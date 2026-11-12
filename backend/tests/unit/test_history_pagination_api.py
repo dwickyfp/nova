@@ -31,12 +31,14 @@ def test_filtered_page_keeps_cursor_to_next_accessible_page(client, monkeypatch)
 @pytest.mark.parametrize("path", ["/assistant/threads", "/agents/threads"])
 @pytest.mark.parametrize("query", ["limit=0", "limit=101", "cursor=invalid"])
 def test_invalid_pagination_is_rejected(client, monkeypatch, path, query):
-    execute = AsyncMock()
-    monkeypatch.setattr(
-        assistant.history_repository.__class__.__module__ + ".db.execute_system", execute
-    )
+    from unittest.mock import Mock
+
+    from app.modules.assistant import history
+
+    store = Mock(side_effect=AssertionError("invalid cursor reached metadata"))
+    monkeypatch.setattr(history, "_store", store)
     assert client.get(f"{path}?{query}").status_code == 422
-    execute.assert_not_awaited()
+    store.assert_not_called()
 
 
 @pytest.mark.parametrize(

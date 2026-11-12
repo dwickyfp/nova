@@ -86,13 +86,18 @@ class TaskMetadataRepository:
     async def create_task(self, data: dict[str, Any]) -> dict[str, Any]:
         await self._bound()
         values = {field: data.get(field) for field in _DEFINITION}
+        values["schedule_kind"] = values["schedule_kind"] or "manual"
+        values["overlap_policy"] = values["overlap_policy"] or "skip"
         if values["handler_config"] is not None:
             values["handler_config"] = Jsonb(values["handler_config"])
         row = await self._one(
             "INSERT INTO nova_meta.config_tasks (id,created_by,handler,lifecycle_state,"
             + ",".join(_DEFINITION) + ") VALUES (%s,%s,%s,%s,"
             + ",".join(["%s"] * len(_DEFINITION)) + ") RETURNING *",
-            (data.get("id") or str(uuid4()), self.actor.principal, data.get("handler") or "sql",
+            # ``created_by`` is the delegated execution owner. The owning service
+            # authorizes it; it defaults to the actor that defines the task.
+            (data.get("id") or str(uuid4()), data.get("created_by") or self.actor.principal,
+             data.get("handler") or "sql",
              data.get("lifecycle_state") or "STARTED", *values.values()),
         )
         assert row is not None
@@ -204,13 +209,14 @@ class TaskMetadataRepository:
         wal = data.get("wal_marks")
         row = await self._one(
             "INSERT INTO nova_meta.config_task_graph_runs (id,graph_id,trigger_type,state,"
-            "overlap_policy,wal_marks,execution_user,execution_role,execution_session_id) "
-            "VALUES (%s,%s,%s,'pending',%s,%s,%s,%s,%s) ON CONFLICT (id) DO NOTHING RETURNING *",
+            "overlap_policy,wal_marks,execution_user,execution_role,execution_session_id,job_id) "
+            "VALUES (%s,%s,%s,'pending',%s,%s,%s,%s,%s,%s) ON CONFLICT (id) DO NOTHING "
+            "RETURNING *",
             (run_id, data["graph_id"], data.get("trigger_type") or "manual",
              data.get("overlap_policy") or "skip",
              json.dumps(wal, sort_keys=True) if wal is not None else None,
              data.get("execution_user"), data.get("execution_role"),
-             data.get("execution_session_id")),
+             data.get("execution_session_id"), data.get("job_id")),
         )
         if row is not None:
             return row, True
@@ -224,6 +230,17 @@ class TaskMetadataRepository:
         return await self._one(
             "SELECT * FROM nova_meta.config_task_graph_runs WHERE id=%s", (run_id,),
         )
+
+    async def existing_graph_run_ids(self, run_ids: list[str]) -> set[str]:
+        await self._bound()
+        found: set[str] = set()
+        for start in range(0, len(run_ids), 1000):
+            rows = await self._all(
+                "SELECT id FROM nova_meta.config_task_graph_runs WHERE id=ANY(%s)",
+                (run_ids[start:start + 1000],),
+            )
+            found.update(row["id"] for row in rows)
+        return found
 
     async def claim_graph_run(
         self, run_id: str, from_states: list[str], to_state: str,
@@ -363,3 +380,177 @@ class TaskMetadataRepository:
             (role,),
         )
         return str(row["execution_user"]) if row else None
+
+    # ── Read model and runtime queries used by the ported callers ─────────
+
+    async def _all(self, query: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+        cursor = await self.connection.execute(query, params)
+        return list(await cursor.fetchall())
+
+    async def list_tasks(self, graph_id: str | None = None) -> list[dict[str, Any]]:
+        """All tasks, or the members of one graph (root scope plus edge endpoints).
+
+        A graph id is the root's qualified name (``database.schema.name``); a
+        legacy two-part id has no schema and a bare id is an unscoped task or a
+        task id. Membership never matches across scopes.
+        """
+        await self._bound()
+        if graph_id is None:
+            return await self._all("SELECT * FROM nova_meta.config_tasks ORDER BY name,id")
+        members = (
+            "name IN (SELECT parent_task FROM nova_meta.config_task_edges WHERE graph_id=%s "
+            "UNION SELECT child_task FROM nova_meta.config_task_edges WHERE graph_id=%s)"
+        )
+        parts = graph_id.split(".")
+        if len(parts) == 3 and all(parts):
+            database, schema = parts[0], parts[1]
+            root = graph_id.rsplit(".", 1)[-1]
+            return await self._all(
+                "SELECT * FROM nova_meta.config_tasks WHERE database_name=%s AND schema_name=%s "
+                f"AND (name=%s OR {members}) ORDER BY name,id",
+                (database, schema, root, graph_id, graph_id),
+            )
+        if len(parts) == 2:
+            return await self._all(
+                "SELECT * FROM nova_meta.config_tasks WHERE database_name=%s "
+                f"AND schema_name IS NULL AND (name=%s OR {members}) ORDER BY name,id",
+                (parts[0], parts[1], graph_id, graph_id),
+            )
+        return await self._all(
+            "SELECT * FROM nova_meta.config_tasks WHERE id=%s OR (name=%s "
+            f"AND database_name IS NULL AND schema_name IS NULL) OR ({members}) ORDER BY name,id",
+            (graph_id, graph_id, graph_id, graph_id),
+        )
+
+    async def list_all_edges(self) -> list[dict[str, Any]]:
+        await self._bound()
+        return await self._all("SELECT * FROM nova_meta.config_task_edges ORDER BY graph_id,id")
+
+    async def list_graph_runs(
+        self, graph_id: str, *, trigger_type: str | None = None,
+        limit: int = 1000, offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """A graph's runs, newest first, optionally of one trigger type."""
+        await self._bound()
+        return await self._all(
+            "SELECT * FROM nova_meta.config_task_graph_runs WHERE graph_id=%s "
+            "AND (%s::text IS NULL OR trigger_type=%s) "
+            "ORDER BY started_at DESC NULLS LAST,id DESC LIMIT %s OFFSET %s",
+            (graph_id, trigger_type, trigger_type, max(1, int(limit)), max(0, int(offset))),
+        )
+
+    async def latest_graph_runs(self) -> list[dict[str, Any]]:
+        """Each graph's newest run, in one query."""
+        await self._bound()
+        return await self._all(
+            "SELECT DISTINCT ON (graph_id) * FROM nova_meta.config_task_graph_runs "
+            "ORDER BY graph_id,started_at DESC NULLS LAST,id DESC",
+        )
+
+    async def count_graph_runs(self, graph_id: str) -> int:
+        await self._bound()
+        row = await self._one(
+            "SELECT count(*) AS total FROM nova_meta.config_task_graph_runs WHERE graph_id=%s",
+            (graph_id,),
+        )
+        return int(row["total"]) if row else 0
+
+    async def count_graph_runs_by_graph(self) -> list[dict[str, Any]]:
+        await self._bound()
+        return await self._all(
+            "SELECT graph_id,count(*) AS total,"
+            "count(*) FILTER (WHERE state='success') AS success,"
+            "count(*) FILTER (WHERE state='failed') AS failed "
+            "FROM nova_meta.config_task_graph_runs GROUP BY graph_id",
+        )
+
+    async def list_graph_runs_by_state(
+        self, states: list[str], *, limit: int = 1000,
+    ) -> list[dict[str, Any]]:
+        """Runs in ``states``, oldest first — the recovery work set."""
+        await self._bound()
+        return await self._all(
+            "SELECT * FROM nova_meta.config_task_graph_runs WHERE state=ANY(%s) "
+            "ORDER BY started_at NULLS FIRST,id LIMIT %s",
+            (_states(states), max(1, int(limit))),
+        )
+
+    async def list_active_graph_runs(self, graph_id: str) -> list[dict[str, Any]]:
+        await self._bound()
+        return await self._all(
+            "SELECT * FROM nova_meta.config_task_graph_runs WHERE graph_id=%s "
+            "AND state IN ('pending','running') ORDER BY started_at NULLS FIRST,id",
+            (graph_id,),
+        )
+
+    async def graph_run_for_job(self, job_id: Any) -> dict[str, Any] | None:
+        """The run a durable ``task.graph`` job delivers."""
+        await self._bound()
+        return await self._one(
+            "SELECT * FROM nova_meta.config_task_graph_runs WHERE job_id=%s", (job_id,),
+        )
+
+    async def list_stale_graph_runs(
+        self, *, older_than_seconds: int, limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        await self._bound()
+        return await self._all(
+            "SELECT * FROM nova_meta.config_task_graph_runs WHERE state='running' "
+            "AND coalesce(heartbeat_at,started_at) < clock_timestamp() - make_interval(secs => %s) "
+            "ORDER BY started_at,id LIMIT %s",
+            (float(older_than_seconds), max(1, int(limit))),
+        )
+
+    async def get_task_run(self, run_id: str) -> dict[str, Any] | None:
+        await self._bound()
+        return await self._one("SELECT * FROM nova_meta.config_task_runs WHERE id=%s", (run_id,))
+
+    async def list_task_runs_for_graph(self, graph_id: str) -> list[dict[str, Any]]:
+        await self._bound()
+        return await self._all(
+            "SELECT r.* FROM nova_meta.config_task_runs r JOIN nova_meta.config_task_graph_runs g "
+            "ON g.id=r.graph_run_id WHERE g.graph_id=%s ORDER BY r.started_at,r.id",
+            (graph_id,),
+        )
+
+    async def list_running_task_runs(self, *, limit: int = 500) -> list[dict[str, Any]]:
+        await self._bound()
+        return await self._all(
+            "SELECT * FROM nova_meta.config_task_runs WHERE state='running' "
+            "ORDER BY started_at,id LIMIT %s", (max(1, int(limit)),),
+        )
+
+    async def list_stale_task_runs(
+        self, *, older_than_seconds: int, limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        await self._bound()
+        return await self._all(
+            "SELECT * FROM nova_meta.config_task_runs WHERE state='running' "
+            "AND coalesce(heartbeat_at,started_at) < clock_timestamp() - make_interval(secs => %s) "
+            "ORDER BY started_at,id LIMIT %s",
+            (float(older_than_seconds), max(1, int(limit))),
+        )
+
+    async def skip_pending_task_run(self, run_id: str) -> bool:
+        """A node that never started is recorded skipped; no lease is involved."""
+        await self._bound()
+        row = await self._one(
+            "UPDATE nova_meta.config_task_runs SET state='skipped' "
+            "WHERE id=%s AND state='pending' RETURNING id", (run_id,),
+        )
+        return row is not None
+
+    async def abandon_task_run(
+        self, run_id: str, *, generation: int, query_id: str | None = None,
+        error_message: str | None = None,
+    ) -> bool:
+        """End one stale lease, only if nobody retook the node since it was read."""
+        await self._bound()
+        row = await self._one(
+            "UPDATE nova_meta.config_task_runs SET state='abandoned',"
+            "starrocks_query_id=coalesce(%s,starrocks_query_id),"
+            "error_message=coalesce(%s,error_message) WHERE id=%s "
+            "AND state='running' AND lease_generation=%s RETURNING id",
+            (query_id, error_message, run_id, _generation(generation)),
+        )
+        return row is not None

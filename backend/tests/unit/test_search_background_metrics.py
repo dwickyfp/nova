@@ -54,13 +54,27 @@ class _Histogram:
         self.durations.append(duration)
 
 
+@pytest.fixture
+def metadata(monkeypatch):
+    repo = AsyncMock()
+    repo.pending_builds.return_value = []
+
+    @asynccontextmanager
+    async def scope(actor, *, read_only=False):
+        assert actor.principal_type == "SERVICE"
+        yield repo
+
+    monkeypatch.setattr(module, "intelligence_metadata", scope)
+    return repo
+
+
 @pytest.mark.asyncio
-async def test_search_poll_failure_is_counted_and_loop_continues(monkeypatch) -> None:
+async def test_search_poll_failure_is_counted_and_loop_continues(monkeypatch, metadata) -> None:
     errors = _Counter()
     timestamp = _Timestamp()
     monkeypatch.setattr(module, "SEARCH_POLL_ERRORS", errors)
     monkeypatch.setattr(module, "SEARCH_LAST_SUCCESSFUL_POLL", timestamp)
-    monkeypatch.setattr(module.db, "execute_system", AsyncMock(side_effect=RuntimeError("offline")))
+    metadata.pending_builds.side_effect = RuntimeError("offline")
 
     async def stop_after_poll(seconds: float) -> None:
         raise asyncio.CancelledError
@@ -74,10 +88,11 @@ async def test_search_poll_failure_is_counted_and_loop_continues(monkeypatch) ->
 
 
 @pytest.mark.asyncio
-async def test_search_successful_queue_poll_updates_last_success_timestamp(monkeypatch) -> None:
+async def test_search_successful_queue_poll_updates_last_success_timestamp(
+    monkeypatch, metadata
+) -> None:
     timestamp = _Timestamp()
     monkeypatch.setattr(module, "SEARCH_LAST_SUCCESSFUL_POLL", timestamp)
-    monkeypatch.setattr(module.db, "execute_system", AsyncMock(return_value={"rows": []}))
 
     async def stop_after_poll(seconds: float) -> None:
         raise asyncio.CancelledError
@@ -91,16 +106,20 @@ async def test_search_successful_queue_poll_updates_last_success_timestamp(monke
 
 
 @pytest.mark.asyncio
-async def test_search_reconciliation_failure_counts_one_index(monkeypatch) -> None:
+async def test_search_reconciliation_failure_counts_one_index(monkeypatch, metadata) -> None:
     errors = _Counter()
     monkeypatch.setattr(module, "SEARCH_RECONCILIATION_ERRORS", errors)
-    monkeypatch.setattr(
-        module.db,
-        "execute_system",
-        AsyncMock(return_value={"rows": [["private_index", 1]]}),
+    row = dict.fromkeys(module._INDEX_FIELDS)
+    row.update(
+        name="private_index",
+        active_version=1,
+        key_columns=[],
+        content_columns=[],
+        filter_columns=[],
     )
+    metadata.list_indexes.return_value = [row]
+    metadata.get_sync_state.side_effect = RuntimeError("offline")
     service = module.SearchService()
-    monkeypatch.setattr(service, "_get", AsyncMock(side_effect=RuntimeError("offline")))
 
     await service._reconcile()
 
@@ -120,22 +139,23 @@ async def test_search_build_tracks_active_and_outcome(
     monkeypatch.setattr(module, "SEARCH_BUILD_DURATION", duration)
     service = module.SearchService()
 
-    @asynccontextmanager
-    async def unlocked(name: str):
-        yield
-
-    async def build_locked(definition: dict, version: dict) -> bool:
-        assert active.value == 1
+    async def build_claimed(definition, version, generation, previous):
+        assert active.value == 1 and generation == 7
         return built
 
-    monkeypatch.setattr(service, "_lock", unlocked)
-    monkeypatch.setattr(service, "_get", AsyncMock(return_value={"name": "private_index"}))
     monkeypatch.setattr(
         service,
-        "_version",
-        AsyncMock(return_value={"build_status": "PENDING"}),
+        "_claim",
+        AsyncMock(
+            return_value=(
+                {"name": "private_index"},
+                {"version": 1, "build_status": "PENDING"},
+                None,
+                7,
+            )
+        ),
     )
-    monkeypatch.setattr(service, "_build_locked", build_locked)
+    monkeypatch.setattr(service, "_build_claimed", build_claimed)
 
     await service.build("private_index", 1)
 
@@ -150,8 +170,6 @@ async def test_search_build_tracks_active_and_outcome(
 
 @pytest.mark.asyncio
 async def test_search_failed_build_body_returns_failed_after_persisting_state(monkeypatch) -> None:
-    execute = AsyncMock(return_value={"rows": []})
-    monkeypatch.setattr(module.db, "execute_system", execute)
     monkeypatch.setattr(
         module.vector_backend,
         "drop_index",
@@ -166,9 +184,9 @@ async def test_search_failed_build_body_returns_failed_after_persisting_state(mo
         "build_status": "PENDING",
     }
 
-    completed = await module.SearchService()._build_locked(definition, version)
-
+    service = module.SearchService()
+    finish = AsyncMock(return_value=True)
+    monkeypatch.setattr(service, "_finish", finish)
+    completed = await service._build_claimed(definition, version, 7, None)
     assert completed is False
-    statements = [call.args[0] for call in execute.await_args_list]
-    assert any("SET build_status='FAILED'" in sql for sql in statements)
-    assert any("SET status='FAILED'" in sql for sql in statements)
+    finish.assert_awaited_once_with("private_index", 1, 7, failure_code="RuntimeError")

@@ -329,8 +329,10 @@ class EvaluationService:
             summary={"per_metric": body.per_metric, "seed": body.seed,
                      "vocabulary": body.vocabulary},
         )
-        await access.audit("EVALUATE", "ONTOLOGY_EVALUATION", run.id, user)
-        return await self.repository.save("eval_runs", run)
+        async with access.governed(user):
+            saved = await self.repository.save("eval_runs", run)
+            await access.audit("EVALUATE", "ONTOLOGY_EVALUATION", run.id, user)
+        return saved
 
     async def start_answers(self, body: AnswerRunRequest, user: dict) -> EvalRun:
         await access.require_admin("EVALUATE", "ONTOLOGY_EVALUATION", body.set_name, user)
@@ -355,8 +357,10 @@ class EvaluationService:
             release_id=release_id, manifest_hash=manifest, stage="answers",
             items=[case.id for case in cases], summary={"view_hint": body.view_hint},
         )
-        await access.audit("EVALUATE", "ONTOLOGY_EVALUATION", run.id, user)
-        return await self.repository.save("eval_runs", run)
+        async with access.governed(user):
+            saved = await self.repository.save("eval_runs", run)
+            await access.audit("EVALUATE", "ONTOLOGY_EVALUATION", run.id, user)
+        return saved
 
     async def start_judge(self, body: JudgeRunRequest, user: dict) -> EvalRun:
         await access.require_admin("EVALUATE", "ONTOLOGY_EVALUATION", body.set_name, user)
@@ -373,8 +377,10 @@ class EvaluationService:
             items=sorted(case.id for case in cases),
             summary={"rubric": RUBRIC, "windows": (gold.summary.get("windows") if gold else {})},
         )
-        await access.audit("EVALUATE", "ONTOLOGY_EVALUATION", run.id, user)
-        return await self.repository.save("eval_runs", run)
+        async with access.governed(user):
+            saved = await self.repository.save("eval_runs", run)
+            await access.audit("EVALUATE", "ONTOLOGY_EVALUATION", run.id, user)
+        return saved
 
     async def _judge_step(self, run: EvalRun, user: dict) -> EvalRun:
         batch = run.items[run.done:run.done + JUDGE_BATCH]
@@ -405,8 +411,10 @@ class EvaluationService:
             release_id=alias.release_id if alias else None,
             summary={"population": {name: len(keys) for name, keys in strata.items()}},
         )
-        await access.audit("EVALUATE", "ONTOLOGY_EVALUATION", run.id, user)
-        return await self.repository.save("eval_runs", run)
+        async with access.governed(user):
+            saved = await self.repository.save("eval_runs", run)
+            await access.audit("EVALUATE", "ONTOLOGY_EVALUATION", run.id, user)
+        return saved
 
     # --- advancing --------------------------------------------------------------------
 
@@ -442,8 +450,10 @@ class EvaluationService:
         run = await self._owned_run(run_id, user)
         if run.status != "FAILED":
             return run
-        await access.audit("EVALUATE", "ONTOLOGY_EVALUATION", run.id, user)
-        return await self._save_run(run, status="RUNNING", error=None)
+        async with access.governed(user):
+            resumed = await self._save_run(run, status="RUNNING", error=None)
+            await access.audit("EVALUATE", "ONTOLOGY_EVALUATION", run.id, user)
+        return resumed
 
     # --- gold ---------------------------------------------------------------------------
 
@@ -1231,9 +1241,10 @@ class EvaluationService:
                                   verdict=entry.verdict, reason=entry.reason))  # type: ignore[arg-type]
             updated.append((result.model_copy(update={
                 "reviews": reviews, "revision": result.revision + 1}), result.revision))
-        if updated:
-            await self.repository.save_many("eval_results", updated)
-        await access.audit("REVIEW", "ONTOLOGY_EVALUATION", run_id, user)
+        async with access.governed(user):
+            if updated:
+                await self.repository.save_many("eval_results", updated)
+            await access.audit("REVIEW", "ONTOLOGY_EVALUATION", run_id, user)
         reviewed = await self.results(run_id)
         run = await self.repository.latest("eval_runs", run_id, EvalRun)
         if run is not None and run.kind == "joins" and run.status == "COMPLETED":
@@ -1274,9 +1285,10 @@ class EvaluationService:
             updated.append((case.model_copy(update={
                 "reviews": reviews, "status": status, "revision": case.revision + 1,
             }), case.revision))
-        if updated:
-            await self.repository.save_many("eval_cases", updated)
-        await access.audit("REVIEW", "ONTOLOGY_EVALUATION", set_name, user)
+        async with access.governed(user):
+            if updated:
+                await self.repository.save_many("eval_cases", updated)
+            await access.audit("REVIEW", "ONTOLOGY_EVALUATION", set_name, user)
         return {"reviewed": len(updated),
                 "rejected": sum(1 for case, _ in updated if case.status == "REJECTED")}
 

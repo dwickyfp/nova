@@ -11,15 +11,18 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.streams import capture as capture_module
 from app.modules.streams import service as service_module
 from app.modules.streams.capture import Caller, CaptureCoordinator
 from app.modules.streams.codec import Column
-from app.modules.streams.journal import StarRocksConsumptionJournal
+from app.modules.streams.journal import ConsumptionJournal
+from app.modules.streams.metadata_repository import StreamMetadataRepository
 from app.modules.streams.namespace import StreamName
 from app.modules.streams.schemas import ChangeCursor, StreamError, StreamMode
 from app.modules.streams.sources import READY, REGISTERING, SourceHead, SourceRecord, journal_digest
 from app.sql_frontend.parser import parse_statement
+from tests.unit.stream_metadata_fakes import metadata_scope
 
 SOURCE = SourceRecord(
     "s" * 32, 1, "shop", "orders", 42, ("id",),
@@ -232,8 +235,9 @@ def read_env(monkeypatch):
         _journal_row(2, 1, "c2", "r1", "UPDATE", '{"id":1,"v":"a"}', '{"id":1,"v":"b"}'),
     ]
 
-    async def execute(sql, params=None):
-        return commits
+    async def read_commits(source, after, through):
+        return [dict(zip(("commit_seq", "commit_id", "row_count"), row, strict=True))
+                for row in commits["rows"]]
 
     async def writer_query(conn, sql, params=None):
         return journal
@@ -247,7 +251,7 @@ def read_env(monkeypatch):
     monkeypatch.setattr(service_module, "writer_conn", writer_conn)
     monkeypatch.setattr(service_module.source_registry, "set_status", set_status)
     service = service_module.StreamService()
-    monkeypatch.setattr(service, "_execute", execute)
+    monkeypatch.setattr(service_module.source_registry, "commits", read_commits)
     resolved = service_module.ResolvedStream(
         SimpleNamespace(), SOURCE, StreamMode.STANDARD, 0, SourceHead(2, 11)
     )
@@ -306,17 +310,23 @@ def test_the_relation_checks_select_in_the_same_statement(read_env):
 # ── offsets ─────────────────────────────────────────────────────────────
 
 
+def receipt_scope(receipts):
+    repo = StreamMetadataRepository(None, SecurityContext("alice", "ANALYST"))
+    repo._bound = AsyncMock()
+    repo._all = AsyncMock(return_value=[
+        {"sequence_from": start, "sequence_to": end} for start, end in receipts
+    ])
+    return metadata_scope(repo)[0]
+
+
 @pytest.mark.parametrize(("receipts", "expected"), [
     ([], 3),
     ([(3, 5), (5, 9)], 9),
     ([(5, 9), (3, 5)], 9),
-    ([(1, 3), (3, 5)], 5),  # history before the creation cursor is skipped
+    ([(1, 3), (3, 5)], 5),
 ])
 async def test_offset_is_an_unbroken_chain(receipts, expected):
-    async def execute(sql, params=None):
-        return {"rows": [list(item) for item in receipts]}
-
-    cursor = await StarRocksConsumptionJournal(execute).committed_cursor(
+    cursor = await ConsumptionJournal(receipt_scope(receipts)).committed_cursor(
         "stream", ChangeCursor(1, 3)
     )
     assert cursor == ChangeCursor(1, expected)
@@ -324,11 +334,10 @@ async def test_offset_is_an_unbroken_chain(receipts, expected):
 
 @pytest.mark.parametrize("receipts", [[(3, 5), (6, 9)], [(3, 5), (3, 6)], [(2, 4)]])
 async def test_broken_offset_chains_block(receipts):
-    async def execute(sql, params=None):
-        return {"rows": [list(item) for item in receipts]}
-
     with pytest.raises(StreamError):
-        await StarRocksConsumptionJournal(execute).committed_cursor("stream", ChangeCursor(1, 3))
+        await ConsumptionJournal(receipt_scope(receipts)).committed_cursor(
+            "stream", ChangeCursor(1, 3)
+        )
 
 
 def test_dispatch_slots_are_per_offset_and_attempt():

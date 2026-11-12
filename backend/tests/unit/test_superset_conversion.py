@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException
 
-from app.modules.agents.artifact_repository import ArtifactRepository
 from app.modules.agents.studio_router import convert_artifacts, get_artifact
 from app.modules.agents.studio_schemas import ArtifactConvertRequest
 from app.modules.superset import conversion
@@ -183,9 +182,6 @@ def bi(monkeypatch):
     monkeypatch.setattr(repo, "create_bi", create_bi)
     monkeypatch.setattr(repo, "list", list_rows)
     monkeypatch.setattr(repo, "list_legacy", list_legacy)
-    monkeypatch.setattr(repo, "ensure_bi_columns", AsyncMock(return_value=[]))
-    retire = AsyncMock(return_value=False)
-    monkeypatch.setattr(repo, "retire_legacy_columns", retire)
     monkeypatch.setattr(
         conversion,
         "write_audit_log",
@@ -193,7 +189,7 @@ def bi(monkeypatch):
     )
     tiles = AsyncMock(return_value=[])
     monkeypatch.setattr("app.modules.viz.migration.legacy_tile_dashboards", tiles)
-    state.update(rows=rows, retire=retire, tiles=tiles)
+    state.update(rows=rows, tiles=tiles)
     return state
 
 
@@ -239,7 +235,6 @@ async def test_conversion_keeps_ids_and_holds_back_lossy_charts(bi) -> None:
     assert len(bi["audits"]) == 4
     assert {a["status"] for a in bi["audits"]} == {"SUCCESS", "SKIPPED"}
     assert all(a["action"] == "CONVERT_ARTIFACT" for a in bi["audits"])
-    bi["retire"].assert_awaited_once()
 
     forced = {o.artifact_id: o for o in await conversion.convert_owner(USER, force=True)}
 
@@ -356,91 +351,6 @@ async def test_a_dashboard_view_reports_its_charts_blockers(bi) -> None:
 
 
 @pytest.mark.asyncio
-async def test_repository_attaches_bi_in_place_and_retires_columns_when_done(monkeypatch) -> None:
-    repository = ArtifactRepository()
-    calls: list[tuple[str, list | None]] = []
-    remaining = {"count": 1}
-
-    async def execute(sql, params=None):
-        calls.append((sql, params))
-        if sql.startswith("SELECT COUNT(*)"):
-            return {"rows": [[remaining["count"]]]}
-        if sql.startswith("DESCRIBE"):
-            return {"rows": [["artifact_id"], ["chart_spec"], ["viz_spec"]]}
-        return {"affected": 1}
-
-    monkeypatch.setattr("app.modules.agents.artifact_repository.db.execute_system", execute)
-    monkeypatch.setattr(repository, "get", AsyncMock(return_value={"artifact_id": "a1"}))
-
-    await repository.attach_bi(
-        "a1", owner_name="analyst", bi_kind="chart", bi_object_id=3, bi_dataset_id=4
-    )
-    update, params = calls[-1]
-    assert "chart_spec = NULL, viz_spec = NULL" in update
-    assert "bi_object_id IS NULL" in update
-    assert params[-2:] == ["a1", "analyst"]
-
-    assert await repository.retire_legacy_columns() is False
-    remaining["count"] = 0
-    assert await repository.retire_legacy_columns() is True
-    assert [sql for sql, _ in calls if "DROP COLUMN" in sql] == [
-        "ALTER TABLE NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS DROP COLUMN chart_spec",
-        "ALTER TABLE NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS DROP COLUMN viz_spec",
-    ]
-    assert await repository.retire_legacy_columns() is False
-    assert "chart_spec" not in repository._columns()
-
-
-@pytest.mark.asyncio
-async def test_repository_rereads_the_schema_after_another_process_drops_columns(
-    monkeypatch,
-) -> None:
-    repository = ArtifactRepository()
-    selects: list[str] = []
-
-    async def execute(sql, params=None):
-        if sql.startswith("DESCRIBE"):
-            return {"rows": [["artifact_id"], ["bi_kind"], ["bi_object_id"], ["bi_dataset_id"]]}
-        if sql.startswith("SELECT"):
-            selects.append(sql)
-            if "viz_spec" in sql:
-                raise RuntimeError("Column 'chart_spec' cannot be resolved.")
-            return {"rows": []}
-        return {"affected": 0}
-
-    monkeypatch.setattr("app.modules.agents.artifact_repository.db.execute_system", execute)
-
-    assert await repository.list(owner_name="analyst") == []
-    assert len(selects) == 2 and "viz_spec" not in selects[1]
-
-
-@pytest.mark.asyncio
-async def test_bi_artifacts_are_inserted_without_the_legacy_columns(monkeypatch) -> None:
-    repository = ArtifactRepository()
-    execute = AsyncMock(return_value={"affected": 1})
-    monkeypatch.setattr("app.modules.agents.artifact_repository.db.execute_system", execute)
-    monkeypatch.setattr(repository, "get", AsyncMock(return_value={"artifact_id": "d1"}))
-
-    await repository.create_bi(
-        owner_name="analyst",
-        title="Board",
-        artifact_type="dashboard",
-        sql_text="",
-        database_name=None,
-        schema_name=None,
-        bi_kind="dashboard",
-        bi_object_id=5,
-        bi_dataset_id=None,
-        artifact_id="d1",
-    )
-
-    statement, params = execute.await_args.args
-    assert "viz_spec" not in statement and "chart_spec" not in statement
-    assert params[0] == "d1"
-    assert statement.count("%s") == len(params)
-
-
-@pytest.mark.asyncio
 async def test_convert_route_returns_outcomes_and_maps_refusals(monkeypatch) -> None:
     convert = AsyncMock(
         return_value=[
@@ -489,31 +399,16 @@ async def test_a_legacy_artifact_view_carries_its_conversion_report(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_deleting_the_last_legacy_artifact_forgets_its_source_and_retires_columns(
-    monkeypatch,
-) -> None:
+async def test_deleting_a_legacy_artifact_forgets_its_tile_source(monkeypatch) -> None:
     from app.modules.agents.studio_router import delete_artifact
-    from app.modules.viz.service import legacy_dashboard_artifact_id
 
-    artifact_id = legacy_dashboard_artifact_id("tiles-1")
-    statements: list[tuple[str, list | None]] = []
-
-    async def execute(sql, params=None):
-        statements.append((sql, params))
-        if sql.startswith("SELECT dashboard_id"):
-            return {"rows": [["tiles-1"], ["tiles-2"]]}
-        return {"affected": 1}
-
-    monkeypatch.setattr("app.modules.viz.migration.db.execute_system", execute)
-    repo = conversion.artifact_repository
-    monkeypatch.setattr(repo, "get", AsyncMock(return_value=legacy(artifact_id, "dashboard")))
-    monkeypatch.setattr(repo, "delete", AsyncMock(return_value=True))
-    retire = AsyncMock(return_value=True)
-    monkeypatch.setattr(repo, "retire_legacy_columns", retire)
+    repository = conversion.artifact_repository
+    monkeypatch.setattr(repository, "get", AsyncMock(return_value=legacy("tile-a", "dashboard")))
+    delete = AsyncMock(return_value=True)
+    forget = AsyncMock(return_value=1)
+    monkeypatch.setattr(repository, "delete", delete)
+    monkeypatch.setattr("app.modules.viz.migration.forget_tile_dashboard", forget)
     monkeypatch.setattr("app.modules.agents.studio_router.write_audit_log", AsyncMock())
-
-    await delete_artifact(artifact_id, user=USER)
-
-    deletes = [params for sql, params in statements if sql.startswith("DELETE")]
-    assert deletes == [["tiles-1", "analyst"]]
-    retire.assert_awaited_once()
+    await delete_artifact("tile-a", user=USER)
+    delete.assert_awaited_once_with("tile-a", owner_name="analyst")
+    forget.assert_awaited_once_with("analyst", "tile-a")

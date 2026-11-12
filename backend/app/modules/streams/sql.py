@@ -43,22 +43,13 @@ class StreamSql:
         if time.monotonic() - self._names_at < settings.STREAM_REGISTRY_CACHE_SECONDS:
             return self._names
         try:
-            from app.core.database import db
-
-            result = await db.execute_system(
-                "SELECT s.database_name, s.name, s.status FROM NOVA_SYSTEM.CONFIG_STREAMS s "
-                "JOIN (SELECT catalog_name, database_name, schema_name, name, MAX(generation) g "
-                "FROM NOVA_SYSTEM.CONFIG_STREAMS GROUP BY catalog_name, database_name, "
-                "schema_name, name) m ON s.catalog_name=m.catalog_name AND "
-                "s.database_name=m.database_name AND s.schema_name=m.schema_name AND "
-                "s.name=m.name AND s.generation=m.g"
+            rows = await stream_service.repository.current_generations(
+                statuses=("READY", "STALE")
             )
             self._names = {
-                (str(row[0]).lower(), str(row[1]).lower())
-                for row in result["rows"]
-                if row[2] in {"READY", "STALE"}
+                (str(row["database_name"]).lower(), str(row["name"]).lower()) for row in rows
             }
-        except Exception:  # noqa: BLE001 - before bootstrap there are no streams
+        except Exception:  # noqa: BLE001 - unknown names fall through to the engine
             self._names = set()
         self._names_at = time.monotonic()
         return self._names

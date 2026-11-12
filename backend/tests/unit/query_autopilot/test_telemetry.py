@@ -111,31 +111,22 @@ def test_native_role_unavailable_is_observed_but_cannot_be_enrolled():
         Enrollment.model_validate({**enrollment.model_dump(), "scope": observation.scope})
 
 
-async def test_audit_optional_metadata_upgrade_failure_keeps_original_audit(monkeypatch):
-    from asyncmy.errors import ProgrammingError
+async def test_audit_metadata_failure_does_not_fallback_or_claim_durable_telemetry(monkeypatch):
+    from app.common import audit
+    from app.core.metadata_db import MetadataUnavailable
 
-    from app.common.audit import write_audit_log
-
-    write = AsyncMock(
-        side_effect=[ProgrammingError(1054, "Unknown column 'nova_execution_id'"), {"affected": 1}]
-    )
-    monkeypatch.setattr("app.common.audit.db.execute_system", write)
-    token = EXECUTION.set(ExecutionIdentity())
+    write = AsyncMock(side_effect=MetadataUnavailable())
+    monkeypatch.setattr(audit, "_persist", write)
+    identity = ExecutionIdentity()
+    token = EXECUTION.set(identity)
     try:
-        query_id = await write_audit_log(
-            event_type="QUERY",
-            user_name="alice",
-            action="SELECT",
-            object_type="QUERY",
-            object_name="query",
-            status="SUCCESS",
-        )
-        assert query_id != EXECUTION.get().id
-        assert write.call_count == 2
-        legacy, args = write.call_args.args
-        assert "nova_execution_id" not in legacy
-        assert legacy.count("%s") == len(args)
-        assert args[0] == query_id
+        with pytest.raises(MetadataUnavailable):
+            await audit.write_audit_log(
+                event_type="QUERY", user_name="alice", action="SELECT", object_type="QUERY",
+                object_name="query", status="SUCCESS",
+            )
+        write.assert_awaited_once()
+        assert identity.audit_ids == []
     finally:
         EXECUTION.reset(token)
 

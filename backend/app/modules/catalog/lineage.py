@@ -4,7 +4,7 @@ Every successful statement Nova executes leaves a redacted ``AUDIT_LOG`` row
 with its SQL text and session database. A pass reads the rows written since the
 previous pass, keeps the statements that write one relation from a query
 (:func:`app.sql_frontend.analysis.lineage.statement_lineage`), and upserts one
-edge per ``(source, target)`` pair into ``NOVA_SYSTEM.CATALOG_LINEAGE``.
+edge per ``(source, target)`` pair into ``nova_meta.catalog_lineage``.
 
 * Endpoints are securable ids. A name not synced yet resolves to the id the
   sync will register for it, so an edge recorded before the sync still lands on
@@ -21,38 +21,20 @@ edge per ``(source, target)`` pair into ``NOVA_SYSTEM.CATALOG_LINEAGE``.
 
 from __future__ import annotations
 
-import json
 import logging
 import uuid
 from datetime import datetime, timedelta
 from typing import Any
 
-from app.core.database import db
+from app.common.metadata_audit import AuditFilter, AuditReader
 from app.sql_frontend.analysis.lineage import StatementLineage, statement_lineage
 
+from .metadata_repository import catalog_transaction
 from .repository import row_id
 from .securables import relation_id
 from .sync import nova_now, redact_error
 
 log = logging.getLogger(__name__)
-
-_PK_PROPERTIES = 'PROPERTIES("replication_num"="1", "enable_persistent_index"="true")'
-
-CATALOG_LINEAGE_DDL = f"""
-CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_LINEAGE (
-    id             VARCHAR(64) NOT NULL,
-    source_id      VARCHAR(64) NOT NULL,
-    target_id      VARCHAR(64) NOT NULL,
-    source_name    VARCHAR(1024) NOT NULL,
-    target_name    VARCHAR(1024) NOT NULL,
-    statement_kind VARCHAR(32) NOT NULL,
-    first_seen_at  DATETIME,
-    last_seen_at   DATETIME,
-    last_query_id  VARCHAR(64)
-) PRIMARY KEY(id)
-DISTRIBUTED BY HASH(id) BUCKETS 1
-{_PK_PROPERTIES}
-"""
 
 #: Reserved ``CATALOG_SYNC_RUNS.catalog_name`` of lineage passes. The colon
 #: makes it an invalid catalog identifier, so no engine catalog can share it.
@@ -75,58 +57,32 @@ def edge_id(source_id: str, target_id: str) -> str:
     return row_id(source_id, target_id, "lineage")
 
 
-def _records(result: dict) -> list[dict]:
-    return [dict(zip(_COLUMNS, row, strict=False)) for row in result.get("rows") or []]
-
-
 class LineageRepository:
-    async def ensure_schema(self) -> None:
-        await db.execute_system(CATALOG_LINEAGE_DDL)
-
     async def edges_of(self, securable_id: str, limit: int = 200) -> list[dict]:
-        result = await db.execute_system(
-            "SELECT " + ", ".join(_COLUMNS) + " FROM NOVA_SYSTEM.CATALOG_LINEAGE "
-            "WHERE source_id = %s OR target_id = %s ORDER BY last_seen_at DESC LIMIT %s",
-            [securable_id, securable_id, int(limit)],
-        )
-        return _records(result)
+        async with catalog_transaction(read_only=True) as repo:
+            return await repo.lineage_edges_of(securable_id, limit)
 
     async def existing(self, ids: list[str]) -> dict[str, dict]:
-        found: dict[str, dict] = {}
-        for start in range(0, len(ids), 200):
-            chunk = ids[start : start + 200]
-            result = await db.execute_system(
-                "SELECT " + ", ".join(_COLUMNS) + " FROM NOVA_SYSTEM.CATALOG_LINEAGE "
-                f"WHERE id IN ({', '.join(['%s'] * len(chunk))})",
-                chunk,
-            )
-            found.update({row["id"]: row for row in _records(result)})
-        return found
+        async with catalog_transaction(read_only=True) as repo:
+            return await repo.lineage_by_ids(ids)
 
     async def upsert(self, edges: list[dict]) -> None:
-        for start in range(0, len(edges), 200):
-            batch = edges[start : start + 200]
-            placeholders = "(" + ", ".join(["%s"] * len(_COLUMNS)) + ")"
-            await db.execute_system(
-                "INSERT INTO NOVA_SYSTEM.CATALOG_LINEAGE (" + ", ".join(_COLUMNS) + ") VALUES "
-                + ", ".join([placeholders] * len(batch)),
-                [edge.get(column) for edge in batch for column in _COLUMNS],
-            )
+        async with catalog_transaction() as repo:
+            await repo.upsert_lineage(edges)
 
     async def watermark(self) -> datetime | None:
-        result = await db.execute_system(
-            "SELECT counts_json FROM NOVA_SYSTEM.CATALOG_SYNC_RUNS "
-            "WHERE catalog_name = %s AND status = 'ok' ORDER BY started_at DESC LIMIT 1",
-            [LINEAGE_RUN],
-        )
-        rows = result.get("rows") or []
-        if not rows:
-            return None
-        try:
-            value = json.loads(rows[0][0] or "{}").get("watermark")
-            return datetime.fromisoformat(value) if value else None
-        except (TypeError, ValueError, AttributeError):
-            return None
+        async with catalog_transaction(read_only=True) as repo:
+            return await repo.lineage_watermark()
+
+    async def statements(self, since: datetime) -> list[tuple]:
+        async with catalog_transaction(read_only=True) as repo:
+            columns = ("query_id", "event_time", "database_name", "sql_text")
+            rows = await AuditReader(repo.connection).events(
+                AuditFilter(event_type="query", status="SUCCESS", since=since,
+                            sql_present=True, sql_contains_any=("insert", "create")),
+                columns, limit=MAX_ROWS, newest_first=False,
+            )
+        return [tuple(row[column] for column in columns) for row in rows]
 
 
 lineage_repo = LineageRepository()
@@ -168,15 +124,7 @@ async def harvest_lineage(repo: LineageRepository | None = None) -> dict[str, An
     previous = await repo.watermark()
     since = (previous - OVERLAP) if previous else (started - FIRST_PASS_LOOKBACK)
     try:
-        result = await db.execute_system(
-            "SELECT query_id, event_time, database_name, sql_text FROM NOVA_SYSTEM.AUDIT_LOG "
-            "WHERE event_type = 'query' AND status = 'SUCCESS' AND event_time >= %s "
-            "AND sql_text IS NOT NULL "
-            "AND (LOWER(sql_text) LIKE '%%insert%%' OR LOWER(sql_text) LIKE '%%create%%') "
-            "ORDER BY event_time LIMIT %s",
-            [since, MAX_ROWS],
-        )
-        rows = result.get("rows") or []
+        rows = await repo.statements(since)
         found: dict[str, dict] = {}
         for query_id, event_time, database, sql_text in rows:
             lineage = statement_lineage(str(sql_text), database=database or None)

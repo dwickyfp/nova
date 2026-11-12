@@ -63,7 +63,8 @@ async def test_shared_semantic_model_uses_owner_metadata_but_caller_sql(monkeypa
         AsyncMock(return_value={"object_access": ["SELECT"]}),
     )
 
-    async def get_view(view_id):
+    async def get_view(view_id, user):
+        assert user["username"] == "rbac_jakarta"
         calls.append(("view", view_id))
         return {
             "id": view_id,
@@ -75,7 +76,8 @@ async def test_shared_semantic_model_uses_owner_metadata_but_caller_sql(monkeypa
             "database_name": "rbac_city_demo",
         }
 
-    async def get_version(view_id, version):
+    async def get_version(view_id, version, user):
+        assert user["username"] == "rbac_jakarta"
         calls.append(("version", view_id, version))
         return {
             "status": "ACTIVE",

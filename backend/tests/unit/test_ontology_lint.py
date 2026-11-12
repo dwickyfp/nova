@@ -20,20 +20,41 @@ from app.modules.ontology.stewardship import ProposalCreate, ReviewRequest, Stew
 from tests.unit._ontology import ADMIN, FakeRepository, user
 from tests.unit.test_ontology_derived import lab_catalog
 
+pytestmark = pytest.mark.usefixtures("fake_metadata_db")
+
 STEWARD = user("sam", "retail_steward")
 ANALYST = user("ana", "retail_analyst")
 OUTSIDER = user("oz", "nobody")
 
 SALES = [
-    ("NetRevenue", "Net revenue",
-     "Omzet bersih: nilai order setelah diskon, dikurangi nilai retur.",
-     ["omzet", "omzet bersih"], "net_revenue"),
-    ("SalesBeforeReturns", "Sales before returns", "Nilai order sebelum retur.", ["nilai order"],
-     "sales_before_returns"),
-    ("ReturnedValue", "Returned value", "Nilai unit yang diretur.", ["nilai retur"],
-     "returned_value"),
-    ("GrossMargin", "Gross margin", "Omzet bersih dikurangi harga pokok.", ["margin"],
-     "gross_margin"),
+    (
+        "NetRevenue",
+        "Net revenue",
+        "Omzet bersih: nilai order setelah diskon, dikurangi nilai retur.",
+        ["omzet", "omzet bersih"],
+        "net_revenue",
+    ),
+    (
+        "SalesBeforeReturns",
+        "Sales before returns",
+        "Nilai order sebelum retur.",
+        ["nilai order"],
+        "sales_before_returns",
+    ),
+    (
+        "ReturnedValue",
+        "Returned value",
+        "Nilai unit yang diretur.",
+        ["nilai retur"],
+        "returned_value",
+    ),
+    (
+        "GrossMargin",
+        "Gross margin",
+        "Omzet bersih dikurangi harga pokok.",
+        ["margin"],
+        "gross_margin",
+    ),
     ("UnitsSold", "Units sold", "Unit terjual ke outlet.", ["unit terjual"], "units_sold"),
     ("Churn", "Churn", "Outlet yang berhenti memesan.", [], None),
 ]
@@ -59,9 +80,13 @@ class Lab:
         if gross_margin:
             # The margin as it was first published: before returns, so the checks have a
             # real mistake to find.
-            self.catalog.publish("retail_sales", with_gross_margin(
-                self.catalog.views["retail_sales"].definition, gross_margin,
-            ))
+            self.catalog.publish(
+                "retail_sales",
+                with_gross_margin(
+                    self.catalog.views["retail_sales"].definition,
+                    gross_margin,
+                ),
+            )
         self.reads = OntologyService(self.repository, self.catalog)
         self.stewardship = StewardshipService(self.repository, self.catalog)
         self.ops = 0
@@ -77,46 +102,93 @@ class Lab:
 
     async def domain(self, name: str, readers: list[str] | None = None) -> str:
         created = await self.reads.create_domain(
-            DomainCreate(name=name, steward_roles=["retail_steward"],
-                         visibility_roles=readers or []), ADMIN,
+            DomainCreate(
+                name=name, steward_roles=["retail_steward"], visibility_roles=readers or []
+            ),
+            ADMIN,
         )
         return created["id"]
 
     async def approve(self, domain_id: str, rows) -> None:
         changes: list = []
         for slug, label, definition, aliases, metric in rows:
-            changes.append(ConceptChange(op="create", body=ConceptBody(
-                domain_id=domain_id, kind="METRIC", slug=slug, label=label,
-                definition=definition, aliases=aliases,
-            )))
+            changes.append(
+                ConceptChange(
+                    op="create",
+                    body=ConceptBody(
+                        domain_id=domain_id,
+                        kind="METRIC",
+                        slug=slug,
+                        label=label,
+                        definition=definition,
+                        aliases=aliases,
+                    ),
+                )
+            )
             if metric:
                 view, name = metric
-                changes.append(RepresentationChange(
-                    op="create", concept_id=f"@{len(changes) - 1}", view_id=view, metric=name,
-                ))
-        proposal = await self.stewardship.create(ProposalCreate(
-            title="Seed", rationale="Pilot", operation_id=self.op(), changes=changes,
-        ), ADMIN)
-        await self.stewardship.review(proposal.id, ReviewRequest(
-            decision="APPROVE", rationale="Checked", operation_id=self.op(),
-        ), STEWARD)
+                changes.append(
+                    RepresentationChange(
+                        op="create",
+                        concept_id=f"@{len(changes) - 1}",
+                        view_id=view,
+                        metric=name,
+                    )
+                )
+        proposal = await self.stewardship.create(
+            ProposalCreate(
+                title="Seed",
+                rationale="Pilot",
+                operation_id=self.op(),
+                changes=changes,
+            ),
+            ADMIN,
+        )
+        await self.stewardship.review(
+            proposal.id,
+            ReviewRequest(
+                decision="APPROVE",
+                rationale="Checked",
+                operation_id=self.op(),
+            ),
+            STEWARD,
+        )
 
     async def setup(self) -> None:
         self.sales = await self.domain("Penjualan")
         self.stock = await self.domain("Persediaan")
         self.ops_domain = await self.domain("Operasional", readers=["retail_steward"])
-        await self.approve(self.sales, [
-            (slug, label, text, aliases, ("retail_sales", metric) if metric else None)
-            for slug, label, text, aliases, metric in SALES
-        ])
-        await self.approve(self.stock, [(
-            "ReceivedUnits", "Received units", "Unit yang diterima outlet.", [],
-            ("outlet_stock", "received_units"),
-        )])
-        await self.approve(self.ops_domain, [(
-            "ReceivedUnits", "Received units", "Unit yang diterima outlet dari driver.", [],
-            ("delivery_routes", "received_units"),
-        )])
+        await self.approve(
+            self.sales,
+            [
+                (slug, label, text, aliases, ("retail_sales", metric) if metric else None)
+                for slug, label, text, aliases, metric in SALES
+            ],
+        )
+        await self.approve(
+            self.stock,
+            [
+                (
+                    "ReceivedUnits",
+                    "Received units",
+                    "Unit yang diterima outlet.",
+                    [],
+                    ("outlet_stock", "received_units"),
+                )
+            ],
+        )
+        await self.approve(
+            self.ops_domain,
+            [
+                (
+                    "ReceivedUnits",
+                    "Received units",
+                    "Unit yang diterima outlet dari driver.",
+                    [],
+                    ("delivery_routes", "received_units"),
+                )
+            ],
+        )
         actor = Actor.from_user(ADMIN)
         for view_id in sorted(self.catalog.views):
             await compile_view(await self.catalog.published(view_id), actor, self.repository)
@@ -219,7 +291,10 @@ def test_lint_route(lab):
         router_module.ontology_service = original
     assert body["counts"]["error"] == 1
     assert {item["rule"] for item in body["findings"]} == {
-        "definition_formula", "adjustment_ignored", "ambiguous_name", "unbound_metric",
+        "definition_formula",
+        "adjustment_ignored",
+        "ambiguous_name",
+        "unbound_metric",
     }
 
 
@@ -231,7 +306,8 @@ async def test_the_corrected_margin_is_built_from_net_revenue(monkeypatch):
     assert "Penjualan.GrossMargin" not in by_rule(findings, "adjustment_ignored")
     derives = {
         (item.source_key, item.target_key)
-        for records in lab.repository.rows["derived"].values() for item in records[-1:]
+        for records in lab.repository.rows["derived"].values()
+        for item in records[-1:]
         if item.status == "ACTIVE" and item.relation_type and item.relation_type.value == "DERIVES"
     }
     assert ("metric:retail_sales.net_revenue", "metric:retail_sales.gross_margin") in derives

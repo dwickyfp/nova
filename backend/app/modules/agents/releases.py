@@ -10,11 +10,10 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from app.core.database import db
+from app.modules.agents.metadata_repository import agent_metadata
 from app.modules.agents.versions import configuration
 from app.modules.assistant.skills import contains_credential_shape
 from app.modules.intelligence.contracts import fingerprint
-from app.modules.intelligence.engine_repository import metadata_lock
 
 SCORER_SET_VERSION = "nova-agent-scorers:3"
 RELEASES_DDL = """
@@ -231,17 +230,14 @@ async def resource_contracts(agent: dict, user: dict) -> list[dict]:
 async def get_manifest(
     agent_id: str, owner: str, *, manifest_id: str | None = None, version_id: str | None = None
 ) -> dict | None:
-    column, value = ("manifest_id", manifest_id) if manifest_id else ("version_id", version_id)
-    result = await db.execute_system(
-        "SELECT payload FROM NOVA_SYSTEM.CONFIG_AGENT_RELEASE_MANIFESTS "
-        f"WHERE agent_id=%s AND owner_name=%s AND {column}=%s LIMIT 2",
-        [agent_id, owner, value],
-    )
-    if len(result["rows"]) > 1:
+    async with agent_metadata(read_only=True) as store:
+        rows = await store.find_manifests(
+            agent_id, owner, manifest_id=manifest_id, version_id=version_id)
+    if len(rows) > 1:
         raise HTTPException(409, "Release manifest requires reconciliation")
-    if not result["rows"]:
+    if not rows:
         return None
-    payload = result["rows"][0][0]
+    payload = rows[0]["payload"]
     return json.loads(payload) if isinstance(payload, str) else payload
 
 
@@ -257,6 +253,7 @@ async def _capture_manifest(agent: dict, version_id: str, user: dict) -> dict:
     from app.modules.assistant.provider import assistant_provider
     from app.modules.intelligence.semantic_views import semantic_view_service
 
+    saved_configuration = configuration(agent)
     existing = await get_manifest(agent["agent_id"], agent["owner_name"], version_id=version_id)
     if existing:
         return existing
@@ -320,16 +317,17 @@ async def _capture_manifest(agent: dict, version_id: str, user: dict) -> dict:
             "External model and MCP behavior can change without an immutable vendor revision."
         ],
     }
-    async with metadata_lock(f"agent-release:{agent['agent_id']}:{version_id}"):
+    async with agent_metadata(agent["owner_name"]) as store:
+        await store.lock_agent(agent["agent_id"])
         existing = await get_manifest(agent["agent_id"], agent["owner_name"], version_id=version_id)
         if existing:
             return existing
-        await db.execute_system(
-            "INSERT INTO NOVA_SYSTEM.CONFIG_AGENT_RELEASE_MANIFESTS "
-            "(manifest_id,agent_id,owner_name,version_id,payload,created_at) "
-            "VALUES (%s,%s,%s,%s,%s,NOW())",
-            [manifest_id, agent["agent_id"], agent["owner_name"], version_id, json.dumps(manifest)],
-        )
+        saved = await store.get_version(version_id)
+        if (saved is None or saved["agent_id"] != agent["agent_id"]
+                or saved["owner_name"] != agent["owner_name"]
+                or json.loads(saved["configuration"]) != saved_configuration):
+            raise HTTPException(409, "Release configuration does not match its saved version")
+        await store.store_manifest(manifest_id, agent["agent_id"], version_id, manifest)
         return manifest
 
 

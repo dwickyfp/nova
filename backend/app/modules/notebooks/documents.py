@@ -16,6 +16,7 @@ from typing import Any
 
 from app.common.audit import write_audit_log
 from app.core.exceptions import StorageError
+from app.core.metadata_scope import current_scope
 from app.core.redis import session_store
 from app.modules.notebooks.document import (
     NotebookConflictError,
@@ -27,7 +28,6 @@ from app.modules.notebooks.document import (
     starter_document,
     to_ipynb,
 )
-from app.modules.workspaces.actor import acting_user
 from app.modules.workspaces.service import workspace_service
 
 logger = logging.getLogger(__name__)
@@ -73,16 +73,23 @@ class NotebookDocumentService:
             name = f"{name}{NOTEBOOK_EXTENSION}"
         document = parse_ipynb(content) if content is not None else starter_document()
         document.revision = 1
+
+        async def audit(entry: dict[str, Any]) -> None:
+            actor = current_scope().actor
+            await write_audit_log(
+                event_type="notebook",
+                user_name=actor.principal,
+                action="import" if content is not None else "create",
+                object_type="notebook",
+                object_name=entry["path"],
+                status="SUCCESS",
+                session_id=actor.session_id,
+                active_role=actor.active_role,
+                security_context_version=actor.security_context_version,
+            )
+
         entry = await workspace_service.create_file(
-            username, parent_path, name, to_ipynb(document)
-        )
-        await write_audit_log(
-            event_type="notebook",
-            user_name=acting_user(username),
-            action="import" if content is not None else "create",
-            object_type="notebook",
-            object_name=entry["path"],
-            status="SUCCESS",
+            username, parent_path, name, to_ipynb(document), on_created=audit
         )
         return entry, document
 
@@ -121,7 +128,16 @@ class NotebookDocumentService:
             working = copy_document(current)
             changed = apply_edits(working, edits)
             working.revision = current.revision + 1
-            saved = await workspace_service.update_file(username, entry_id, to_ipynb(working))
+            try:
+                saved = await workspace_service.update_file(
+                    username, entry_id, to_ipynb(working),
+                    expected_revision=_entry["metadata_revision"],
+                )
+            except StorageError as error:
+                if error.status_code != 409:
+                    raise
+                _, latest = await self.get(username, entry_id)
+                raise NotebookConflictError(latest.revision) from None
         return saved, working, changed
 
     async def export(self, username: str, entry_id: str) -> tuple[str, str]:

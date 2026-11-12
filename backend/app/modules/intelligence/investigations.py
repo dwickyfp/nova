@@ -20,6 +20,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from fastapi import HTTPException
 
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.intelligence.business_events import (
     UNAVAILABLE,
     BusinessIncident,
@@ -109,7 +110,8 @@ async def investigate(story_id: str, agent_id: str, user: dict) -> dict:
         user,
     )
     incident = await events.repository.latest(
-        "incidents", signal.incident_id, BusinessIncident
+        "incidents", signal.incident_id, BusinessIncident,
+        actor=SecurityContext.from_session(user),
     )
     if incident is not None and incident.status in {"OPEN", "TRIAGED"}:
         try:

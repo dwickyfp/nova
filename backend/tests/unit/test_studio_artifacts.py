@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from unittest.mock import AsyncMock
 
 import pytest
@@ -11,7 +10,6 @@ from fastapi import HTTPException
 
 from app.modules.agents.artifact_editor import propose_artifact_edit
 from app.modules.agents.artifact_repository import (
-    ArtifactRepository,
     chart_template,
     validate_artifact_sql,
 )
@@ -261,27 +259,6 @@ async def test_apply_edit_refuses_legacy_artifacts_and_dashboards(
     draft.assert_not_awaited()
 
 
-@pytest.mark.asyncio
-async def test_repository_source_update_requires_matching_owner_and_revision(monkeypatch) -> None:
-    execute = AsyncMock(return_value={"affected": 0})
-    get = AsyncMock()
-    monkeypatch.setattr("app.modules.agents.artifact_repository.db.execute_system", execute)
-    repository = ArtifactRepository()
-    monkeypatch.setattr(repository, "get", get)
-    expected = datetime(2026, 9, 21, 8, 0, 0)
-
-    result = await repository.update_bi_source(
-        "art-1",
-        owner_name="analyst",
-        expected_updated_at=expected,
-        sql_text="SELECT region FROM sales.summary",
-    )
-
-    assert result is None
-    get.assert_not_awaited()
-    statement, parameters = execute.await_args.args
-    assert "owner_name = %s AND updated_at = %s" in statement
-    assert parameters[-3:] == ["art-1", "analyst", expected]
 
 
 BI_CHART = {

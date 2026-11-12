@@ -30,6 +30,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from datetime import timedelta
 from typing import Any
 
 import psycopg
@@ -84,6 +87,13 @@ def _positive(value: int, label: str) -> int:
     if type(value) is not int or value < 1:
         raise ValueError(f"A positive {label} is required")
     return value
+
+
+def _json_path(path: str) -> list[str]:
+    parts = path.split(".")
+    if not all(part.isidentifier() for part in parts):
+        raise ValueError("Unsupported record field")
+    return parts
 
 
 def _branch_free(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -286,6 +296,30 @@ class IntelligenceMetadataRepository:
         )
         return True
 
+    async def list_versions(self, view_id: str) -> list[dict[str, Any]]:
+        """Every version of one view, newest first; the service filters what a caller sees."""
+        await self._bound()
+        return await self._all(
+            "SELECT * FROM nova_meta.config_semantic_view_versions WHERE view_id=%s "
+            "ORDER BY version DESC", (view_id,),
+        )
+
+    async def view_link_sources(self, view_id: str | None = None) -> list[dict[str, Any]]:
+        """Each view (deprecated ones too) with the definition the catalog links.
+
+        That is the active version, or the newest version while none is active.
+        """
+        await self._bound()
+        return await self._all(
+            "SELECT v.id,v.catalog_name,v.database_name,v.schema_name,v.name,s.version,"
+            "s.definition FROM nova_meta.config_semantic_views v "
+            "JOIN nova_meta.config_semantic_view_versions s ON s.view_id=v.id "
+            "AND s.version=coalesce(v.active_version,(SELECT max(l.version) FROM "
+            "nova_meta.config_semantic_view_versions l WHERE l.view_id=v.id)) "
+            + ("WHERE v.id=%s " if view_id is not None else "") + "ORDER BY v.id",
+            (view_id,) if view_id is not None else (),
+        )
+
     # ── Revision stores ───────────────────────────────────────────────────
 
     async def get_record(
@@ -318,6 +352,61 @@ class IntelligenceMetadataRepository:
             f"FROM nova_meta.{table} r WHERE id>%s) current_records WHERE rn=1 "
             "ORDER BY id LIMIT %s",
             (after, min(max(limit, 1), 101)),
+        )
+        if any(row["branches"] != 1 for row in rows):
+            raise MetadataConflict()
+        return rows
+
+    async def current_records(
+        self, kind: str, *, scope: SecurityContext | None = None,
+        match: dict[str, str] | None = None, ids: list[str] | None = None,
+        between: tuple[str, str, str] | None = None, after: str | None = None,
+        endpoint: str | None = None, search: str | None = None, limit: int = 101,
+    ) -> list[dict[str, Any]]:
+        """The current revision of each matching record, ordered by id.
+
+        ``scope`` keeps only records of that principal, role and security
+        version (the source's scoped reads; RLS already limits owner stores to
+        the bound principal and role). ``match`` and ``between`` compare payload
+        text at a dotted path; ``endpoint`` matches a graph edge's source or
+        target; ``search`` is a case-insensitive substring of a node's name.
+        Filters apply to the current revision; a branched record is a conflict.
+        """
+        await self._bound()
+        table = _table(kind)
+        inner: list[str] = []
+        outer: list[str] = []
+        inner_params: list[Any] = []
+        outer_params: list[Any] = []
+        if scope is not None:
+            owner = "actor" if kind in ACTOR_KINDS else "principal"
+            inner.append(f"{owner}=%s AND active_role=%s AND security_context_version=%s")
+            inner_params += [scope.principal, scope.active_role, scope.security_context_version]
+        if ids is not None:
+            inner.append("id=ANY(%s)")
+            inner_params.append(list(ids))
+        if after is not None:
+            inner.append("id>%s")
+            inner_params.append(after)
+        for path, value in (match or {}).items():
+            outer.append("payload#>>%s=%s")
+            outer_params += [_json_path(path), value]
+        if between is not None:
+            path, low, high = between
+            outer.append("payload#>>%s BETWEEN %s AND %s")
+            outer_params += [_json_path(path), low, high]
+        if endpoint is not None:
+            outer.append("(payload->>'source'=%s OR payload->>'target'=%s)")
+            outer_params += [endpoint, endpoint]
+        if search is not None:
+            outer.append("strpos(lower(payload->>'name'),lower(%s))>0")
+            outer_params.append(search)
+        rows = await self._all(
+            "SELECT * FROM (SELECT r.*,count(*) OVER (PARTITION BY id,revision) AS branches,"
+            "row_number() OVER (PARTITION BY id ORDER BY revision DESC) AS rn "
+            f"FROM nova_meta.{table} r WHERE {' AND '.join(inner) or 'TRUE'}) current_records "
+            f"WHERE rn=1{''.join(' AND ' + item for item in outer)} ORDER BY id LIMIT %s",
+            (*inner_params, *outer_params, min(max(int(limit), 1), 20001)),
         )
         if any(row["branches"] != 1 for row in rows):
             raise MetadataConflict()
@@ -422,12 +511,14 @@ class IntelligenceMetadataRepository:
             (self.actor.principal, story_id, reaction, Jsonb(features or {})),
         )
 
-    async def feedback(self) -> list[dict[str, Any]]:
+    async def feedback(self, limit: int = 500) -> list[dict[str, Any]]:
+        """The caller's own reactions, newest first (at most 2000, the ranking history)."""
         await self._bound()
         return await self._all(
             "SELECT story_id,reaction,features,updated_at FROM "
             "nova_meta.config_intelligence_story_feedback WHERE user_name=%s "
-            "ORDER BY updated_at DESC LIMIT 500", (self.actor.principal,),
+            "ORDER BY updated_at DESC LIMIT %s",
+            (self.actor.principal, min(max(int(limit), 1), 2000)),
         )
 
     # ── AI Search ─────────────────────────────────────────────────────────
@@ -486,12 +577,108 @@ class IntelligenceMetadataRepository:
         )
         return row
 
-    async def pending_builds(self, limit: int = 100) -> list[dict[str, Any]]:
+    async def list_indexes(
+        self, *, active_only: bool = False, limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Indexes that are not dropped (or only those serving a version), by name."""
+        await self._bound()
+        condition = (
+            "status='ACTIVE' AND active_version IS NOT NULL" if active_only
+            else "status<>'DEPRECATED'"
+        )
+        return await self._all(
+            f"SELECT * FROM nova_meta.config_ai_search_indexes WHERE {condition} "
+            "ORDER BY name LIMIT %s", (None if limit is None else max(limit, 1),),
+        )
+
+    async def list_search_versions(self, name: str) -> list[dict[str, Any]]:
         await self._bound()
         return await self._all(
-            "SELECT index_name,version,build_status,build_generation FROM "
-            "nova_meta.config_ai_search_versions WHERE build_status=ANY(%s) "
-            "ORDER BY index_name,version LIMIT %s", (list(CLAIMABLE), min(max(limit, 1), 100)),
+            "SELECT * FROM nova_meta.config_ai_search_versions WHERE index_name=%s "
+            "ORDER BY version DESC", (name,),
+        )
+
+    async def latest_search_version(self, name: str) -> int:
+        """The newest version number of an index (0 without versions)."""
+        await self._bound()
+        row = await self._one(
+            "SELECT coalesce(max(version),0) AS latest FROM nova_meta.config_ai_search_versions "
+            "WHERE index_name=%s", (name,),
+        )
+        return int(row["latest"]) if row else 0
+
+    async def get_sync_state(self, name: str, version: int) -> dict[str, Any] | None:
+        await self._bound()
+        return await self._one(
+            "SELECT * FROM nova_meta.config_ai_search_sync_state WHERE index_name=%s "
+            "AND version=%s", (name, version),
+        )
+
+    async def set_model_alias(
+        self, name: str, model_alias: str | None, *, expected_revision: int,
+    ) -> dict[str, Any]:
+        """Change the embedding alias of a live index under a revision CAS."""
+        await self._bound()
+        _positive(expected_revision, "revision")
+        row = await self._one(
+            "UPDATE nova_meta.config_ai_search_indexes SET model_alias=%s,"
+            "metadata_revision=metadata_revision+1 WHERE name=%s AND metadata_revision=%s "
+            "AND status<>'DEPRECATED' RETURNING *", (model_alias, name, expected_revision),
+        )
+        if row is None:
+            raise MetadataConflict()
+        return row
+
+    async def retire_index(self, name: str, *, expected_revision: int) -> dict[str, Any]:
+        """Drop an index from service: it stops serving and its active version is retired.
+
+        Rows are kept (no workload may delete Search metadata); the engine
+        projections are the caller's to remove after this commits.
+        """
+        await self._bound()
+        _positive(expected_revision, "revision")
+        await self.connection.execute(
+            "UPDATE nova_meta.config_ai_search_versions SET build_status='DEPRECATED' "
+            "WHERE index_name=%s AND build_status='ACTIVE'", (name,),
+        )
+        row = await self._one(
+            "UPDATE nova_meta.config_ai_search_indexes SET status='DEPRECATED',"
+            "active_version=NULL,metadata_revision=metadata_revision+1 WHERE name=%s "
+            "AND metadata_revision=%s AND status<>'DEPRECATED' RETURNING *",
+            (name, expected_revision),
+        )
+        if row is None:
+            raise MetadataConflict()
+        return row
+
+    async def pending_builds(
+        self, limit: int = 100, *, lease_seconds: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Claimable builds of live indexes.
+
+        With ``lease_seconds``, a version that is already building is returned
+        only when its builder has not recorded progress for that long (a lapsed
+        claim the poller may take over); pending versions are always returned.
+        """
+        await self._bound()
+        lease_filter = ""
+        parameters: tuple[Any, ...] = (list(CLAIMABLE),)
+        if lease_seconds is not None:
+            _positive(lease_seconds, "lease")
+            lease_filter = (
+                " AND (v.build_status<>ALL(%s) OR s.updated_at IS NULL "
+                "OR s.updated_at<clock_timestamp()-%s)"
+            )
+            parameters += (list(BUILDING), timedelta(seconds=lease_seconds))
+        return await self._all(
+            "SELECT v.index_name,v.version,v.build_status,v.build_generation FROM "
+            "nova_meta.config_ai_search_versions v JOIN nova_meta.config_ai_search_indexes i "
+            "ON i.name=v.index_name AND i.status<>'DEPRECATED' "
+            "LEFT JOIN nova_meta.config_ai_search_sync_state s "
+            "ON s.index_name=v.index_name AND s.version=v.version "
+            "WHERE v.build_status=ANY(%s)" + lease_filter
+            + " ORDER BY v.index_name,v.version LIMIT %s",
+            (*parameters, min(max(limit, 1), 100)),
         )
 
     async def claim_build(self, name: str, version: int) -> int | None:
@@ -672,6 +859,31 @@ class IntelligenceMetadataRepository:
             "SELECT * FROM nova_meta.config_feature_views WHERE name=%s", (name,),
         )
 
+    async def list_feature_views(self) -> list[dict[str, Any]]:
+        """Views that are not retired; the service still checks source access."""
+        await self._bound()
+        return await self._all(
+            "SELECT * FROM nova_meta.config_feature_views WHERE status<>'DEPRECATED' "
+            "ORDER BY name", (),
+        )
+
+    async def feature_view_versions(self, name: str) -> list[dict[str, Any]]:
+        """Every version of a view, oldest first (DROP removes their engine tables)."""
+        await self._bound()
+        return await self._all(
+            "SELECT * FROM nova_meta.config_feature_view_versions WHERE view_name=%s "
+            "ORDER BY version", (name,),
+        )
+
+    async def latest_feature_view_version(self, name: str) -> int:
+        """The highest allocated version, the ``expected_latest`` of the next one."""
+        await self._bound()
+        row = await self._one(
+            "SELECT coalesce(max(version),0) AS latest "
+            "FROM nova_meta.config_feature_view_versions WHERE view_name=%s", (name,),
+        )
+        return int(row["latest"]) if row else 0
+
     async def get_feature_view_version(self, name: str, version: int) -> dict[str, Any] | None:
         await self._bound()
         return await self._one(
@@ -782,6 +994,22 @@ class IntelligenceMetadataRepository:
             "SELECT * FROM nova_meta.config_feature_groups WHERE name=%s", (name,),
         )
 
+    async def list_feature_groups(self) -> list[dict[str, Any]]:
+        """Groups that are not retired; the service still checks member access."""
+        await self._bound()
+        return await self._all(
+            "SELECT * FROM nova_meta.config_feature_groups WHERE status<>'DEPRECATED' "
+            "ORDER BY name", (),
+        )
+
+    async def latest_feature_group_version(self, name: str) -> int:
+        await self._bound()
+        row = await self._one(
+            "SELECT coalesce(max(version),0) AS latest "
+            "FROM nova_meta.config_feature_group_versions WHERE group_name=%s", (name,),
+        )
+        return int(row["latest"]) if row else 0
+
     async def get_feature_group_version(self, name: str, version: int) -> dict[str, Any] | None:
         await self._bound()
         return await self._one(
@@ -858,6 +1086,17 @@ class IntelligenceMetadataRepository:
             (training_set_id,),
         )
 
+    async def find_training_set(
+        self, group_name: str, label_relation: str,
+    ) -> dict[str, Any] | None:
+        """The caller's oldest training set of a group over one label relation."""
+        await self._bound()
+        return await self._one(
+            "SELECT * FROM nova_meta.config_feature_training_sets WHERE owner_name=%s "
+            "AND group_name=%s AND label_relation=%s ORDER BY created_at,id LIMIT 1",
+            (self.actor.principal, group_name, label_relation),
+        )
+
     async def link_model(self, data: dict[str, Any]) -> None:
         """Record which model version was trained from the caller's training set."""
         await self._bound()
@@ -930,3 +1169,66 @@ class IntelligenceMetadataRepository:
             (self.actor.principal, self.actor.active_role, self.actor.security_context_version,
              semantic_model_id, model_fingerprint, semantic_version, min(max(limit, 1), 2000)),
         )
+
+    async def semantic_usage_for_models(
+        self, semantic_model_ids: list[str], *, limit: int = 2000,
+    ) -> list[dict[str, Any]]:
+        """The caller's own usage across the given models (any version), newest first."""
+        await self._bound()
+        if not semantic_model_ids:
+            return []
+        return await self._all(
+            "SELECT * FROM nova_meta.audit_semantic_query_usage WHERE owner_name=%s "
+            "AND active_role=%s AND security_context_version=%s "
+            "AND semantic_model_id=ANY(%s) "
+            "ORDER BY created_at DESC,usage_id DESC LIMIT %s",
+            (self.actor.principal, self.actor.active_role, self.actor.security_context_version,
+             [str(item) for item in semantic_model_ids], min(max(limit, 1), 2000)),
+        )
+
+
+# ── Transaction boundary ──────────────────────────────────────────────────
+
+
+def scope_actor(scope: Any) -> SecurityContext:
+    """The metadata actor of an Intelligence ``Scope`` built from a validated session.
+
+    Scheduled handlers carry the scope of the account they run for (a monitor's
+    owner, a News execution account), so their writes stay bound to it.
+    """
+    return SecurityContext(
+        principal=scope.principal,
+        active_role=scope.active_role,
+        session_id=getattr(scope, "session_id", None),
+        security_context_version=scope.security_context_version,
+    )
+
+
+def user_actor(user: dict[str, Any]) -> SecurityContext:
+    """The metadata actor of a request's session (``get_current_user``); 403 if invalid."""
+    from app.modules.assistant.security import session_security
+
+    return session_security(user)
+
+
+def service_actor(service: str) -> SecurityContext:
+    """An explicit service-principal context for maintenance and scheduled work."""
+    return SecurityContext(
+        principal=f"nova-service:{service}", active_role="NOVA_SERVICE",
+        principal_type="SERVICE",
+    )
+
+
+@asynccontextmanager
+async def intelligence_metadata(
+    actor: SecurityContext, *, read_only: bool = False,
+) -> AsyncIterator[IntelligenceMetadataRepository]:
+    """One actor-bound PG transaction holding the Intelligence repository.
+
+    There is no ``NOVA_SYSTEM`` fallback: without an installed metadata
+    database the call fails with 503.
+    """
+    from app.core.metadata_scope import metadata_transaction
+
+    async with metadata_transaction(actor, read_only=read_only) as scope:
+        yield IntelligenceMetadataRepository(scope.connection, scope.actor)

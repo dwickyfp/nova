@@ -1,16 +1,20 @@
 """Nova's `ALTER USER … REQUIRE PASSWORD CHANGE` statement and its flag store.
 
 The statement is Nova metadata (StarRocks has no such attribute): it records a
-flag in `NOVA_SYSTEM.CONFIG_USER_PREFERENCES`, and login reads it to require a
+flag in `nova_meta.config_user_preferences`, and login reads it to require a
 password change at first use. These tests pin the parser, the store helper, and
 the login/change-password wiring.
 """
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 
 from app.common import user_flags
+from app.core.metadata_db import MetadataUnavailable
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.query.dialect.force_password_change import (
     is_force_password_change,
     parse_force_password_change,
@@ -71,55 +75,43 @@ def test_rejects_non_matching_statements(sql):
 # ── Flag store ──────────────────────────────────────────────────────────────
 
 
-class _FlagDB:
-    """Records the writes and serves a fixed read, so no engine is needed."""
-
-    def __init__(self, value: str | None = None) -> None:
-        self.value = value
-        self.writes: list[tuple[str, list | None]] = []
-
-    async def execute_system(self, sql, params=None):
-        self.writes.append((" ".join(sql.split()), params))
-        if " ".join(sql.split()).upper().startswith("SELECT"):
-            return {"columns": [], "rows": [[self.value]] if self.value else []}
-        return {"columns": [], "rows": [], "affected": 1}
+ADMIN = SecurityContext("admin", "ACCOUNTADMIN", session_id="admin-login")
+ALICE = SecurityContext("alice", "PUBLIC", session_id="alice-login")
 
 
-async def test_set_writes_true_and_scopes_to_the_user(monkeypatch):
-    db = _FlagDB()
-    monkeypatch.setattr(user_flags, "db", db)
-
-    await user_flags.set_must_change_password("alice", required=True)
-
-    sql, params = db.writes[-1]
-    assert "CONFIG_USER_PREFERENCES" in sql
-    assert params == ["alice", user_flags.MUST_CHANGE_PASSWORD, "true"]
+async def test_set_writes_true_as_the_administrator_and_scopes_to_the_user(monkeypatch):
+    write = AsyncMock()
+    monkeypatch.setattr(user_flags, "write_values", write)
+    await user_flags.set_must_change_password("alice", required=True, actor=ADMIN)
+    write.assert_awaited_once_with(ADMIN, "alice", {user_flags.MUST_CHANGE_PASSWORD: "true"})
 
 
-async def test_clear_writes_false(monkeypatch):
-    db = _FlagDB()
-    monkeypatch.setattr(user_flags, "db", db)
-
-    await user_flags.clear_must_change_password("alice")
-
-    assert db.writes[-1][1][2] == "false"
-
-
-async def test_is_true_reads_the_flag(monkeypatch):
-    monkeypatch.setattr(user_flags, "db", _FlagDB("true"))
-    assert await user_flags.is_must_change_password("alice") is True
+async def test_clear_writes_false_as_the_affected_user(monkeypatch):
+    write = AsyncMock()
+    monkeypatch.setattr(user_flags, "read_value", AsyncMock(return_value="true"))
+    monkeypatch.setattr(user_flags, "write_values", write)
+    await user_flags.clear_must_change_password(ALICE)
+    write.assert_awaited_once_with(ALICE, "alice", {user_flags.MUST_CHANGE_PASSWORD: "false"})
 
 
-async def test_is_false_when_absent(monkeypatch):
-    monkeypatch.setattr(user_flags, "db", _FlagDB(None))
-    assert await user_flags.is_must_change_password("alice") is False
+@pytest.mark.parametrize("value,expected", [("true", True), ("false", False), (None, False)])
+async def test_read_is_bound_to_the_affected_user(monkeypatch, value, expected):
+    read = AsyncMock(return_value=value)
+    monkeypatch.setattr(user_flags, "read_value", read)
+    assert await user_flags.is_must_change_password(ALICE) is expected
+    read.assert_awaited_once_with(ALICE, "alice", user_flags.MUST_CHANGE_PASSWORD)
 
 
-async def test_is_false_on_store_error(monkeypatch):
-    class _Broken:
-        async def execute_system(self, sql, params=None):
-            raise RuntimeError("engine down")
+@pytest.mark.parametrize("value", [None, "false"])
+async def test_clear_does_not_create_an_absent_or_already_cleared_flag(monkeypatch, value):
+    write = AsyncMock()
+    monkeypatch.setattr(user_flags, "read_value", AsyncMock(return_value=value))
+    monkeypatch.setattr(user_flags, "write_values", write)
+    await user_flags.clear_must_change_password(ALICE)
+    write.assert_not_awaited()
 
-    monkeypatch.setattr(user_flags, "db", _Broken())
-    # A metadata outage must not lock every user out of login.
-    assert await user_flags.is_must_change_password("alice") is False
+
+async def test_store_outage_cannot_bypass_password_change(monkeypatch):
+    monkeypatch.setattr(user_flags, "read_value", AsyncMock(side_effect=MetadataUnavailable()))
+    with pytest.raises(MetadataUnavailable):
+        await user_flags.is_must_change_password(ALICE)

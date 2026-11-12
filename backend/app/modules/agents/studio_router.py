@@ -119,9 +119,7 @@ async def update_studio_settings(
     body: StudioPreferencesUpdate,
     user: dict = Depends(get_current_user),
 ):
-    return await studio_service.update_preferences(
-        user["username"], body.model_dump(exclude_unset=True)
-    )
+    return await studio_service.update_preferences(user, body.model_dump(exclude_unset=True))
 
 
 async def _verified_agents(agents: list[dict], *, role: str, user: dict) -> list[dict]:
@@ -654,7 +652,6 @@ async def delete_artifact(
         from app.modules.viz.migration import forget_tile_dashboard
 
         await forget_tile_dashboard(user["username"], artifact_id)
-        await artifact_repository.retire_legacy_columns()
     await write_audit_log(
         event_type="ARTIFACT",
         user_name=user["username"],
@@ -1320,15 +1317,14 @@ async def _shared_grant(user: dict, object_type: str, object_id: str) -> dict:
 
 @router.get("/studio/shared/threads/{thread_id}", response_class=SanitizingJSONResponse)
 async def open_shared_thread(thread_id: str, user: dict = Depends(get_current_user)) -> dict:
-    from app.modules.agents.sharing import shared_messages
-    from app.modules.assistant.repository import assistant_repository
+    from app.modules.agents.sharing import share_repository, shared_messages
 
     share = await _shared_grant(user, "thread", thread_id)
     owner = share["owner_name"]
-    thread = await assistant_repository.get_thread(thread_id, user_name=owner)
+    thread = await share_repository.thread(user, thread_id, owner_name=owner)
     if not thread:
         raise HTTPException(status_code=404, detail="The shared conversation no longer exists")
-    messages = await assistant_repository.list_messages(thread_id, user_name=owner)
+    messages = thread["messages"]
     await write_audit_log(
         event_type="STUDIO_SHARE",
         user_name=user["username"],
@@ -1368,14 +1364,15 @@ async def refresh_shared_result(
     from app.modules.agents.semantic.compiler import SemanticCompiler
     from app.modules.agents.semantic.ir import SemanticModelIR
     from app.modules.agents.semantic.planning import SemanticPlan
-    from app.modules.agents.sharing import shared_messages
-    from app.modules.assistant.repository import assistant_repository
+    from app.modules.agents.sharing import share_repository, shared_messages
     from app.modules.intelligence.semantic_views import semantic_view_service
 
     share = await _shared_grant(user, "thread", thread_id)
     owner = share["owner_name"]
-    thread = await assistant_repository.get_thread(thread_id, user_name=owner) or {}
-    messages = await assistant_repository.list_messages(thread_id, user_name=owner)
+    thread = await share_repository.thread(user, thread_id, owner_name=owner)
+    if thread is None:
+        raise HTTPException(status_code=404, detail="The shared conversation no longer exists")
+    messages = thread["messages"]
     step = next(
         (
             item
@@ -1414,7 +1411,9 @@ async def refresh_shared_result(
 @router.get("/studio/shared/dashboards/{dashboard_id}")
 async def open_shared_dashboard(dashboard_id: str, user: dict = Depends(get_current_user)) -> dict:
     share = await _shared_grant(user, "dashboard", dashboard_id)
-    artifact = await artifact_repository.get(dashboard_id, owner_name=share["owner_name"])
+    artifact = await artifact_repository.shared_dashboard(
+        dashboard_id, owner_name=share["owner_name"]
+    )
     if artifact is None or artifact.get("artifact_type") != "dashboard":
         raise HTTPException(status_code=404, detail="The shared dashboard no longer exists")
     return {
@@ -1443,7 +1442,9 @@ async def compute_shared_dashboard(
     from app.modules.viz.spec import DashboardSpec, parse_filter
 
     share = await _shared_grant(user, "dashboard", dashboard_id)
-    artifact = await artifact_repository.get(dashboard_id, owner_name=share["owner_name"])
+    artifact = await artifact_repository.shared_dashboard(
+        dashboard_id, owner_name=share["owner_name"]
+    )
     if artifact is None or artifact.get("artifact_type") != "dashboard":
         raise HTTPException(status_code=404, detail="The shared dashboard no longer exists")
     try:
@@ -1462,7 +1463,7 @@ async def compute_shared_dashboard(
         user,
         filter_values=filter_values,
         zone_filters=zone_filters,
-        owner_name=share["owner_name"],
+        artifacts=artifact["charts"],
     )
 
 

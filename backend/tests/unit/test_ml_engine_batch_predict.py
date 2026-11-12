@@ -68,35 +68,12 @@ class TestPredictionSqlIsGuarded:
     """The guard must run on prediction_sql exactly as on the worksheet."""
 
     async def test_blocked_statement_never_reaches_the_engine(self, service, monkeypatch):
-        executed: list[str] = []
+        from unittest.mock import AsyncMock
 
-        class Cursor:
-            async def __aenter__(self):
-                return self
+        from app.modules.query.service import query_service
 
-            async def __aexit__(self, *exc):
-                return False
-
-            async def execute(self, sql, params=None):
-                executed.append(sql)
-
-            async def fetchone(self):
-                return None
-
-            async def fetchall(self):
-                return []
-
-        class Conn:
-            def cursor(self, *args, **kwargs):
-                return Cursor()
-
-            def close(self):
-                pass
-
-        async def fake_connect():
-            return Conn()
-
-        monkeypatch.setattr(service, "_connect", fake_connect)
+        execute = AsyncMock(side_effect=AssertionError("forbidden SQL reached the engine"))
+        monkeypatch.setattr(query_service, "execute", execute)
 
         with pytest.raises(ForbiddenSQLError):
             await service.batch_predict(
@@ -104,7 +81,7 @@ class TestPredictionSqlIsGuarded:
             )
 
         # The guard fired during preparation, before any statement ran.
-        assert executed == []
+        execute.assert_not_awaited()
 
     @pytest.mark.parametrize(
         "sql",

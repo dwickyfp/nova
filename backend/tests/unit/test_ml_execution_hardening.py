@@ -41,6 +41,28 @@ from tests.unit.ml_fakes import MemoryEphemeralRepository
 SECURITY = MLSecurityContext("alice", "password", database="analytics", role="analyst")
 
 
+@pytest.mark.parametrize("outcome", [True, False, None, "unavailable"])
+async def test_abort_removes_an_artifact_only_after_confirmed_unpublished_reservation(outcome):
+    from unittest.mock import AsyncMock
+
+    from app.core.metadata_db import MetadataUnavailable
+    from app.modules.access_control.security_context import SecurityContext
+
+    registry = AsyncMock()
+    registry.abort_version.return_value = outcome
+    if outcome == "unavailable":
+        registry.abort_version.side_effect = MetadataUnavailable()
+    store = MemoryArtifactStore()
+    uri = store.put("models/uncertain/model.joblib", b"must-survive-an-unknown-commit")
+    service = MLEngineService(repository=registry, artifact_store=store)
+    actor = SecurityContext("alice", "analyst", session_id="login-1")
+    await service._abort_persistence_best_effort(
+        model_id="uncertain", version=1, artifact_uri=uri, actor=actor,
+    )
+    registry.abort_version.assert_awaited_once_with("uncertain", 1, actor=actor)
+    assert (uri in store.objects) is (outcome is not True)
+
+
 @pytest.mark.parametrize(
     "sql",
     [
@@ -301,7 +323,7 @@ async def test_promotion_reconstructs_spec_on_another_replica_and_cleanup_is_off
     class Registry:
         async def reserve_version(self, spec, **kwargs):
             self.spec = spec
-            return "model", 1
+            return "model", 1, "reservation-1"
 
         async def register_version(self, **kwargs):
             self.registered = kwargs
@@ -387,7 +409,7 @@ async def test_abandoned_upload_lease_cleanup_preserves_ready_version(ready):
         async def get_version(self, *args, **kwargs):
             return {"artifact_uri": uri} if ready else None
 
-        async def abort_version(self, *args):
+        async def abort_version(self, *args, **kwargs):
             self.aborted = True
 
     registry = Registry()
@@ -408,11 +430,11 @@ async def test_result_cleanup_retries_after_manifest_deletion():
     class RetryRepository(MemoryEphemeralRepository):
         failures = 1
 
-        async def delete_expired(self, entry):
+        async def delete_expired(self, entry, *, actor=None):
             if self.failures:
                 self.failures -= 1
                 raise OSError("transient")
-            await super().delete_expired(entry)
+            await super().delete_expired(entry, actor=actor)
 
     shared = RetryRepository()
     store = MemoryArtifactStore()

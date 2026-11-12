@@ -422,7 +422,7 @@ class QueryService:
             )
             raise
         try:
-            require_security_context(
+            security = require_security_context(
                 principal=username,
                 active_role=role,
                 database=database,
@@ -431,127 +431,138 @@ class QueryService:
             )
         except SecurityContextError as exc:
             await self._audit_engine_result(
-                status="ERROR", sql=sql, username=username, role=role,
-                database=database, schema=schema, session_id=session_id, file_id=file_id,
+                status="ERROR",
+                sql=sql,
+                username=username,
+                role=role,
+                database=database,
+                schema=schema,
+                session_id=session_id,
+                file_id=file_id,
                 error_message=str(exc),
             )
             raise
-        context = ExecutionContext(
-            username=username,
-            encrypted_password=encrypted_password,
-            database=database,
-            schema=schema,
-            role=role,
-            max_rows=max_rows,
-            session_id=session_id,
-            file_id=file_id,
-            tenant=tenant,
-            security_context_version=security_context_version,
-            connection=connection,
-            confirm_destructive=confirm_destructive,
-            allow_stage_export=allow_stage_export,
-            row_sink=row_sink,
-            # Inside a client's explicit engine transaction the session already
-            # holds its role and database (the engine refuses SET ROLE there),
-            # and statements are audited as executed, not yet committed.
-            engine_session_prepared=client_transaction,
-            transaction_active=client_transaction,
-        )
-        try:
-            size = len(normalized_sql)
-            parts = await run_sql_cpu(size, split_sql_statements, normalized_sql)
-            if len(parts) > 1:
-                # Direct single-result callers still receive a confirmation refusal.
-                for item in parts:
-                    candidate = self._builders.build(await self._frontend(item))
-                    analysis = self._planner.preflight(candidate)
-                    if analysis.requires_confirmation and not confirm_destructive:
-                        raise ConfirmationRequiredError(analysis.effects, analysis.statement_kind)
-            parsed = await self._frontend(normalized_sql, original_sql=sql)
-            statement = await run_sql_cpu(size, self._builders.build, parsed)
-            context.statements[0] = statement
-            binder = Binder(
-                self._catalog_provider_factory(
-                    self._repo, context, lambda: decrypt_password(encrypted_password)
-                )
-            )
-            planning = PlanningContext(
+        from app.core.metadata_scope import acting_as_sync
+
+        with acting_as_sync(security):
+            context = ExecutionContext(
+                username=username,
+                encrypted_password=encrypted_password,
                 database=database,
                 schema=schema,
-                binder=binder,
-                capabilities=await self._capability_resolver(),
+                role=role,
+                max_rows=max_rows,
+                session_id=session_id,
+                file_id=file_id,
+                tenant=tenant,
+                security_context_version=security_context_version,
+                connection=connection,
                 confirm_destructive=confirm_destructive,
-            )
-            from app.sql_frontend.binding.relations import RelationBinder
-
-            context.capabilities = planning.capabilities
-            context.binder = binder
-            planning.relation_binder = RelationBinder(
-                binder,
-                database=database,
-                stage_schema=self._adapters().stage_schema_provider(context),
+                allow_stage_export=allow_stage_export,
+                row_sink=row_sink,
+                # Inside a client's explicit engine transaction the session already
+                # holds its role and database (the engine refuses SET ROLE there),
+                # and statements are audited as executed, not yet committed.
+                engine_session_prepared=client_transaction,
+                transaction_active=client_transaction,
             )
             try:
-                analysis, plan, bound = await run_sql_cpu(
-                    size, self._plan_without_awaiting, statement, planning
+                size = len(normalized_sql)
+                parts = await run_sql_cpu(size, split_sql_statements, normalized_sql)
+                if len(parts) > 1:
+                    # Direct single-result callers still receive a confirmation refusal.
+                    for item in parts:
+                        candidate = self._builders.build(await self._frontend(item))
+                        analysis = self._planner.preflight(candidate)
+                        if analysis.requires_confirmation and not confirm_destructive:
+                            raise ConfirmationRequiredError(
+                                analysis.effects, analysis.statement_kind
+                            )
+                parsed = await self._frontend(normalized_sql, original_sql=sql)
+                statement = await run_sql_cpu(size, self._builders.build, parsed)
+                context.statements[0] = statement
+                binder = Binder(
+                    self._catalog_provider_factory(
+                        self._repo, context, lambda: decrypt_password(encrypted_password)
+                    )
                 )
-            except NeedsEventLoop:
-                analysis = self._planner.preflight(statement)
-                plan = await self._planner.plan(statement, planning)
-                bound = self._planner.preflight(statement)
-            if not bound.effects.includes(plan.effects) or (
-                plan.requires_confirmation and not bound.requires_confirmation
-            ):
-                raise SemanticError("Execution plan exceeds declared semantic effects")
-            if plan.requires_confirmation and not confirm_destructive:
-                raise ConfirmationRequiredError(plan.effects, type(statement).__name__)
-            context.validated = planning.validated
-        except (ValueError, AccessControlError, ForbiddenSQLError) as exc:
-            await self._audit_engine_result(
-                status="ERROR",
-                sql=sql,
-                username=username,
-                role=role,
-                database=database,
-                schema=schema,
-                session_id=session_id,
-                file_id=file_id,
-                error_message=_redact_error_message(str(exc)),
-            )
-            if isinstance(exc, (AccessControlError, ForbiddenSQLError)):
+                planning = PlanningContext(
+                    database=database,
+                    schema=schema,
+                    binder=binder,
+                    capabilities=await self._capability_resolver(),
+                    confirm_destructive=confirm_destructive,
+                )
+                from app.sql_frontend.binding.relations import RelationBinder
+
+                context.capabilities = planning.capabilities
+                context.binder = binder
+                planning.relation_binder = RelationBinder(
+                    binder,
+                    database=database,
+                    stage_schema=self._adapters().stage_schema_provider(context),
+                )
+                try:
+                    analysis, plan, bound = await run_sql_cpu(
+                        size, self._plan_without_awaiting, statement, planning
+                    )
+                except NeedsEventLoop:
+                    analysis = self._planner.preflight(statement)
+                    plan = await self._planner.plan(statement, planning)
+                    bound = self._planner.preflight(statement)
+                if not bound.effects.includes(plan.effects) or (
+                    plan.requires_confirmation and not bound.requires_confirmation
+                ):
+                    raise SemanticError("Execution plan exceeds declared semantic effects")
+                if plan.requires_confirmation and not confirm_destructive:
+                    raise ConfirmationRequiredError(plan.effects, type(statement).__name__)
+                context.validated = planning.validated
+            except (ValueError, AccessControlError, ForbiddenSQLError) as exc:
+                await self._audit_engine_result(
+                    status="ERROR",
+                    sql=sql,
+                    username=username,
+                    role=role,
+                    database=database,
+                    schema=schema,
+                    session_id=session_id,
+                    file_id=file_id,
+                    error_message=_redact_error_message(str(exc)),
+                )
+                if isinstance(exc, (AccessControlError, ForbiddenSQLError)):
+                    raise
+                failure = QueryResult(
+                    original_sql=sql,
+                    executed_sql=normalized_sql,
+                    error=_redact_error_message(str(exc)),
+                    error_code=getattr(exc, "code", "semantic_error"),
+                )
+                if context.statements:
+                    statement = context.statements[0]
+                    analysis = self._planner.preflight(statement)
+                    failure.statement_kind = analysis.statement_kind
+                    failure.effects = asdict(analysis.effects)
+                    failure.destructive = analysis.requires_confirmation
+                return failure
+            try:
+                result = await self._adapters().executor().execute(plan, context)
+            except SemanticError as exc:
+                await self._audit_engine_result(
+                    status="ERROR",
+                    sql=sql,
+                    username=username,
+                    role=role,
+                    database=database,
+                    schema=schema,
+                    session_id=session_id,
+                    file_id=file_id,
+                    error_message=_redact_error_message(str(exc)),
+                )
                 raise
-            failure = QueryResult(
-                original_sql=sql,
-                executed_sql=normalized_sql,
-                error=_redact_error_message(str(exc)),
-                error_code=getattr(exc, "code", "semantic_error"),
-            )
-            if context.statements:
-                statement = context.statements[0]
-                analysis = self._planner.preflight(statement)
-                failure.statement_kind = analysis.statement_kind
-                failure.effects = asdict(analysis.effects)
-                failure.destructive = analysis.requires_confirmation
-            return failure
-        try:
-            result = await self._adapters().executor().execute(plan, context)
-        except SemanticError as exc:
-            await self._audit_engine_result(
-                status="ERROR",
-                sql=sql,
-                username=username,
-                role=role,
-                database=database,
-                schema=schema,
-                session_id=session_id,
-                file_id=file_id,
-                error_message=_redact_error_message(str(exc)),
-            )
-            raise
-        result.destructive = plan.requires_confirmation
-        result.statement_kind = type(statement).__name__
-        result.effects = asdict(plan.effects)
-        return result
+            result.destructive = plan.requires_confirmation
+            result.statement_kind = type(statement).__name__
+            result.effects = asdict(plan.effects)
+            return result
 
     def _adapters(self):
         return FeatureAdapters(
@@ -1087,21 +1098,28 @@ class QueryService:
         username: str,
         encrypted_password: str,
         active_role: str | None = None,
+        *,
+        session_id: str | None = None,
+        security_context_version: int = 1,
     ) -> dict:
+        from app.common.preference_store import read_values
+        from app.modules.access_control.security_context import SecurityContext
+
         password = decrypt_password(encrypted_password)
         if not active_role:
             raise ValueError("Query context requires an explicit active role")
         databases = await self._list_user_databases(username, password, active_role)
-        prefs = await db.execute_system(
-            """
-            SELECT pref_key, pref_value
-            FROM NOVA_SYSTEM.CONFIG_USER_PREFERENCES
-            WHERE user_name = %s AND pref_key IN
-            ('workspace.last_database', 'workspace.last_schema', 'workspace.last_role')
-            """,
-            [username],
+        actor = SecurityContext(
+            principal=username,
+            active_role=active_role,
+            session_id=session_id,
+            security_context_version=security_context_version,
         )
-        pref_map = {row[0]: row[1] for row in prefs["rows"]}
+        pref_map = await read_values(
+            actor,
+            username,
+            ["workspace.last_database", "workspace.last_schema", "workspace.last_role"],
+        )
         roles = await self._get_roles(username, password)
         default_db = pref_map.get("workspace.last_database") or (
             databases[0] if databases else None
@@ -1190,22 +1208,18 @@ class QueryService:
     ) -> list[str]:
         if not database:
             return ["default"]
-        result = await db.execute_system(
-            """
-            SELECT DISTINCT schema_name
-            FROM NOVA_SYSTEM.CONFIG_STAGES
-            WHERE database_name = %s
-            ORDER BY schema_name
-            """,
-            [database],
+        stage_schemas = sorted(
+            {
+                row["schema_name"]
+                for row in await _stage_identities(database, username, role)
+                if row["schema_name"]
+            }
         )
         schemas = []
-        for row in result["rows"]:
-            if not row[0]:
-                continue
+        for schema_name in stage_schemas:
             try:
                 await check_stage_access(
-                    {"database_name": database, "schema_name": row[0]},
+                    {"database_name": database, "schema_name": schema_name},
                     action="read",
                     username=username,
                     password=password,
@@ -1213,7 +1227,7 @@ class QueryService:
                 )
             except ValueError:
                 continue
-            schemas.append(row[0])
+            schemas.append(schema_name)
         return schemas or ["default"]
 
     async def _resolve_stage_refs(self, parsed, **kwargs):
@@ -1289,17 +1303,12 @@ class QueryService:
         password: str,
         role: str | None,
     ) -> list[str]:
-        result = await db.execute_system(
-            """
-            SELECT name, schema_name
-            FROM NOVA_SYSTEM.CONFIG_STAGES
-            WHERE database_name = %s
-            ORDER BY name
-            """,
-            [database],
+        rows = sorted(
+            await _stage_identities(database, username, role),
+            key=lambda row: (row["name"], row["id"]),
         )
         names = []
-        for name, schema_name in result["rows"]:
+        for name, schema_name in ((row["name"], row["schema_name"]) for row in rows):
             if schema and schema_name != schema:
                 continue
             try:
@@ -1326,32 +1335,28 @@ class QueryService:
         password: str,
         role: str | None,
     ) -> list[dict]:
-        from app.modules.stages.service import stage_service
+        from app.modules.stages.service import caller_actor, stage_service
 
-        result = await db.execute_system(
-            """
-            SELECT id, schema_name
-            FROM NOVA_SYSTEM.CONFIG_STAGES
-            WHERE name = %s AND database_name = %s
-            ORDER BY schema_name
-            """,
-            [stage_name, database],
-        )
-        rows = [row for row in result["rows"] if schema is None or row[1] == schema]
+        rows = await _stage_identities(database, username, role, name=stage_name, schema=schema)
         if len(rows) != 1:
             return []
         try:
             await check_stage_access(
-                {"database_name": database, "schema_name": rows[0][1]},
+                {"database_name": database, "schema_name": rows[0]["schema_name"]},
                 action="read",
                 username=username,
                 password=password,
                 active_role=role,
             )
+            # Ranger allowed the schema; the registration's payload is read
+            # under that scope before its storage connection is used.
+            stage = await stage_service.get_stage(rows[0]["id"], caller_actor(username, role))
         except ValueError:
             return []
+        if stage is None:
+            return []
         storage_prefix = folder.replace(".", "/") if folder else ""
-        return await stage_service.list_files(rows[0][0], prefix=storage_prefix)
+        return await stage_service.list_files(stage, prefix=storage_prefix)
 
     @staticmethod
     def _filter_strings(items: list[str], prefix: str, item_type: str) -> list[dict]:
@@ -1486,3 +1491,22 @@ def _context_after(
     if catalog:
         return connect_database(f"{catalog}."), None
     return database, schema
+
+
+async def _stage_identities(
+    database: str,
+    username: str,
+    role: str | None,
+    *,
+    name: str | None = None,
+    schema: str | None = None,
+) -> list[dict]:
+    """Stage identities in ``database`` (no payload); none without an active role."""
+    from app.modules.stages.access import StageAccessDenied
+    from app.modules.stages.service import caller_actor, discover_stages
+
+    try:
+        actor = caller_actor(username, role)
+    except StageAccessDenied:
+        return []
+    return await discover_stages(actor, database=database, schema=schema, name=name)

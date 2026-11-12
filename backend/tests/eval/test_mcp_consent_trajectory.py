@@ -45,7 +45,7 @@ async def test_immediate_mcp_decision_is_scoped_and_precedes_external_effect(mon
     def prepare(invocation, classification):
         return broker.open(
             invocation.tool_call_id, thread_id=thread.thread_id,
-            user_name=user["username"], classification=classification,
+            user=user, classification=classification,
         )
 
     frames = []
@@ -69,6 +69,14 @@ async def test_immediate_mcp_decision_is_scoped_and_precedes_external_effect(mon
                     {"username": "fixture-bob"},
                 )
             assert foreign.value.status_code == 404
+            for changed in ({"session_id": "another-login"}, {"security_context_version": 2}):
+                with pytest.raises(HTTPException) as stale:
+                    await router.resolve_agent_tool_call(
+                        "agent", call_id, ConsentDecisionRequest(decision=decision),
+                        {**user, **changed},
+                    )
+                assert stale.value.status_code == 404
+                external.assert_not_awaited()
             with pytest.raises(HTTPException) as session:
                 await router.resolve_agent_tool_call(
                     "agent", call_id, ConsentDecisionRequest(decision="allow_session"), user,
@@ -82,7 +90,7 @@ async def test_immediate_mcp_decision_is_scoped_and_precedes_external_effect(mon
         result = TurnResult(frames=frames)
         assert result.finish_reason == ("stop" if decision == "allow_once" else "denied")
         assert external.await_count == (1 if decision == "allow_once" else 0)
-        assert broker.owner_of(call_id) is None
+        assert broker.owner_of(call_id, user=user) is None
         if decision == "allow_once":
             external.assert_awaited_once_with(tool.server, "total", {"a": 42})
     finally:

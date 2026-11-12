@@ -23,13 +23,14 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar
 
 from fastapi import HTTPException
 from pydantic import Field
 
 from app.common.audit import write_audit_log
-from app.core.database import db
+from app.core.metadata_db import MetadataConflict
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.agents.semantic.planning import SemanticFilter, SemanticPlan
 from app.modules.intelligence.contracts import (
     Contract,
@@ -41,19 +42,16 @@ from app.modules.intelligence.contracts import (
 from app.modules.intelligence.engine_repository import metadata_lock
 from app.modules.intelligence.evidence import semantic_population_fingerprint
 from app.modules.intelligence.investigation_contracts import Claim, UpdateSubmission
+from app.modules.intelligence.metadata_repository import (
+    intelligence_metadata,
+    user_actor,
+)
+from app.modules.ontology.access import with_caller
 from app.modules.ontology.binding import MetricBinding, bind_metric, linked
 from app.modules.ontology.contracts import Actor, OntologyRecord
-from app.modules.ontology.repository import RevisionRepository
-from app.modules.ontology.schema import revision_table_ddl
 
 logger = logging.getLogger(__name__)
 
-EVENT_TABLES = {
-    "signals": "CONFIG_INTELLIGENCE_SIGNALS",
-    "incidents": "CONFIG_INTELLIGENCE_INCIDENTS",
-    "updates": "CONFIG_INTELLIGENCE_INVESTIGATION_UPDATES",
-}
-EVENT_DDL = tuple(revision_table_ddl(name) for name in EVENT_TABLES.values())
 UNAVAILABLE = "Incident unavailable"
 MAX_SIGNALS = 100
 OPEN_LIMIT = 50
@@ -81,11 +79,6 @@ TRANSITIONS: dict[str, frozenset[str]] = {
     "DISMISSED": frozenset({"OPEN"}),
 }
 _SEVERITY_RANK = {"info": 0, "warning": 1, "critical": 2}
-
-
-async def ensure_event_schema() -> None:
-    for ddl in EVENT_DDL:
-        await db.execute_system(ddl)
 
 
 # --- contracts -----------------------------------------------------------------
@@ -282,6 +275,7 @@ async def _definition(semantic: SemanticRef) -> dict:
     return row["definition"]
 
 
+@with_caller
 async def _visible_concepts(concept_ids: set[str], user: dict) -> dict[str, dict]:
     """Names of the concepts the reader's role may see; others stay anonymous."""
     if not concept_ids:
@@ -308,10 +302,129 @@ async def _visible_concepts(concept_ids: set[str], user: dict) -> dict[str, dict
     }
 
 
+# --- store ---------------------------------------------------------------------
+
+E = TypeVar("E", bound=OntologyRecord)
+#: Fields a replayed save may differ in without being a new revision.
+_UNCHANGED = {"revision", "actor", "created_at", "updated_at"}
+MAX_CURRENT = 20000
+_RECONCILE = "Concurrent revisions require reconciliation"
+
+
+def writer(actor: Actor) -> SecurityContext:
+    """The metadata actor of a Business Event writer (a validated session's identity)."""
+    return SecurityContext(
+        principal=actor.principal,
+        active_role=actor.active_role,
+        security_context_version=actor.security_context_version,
+    )
+
+
+class EventStore:
+    """Business Event revisions in the control metadata.
+
+    Deployment-wide records: any bound reader of the allowed workloads may read
+    them (who may see an incident stays this service's proof check), and each
+    new revision is written as, and records, the actor who wrote it. The store
+    enforces the revision chain, so a stale write is a 409 without a lock.
+    """
+
+    async def _current(
+        self, kind: str, model: type[E], actor: SecurityContext, *, limit: int,
+        match: dict[str, str] | None = None, ids: list[str] | None = None,
+    ) -> list[E]:
+        try:
+            async with intelligence_metadata(actor, read_only=True) as repo:
+                rows = await repo.current_records(kind, match=match, ids=ids, limit=limit)
+        except MetadataConflict:
+            raise HTTPException(status_code=409, detail=_RECONCILE) from None
+        return [model.model_validate(row["payload"]) for row in rows]
+
+    async def latest(
+        self, kind: str, record_id: str, model: type[E], *, actor: SecurityContext,
+    ) -> E | None:
+        try:
+            async with intelligence_metadata(actor, read_only=True) as repo:
+                row = await repo.get_record(kind, record_id)
+        except MetadataConflict:
+            raise HTTPException(status_code=409, detail=_RECONCILE) from None
+        return model.model_validate(row["payload"]) if row is not None else None
+
+    async def latest_many(
+        self, kind: str, record_ids: list[str], model: type[E], *, actor: SecurityContext,
+    ) -> dict[str, E]:
+        """The newest revision of each given record, in one read."""
+        ids = sorted(set(record_ids))[:500]
+        if not ids:
+            return {}
+        records = await self._current(kind, model, actor, ids=ids, limit=len(ids))
+        return {record.id: record for record in records}
+
+    async def current(
+        self, kind: str, model: type[E], *, actor: SecurityContext,
+    ) -> list[E]:
+        """The newest revision of every record of one kind."""
+        records = await self._current(kind, model, actor, limit=MAX_CURRENT + 1)
+        if len(records) > MAX_CURRENT:
+            raise HTTPException(status_code=422, detail="The ontology exceeds its read bound")
+        return records
+
+    async def current_matching(
+        self, kind: str, model: type[E], field: str, value: str, *,
+        actor: SecurityContext, limit: int = 200,
+    ) -> list[E]:
+        """The newest revision of every record whose top-level ``field`` equals ``value``."""
+        if not field.isidentifier():
+            raise ValueError("Unsupported field")
+        records = await self._current(
+            kind, model, actor, match={field: value}, limit=limit + 1,
+        )
+        if len(records) > limit:
+            raise HTTPException(status_code=422, detail="Too many matching records")
+        return records
+
+    async def save(self, kind: str, record: E, *, expected_revision: int = 0) -> E:
+        """Append ``record`` as the next revision, written as ``record.actor``.
+
+        Saving the content that is already current is a no-op, so an
+        interrupted multi-record write can be replayed safely.
+        """
+        actor = writer(record.actor)
+        try:
+            async with intelligence_metadata(actor) as repo:
+                current = await repo.get_record(kind, record.id)
+                if current is not None:
+                    old = type(record).model_validate(current["payload"])
+                    if old.model_dump(exclude=_UNCHANGED) == record.model_dump(
+                        exclude=_UNCHANGED
+                    ):
+                        return old
+                    if old.revision != expected_revision:
+                        raise HTTPException(
+                            status_code=409, detail="Record changed; reload before editing"
+                        )
+                    record = record.model_copy(update={"created_at": old.created_at})
+                elif expected_revision:
+                    raise HTTPException(
+                        status_code=409, detail="Record no longer matches this revision"
+                    )
+                record = record.model_copy(
+                    update={"revision": expected_revision + 1, "updated_at": utc_now()}
+                )
+                stored = await repo.save_record(
+                    kind, record.model_dump(mode="json"), expected_revision=expected_revision,
+                )
+        except MetadataConflict:
+            raise HTTPException(
+                status_code=409, detail="Record changed; reload before editing"
+            ) from None
+        return type(record).model_validate(stored)
+
+
 class BusinessEventService:
     def __init__(
         self,
-        repository: RevisionRepository | None = None,
+        repository: EventStore | None = None,
         *,
         read_story: StoryReader = _read_story,
         read_news: NewsReader = _read_news,
@@ -320,7 +433,7 @@ class BusinessEventService:
         definition: DefinitionReader = _definition,
         concept_names: Callable[[set[str], dict], Awaitable[dict[str, dict]]] = _visible_concepts,
     ) -> None:
-        self.repository = repository or RevisionRepository(EVENT_TABLES, "business-events")
+        self.repository = repository or EventStore()
         self.read_story = read_story
         self.read_news = read_news
         self.bind = bind
@@ -395,7 +508,9 @@ class BusinessEventService:
         actor: Actor,
     ) -> BusinessSignal:
         signal_id = _signal_id(source)
-        existing = await self.repository.latest("signals", signal_id, BusinessSignal)
+        existing = await self.repository.latest(
+            "signals", signal_id, BusinessSignal, actor=writer(actor)
+        )
         if existing is None:
             binding = await self.bind(semantic, metric, definition)
             existing = await self.repository.save(
@@ -428,6 +543,7 @@ class BusinessEventService:
                 BusinessIncident,
                 "population_fingerprint",
                 signal.population_fingerprint,
+                actor=writer(actor),
             )
             incident = next(
                 (item for item in candidates if signal.id in item.signal_ids), None
@@ -452,7 +568,7 @@ class BusinessEventService:
                 continue
             if not windows_overlap(incident.window, signal.window):
                 continue
-            grouping = await self._grouping(signal, incident)
+            grouping = await self._grouping(signal, incident, actor)
             if grouping is None:
                 continue
             concept_ids = list(incident.concept_ids)
@@ -490,11 +606,13 @@ class BusinessEventService:
         )
 
     async def _grouping(
-        self, signal: BusinessSignal, incident: BusinessIncident
+        self, signal: BusinessSignal, incident: BusinessIncident, actor: Actor
     ) -> Grouping | None:
         """The approved reason ``signal`` belongs to ``incident``, if there is one."""
         for member_id in incident.signal_ids:
-            member = await self.repository.latest("signals", member_id, BusinessSignal)
+            member = await self.repository.latest(
+                "signals", member_id, BusinessSignal, actor=writer(actor)
+            )
             if member is None:
                 continue
             if signal.concept and member.concept:
@@ -524,7 +642,9 @@ class BusinessEventService:
     ) -> list[BusinessSignal]:
         visible = []
         for signal_id in incident.signal_ids:
-            signal = await self.repository.latest("signals", signal_id, BusinessSignal)
+            signal = await self.repository.latest(
+                "signals", signal_id, BusinessSignal, actor=user_actor(user)
+            )
             if signal is None:
                 continue
             reader = (
@@ -587,7 +707,8 @@ class BusinessEventService:
         provable = {signal.id for signal in signals}
         shown = []
         for update in await self.repository.current_matching(
-            "updates", InvestigationUpdate, "incident_id", incident.id, limit=100
+            "updates", InvestigationUpdate, "incident_id", incident.id, limit=100,
+            actor=user_actor(user),
         ):
             if update.author_role != actor.active_role:
                 continue
@@ -618,7 +739,7 @@ class BusinessEventService:
             await self._audit(user, "READ_STORY_INCIDENT", story_id, "DENIED", "DENY")
             raise HTTPException(status_code=404, detail=UNAVAILABLE)
         signal = await self.repository.latest(
-            "signals", _signal_id(_story_source(story)), BusinessSignal
+            "signals", _signal_id(_story_source(story)), BusinessSignal, actor=user_actor(user)
         )
         if signal is None or not signal.incident_id:
             return None
@@ -635,7 +756,9 @@ class BusinessEventService:
         mission_id: str | None = None,
     ) -> InvestigationUpdate:
         """Post a finding that cites only evidence verified in the caller's own run."""
-        incident = await self.repository.latest("incidents", incident_id, BusinessIncident)
+        incident = await self.repository.latest(
+            "incidents", incident_id, BusinessIncident, actor=user_actor(user)
+        )
         signals = await self._visible_signals(incident, user) if incident else []
         if incident is None or not signals:
             raise HTTPException(status_code=404, detail=UNAVAILABLE)
@@ -673,8 +796,13 @@ class BusinessEventService:
     async def review_update(
         self, incident_id: str, update_id: str, body: UpdateReviewRequest, user: dict
     ) -> dict:
-        update = await self.repository.latest("updates", update_id, InvestigationUpdate)
-        incident = await self.repository.latest("incidents", incident_id, BusinessIncident)
+        reader = user_actor(user)
+        update = await self.repository.latest(
+            "updates", update_id, InvestigationUpdate, actor=reader
+        )
+        incident = await self.repository.latest(
+            "incidents", incident_id, BusinessIncident, actor=reader
+        )
         signals = await self._visible_signals(incident, user) if incident else []
         actor = Actor.from_user(user)
         if (
@@ -713,7 +841,9 @@ class BusinessEventService:
         return await self.get(incident.id, user)
 
     async def get(self, incident_id: str, user: dict) -> dict:
-        incident = await self.repository.latest("incidents", incident_id, BusinessIncident)
+        incident = await self.repository.latest(
+            "incidents", incident_id, BusinessIncident, actor=user_actor(user)
+        )
         signals = await self._visible_signals(incident, user) if incident else []
         if incident is None or not signals:
             await self._audit(user, "READ_INCIDENT", incident_id, "DENIED", "DENY")
@@ -723,7 +853,9 @@ class BusinessEventService:
 
     async def list(self, user: dict, *, include_closed: bool = False) -> list[dict]:
         """The most recent incidents the reader can see at least one signal of."""
-        incidents = await self.repository.current("incidents", BusinessIncident)
+        incidents = await self.repository.current(
+            "incidents", BusinessIncident, actor=user_actor(user)
+        )
         recent = sorted(
             (item for item in incidents if include_closed or item.status not in CLOSED),
             key=lambda item: item.updated_at,
@@ -740,7 +872,9 @@ class BusinessEventService:
     # --- lifecycle -----------------------------------------------------------------
 
     async def transition(self, incident_id: str, body: TransitionRequest, user: dict) -> dict:
-        incident = await self.repository.latest("incidents", incident_id, BusinessIncident)
+        incident = await self.repository.latest(
+            "incidents", incident_id, BusinessIncident, actor=user_actor(user)
+        )
         if incident is None or not await self._visible_signals(incident, user):
             raise HTTPException(status_code=404, detail=UNAVAILABLE)
         if any(item.operation_id == body.operation_id for item in incident.transitions):
@@ -807,6 +941,7 @@ business_event_service = BusinessEventService()
 SIGNIFICANCE_WEIGHTS = {"goal": 0.75, "corroboration": 0.5, "official": 0.25}
 
 
+@with_caller
 async def significance(stories: list, user: dict, *, service: BusinessEventService | None = None,
                        ontology=None) -> dict[str, dict]:
     """Deterministic significance of the stories one reader can see now.
@@ -821,7 +956,7 @@ async def significance(stories: list, user: dict, *, service: BusinessEventServi
     ontology = ontology or default_ontology
     ids = {story.id: _signal_id(_story_source(story)) for story in stories}
     signals = await service.repository.latest_many(
-        "signals", list(ids.values()), BusinessSignal
+        "signals", list(ids.values()), BusinessSignal, actor=user_actor(user)
     )
     snapshot = await ontology.snapshot("current")
     visible = ontology.visible_concepts(snapshot, user) if snapshot.release else {}
@@ -887,7 +1022,6 @@ __all__ = [
     "BusinessSignal",
     "TransitionRequest",
     "business_event_service",
-    "ensure_event_schema",
     "record_news_item_safely",
     "record_stories_safely",
 ]

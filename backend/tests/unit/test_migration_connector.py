@@ -28,6 +28,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.migration import router as migration_router
 from app.modules.migration.engine import StarRocksClusterSyncAdapter
 from app.modules.migration.schemas import MigrationVerdict, ObjectKind
@@ -185,13 +186,28 @@ class RecordingAudit:
 
 
 @pytest.fixture
-def fake_repo(monkeypatch):
+def fake_repo(monkeypatch, fake_metadata_db):
     """Replace the module-level repository used by the service."""
     from app.modules.migration import service as service_module
 
     repo = FakeMigrationRepository()
     repo.add_source("local-source")
     monkeypatch.setattr(service_module, "migration_repo", repo)
+    class SourceRegistry:
+        def __init__(self, connection, actor):
+            self.actor = actor
+
+        async def get_source(self, name):
+            row = await repo.get_source(name)
+            return [row] if row else []
+
+        async def list_sources(self):
+            return await repo.list_sources()
+
+        async def create_source(self, **fields):
+            return await repo.create_source(**fields, created_by=self.actor.principal)
+
+    monkeypatch.setattr(service_module, "MigrationMetadataRepository", SourceRegistry)
     return repo
 
 
@@ -560,7 +576,7 @@ class TestAudit:
             username="root",
             secret_ref="",
             comment="primary",
-            username_actor="alice",
+            actor=SecurityContext("alice", "ACCOUNTADMIN", session_id="s1"),
         )
         assert len(fake_audit.rows) == 1
         row = fake_audit.rows[0]
@@ -593,7 +609,7 @@ class TestAudit:
             username="root",
             secret_ref=SECRET_REF,
             comment="",
-            username_actor="alice",
+            actor=SecurityContext("alice", "ACCOUNTADMIN", session_id="s1"),
         )
         # The reference is not a credential value, but it must not appear in the
         # audit row either — the row names the source, nothing more.

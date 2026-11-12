@@ -7,6 +7,8 @@ import hashlib
 import hmac
 import json
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any, Literal, Protocol
 from uuid import uuid4
@@ -14,23 +16,22 @@ from uuid import uuid4
 import redis.asyncio as aioredis
 
 from app.common.audit import write_audit_log
-from app.common.responses import SanitizingJSONResponse
 from app.core.config import settings
-from app.core.database import db
+from app.core.metadata_runtime import metadata_db
+from app.modules.access_control.security_context import SecurityContext, SecurityContextError
 
+from .metadata_repository import MigrationMetadataRepository
 from .schemas import MigrationJobAccepted, MigrationJobStatus
 
 logger = logging.getLogger(__name__)
 
-_TABLE = "NOVA_SYSTEM.CONFIG_MIGRATION_JOBS"
-_COLUMNS = (
-    "id, operation, actor, session_fingerprint, active_role, "
-    "security_context_version, source_name, "
-    "request_json, status, current_database, result_json, error_code, "
-    "created_at, started_at, heartbeat_at, finished_at"
-)
 _SESSION_KEY_PREFIX = "nova:migration:job-session:"
 _TERMINAL = frozenset({"succeeded", "partial", "failed", "interrupted"})
+
+#: The standalone migration worker. It claims, advances, interrupts and prunes
+#: jobs through the ingestion workload; the work itself still runs as the
+#: person who queued the job, from their live session.
+MIGRATION_WORKER = SecurityContext("migration-worker", "nova_service", principal_type="SERVICE")
 
 
 class MigrationJobUnavailable(RuntimeError):
@@ -57,112 +58,114 @@ class MigrationJobFailed(RuntimeError):
         super().__init__(f"Migration operation failed ({code})")
 
 
+class MigrationLeaseLost(RuntimeError):
+    """The worker no longer holds the lease generation it claimed the job under."""
+
+
+def request_actor(user: dict[str, Any]) -> SecurityContext:
+    """The bound identity of the person behind an API request."""
+    security = user.get("security")
+    return security if isinstance(security, SecurityContext) else SecurityContext.from_session(user)
+
+
 class MigrationJobRepository:
+    """Migration jobs in PostgreSQL, one actor-bound transaction per operation.
+
+    People queue, read and clean up only their own jobs. The worker acts as
+    ``MIGRATION_WORKER``: it claims a queued job under a new lease generation and
+    names that generation on every later heartbeat, progress and outcome write,
+    so a worker that lost its claim cannot change the job any more.
+    """
+
     @staticmethod
-    def _row(values: tuple[Any, ...] | list[Any]) -> dict[str, Any]:
-        return dict(zip((name.strip() for name in _COLUMNS.split(",")), values, strict=True))
+    @asynccontextmanager
+    async def _repository(
+        actor: SecurityContext, *, read_only: bool = False
+    ) -> AsyncIterator[MigrationMetadataRepository]:
+        async with metadata_db().transaction(actor, read_only=read_only) as conn:
+            yield MigrationMetadataRepository(conn, actor)
+
+    # ── The person who queued the job ─────────────────────────────────────
 
     async def create(
         self,
+        actor: SecurityContext,
         *,
         job_id: str,
         operation: str,
-        actor: str,
         session_fingerprint: str,
-        role: str | None,
-        security_context_version: int,
         source: str,
         request: dict[str, Any],
     ) -> None:
-        await db.execute_system(
-            f"INSERT INTO {_TABLE} (id, operation, actor, session_fingerprint, active_role, "
-            "security_context_version, source_name, request_json, status, created_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'queued', NOW())",
-            [
-                job_id,
-                operation,
-                actor,
-                session_fingerprint,
-                role,
-                security_context_version,
-                source,
-                json.dumps(request),
-            ],
-        )
+        async with self._repository(actor) as repository:
+            await repository.create_job(
+                job_id=job_id,
+                operation=operation,
+                session_fingerprint=session_fingerprint,
+                source=source,
+                request=request,
+            )
 
-    async def get(self, job_id: str) -> dict[str, Any] | None:
-        result = await db.execute_system(f"SELECT {_COLUMNS} FROM {_TABLE} WHERE id = %s", [job_id])
-        return self._row(result["rows"][0]) if result["rows"] else None
+    async def get(self, actor: SecurityContext, job_id: str) -> dict[str, Any] | None:
+        async with self._repository(actor, read_only=True) as repository:
+            return await repository.get_job(job_id)
+
+    async def delete(self, actor: SecurityContext, job_id: str) -> bool:
+        async with self._repository(actor) as repository:
+            return await repository.delete_finished_job(job_id)
+
+    # ── The migration worker ──────────────────────────────────────────────
 
     async def queued(self, limit: int = 4) -> list[dict[str, Any]]:
-        result = await db.execute_system(
-            f"SELECT {_COLUMNS} FROM {_TABLE} WHERE status = 'queued' "
-            "ORDER BY CASE WHEN operation IN ('execute', 'execute_batch') "
-            "THEN 1 ELSE 0 END, created_at, id LIMIT %s",
-            [limit],
-        )
-        return [self._row(row) for row in result["rows"]]
+        async with self._repository(MIGRATION_WORKER, read_only=True) as repository:
+            return await repository.queued(limit)
 
-    async def claim(self, job_id: str) -> bool:
-        result = await db.execute_system(
-            f"UPDATE {_TABLE} SET status = 'running', started_at = NOW(), "
-            "heartbeat_at = NOW() WHERE id = %s AND status = 'queued'",
-            [job_id],
-        )
-        return bool(result.get("affected"))
+    async def claim(self, job_id: str) -> int | None:
+        """Start a queued job; returns the lease generation, or None if another won."""
+        async with self._repository(MIGRATION_WORKER) as repository:
+            return await repository.claim(job_id)
 
-    async def heartbeat(self, job_id: str) -> None:
-        await db.execute_system(
-            f"UPDATE {_TABLE} SET heartbeat_at = NOW() WHERE id = %s AND status = 'running'",
-            [job_id],
-        )
+    async def heartbeat(self, job_id: str, *, generation: int) -> bool:
+        async with self._repository(MIGRATION_WORKER) as repository:
+            return await repository.heartbeat(job_id, generation=generation)
 
     async def progress(
-        self, job_id: str, *, current_database: str | None, result: dict[str, Any]
-    ) -> None:
-        safe = SanitizingJSONResponse._sanitize(result)
-        await db.execute_system(
-            f"UPDATE {_TABLE} SET current_database = %s, result_json = %s, "
-            "heartbeat_at = NOW() WHERE id = %s AND status = 'running'",
-            [current_database, json.dumps(safe), job_id],
-        )
+        self,
+        job_id: str,
+        *,
+        generation: int,
+        current_database: str | None,
+        result: dict[str, Any],
+    ) -> bool:
+        async with self._repository(MIGRATION_WORKER) as repository:
+            return await repository.progress(
+                job_id, generation=generation, current_database=current_database, result=result
+            )
 
     async def finish(
         self,
         job_id: str,
         *,
+        generation: int,
         status: str,
         result: dict[str, Any] | None = None,
         error_code: str | None = None,
-    ) -> None:
+    ) -> bool:
         if status not in _TERMINAL:
             raise ValueError("migration job must finish in a terminal state")
-        safe = SanitizingJSONResponse._sanitize(result) if result is not None else None
-        await db.execute_system(
-            f"UPDATE {_TABLE} SET status = %s, current_database = NULL, "
-            "result_json = COALESCE(%s, result_json), error_code = %s, finished_at = NOW(), "
-            "heartbeat_at = NOW() WHERE id = %s AND status = 'running'",
-            [status, json.dumps(safe) if safe is not None else None, error_code, job_id],
-        )
+        async with self._repository(MIGRATION_WORKER) as repository:
+            return await repository.finish(
+                job_id, generation=generation, status=status, result=result,
+                error_code=error_code,
+            )
 
-    async def interrupt_stale(self, *, older_than_seconds: int = 120) -> None:
-        await db.execute_system(
-            f"UPDATE {_TABLE} SET status = 'interrupted', current_database = NULL, "
-            "error_code = 'worker_interrupted', finished_at = NOW() "
-            "WHERE status = 'running' AND heartbeat_at < "
-            "DATE_SUB(NOW(), INTERVAL %s SECOND)",
-            [older_than_seconds],
-        )
+    async def interrupt_stale(self, *, older_than_seconds: int = 120) -> list[str]:
+        async with self._repository(MIGRATION_WORKER) as repository:
+            return await repository.interrupt_stale(older_than_seconds=older_than_seconds)
 
-    async def delete(self, job_id: str) -> None:
-        await db.execute_system(f"DELETE FROM {_TABLE} WHERE id = %s", [job_id])
-
-    async def prune_completed_reads(self) -> None:
-        await db.execute_system(
-            f"DELETE FROM {_TABLE} WHERE operation NOT IN ('execute', 'execute_batch') "
-            "AND status IN ('succeeded', 'partial', 'failed', 'interrupted') "
-            "AND finished_at < DATE_SUB(NOW(), INTERVAL 1 DAY)"
-        )
+    async def prune_completed_reads(self) -> int:
+        async with self._repository(MIGRATION_WORKER) as repository:
+            return await repository.prune_completed_reads()
 
 
 migration_job_repo = MigrationJobRepository()
@@ -188,6 +191,12 @@ async def submit_job(
     session_id = user.get("session_id")
     if not session_id:
         raise MigrationJobUnavailable("A live session is required to queue a migration job")
+    try:
+        actor = request_actor(user)
+    except SecurityContextError:
+        raise MigrationJobUnavailable(
+            "A session with an active role is required to queue a migration job", 401
+        ) from None
     job_id = str(uuid4())
     key = f"{_SESSION_KEY_PREFIX}{job_id}"
     await write_audit_log(
@@ -203,12 +212,10 @@ async def submit_job(
         await client.set(key, session_id, ex=settings.SESSION_TTL_SECONDS)
         try:
             await migration_job_repo.create(
+                actor,
                 job_id=job_id,
                 operation=operation,
-                actor=user["username"],
                 session_fingerprint=session_fingerprint(session_id),
-                role=user.get("active_role"),
-                security_context_version=int(user.get("security_context_version") or 1),
                 source=body.source,
                 request=body.model_dump(mode="json"),
             )
@@ -229,13 +236,15 @@ async def submit_job(
     )
 
 
-async def wait_for_job(job_id: str, *, timeout_seconds: float = 60) -> dict[str, Any]:
+async def wait_for_job(
+    job_id: str, actor: SecurityContext, *, timeout_seconds: float = 60
+) -> dict[str, Any]:
     """Wait for a read operation while all source/target work stays in worker."""
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout_seconds
     while loop.time() < deadline:
         try:
-            job = await migration_job_repo.get(job_id)
+            job = await migration_job_repo.get(actor, job_id)
         except Exception as exc:
             logger.warning(
                 "migration job status read failed exception=%s.%s",
@@ -250,7 +259,7 @@ async def wait_for_job(job_id: str, *, timeout_seconds: float = 60) -> dict[str,
         if job["status"] == "succeeded":
             result = json.loads(job["result_json"] or "{}")
             try:
-                await migration_job_repo.delete(job_id)
+                await migration_job_repo.delete(actor, job_id)
             except Exception as exc:
                 logger.warning(
                     "migration read job cleanup failed exception=%s.%s",

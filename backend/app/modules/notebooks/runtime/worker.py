@@ -29,7 +29,7 @@ from typing import Any
 from app.common.audit import write_audit_log
 from app.core.config import settings
 from app.modules.access_control import data_tokens
-from app.modules.notebooks.repository import notebook_repository
+from app.modules.notebooks.repository import job_actor, notebook_repository, runtime_actor
 from app.modules.notebooks.runtime import events, kernel_calls, rpc, state
 from app.modules.notebooks.runtime.outputs import OutputCollector, payload_of, summary
 from app.modules.notebooks.runtime.provider import (
@@ -432,6 +432,7 @@ class NotebookRuntimeWorker:
         runtime.error = error
         with contextlib.suppress(Exception):
             await notebook_repository.record_runtime(
+                runtime_actor(runtime),
                 {
                     "id": runtime.id,
                     "notebook_id": runtime.notebook_id,
@@ -510,6 +511,7 @@ class NotebookRuntimeWorker:
                 runtime, "READY", "", ready_at=runtime.ready_at, last_activity=runtime.ready_at
             )
             await notebook_repository.record_runtime(
+                runtime_actor(runtime),
                 {
                     "id": runtime.id,
                     "notebook_id": runtime.notebook_id,
@@ -605,6 +607,7 @@ class NotebookRuntimeWorker:
         await state.redis().hdel(state.inflight_key(state.job_channel(job)), job["cell_id"])
         with contextlib.suppress(Exception):
             await notebook_repository.record_execution(
+                job_actor(job),
                 {
                     **_row_base(job),
                     "status": status,
@@ -763,7 +766,7 @@ class NotebookRuntimeWorker:
             "duration_ms": int((ended - started) * 1000),
         }
         with contextlib.suppress(Exception):
-            await notebook_repository.record_execution(row)
+            await notebook_repository.record_execution(job_actor(job), row)
         await state.set_execution(execution_id, status=status, ended_at=ended)
         await client.hdel(state.inflight_key(runtime.channel), job["cell_id"])
         if status in {"failed", "timeout"} and job.get("on_error") == "stop":

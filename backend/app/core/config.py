@@ -38,6 +38,43 @@ class MetadataBootstrapSettings(BaseSettings):
     lock_timeout_ms: int = Field(default=5000, gt=0, le=60000)
 
 
+class MetadataRuntimeSettings(BaseSettings):
+    """Where application processes reach `nova_control` and which epoch they serve.
+
+    Every process connects with its own workload login (`app.core.metadata_process`).
+    Passwords come from exactly one of `NOVA_METADATA_PASSWORDS` (a JSON object
+    from login name to password) or `NOVA_METADATA_PASSWORDS_FILE` (the same
+    JSON in a private file). Owner, migrator, backup and readonly logins are
+    never accepted here.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="NOVA_METADATA_", env_file=".env", env_file_encoding="utf-8",
+        extra="ignore", hide_input_in_errors=True,
+    )
+
+    host: str = Field(min_length=1, max_length=253)
+    #: Optional IP address to dial while `host` remains the verified TLS name.
+    hostaddr: str = Field(default="", max_length=64)
+    port: int = Field(default=5432, ge=1, le=65535)
+    sslrootcert: Path
+    passwords: SecretStr | None = None
+    passwords_file: Path | None = None
+    #: The schema revision and epoch this deployment was released against.
+    schema_version: int = Field(gt=0)
+    epoch: UUID
+    pool_max_size: int = Field(default=10, ge=1, le=200)
+    pool_max_waiting: int = Field(default=40, ge=1, le=10000)
+    acquire_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
+    statement_timeout_ms: int = Field(default=15000, gt=0, le=600000)
+    lock_timeout_ms: int = Field(default=3000, gt=0, le=60000)
+    idle_transaction_timeout_ms: int = Field(default=30000, gt=0, le=600000)
+    #: How long a starting process waits for PostgreSQL to become reachable.
+    startup_deadline_seconds: float = Field(default=180.0, gt=0, le=3600)
+    #: How often worker roles re-check metadata readiness.
+    readiness_interval_seconds: float = Field(default=15.0, gt=0, le=600)
+
+
 class Settings(BaseSettings):
     """Nova backend configuration. All values from env vars or .env file."""
 

@@ -35,16 +35,32 @@ def test_feature_view_rejects_duplicate_columns():
 
 
 async def test_search_denies_projection_when_source_access_is_revoked(monkeypatch):
-    async def index(_name):
-        return {"status": "ACTIVE", "source_relation": "NOVA_SYSTEM.secret"}
+    from app.modules.intelligence.search import _INDEX_FIELDS
+
+    row = dict.fromkeys(_INDEX_FIELDS)
+    row.update(
+        status="ACTIVE",
+        source_relation="NOVA_SYSTEM.secret",
+        key_columns=[],
+        content_columns=[],
+        filter_columns=[],
+    )
+
+    async def snapshot(_name, actor):
+        assert actor.principal == "u"
+        return row, []
 
     async def denied(_definition, _user):
         return False
 
-    monkeypatch.setattr(search_service, "_get", index)
+    monkeypatch.setattr(search_service, "_snapshot", snapshot)
     monkeypatch.setattr(search_service, "_source_access", denied)
     with pytest.raises(HTTPException) as exc:
-        await search_service.query("secret", SearchQuery(query="document"), {"username": "u"})
+        await search_service.query(
+            "secret",
+            SearchQuery(query="document"),
+            {"username": "u", "active_role": "analyst", "assigned_roles": ["analyst"]},
+        )
     assert exc.value.status_code == 404
 
 
@@ -52,7 +68,7 @@ async def test_semantic_view_rejects_explicit_draft_query(monkeypatch):
     async def visible(_id, _user):
         return {"active_version": 1}
 
-    async def version(_id, _version):
+    async def version(_id, _version, user):
         return {"status": "DRAFT", "definition": {}}
 
     monkeypatch.setattr(semantic_view_service, "_visible", visible)

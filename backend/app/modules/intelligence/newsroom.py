@@ -39,6 +39,7 @@ from app.modules.intelligence.contracts import (
 )
 from app.modules.intelligence.engine import CycleBudget, intelligence_service
 from app.modules.intelligence.engine_repository import intelligence_repository, metadata_lock
+from app.modules.intelligence.metadata_repository import user_actor
 from app.modules.intelligence.newsroom_cache import proof_cache
 from app.modules.intelligence.newsroom_contracts import (
     BusinessRule,
@@ -622,7 +623,8 @@ class NewsroomService:
             view_id,
             enabled=body.enabled,
             config=config.model_dump(mode="json") if config else None,
-            username=user["username"],
+            user=user,
+            expected_revision=view.get("metadata_revision"),
         )
         await write_audit_log(
             event_type="SEMANTIC_VIEW",
@@ -999,7 +1001,10 @@ class NewsroomService:
             for proof in story.proofs
         )
 
-    async def _edition(self, view: dict, config: NewsConfig, day: date | None) -> Edition | None:
+    async def _edition(
+        self, view: dict, config: NewsConfig, day: date | None, *, user: dict | None = None
+    ) -> Edition | None:
+        """The execution account's edition, read as ``user`` when a reader asks."""
         if config.execution_user is None:
             raise HTTPException(status_code=409, detail="News execution binding is unavailable")
         scope = Scope(
@@ -1007,13 +1012,15 @@ class NewsroomService:
             active_role=config.execution_role,
             security_context_version=1,
         )
+        actor = user_actor(user) if user is not None else None
         if day is None:
-            return await self.repository.latest_edition(view["id"], scope, Edition)
+            return await self.repository.latest_edition(view["id"], scope, Edition, actor=actor)
         return await self.repository.get(
             "editions",
             fingerprint([view["id"], day.isoformat(), scope.principal, scope.active_role]),
             scope,
             Edition,
+            actor=actor,
         )
 
     async def _prove(
@@ -1056,7 +1063,7 @@ class NewsroomService:
             config = self._stored_config(view)
             if config is None or not config.execution_user:
                 continue
-            edition = await self._edition(view, config, None)
+            edition = await self._edition(view, config, None, user=user)
             if edition is None:
                 continue
             cached = await self.cache.get(user, view["id"], edition) if self.cache else None
@@ -1072,12 +1079,14 @@ class NewsroomService:
         config = self._stored_config(view)
         if not view.get("news_enabled") or config is None or not config.execution_user:
             return None
-        edition = await self._edition(view, config, day)
+        edition = await self._edition(view, config, day, user=user)
         if edition is None or (only is not None and only not in edition.story_ids):
             return None
         target = None
         if only is not None:
-            target = await self.repository.get("stories", only, edition.scope, Story)
+            target = await self.repository.get(
+                "stories", only, edition.scope, Story, actor=user_actor(user)
+            )
             if target is None:
                 return None
         if target is not None and (self.cache is None or not self.cache.enabled):
@@ -1099,7 +1108,7 @@ class NewsroomService:
             stories = [target]
         else:
             stories = await self.repository.edition_stories(
-                edition.story_ids, edition.scope, Story
+                edition.story_ids, edition.scope, Story, actor=user_actor(user)
             )
         return edition, sorted(
             (story for story in stories if self._proven(story, digests)),
@@ -1133,7 +1142,7 @@ class NewsroomService:
         # One order across every view the reader can see; the first is their head story.
         ranked = rank(
             [story for section in sections for story in section["stories"]],
-            await self.feedback.rows(user["username"]),
+            await self.feedback.rows(user),
         )
         for section in sections:
             section["stories"] = [
@@ -1150,7 +1159,7 @@ class NewsroomService:
 
     async def _proven_story(self, story_id: str, user: dict):
         """The story, its view and edition when ``user`` reproduces every proof now."""
-        record = await self.repository.shared_story(story_id, Story)
+        record = await self.repository.shared_story(story_id, Story, actor=user_actor(user))
         if record is None:
             return None
         view = await self.semantic._get(record.semantic.view_id)
@@ -1182,7 +1191,7 @@ class NewsroomService:
         """Record the reader's like or dislike for a story they can read."""
         # The same proof as opening the story: no reaction to an unseen story.
         story = await self.story(story_id, user)
-        await self.feedback.set(user["username"], story, reaction)
+        await self.feedback.set(user, story, reaction)
         await self._audit_read(
             user, "REACT_STORY", story_id[:64], "SUCCESS", (reaction or "clear").upper(), 1
         )

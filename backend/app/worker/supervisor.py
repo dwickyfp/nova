@@ -8,7 +8,7 @@ import os
 import signal
 import sys
 
-ROLES = ("task", "ingestion", "ml", "notebook", "automation", "autopilot", "maintenance")
+ROLES = ("task", "ingestion", "ml", "notebook", "automation", "autopilot", "maintenance", "outbox")
 #: Tells a supervised role which launcher to outlive no longer than.
 PARENT_PID_ENV = "NOVA_WORKER_PARENT_PID"
 

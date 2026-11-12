@@ -1,16 +1,20 @@
 """Durable arbitration of one immutable stream operation per generation.
 
-Label uniqueness serializes simultaneous INSERTs. The durable existence guard
-preserves the winner after label retention expires. A recovered winner row is
-evidence for verification only; it never grants permission to submit target DML.
+The first claim of a key wins in PostgreSQL; a later claimant inserts nothing
+and reads the winner. A recovered winner row is evidence for verification only;
+it never grants permission to submit target DML.
 """
 
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Awaitable, Callable
+import logging
 from dataclasses import dataclass
 from enum import StrEnum
+
+from app.modules.streams.control import MetadataScope, stream_metadata
+
+logger = logging.getLogger(__name__)
 
 
 class ClaimOutcome(StrEnum):
@@ -40,10 +44,6 @@ class Claim:
             f"{self.resource_id}:{self.epoch}:{self.generation}".encode()
         ).hexdigest()
 
-    @property
-    def label(self) -> str:
-        return "nova_stream_claim_" + self.key
-
 
 @dataclass(frozen=True, slots=True)
 class ClaimResult:
@@ -51,66 +51,40 @@ class ClaimResult:
     winner: Claim | None = None
 
 
-MetadataExecutor = Callable[[str, tuple], Awaitable[dict]]
-
-CLAIMS_DDL = """
-CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT_STREAM_CLAIMS (
-    claim_key VARCHAR(64) NOT NULL,
-    resource_id VARCHAR(64) NOT NULL,
-    epoch BIGINT NOT NULL,
-    generation BIGINT NOT NULL,
-    attempt_id VARCHAR(64) NOT NULL,
-    operation_digest VARCHAR(64) NOT NULL,
-    created_at DATETIME NOT NULL
-) PRIMARY KEY(claim_key)
-DISTRIBUTED BY HASH(claim_key) BUCKETS 1
-PROPERTIES ('replication_num'='1')
-"""
-
-
 class ClaimRepository:
-    def __init__(self, execute: MetadataExecutor | None = None) -> None:
-        if execute is None:
-            from app.core.database import db
-
-            execute = db.execute_system
-        self._execute = execute
+    def __init__(self, metadata: MetadataScope = stream_metadata) -> None:
+        self._metadata = metadata
 
     async def inspect(self, claim: Claim) -> ClaimResult:
         try:
-            result = await self._execute(
-                "SELECT resource_id, epoch, generation, attempt_id, operation_digest "
-                "FROM NOVA_SYSTEM.AUDIT_STREAM_CLAIMS WHERE claim_key = %s LIMIT 2",
-                (claim.key,),
-            )
-            rows = result["rows"]
-            if len(rows) != 1:
+            async with self._metadata(read_only=True) as repository:
+                row = await repository.inspect_claim(claim.key)
+            if row is None:
                 return ClaimResult(ClaimOutcome.VERIFICATION_REQUIRED)
-            winner = Claim(*rows[0])
+            winner = Claim(
+                row["resource_id"], int(row["epoch"]), int(row["generation"]),
+                row["attempt_id"], row["operation_digest"],
+            )
             if winner.key != claim.key:
                 return ClaimResult(ClaimOutcome.VERIFICATION_REQUIRED)
-        except Exception:
+        except Exception:  # noqa: BLE001 - unknown evidence is never a decision
+            logger.debug("stream claim inspection failed", exc_info=True)
             return ClaimResult(ClaimOutcome.VERIFICATION_REQUIRED)
         return ClaimResult(ClaimOutcome.EXISTING, winner)
 
     async def acquire(self, claim: Claim) -> ClaimResult:
+        values = {
+            "resource_id": claim.resource_id, "epoch": claim.epoch,
+            "generation": claim.generation, "attempt_id": claim.attempt_id,
+            "operation_digest": claim.operation_digest,
+        }
         try:
-            result = await self._execute(
-                "INSERT INTO NOVA_SYSTEM.AUDIT_STREAM_CLAIMS "
-                f"WITH LABEL {claim.label} "
-                "SELECT %s, %s, %s, %s, %s, %s, NOW() "
-                "WHERE NOT EXISTS (SELECT 1 FROM NOVA_SYSTEM.AUDIT_STREAM_CLAIMS "
-                "WHERE claim_key = %s)",
-                (
-                    claim.key, claim.resource_id, claim.epoch, claim.generation,
-                    claim.attempt_id, claim.operation_digest, claim.key,
-                ),
-            )
-        except Exception:
-            # Lost INSERT response and duplicate label both require inspection.
+            async with self._metadata() as repository:
+                _winner, inserted = await repository.acquire_claim(values)
+        except Exception:  # noqa: BLE001 - a lost commit response needs inspection
             # Even our own attempt_id does not prove we still own submission.
             return await self.inspect(claim)
         inspected = await self.inspect(claim)
-        if result.get("affected") == 1 and inspected.winner == claim:
+        if inserted and inspected.winner == claim:
             return ClaimResult(ClaimOutcome.ACQUIRED, claim)
         return inspected

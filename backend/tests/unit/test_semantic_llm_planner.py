@@ -54,7 +54,6 @@ def setup_tool(monkeypatch, *responses):
     monkeypatch.setattr(tool, "_resolve_model", AsyncMock(return_value={
         "semantic_model_id": "sales", "definition": semantic_ir_to_definition(sales_model()),
     }))
-    monkeypatch.setattr(agent_repository, "list_verified_queries", AsyncMock(return_value=[]))
     monkeypatch.setattr(agent_repository, "record_semantic_usage", AsyncMock())
     import app.modules.agents.semantic.literals as literals
 

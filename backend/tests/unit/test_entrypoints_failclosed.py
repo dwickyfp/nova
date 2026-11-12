@@ -121,6 +121,8 @@ def test_every_entrypoint_calls_the_shared_helper():
         module = importlib.import_module(module_name)
         source = inspect.getsource(module._run)
         assert "require_configured_secrets" in source, module_name
+        # The metadata pool is the first connection each process opens.
         assert source.index("require_configured_secrets") < source.index(
-            "init_system_pool"
+            "open_process_metadata"
         ), module_name
+        assert "init_system_pool" in inspect.getsource(module), module_name

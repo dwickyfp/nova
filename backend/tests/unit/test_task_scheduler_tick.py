@@ -13,11 +13,14 @@ single row, so idempotency is proven, not assumed.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any
+from uuid import UUID
 
 import pytest
 
 from app.core.config import settings
+from app.modules.task_orchestration.metadata_scheduler import SchedulerLease
 from app.modules.task_orchestration.schedule import ScheduleError
 from app.modules.task_orchestration.scheduler import (
     SchedulerTick,
@@ -26,6 +29,10 @@ from app.modules.task_orchestration.scheduler import (
     plan_tick,
     resolve_engine_timezone,
 )
+
+
+def leader():
+    return SimpleNamespace(lease=SchedulerLease("tasks", UUID(int=1), 1))
 
 
 class FakeRepository:
@@ -42,6 +49,21 @@ class FakeRepository:
         self.graph_runs: dict[str, dict[str, Any]] = {}
         self.calls: list[str] = []
         self.engine_timezone = engine_timezone
+
+    def for_actor(self, actor):
+        self.actor = actor
+        return self
+
+    async def existing_graph_run_ids(self, run_ids):
+        self.calls.append("existing_graph_run_ids")
+        return set(run_ids) & self.graph_runs.keys()
+
+    async def create_scheduled_graph_run(self, lease, root, scheduled_at, data):
+        assert lease == leader().lease
+        assert root in self.tasks
+        assert scheduled_at.tzinfo is not None
+        self.calls.append("reserve_scheduled_occurrence")
+        return await self.create_graph_run_once(data)
 
     async def list_tasks(self) -> list[dict[str, Any]]:
         self.calls.append("list_tasks")
@@ -313,7 +335,7 @@ class TestEngineTimezoneAnchorRegression:
             [make_task("solo", created_at=created)], engine_timezone="Asia/Jakarta"
         )
         transport = RecordingTransport()
-        plan = await SchedulerTick(repo, transport).tick(
+        plan = await SchedulerTick(repo, transport, leader=leader()).tick(
             datetime(2026, 1, 1, 2, 6, tzinfo=UTC)
         )
         assert len(plan.due) == 1
@@ -327,7 +349,7 @@ class TestEngineTimezoneAnchorRegression:
         """
         created = datetime(2026, 1, 1, 9, 0)
         repo = FakeRepository([make_task("solo", created_at=created)])
-        plan = await SchedulerTick(repo, RecordingTransport()).tick(
+        plan = await SchedulerTick(repo, RecordingTransport(), leader=leader()).tick(
             datetime(2026, 1, 1, 2, 6, tzinfo=UTC)
         )
         assert plan.due == []
@@ -337,7 +359,7 @@ class TestEngineTimezoneAnchorRegression:
         created = datetime(2026, 1, 1, 9, 0)
         repo = FakeRepository([make_task("solo", created_at=created)], engine_timezone="+07:00")
         transport = RecordingTransport()
-        plan = await SchedulerTick(repo, transport).tick(
+        plan = await SchedulerTick(repo, transport, leader=leader()).tick(
             datetime(2026, 1, 1, 2, 6, tzinfo=UTC)
         )
         assert len(plan.due) == 1
@@ -594,7 +616,7 @@ class TestTickOrderingAndIdempotency:
         """Criterion 5: NOVA_SYSTEM first, Redis second."""
         repo = FakeRepository([make_task("solo", created_at=TestPlanTick.ONE_STEP_ANCHOR)])
         transport = RecordingTransport()
-        tick = SchedulerTick(repo, transport)
+        tick = SchedulerTick(repo, transport, leader=leader())
 
         await tick.tick(NOW)
 
@@ -615,7 +637,7 @@ class TestTickOrderingAndIdempotency:
         The persisted row is what the reconciler re-derives from.
         """
         repo = FakeRepository([make_task("solo", created_at=TestPlanTick.ONE_STEP_ANCHOR)])
-        tick = SchedulerTick(repo, RecordingTransport(fail=True))
+        tick = SchedulerTick(repo, RecordingTransport(fail=True), leader=leader())
 
         plan = await tick.tick(NOW)
 
@@ -642,7 +664,7 @@ class TestTickOrderingAndIdempotency:
         ])
         transport = FlakyTransport()
 
-        plan = await SchedulerTick(repo, transport).tick(NOW)
+        plan = await SchedulerTick(repo, transport, leader=leader()).tick(NOW)
 
         assert len(plan.due) == 2
         assert len(repo.graph_runs) == 2, "both rows persisted despite one failure"
@@ -652,7 +674,7 @@ class TestTickOrderingAndIdempotency:
         """Criterion 6: the deterministic id makes a repeated tick a no-op."""
         repo = FakeRepository([make_task("solo", created_at=TestPlanTick.ONE_STEP_ANCHOR)])
         transport = RecordingTransport()
-        tick = SchedulerTick(repo, transport)
+        tick = SchedulerTick(repo, transport, leader=leader())
 
         await tick.tick(NOW)
         await tick.tick(NOW)
@@ -668,7 +690,7 @@ class TestTickOrderingAndIdempotency:
 
         repo = BatchRepository([make_task("solo", created_at=TestPlanTick.ONE_STEP_ANCHOR)])
         transport = RecordingTransport()
-        tick = SchedulerTick(repo, transport)
+        tick = SchedulerTick(repo, transport, leader=leader())
 
         await tick.tick(NOW)
         await tick.tick(NOW)
@@ -685,7 +707,7 @@ class TestTickOrderingAndIdempotency:
             make_task("solo", overlap_policy="queue", created_at=TestPlanTick.ONE_STEP_ANCHOR)
         ])
         transport = RecordingTransport()
-        tick = SchedulerTick(repo, transport)
+        tick = SchedulerTick(repo, transport, leader=leader())
 
         await tick.tick(NOW)
         await tick.tick(NOW + timedelta(minutes=5))
@@ -704,7 +726,7 @@ class TestTickOrderingAndIdempotency:
         """
         repo = FakeRepository([make_task("solo", created_at=TestPlanTick.ONE_STEP_ANCHOR)])
         transport = RecordingTransport()
-        tick = SchedulerTick(repo, transport)
+        tick = SchedulerTick(repo, transport, leader=leader())
 
         await tick.tick(NOW)
         run_id = next(iter(repo.graph_runs))
@@ -719,7 +741,7 @@ class TestTickOrderingAndIdempotency:
         """Credential-invisible: the stream payload is ids plus trigger type."""
         repo = FakeRepository([make_task("solo", created_at=TestPlanTick.ONE_STEP_ANCHOR)])
         transport = RecordingTransport()
-        await SchedulerTick(repo, transport).tick(NOW)
+        await SchedulerTick(repo, transport, leader=leader()).tick(NOW)
 
         payload = transport.published[0][0]
         # `overlap_policy` is a policy string (`skip`/`queue`/`allow`), not a
@@ -739,7 +761,7 @@ class TestTickOrderingAndIdempotency:
     async def test_tick_with_nothing_due_publishes_nothing(self):
         repo = FakeRepository([make_task("manual_only", kind="manual", expr="")])
         transport = RecordingTransport()
-        plan = await SchedulerTick(repo, transport).tick(NOW)
+        plan = await SchedulerTick(repo, transport, leader=leader()).tick(NOW)
         assert plan.due == []
         assert transport.published == []
         assert repo.graph_runs == {}
@@ -770,7 +792,7 @@ class TestEngineTimezoneSettingIsNotLeaked:
             [make_task("solo", created_at=created)], engine_timezone="+07:00"
         )
         transport = RecordingTransport()
-        plan = await SchedulerTick(repo, transport).tick(
+        plan = await SchedulerTick(repo, transport, leader=leader()).tick(
             datetime(2026, 1, 1, 2, 6, tzinfo=UTC)
         )
         assert len(plan.due) == 1

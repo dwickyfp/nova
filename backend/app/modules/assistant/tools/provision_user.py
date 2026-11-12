@@ -113,7 +113,7 @@ class ProvisionUserTool:
         try:
             # Install the policy first: a partially created account must still
             # require a password change even if a later service call fails.
-            await set_must_change_password(username, required=True)
+            await set_must_change_password(username, required=True, actor=security)
             await user_service.create_user(username, password=secure_input["password"])
             completed.append("user created")
             await access_control_service.assign_role(security, role=role, username=username)

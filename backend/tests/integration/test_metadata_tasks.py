@@ -223,6 +223,38 @@ async def test_node_runs_use_the_source_ids_and_fence_stale_workers(tasks):
                                "lease_generation=lease_generation+1 WHERE id=%s", (run_id,))
 
 
+async def test_abandon_keeps_verification_evidence_and_refuses_stale_generation(tasks):
+    async with tasks.transaction("task") as (repo, _):
+        row, _ = await repo.create_task_run_once("uncertain-run", "task-a", 1)
+        generation = await repo.claim_task_run(row["id"], ["pending"])
+        assert await repo.abandon_task_run(
+            row["id"], generation=generation, query_id="engine-receipt",
+            error_message="External outcome is unknown",
+        )
+        stored = (await repo.list_task_runs("uncertain-run"))[0]
+        assert stored["state"] == "abandoned"
+        assert stored["starrocks_query_id"] == "engine-receipt"
+        assert stored["error_message"] == "External outcome is unknown"
+        next_generation = await repo.claim_task_run(row["id"], ["abandoned"])
+        assert next_generation == generation + 1
+        assert not await repo.abandon_task_run(
+            row["id"], generation=generation, query_id="stale-receipt",
+            error_message="stale failure",
+        )
+        stored = (await repo.list_task_runs("uncertain-run"))[0]
+        assert stored["state"] == "running"
+        assert stored["starrocks_query_id"] == "engine-receipt"
+
+
+async def test_existing_occurrences_are_found_across_bounded_batches(tasks):
+    async with tasks.transaction("scheduler") as (repo, _):
+        for run_id in ("batch-first", "batch-last"):
+            await repo.create_graph_run_once({"id": run_id, "graph_id": "sales.public.job"})
+        requested = ["batch-first", *[f"missing-{i}" for i in range(1000)], "batch-last"]
+        assert await repo.existing_graph_run_ids(requested) == {"batch-first", "batch-last"}
+        assert await repo.existing_graph_run_ids([]) == set()
+
+
 async def test_role_bindings_are_revisioned_and_attributed(tasks):
     async with tasks.transaction(name="admin-1") as (repo, _):
         first = await repo.bind_role_execution_user("ANALYST", "svc_analyst")

@@ -74,10 +74,14 @@ async def test_csv_properties_belong_only_to_their_reference() -> None:
     prepared = await prepare_stage_sql(
         sql,
         parsed=parsed,
-        stage_configs_by_ref={parsed.stage_refs[0].start: _config("a"),
-                              parsed.stage_refs[1].start: _config("b")},
-        csv_params_by_ref={parsed.stage_refs[0].start: {"csv.column_separator": ";"},
-                           parsed.stage_refs[1].start: {"csv.column_separator": "|"}},
+        stage_configs_by_ref={
+            parsed.stage_refs[0].start: _config("a"),
+            parsed.stage_refs[1].start: _config("b"),
+        },
+        csv_params_by_ref={
+            parsed.stage_refs[0].start: {"csv.column_separator": ";"},
+            parsed.stage_refs[1].start: {"csv.column_separator": "|"},
+        },
     )
     assert prepared.engine_sql.count("'csv.column_separator'") == 2
     assert "'csv.column_separator'=';'" in prepared.engine_sql
@@ -110,32 +114,56 @@ async def test_authorization_precedes_secret_resolution(monkeypatch) -> None:
     with pytest.raises(StageAccessDenied):
         await QueryService()._resolve_stage_refs(
             parse_sql("SELECT * FROM @stage.data.csv"),
-            database="db", schema="bronze", username="analyst", password="pw", role=None,
+            database="db",
+            schema="bronze",
+            username="analyst",
+            password="pw",
+            role=None,
         )
 
 
-async def test_explicit_scope_and_same_names_do_not_collide(monkeypatch) -> None:
+async def test_explicit_scope_and_same_names_do_not_collide(monkeypatch, fake_metadata_db) -> None:
     import app.modules.query.service as module
+    from tests.unit.stage_metadata_fakes import install_stages
 
-    async def rows(sql, params=None):
-        return {"rows": [
-            ("stage", "db", "bronze", "bronze_store", "db/bronze/stage"),
-            ("stage", "db", "silver", "silver_store", "db/silver/stage"),
-        ]}
+    install_stages(
+        monkeypatch,
+        [
+            {
+                "id": "bronze",
+                "name": "stage",
+                "database_name": "db",
+                "schema_name": "bronze",
+                "storage_connection": "bronze_store",
+                "base_prefix": "db/bronze/stage",
+            },
+            {
+                "id": "silver",
+                "name": "stage",
+                "database_name": "db",
+                "schema_name": "silver",
+                "storage_connection": "silver_store",
+                "base_prefix": "db/silver/stage",
+            },
+        ],
+    )
 
     checked = []
 
     async def allow(stage, **kwargs):
         checked.append((stage["schema_name"], kwargs["action"]))
 
-    monkeypatch.setattr(module.db, "execute_system", rows)
     monkeypatch.setattr(module, "check_stage_access", allow)
     monkeypatch.setattr(module, "require_storage_connection", lambda name: _Connection())
     monkeypatch.setattr(module, "resolve_storage_credentials", lambda name: ("key", "secret"))
     sql = "SELECT * FROM @stage.a.csv JOIN @silver.stage.b.csv ON 1=1"
     parsed, configs = await QueryService()._resolve_stage_refs(
-        parse_sql(sql), database="db", schema="bronze", username="analyst",
-        password="pw", role=None,
+        parse_sql(sql),
+        database="db",
+        schema="bronze",
+        username="analyst",
+        password="pw",
+        role="analyst",
     )
     prepared = await prepare_stage_sql(sql, parsed=parsed, stage_configs_by_ref=configs)
     assert "db/bronze/stage/a.csv" in prepared.engine_sql
@@ -143,17 +171,34 @@ async def test_explicit_scope_and_same_names_do_not_collide(monkeypatch) -> None
     assert checked == [("bronze", "read"), ("silver", "read")]
 
 
-async def test_scoped_reference_does_not_fall_back_to_foreign_stage(monkeypatch) -> None:
-    import app.modules.query.service as module
+async def test_scoped_reference_does_not_fall_back_to_foreign_stage(
+    monkeypatch, fake_metadata_db
+) -> None:
 
-    async def rows(sql, params=None):
-        return {"rows": [("stage", "other", "silver", "storage", "other/silver/stage")]}
+    from tests.unit.stage_metadata_fakes import install_stages
 
-    monkeypatch.setattr(module.db, "execute_system", rows)
+    install_stages(
+        monkeypatch,
+        [
+            {
+                "id": "foreign",
+                "name": "stage",
+                "database_name": "other",
+                "schema_name": "silver",
+                "storage_connection": "storage",
+                "base_prefix": "other/silver/stage",
+            }
+        ],
+    )
+
     with pytest.raises(ValueError, match="not found"):
         await QueryService()._resolve_stage_refs(
             parse_sql("SELECT * FROM @stage.data.csv"),
-            database="db", schema="bronze", username="analyst", password="pw", role=None,
+            database="db",
+            schema="bronze",
+            username="analyst",
+            password="pw",
+            role="analyst",
         )
 
 
@@ -165,7 +210,9 @@ async def test_only_an_active_role_grants_stage_access(monkeypatch) -> None:
     stage = {"database_name": "db", "schema_name": "bronze"}
     await check_stage_access(stage, action="read", username="user", active_role="analyst")
     assert effective.await_args.kwargs == {
-        "principal": "user", "active_role": "analyst", "resource": "db.bronze"
+        "principal": "user",
+        "active_role": "analyst",
+        "resource": "db.bronze",
     }
     with pytest.raises(StageAccessDenied):
         await check_stage_access(stage, action="write", username="user", active_role="analyst")

@@ -1,8 +1,8 @@
 """Runtime assistant state — consent grants keyed by thread.
 
-Threads and messages are **persisted** in ``NOVA_SYSTEM.CONFIG_ASSISTANT_*``
+Threads and messages are **persisted** in the metadata store
 (``repository.py``), so a conversation survives a reload and is scoped per user
-in SQL. This module holds the current turn's consent policy:
+by row security. This module holds the current turn's consent policy:
 
 * **Consent (E2b).** An explicit read-only grant belongs to one authenticated
   login and conversation. ``read_grants`` reloads its Redis record before each

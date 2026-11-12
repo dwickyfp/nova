@@ -24,9 +24,8 @@ from app.modules.notebooks.packages import (
     sync_file,
     validate_request,
 )
-from app.modules.notebooks.repository import notebook_repository
+from app.modules.notebooks.repository import notebook_actor, notebook_repository
 from app.modules.notebooks.runtime import events, state
-from app.modules.workspaces.repository import workspace_repository
 from app.modules.workspaces.service import workspace_service
 from app.modules.workspaces.spaces import Space, space_service
 
@@ -75,10 +74,19 @@ async def _require_notebook(
         raise NotebookRuntimeError(
             "Notebook not found", status_code=404, code="NOT_FOUND"
         ) from None
-    entry = await workspace_repository.get_entry(space.namespace, notebook_id)
+    entry = await workspace_service.get_entry(space.namespace, notebook_id)
     if not entry or entry["entry_type"] != "file" or not is_notebook_name(entry["name"]):
         raise NotebookRuntimeError("Notebook not found", status_code=404, code="NOT_FOUND")
     return entry, space
+
+
+def _actor(user: dict[str, Any]) -> SecurityContext:
+    """The caller as the owner of their own notebook metadata rows."""
+    identity = _identity(user)
+    return notebook_actor(
+        identity["user"], identity["active_role"],
+        security_version=identity["security_version"], session_id=identity["session_id"],
+    )
 
 
 def _not_ready(runtime: state.RuntimeState | None) -> NotebookRuntimeError:
@@ -343,10 +351,9 @@ class NotebookRuntimeService:
 
     async def latest(self, user: dict[str, Any], notebook_id: str) -> dict[str, Any]:
         """The newest outcome of every cell, with outputs, plus what is in flight."""
-        username = user["username"]
         _entry, space = await _require_notebook(user, notebook_id)
         ch = state.channel(notebook_id, user["username"])
-        rows = await notebook_repository.latest_executions(username, notebook_id)
+        rows = await notebook_repository.latest_executions(_actor(user), notebook_id)
         # Smallest outputs first, so many cells show theirs; the largest (an
         # interactive chart) are left for the page to fetch one by one.
         budget = _LATEST_OUTPUT_BUDGET
@@ -391,7 +398,7 @@ class NotebookRuntimeService:
         self, user: dict[str, Any], notebook_id: str, execution_id: str
     ) -> dict[str, Any]:
         _entry, space = await _require_notebook(user, notebook_id)
-        row = await notebook_repository.get_execution(user["username"], notebook_id, execution_id)
+        row = await notebook_repository.get_execution(_actor(user), notebook_id, execution_id)
         if row is None:
             live = await state.get_execution(execution_id)
             if not live or live.get("notebook_id") != notebook_id:
@@ -405,7 +412,7 @@ class NotebookRuntimeService:
 
     async def packages(self, user: dict[str, Any], notebook_id: str) -> dict[str, Any]:
         _entry, space = await _require_notebook(user, notebook_id)
-        manifest = await notebook_repository.get_packages(user["username"], notebook_id)
+        manifest = await notebook_repository.get_packages(_actor(user), notebook_id)
         return {
             "requested": manifest,
             "allowed": [
@@ -439,7 +446,9 @@ class NotebookRuntimeService:
         await state.put_job(
             runtime.id,
             {"kind": "install", "operation_id": operation_id, "package": package,
-             "notebook_id": notebook_id, "channel": ch, "user": identity["user"]},
+             "notebook_id": notebook_id, "channel": ch, "user": identity["user"],
+             "session_id": identity["session_id"], "active_role": identity["active_role"],
+             "security_version": identity["security_version"]},
         )
         return {"operation_id": operation_id, "package": package, "status": "queued"}
 
@@ -450,10 +459,17 @@ class NotebookRuntimeService:
 
         _entry, space = await _require_notebook(user, notebook_id)
 
-        manifest = await notebook_repository.get_packages(user["username"], notebook_id)
-        kept = [item for item in manifest if canonical(item.get("name", "")) != canonical(name)]
-        await notebook_repository.set_packages(user["username"], notebook_id, kept)
-        return {"requested": kept, "restart_required": len(kept) != len(manifest)}
+        removed: list[bool] = []
+
+        def without(manifest: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            kept = [
+                item for item in manifest if canonical(item.get("name", "")) != canonical(name)
+            ]
+            removed.append(len(kept) != len(manifest))
+            return kept
+
+        kept = await notebook_repository.modify_packages(_actor(user), notebook_id, without)
+        return {"requested": kept, "restart_required": bool(removed and removed[-1])}
 
     async def upload(
         self,
@@ -475,7 +491,7 @@ class NotebookRuntimeService:
         from app.modules.notebooks.packages import _ensure_folders
         from app.modules.workspaces.actor import acting_as
 
-        with acting_as(user["username"]):
+        with acting_as(user):
             await _ensure_folders(space.namespace, parent)
             stored = await workspace_service.create_file_bytes(
                 space.namespace, parent, clean_name, data

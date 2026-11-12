@@ -121,7 +121,7 @@ def _verified_query_view(monkeypatch):
     view = {"id": "view-1", "name": "sales", "owner_name": "alice"}
     definition = semantic_ir_to_definition(sales_model())
     user = {"username": "alice", "encrypted_password": "encrypted"}
-    insert_version = AsyncMock()
+    insert_version = AsyncMock(return_value={"view_id": "view-1", "version": 2})
     audit = AsyncMock()
     monkeypatch.setattr(service, "_owned", AsyncMock(return_value=view))
     monkeypatch.setattr(
@@ -129,10 +129,7 @@ def _verified_query_view(monkeypatch):
         "_readable_version",
         AsyncMock(return_value=(view, {"version": 1, "definition": definition})),
     )
-    monkeypatch.setattr(
-        "app.modules.intelligence.semantic_views.db.execute_system",
-        AsyncMock(return_value={"rows": [[1]]}),
-    )
+    monkeypatch.setattr(service, "_latest", AsyncMock(return_value=1))
     monkeypatch.setattr(service, "_insert_version", insert_version)
     monkeypatch.setattr(service, "_audit", audit)
     monkeypatch.setattr(
@@ -171,7 +168,8 @@ async def test_verified_query_view_saves_owner_and_new_version_fingerprint(monke
     )
     result = await service.add_verified_query("view-1", 1, body, user)
     assert result == {"view_id": "view-1", "version": 2}
-    view_id, version, definition, fingerprint = insert_version.await_args.args
+    view_id, version, definition, fingerprint, actor_user = insert_version.await_args.args
+    assert actor_user is user
     assert (view_id, version) == ("view-1", 2)
     verified = definition["verified_queries"]
     assert len(verified) == 1

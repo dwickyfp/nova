@@ -221,9 +221,16 @@ class WebSearchTool:
             await self._audit(user, context, "DENIED")
             return outcome
 
+        from fastapi import HTTPException
+
+        from app.core.metadata_scope import actor_for
         from app.modules.ai_ml.web_search_settings import tavily_api_key
 
-        api_key = await tavily_api_key()
+        try:
+            actor = actor_for(user)
+        except HTTPException:
+            return _failure("No authorized user is available.", "AUTHORIZATION_FAILURE")
+        api_key = await tavily_api_key(actor)
         if not api_key:
             # A clear answer the model can pass on to the user; the turn goes on.
             await self._audit(user, context, "FAILED")

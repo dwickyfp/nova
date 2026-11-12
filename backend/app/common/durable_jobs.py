@@ -184,6 +184,7 @@ class JobRepository:
         *,
         seconds: int = 60,
         limit: int = 1,
+        kind: str | None = None,
     ) -> list[dict[str, Any]]:
         self._require_transaction()
         if queue not in QUEUES:
@@ -191,8 +192,11 @@ class JobRepository:
         _uuid(holder)
         _integer(seconds, 300)
         _integer(limit, 100)
+        if kind is not None:
+            _identifier(kind)
+        kind_clause = " AND kind=%s" if kind is not None else ""
         cursor = await self._connection.execute(
-            "WITH due AS (SELECT id FROM nova_meta.job_queue WHERE queue=%s AND "
+            "WITH due AS (SELECT id FROM nova_meta.job_queue WHERE queue=%s" + kind_clause + " AND "
             "nova_meta.job_worker(queue) AND ((state='PENDING' "
             "AND next_attempt_at<=clock_timestamp()) "
             "OR (state IN ('LEASED','PREPARED','SUBMITTED','VERIFYING','BLOCKED','COMMITTED') "
@@ -205,7 +209,8 @@ class JobRepository:
             "revision=revision+1, lease_holder=%s, lease_token=lease_token+1, "
             "lease_expires_at=clock_timestamp()+%s*interval '1 second' "
             "FROM due WHERE j.id=due.id RETURNING j.*",
-            (queue, limit, holder, seconds),
+            ((queue, kind, limit, holder, seconds) if kind is not None
+             else (queue, limit, holder, seconds)),
         )
         return list(await cursor.fetchall())
 

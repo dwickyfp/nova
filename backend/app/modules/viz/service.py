@@ -175,26 +175,23 @@ class VizService:
         *,
         filter_values: dict[str, Filter] | None = None,
         zone_filters: dict[str, list[Filter]] | None = None,
-        owner_name: str | None = None,
+        artifacts: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Compute every sheet zone under merged dashboard and action filters.
 
         ``filter_values`` are the current values of filter zones, keyed by
         filter-zone id; each applies to the sheets its ``apply_to`` names.
         ``zone_filters`` carry filter-action selections targeting one zone.
-        ``owner_name`` resolves the referenced chart artifacts — a shared
-        dashboard reads the owner's definitions while every query still
-        executes under ``user``'s own session. Failures are reported per zone
+        ``artifacts`` is the server-verified member projection of a shared
+        dashboard. Caller-supplied layouts cannot extend that membership.
+        Every query executes under ``user``'s own session. Failures are reported per zone
         so one broken sheet never blanks the whole dashboard.
         """
         filter_values = filter_values or {}
         zone_filters = zone_filters or {}
-        owned = {
-            artifact["artifact_id"]: artifact
-            for artifact in await artifact_repository.list(
-                owner_name=owner_name or user["username"]
-            )
-        }
+        if artifacts is None:
+            artifacts = await artifact_repository.list(owner_name=user["username"])
+        owned = {artifact["artifact_id"]: artifact for artifact in artifacts}
         zones_out: list[dict[str, Any]] = []
         for zone in spec.sheet_zones():
             artifact = owned.get(zone.artifact_id or "")

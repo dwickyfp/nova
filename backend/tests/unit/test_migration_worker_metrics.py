@@ -55,10 +55,12 @@ def claimed_job(monkeypatch):
         def __init__(self) -> None:
             self.finished: list[str] = []
 
-        async def finish(self, job_id: str, *, status: str,
+        async def finish(self, job_id: str, *, generation: int, status: str,
                          result: dict[str, Any] | None = None,
                          error_code: str | None = None) -> None:
+            assert generation == 1
             self.finished.append(status)
+            return True
 
     repository = Repository()
     monkeypatch.setattr(module, "migration_job_repo", repository)
@@ -66,7 +68,7 @@ def claimed_job(monkeypatch):
     async def session(self, job):
         return "private-session", {"encrypted_password": "private-password"}
 
-    async def heartbeat(self, job_id, session_id, stop_event):
+    async def heartbeat(self, job_id, session_id, stop_event, *, generation, job=None):
         await stop_event.wait()
 
     async def audit(self, job, status):
@@ -98,7 +100,7 @@ async def test_active_job_and_success_duration_return_to_zero(
 
     monkeypatch.setattr(module.MigrationJobWorker, "_read", read)
     worker = module.MigrationJobWorker(None)
-    task = asyncio.create_task(worker.process_claimed(job))
+    task = asyncio.create_task(worker.process_claimed(job, generation=1))
     await started.wait()
     assert gauge.value == 1
     release.set()
@@ -128,7 +130,7 @@ async def test_cancellation_records_interrupted_and_decrements_active(
 
     monkeypatch.setattr(module.MigrationJobWorker, "_read", read)
     worker = module.MigrationJobWorker(None)
-    task = asyncio.create_task(worker.process_claimed(job))
+    task = asyncio.create_task(worker.process_claimed(job, generation=1))
     await started.wait()
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -149,7 +151,7 @@ async def test_unknown_operation_is_collapsed_to_other(monkeypatch, metrics, cla
         raise ValueError("unsupported operation")
 
     monkeypatch.setattr(module.MigrationJobWorker, "_read", read)
-    await module.MigrationJobWorker(None).process_claimed(job)
+    await module.MigrationJobWorker(None).process_claimed(job, generation=1)
 
     assert repository.finished == ["failed"]
     assert jobs.increments == [{"operation": "other", "status": "failed"}]
@@ -166,13 +168,13 @@ async def test_terminal_write_failure_is_not_reported_as_completed(
     async def read(self, job, payload, session_id, session):
         return {"databases": []}
 
-    async def fail_finish(job_id, *, status, result=None, error_code=None):
+    async def fail_finish(job_id, *, generation, status, result=None, error_code=None):
         raise RuntimeError("terminal update unavailable")
 
     monkeypatch.setattr(module.MigrationJobWorker, "_read", read)
     monkeypatch.setattr(repository, "finish", fail_finish)
     with pytest.raises(RuntimeError, match="terminal update unavailable"):
-        await module.MigrationJobWorker(None).process_claimed(job)
+        await module.MigrationJobWorker(None).process_claimed(job, generation=1)
 
     assert jobs.increments == [{"operation": "databases", "status": "unfinished"}]
     assert duration.observations[0][0] == jobs.increments[0]

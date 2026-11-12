@@ -31,9 +31,10 @@ from app.modules.task_orchestration.native import (
     schedule_is_paused,
 )
 from app.modules.task_orchestration.reconciler import Reconciler
+from tests.unit.test_task_orchestration_worker import FakeRepository as WorkerRepository
 
 
-class FakeRepository:
+class FakeRepository(WorkerRepository):
     """The reconciler-facing repository surface, in memory.
 
     Conditional transitions mirror the SQL ``WHERE state IN (...)`` guard so a
@@ -74,6 +75,7 @@ class FakeRepository:
             "starrocks_query_id": None,
             "error_message": None,
             "started_at": started_at,
+            "lease_generation": 1,
         }
         self.task_runs[run_id] = row
         return row

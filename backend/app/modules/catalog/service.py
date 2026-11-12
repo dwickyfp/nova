@@ -13,6 +13,12 @@
   ``aws.s3.session_token`` and ``hive.metastore.password`` in full).
 * **Refresh is an admin action**, gated on a security-admin active role and
   audited, including refusals.
+* **Intent before the engine.** Nova's row for an ``ALTER``/``DROP`` is written
+  (at the revision read in the same transaction) and committed before the
+  engine statement runs. A refusal by the engine restores the row; an unknown
+  outcome leaves it for the refresher, which matches the store to the engine's
+  catalog list. Store rows live in PostgreSQL, read and written in the
+  caller's actor-bound transaction.
 """
 
 from __future__ import annotations
@@ -23,13 +29,15 @@ from typing import Any
 from app.common.audit import write_audit_log
 from app.common.sql_guard import redact_sql_credentials
 from app.core.database import db
+from app.core.metadata_db import MetadataConflict
 from app.modules.access_control.security_context import SecurityContext, SecurityContextError
 from app.modules.access_control.service import AccessControlError, AccessControlService
 from app.modules.query.service import query_service
 
 from . import visibility
 from .connectors import CatalogError, connector_for, safe_catalog_name
-from .repository import CatalogRepository, catalog_repo, credential_free
+from .metadata_repository import actor_of, catalog_transaction
+from .repository import credential_free
 from .schemas import (
     CatalogColumn,
     CatalogDetail,
@@ -39,20 +47,7 @@ from .schemas import (
     ExternalCatalogAlter,
     SyncRun,
 )
-from .sync import nova_now, reconcile_catalogs, sync_catalog
-
-
-async def ensure_metadata_schema() -> None:
-    """Create the securable registry, business metadata, lineage, and link tables."""
-    from .lineage import lineage_repo
-    from .links import link_repo
-    from .metadata import metadata_repo
-    from .securables import securable_repo
-
-    await securable_repo.ensure_schema()
-    await metadata_repo.ensure_schema()
-    await lineage_repo.ensure_schema()
-    await link_repo.ensure_schema()
+from .sync import reconcile_catalogs, sync_catalog
 
 log = logging.getLogger(__name__)
 
@@ -62,29 +57,23 @@ class CatalogAccessDenied(CatalogError):
 
 
 class CatalogService:
-    def __init__(self, repo: CatalogRepository | None = None) -> None:
-        self._repo = repo
-
-    @property
-    def repo(self) -> CatalogRepository:
-        return self._repo or catalog_repo
-
     async def ensure_schema(self) -> None:
-        """Create the store tables and copy legacy catalog rows once."""
-        await self.repo.ensure_schema()
-        await ensure_metadata_schema()
-        copied = await self.repo.migrate_legacy_catalogs(nova_now())
-        if copied:
-            log.info("Copied %d legacy external catalog rows into the catalog store", copied)
+        """Kept for application startup; there is nothing to create any more.
+
+        The catalog tables are installed by the one-shot metadata migrator and
+        legacy ``CONFIG_EXTERNAL_CATALOGS`` rows and pre-catalog tags arrive
+        through the metadata import, so startup neither runs DDL nor copies
+        rows.
+        """
+        return None
 
     # ── Read path ───────────────────────────────────────────────
 
     async def list_catalogs(self, user: dict) -> CatalogListResponse:
-        stored = {row["name"]: row for row in await self.repo.list_catalogs()}
-        catalogs = [
-            _summary(visible, stored.get(visible["name"]))
-            for visible in await visibility.visible_catalogs(user)
-        ]
+        visible_catalogs = await visibility.visible_catalogs(user)
+        async with catalog_transaction(actor_of(user), read_only=True) as repo:
+            stored = {row["name"]: row for row in await repo.list_catalogs()}
+        catalogs = [_summary(visible, stored.get(visible["name"])) for visible in visible_catalogs]
         return CatalogListResponse(catalogs=catalogs, count=len(catalogs))
 
     async def _visible(self, name: str, user: dict) -> dict | None:
@@ -99,7 +88,8 @@ class CatalogService:
         visible = await self._visible(name, user)
         if visible is None:
             return None
-        stored = await self.repo.get_catalog(visible["name"])
+        async with catalog_transaction(actor_of(user), read_only=True) as repo:
+            stored = await repo.get_catalog(visible["name"])
         return CatalogDetail(
             **_summary(visible, stored).model_dump(),
             metastore_type=(stored or {}).get("metastore_type"),
@@ -125,11 +115,9 @@ class CatalogService:
         ):
             return None
         relations = await visibility.visible_relations(user, visible["name"], database)
-        stored = {
-            row["object_name"]: row
-            for row in await self.repo.list_objects(visible["name"], database)
-            if row["object_type"] != "database"
-        }
+        async with catalog_transaction(actor_of(user), read_only=True) as repo:
+            rows = await repo.list_objects(visible["name"], database)
+        stored = {row["object_name"]: row for row in rows if row["object_type"] != "database"}
         objects = []
         for relation, kind in sorted(relations.items()):
             row = stored.get(relation) or {}
@@ -156,6 +144,8 @@ class CatalogService:
         name = safe_catalog_name(name)
         if relation not in await visibility.visible_relations(user, name, database):
             return None
+        async with catalog_transaction(actor_of(user), read_only=True) as repo:
+            rows = await repo.list_columns(name, database, relation)
         return [
             CatalogColumn(
                 ordinal=row["ordinal"],
@@ -164,14 +154,16 @@ class CatalogService:
                 is_nullable=row.get("is_nullable"),
                 comment=row.get("column_comment"),
             )
-            for row in await self.repo.list_columns(name, database, relation)
+            for row in rows
         ]
 
     async def sync_runs(self, name: str, user: dict, limit: int = 20) -> list[SyncRun] | None:
         visible = await self._visible(name, user)
         if visible is None:
             return None
-        return [SyncRun(**row) for row in await self.repo.list_sync_runs(visible["name"], limit)]
+        async with catalog_transaction(actor_of(user), read_only=True) as repo:
+            runs = await repo.list_sync_runs(visible["name"], limit)
+        return [SyncRun(**row) for row in runs]
 
     # ── Changes, as the caller ──────────────────────────────────
 
@@ -194,10 +186,10 @@ class CatalogService:
         if result.error:
             raise CatalogError(result.error)
 
-    async def _after_change(self, name: str, trigger: str) -> None:
+    async def _after_change(self, name: str, trigger: str, actor: SecurityContext) -> None:
         await visibility.bump()
         try:
-            await sync_catalog(name, trigger=trigger, repo=self.repo)
+            await sync_catalog(name, actor=actor, trigger=trigger)
         except Exception:  # noqa: BLE001 - the next scheduled pass catches up
             log.warning("Catalog sync after %s of %s failed", trigger, name, exc_info=True)
 
@@ -205,33 +197,66 @@ class CatalogService:
         self, name: str, body: ExternalCatalogAlter, user: dict
     ) -> CatalogDetail | None:
         name = safe_catalog_name(name)
-        existing = await self.repo.get_catalog(name)
+        actor = actor_of(user)
+        previous: dict[str, Any] = {}
+        written: dict | None = None
+        async with catalog_transaction(actor) as repo:
+            existing = await repo.get_catalog(name)
+            if existing:
+                changes: dict[str, Any] = {}
+                if body.metastore_uri:
+                    changes["metastore_uri"] = body.metastore_uri
+                if body.comment is not None:
+                    changes["comment"] = body.comment
+                if body.properties:
+                    changes["properties"] = {**existing.get("properties", {}), **body.properties}
+                if changes:
+                    previous = {field: existing.get(field) for field in changes}
+                    written = await repo.update_catalog(
+                        name, changes, expected_revision=existing["metadata_revision"]
+                    )
         connector = connector_for((existing or {}).get("catalog_type") or "iceberg")
-        await self._run_as_caller(connector.build_alter_sql(name, body), user)
-        if existing:
-            await self.repo.upsert_catalog(
-                {
-                    **existing,
-                    "metastore_uri": body.metastore_uri or existing.get("metastore_uri"),
-                    "comment": body.comment
-                    if body.comment is not None
-                    else existing.get("comment"),
-                    "properties": {**existing.get("properties", {}), **body.properties},
-                    "updated_at": nova_now(),
-                }
-            )
-        await self._after_change(name, "alter")
+        try:
+            await self._run_as_caller(connector.build_alter_sql(name, body), user)
+        except CatalogError:
+            if written is not None:
+                await _restore(actor, name, previous, written["metadata_revision"])
+            raise
+        except Exception:
+            if written is not None:
+                log.warning("ALTER CATALOG %s has an unknown outcome; its Nova definition "
+                            "is kept for verification", name)
+            raise
+        await self._after_change(name, "alter", actor)
         return await self.get_catalog(name, user)
 
     async def drop(self, name: str, user: dict) -> None:
         name = safe_catalog_name(name)
-        existing = await self.repo.get_catalog(name)
+        actor = actor_of(user)
+        tombstone: dict | None = None
+        async with catalog_transaction(actor) as repo:
+            existing = await repo.get_catalog(name)
+            if existing and existing.get("dropped_at") is None:
+                tombstone = await repo.drop_catalog(
+                    name, expected_revision=existing["metadata_revision"]
+                )
         connector = connector_for((existing or {}).get("catalog_type") or "iceberg")
-        await self._run_as_caller(connector.build_drop_sql(name), user)
+        try:
+            await self._run_as_caller(connector.build_drop_sql(name), user)
+        except CatalogError:
+            if tombstone is not None:
+                await _restore(actor, name, {}, tombstone["metadata_revision"], revive=True)
+            raise
+        except Exception:
+            if tombstone is not None:
+                log.warning("DROP CATALOG %s has an unknown outcome; the refresher revives "
+                            "its row if the engine still lists it", name)
+            raise
         if existing:
-            now = nova_now()
-            await self.repo.upsert_catalog({**existing, "dropped_at": now, "updated_at": now})
-            await self.repo.retire_catalog_objects(name, now)
+            async with catalog_transaction(actor) as repo:
+                generation = await repo.claim_sync(name)
+                await repo.retire_catalog_objects(name, generation=generation)
+                await repo.mark_securables_dropped(name, None, generation=generation)
         await visibility.bump()
 
     # ── Refresh (security admin) ────────────────────────────────
@@ -253,22 +278,23 @@ class CatalogService:
             raise CatalogAccessDenied(str(exc)) from exc
         try:
             if name:
-                stored = await self.repo.get_catalog(target)
+                async with catalog_transaction(security, read_only=True) as repo:
+                    stored = await repo.get_catalog(target)
                 if stored is None or stored.get("dropped_at") is not None:
                     runs = [
                         run
-                        for run in await reconcile_catalogs(trigger="manual", repo=self.repo)
+                        for run in await reconcile_catalogs(trigger="manual", actor=security)
                         if run["catalog_name"] == target
                     ]
                     if not runs:
                         raise CatalogError(f"Catalog '{target}' does not exist")
                 else:
-                    runs = [await sync_catalog(target, trigger="manual", repo=self.repo)]
+                    runs = [await sync_catalog(target, actor=security, trigger="manual")]
             else:
-                runs = await reconcile_catalogs(trigger="manual", repo=self.repo)
+                runs = await reconcile_catalogs(trigger="manual", actor=security)
                 from .refresher import metadata_pass
 
-                await metadata_pass()
+                await metadata_pass(security)
         except Exception as exc:
             await _audit(user, target, "ERROR", str(exc))
             raise
@@ -316,6 +342,23 @@ async def redacted_create_statement(name: str) -> str | None:
     if not rows or len(rows[0]) < 2 or not rows[0][1]:
         return None
     return redact_sql_credentials(str(rows[0][1]))
+
+
+async def _restore(
+    actor: SecurityContext, name: str, previous: dict[str, Any], revision: int, *,
+    revive: bool = False,
+) -> None:
+    """Withdraw Nova's intent after the engine refused the statement.
+
+    Only the revision this request wrote is restored; a later edit wins.
+    """
+    try:
+        async with catalog_transaction(actor) as repo:
+            await repo.update_catalog(name, previous, expected_revision=revision, revive=revive)
+    except MetadataConflict:
+        log.warning("Catalog %s changed again before its refused change was withdrawn", name)
+    except Exception:  # noqa: BLE001 - the refresher reconciles the store with the engine
+        log.warning("Could not withdraw the refused change of catalog %s", name, exc_info=True)
 
 
 async def _audit(user: dict, target: str, status: str, error: str | None) -> None:

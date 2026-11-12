@@ -13,7 +13,10 @@ from uuid import uuid4
 from fastapi import HTTPException
 from pydantic import Field, model_validator
 
-from app.core.database import configured_timezone, db
+from app.core.database import configured_timezone
+from app.core.metadata_db import MetadataPermissionDenied
+from app.modules.access_control.security_context import SecurityContext
+from app.modules.agents.metadata_repository import agent_metadata
 from app.modules.agents.quality_scoring import (
     PERFORMANCE_SCORERS,
     Assertion,
@@ -112,51 +115,28 @@ class ProposalReview(Contract):
 
 
 async def records(
-    kind: str, agent_id: str, user: dict, identifier: str | None = None
+    kind: str, agent_id: str | None, user: dict, identifier: str | None = None,
 ) -> list[dict]:
-    scope = Scope.from_user(user)
-    result = await db.execute_system(
-        "SELECT payload,branches FROM (SELECT id,payload,ROW_NUMBER() OVER "
-        "(PARTITION BY id ORDER BY revision DESC) rn,COUNT(*) OVER "
-        f"(PARTITION BY id,revision) branches FROM NOVA_SYSTEM.{QUALITY_TABLES[kind]} "
-        "WHERE agent_id=%s AND principal=%s AND active_role=%s AND security_context_version=%s"
-        + (" AND id=%s" if identifier else "")
-        + ") current_records WHERE rn=1 ORDER BY id LIMIT 101",
-        [agent_id, scope.principal, scope.active_role, scope.security_context_version]
-        + ([identifier] if identifier else []),
-    )
-    if len(result["rows"]) > 100 or any(row[1] != 1 for row in result["rows"]):
-        raise HTTPException(409, "Quality records require reconciliation or a smaller selection")
-    return [json.loads(row[0]) if isinstance(row[0], str) else row[0] for row in result["rows"]]
+    Scope.from_user(user)
+    async with agent_metadata(read_only=True) as store:
+        if store.actor != SecurityContext.from_session(user):
+            raise MetadataPermissionDenied()
+        rows = await store.current_quality_records(kind, agent_id, identifier)
+    return [json.loads(row["payload"]) if isinstance(row["payload"], str)
+            else row["payload"] for row in rows]
 
 
 async def save_record(kind: str, record: dict, user: dict, expected_revision: int = 0) -> dict:
-    record = deepcopy(record)
-    async with metadata_lock(f"agent-quality:{kind}:{record['id']}") as lock:
-        return await _save_record_locked(kind, record, user, expected_revision, lock)
+    return await _save_record_locked(kind, deepcopy(record), user, expected_revision, None)
 
 
 async def _save_record_locked(
-    kind: str, record: dict, user: dict, expected_revision: int, lock
+    kind: str, record: dict, user: dict, expected_revision: int, lock,
 ) -> dict:
     scope = Scope.from_user(user)
     safe_content(record)
-    result = await db.execute_system(
-        f"SELECT payload,revision FROM NOVA_SYSTEM.{QUALITY_TABLES[kind]} "
-        "WHERE id=%s ORDER BY revision DESC LIMIT 2",
-        [record["id"]],
-    )
-    if len(result["rows"]) > 1 and result["rows"][0][1] == result["rows"][1][1]:
-        raise HTTPException(409, "Quality revision requires reconciliation")
-    old = (
-        (
-            json.loads(result["rows"][0][0])
-            if isinstance(result["rows"][0][0], str)
-            else result["rows"][0][0]
-        )
-        if result["rows"]
-        else None
-    )
+    old_records = await records(kind, None, user, record["id"])
+    old = old_records[0] if old_records else None
     if old and (
         old["agent_id"] != record["agent_id"]
         or old["scope"] != scope.model_dump(mode="json", exclude={"session_id"})
@@ -189,24 +169,14 @@ async def _save_record_locked(
         "updated_at": datetime.now(UTC).isoformat(),
     }
     safe_content(record)
-    if not await lock.renew():
+    if lock is not None and not await lock.renew():
         raise HTTPException(409, "Quality metadata lease expired")
-    await db.execute_system(
-        f"INSERT INTO NOVA_SYSTEM.{QUALITY_TABLES[kind]} "
-        "(id,revision,operation_id,agent_id,principal,active_role,"
-        "security_context_version,payload,created_at) "
-        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,NOW())",
-        [
-            record["id"],
-            record["revision"],
-            uuid4().hex,
-            record["agent_id"],
-            scope.principal,
-            scope.active_role,
-            scope.security_context_version,
-            json.dumps(record),
-        ],
-    )
+    async with agent_metadata() as store:
+        if store.actor != SecurityContext.from_session(user):
+            raise MetadataPermissionDenied()
+        await store.save_quality_record(
+            kind, record["id"], record["agent_id"], record, expected_revision=expected_revision,
+        )
     return record
 
 

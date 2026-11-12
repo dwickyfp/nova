@@ -1,49 +1,17 @@
-"""Flat, additive StarRocks control-plane schema; no user data is read here."""
+"""Startup schema hook for Query Autopilot.
+
+Autopilot metadata lives in PostgreSQL (`nova_meta.query_autopilot_*`, revision
+0023) and is created by the metadata migrator, never at process startup. What
+remains here is the audit-log execution columns the query telemetry writes,
+which belong to the audit log until it is ported.
+"""
 
 from asyncmy.errors import ProgrammingError
 
 from app.core.database import db
 
-TABLES = {
-    name: f"QUERY_AUTOPILOT_{name.upper()}"
-    for name in (
-        "families",
-        "observations",
-        "rollups",
-        "baselines",
-        "evidence",
-        "incidents",
-        "opportunities",
-        "experiments",
-        "actions",
-        "outcomes",
-        "policies",
-        "enrollments",
-        "jobs",
-    )
-}
-
-DDL = tuple(
-    f"""CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.{table} (
-    id VARCHAR(128) NOT NULL,
-    family_id VARCHAR(64) NOT NULL,
-    cohort_id VARCHAR(64) NOT NULL,
-    version BIGINT NOT NULL,
-    state VARCHAR(32) NOT NULL,
-    payload JSON NOT NULL,
-    created_at DATETIME NOT NULL,
-    updated_at DATETIME NOT NULL,
-    expires_at DATETIME
-) PRIMARY KEY(id)
-DISTRIBUTED BY HASH(id) BUCKETS 4
-PROPERTIES("replication_num"="1", "enable_persistent_index"="true")"""
-    for table in TABLES.values()
-)
-
 
 async def ensure_schema() -> None:
-    for ddl in DDL:
-        await db.execute_system(ddl)
     from app.common.nova_system import _column_exists
 
     for name, sql_type in (

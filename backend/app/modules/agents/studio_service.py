@@ -7,7 +7,7 @@ identity. This service answers two questions the Studio Settings panel asks:
   applicable roles; warehouses (resource groups) from the live engine. Both run
   on the caller's connection, so the engine's RBAC decides what is listed.
 * **What are my Studio preferences?** Small UI settings. They live in
-  ``NOVA_SYSTEM.CONFIG_USER_PREFERENCES`` (Nova has no user table) under
+  the preference metadata (Nova has no user table) under
   ``studio.*`` keys, so they cannot collide with the account flags stored there.
 
 No credential is read or written here; preferences are UI metadata only.
@@ -19,7 +19,8 @@ import logging
 from typing import Any, cast
 
 from app.common.news_entitlement import is_news_enabled
-from app.core.database import db
+from app.common.preference_store import read_values, write_values
+from app.core.metadata_scope import actor_for
 from app.core.studio_capabilities import (
     StudioRuntimeCapabilities,
     effective_studio_capabilities,
@@ -80,37 +81,39 @@ class StudioService:
         except Exception:  # noqa: BLE001 - a warehouse list is advisory, not fatal
             logger.warning("Studio: could not list warehouses for %s", username)
 
-        prefs = await self.get_preferences(username)
+        prefs = await self.get_preferences(user)
+        try:
+            news_enabled = await is_news_enabled(username, actor_for(user))
+        except Exception:  # noqa: BLE001 - no valid actor: News stays off
+            news_enabled = False
         return StudioIdentity(
             username=username,
             roles=roles,
             active_role=user.get("active_role"),
             warehouses=warehouses,
             active_warehouse=prefs.warehouse or (warehouses[0] if warehouses else None),
-            news_enabled=await is_news_enabled(username),
+            news_enabled=news_enabled,
         )
 
     async def settings(self, user: dict) -> StudioSettingsResponse:
         identity = await self.identity(user)
-        preferences = await self.get_preferences(user.get("username", ""))
+        preferences = await self.get_preferences(user)
         return StudioSettingsResponse(identity=identity, preferences=preferences)
 
-    async def get_preferences(self, username: str) -> StudioPreferences:
-        """Read Studio preferences, falling back to defaults per field."""
+    async def get_preferences(self, user: dict) -> StudioPreferences:
+        """Read the caller's Studio preferences, falling back to defaults per field."""
         values: dict[str, Any] = {}
         try:
-            result = await db.execute_system(
-                "SELECT pref_key, pref_value FROM NOVA_SYSTEM.CONFIG_USER_PREFERENCES "
-                "WHERE user_name = %s AND pref_key LIKE %s",
-                [username, f"{_KEY_PREFIX}%"],
+            actor = actor_for(user)
+            stored = await read_values(
+                actor, actor.principal, [f"{_KEY_PREFIX}{key}" for key in _PREF_KEYS]
             )
         except Exception:  # noqa: BLE001 - defaults are safe
-            logger.warning("Studio: could not read preferences for %s", username)
+            logger.warning("Studio: could not read preferences")
             return StudioPreferences()
 
-        for row in result["rows"]:
-            key = str(row[0])[len(_KEY_PREFIX) :]
-            values[key] = row[1]
+        for pref_key, value in stored.items():
+            values[pref_key[len(_KEY_PREFIX) :]] = value
 
         return StudioPreferences(
             theme=cast(
@@ -123,24 +126,24 @@ class StudioService:
             extended_thinking=_bool(values.get("extended_thinking"), True),
         )
 
-    async def update_preferences(
-        self, username: str, patch: dict[str, Any]
-    ) -> StudioPreferences:
-        """Persist the provided Studio preference fields (PATCH semantics)."""
+    async def update_preferences(self, user: dict, patch: dict[str, Any]) -> StudioPreferences:
+        """Persist the provided Studio preference fields (PATCH semantics).
+
+        All changed fields commit in one transaction at their current revisions.
+        Saving ``studio.role`` records a preference only; it never changes the
+        session's active role.
+        """
+        changes: dict[str, str | None] = {}
         for key in _PREF_KEYS:
             if key not in patch or patch[key] is None:
                 continue
             value = patch[key]
-            stored = (
+            changes[f"{_KEY_PREFIX}{key}"] = (
                 "true" if value is True else "false" if value is False else str(value)
             )
-            await db.execute_system(
-                "INSERT INTO NOVA_SYSTEM.CONFIG_USER_PREFERENCES "
-                "(user_name, pref_key, pref_value, updated_at) "
-                "VALUES (%s, %s, %s, NOW())",
-                [username, f"{_KEY_PREFIX}{key}", stored],
-            )
-        return await self.get_preferences(username)
+        actor = actor_for(user)
+        await write_values(actor, actor.principal, changes)
+        return await self.get_preferences(user)
 
     @staticmethod
     def _roles(user: dict) -> list[str]:

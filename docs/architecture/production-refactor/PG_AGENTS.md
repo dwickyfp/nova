@@ -93,12 +93,21 @@ in the same transaction. Runs, events, Missions, knowledge and bookkeeping
 
 - **Durable consent** is not stored here; Wave D/R39–R41 require its own
   principal/login/role/version-bound decision and consumption record.
-- **Shares:** `ShareRepository.visible` expands assigned roles; PG RLS follows
-  only the active role (`active_grants`). The wider listing needs a product
-  decision, not a policy widening. A share does not verify that the owner owns
-  the shared object (the object tables differ); the service must check it.
-- **Shared domain memory** and **observability/learning scans** cross owner
-  scope through service decisions; they need narrow service projections.
+- **Shares:** the prepared facade and PG RLS use the active role plus direct
+  user grants. The API checks ownership before granting. Revisions 0029/0030
+  expose fixed conversation/dashboard projections under the viewer identity;
+  a dashboard projection contains only charts named by its stored layout.
+  Client edits to a layout cannot widen that membership. Direct cross-owner
+  SELECT remains refused, and queries run through the viewer's governed session.
+- **Shared domain memory** and remaining learning scans still need narrow
+  cross-owner projections. Usage/session observability now uses PG with the
+  bound owner; usage totals and series cover the same UTC calendar-day window.
+- **Artifact conversion:** runtime no longer changes schema or scans another
+  owner's artifacts. The CLI discovers owner names through a maintenance-only
+  projection, then explicitly authorizes delegation and binds each owner's
+  identity for conversion. Historical tile readers use PG and propagate outages.
+  Superset effect reconciliation and the legacy import/type transformations
+  still need full rehearsal; storage tests do not prove those external effects.
 - **Shared-agent MCP tools:** owner-only. If a shared agent must call the
   owner's MCP tools, add a reference-bound read like skills and custom tools.
 - **Run visibility** is owner-wide because thread deletion spans roles; replay

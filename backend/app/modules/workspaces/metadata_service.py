@@ -1,8 +1,8 @@
-"""Workspace file commands for the PostgreSQL cutover.
+"""Workspace file commands with metadata in PostgreSQL.
 
-This is the prepared caller port for ``WorkspaceService``: the same method
-names and arguments, with metadata in PostgreSQL. It is wired in at the
-all-domain cutover; until then runtime callers keep ``NOVA_SYSTEM``.
+``WorkspaceService`` delegates every file command here: the same method names
+and arguments, with metadata in ``nova_meta`` and payloads in the existing
+Workspace object storage. There is no ``NOVA_SYSTEM`` path or fallback.
 
 Every save writes a new object under a fresh key, then publishes it with a
 revision check in one metadata transaction. The previous live object becomes
@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any, Protocol
 from uuid import uuid4
@@ -28,12 +28,17 @@ from app.core.metadata_db import (
     MetadataOutcomeUnknown,
     MetadataPermissionDenied,
 )
+from app.core.metadata_scope import actor_for, metadata_transaction
 from app.modules.access_control.security_context import SecurityContext
+from app.modules.workspaces.actor import acting_session
 from app.modules.workspaces.metadata_files import WorkspaceFileRepository, build_path
 
 logger = logging.getLogger(__name__)
 
 Transaction = Callable[..., AbstractAsyncContextManager[WorkspaceFileRepository]]
+#: Records a governed file action inside the command's metadata transaction:
+#: ``(action, object_type, object_name)``.
+Audit = Callable[[str, str, str], Awaitable[None]]
 
 _CHANGED = "This file changed since you opened it. Reload it and try again."
 _EXISTS = "A file or folder with this name already exists here"
@@ -83,6 +88,17 @@ def bound_transaction(
     return transaction
 
 
+@asynccontextmanager
+async def acting_transaction(*, read_only: bool = False):
+    """The file repository for the acting session, in this task's metadata transaction."""
+    session = acting_session()
+    async with (
+        metadata_transaction(actor_for(session), read_only=read_only) as scope,
+        WorkspaceFileRepository.bind(scope.connection, session) as repository,
+    ):
+        yield repository
+
+
 def _not_found() -> StorageError:
     return StorageError("Workspace entry not found", status_code=404)
 
@@ -96,9 +112,16 @@ def _translate(error: Exception) -> StorageError:
 
 
 class WorkspaceMetadataService:
-    def __init__(self, transaction: Transaction, objects: ObjectStore) -> None:
+    def __init__(
+        self, transaction: Transaction, objects: ObjectStore, audit: Audit | None = None,
+    ) -> None:
         self._transaction = transaction
         self._objects = objects
+        self._audit = audit
+
+    async def _record(self, action: str, object_type: str, object_name: str) -> None:
+        if self._audit is not None:
+            await self._audit(action, object_type, object_name)
 
     async def _discard(self, keys: list[str]) -> int:
         """Best-effort removal of unreferenced objects; returns how many failed."""
@@ -123,6 +146,10 @@ class WorkspaceMetadataService:
             raise _not_found()
         return entry
 
+    async def get_entry(self, namespace: str, entry_id: str) -> dict[str, Any] | None:
+        async with self._transaction(read_only=True) as files:
+            return await files.get_entry(namespace, entry_id)
+
     async def list_entries(self, namespace: str) -> list[dict[str, Any]]:
         async with self._transaction(read_only=True) as files:
             return await files.list_entries(namespace)
@@ -144,22 +171,31 @@ class WorkspaceMetadataService:
     async def create_folder(self, namespace: str, parent_path: str, name: str) -> dict[str, Any]:
         try:
             async with self._transaction() as files:
-                return await files.insert_entry(
+                entry = await files.insert_entry(
                     namespace, parent_path=parent_path, name=name, entry_type="folder",
                     object_key=None,
                 )
+                await self._record("create_folder", "workspace_folder", entry["path"])
+                return entry
         except MetadataConflict:
             raise StorageError(_EXISTS, status_code=409) from None
         except (MetadataPermissionDenied, ValueError) as error:
             raise _translate(error) from None
 
     async def create_file(
-        self, namespace: str, parent_path: str, name: str, content: str,
+        self, namespace: str, parent_path: str, name: str, content: str, *,
+        on_created: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
-        return await self.create_file_bytes(namespace, parent_path, name, content.encode("utf-8"))
+        """Create a text file; ``on_created`` runs in the same metadata transaction."""
+        return await self.create_file_bytes(
+            namespace, parent_path, name, content.encode("utf-8"), action="create_file",
+            on_created=on_created,
+        )
 
     async def create_file_bytes(
         self, namespace: str, parent_path: str, name: str, data: bytes, *, replace: bool = False,
+        action: str = "upload_file",
+        on_created: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
         if replace:
             path = build_path(parent_path, name)
@@ -171,10 +207,14 @@ class WorkspaceMetadataService:
         key, etag = await self._write(namespace, uuid4().hex, data)
         try:
             async with self._transaction() as files:
-                return await files.insert_entry(
+                entry = await files.insert_entry(
                     namespace, parent_path=parent_path, name=name, entry_type="file",
                     object_key=key, size_bytes=len(data), etag=etag,
                 )
+                await self._record(action, "workspace_file", entry["path"])
+                if on_created is not None:
+                    await on_created(entry)
+                return entry
         except MetadataOutcomeUnknown:
             raise  # The object may now be referenced; recovery must decide.
         except MetadataConflict:
@@ -204,7 +244,9 @@ class WorkspaceMetadataService:
         old_key = entry["object_key"]
         try:
             current = await self._objects.get(old_key)
-        except StorageError:
+        except StorageError as error:
+            if error.status_code != 404:
+                raise
             current = None
         if current == data:
             return entry
@@ -251,6 +293,10 @@ class WorkspaceMetadataService:
                     ),
                     new_name=new_name,
                 )
+                await self._record(
+                    "rename", f"workspace_{entry['entry_type']}",
+                    f"{entry['path']} -> {moved['path']}",
+                )
                 return moved
         except MetadataConflict:
             raise StorageError(_EXISTS + " or the item changed", status_code=409) from None
@@ -264,6 +310,7 @@ class WorkspaceMetadataService:
                 keys = await files.delete(
                     namespace, entry_id, expected_revision=entry["metadata_revision"],
                 )
+                await self._record("delete", f"workspace_{entry['entry_type']}", entry["path"])
         except (MetadataConflict, MetadataPermissionDenied, ValueError) as error:
             raise _translate(error) from None
         await self._discard(keys)

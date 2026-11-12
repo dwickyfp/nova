@@ -559,6 +559,7 @@ class TestConfigParsing:
             config_module.load_nova_app_config.cache_clear()
 
 
+@pytest.mark.usefixtures("fake_metadata_db")
 class TestStageQueryEndToEnd:
     """The ``@stage`` query path with a referenced secret, without an engine.
 
@@ -590,14 +591,6 @@ class TestStageQueryEndToEnd:
             audits.append(kwargs)
             return "qid"
 
-        async def fake_execute_system(sql, params=None):
-            # One stage bound to the referenced 'production' connection.
-            return {
-                "rows": [
-                    ("stage1", "db", "sch", "production", "db/sch/stage1"),
-                ]
-            }
-
         async def fake_csv(parsed, stage_configs):
             return {}, None
 
@@ -607,7 +600,12 @@ class TestStageQueryEndToEnd:
 
         monkeypatch.setattr(service_module, "write_audit_log", fake_write_audit_log)
         monkeypatch.setattr(service_module, "decrypt_password", lambda value: "pw")
-        monkeypatch.setattr(service_module.db, "execute_system", fake_execute_system)
+        from tests.unit.stage_metadata_fakes import install_stages
+        install_stages(monkeypatch, [{
+            "id": "stage-id", "name": "stage1", "database_name": "db", "schema_name": "sch",
+            "storage_connection": "production", "base_prefix": "db/sch/stage1",
+        }])
+
         async def allowed_stage(*args, **kwargs):
             return None
 
@@ -710,9 +708,6 @@ class TestStageQueryEndToEnd:
                     executed_sql=sql, columns=["v"], rows=[[1]], row_count=1
                 )
 
-        async def fake_execute_system(sql, params=None):
-            return {"rows": [("stage1", "db", "sch", "backup", "db/sch/stage1")]}
-
         async def fake_csv(parsed, stage_configs):
             return {}, None
 
@@ -741,7 +736,12 @@ class TestStageQueryEndToEnd:
 
         monkeypatch.setattr(service_module, "write_audit_log", fake_write_audit_log)
         monkeypatch.setattr(service_module, "decrypt_password", lambda value: "pw")
-        monkeypatch.setattr(service_module.db, "execute_system", fake_execute_system)
+        from tests.unit.stage_metadata_fakes import install_stages
+        install_stages(monkeypatch, [{
+            "id": "stage-id", "name": "stage1", "database_name": "db", "schema_name": "sch",
+            "storage_connection": "backup", "base_prefix": "db/sch/stage1",
+        }])
+
         async def allowed_stage(*args, **kwargs):
             return None
 

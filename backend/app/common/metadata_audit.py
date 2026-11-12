@@ -13,6 +13,7 @@ from psycopg.types.json import Jsonb
 
 from app.common.audit_text import fit_audit_text
 from app.common.sql_guard import redact_sql_credentials
+from app.core.exceptions import NovaException
 from app.core.metadata_db import MetadataConflict
 
 
@@ -178,3 +179,195 @@ class AuditRepository:
             ):
                 raise MetadataConflict()
             return existing
+
+
+# ── Reads ─────────────────────────────────────────────────────────────────
+#
+# Row-level security decides which events a reader sees: its own events for
+# its principal and active role, every event for an active administration
+# role on the web login. Filters below only narrow that set.
+
+_READ_COLUMNS = frozenset(
+    {"log_id", "record_id", "query_id", "event_type", "event_time", "user_name",
+     "object_type", "object_name", "action", "sql_text", "status", "error_message",
+     "duration_ms", "rows_affected", "session_id", "file_id", "database_name",
+     "schema_name", "active_role"}
+)
+_MAX_READ_ROWS = 10_000
+
+
+def _instant(value: datetime | str | None) -> datetime | None:
+    """An aware instant; a naive value or date is read as UTC."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        except ValueError:
+            raise ValueError("Invalid audit time filter") from None
+    if not isinstance(value, datetime):
+        raise ValueError("Invalid audit time filter")
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+@dataclass(frozen=True, slots=True)
+class AuditFilter:
+    """Optional, AND-combined narrowing of the events a reader may see."""
+
+    event_type: str | None = None
+    user_name: str | None = None
+    status: str | None = None
+    action: str | None = None
+    object_name: str | None = None
+    database_name: str | None = None
+    file_id: str | None = None
+    min_duration_ms: int | None = None
+    since: datetime | str | None = None
+    until: datetime | str | None = None
+    #: Inclusive upper bound (the history pages' ``date_to``).
+    through: datetime | str | None = None
+    #: Literal substring of the statement text, not a pattern.
+    sql_contains: str | None = None
+    #: Statement text containing any of these literal, case-insensitive words.
+    sql_contains_any: tuple[str, ...] = ()
+    sql_present: bool = False
+
+    def __post_init__(self) -> None:
+        for name in ("event_type", "user_name", "status", "action", "object_name",
+                     "database_name", "file_id", "sql_contains"):
+            value = getattr(self, name)
+            if value is not None:
+                _text(value, 4096)
+        for name in ("since", "until", "through"):
+            object.__setattr__(self, name, _instant(getattr(self, name)))
+        if self.min_duration_ms is not None and (
+            type(self.min_duration_ms) is not int or self.min_duration_ms < 0
+        ):
+            raise ValueError("Invalid audit duration filter")
+        if not isinstance(self.sql_contains_any, tuple) or len(self.sql_contains_any) > 32:
+            raise ValueError("Invalid audit text filter")
+        for word in self.sql_contains_any:
+            _text(word, 256)
+
+    def where(self) -> tuple[str, list[Any]]:
+        conditions: list[str] = []
+        params: list[Any] = []
+        for column in ("event_type", "user_name", "status", "action", "object_name",
+                       "database_name", "file_id"):
+            value = getattr(self, column)
+            if value is not None:
+                conditions.append(f"{column}=%s")
+                params.append(value)
+        if self.min_duration_ms is not None:
+            conditions.append("duration_ms>=%s")
+            params.append(self.min_duration_ms)
+        for column, operator in (("since", ">="), ("until", "<"), ("through", "<=")):
+            value = getattr(self, column)
+            if value is not None:
+                conditions.append(f"event_time{operator}%s")
+                params.append(value)
+        if self.sql_contains:
+            conditions.append("strpos(sql_text,%s)>0")
+            params.append(self.sql_contains)
+        if self.sql_contains_any:
+            conditions.append(
+                "(" + " OR ".join(["strpos(upper(sql_text),%s)>0"] * len(self.sql_contains_any))
+                + ")"
+            )
+            params.extend(word.upper() for word in self.sql_contains_any)
+        if self.sql_present:
+            conditions.append("sql_text IS NOT NULL")
+        return (" AND ".join(conditions) or "TRUE"), params
+
+
+class InvalidAuditFilter(NovaException):
+    def __init__(self) -> None:
+        super().__init__("Invalid history filter", status_code=422)
+
+
+def audit_filter(**selection: Any) -> AuditFilter:
+    """A filter from request values; malformed values answer 422."""
+    try:
+        return AuditFilter(**selection)
+    except (TypeError, ValueError):
+        raise InvalidAuditFilter() from None
+
+
+class AuditReader:
+    """Reads in the caller's transaction; RLS limits rows to what the actor may see."""
+
+    def __init__(self, connection: psycopg.AsyncConnection[dict[str, Any]]) -> None:
+        self._connection = connection
+        if connection.info.transaction_status != TransactionStatus.INTRANS:
+            raise ValueError("Audit storage requires an active metadata transaction")
+
+    async def _fetch(self, query: str, params: list[Any]) -> list[dict[str, Any]]:
+        cursor = await self._connection.execute(query, params)
+        return list(await cursor.fetchall())
+
+    async def count(self, selection: AuditFilter) -> int:
+        where, params = selection.where()
+        rows = await self._fetch(f"SELECT count(*) AS total FROM nova_meta.audit_log WHERE {where}",
+                                 params)
+        return int(rows[0]["total"]) if rows else 0
+
+    async def events(
+        self,
+        selection: AuditFilter,
+        columns: tuple[str, ...],
+        *,
+        limit: int,
+        offset: int = 0,
+        newest_first: bool = True,
+    ) -> list[dict[str, Any]]:
+        if not columns or any(column not in _READ_COLUMNS for column in columns):
+            raise ValueError("Unsupported audit column")
+        if (type(limit) is not int or not 1 <= limit <= _MAX_READ_ROWS
+                or type(offset) is not int or offset < 0):
+            raise ValueError("Invalid audit page")
+        where, params = selection.where()
+        order = "DESC" if newest_first else "ASC"
+        return await self._fetch(
+            f"SELECT {','.join(columns)} FROM nova_meta.audit_log WHERE {where} "
+            f"ORDER BY event_time {order},log_id {order} LIMIT %s OFFSET %s",
+            [*params, limit, offset],
+        )
+
+    async def summary(self, selection: AuditFilter) -> dict[str, Any]:
+        """Count, mean duration (``None`` without durations) and outcome counts."""
+        where, params = selection.where()
+        rows = await self._fetch(
+            "SELECT count(*) AS total, avg(duration_ms)::float8 AS avg_duration_ms, "
+            "count(*) FILTER (WHERE status='ERROR') AS error_count, "
+            "count(*) FILTER (WHERE status='SUCCESS') AS success_count, "
+            "count(*) FILTER (WHERE status IS DISTINCT FROM 'ERROR') AS non_error_count "
+            f"FROM nova_meta.audit_log WHERE {where}",
+            params,
+        )
+        return dict(rows[0])
+
+    async def buckets(self, selection: AuditFilter, unit: str) -> list[dict[str, Any]]:
+        """UTC hour or day buckets, oldest first."""
+        formats = {"hour": "YYYY-MM-DD HH24:00:00", "day": "YYYY-MM-DD"}
+        if unit not in formats:
+            raise ValueError("Unsupported audit bucket")
+        where, params = selection.where()
+        return await self._fetch(
+            f"SELECT to_char(date_trunc('{unit}',event_time AT TIME ZONE 'UTC'),"
+            f"'{formats[unit]}') AS period, count(*) AS query_count, "
+            "coalesce(avg(coalesce(duration_ms,0)),0)::float8 AS avg_duration_ms, "
+            "coalesce(sum(coalesce(rows_affected,0)),0)::bigint AS total_rows, "
+            "count(*) FILTER (WHERE status='ERROR') AS error_count "
+            f"FROM nova_meta.audit_log WHERE {where} GROUP BY period ORDER BY period",
+            params,
+        )
+
+    async def latest_by_user(self, selection: AuditFilter) -> dict[str, datetime]:
+        """The newest matching event time per user."""
+        where, params = selection.where()
+        rows = await self._fetch(
+            "SELECT user_name, max(event_time) AS latest FROM nova_meta.audit_log "
+            f"WHERE {where} AND user_name IS NOT NULL GROUP BY user_name",
+            params,
+        )
+        return {row["user_name"]: row["latest"] for row in rows}

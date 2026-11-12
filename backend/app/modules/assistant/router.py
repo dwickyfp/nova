@@ -699,10 +699,11 @@ async def send_message(
         invocation: ToolInvocation, classification: str
     ) -> asyncio.Future[bool | None | ConsentApproval]:
         # Registration precedes publication so an immediate decision can resolve.
+        approval_user = dict(context.user or user)
         future = consent_broker.open(
             invocation.tool_call_id,
             thread_id=thread_id,
-            user_name=user_name,
+            user=approval_user,
             classification=classification,
             secure_fields=(
                 ("password",)
@@ -718,7 +719,7 @@ async def send_message(
                     # its owner, so the owner check is satisfied and the loop
                     # is released with ``None`` (cancelled).
                     consent_broker.resolve(
-                        invocation.tool_call_id, None, user_name=user_name
+                        invocation.tool_call_id, None, user=approval_user
                     )
                     return
                 await asyncio.sleep(0.25)
@@ -868,7 +869,7 @@ async def resolve_tool_call(
     only covers read-only statements — it is not a switch the client can use to
     auto-approve a destructive call (E2b).
     """
-    owner = consent_broker.owner_of(tool_call_id)
+    owner = consent_broker.owner_of(tool_call_id, user=user)
     if owner is None or owner[1] != user["username"]:
         # Unknown id, already resolved, or someone else's pending call.
         raise HTTPException(status_code=404, detail="Tool call not found")
@@ -884,7 +885,7 @@ async def resolve_tool_call(
         if body.secure_input:
             raise HTTPException(status_code=400, detail="Secure input is not valid for denial")
         resolved = consent_broker.resolve(
-            tool_call_id, False, user_name=user["username"]
+            tool_call_id, False, user=user
         )
         return ConsentDecisionResponse(
             tool_call_id=tool_call_id,
@@ -920,7 +921,7 @@ async def resolve_tool_call(
     resolved = consent_broker.resolve(
         tool_call_id,
         ConsentApproval(body.secure_input) if body.secure_input is not None else True,
-        user_name=user["username"],
+        user=user,
     )
     return ConsentDecisionResponse(
         tool_call_id=tool_call_id,
@@ -939,7 +940,7 @@ async def resolve_upload_tool_call(
     user: dict = Depends(get_current_user),
 ):
     """Approve one stage upload with browser-owned bytes outside the model context."""
-    owner = consent_broker.owner_of(tool_call_id)
+    owner = consent_broker.owner_of(tool_call_id, user=user)
     if owner is None or owner[1] != user["username"]:
         raise HTTPException(status_code=404, detail="Tool call not found")
     thread = thread_store.get(owner[0], user_name=user["username"])
@@ -973,7 +974,7 @@ async def resolve_upload_tool_call(
             ConsentApproval(
                 upload=(filename, stream, file.content_type or "application/octet-stream")
             ),
-            user_name=user["username"],
+            user=user,
         )
         if not resolved:
             raise HTTPException(status_code=404, detail="Tool call not found")

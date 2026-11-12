@@ -4,8 +4,11 @@ import json
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.core.database import db
+from app.common.preference_store import SYSTEM_OWNER, read_value, settings_reader, write_values
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.ai_ml.service import ai_service
+
+DEFAULT_MODEL_KEY = "default_llm_model"
 
 
 class DefaultModelSettings(BaseModel):
@@ -14,14 +17,11 @@ class DefaultModelSettings(BaseModel):
     model_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
-async def read_default_model() -> DefaultModelSettings:
-    result = await db.execute_system(
-        "SELECT pref_value FROM NOVA_SYSTEM.CONFIG_USER_PREFERENCES "
-        "WHERE user_name=%s AND pref_key=%s",
-        ("__system__", "default_llm_model"),
-    )
-    rows = result.get("rows") or []
-    return DefaultModelSettings.model_validate_json(rows[0][0]) if rows else DefaultModelSettings()
+async def read_default_model(actor: SecurityContext | None = None) -> DefaultModelSettings:
+    """The deployment default; any valid actor may read it, so a caller without
+    one (provider selection outside a request) uses the settings reader."""
+    stored = await read_value(actor or settings_reader(), SYSTEM_OWNER, DEFAULT_MODEL_KEY)
+    return DefaultModelSettings.model_validate_json(stored) if stored else DefaultModelSettings()
 
 
 async def registered_model(model_id: str, kind: str) -> tuple[dict, dict]:
@@ -36,12 +36,11 @@ async def registered_model(model_id: str, kind: str) -> tuple[dict, dict]:
     return model, provider
 
 
-async def save_default_model(value: DefaultModelSettings) -> DefaultModelSettings:
+async def save_default_model(
+    value: DefaultModelSettings, actor: SecurityContext,
+) -> DefaultModelSettings:
+    """Store the default as an active administrator (enforced by RLS)."""
     if value.model_id:
         await registered_model(value.model_id, "llm")
-    await db.execute_system(
-        "INSERT INTO NOVA_SYSTEM.CONFIG_USER_PREFERENCES "
-        "(user_name,pref_key,pref_value,updated_at) VALUES (%s,%s,%s,NOW())",
-        ("__system__", "default_llm_model", json.dumps(value.model_dump())),
-    )
+    await write_values(actor, SYSTEM_OWNER, {DEFAULT_MODEL_KEY: json.dumps(value.model_dump())})
     return value

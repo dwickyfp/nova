@@ -42,64 +42,16 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from app.core.config import settings
+from app.core.metadata_db import (
+    MetadataConflict,
+    MetadataIntegrityViolation,
+    MetadataOutcomeUnknown,
+)
 from app.modules.streams.codec import Column, quote_identifier, supported
+from app.modules.streams.control import MetadataScope, stream_metadata
 from app.modules.streams.schemas import StreamError
 
 logger = logging.getLogger(__name__)
-
-SOURCES_DDL = """
-CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_STREAM_SOURCES (
-    source_id VARCHAR(64) NOT NULL,
-    epoch BIGINT NOT NULL,
-    database_name VARCHAR(128) NOT NULL,
-    table_name VARCHAR(128) NOT NULL,
-    table_id BIGINT NOT NULL,
-    key_columns STRING NOT NULL,
-    columns_json STRING NOT NULL,
-    schema_fingerprint VARCHAR(64) NOT NULL,
-    journal_table VARCHAR(128) NOT NULL,
-    lineage_table VARCHAR(128) NOT NULL,
-    status VARCHAR(32) NOT NULL,
-    status_reason VARCHAR(512),
-    registered_by VARCHAR(128) NOT NULL,
-    created_at DATETIME NOT NULL,
-    updated_at DATETIME NOT NULL
-) PRIMARY KEY(source_id)
-DISTRIBUTED BY HASH(source_id) BUCKETS 1
-PROPERTIES ('replication_num'='1')
-"""
-
-SOURCE_COMMITS_DDL = """
-CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT_STREAM_SOURCE_COMMITS (
-    source_id VARCHAR(64) NOT NULL,
-    commit_seq BIGINT NOT NULL,
-    commit_id VARCHAR(64) NOT NULL,
-    version_before BIGINT NOT NULL,
-    version_after BIGINT NOT NULL,
-    row_count BIGINT NOT NULL,
-    principal VARCHAR(256) NOT NULL,
-    active_role VARCHAR(128),
-    recorded_at DATETIME NOT NULL
-) PRIMARY KEY(source_id, commit_seq)
-DISTRIBUTED BY HASH(source_id) BUCKETS 1
-PROPERTIES ('replication_num'='1')
-"""
-
-DEFINITIONS_DDL = """
-CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_STREAM_DEFINITIONS (
-    stream_id VARCHAR(64) NOT NULL,
-    mode VARCHAR(16) NOT NULL,
-    source_id VARCHAR(64) NOT NULL,
-    created_by VARCHAR(128) NOT NULL,
-    created_at DATETIME NOT NULL,
-    show_initial_rows BOOLEAN,
-    initial_commit_seq BIGINT
-) PRIMARY KEY(stream_id)
-DISTRIBUTED BY HASH(stream_id) BUCKETS 1
-PROPERTIES ('replication_num'='1')
-"""
-
-STREAM_SOURCE_DDL = (SOURCES_DDL, SOURCE_COMMITS_DDL, DEFINITIONS_DDL)
 
 _JOURNAL_DDL = """
 CREATE TABLE IF NOT EXISTS {db}.{table} (
@@ -180,27 +132,21 @@ class SourceHead:
     version: int
 
 
-_SOURCE_COLUMNS = (
-    "source_id, epoch, database_name, table_name, table_id, key_columns, columns_json, "
-    "schema_fingerprint, journal_table, lineage_table, status, status_reason"
-)
-
-
-def _decode(row: list[Any]) -> SourceRecord:
-    columns = tuple(Column(item["name"], item["type"]) for item in json.loads(row[6]))
+def _decode(row: dict[str, Any]) -> SourceRecord:
+    columns = tuple(Column(item["name"], item["type"]) for item in row["columns_json"])
     return SourceRecord(
-        str(row[0]),
-        int(row[1]),
-        str(row[2]),
-        str(row[3]),
-        int(row[4]),
-        tuple(json.loads(row[5])),
+        str(row["source_id"]),
+        int(row["epoch"]),
+        str(row["database_name"]),
+        str(row["table_name"]),
+        int(row["table_id"]),
+        tuple(row["key_columns"]),
         columns,
-        str(row[7]),
-        str(row[8]),
-        str(row[9]),
-        str(row[10]),
-        row[11],
+        str(row["schema_fingerprint"]),
+        str(row["journal_table"]),
+        str(row["lineage_table"]),
+        str(row["status"]),
+        row["status_reason"],
     )
 
 
@@ -264,18 +210,22 @@ async def writer_query(conn: Any, sql: str, params: tuple | list | None = None) 
 
 
 class SourceRegistry:
-    """``CONFIG_STREAM_SOURCES`` and the commit index, through the system connection.
+    """The Stream source registry and commit index (PostgreSQL control metadata).
 
     Everything here is Nova's own control-plane metadata (table ids, versions,
-    sequence numbers). Row images are only ever read through ``writer_conn``.
+    sequence numbers). Engine observations (table identity, partition
+    versions, columns) are read from the engine; row images are only ever
+    read through ``writer_conn``.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, metadata: MetadataScope = stream_metadata) -> None:
+        self._metadata = metadata
         self._cache: dict[tuple[str, str], SourceRecord] = {}
         self._cache_at = 0.0
         self._cache_lock = asyncio.Lock()
 
     async def _execute(self, sql: str, params: tuple | list | None = None) -> dict:
+        """Engine observations and journal DDL only; never Nova control metadata."""
         from app.core.database import db
 
         return await db.execute_system(sql, params)
@@ -283,20 +233,19 @@ class SourceRegistry:
     # ── lookups ─────────────────────────────────────────────────────────
 
     async def get(self, source_id: str) -> SourceRecord | None:
-        result = await self._execute(
-            f"SELECT {_SOURCE_COLUMNS} FROM NOVA_SYSTEM.CONFIG_STREAM_SOURCES WHERE source_id=%s",
-            (source_id,),
-        )
-        return _decode(result["rows"][0]) if result["rows"] else None
+        async with self._metadata(read_only=True) as repository:
+            row = await repository.get_source(source_id)
+        return _decode(row) if row else None
 
     async def active_for_table(self, database: str, table: str) -> SourceRecord | None:
-        result = await self._execute(
-            f"SELECT {_SOURCE_COLUMNS} FROM NOVA_SYSTEM.CONFIG_STREAM_SOURCES "
-            "WHERE database_name=%s AND table_name=%s AND status <> 'DROPPED' "
-            "ORDER BY epoch DESC LIMIT 1",
-            (database, table),
-        )
-        return _decode(result["rows"][0]) if result["rows"] else None
+        async with self._metadata(read_only=True) as repository:
+            row = await repository.active_source_for_table(database, table)
+        return _decode(row) if row else None
+
+    async def sources(self, statuses: tuple[str, ...]) -> list[SourceRecord]:
+        async with self._metadata(read_only=True) as repository:
+            rows = await repository.list_sources(statuses)
+        return [_decode(row) for row in rows]
 
     async def captured_tables(self) -> dict[tuple[str, str], SourceRecord]:
         """Tables Nova must route writes for, cached for a few seconds per process."""
@@ -307,13 +256,9 @@ class SourceRegistry:
             if time.monotonic() - self._cache_at < settings.STREAM_REGISTRY_CACHE_SECONDS:
                 return self._cache
             try:
-                result = await self._execute(
-                    f"SELECT {_SOURCE_COLUMNS} FROM NOVA_SYSTEM.CONFIG_STREAM_SOURCES "
-                    "WHERE status IN ('REGISTERING', 'READY')"
-                )
-                records = [_decode(row) for row in result["rows"]]
-            except Exception:  # noqa: BLE001 - before bootstrap there is nothing to route
-                logger.debug("stream source registry unavailable", exc_info=True)
+                records = await self.sources((REGISTERING, READY))
+            except Exception:  # noqa: BLE001 - an unrouted write is caught by the version check
+                logger.warning("stream source registry unavailable", exc_info=True)
                 records = []
             self._cache = {
                 (record.database.lower(), record.table.lower()): record for record in records
@@ -324,14 +269,33 @@ class SourceRegistry:
     def forget_cache(self) -> None:
         self._cache_at = 0.0
 
+    async def _move(self, source_id: str, status: str, reason: str | None) -> bool:
+        """Move the current registration under its revision; ``False`` if refused.
+
+        The status only moves forward (the database refuses DROPPED to
+        anything, REGISTERING again, READY without a baseline, BLOCKED from a
+        non-READY source); a concurrent change is a revision conflict.
+        """
+        try:
+            async with self._metadata() as repository:
+                current = await repository.get_source(source_id)
+                if current is None:
+                    return False
+                if current["status"] == status:
+                    return True
+                await repository.set_source_status(
+                    source_id, status, reason,
+                    expected_revision=int(current["metadata_revision"]),
+                )
+            return True
+        except (MetadataConflict, MetadataIntegrityViolation):
+            logger.info("stream source %s did not move to %s", source_id, status)
+            return False
+
     async def set_status(self, record: SourceRecord, status: str, reason: str | None) -> None:
-        await self._execute(
-            "UPDATE NOVA_SYSTEM.CONFIG_STREAM_SOURCES SET status=%s, status_reason=%s, "
-            "updated_at=NOW() WHERE source_id=%s",
-            (status, (reason or "")[:500] or None, record.source_id),
-        )
+        moved = await self._move(record.source_id, status, reason)
         self.forget_cache()
-        if status in {BLOCKED, SOURCE_INVALID}:
+        if moved and status in {BLOCKED, SOURCE_INVALID}:
             from app.observability.metrics import STREAM_SOURCE_BLOCKS
 
             STREAM_SOURCE_BLOCKS.labels(status).inc()
@@ -390,14 +354,11 @@ class SourceRegistry:
 
     async def head_commit(self, record: SourceRecord) -> tuple[int, int] | None:
         """``(commit_seq, version_after)`` of the newest recorded commit."""
-        result = await self._execute(
-            "SELECT commit_seq, version_after FROM NOVA_SYSTEM.AUDIT_STREAM_SOURCE_COMMITS "
-            "WHERE source_id=%s ORDER BY commit_seq DESC LIMIT 1",
-            (record.source_id,),
-        )
-        if not result["rows"]:
+        async with self._metadata(read_only=True) as repository:
+            row = await repository.head_commit(record.source_id)
+        if row is None:
             return None
-        return int(result["rows"][0][0]), int(result["rows"][0][1])
+        return int(row["commit_seq"]), int(row["version_after"])
 
     async def record_commit(
         self,
@@ -410,40 +371,38 @@ class SourceRegistry:
         principal: str,
         role: str | None,
     ) -> None:
-        await self._execute(
-            "INSERT INTO NOVA_SYSTEM.AUDIT_STREAM_SOURCE_COMMITS (source_id, commit_seq, "
-            "commit_id, version_before, version_after, row_count, principal, active_role, "
-            "recorded_at) SELECT %s, %s, %s, %s, %s, %s, %s, %s, NOW() WHERE NOT EXISTS ("
-            "SELECT 1 FROM NOVA_SYSTEM.AUDIT_STREAM_SOURCE_COMMITS WHERE source_id=%s AND "
-            "commit_seq=%s)",
-            (
-                record.source_id,
-                sequence,
-                commit_id,
-                version_before,
-                version_after,
-                rows,
-                principal,
-                role,
-                record.source_id,
-                sequence,
-            ),
-        )
-        stored = await self._execute(
-            "SELECT commit_id FROM NOVA_SYSTEM.AUDIT_STREAM_SOURCE_COMMITS WHERE source_id=%s "
-            "AND commit_seq=%s",
-            (record.source_id, sequence),
-        )
-        if not stored["rows"] or stored["rows"][0][0] != commit_id:
+        commit = {
+            "commit_id": commit_id, "version_before": version_before,
+            "version_after": version_after, "row_count": rows, "principal": principal,
+            "active_role": role,
+        }
+        try:
+            async with self._metadata() as repository:
+                await repository.record_commit(record.source_id, sequence, commit)
+            return
+        except (MetadataConflict, MetadataIntegrityViolation, MetadataOutcomeUnknown):
+            logger.debug("capture commit index needs readback", exc_info=True)
+        # A lost commit response: only the same commit at this sequence is ours.
+        async with self._metadata(read_only=True) as repository:
+            stored = await repository.commits_between(record.source_id, sequence - 1, sequence)
+        if len(stored) != 1 or stored[0]["commit_id"] != commit_id:
             raise StreamError("STREAM_SOURCE_BLOCKED", "The capture commit index conflicts")
 
+    async def commits(self, record: SourceRecord, after: int, through: int) -> list[dict]:
+        """The commit index rows in ``(after, through]``, in sequence order."""
+        async with self._metadata(read_only=True) as repository:
+            return await repository.commits_between(record.source_id, after, through)
+
+    async def commit_window(self, record: SourceRecord, after: int, through: int) -> dict:
+        """Pending commits and their retention, in the clock that recorded them."""
+        async with self._metadata(read_only=True) as repository:
+            return await repository.commit_window(
+                record.source_id, after, through,
+                retention_days=int(settings.STREAM_RETENTION_DAYS),
+            )
+
     async def commit_count(self, record: SourceRecord, after: int, through: int) -> int:
-        result = await self._execute(
-            "SELECT COUNT(*) FROM NOVA_SYSTEM.AUDIT_STREAM_SOURCE_COMMITS WHERE source_id=%s "
-            "AND commit_seq > %s AND commit_seq <= %s",
-            (record.source_id, after, through),
-        )
-        return int(result["rows"][0][0])
+        return int((await self.commit_window(record, after, through))["commits"])
 
     # ── health ──────────────────────────────────────────────────────────
 
@@ -590,26 +549,21 @@ class SourceRegistry:
             )
         )
         await grant_writer(record)
-        await self._execute(
-            "INSERT INTO NOVA_SYSTEM.CONFIG_STREAM_SOURCES (source_id, epoch, database_name, "
-            "table_name, table_id, key_columns, columns_json, schema_fingerprint, journal_table, "
-            "lineage_table, status, status_reason, registered_by, created_at, updated_at) VALUES "
-            "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, %s, NOW(), NOW())",
-            (
-                record.source_id,
-                epoch,
-                database,
-                table,
-                table_id,
-                json.dumps(list(keys)),
-                json.dumps([{"name": c.name, "type": c.sql_type} for c in columns]),
-                record.schema_fingerprint,
-                record.journal_table,
-                record.lineage_table,
-                REGISTERING,
-                principal,
-            ),
-        )
+        async with self._metadata() as repository:
+            await repository.register_source(
+                {
+                    "source_id": record.source_id,
+                    "epoch": epoch,
+                    "database_name": database,
+                    "table_name": table,
+                    "table_id": table_id,
+                    "key_columns": list(keys),
+                    "columns_json": [{"name": c.name, "type": c.sql_type} for c in columns],
+                    "schema_fingerprint": record.schema_fingerprint,
+                    "journal_table": record.journal_table,
+                    "lineage_table": record.lineage_table,
+                }
+            )
         self.forget_cache()
         # Every Nova process must route writes to this table through the
         # coordinator before the baseline is taken: wait out their caches.
@@ -617,26 +571,20 @@ class SourceRegistry:
         async with source_lock(record.source_id):
             version = await self.version(record)
             await self.record_commit(record, 0, "baseline", version, version, 0, principal, None)
-            await self._execute(
-                "UPDATE NOVA_SYSTEM.CONFIG_STREAM_SOURCES SET status='READY', updated_at=NOW() "
-                "WHERE source_id=%s",
-                (record.source_id,),
-            )
+            if not await self._move(record.source_id, READY, None):
+                raise StreamError(
+                    "STREAM_SOURCE_NOT_READY", "The stream source could not be made ready"
+                )
         self.forget_cache()
         return replace(record, status=READY)
 
     async def release_if_unused(self, record: SourceRecord) -> None:
         """Stop capturing a source once its last Stream is dropped."""
-        result = await self._execute(
-            "SELECT s.stream_id, s.status FROM NOVA_SYSTEM.CONFIG_STREAMS s "
-            "JOIN (SELECT catalog_name, database_name, schema_name, name, MAX(generation) g "
-            "FROM NOVA_SYSTEM.CONFIG_STREAMS GROUP BY catalog_name, database_name, schema_name, "
-            "name) m ON s.catalog_name=m.catalog_name AND s.database_name=m.database_name AND "
-            "s.schema_name=m.schema_name AND s.name=m.name AND s.generation=m.g "
-            "WHERE s.source_id=%s AND s.status='READY'",
-            (record.source_id,),
-        )
-        if not result["rows"]:
+        async with self._metadata(read_only=True) as repository:
+            live = await repository.current_generations(
+                source_id=record.source_id, statuses=(READY,),
+            )
+        if not live:
             await self.set_status(record, DROPPED, "No stream reads this source any more")
 
 

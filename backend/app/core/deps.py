@@ -8,6 +8,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.database import db
 from app.core.exceptions import InsufficientRoleError, SessionExpiredError
+from app.core.metadata_actor import bind_request_actor
 from app.core.redis import session_store
 from app.core.security import decode_token, decrypt_password
 
@@ -54,7 +55,7 @@ async def get_current_user(
     # Refresh session TTL on activity
     await session_store.refresh(payload["sid"])
 
-    return {
+    user = {
         "username": payload["sub"],
         "session_id": payload["sid"],
         "roles": session["roles"],
@@ -64,6 +65,9 @@ async def get_current_user(
         "security_context_version": session.get("security_context_version", 1),
         "encrypted_password": session["encrypted_password"],
     }
+    # Metadata transactions on this request run as this caller only.
+    bind_request_actor(user)
+    return user
 
 
 def require_role(*allowed_roles: str):

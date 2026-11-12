@@ -77,7 +77,7 @@ datasets:
     }
     rows = {1: {"status": "ACTIVE", "definition": definition,
                 "fingerprint": semantic_fingerprint}}
-    get_version = AsyncMock(side_effect=lambda _id, version: rows.get(version))
+    get_version = AsyncMock(side_effect=lambda _id, version, user=None: rows.get(version))
     monkeypatch.setattr(semantic_view_service, "_get", AsyncMock(return_value=view))
     monkeypatch.setattr(semantic_view_service, "_version", get_version)
     get_active = AsyncMock(wraps=semantic_view_service.get_active_for_agent)

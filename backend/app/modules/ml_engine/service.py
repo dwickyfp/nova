@@ -13,11 +13,12 @@ from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
-import asyncmy.cursors
 import pyarrow as pa
 
+from app.common.metadata_actors import service_actor
 from app.core.config import settings
 from app.core.security import encrypt_password
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.ml_engine.artifacts.serializer import serialize_bundle
 from app.modules.ml_engine.artifacts.store import ArtifactStore, ObjectArtifactStore
 from app.modules.ml_engine.data.batches import inference_batches
@@ -43,8 +44,8 @@ from app.modules.ml_engine.execution.job_runner import MLJobRunner
 from app.modules.ml_engine.execution.worker import MLWorkerJob, MLWorkerSecurity
 from app.modules.ml_engine.registry.repository import (
     ModelRegistryRepository,
-    alias_database_scope,
     model_registry_repository,
+    security_actor,
 )
 from app.modules.ml_engine.runtime.model_runtime import ModelRuntime
 from app.modules.ml_engine.spec import (
@@ -103,7 +104,7 @@ class MLEngineService:
             max_entries=settings.ML_EPHEMERAL_MAX_ENTRIES,
             max_memory_bytes=settings.ML_EPHEMERAL_MAX_MEMORY_BYTES,
         )
-        self.ephemeral_repository = ephemeral_repository or EphemeralRepository(self.repository)
+        self.ephemeral_repository = ephemeral_repository or EphemeralRepository()
 
     async def execute(self, spec: MLExecutionSpec) -> MLRunResult:
         budget = spec.budget or budget_for(spec.mode)
@@ -122,12 +123,13 @@ class MLEngineService:
         budget = spec.budget or budget_for(spec.mode)
         spec = replace(spec, budget=budget)
         fingerprint = execution_fingerprint(spec)
+        owner = security_actor(spec.security)
         reusable = bool(spec.parameters.get("data_freshness_token"))
         if not spec.persist and reusable:
             cached = self.ephemeral_cache.by_fingerprint(spec.security.scope_key, fingerprint)
             if cached is None:
                 cached = await self.ephemeral_repository.by_fingerprint(
-                    fingerprint, spec.security.scope_key
+                    fingerprint, spec.security.scope_key, actor=owner
                 )
             if cached is not None:
                 return self._result_from_entry(cached, spec, cache_hit=True)
@@ -147,11 +149,12 @@ class MLEngineService:
         }
         model_id = None
         version = None
+        reservation_token = ""
         artifact_uri = None
         version_registered = False
         try:
             if spec.persist:
-                model_id, version = await self.repository.reserve_version(
+                model_id, version, reservation_token = await self.repository.reserve_version(
                     replace(spec, input_sql=redact_for_output(spec.input_sql)),
                     feature_columns=list(spec.feature_columns),
                 )
@@ -304,6 +307,7 @@ class MLEngineService:
                 await self.repository.register_version(
                     model_id=model_id,
                     version=version,
+                    reservation_token=reservation_token,
                     spec=spec,
                     output=output,
                     artifact_uri=artifact_uri,
@@ -316,7 +320,9 @@ class MLEngineService:
                     await self.runtime.executor.run(
                         self.artifact_store.cleanup_upload, artifact_uri, keep_final=True
                     )
-                    await self.ephemeral_repository.remove(run_id, spec.security.scope_key)
+                    await self.ephemeral_repository.remove(
+                        run_id, spec.security.scope_key, actor=owner
+                    )
             else:
                 cached_output = replace(output, bundle={}, results=output.results[:1000])
                 entry = EphemeralEntry(
@@ -331,7 +337,7 @@ class MLEngineService:
                     expires_at=time.monotonic() + settings.ML_EPHEMERAL_TTL_SECONDS,
                     spec_snapshot=sanitized_spec(spec),
                 )
-                await self.ephemeral_repository.put(entry)
+                await self.ephemeral_repository.put(entry, actor=owner)
                 self.ephemeral_cache.put(entry)
             telemetry["result_rows"] = (
                 output.result_table.num_rows
@@ -383,6 +389,7 @@ class MLEngineService:
                     model_id=model_id,
                     version=version,
                     artifact_uri=artifact_uri,
+                    actor=owner,
                 )
             elif not spec.persist and artifact_uri:
                 with contextlib.suppress(Exception):
@@ -407,6 +414,7 @@ class MLEngineService:
                     model_id=model_id,
                     version=version,
                     artifact_uri=artifact_uri,
+                    actor=owner,
                 )
             elif not spec.persist and artifact_uri:
                 with contextlib.suppress(Exception):
@@ -449,7 +457,8 @@ class MLEngineService:
         security: MLSecurityContext,
         deadline: ExecutionDeadline,
     ) -> MLRunResult:
-        entry = await self.ephemeral_repository.get(run_id, security.scope_key)
+        owner = security_actor(security)
+        entry = await self.ephemeral_repository.get(run_id, security.scope_key, actor=owner)
         if entry is None:
             raise ValueError("Ephemeral ML run was not found, expired, or belongs to another scope")
         if entry.artifact_kind != "model":
@@ -470,7 +479,7 @@ class MLEngineService:
         registered = False
         lease_id = str(uuid4())
         try:
-            model_id, version = await self.repository.reserve_version(
+            model_id, version, reservation_token = await self.repository.reserve_version(
                 spec, feature_columns=output.feature_columns
             )
             destination = self._artifact_key(spec, model_id, version)
@@ -493,6 +502,7 @@ class MLEngineService:
             await self.repository.register_version(
                 model_id=model_id,
                 version=version,
+                reservation_token=reservation_token,
                 spec=spec,
                 output=output,
                 artifact_uri=artifact_uri,
@@ -502,13 +512,16 @@ class MLEngineService:
             )
             registered = True
             with contextlib.suppress(Exception):
-                await self.ephemeral_repository.remove(lease_id, security.scope_key)
+                await self.ephemeral_repository.remove(
+                    lease_id, security.scope_key, actor=owner
+                )
         except BaseException:
             if not registered and model_id and version:
                 await self._abort_persistence_best_effort(
                     model_id=model_id,
                     version=version,
                     artifact_uri=artifact_uri,
+                    actor=owner,
                 )
             raise
         return MLRunResult(
@@ -592,6 +605,8 @@ class MLEngineService:
             budget = budget_for(MLMode(mode))
             return await wait_for_training(
                 job_id,
+                actor=SecurityContext(username, role or "", session_id=session_id,
+                                      security_context_version=security_context_version),
                 timeout_seconds=budget.timeout_seconds + settings.ML_JOB_QUEUE_TIMEOUT_SECONDS,
             )
         return await self.train_model_locally(
@@ -641,8 +656,13 @@ class MLEngineService:
         mode: str = "balanced",
         tenant: str = "default",
         security_context_version: int = 1,
+        reservation_token: str | None = None,
     ) -> dict[str, Any]:
-        """Train in this process, as the identity given."""
+        """Train in this process, as the identity given.
+
+        The ML worker passes its durable operation id as ``reservation_token``
+        so the version this attempt reserves can be verified after a crash.
+        """
         del created_by
         if as_system:
             raise ValueError("System identity cannot train on user data")
@@ -675,6 +695,7 @@ class MLEngineService:
                 horizon=horizon,
                 frequency=frequency,
                 parameters=parameters,
+                reservation_token=reservation_token,
             )
         )
         return {
@@ -1025,7 +1046,8 @@ class MLEngineService:
                 artifact_uri=result["result_uri"],
                 artifact_size=result["result_bytes"],
                 artifact_kind="result",
-            )
+            ),
+            actor=security_actor(security),
         )
         await self.repository.record_run(
             run_id=run_id,
@@ -1058,7 +1080,9 @@ class MLEngineService:
         import pyarrow.parquet as pq
 
         security.validate()
-        entry = await self.ephemeral_repository.get(run_id, security.scope_key)
+        entry = await self.ephemeral_repository.get(
+            run_id, security.scope_key, actor=security_actor(security)
+        )
         if entry is None or entry.artifact_kind != "result":
             raise ValueError("Result was not found in this scope or has expired")
         manifest = json.loads(
@@ -1082,17 +1106,18 @@ class MLEngineService:
         model_id: str,
         version: int,
         *,
-        owner_name: str = "root",
+        actor: SecurityContext,
         database_name: str | None = None,
         tenant: str = "default",
     ) -> dict[str, Any]:
+        """Create or move the caller's alias; the caller is the alias owner."""
         return await self.repository.set_alias(
             alias_name,
             model_id,
             version,
-            owner_name=owner_name,
+            actor=actor,
             database_name=database_name,
-            **({"tenant": tenant} if tenant != "default" else {}),
+            tenant=tenant,
         )
 
     async def _prepare_user_sql(
@@ -1127,11 +1152,12 @@ class MLEngineService:
         model_id: str,
         version: int,
         artifact_uri: str | None,
+        actor: SecurityContext,
     ) -> None:
-        artifact_can_be_deleted = True
+        artifact_can_be_deleted = False
         try:
-            result = await self.repository.abort_version(model_id, version)
-            artifact_can_be_deleted = result is not False
+            result = await self.repository.abort_version(model_id, version, actor=actor)
+            artifact_can_be_deleted = result is True
         except Exception:
             logger.warning("Could not roll back ML version reservation")
         if artifact_uri and artifact_can_be_deleted:
@@ -1140,13 +1166,15 @@ class MLEngineService:
             except Exception:
                 logger.warning("Could not remove partial ML artifact")
 
-    async def _connect(self):
-        """Compatibility hook for callers that extend registry operations."""
-        return await self.repository._connect()
-
     async def cleanup_ephemeral(self) -> int:
+        """Retention sweep, run by the maintenance role as its service actor.
+
+        It may abandon a reservation whose upload lease expired, never publish
+        one, and deletes only descriptors that have expired.
+        """
+        maintenance = service_actor("maintenance")
         deleted = 0
-        for entry in await self.ephemeral_repository.expired():
+        for entry in await self.ephemeral_repository.expired(actor=maintenance):
             try:
                 if entry.artifact_kind in {"result", "pending_result"}:
                     await self.runtime.executor.run(
@@ -1162,10 +1190,11 @@ class MLEngineService:
                             owner_name=lease["username"],
                             database_name=lease["database"],
                             tenant=lease["tenant"],
+                            actor=maintenance,
                         )
                         if ready is None:
                             aborted = await self.repository.abort_version(
-                                lease["model_id"], lease["version"]
+                                lease["model_id"], lease["version"], actor=maintenance
                             )
                             if aborted is False:
                                 ready = {}
@@ -1174,7 +1203,7 @@ class MLEngineService:
                         entry.artifact_uri,
                         keep_final=ready is not None,
                     )
-                await self.ephemeral_repository.delete_expired(entry)
+                await self.ephemeral_repository.delete_expired(entry, actor=maintenance)
                 deleted += 1
             except Exception:
                 logger.warning("Ephemeral cleanup failed for run %s", entry.run_id)
@@ -1209,7 +1238,8 @@ class MLEngineService:
                     "database": security.database,
                     "tenant": security.tenant,
                 },
-            )
+            ),
+            actor=security_actor(security),
         )
 
     async def sweep_ephemeral(self) -> None:
@@ -1261,30 +1291,16 @@ class MLEngineService:
         )
 
     async def list_models(
-        self, *, owner_name: str, database_name: str | None = None, tenant: str = "default"
+        self,
+        *,
+        owner_name: str,
+        database_name: str | None = None,
+        tenant: str = "default",
+        actor: SecurityContext | None = None,
     ) -> list[dict[str, Any]]:
-        conn = await self.repository._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cursor:
-                await cursor.execute(
-                    "SELECT m.*, v.version AS latest_version, v.status AS latest_status, "
-                    "v.metrics AS latest_metrics, v.training_rows, v.algorithm AS algorithm "
-                    "FROM NOVA_SYSTEM.ML_MODELS m LEFT JOIN NOVA_SYSTEM.ML_MODEL_VERSIONS v "
-                    "ON m.model_id=v.model_id AND v.version=m.current_version "
-                    "WHERE m.created_by=%s AND m.tenant_name=%s "
-                    + (
-                        "AND COALESCE(m.database_name, '')=COALESCE(%s, '') "
-                        if database_name is not None
-                        else ""
-                    )
-                    + "ORDER BY m.updated_at DESC",
-                    (owner_name, tenant, database_name)
-                    if database_name is not None
-                    else (owner_name, tenant),
-                )
-                rows = await cursor.fetchall()
-        finally:
-            conn.close()
+        rows = await self.repository.list_models(
+            owner_name=owner_name, database_name=database_name, tenant=tenant, actor=actor
+        )
         return [self._deserialize_metadata(row) for row in rows]
 
     async def get_model(
@@ -1294,40 +1310,38 @@ class MLEngineService:
         owner_name: str,
         database_name: str | None = None,
         tenant: str = "default",
+        actor: SecurityContext | None = None,
     ) -> dict[str, Any] | None:
         models = [
             item
             for item in await self.list_models(
-                owner_name=owner_name, database_name=database_name, tenant=tenant
+                owner_name=owner_name, database_name=database_name, tenant=tenant, actor=actor
             )
             if item["model_id"] == model_id
         ]
         if not models:
             return None
-        conn = await self.repository._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cursor:
-                await cursor.execute(
-                    "SELECT version,status,training_rows,metrics,artifact_uri,artifact_size,"
-                    "framework,algorithm,created_at,created_by FROM "
-                    "NOVA_SYSTEM.ML_MODEL_VERSIONS WHERE model_id=%s ORDER BY version DESC",
-                    (model_id,),
-                )
-                versions = [self._deserialize_metadata(row) for row in await cursor.fetchall()]
-        finally:
-            conn.close()
+        versions = [
+            self._deserialize_metadata(row)
+            for row in await self.repository.list_versions(model_id, actor=actor)
+        ]
         return {"model": models[0], "versions": versions}
 
     async def delete_model(
         self,
         model_id: str,
         *,
-        owner_name: str,
+        actor: SecurityContext,
         database_name: str | None = None,
         tenant: str = "default",
     ) -> dict[str, Any]:
+        """Delete the caller's model: artifacts first, then its metadata in one transaction."""
         detail = await self.get_model(
-            model_id, owner_name=owner_name, database_name=database_name, tenant=tenant
+            model_id,
+            owner_name=actor.principal,
+            database_name=database_name,
+            tenant=tenant,
+            actor=actor,
         )
         if detail is None:
             raise ValueError("Model not found in this scope")
@@ -1346,58 +1360,34 @@ class MLEngineService:
                 raise OSError(
                     "Model artifacts could not be removed; model metadata retained"
                 ) from None
-        conn = await self.repository._connect()
-        try:
-            async with conn.cursor() as cursor:
-                await cursor.execute(
-                    "DELETE FROM NOVA_SYSTEM.ML_MODEL_ALIASES WHERE model_id=%s", (model_id,)
-                )
-                await cursor.execute(
-                    "DELETE FROM NOVA_SYSTEM.ML_MODEL_VERSIONS WHERE model_id=%s", (model_id,)
-                )
-                await cursor.execute(
-                    "DELETE FROM NOVA_SYSTEM.ML_MODELS WHERE model_id=%s", (model_id,)
-                )
-        finally:
-            conn.close()
+        await self.repository.delete_model(model_id, actor=actor)
         self.runtime.cache.invalidate()
         return {"model_id": model_id, "deleted": True, "message": "Model deleted"}
 
     async def list_aliases(
-        self, *, owner_name: str = "root", database_name: str | None = None, tenant: str = "default"
+        self,
+        *,
+        owner_name: str,
+        database_name: str | None = None,
+        tenant: str = "default",
+        actor: SecurityContext | None = None,
     ) -> list[dict[str, Any]]:
-        conn = await self.repository._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cursor:
-                await cursor.execute(
-                    "SELECT a.alias_name,a.model_id,a.version,a.created_at,m.model_name "
-                    "FROM NOVA_SYSTEM.ML_MODEL_ALIASES a LEFT JOIN NOVA_SYSTEM.ML_MODELS m "
-                    "ON m.model_id=a.model_id WHERE a.owner_name=%s AND a.database_name=%s "
-                    "ORDER BY a.alias_name",
-                    (owner_name, alias_database_scope(database_name, tenant)),
-                )
-                return [self._deserialize_metadata(row) for row in await cursor.fetchall()]
-        finally:
-            conn.close()
+        rows = await self.repository.list_aliases(
+            owner_name=owner_name, database_name=database_name, tenant=tenant, actor=actor
+        )
+        return [self._deserialize_metadata(row) for row in rows]
 
     async def delete_alias(
         self,
         alias_name: str,
         *,
-        owner_name: str = "root",
+        actor: SecurityContext,
         database_name: str | None = None,
         tenant: str = "default",
     ) -> dict[str, Any]:
-        conn = await self.repository._connect()
-        try:
-            async with conn.cursor() as cursor:
-                await cursor.execute(
-                    "DELETE FROM NOVA_SYSTEM.ML_MODEL_ALIASES WHERE alias_name=%s "
-                    "AND owner_name=%s AND database_name=%s",
-                    (alias_name, owner_name, alias_database_scope(database_name, tenant)),
-                )
-        finally:
-            conn.close()
+        await self.repository.delete_alias(
+            alias_name, actor=actor, database_name=database_name, tenant=tenant
+        )
         return {"alias_name": alias_name, "deleted": True}
 
     @staticmethod

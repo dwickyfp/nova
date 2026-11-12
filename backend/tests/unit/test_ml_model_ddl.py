@@ -219,7 +219,8 @@ async def test_query_service_records_password_change_requirement(monkeypatch):
 
     written: dict = {}
 
-    async def fake_set_flag(username, *, required=True):
+    async def fake_set_flag(username, *, required=True, actor):
+        assert actor.principal == "admin" and actor.active_role == "ACCOUNTADMIN"
         written["username"] = username
         written["required"] = required
 

@@ -15,6 +15,7 @@ from pydantic import Field, ValidationError
 from app.modules.assistant.schemas import ToolClassification
 from app.modules.assistant.tools import ToolOutcome
 from app.modules.intelligence.contracts import Contract
+from app.modules.ontology.access import with_caller
 
 
 class ResolveRequest(Contract):
@@ -69,6 +70,7 @@ class OntologyResolveTool:
     def preview(self, invocation):
         return "Look up approved business definitions"
 
+    @with_caller
     async def run(self, invocation, context):
         from app.modules.ontology.resolver import concept_resolver
 
@@ -120,6 +122,7 @@ class OntologyExplainTool:
     def preview(self, invocation):
         return "Explain an approved business concept"
 
+    @with_caller
     async def run(self, invocation, context):
         from app.modules.ontology.service import ontology_service
 
@@ -225,6 +228,7 @@ class KnowledgeProposeTool:
     def preview(self, invocation):
         return "Propose a change to a business definition for steward review"
 
+    @with_caller
     async def run(self, invocation, context):
         from app.modules.intelligence.contracts import fingerprint
         from app.modules.ontology.stewardship import ProposalCreate, stewardship_service
@@ -347,6 +351,7 @@ class OntologyStatusTool:
     def preview(self, invocation):
         return "Check the business-definition release and your proposals"
 
+    @with_caller
     async def run(self, invocation, context):
         from app.modules.ontology.contracts import Actor
         from app.modules.ontology.releases import release_service
@@ -407,6 +412,7 @@ class KnowledgeWithdrawTool:
     def preview(self, invocation):
         return "Withdraw your business-definition proposal"
 
+    @with_caller
     async def run(self, invocation, context):
         from app.modules.ontology.stewardship import stewardship_service
 

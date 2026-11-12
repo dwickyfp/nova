@@ -155,6 +155,43 @@ async def test_administrators_read_usage_across_people_but_change_nothing(meta):
         assert await repo.delete_thread("t-alice") is False
 
 
+@pytest.mark.parametrize("role,expected", [("ANALYST", {"alice"}),
+                                          ("ACCOUNTADMIN", {"alice", "bob"})])
+async def test_ai_monitoring_reads_pg_counters_and_audit_under_caller_rls(
+    meta, role, expected,
+):
+    from app.core.metadata_runtime import install_metadata_db, uninstall_metadata_db
+    from app.modules.monitoring.ai_usage import AIUsageService
+
+    for name in ("alice", "bob"):
+        await thread_with_answer(meta, name=name)
+        async with meta.transaction(name=name) as (_, conn):
+            await conn.execute(
+                "INSERT INTO nova_meta.audit_log (event_type,sql_text,status,duration_ms) "
+                "VALUES ('query',%s,'SUCCESS',17)",
+                ("SELECT AI_COMPLETE('private-accounting-fixture')",),
+            )
+
+    database = MetadataDatabase(meta.environment.role_config("nova_meta_web"))
+    try:
+        await database.open(schema_version=len(load_migrations()), metadata_epoch=meta.epoch)
+        install_metadata_db(database)
+        actor = SecurityContext.from_session(session("alice", active=role))
+        begin, end = await _window(meta)
+        usage = AIUsageService()
+        messages, truncated = await usage._messages(begin, end, actor=actor)
+        queries, query_truncated = await usage._functions(begin, end, actor=actor)
+    finally:
+        uninstall_metadata_db(database)
+        await database.close()
+    assert not truncated and not query_truncated
+    assert {row["user_name"] for row in messages} == expected
+    assert {row["user_name"] for row in queries} == expected
+    assert all(row["total_tokens"] == 9 for row in messages)
+    assert all(row["action"] == "AI_COMPLETE" for row in queries)
+    assert "private-accounting-fixture" not in str(queries)
+
+
 async def test_messages_are_appended_once_and_conflicting_retries_are_refused(meta):
     await thread_with_answer(meta)
 

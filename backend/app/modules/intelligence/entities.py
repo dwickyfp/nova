@@ -1,8 +1,11 @@
-"""Shared business entity registry with caller-scoped source access."""
+"""Shared business entity registry with caller-scoped source access.
+
+Entity rows live in the PG metadata store; whether a caller may see one stays
+the engine's source check, run as the caller.
+"""
 
 from __future__ import annotations
 
-import json
 import re
 from typing import Annotated, Literal
 from uuid import uuid4
@@ -12,11 +15,12 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.common.audit import write_audit_log
 from app.common.responses import SanitizingJSONResponse
-from app.core.database import db
 from app.core.deps import get_current_user
+from app.core.metadata_db import MetadataConflict
 from app.modules.agents.semantic.expressions import quote_identifier, quote_source
 from app.modules.assistant.skills import contains_credential_shape
 from app.modules.intelligence.access import can_manage
+from app.modules.intelligence.metadata_repository import intelligence_metadata, user_actor
 from app.modules.query.service import query_service
 
 router = APIRouter()
@@ -113,46 +117,39 @@ class EntityRegistry:
             return False
 
     @staticmethod
-    def _decode(row: list) -> EntityResponse:
+    def _decode(row: dict) -> EntityResponse:
         return EntityResponse(
-            id=row[0],
-            name=row[1],
-            description=row[2] or "",
-            catalog=row[3],
-            database=row[4],
-            schema_name=row[5],
-            relation=row[6],
-            key_columns=json.loads(row[7]) if isinstance(row[7], str) else row[7],
-            owner=row[8],
-            tags=json.loads(row[9]) if isinstance(row[9], str) else (row[9] or []),
-            status=row[10],
-            created_at=str(row[11]) if row[11] else None,
-            updated_at=str(row[12]) if row[12] else None,
+            id=row["id"],
+            name=row["name"],
+            description=row["description"] or "",
+            catalog=row["catalog_name"],
+            database=row["database_name"],
+            schema_name=row["schema_name"],
+            relation=row["relation_name"],
+            key_columns=list(row["key_columns"]),
+            owner=row["owner_name"],
+            tags=list(row["tags"] or []),
+            status=row["status"],
+            created_at=str(row["created_at"]) if row["created_at"] else None,
+            updated_at=str(row["updated_at"]) if row["updated_at"] else None,
         )
 
     async def list(self, user: dict) -> list[EntityResponse]:
-        result = await db.execute_system(
-            "SELECT id,name,description,catalog_name,database_name,schema_name,"
-            "relation_name,key_columns,owner_name,tags,status,created_at,updated_at "
-            "FROM NOVA_SYSTEM.CONFIG_ENTITIES WHERE status='ACTIVE' ORDER BY name"
-        )
+        async with intelligence_metadata(user_actor(user), read_only=True) as repo:
+            rows = await repo.list_entities()
         visible = []
-        for row in result["rows"]:
+        for row in rows:
             entity = self._decode(row)
             if await self._authorized(user, entity.relation, entity.key_columns, entity.database):
                 visible.append(entity)
         return visible
 
     async def get(self, entity_id: str, user: dict) -> EntityResponse | None:
-        result = await db.execute_system(
-            "SELECT id,name,description,catalog_name,database_name,schema_name,"
-            "relation_name,key_columns,owner_name,tags,status,created_at,updated_at "
-            "FROM NOVA_SYSTEM.CONFIG_ENTITIES WHERE id=%s AND status='ACTIVE'",
-            [entity_id],
-        )
-        if not result["rows"]:
+        async with intelligence_metadata(user_actor(user), read_only=True) as repo:
+            row = await repo.get_entity(entity_id)
+        if row is None:
             return None
-        entity = self._decode(result["rows"][0])
+        entity = self._decode(row)
         return (
             entity
             if await self._authorized(user, entity.relation, entity.key_columns, entity.database)
@@ -162,33 +159,25 @@ class EntityRegistry:
     async def create(self, body: EntityCreate, user: dict) -> EntityResponse:
         if not await self._authorized(user, body.relation, body.key_columns, body.database):
             raise HTTPException(status_code=403, detail="Source relation is unavailable")
-        scope = [body.catalog, body.database, body.schema_name, body.name]
-        existing = await db.execute_system(
-            "SELECT id FROM NOVA_SYSTEM.CONFIG_ENTITIES "
-            "WHERE catalog_name=%s AND database_name=%s AND schema_name=%s AND name=%s",
-            scope,
-        )
-        if existing["rows"]:
-            raise HTTPException(status_code=409, detail="Entity already exists")
         entity_id = str(uuid4())
-        await db.execute_system(
-            "INSERT INTO NOVA_SYSTEM.CONFIG_ENTITIES "
-            "(id,name,description,catalog_name,database_name,schema_name,relation_name,"
-            "key_columns,owner_name,tags,status,created_at,updated_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'ACTIVE',NOW(),NOW())",
-            [
-                entity_id,
-                body.name,
-                body.description,
-                body.catalog,
-                body.database,
-                body.schema_name,
-                body.relation,
-                json.dumps(body.key_columns),
-                user["username"],
-                json.dumps(body.tags),
-            ],
-        )
+        try:
+            # The scoped name is the primary key: a taken name conflicts in PG.
+            async with intelligence_metadata(user_actor(user)) as repo:
+                await repo.create_entity(
+                    {
+                        "id": entity_id,
+                        "name": body.name,
+                        "description": body.description,
+                        "catalog": body.catalog,
+                        "database": body.database,
+                        "schema": body.schema_name,
+                        "relation": body.relation,
+                        "key_columns": body.key_columns,
+                        "tags": body.tags,
+                    }
+                )
+        except MetadataConflict as exc:
+            raise HTTPException(status_code=409, detail="Entity already exists") from exc
         await write_audit_log(
             event_type="INTELLIGENCE",
             user_name=user["username"],
@@ -210,11 +199,11 @@ class EntityRegistry:
         entity = await self.get(entity_id, user)
         if entity is None or not can_manage(entity.owner, user):
             return False
-        await db.execute_system(
-            "UPDATE NOVA_SYSTEM.CONFIG_ENTITIES SET status='DEPRECATED', updated_at=NOW() "
-            "WHERE id=%s",
-            [entity_id],
-        )
+        async with intelligence_metadata(user_actor(user)) as repo:
+            row = await repo.get_entity(entity_id)
+            if row is None:
+                return False
+            await repo.deprecate_entity(entity_id, expected_revision=row["metadata_revision"])
         await write_audit_log(
             event_type="INTELLIGENCE",
             user_name=user["username"],

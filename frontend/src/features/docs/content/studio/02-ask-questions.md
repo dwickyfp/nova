@@ -63,6 +63,10 @@ Under each answer:
 The token count next to the buttons (for example "13,189 tokens") is how much
 AI model work the answer used.
 
+Tool approvals belong to the login and active role that requested them. After
+switching roles or signing in again, start a new request to approve a tool. A
+pending approval cannot be accepted from another login, even for the same account.
+
 ## Limits and errors
 
 - One agent answers each question. Studio does not hand a question from one

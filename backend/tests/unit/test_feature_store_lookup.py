@@ -17,10 +17,10 @@ async def test_lookup_queries_the_source_as_the_caller(monkeypatch):
     async def entity(_id, _user):
         return SimpleNamespace(key_columns=["customer_id"])
 
-    async def view(_name):
+    async def view(_name, user):
         return {"ttl_seconds": 60, "freshness_seconds": 86400}
 
-    async def version(_name, _version):
+    async def version(_name, _version, user):
         return {
             "relation_name": "`_NOVA_FEATURES`.`FV_abc_V1`",
             "definition": {
@@ -36,8 +36,9 @@ async def test_lookup_queries_the_source_as_the_caller(monkeypatch):
     system = AsyncMock(side_effect=AssertionError("system identity must not read features"))
     monkeypatch.setattr(feature_store, "_authorized_group", group)
     monkeypatch.setattr(entity_registry, "get", entity)
-    monkeypatch.setattr(feature_store, "_view", view)
-    monkeypatch.setattr(feature_store, "_view_version", version)
+    async def view_and_version(name, number, user):
+        return await view(name, user), await version(name, number, user)
+    monkeypatch.setattr(feature_store, "_view_and_version", view_and_version)
     monkeypatch.setattr(query_service, "execute", execute)
     monkeypatch.setattr(db, "execute_system", system)
     monkeypatch.setattr("app.modules.intelligence.feature_store._audit", AsyncMock())
@@ -45,6 +46,7 @@ async def test_lookup_queries_the_source_as_the_caller(monkeypatch):
         "username": "alice",
         "encrypted_password": "sealed",
         "active_role": "analyst",
+        "assigned_roles": ["analyst"],
         "session_id": "s1",
     }
     result = await feature_store.lookup(

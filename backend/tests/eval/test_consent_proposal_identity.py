@@ -13,6 +13,7 @@ from app.modules.assistant.tools import ToolRegistry
 from tests.benchmark.harness import text_frame, tool_call_frame
 from tests.eval.harness import EvalTool, TurnResult
 from tests.eval.test_harness_guards_trajectory import RecordingProvider
+from tests.unit.test_assistant_consent_ownership import _signed_in
 
 
 async def _turn(thread_id, resolver, *, script=None, granted=False, iterative=False):
@@ -42,13 +43,13 @@ async def test_a_previous_decision_cannot_resolve_a_later_provider_id_reuse():
 
     async def resolve(invocation, classification):
         future = broker.open(invocation.tool_call_id, thread_id="one-thread",
-                             user_name="alice", classification=classification)
+                             user=_signed_in("alice"), classification=classification)
         try:
             if identities:
-                assert not broker.resolve(identities[-1], True, user_name="alice")
+                assert not broker.resolve(identities[-1], True, user=_signed_in("alice"))
                 assert not future.done()
             identities.append(invocation.tool_call_id)
-            assert broker.resolve(invocation.tool_call_id, True, user_name="alice")
+            assert broker.resolve(invocation.tool_call_id, True, user=_signed_in("alice"))
             return await future
         finally:
             broker.clear()
@@ -74,12 +75,12 @@ async def test_parallel_turns_with_the_same_wire_id_keep_independent_approvals()
 
     async def resolve(invocation, classification):
         future = broker.open(invocation.tool_call_id, thread_id="thread-" + str(len(opened)),
-                             user_name="alice", classification=classification)
+                             user=_signed_in("alice"), classification=classification)
         opened.append(invocation.tool_call_id)
         if len(opened) == 2:
             both.set()
         await both.wait()
-        assert broker.resolve(invocation.tool_call_id, True, user_name="alice")
+        assert broker.resolve(invocation.tool_call_id, True, user=_signed_in("alice"))
         return await future
 
     try:

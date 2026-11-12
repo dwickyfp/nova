@@ -13,6 +13,7 @@ import logging
 
 from app.common.news_entitlement import is_news_enabled
 from app.core.config import settings
+from app.core.metadata_scope import actor_for
 from app.core.redis import session_store
 from app.core.security import decrypt_password
 from app.modules.intelligence.newsroom_cache import proof_cache
@@ -57,7 +58,9 @@ async def refresh_once(service=None, cache=proof_cache) -> int:
         async with gate:
             try:
                 user = await session_user(session_id)
-                if user is None or not await is_news_enabled(user["username"]):
+                if user is None or not await is_news_enabled(
+                    user["username"], actor_for(user)
+                ):
                     await cache.forget(session_id)
                     return False
                 await service.refresh_reader(user)

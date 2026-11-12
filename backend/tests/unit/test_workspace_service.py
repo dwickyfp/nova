@@ -27,12 +27,17 @@ is stubbed.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock
+
 import pytest
 from botocore.exceptions import ClientError, EndpointConnectionError
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.core.exceptions import register_exception_handlers
+from app.core.metadata_db import MetadataSchemaMismatch, MetadataUnavailable
+from app.modules.workspaces.metadata_service import WorkspaceMetadataService, WorkspaceObjectStore
 from app.modules.workspaces.service import WorkspaceService
 
 ACCESS_KEY = "AKIA_NOVA137_TESTVALUE_123"
@@ -62,18 +67,15 @@ class _UnavailableStorageService(WorkspaceService):
     def __init__(self, exc: BaseException):
         super().__init__()
         self._exc = exc
-        real_repo = self._repo
+        self._repo = AsyncMock()
+        self._repo.list_entries.return_value = []
 
-        class _NoEntriesRepo:
-            """The real repository, with an empty workspace for the name check."""
-
-            def __getattr__(self, name):
-                return getattr(real_repo, name)
-
-            async def list_entries(self, username):
-                return []
-
-        self._repo = _NoEntriesRepo()
+    @property
+    def _files(self):
+        @asynccontextmanager
+        async def transaction(*, read_only=False):
+            yield self._repo
+        return WorkspaceMetadataService(transaction, WorkspaceObjectStore(self))
 
     def _client(self):
         exc = self._exc
@@ -100,8 +102,8 @@ def workspace_client(monkeypatch):
         return {
             "username": "analyst",
             "session_id": "sess-nova137",
-            "roles": [],
-            "active_role": None,
+            "roles": ["ANALYST"],
+            "active_role": "ANALYST",
             "encrypted_password": "enc",
         }
 
@@ -186,97 +188,32 @@ class TestBadCredentialsAreClassified:
         assert ACCESS_KEY not in detail
 
 
-class TestRepositoryClassifiesUnreadyNovaSystem:
-    """The repository is where a missing NOVA_SYSTEM table is translated."""
+class TestMetadataNotReady:
+    @pytest.mark.parametrize("error_type", [MetadataUnavailable, MetadataSchemaMismatch])
+    @pytest.mark.parametrize("operation", ["tree", "create"])
+    def test_unavailable_metadata_refuses_with_typed_503(
+        self, workspace_client, error_type, operation,
+    ):
+        class UnreadyService(_UnavailableStorageService):
+            @property
+            def _files(self):
+                @asynccontextmanager
+                async def transaction(*, read_only=False):
+                    raise error_type()
+                    yield
+                return WorkspaceMetadataService(transaction, WorkspaceObjectStore(self))
 
-    @pytest.mark.asyncio
-    async def test_missing_table_becomes_typed_503(self):
-        import asyncmy.errors
+            def _put_object(self, key, data):
+                return {"ETag": "test"}
 
-        from app.core.exceptions import WorkspaceNotReadyError
-        from app.modules.workspaces.repository import _system_query
+            def _delete_object(self, key):
+                pass
 
-        async def _boom():
-            raise asyncmy.errors.ProgrammingError(
-                1064, "Table CONFIG_WORKSPACE_ENTRIES is not found."
-            )
-
-        with pytest.raises(WorkspaceNotReadyError) as caught:
-            await _system_query(_boom())
-
-        assert caught.value.status_code == 503
-        assert "NOVA_SYSTEM" in caught.value.message
-
-    @pytest.mark.asyncio
-    async def test_engine_down_becomes_typed_503(self):
-        import asyncmy.errors
-
-        from app.core.exceptions import WorkspaceNotReadyError
-        from app.modules.workspaces.repository import _system_query
-
-        async def _boom():
-            raise asyncmy.errors.OperationalError(2013, "Lost connection")
-
-        with pytest.raises(WorkspaceNotReadyError):
-            await _system_query(_boom())
-
-
-class TestNovaSystemNotReady:
-    """The tree and create paths degrade to 503 when NOVA_SYSTEM is missing."""
-
-    def _service_with_unready_repo(self):
-        from app.core.exceptions import WorkspaceNotReadyError
-
-        message = (
-            "Workspace storage is not ready: NOVA_SYSTEM is unavailable or "
-            "the workspace tables have not been initialised."
-        )
-
-        class _UnreadyRepo:
-            """Mirrors the real repository: every call raises the typed 503."""
-
-            @staticmethod
-            def build_path(parent_path, name):
-                return "/".join(part for part in [parent_path.strip("/"), name.strip("/")] if part)
-
-            async def list_entries(self, _username):
-                raise WorkspaceNotReadyError(message)
-
-            async def get_preferences(self, *_args, **_kwargs):
-                raise WorkspaceNotReadyError(message)
-
-            async def insert_entry(self, **_kwargs):
-                raise WorkspaceNotReadyError(message)
-
-            async def get_entry(self, *_args, **_kwargs):
-                raise WorkspaceNotReadyError(message)
-
-        class _WorkingStorage:
-            """Storage succeeds, so create_file reaches the NOVA_SYSTEM write."""
-
-            def put_object(self, **_kwargs):
-                return {"ETag": '"etag"'}
-
-        service = WorkspaceService()
-        service._repo = _UnreadyRepo()
-        service._client = _WorkingStorage
-        return service
-
-    def test_tree_returns_503_when_not_ready(self, workspace_client):
-        client = workspace_client(self._service_with_unready_repo())
-        resp = client.get(TREE_ENDPOINT)
-
-        assert resp.status_code == 503, resp.text
-        body = resp.json()
-        assert body["type"] == "WorkspaceNotReadyError"
-        assert "NOVA_SYSTEM" in body["detail"]
-
-    def test_create_file_returns_503_when_not_ready(self, workspace_client):
-        client = workspace_client(self._service_with_unready_repo())
-        resp = _create_file(client)
-
-        assert resp.status_code == 503, resp.text
-        assert resp.json()["type"] == "WorkspaceNotReadyError"
+        client = workspace_client(UnreadyService(_endpoint_down()))
+        response = client.get(TREE_ENDPOINT) if operation == "tree" else _create_file(client)
+        assert response.status_code == 503, response.text
+        assert response.json()["type"] == error_type.__name__
+        assert "Metadata" in response.json()["detail"]
 
 
 class TestCrudMethodsNeverReturnBare500:
@@ -314,6 +251,7 @@ class TestCrudMethodsNeverReturnBare500:
                 "etag": None,
                 "created_at": None,
                 "updated_at": None,
+                "metadata_revision": 1,
             }
 
         service._repo = type("R", (), {"get_entry": staticmethod(fake_get_entry)})()

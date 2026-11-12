@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.ml_engine.artifacts.store import ObjectArtifactStore
 from app.modules.ml_engine.service import MLEngineService
 
@@ -64,11 +65,13 @@ async def test_failed_model_artifact_cleanup_retains_retryable_registry_identity
         return_value={"versions": [{"artifact_uri": "nova-artifact://test/owned-model.joblib"}]}
     )
     service.repository = Mock()
-    service.repository._connect = AsyncMock()
+    service.repository.delete_model = AsyncMock()
     with pytest.raises(OSError, match="model metadata retained") as error:
-        await service.delete_model("owned-model", owner_name="alice", database_name="db")
+        await service.delete_model(
+            "owned-model", actor=SecurityContext("alice", "analyst"), database_name="db"
+        )
     assert "credential-bearing" not in str(error.value)
-    service.repository._connect.assert_not_awaited()
+    service.repository.delete_model.assert_not_awaited()
 
 
 @pytest.mark.parametrize("code", ["404", "NoSuchKey", "AccessDenied"])

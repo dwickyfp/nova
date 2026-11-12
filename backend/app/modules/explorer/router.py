@@ -249,7 +249,7 @@ async def get_stage_files(
     from app.modules.stages.service import StagePathError, stage_service
 
     # Lookup stage ID by name + database
-    stage_id = await explorer_service.get_stage_id(database, stage)
+    stage_id = await explorer_service.get_stage_id(database, stage, user)
     if not stage_id:
         raise HTTPException(
             status_code=404,
@@ -260,9 +260,9 @@ async def get_stage_files(
             stage_service._safe_relative_path(prefix, field="prefix")
     except StagePathError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    await _authorized_stage(stage_id, user, "read")
+    stage_row = await _authorized_stage(stage_id, user, "read")
     try:
-        files = await stage_service.list_files(stage_id, prefix=prefix)
+        files = await stage_service.list_files(stage_row, prefix=prefix)
     except StagePathError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as e:
@@ -282,7 +282,7 @@ async def upload_stage_file(
     from app.modules.stages.router import _authorized_stage, _stage_mutation_audit
     from app.modules.stages.service import StagePathError, stage_service
 
-    stage_id = await explorer_service.get_stage_id(database, stage)
+    stage_id = await explorer_service.get_stage_id(database, stage, user)
     if not stage_id:
         raise HTTPException(
             status_code=404,
@@ -299,7 +299,7 @@ async def upload_stage_file(
         async with _stage_mutation_audit(
             stage_row, user, "UPLOAD_STAGE_FILE", f"{stage_id}/{target_name}"
         ):
-            result = await stage_service.upload_stream(stage_id, target_name, file.file)
+            result = await stage_service.upload_stream(stage_row, target_name, file.file)
     except StagePathError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
@@ -318,7 +318,7 @@ async def delete_stage_file(
     from app.modules.stages.router import _authorized_stage, _stage_mutation_audit
     from app.modules.stages.service import StagePathError, stage_service
 
-    stage_id = await explorer_service.get_stage_id(database, stage)
+    stage_id = await explorer_service.get_stage_id(database, stage, user)
     if not stage_id:
         raise HTTPException(
             status_code=404,
@@ -333,7 +333,7 @@ async def delete_stage_file(
         async with _stage_mutation_audit(
             stage_row, user, "DELETE_STAGE_FILE", f"{stage_id}/{filename}"
         ):
-            await stage_service.delete_file(stage_id, filename)
+            await stage_service.delete_file(stage_row, filename)
     except StagePathError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:

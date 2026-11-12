@@ -37,6 +37,7 @@ from app.modules.intelligence.feature_store import (
     TrainingSetCreate,
     feature_store,
 )
+from app.modules.intelligence.metadata_repository import intelligence_metadata, user_actor
 from app.modules.intelligence.search import SearchIndexCreate, search_service
 from app.modules.intelligence.semantic_views import (
     SemanticViewCreate,
@@ -211,13 +212,10 @@ async def seed(embedding_alias: str | None = None) -> dict[str, str]:
                     )],
                 ), user,
             )
-        training = await db.execute_system(
-            "SELECT id FROM NOVA_SYSTEM.CONFIG_FEATURE_TRAINING_SETS "
-            "WHERE group_name=%s AND label_relation=%s LIMIT 1",
-            [group_name, "NOVA_DEMO.orders"],
-        )
-        if training["rows"]:
-            training_id = training["rows"][0][0]
+        async with intelligence_metadata(user_actor(user), read_only=True) as repo:
+            training = await repo.find_training_set(group_name, "NOVA_DEMO.orders")
+        if training is not None:
+            training_id = training["id"]
         else:
             result = await feature_store.create_training_set(
                 group_name,

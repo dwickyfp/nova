@@ -1,32 +1,45 @@
-"""LLM Function Management service — alias CRUD and StarRocks SQL UDF registration.
+"""LLM function aliases and the rendering of their ``AI_*`` SQL functions.
 
-Tables:
-  NOVA_SYSTEM.CONFIG_MODEL_ALIASES  — maps function types to provider+model
-  NOVA_SYSTEM.CONFIG_AI_PROVIDERS   — provider config (endpoint, api_key)
-  NOVA_SYSTEM.CONFIG_AI_MODELS      — model config (name, max_tokens)
+Aliases live in the PostgreSQL metadata store (``nova_meta.config_model_aliases``)
+next to the AI registry. Every alias change goes through
+``AIConfigurationService``: the alias, the immutable function definition, its
+registration job and the outbox wakeup commit in one transaction. The HTTP
+process never drops or creates an engine function itself; the maintenance
+participant in ``registration_worker`` applies each definition, verifies the
+engine function and records a receipt.
 
 Flow:
-  1. User creates alias: function_type → provider_id + model_id
-  2. Service generates SQL UDF that wraps ai_query() with resolved config
-  3. Service executes CREATE FUNCTION in StarRocks
-  4. User can now call AI_COMPLETE(), AI_SENTIMENT(), etc. in SQL
+  1. An administrator creates or changes an alias (function_type → provider + model).
+  2. The definition and its ``ai.function.reconcile`` job are stored atomically.
+  3. The maintenance worker renders the ``AI_*`` function from that definition,
+     applies it in StarRocks and verifies it before completing the job.
+  4. SQL users call AI_COMPLETE(), AI_SENTIMENT(), ... which reach the gateway.
 """
 
 import contextlib
 import json
 import logging
+from dataclasses import dataclass, field
+from typing import Any
 from uuid import uuid4
 
 import asyncmy
 import asyncmy.cursors
 
+from app.common.metadata_actors import metadata_scope
 from app.core.config import settings
+from app.modules.access_control.security_context import SecurityContext
+from app.modules.ai_ml.metadata_service import AIConfigurationService
+from app.modules.ai_ml.repository import AIRegistryRepository
+from app.modules.ai_ml.service import REGISTRY_READER
 from app.modules.llm_functions.gateway import (
     FORWARDED_PARAMETERS,
     alias_token,
     gateway_endpoint,
     llm_gateway,
 )
+from app.modules.llm_functions.registrations import FunctionRegistrationRepository
+from app.modules.llm_functions.repository import AliasDefinition, ModelAliasRepository
 
 logger = logging.getLogger(__name__)
 
@@ -124,18 +137,153 @@ UDF_TEMPLATES: dict[str, dict] = {
 }
 
 
-class LLMFunctionService:
-    """Manage LLM function aliases and register SQL UDFs in StarRocks.
+@dataclass(frozen=True)
+class RenderedFunction:
+    """The engine statements for one function definition. Never logged."""
 
-    Every method opens a fresh root-level asyncmy connection, executes,
-    and closes. This keeps the service stateless and avoids pool contention.
+    function_type: str
+    function_name: str
+    drop_sql: str = field(repr=False)
+    create_sql: str = field(repr=False)
+    body: str = field(repr=False)
+
+
+def _placeholder_body(function_name: str, params: list[str]) -> str:
+    param_names = [p.split()[0] for p in params]
+    if not param_names:
+        return f"'ERROR: {function_name} not configured.'"
+    pairs: list[str] = []
+    for name in param_names:
+        pairs.extend((f"'{name}='", name, "', '"))
+    return (
+        f"CONCAT('ERROR: {function_name} not configured. "
+        "Set up an alias in AI Providers > Functions tab. Input was: ', "
+        f"{', '.join(pairs[:-1])})"
+    )
+
+
+def _body_with_prompt(function_type: str, system_prompt: str, config_str: str) -> str:
+    """The ``ai_query`` body for an alias with its own system prompt."""
+    escaped = system_prompt.replace("'", "''")
+    if function_type in {"complete"}:
+        return f"ai_query(CONCAT('{escaped}', prompt), '{config_str}')"
+    if function_type in {"sentiment", "summarize"}:
+        return f"ai_query(CONCAT('{escaped}', txt), '{config_str}')"
+    if function_type == "classify":
+        return f"ai_query(CONCAT('{escaped}', categories, ']: ', txt), '{config_str}')"
+    if function_type == "extract":
+        return (
+            f"ai_query(CONCAT('{escaped}', json_schema, "
+            f"'. Reply with ONLY the JSON.\\n\\nText: ', txt), '{config_str}')"
+        )
+    if function_type == "translate":
+        return (
+            f"ai_query(CONCAT('{escaped}', target_lang, "
+            f"'. Reply with ONLY the translation.\\n\\nText: ', txt), '{config_str}')"
+        )
+    if function_type == "filter":
+        return f"ai_query(CONCAT('{escaped}', criteria, '\\n\\nText: ', txt), '{config_str}')"
+    params = [p.split()[0] for p in UDF_TEMPLATES[function_type]["params"]]
+    return f"ai_query(CONCAT('{escaped}', {', '.join(params)}), '{config_str}')"
+
+
+def render_function(snapshot: dict[str, Any]) -> RenderedFunction | None:
+    """Render one immutable definition snapshot (contract version 1).
+
+    ``None`` means Nova has no engine function for the type (``embed``, R33).
+    A disabled or unconfigured definition renders the placeholder that fails
+    with a clear message instead of reaching another provider.
     """
+    if snapshot.get("contract_version") != 1:
+        raise ValueError("Unsupported function definition contract")
+    function_type = snapshot["function_type"]
+    template = UDF_TEMPLATES.get(function_type)
+    if template is None:
+        return None
+    name = template["function_name"]
+    params_sql = ", ".join(template["params"])
+    argument_types = ", ".join("STRING" for _ in template["params"])
+    drop_sql = f"DROP GLOBAL FUNCTION IF EXISTS {name}({argument_types})"
+    alias = snapshot.get("alias") or {}
+    if snapshot.get("mode") != "configured":
+        body = _placeholder_body(name, template["params"])
+    else:
+        model = snapshot.get("model") or {}
+        model_name = model.get("name") or "gpt-4o-mini"
+        # The body names only Nova's gateway and an alias token; the provider
+        # key never enters engine function metadata (see ``gateway.py``).
+        config = {
+            key: value
+            for key, value in (snapshot.get("parameters") or {}).items()
+            if key in FORWARDED_PARAMETERS or key == "timeout_ms"
+        }
+        config.update(
+            model=model_name, api_key=alias_token(alias["id"]), endpoint=gateway_endpoint()
+        )
+        config_escaped = json.dumps(config, separators=(",", ": ")).replace("'", "''")
+        if alias.get("system_prompt"):
+            body = _body_with_prompt(function_type, alias["system_prompt"], config_escaped)
+        else:
+            body = template["body"].replace("{config}", config_escaped)
+    create_sql = f"CREATE GLOBAL FUNCTION {name}({params_sql})\n        RETURNS {body}"
+    return RenderedFunction(function_type, name, drop_sql, create_sql, body)
 
-    # ── DB helpers ──────────────────────────────────────────────
+
+def function_body_matches(rendered: RenderedFunction, body: str) -> bool:
+    """Compare complete expressions, including prompts and every provider parameter.
+
+    Use Nova's parser to ignore identifier quoting, keyword case and layout.
+    String contents remain exact except for the JSON gateway configuration,
+    whose property order and formatting have no effect on its meaning.
+    An unsupported engine rendering is unverifiable and never proves success.
+    """
+    from app.sql_frontend.errors import SQLSyntaxError
+    from app.sql_frontend.parser import parse_statement
+
+    def tokens(expression: str) -> list[tuple[str, str]]:
+        result = []
+        for token in parse_statement("SELECT " + expression).visible_tokens:
+            text = token.text
+            if text.startswith(("'", '"')):
+                quote = text[0]
+                value = text[1:-1].replace(quote * 2, quote)
+                try:
+                    config = json.loads(value)
+                except (ValueError, TypeError):
+                    config = None
+                if isinstance(config, dict) and {"endpoint", "api_key", "model"} <= config.keys():
+                    value = json.dumps(config, sort_keys=True, separators=(",", ":"))
+                result.append(("literal", value))
+            else:
+                result.append(("syntax", text.strip("`").lower()))
+        return result
+
+    if len(body) > 262144:
+        return False
+    try:
+        return tokens(body) == tokens(rendered.body)
+    except (SQLSyntaxError, ValueError, TypeError):
+        return False
+
+
+def _status_item(function_type: str, alias: dict | None, registered: bool) -> dict:
+    return {
+        "function_name": UDF_TEMPLATES[function_type]["function_name"],
+        "function_type": function_type,
+        "alias_name": alias.get("alias_name") if alias else None,
+        "provider_name": alias.get("provider_name") if alias else None,
+        "model_name": alias.get("model_name") if alias else None,
+        "registered": registered,
+        "error": None,
+    }
+
+
+class LLMFunctionService:
+    """Alias configuration and the engine status of the ``AI_*`` functions."""
 
     @staticmethod
     async def _connect() -> asyncmy.Connection:
-        """Open a root-level connection to StarRocks."""
+        """Engine connection used only to observe or apply ``AI_*`` functions."""
         return await asyncmy.connect(
             host=settings.STARROCKS_HOST,
             port=settings.STARROCKS_FE_MYSQL_PORT,
@@ -145,645 +293,176 @@ class LLMFunctionService:
             connect_timeout=10,
         )
 
-    # ── Alias CRUD ──────────────────────────────────────────────
+    # ── Alias reads ─────────────────────────────────────────────
 
-    async def list_aliases(self) -> list[dict]:
-        """List all aliases with provider and model names."""
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(
-                    """
-                    SELECT a.id, a.alias_name, a.function_type,
-                           a.provider_id, a.model_id,
-                           a.system_prompt, a.default_params,
-                           a.is_default, a.is_active,
-                           a.created_at, a.updated_at, a.created_by,
-                           p.name AS provider_name,
-                           m.name AS model_name,
-                           m.display_name AS model_display_name
-                    FROM NOVA_SYSTEM.CONFIG_MODEL_ALIASES a
-                    LEFT JOIN NOVA_SYSTEM.CONFIG_AI_PROVIDERS p
-                        ON p.id = a.provider_id
-                    LEFT JOIN NOVA_SYSTEM.CONFIG_AI_MODELS m
-                        ON m.id = a.model_id
-                    ORDER BY a.function_type, a.alias_name
-                    """
-                )
-                rows = await cur.fetchall()
-                return [self._deserialize_row(row) for row in rows]
-        finally:
-            conn.close()
-
-    async def get_alias(self, alias_id: str) -> dict | None:
-        """Get a single alias by ID."""
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(
-                    """
-                    SELECT a.id, a.alias_name, a.function_type,
-                           a.provider_id, a.model_id,
-                           a.system_prompt, a.default_params,
-                           a.is_default, a.is_active,
-                           a.created_at, a.updated_at, a.created_by,
-                           p.name AS provider_name,
-                           m.name AS model_name,
-                           m.display_name AS model_display_name
-                    FROM NOVA_SYSTEM.CONFIG_MODEL_ALIASES a
-                    LEFT JOIN NOVA_SYSTEM.CONFIG_AI_PROVIDERS p
-                        ON p.id = a.provider_id
-                    LEFT JOIN NOVA_SYSTEM.CONFIG_AI_MODELS m
-                        ON m.id = a.model_id
-                    WHERE a.id = %s
-                    """,
-                    (alias_id,),
-                )
-                row = await cur.fetchone()
-                return self._deserialize_row(row) if row else None
-        finally:
-            conn.close()
-
-    async def create_alias(self, data: dict, created_by: str) -> dict:
-        """Create a new alias and register the UDF."""
-        alias_id = str(uuid4())
-        default_params = data.get("default_params")
-        params_str = json.dumps(default_params) if default_params else None
-
-        conn = await self._connect()
-        try:
-            async with conn.cursor() as cur:
-                # If is_default, unset other defaults for same function_type
-                if data.get("is_default", True):
-                    await cur.execute(
-                        """
-                        UPDATE NOVA_SYSTEM.CONFIG_MODEL_ALIASES
-                        SET is_default = false
-                        WHERE function_type = %s AND is_default = true
-                        """,
-                        (data["function_type"],),
-                    )
-
-                await cur.execute(
-                    """
-                    INSERT INTO NOVA_SYSTEM.CONFIG_MODEL_ALIASES
-                        (id, alias_name, function_type, provider_id, model_id,
-                         system_prompt, default_params, is_default, is_active,
-                         created_by)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, true, %s)
-                    """,
-                    (
-                        alias_id,
-                        data["alias_name"],
-                        data["function_type"],
-                        data["provider_id"],
-                        data.get("model_id"),
-                        data.get("system_prompt"),
-                        params_str,
-                        data.get("is_default", True),
-                        created_by,
-                    ),
-                )
-        finally:
-            conn.close()
-
-        # Register the UDF for this function type
-        await self.register_udf_for_type(data["function_type"])
-
-        result = await self.get_alias(alias_id)
-        if result is None:
-            raise RuntimeError("Created function alias is unavailable")
+    @classmethod
+    async def _joined(
+        cls, connection: Any, alias_id: str | None = None
+    ) -> list[dict]:
+        aliases_repo = ModelAliasRepository(connection)
+        if alias_id is None:
+            aliases = await aliases_repo.aliases()
+        else:
+            row = await aliases_repo.alias(alias_id)
+            aliases = [row] if row and not row["is_deleted"] else []
+        if not aliases:
+            return []
+        registry = AIRegistryRepository(connection)
+        providers = {p["id"]: p for p in await registry.providers()}
+        models = {m["id"]: m for m in await registry.models()}
+        result = []
+        for alias in aliases:
+            provider = providers.get(alias["provider_id"]) or {}
+            model = models.get(alias["model_id"]) if alias["model_id"] else None
+            result.append(cls._deserialize_row({
+                **{key: alias[key] for key in (
+                    "id", "alias_name", "function_type", "provider_id", "model_id",
+                    "system_prompt", "default_params", "is_default", "is_active",
+                    "created_at", "updated_at", "created_by",
+                )},
+                "metadata_revision": alias["metadata_revision"],
+                "provider_name": provider.get("name"),
+                "model_name": model["name"] if model else None,
+                "model_display_name": model["display_name"] if model else None,
+            }))
         return result
 
-    async def update_alias(self, alias_id: str, data: dict) -> dict | None:
-        """Update an existing alias."""
-        existing = await self.get_alias(alias_id)
-        if not existing:
-            return None
+    async def list_aliases(self, *, actor: SecurityContext | None = None) -> list[dict]:
+        """Every live alias with its provider and model names."""
+        async with metadata_scope(actor or REGISTRY_READER, read_only=True) as connection:
+            return await self._joined(connection)
 
-        # Build SET clause
-        set_parts: list[str] = []
-        values: list = []
-        field_map = {
-            "alias_name": "alias_name",
-            "function_type": "function_type",
-            "provider_id": "provider_id",
-            "is_default": "is_default",
-            "is_active": "is_active",
-        }
-        for key, col in field_map.items():
-            if key in data and data[key] is not None:
-                set_parts.append(f"{col} = %s")
-                values.append(data[key])
+    async def get_alias(
+        self, alias_id: str, *, actor: SecurityContext | None = None
+    ) -> dict | None:
+        async with metadata_scope(actor or REGISTRY_READER, read_only=True) as connection:
+            rows = await self._joined(connection, alias_id)
+        return rows[0] if rows else None
 
-        if "system_prompt" in data:
-            set_parts.append("system_prompt = %s")
-            values.append(data["system_prompt"])
+    # ── Alias commands ──────────────────────────────────────────
 
-        if "default_params" in data and data["default_params"] is not None:
-            set_parts.append("default_params = %s")
-            values.append(json.dumps(data["default_params"]))
+    @staticmethod
+    def _definition(data: dict[str, Any]) -> AliasDefinition:
+        params = data.get("default_params")
+        return AliasDefinition(
+            alias_name=data["alias_name"],
+            function_type=data["function_type"],
+            provider_id=data["provider_id"],
+            model_id=data.get("model_id"),
+            system_prompt=data.get("system_prompt"),
+            default_params=json.dumps(params) if params else None,
+            is_default=data.get("is_default") is not False,
+            is_active=data.get("is_active") is not False,
+        )
 
-        if "model_id" in data:
-            set_parts.append("model_id = %s")
-            values.append(data["model_id"])
+    async def create_alias(
+        self, data: dict, created_by: str, *, actor: SecurityContext
+    ) -> dict:
+        """Create an alias; its function definition and registration intent commit with it.
 
-        if not set_parts:
-            return existing
+        ``created_by`` is recorded from the bound actor, which is the same user.
+        """
+        alias_id = str(uuid4())
+        definition = self._definition({**data, "is_active": True})
+        async with metadata_scope(actor) as connection:
+            await AIConfigurationService(connection).create_alias(alias_id, definition)
+            rows = await self._joined(connection, alias_id)
+        if not rows:
+            raise RuntimeError("Created function alias is unavailable")
+        return rows[0]
 
-        set_parts.append("updated_at = CURRENT_TIMESTAMP")
-        values.append(alias_id)
-
-        conn = await self._connect()
-        try:
-            async with conn.cursor() as cur:
-                # If setting as default, unset others
-                if data.get("is_default"):
-                    await cur.execute(
-                        """
-                        UPDATE NOVA_SYSTEM.CONFIG_MODEL_ALIASES
-                        SET is_default = false
-                        WHERE function_type = %s AND is_default = true
-                          AND id != %s
-                        """,
-                        (existing["function_type"], alias_id),
-                    )
-
-                await cur.execute(
-                    f"""
-                    UPDATE NOVA_SYSTEM.CONFIG_MODEL_ALIASES
-                    SET {", ".join(set_parts)}
-                    WHERE id = %s
-                    """,
-                    tuple(values),
-                )
-        finally:
-            conn.close()
-
-        # Re-register the UDF
-        function_type = data.get("function_type", existing["function_type"])
-        await self.register_udf_for_type(function_type)
-
-        return await self.get_alias(alias_id)
-
-    async def delete_alias(self, alias_id: str) -> bool:
-        """Delete an alias. If it was the default, try to promote another."""
+    async def update_alias(
+        self, alias_id: str, data: dict, *, actor: SecurityContext
+    ) -> dict | None:
+        """Merge the supplied fields into the live alias (revision-checked)."""
         llm_gateway.forget(alias_id)
-        existing = await self.get_alias(alias_id)
-        if not existing:
-            return False
-
-        function_type = existing["function_type"]
-        was_default = existing["is_default"]
-
-        conn = await self._connect()
-        try:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "DELETE FROM NOVA_SYSTEM.CONFIG_MODEL_ALIASES WHERE id = %s",
-                    (alias_id,),
-                )
-        finally:
-            conn.close()
-
-        # If deleted alias was default, promote the next one
-        if was_default:
-            aliases = await self.list_aliases()
-            next_alias = next(
-                (a for a in aliases if a["function_type"] == function_type and a["is_active"]),
-                None,
+        async with metadata_scope(actor) as connection:
+            current = await self._joined(connection, alias_id)
+            if not current:
+                return None
+            existing = current[0]
+            merged = {**existing, **{k: v for k, v in data.items() if v is not None}}
+            if "system_prompt" in data:
+                merged["system_prompt"] = data["system_prompt"]
+            if "model_id" in data:
+                merged["model_id"] = data["model_id"]
+            await AIConfigurationService(connection).replace_alias(
+                alias_id,
+                self._definition(merged),
+                expected_revision=existing["metadata_revision"],
             )
-            if next_alias:
-                await self.update_alias(next_alias["id"], {"is_default": True})
+            rows = await self._joined(connection, alias_id)
+        return rows[0] if rows else None
 
-        return True
-
-    # ── UDF Registration ────────────────────────────────────────
-
-    async def register_all_udfs(self) -> dict:
-        """Register UDFs for all function types that have a default alias.
-
-        Called on backend startup and when aliases change.
-        """
-        aliases = await self.list_aliases()
-        # Group by function_type, pick the default (or first active)
-        type_to_alias: dict[str, dict] = {}
-        for alias in aliases:
-            ft = alias["function_type"]
-            if ft not in type_to_alias or alias.get("is_default"):
-                type_to_alias[ft] = alias
-
-        results: list[dict] = []
-        registered_count = 0
-        failed_count = 0
-
-        # Register UDFs for all types that have aliases
-        for ft, alias in type_to_alias.items():
-            if not alias.get("is_active", True):
-                continue
-            result = await self._register_single_udf(ft, alias)
-            results.append(result)
-            if result["registered"]:
-                registered_count += 1
-            else:
-                failed_count += 1
-
-        # Also register "empty" UDFs for types without aliases
-        # so that SQL queries don't fail with "function not found"
-        for ft in UDF_TEMPLATES:
-            if ft not in type_to_alias:
-                result = await self._register_placeholder_udf(ft)
-                results.append(result)
-                if result["registered"]:
-                    registered_count += 1
-                else:
-                    failed_count += 1
-
-        return {
-            "success": failed_count == 0,
-            "registered": registered_count,
-            "failed": failed_count,
-            "details": results,
-        }
-
-    async def register_udf_for_type(self, function_type: str) -> dict:
-        """Register the UDF for a specific function type."""
-        aliases = await self.list_aliases()
-        # Find the default alias for this type
-        alias = next(
-            (a for a in aliases if a["function_type"] == function_type and a.get("is_default")),
-            None,
-        )
-        if not alias:
-            # Try any active alias for this type
-            alias = next(
-                (
-                    a
-                    for a in aliases
-                    if a["function_type"] == function_type and a.get("is_active", True)
-                ),
-                None,
-            )
-
-        if not alias:
-            return await self._register_placeholder_udf(function_type)
-
-        return await self._register_single_udf(function_type, alias)
-
-    async def _register_single_udf(self, function_type: str, alias: dict) -> dict:
-        """Register a UDF with resolved provider config."""
-        template = UDF_TEMPLATES.get(function_type)
-        if not template:
-            return {
-                "function_name": function_type.upper(),
-                "function_type": function_type,
-                "alias_name": alias.get("alias_name"),
-                "provider_name": alias.get("provider_name"),
-                "model_name": alias.get("model_name"),
-                "registered": False,
-                "error": f"Unknown function type: {function_type}",
-            }
-
-        # Resolve provider config
-        provider = await self._get_provider(alias["provider_id"])
-        if not provider:
-            return {
-                "function_name": template["function_name"],
-                "function_type": function_type,
-                "alias_name": alias.get("alias_name"),
-                "provider_name": None,
-                "model_name": alias.get("model_name"),
-                "registered": False,
-                "error": f"Provider {alias['provider_id']} not found",
-            }
-
-        model = await self._get_model(alias["model_id"]) if alias.get("model_id") else None
-        # Resolve model name
-        model_name = alias.get("model_name")
-        if not model_name and model:
-            model_name = model["name"]
-
-        # ``ai_query()`` posts an OpenAI-style request to ``endpoint`` with
-        # ``api_key`` as the bearer token. Both point at Nova's own gateway, so
-        # the provider's key never enters the engine's function metadata; the
-        # token only names this alias. See ``gateway.py``.
-        if not provider.get("endpoint"):
-            return {
-                "function_name": template["function_name"],
-                "function_type": function_type,
-                "alias_name": alias.get("alias_name"),
-                "provider_name": provider["name"],
-                "model_name": model_name,
-                "registered": False,
-                "error": "Provider has no endpoint",
-            }
-        config = {
-            key: value
-            for key, value in (alias.get("default_params") or {}).items()
-            if key in FORWARDED_PARAMETERS or key == "timeout_ms"
-        }
-        config.update(
-            model=model_name or "gpt-4o-mini",
-            api_key=alias_token(alias["id"]),
-            endpoint=gateway_endpoint(),
-        )
-        llm_gateway.forget(alias["id"])
-
-        config_str = json.dumps(config, separators=(",", ": "))
-        # Escape single quotes for SQL string literal
-        config_escaped = config_str.replace("'", "''")
-
-        # Use custom system prompt if provided, otherwise template default
-        if alias.get("system_prompt"):
-            # Custom prompt — we need to build the body differently
-            body = self._build_body_with_prompt(
-                function_type, alias["system_prompt"], config_escaped
-            )
-        else:
-            body = template["body"].replace("{config}", config_escaped)
-
-        # StarRocks SQL UDF syntax: CREATE GLOBAL FUNCTION name(arg type) RETURNS expr
-        params_str = ", ".join(template["params"])
-        fn_name = template["function_name"]
-
-        # Drop existing function first (StarRocks doesn't support CREATE OR REPLACE for UDFs)
-        # Try multiple type signatures since StarRocks may store as STRING or VARCHAR
-        argument_types = ", ".join("STRING" for _ in template["params"])
-        drop_sql = f"DROP GLOBAL FUNCTION IF EXISTS {fn_name}({argument_types})"
-
-        sql = f"""CREATE GLOBAL FUNCTION {fn_name}({params_str})
-        RETURNS {body}"""
-
-        try:
-            conn = await self._connect()
-            try:
-                async with conn.cursor() as cur:
-                    # Drop existing function first
-                    await cur.execute(drop_sql)
-                    # Create new function
-                    await cur.execute(sql)
-            finally:
-                conn.close()
-
-            logger.info(
-                "Registered UDF %s (provider=%s, model=%s)", fn_name, provider["name"], model_name
-            )
-            return {
-                "function_name": fn_name,
-                "function_type": function_type,
-                "alias_name": alias.get("alias_name"),
-                "provider_name": provider["name"],
-                "model_name": model_name,
-                "registered": True,
-                "error": None,
-            }
-        except Exception as e:
-            logger.error("Failed to register UDF %s: %s", fn_name, type(e).__name__)
-            return {
-                "function_name": fn_name,
-                "function_type": function_type,
-                "alias_name": alias.get("alias_name"),
-                "provider_name": provider["name"],
-                "model_name": model_name,
-                "registered": False,
-                "error": f"UDF registration failed: {type(e).__name__}",
-            }
-
-    async def _register_placeholder_udf(self, function_type: str) -> dict:
-        """Register a placeholder UDF that returns an error message.
-
-        This ensures SQL queries don't fail with 'function not found'
-        when no alias is configured.
-        """
-        template = UDF_TEMPLATES.get(function_type)
-        if not template:
-            return {
-                "function_name": function_type.upper(),
-                "function_type": function_type,
-                "alias_name": None,
-                "provider_name": None,
-                "model_name": None,
-                "registered": False,
-                "error": f"Unknown function type: {function_type}",
-            }
-
-        fn_name = template["function_name"]
-        # StarRocks SQL UDF: "name type" format
-        params_str = ", ".join(template["params"])
-        param_names = [p.split()[0] for p in template["params"]]
-        if param_names:
-            # Build param=value pairs with ', ' separator between them
-            param_pairs = []
-            for p in param_names:
-                param_pairs.append(f"'{p}='")
-                param_pairs.append(p)
-                param_pairs.append("', '")
-            # Remove last separator
-            if param_pairs:
-                param_pairs = param_pairs[:-1]
-            flat_parts = ", ".join(param_pairs)
-            body = (
-                f"CONCAT('ERROR: {fn_name} not configured. "
-                "Set up an alias in AI Providers > Functions tab. Input was: ', "
-                f"{flat_parts})"
-            )
-        else:
-            body = f"'ERROR: {fn_name} not configured.'"
-
-        argument_types = ", ".join("STRING" for _ in template["params"])
-        drop_sql = f"DROP GLOBAL FUNCTION IF EXISTS {fn_name}({argument_types})"
-
-        sql = f"""CREATE GLOBAL FUNCTION {fn_name}({params_str})
-        RETURNS {body}"""
-
-        try:
-            conn = await self._connect()
-            try:
-                async with conn.cursor() as cur:
-                    await cur.execute(drop_sql)
-                    await cur.execute(sql)
-            finally:
-                conn.close()
-
-            logger.info("Registered placeholder UDF %s", fn_name)
-            return {
-                "function_name": fn_name,
-                "function_type": function_type,
-                "alias_name": None,
-                "provider_name": None,
-                "model_name": None,
-                "registered": True,
-                "error": None,
-            }
-        except Exception as e:
-            logger.error("Failed to register placeholder UDF %s: %s", fn_name, e)
-            return {
-                "function_name": fn_name,
-                "function_type": function_type,
-                "alias_name": None,
-                "provider_name": None,
-                "model_name": None,
-                "registered": False,
-                "error": str(e),
-            }
-
-    async def registration_is_current(self) -> bool:
-        """Whether the engine's ``AI_*`` functions already match the aliases.
-
-        Registering drops each function before recreating it, so a process that
-        starts while queries are running should leave matching functions alone.
-        """
-        conn = await self._connect()
-        bodies: dict[str, str] = {}
-        try:
-            async with conn.cursor() as cur:
-                await cur.execute("SHOW FULL GLOBAL FUNCTIONS")
-                for row in await cur.fetchall():
-                    values = list(row.values()) if isinstance(row, dict) else list(row)
-                    name = str(values[0]).split("(", 1)[0].strip().upper()
-                    bodies[name] = str(values[-1])
-        finally:
-            conn.close()
-
-        chosen: dict[str, dict] = {}
-        for alias in await self.list_aliases():
-            function_type = alias["function_type"]
-            if function_type not in chosen or alias.get("is_default"):
-                chosen[function_type] = alias
-        for function_type, template in UDF_TEMPLATES.items():
-            body = bodies.get(template["function_name"])
-            if body is None:
+    async def delete_alias(self, alias_id: str, *, actor: SecurityContext) -> bool:
+        """Delete an alias; the next active alias of its type becomes the default."""
+        llm_gateway.forget(alias_id)
+        async with metadata_scope(actor) as connection:
+            existing = await ModelAliasRepository(connection).alias(alias_id)
+            if existing is None or existing["is_deleted"]:
                 return False
-            selected_alias = chosen.get(function_type)
-            if selected_alias is None:
-                if "not configured" not in body:
-                    return False
-            elif selected_alias.get("is_active", True):
-                expected = [alias_token(selected_alias["id"]), gateway_endpoint()]
-                if selected_alias.get("model_name"):
-                    expected.append(json.dumps(selected_alias["model_name"]))
-                if any(marker not in body for marker in expected):
-                    return False
+            await AIConfigurationService(connection).delete_alias(
+                alias_id, expected_revision=existing["metadata_revision"]
+            )
         return True
 
-    async def get_udf_status(self) -> list[dict]:
-        """Check which UDFs are registered in StarRocks."""
+    # ── Function registration ───────────────────────────────────
+
+    async def register_all_udfs(self, *, actor: SecurityContext | None = None) -> dict:
+        """Persist registration intent for every function whose definition changed.
+
+        The maintenance participant applies and verifies the engine functions;
+        this call never drops or creates one. Without an administrator actor
+        (process startup) nothing is written: a process start is not a
+        configuration change.
+        """
+        if actor is not None:
+            async with metadata_scope(actor) as connection:
+                await ModelAliasRepository(connection).lock_mutations()
+                jobs = await FunctionRegistrationRepository(connection).reconcile_changed()
+            logger.info("Queued %d AI function registration(s)", len(jobs))
+        details = await self.get_udf_status(actor=actor)
+        registered = sum(1 for item in details if item["registered"])
+        return {
+            "success": True,
+            "registered": registered,
+            "failed": len(details) - registered,
+            "details": details,
+        }
+
+    async def _engine_functions(self) -> set[str]:
         conn = await self._connect()
-        registered_functions: set[str] = set()
+        names: set[str] = set()
         try:
             async with conn.cursor() as cur:
                 await cur.execute("SHOW GLOBAL FUNCTIONS")
-                rows = await cur.fetchall()
-                for row in rows:
-                    # row format: (function_name, return_type, ...)
-                    fn_name = row[0] if isinstance(row, tuple) else row.get("Function", "")
-                    if fn_name:
-                        registered_functions.add(fn_name.upper())
+                for row in await cur.fetchall():
+                    name = row[0] if isinstance(row, tuple) else row.get("Function", "")
+                    if name:
+                        names.add(str(name).split("(", 1)[0].strip().upper())
         finally:
             conn.close()
+        return names
 
-        aliases = await self.list_aliases()
-        type_to_alias: dict[str, dict] = {}
-        for alias in aliases:
-            ft = alias["function_type"]
-            if ft not in type_to_alias or alias.get("is_default"):
-                type_to_alias[ft] = alias
-
-        results: list[dict] = []
-        for ft, template in UDF_TEMPLATES.items():
-            fn_name = template["function_name"]
-            selected_alias = type_to_alias.get(ft)
-            results.append(
-                {
-                    "function_name": fn_name,
-                    "function_type": ft,
-                    "alias_name": selected_alias.get("alias_name") if selected_alias else None,
-                    "provider_name": selected_alias.get("provider_name")
-                    if selected_alias
-                    else None,
-                    "model_name": selected_alias.get("model_name") if selected_alias else None,
-                    "registered": fn_name in registered_functions,
-                    "error": None,
-                }
+    async def get_udf_status(self, *, actor: SecurityContext | None = None) -> list[dict]:
+        """Which ``AI_*`` functions the engine currently has, per selected alias."""
+        registered = await self._engine_functions()
+        selected: dict[str, dict] = {}
+        for alias in await self.list_aliases(actor=actor):
+            function_type = alias["function_type"]
+            if function_type not in selected or alias.get("is_default"):
+                selected[function_type] = alias
+        return [
+            _status_item(
+                function_type, selected.get(function_type),
+                template["function_name"] in registered,
             )
-        return results
-
-    # ── Internal helpers ────────────────────────────────────────
-
-    async def _get_provider(self, provider_id: str) -> dict | None:
-        """Get provider by ID."""
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(
-                    "SELECT id, name, type, endpoint, api_key, default_params "
-                    "FROM NOVA_SYSTEM.CONFIG_AI_PROVIDERS WHERE id = %s",
-                    (provider_id,),
-                )
-                row = await cur.fetchone()
-                if not row:
-                    return {}
-                result = dict(row)
-                if result.get("default_params") and isinstance(result["default_params"], str):
-                    with contextlib.suppress(json.JSONDecodeError, TypeError):
-                        result["default_params"] = json.loads(result["default_params"])
-                return result
-        finally:
-            conn.close()
-
-    async def _get_model(self, model_id: str) -> dict | None:
-        """Get model by ID."""
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(
-                    "SELECT id, provider_id, name, display_name, type, max_tokens "
-                    "FROM NOVA_SYSTEM.CONFIG_AI_MODELS WHERE id = %s",
-                    (model_id,),
-                )
-                row = await cur.fetchone()
-                return dict(row) if row else None
-        finally:
-            conn.close()
-
-    def _build_body_with_prompt(
-        self, function_type: str, system_prompt: str, config_str: str
-    ) -> str:
-        """Build ai_query body with a custom system prompt."""
-        template = UDF_TEMPLATES[function_type]
-        # Escape single quotes in prompt for SQL string
-        escaped_prompt = system_prompt.replace("'", "''")
-
-        if function_type == "complete":
-            return f"ai_query(CONCAT('{escaped_prompt}', prompt), '{config_str}')"
-        elif function_type == "sentiment":
-            return f"ai_query(CONCAT('{escaped_prompt}', txt), '{config_str}')"
-        elif function_type == "classify":
-            return f"ai_query(CONCAT('{escaped_prompt}', categories, ']: ', txt), '{config_str}')"
-        elif function_type == "summarize":
-            return f"ai_query(CONCAT('{escaped_prompt}', txt), '{config_str}')"
-        elif function_type == "extract":
-            return (
-                f"ai_query(CONCAT('{escaped_prompt}', json_schema, "
-                f"'. Reply with ONLY the JSON.\\n\\nText: ', txt), '{config_str}')"
-            )
-        elif function_type == "translate":
-            return (
-                f"ai_query(CONCAT('{escaped_prompt}', target_lang, "
-                f"'. Reply with ONLY the translation.\\n\\nText: ', txt), '{config_str}')"
-            )
-        elif function_type == "filter":
-            return (
-                f"ai_query(CONCAT('{escaped_prompt}', criteria, "
-                f"'\\n\\nText: ', txt), '{config_str}')"
-            )
-        else:
-            params = [p.split()[0] for p in template["params"]]
-            return f"ai_query(CONCAT('{escaped_prompt}', {', '.join(params)}), '{config_str}')"
+            for function_type, template in UDF_TEMPLATES.items()
+        ]
 
     @staticmethod
     def _deserialize_row(row: dict) -> dict:
-        """Deserialize a DB row, parsing JSON fields."""
+        """Parse the stored JSON text of ``default_params``."""
         result = dict(row)
         if result.get("default_params") and isinstance(result["default_params"], str):
             with contextlib.suppress(json.JSONDecodeError, TypeError):

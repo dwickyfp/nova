@@ -20,6 +20,11 @@ from app.common.secret_keys import require_configured_secrets
 from app.core.config import settings
 from app.core.database import db
 from app.core.exceptions import register_exception_handlers
+from app.core.metadata_process import (
+    check_metadata,
+    close_process_metadata,
+    open_process_metadata,
+)
 from app.core.redis import session_store
 from app.core.studio_capabilities import log_studio_capabilities
 from app.modules.access_control.router import router as access_control_router
@@ -42,13 +47,9 @@ from app.modules.indexes.router import router as indexes_router
 from app.modules.intelligence.autopilot import router as semantic_autopilot_router
 from app.modules.intelligence.business_events_router import router as business_events_router
 from app.modules.intelligence.engine_router import router as intelligence_engine_router
-from app.modules.intelligence.engine_schema import ensure_engine_schema
 from app.modules.intelligence.entities import router as entities_router
-from app.modules.intelligence.feature_schema import ensure_feature_schema
 from app.modules.intelligence.feature_store import router as feature_store_router
 from app.modules.intelligence.search import router as search_router
-from app.modules.intelligence.search_schema import ensure_search_schema
-from app.modules.intelligence.semantic_view_schema import ensure_semantic_view_schema
 from app.modules.intelligence.semantic_views import router as semantic_views_router
 from app.modules.llm_functions.gateway import llm_gateway
 from app.modules.llm_functions.gateway import router as llm_gateway_router
@@ -60,7 +61,6 @@ from app.modules.monitoring.router import router as monitoring_router
 from app.modules.notebooks.router import router as notebooks_router
 from app.modules.objects.router import router as objects_router
 from app.modules.ontology.router import router as ontology_router
-from app.modules.ontology.schema import ensure_ontology_schema
 from app.modules.pipes.router import router as pipes_router
 from app.modules.query.router import router as query_router
 from app.modules.query_autopilot.router import router as query_autopilot_router
@@ -95,7 +95,6 @@ logger = logging.getLogger(__name__)
 #: Held while one process re-registers the global LLM functions. Registration
 #: drops and recreates each function, so two processes doing it at once would
 #: leave a window in which a function a query needs does not exist.
-_LLM_UDF_LOCK = "nova:llm-functions:register"
 
 #: Held by the one process that is creating or migrating ``NOVA_SYSTEM``.
 _BOOTSTRAP_LOCK = "nova:control-plane:bootstrap"
@@ -145,170 +144,11 @@ async def _bootstrap_exclusively() -> None:
 
 
 async def _bootstrap_control_plane() -> None:
-    """Create or migrate the ``NOVA_SYSTEM`` schemas this service owns."""
+    """Check the published metadata epoch and prepare the managed payload bucket."""
     await init_nova_system()
-    await ensure_search_schema()
-    await ensure_semantic_view_schema()
-    await ensure_feature_schema()
-    await ensure_engine_schema()
-    await ensure_ontology_schema()
+    from app.modules.workspaces.storage_bootstrap import ensure_workspace_bucket
 
-    # Workspace object storage (NOVA-137). Idempotent: creates the configured
-    # bucket if absent so the first "create file" does not fail with
-    # NoSuchBucket. Best-effort and non-fatal — a missing bucket only breaks
-    # the workspace feature, and the request path still classifies the failure
-    # into a 503 with an actionable message.
-    try:
-        from app.modules.workspaces.storage_bootstrap import ensure_workspace_bucket
-
-        ensure_workspace_bucket()
-    except Exception as e:
-        logger.warning("Could not ensure workspace storage bucket: %s", e)
-
-    # Nova Catalog store (CATALOG_*), plus a one-time copy of the legacy
-    # CONFIG_EXTERNAL_CATALOGS rows. Best-effort: visibility always comes from
-    # the engine, so a missing store only loses descriptions and sync history.
-    try:
-        from app.modules.catalog.service import catalog_service
-
-        await catalog_service.ensure_schema()
-    except Exception as e:
-        logger.warning("Could not ensure catalog store schema: %s", e)
-
-    # Nova Notebook runtimes, executions and package manifests. Best-effort:
-    # without them notebooks still open and edit; running cells reports why.
-    try:
-        from app.modules.notebooks.repository import notebook_repository
-
-        await notebook_repository.ensure_schema()
-    except Exception as e:
-        logger.warning("Could not ensure notebook schema: %s", e)
-
-    # Migration Connector source registry (Phase 11 v1). Best-effort, same
-    # reasoning: a missing mirror table only degrades the source list, not the
-    # read-only assessment path.
-    try:
-        from app.modules.migration.repository import migration_repo
-
-        await migration_repo.ensure_schema()
-    except Exception as e:
-        logger.warning("Could not ensure migration source schema: %s", e)
-
-    # Assistant conversation storage. Threads/messages used to live in process
-    # memory and vanished on reload; persisting them per user is what survives a
-    # restart. Best-effort: without it the assistant still answers, but history
-    # is not durable.
-    try:
-        from app.modules.assistant.repository import assistant_repository
-
-        await assistant_repository.ensure_schema()
-    except Exception as e:
-        logger.warning("Could not ensure assistant conversation schema: %s", e)
-
-    # Agent Studio storage (Phase 12): agents, legacy semantic metadata, user skills.
-    # Best-effort in the same way: without it the routes answer 500 rather than
-    # taking the whole web service down at boot.
-    try:
-        from app.modules.agents.artifact_repository import artifact_repository
-        from app.modules.agents.memory import memory_repository
-        from app.modules.agents.repository import agent_repository
-        from app.modules.agents.rule_proposals import rule_proposal_repository
-        from app.modules.agents.run_journal import run_journal
-
-        await agent_repository.ensure_schema()
-        from app.modules.agents.mission import mission_service
-        from app.modules.agents.resource_delegation import resource_delegation
-
-        await mission_service.ensure_schema()
-        await resource_delegation.ensure_schema()
-        await memory_repository.ensure_schema()
-        await rule_proposal_repository.ensure_schema()
-        await run_journal.ensure_schema()
-        from app.modules.agents.harness_repository import harness_repository
-
-        await harness_repository.ensure_schema()
-        await agent_repository.migrate_legacy_skill_authors()
-        await artifact_repository.ensure_schema()
-        from app.modules.superset.publication import ensure_schema as ensure_dataviz_schema
-
-        await ensure_dataviz_schema()
-        from app.modules.viz.migration import migrate_viz
-
-        await migrate_viz()
-    except Exception as e:
-        logger.warning("Could not ensure Agent Studio schema: %s", e)
-
-    # Import legacy semantic metadata after both View and Agent tables exist.
-    # The importer keeps old IDs, so saved agent bindings resolve the same View.
-    try:
-        from app.modules.intelligence.semantic_migration import migrate_legacy_semantic_models
-
-        migration = await migrate_legacy_semantic_models()
-        logger.info(
-            "Semantic View migration: %d imported, %d already present",
-            migration["imported"],
-            migration["already_present"],
-        )
-        if migration["drafts_needing_review"] or migration["unresolved"]:
-            logger.warning(
-                "Semantic View migration needs review: %d drafts, %d unresolved",
-                len(migration["drafts_needing_review"]),
-                len(migration["unresolved"]),
-            )
-    except Exception as exc:
-        logger.warning("Could not migrate legacy semantic metadata: %s", type(exc).__name__)
-    else:
-        try:
-            from app.modules.agents.repository import agent_repository
-
-            backfilled = await agent_repository.backfill_semantic_view_ids()
-            logger.info("Agent Semantic View bindings backfilled: %d", backfilled)
-        except Exception as exc:
-            logger.warning(
-                "Could not backfill agent Semantic View bindings: %s",
-                type(exc).__name__,
-            )
-
-    # Training jobs handed to nova-worker (ML_TRAINING_EXECUTOR=worker).
-    try:
-        from app.modules.ml_engine.jobs import ml_job_repo
-
-        await ml_job_repo.ensure_schema()
-    except Exception as e:
-        logger.warning("Could not ensure ML job schema: %s", e)
-
-    # Token usage of the AI_* SQL functions, written by the LLM gateway.
-    try:
-        await llm_gateway.ensure_schema()
-    except Exception as e:
-        logger.warning("Could not ensure AI function usage schema: %s", e)
-
-
-async def _register_llm_udfs() -> None:
-    """Register LLM function UDFs (AI_COMPLETE, AI_SENTIMENT, etc.)."""
-    from app.modules.task_orchestration.transport import LeaderLock
-
-    lock = LeaderLock(session_store._redis, key=_LLM_UDF_LOCK, ttl_seconds=120)
-    try:
-        if not await lock.acquire():
-            logger.info("LLM UDF registration is running in another process")
-            return
-        try:
-            from app.modules.llm_functions.service import llm_function_service
-
-            if await llm_function_service.registration_is_current():
-                logger.info("LLM UDFs already match the configured aliases")
-                return
-            result = await llm_function_service.register_all_udfs()
-            logger.info(
-                "LLM UDFs registered: %d ok, %d failed",
-                result["registered"],
-                result["failed"],
-            )
-        finally:
-            await lock.release()
-    except Exception as e:
-        logger.warning("Failed to register LLM UDFs on startup: %s", e)
+    await asyncio.to_thread(ensure_workspace_bucket)
 
 
 @asynccontextmanager
@@ -319,8 +159,25 @@ async def lifespan(app: FastAPI):
     # dies at boot with a clear message instead of at first login.
     require_configured_secrets()
     log_studio_capabilities(logger, "api")
+    role = settings.NOVA_PROCESS_ROLE
+    service = _service_label(role)
 
-    # Startup
+    # Control metadata lives in nova_control. Admit this process only at the
+    # published schema and epoch, with its own workload login; there is no
+    # fallback to NOVA_SYSTEM metadata.
+    metadata = await open_process_metadata(role)
+    app.state.metadata = metadata
+    try:
+        async with _serve(app, role, service):
+            yield
+    finally:
+        app.state.metadata = None
+        await close_process_metadata(metadata, service)
+
+
+@asynccontextmanager
+async def _serve(app: FastAPI, role: str, service: str):
+    """Everything the API process runs once its metadata pool is installed."""
     await db.init_system_pool()
     from app.sql_frontend.capabilities.starrocks import resolve_engine_capabilities
 
@@ -329,12 +186,9 @@ async def lifespan(app: FastAPI):
     # per-session init_command is the guarantee). Best-effort inside the method.
     await db.apply_global_time_zone()
     await session_store.init()
-    role = settings.NOVA_PROCESS_ROLE
     control = _owns_control_plane(role)
     if control:
         await _bootstrap_exclusively()
-        # So the AI_* functions are available as SQL functions from the start.
-        await _register_llm_udfs()
 
     # MySQL protocol proxy. Embedded only in the single-process role, where the
     # web service alone is enough to serve port 4406; a split deployment runs
@@ -365,7 +219,6 @@ async def lifespan(app: FastAPI):
     # The same holds for AI function usage: whichever process the engine calls
     # records what it forwarded.
     llm_usage_flush = asyncio.create_task(llm_gateway.meter.run(autopilot_stop))
-    service = _service_label(role)
     SERVICE_UP.labels(service=service).set(1)
     app.state.started = True
     try:
@@ -559,16 +412,21 @@ def create_app() -> FastAPI:
         have finished and the engine and Redis to answer, which is what a
         gateway or orchestrator needs before sending traffic.
         """
-        if not getattr(app.state, "started", False):
+        metadata = getattr(app.state, "metadata", None)
+        if not getattr(app.state, "started", False) or metadata is None:
             return JSONResponse(status_code=503, content={"status": "starting"})
+        role = settings.NOVA_PROCESS_ROLE
         try:
             async with asyncio.timeout(READINESS_TIMEOUT_SECONDS):
+                # ``read_only`` while the deployment is frozen: reads still
+                # serve, metadata writes are refused with 503.
+                metadata_state = await check_metadata(metadata, _service_label(role))
                 await db.execute_system("SELECT 1")
                 await session_store._redis.ping()
         except Exception as exc:
             logger.warning("Readiness check failed: %s", type(exc).__name__)
             return JSONResponse(status_code=503, content={"status": "unavailable"})
-        return {"status": "ready", "role": settings.NOVA_PROCESS_ROLE}
+        return {"status": "ready", "role": role, "metadata": metadata_state}
 
     app.add_api_route("/metrics", metrics_response, methods=["GET"], include_in_schema=False)
 

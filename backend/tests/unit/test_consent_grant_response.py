@@ -32,7 +32,7 @@ async def test_one_tool_decision_reports_the_existing_read_grant(
     thread.consent.always_allow_read_only = active
     thread.consent.granted_under = stamp(user) if active else None
     future = broker.open(
-        "write-1", thread_id=thread.thread_id, user_name="alice", classification="destructive",
+        "write-1", thread_id=thread.thread_id, user=user, classification="destructive",
     )
     try:
         request = ConsentDecisionRequest(decision=decision)
@@ -64,7 +64,7 @@ async def test_file_approval_reports_the_existing_read_grant(monkeypatch, active
     thread.consent.always_allow_read_only = active
     thread.consent.granted_under = stamp(user) if active else None
     future = broker.open(
-        "upload-1", thread_id=thread.thread_id, user_name="alice",
+        "upload-1", thread_id=thread.thread_id, user=user,
         classification="destructive", upload_required=True,
     )
     upload = UploadFile(file=BytesIO(b"synthetic,file\n1,2\n"), filename="fixture.csv")

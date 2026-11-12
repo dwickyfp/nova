@@ -17,6 +17,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
+from app.core.metadata_db import MetadataOutcomeUnknown
 from app.modules.llm_functions import gateway
 from app.modules.llm_functions.gateway import (
     GatewayRefusal,
@@ -288,32 +289,31 @@ async def test_forwarding_is_bounded(monkeypatch, stack):
 # ── Usage ───────────────────────────────────────────────────────────────────
 
 
-class _Connection:
-    def __init__(self, fail: bool = False) -> None:
-        self.rows: list[tuple] = []
-        self.fail = fail
+class _UsageStore:
+    def __init__(self):
+        self.rows = []
+        self.fail = False
+        self.unknown = False
 
-    def cursor(self):
-        return self
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *exc):
-        return False
-
-    async def executemany(self, sql, rows):
+    async def record(self, rows):
         if self.fail:
-            raise ConnectionError("engine unavailable")
-        assert "USAGE_LLM_FUNCTIONS" in sql
+            raise ConnectionError("metadata unavailable")
+        if self.unknown:
+            raise MetadataOutcomeUnknown()
         self.rows.extend(rows)
 
 
 @pytest.fixture
-def usage_store(monkeypatch):
-    connection = _Connection()
-    monkeypatch.setattr(gateway.db, "system_conn", lambda: connection)
-    return connection
+def usage_store(monkeypatch, fake_metadata_db):
+    store = _UsageStore()
+
+    def repository(connection, actor):
+        assert actor == gateway.USAGE_WRITER
+        assert fake_metadata_db.transactions[-1].actor == actor
+        return store
+
+    monkeypatch.setattr(gateway, "LLMUsageMetadataRepository", repository)
+    return store
 
 
 async def test_usage_is_summed_per_function_and_written_in_one_row(stack, usage_store):
@@ -328,11 +328,11 @@ async def test_usage_is_summed_per_function_and_written_in_one_row(stack, usage_
 
     assert usage_store.rows == []
     assert await llm.meter.flush() == 2
-    by_status = {row[4]: row for row in usage_store.rows}
+    by_status = {row[3]: row for row in usage_store.rows}
     success = by_status["success"]
-    assert success[1:4] == ("AI_COMPLETE", "default-complete", "provider-model")
-    assert success[5:9] == (3, 33, 12, 45)
-    assert by_status["error"][5:9] == (1, 0, 0, 0)
+    assert success[:3] == ("AI_COMPLETE", "default-complete", "provider-model")
+    assert success[4:8] == (3, 33, 12, 45)
+    assert by_status["error"][4:8] == (1, 0, 0, 0)
     assert await llm.meter.flush() == 0
 
 
@@ -357,7 +357,7 @@ async def test_failed_flush_keeps_the_usage_for_the_next_one(stack, usage_store)
     await llm.complete(alias_token("alias-1"), REQUEST)
 
     assert await llm.meter.flush() == 1
-    assert usage_store.rows[0][5:9] == (2, 22, 8, 30)
+    assert usage_store.rows[0][4:8] == (2, 22, 8, 30)
 
 
 @pytest.mark.parametrize("usage", [None, {}, {"prompt_tokens": "9"}, {"prompt_tokens": -1}, []])
@@ -368,7 +368,7 @@ async def test_missing_or_odd_usage_counts_the_request_without_tokens(usage_stor
     meter.record(resolved, "success", usage, 5)
     await meter.flush()
 
-    assert usage_store.rows[0][5:10] == (1, 0, 0, 0, 5)
+    assert usage_store.rows[0][4:9] == (1, 0, 0, 0, 5)
 
 
 async def test_meter_loop_flushes_on_interval_and_at_stop(monkeypatch, usage_store):
@@ -445,56 +445,36 @@ def test_gateway_is_mounted_on_the_internal_prefix():
     assert TestClient(app).post(gateway.GATEWAY_PATH, json=REQUEST).status_code == 401
 
 
-# ── Function bodies ─────────────────────────────────────────────────────────
+# Function registration runs in maintenance; rendering is deterministic.
 
 
-class _Engine:
-    def __init__(self) -> None:
-        self.statements: list[str] = []
-
-    def cursor(self):
-        return self
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *exc):
-        return False
-
-    async def execute(self, sql, *args):
-        self.statements.append(sql)
-
-    def close(self):
-        pass
-
-
-async def test_registered_function_body_carries_the_token_not_the_provider_key(monkeypatch):
-    from app.modules.llm_functions.service import LLMFunctionService
-
-    monkeypatch.setattr(settings, "LLM_GATEWAY_URL", "http://nova-query:8000/")
-    engine = _Engine()
-    service = LLMFunctionService()
-    monkeypatch.setattr(
-        service,
-        "_get_provider",
-        AsyncMock(return_value={**PROVIDER, "api_key": f"enc:{PROVIDER_KEY}"}),
-    )
-    monkeypatch.setattr(service, "_connect", AsyncMock(return_value=engine))
-    alias = {
-        **ALIAS,
-        "default_params": {
-            "max_tokens": 64,
-            "timeout_ms": 20000,
-            "api_key": PROVIDER_KEY,
-            "endpoint": "https://attacker.example.com",
-        },
+def snapshot(**changes):
+    return {
+        "contract_version": 1,
+        "function_type": "complete",
+        "mode": "configured",
+        "alias": {"id": "alias-1", "system_prompt": ""},
+        "model": {"name": "provider-model"},
+        "parameters": {"max_tokens": 64},
+        **changes,
     }
 
-    result = await service._register_single_udf("complete", alias)
 
-    assert result["registered"] is True
-    create = next(sql for sql in engine.statements if sql.startswith("CREATE GLOBAL FUNCTION"))
-    config = json.loads(create.split("ai_query(prompt, '", 1)[1].rsplit("')", 1)[0])
+def test_registered_body_carries_only_gateway_token(monkeypatch):
+    from app.modules.llm_functions.service import render_function
+
+    monkeypatch.setattr(settings, "LLM_GATEWAY_URL", "http://nova-query:8000/")
+    rendered = render_function(
+        snapshot(
+            parameters={
+                "max_tokens": 64,
+                "timeout_ms": 20000,
+                "api_key": PROVIDER_KEY,
+                "endpoint": "https://attacker.example.com",
+            }
+        )
+    )
+    config = json.loads(rendered.body.split("ai_query(prompt, '", 1)[1].rsplit("')", 1)[0])
     assert config == {
         "max_tokens": 64,
         "timeout_ms": 20000,
@@ -502,102 +482,81 @@ async def test_registered_function_body_carries_the_token_not_the_provider_key(m
         "api_key": alias_token("alias-1"),
         "endpoint": "http://nova-query:8000/api/v1/internal/llm/chat/completions",
     }
-    assert PROVIDER_KEY not in "".join(engine.statements)
+    assert PROVIDER_KEY not in rendered.create_sql
+    assert alias_token("alias-1") not in repr(rendered)
 
 
-async def test_provider_without_an_endpoint_is_not_registered(monkeypatch):
-    from app.modules.llm_functions.service import LLMFunctionService
+@pytest.mark.parametrize("mode", ["unconfigured", "disabled"])
+def test_unavailable_definition_renders_a_non_invoking_placeholder(mode):
+    from app.modules.llm_functions.service import render_function
 
-    service = LLMFunctionService()
-    monkeypatch.setattr(
-        service, "_get_provider", AsyncMock(return_value={**PROVIDER, "endpoint": ""})
-    )
-    connect = AsyncMock()
-    monkeypatch.setattr(service, "_connect", connect)
-
-    result = await service._register_single_udf("complete", dict(ALIAS))
-
-    assert result["registered"] is False and result["error"] == "Provider has no endpoint"
-    connect.assert_not_awaited()
-
-
-# ── Leaving matching functions alone ────────────────────────────────────────
-
-
-def _engine_rows(bodies: dict[str, str]) -> list[tuple]:
-    return [
-        (f"{name.lower()}(VARCHAR)", "VARCHAR", "SQL", "NULL", body)
-        for name, body in bodies.items()
-    ]
-
-
-@pytest.fixture
-def registered(monkeypatch):
-    """An engine whose seven functions match one alias plus six placeholders."""
-    from app.modules.llm_functions.service import UDF_TEMPLATES, LLMFunctionService
-
-    monkeypatch.setattr(settings, "LLM_GATEWAY_URL", "http://nova-query:8000")
-    service = LLMFunctionService()
-    bodies = {
-        template["function_name"]: "concat('ERROR: X not configured. ', txt)"
-        for template in UDF_TEMPLATES.values()
-    }
-    bodies["AI_COMPLETE"] = (
-        'ai_query(`prompt`, \'{"model": "provider-model","api_key": "'
-        + alias_token("alias-1")
-        + '","endpoint": "http://nova-query:8000'
-        + gateway.GATEWAY_PATH
-        + "\"}')"
-    )
-
-    class Cursor(_Engine):
-        async def fetchall(self):
-            return _engine_rows(bodies)
-
-    aliases = [dict(ALIAS)]
-    monkeypatch.setattr(service, "_connect", AsyncMock(return_value=Cursor()))
-    monkeypatch.setattr(service, "list_aliases", AsyncMock(return_value=aliases))
-    return service, bodies, aliases
-
-
-async def test_matching_functions_are_current(registered):
-    service, _, _ = registered
-
-    assert await service.registration_is_current() is True
+    rendered = render_function(snapshot(mode=mode))
+    assert "not configured" in rendered.body and "ai_query(" not in rendered.body
 
 
 @pytest.mark.parametrize(
-    "drift",
-    [
-        "missing",
-        "old_provider_key",
-        "other_gateway",
-        "other_model",
-        "placeholder_left",
-        "new_alias",
-    ],
+    "function_type",
+    ["complete", "sentiment", "classify", "summarize", "extract", "translate", "filter"],
 )
-async def test_any_drift_makes_registration_necessary(monkeypatch, registered, drift):
-    service, bodies, aliases = registered
-    if drift == "missing":
-        del bodies["AI_SENTIMENT"]
-    elif drift == "old_provider_key":
-        bodies["AI_COMPLETE"] = bodies["AI_COMPLETE"].replace(alias_token("alias-1"), PROVIDER_KEY)
-    elif drift == "other_gateway":
-        monkeypatch.setattr(settings, "LLM_GATEWAY_URL", "http://nova-backend:8000")
-    elif drift == "other_model":
-        aliases[0]["model_name"] = "newer-model"
-    elif drift == "placeholder_left":
-        bodies["AI_COMPLETE"] = "concat('ERROR: AI_COMPLETE not configured. ', prompt)"
-    elif drift == "new_alias":
-        aliases.append({**ALIAS, "id": "alias-2", "function_type": "summarize"})
+def test_full_stored_body_is_verified_through_novas_parser(function_type):
+    from app.modules.llm_functions.service import function_body_matches, render_function
 
-    assert await service.registration_is_current() is False
+    rendered = render_function(snapshot(function_type=function_type))
+    assert function_body_matches(rendered, rendered.body)
+    assert function_body_matches(rendered, rendered.body.replace("ai_query(", "AI_QUERY ("))
 
 
-async def test_inactive_alias_does_not_force_registration(registered):
-    service, bodies, aliases = registered
-    aliases[0]["is_active"] = False
-    bodies["AI_COMPLETE"] = "anything left from before"
+@pytest.mark.parametrize(
+    "change", ["token", "endpoint", "model", "prompt", "parameter", "placeholder", "suffix"]
+)
+def test_same_alias_markers_are_not_sufficient_proof(change):
+    from app.modules.llm_functions.service import function_body_matches, render_function
 
-    assert await service.registration_is_current() is True
+    rendered = render_function(
+        snapshot(alias={"id": "alias-1", "system_prompt": "original prompt"})
+    )
+    body = rendered.body
+    if change == "token":
+        body = body.replace(alias_token("alias-1"), PROVIDER_KEY)
+    elif change == "endpoint":
+        body = body.replace(gateway.gateway_endpoint(), "https://attacker.example.test")
+    elif change == "model":
+        body = body.replace("provider-model", "unapproved-model")
+    elif change == "prompt":
+        body = body.replace("original prompt", "different prompt")
+    elif change == "parameter":
+        body = body.replace('"max_tokens": 64', '"max_tokens": 128')
+    elif change == "placeholder":
+        body = "concat('ERROR: not configured', prompt)"
+    else:
+        body += " + 1"
+    assert not function_body_matches(rendered, body)
+
+
+def test_equivalent_identifier_quoting_and_json_layout_are_allowed():
+    from app.modules.llm_functions.service import function_body_matches, render_function
+
+    rendered = render_function(snapshot())
+    body = rendered.body.replace("(prompt,", "(`prompt`,").replace('": ', '":')
+    assert function_body_matches(rendered, body)
+
+
+def test_malformed_or_oversized_engine_body_is_not_proof():
+    from app.modules.llm_functions.service import function_body_matches, render_function
+
+    rendered = render_function(snapshot())
+    for body in ["not SQL )", "x" * 262145]:
+        assert not function_body_matches(rendered, body)
+
+
+async def test_unknown_usage_commit_is_never_replayed(stack, usage_store):
+    llm, _, _, _ = stack
+    await llm.complete(alias_token("alias-1"), REQUEST)
+    usage_store.unknown = True
+    with pytest.raises(MetadataOutcomeUnknown):
+        await llm.meter.flush()
+    usage_store.unknown = False
+    assert await llm.meter.flush() == 0
+    await llm.complete(alias_token("alias-1"), REQUEST)
+    assert await llm.meter.flush() == 1
+    assert usage_store.rows[0][4:8] == (1, 11, 4, 15)

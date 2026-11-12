@@ -8,11 +8,13 @@ import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-from app.modules.agents import repository, resources, router, versions
+from app.core.metadata_db import MetadataConflict
+from app.modules.agents import releases, repository, resources, router, versions
 from app.modules.agents.registry import build_registry
 from app.modules.agents.tools.ai_search import AISearchTool
 from app.modules.agents.tools.intelligence_views import FeatureLookupTool
 from app.modules.assistant.tools import ToolInvocation
+from tests.unit.agent_metadata_fakes import install_agent_store
 
 AGENT = {
     "agent_id": "sales",
@@ -37,34 +39,52 @@ def context():
     return SimpleNamespace(agent_id="sales", user=USER, role="regional_sales", audit_session_id="s")
 
 
+class VersionStore:
+    def __init__(self, state=None):
+        self.rows = {}
+        self.state = deepcopy(state or AGENT)
+
+    async def store_version(self, version_id, agent_id, encoded, label):
+        prior = self.rows.get(version_id)
+        if prior is not None:
+            if prior["agent_id"] != agent_id or json.loads(prior["configuration"]) != json.loads(
+                encoded
+            ):
+                raise MetadataConflict()
+            return prior
+        row = {"version_id": version_id, "agent_id": agent_id, "owner_name": "alice",
+               "configuration": encoded, "label": label, "created_at": str(len(self.rows))}
+        self.rows[version_id] = row
+        return row
+
+    async def get_version(self, version_id):
+        return self.rows.get(version_id)
+
+    async def list_versions(self, agent, owner, offset, limit):
+        rows = [row for row in reversed(list(self.rows.values()))
+                if row["agent_id"] == agent and row["owner_name"] == owner]
+        return rows[offset:offset + limit]
+
+    async def find_manifests(self, *_args, **_kwargs):
+        return []
+
+    async def get_agent(self, agent_id):
+        return deepcopy(self.state) if self.state["agent_id"] == agent_id else None
+
+    async def update_agent(self, agent_id, fields, *, expected_config_revision, config_revision):
+        if (
+            self.state["agent_id"] != agent_id
+            or self.state["config_revision"] != expected_config_revision
+        ):
+            raise MetadataConflict()
+        self.state.update({**fields, "config_revision": config_revision})
+        return deepcopy(self.state)
+
+
 @pytest.fixture
 def history(monkeypatch):
-    rows = {}
-
-    async def execute(sql, params=None):
-        if "CONFIG_AGENT_RELEASE_MANIFESTS" in sql:
-            return {"rows": []}
-        if sql.startswith("INSERT"):
-            version, agent, owner, config, label, created = params
-            assert version not in rows
-            rows[version] = (agent, owner, config, label, created)
-            return {"affected": 1}
-        agent, owner, *rest = params
-        if "version_id=%s" in sql:
-            version = rest[0]
-            row = rows.get(version)
-            return {"rows": [[version, *row[2:]]] if row and row[:2] == (agent, owner) else []}
-        limit, offset = rest
-        return {
-            "rows": [
-                [key, row[3], row[4]]
-                for key, row in reversed(list(rows.items()))
-                if row[:2] == (agent, owner)
-            ][offset : offset + limit]
-        }
-
-    monkeypatch.setattr(versions.db, "execute_system", execute)
-    return rows
+    store = install_agent_store(monkeypatch, VersionStore())
+    return store.rows
 
 
 @pytest.mark.asyncio
@@ -76,10 +96,11 @@ async def test_snapshots_are_immutable_and_owner_scoped(history):
     assert await versions.agent_versions.get("other", "alice", "r1") is None
     again = await versions.agent_versions.store(AGENT, label="Other label", version_id="r1")
     assert again["label"] == "Baseline"
-    with pytest.raises(HTTPException, match="cannot be modified"):
+    with pytest.raises(MetadataConflict) as conflict:
         await versions.agent_versions.store(
             {**AGENT, "name": "Different"}, label="Bad", version_id="r1"
         )
+    assert conflict.value.status_code == 409
     assert len(history) == 1
 
 
@@ -122,7 +143,7 @@ async def test_save_draft_never_updates_active_agent(history, monkeypatch):
         USER,
     )
     assert draft["configuration"]["instructions_response"] == "Use gross revenue"
-    assert history["r1"][0] == "sales"
+    assert history["r1"]["agent_id"] == "sales"
     update.assert_not_awaited()
     with pytest.raises(HTTPException) as error:
         await router.save_agent_draft(
@@ -133,7 +154,7 @@ async def test_save_draft_never_updates_active_agent(history, monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("action", ["SAVE_DRAFT", "PUBLISH_VERSION"])
-async def test_version_routes_write_audit_within_column_limits(monkeypatch, action):
+async def test_version_routes_write_audit_within_column_limits(monkeypatch, action, audit_events):
     from app.common.audit import write_audit_log
 
     snapshot_id, active_id = str(uuid4()), str(uuid4())
@@ -146,20 +167,8 @@ async def test_version_routes_write_audit_within_column_limits(monkeypatch, acti
         repository.agent_repository, "update_agent",
         AsyncMock(return_value={**AGENT, "config_revision": active_id}),
     )
-    records = []
 
-    async def execute(sql, params):
-        if "CONFIG_AGENT_RELEASE_MANIFESTS" in sql:
-            return {"rows": []}
-        assert "INSERT INTO NOVA_SYSTEM.AUDIT_LOG" in sql
-        columns = sql.split("(", 1)[1].split(")", 1)[0].replace("\n", "").split(",")
-        columns = [column.strip() for column in columns if column.strip() != "event_time"]
-        record = dict(zip(columns, params, strict=True))
-        assert record["decision"] is None or len(record["decision"].encode()) <= 32
-        records.append(record)
-        return {"affected": 1}
-
-    monkeypatch.setattr(versions.db, "execute_system", execute)
+    monkeypatch.setattr(releases, "get_manifest", AsyncMock(return_value=None))
     if action == "SAVE_DRAFT":
         await router.save_agent_draft(
             "sales", versions.AgentDraftRequest(configuration={}, expected_revision="r1"), USER
@@ -170,10 +179,12 @@ async def test_version_routes_write_audit_within_column_limits(monkeypatch, acti
             "sales", snapshot_id, versions.AgentPublishRequest(expected_revision="r1"), USER
         )
         expected = {"source_version": snapshot_id, "active_version": active_id}
-    assert len(records) == 1
-    assert records[0]["action"] == action
-    assert records[0]["object_name"] == "sales"
-    assert json.loads(records[0]["sql_text"]) == expected
+    assert len(audit_events) == 1
+    _, record, _ = audit_events[0]
+    assert record.decision is None or len(record.decision.encode()) <= 32
+    assert record.action == action
+    assert record.object_name == "sales"
+    assert json.loads(record.sql_text) == expected
 
 
 @pytest.mark.asyncio
@@ -218,31 +229,22 @@ async def test_publish_checks_owner_revision_and_resources(history, monkeypatch)
 @pytest.mark.parametrize("affected", [0, 1])
 async def test_publication_compare_and_swap(monkeypatch, affected):
     repo = repository.AgentRepository()
-    monkeypatch.setattr(repo, "get_agent", AsyncMock(return_value=AGENT))
+    store = install_agent_store(monkeypatch, AsyncMock())
+    store.get_agent.return_value = AGENT
+    store.update_agent.return_value = {**AGENT, "name": "New"}
+    if not affected:
+        store.update_agent.side_effect = MetadataConflict()
     monkeypatch.setattr(versions.agent_versions, "store", AsyncMock())
-    execute = AsyncMock(return_value={"affected": affected})
-    monkeypatch.setattr(repository.db, "execute_system", execute)
     if affected:
-        await repo.update_agent(
-            "sales",
-            owner_name="alice",
-            fields={"name": "New"},
-            expected_revision="r1",
-            check_revision=True,
-        )
+        await repo.update_agent("sales", owner_name="alice", fields={"name": "New"},
+                                expected_revision="r1", check_revision=True)
     else:
-        with pytest.raises(HTTPException) as error:
-            await repo.update_agent(
-                "sales",
-                owner_name="alice",
-                fields={"name": "New"},
-                expected_revision="r1",
-                check_revision=True,
-            )
+        with pytest.raises(MetadataConflict) as error:
+            await repo.update_agent("sales", owner_name="alice", fields={"name": "New"},
+                                    expected_revision="r1", check_revision=True)
         assert error.value.status_code == 409
-    sql, params = execute.call_args.args
-    assert "AND config_revision = %s" in sql
-    assert params[-3:] == ["sales", "alice", "r1"]
+    assert store.update_agent.await_args.args == ("sales", {"name": "New"})
+    assert store.update_agent.await_args.kwargs["expected_config_revision"] == "r1"
 
 
 @pytest.mark.asyncio
@@ -400,15 +402,14 @@ async def test_additive_columns_do_not_invalidate_existing_role_verification(mon
 @pytest.mark.asyncio
 async def test_history_failure_prevents_configuration_update(monkeypatch):
     repo = repository.AgentRepository()
-    monkeypatch.setattr(repo, "get_agent", AsyncMock(return_value=AGENT))
+    store = install_agent_store(monkeypatch, AsyncMock())
+    store.get_agent.return_value = AGENT
     monkeypatch.setattr(
         versions.agent_versions, "store", AsyncMock(side_effect=RuntimeError("unavailable"))
     )
-    execute = AsyncMock()
-    monkeypatch.setattr(repository.db, "execute_system", execute)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="unavailable"):
         await repo.update_agent("sales", owner_name="alice", fields={"name": "New"})
-    execute.assert_not_awaited()
+    store.update_agent.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -449,40 +450,10 @@ async def test_publication_checks_response_model_without_inference(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_publish_and_restore_roundtrip_keeps_all_snapshots(monkeypatch):
-    import json
-
     state = {**versions.configuration(AGENT), **deepcopy(AGENT)}
-    snapshots = {}
-
-    async def execute(sql, params=None):
-        if "SELECT" in sql and "CONFIG_AGENTS " in sql:
-            if params != ["sales", "alice"]:
-                return {"rows": []}
-            columns = repository._AGENT_COLUMNS.split(", ")
-            return {"rows": [[state.get(column) for column in columns]]}
-        if sql.startswith("UPDATE NOVA_SYSTEM.CONFIG_AGENTS"):
-            assert "AND config_revision = %s" in sql
-            if params[-1] != state["config_revision"]:
-                return {"affected": 0}
-            fields = sql.split(" SET ")[1].split(" WHERE ")[0].split(", ")
-            for field, value in zip(fields, params, strict=False):
-                key = field.split(" = ")[0]
-                state[key] = (
-                    json.loads(value) if key in {"resource_bindings", "default_tools"} else value
-                )
-            return {"affected": 1}
-        if sql.startswith("INSERT"):
-            version, agent_id, owner, config, label, created = params
-            assert version not in snapshots
-            snapshots[version] = [agent_id, owner, config, label, created]
-            return {"affected": 1}
-        if "CONFIG_AGENT_VERSIONS" in sql:
-            agent_id, owner, version = params
-            row = snapshots.get(version)
-            return {"rows": [[version, *row[2:]]] if row and row[:2] == [agent_id, owner] else []}
-        raise AssertionError(sql)
-
-    monkeypatch.setattr(repository.db, "execute_system", execute)
+    store = install_agent_store(monkeypatch, VersionStore(state))
+    snapshots = store.rows
+    state = store.state
     repo = repository.AgentRepository()
     initial = await repo.get_agent("sales", owner_name="alice")
     draft = await versions.agent_versions.store(

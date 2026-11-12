@@ -257,29 +257,6 @@ class ExplorerRepository:
             for row in result["rows"]
         ]
 
-    async def list_stages(self, database: str) -> list[dict]:
-        """Nova stages from CONFIG_STAGES table."""
-        sql = (
-            "SELECT name, schema_name, storage_connection, base_prefix, created_at "
-            "FROM NOVA_SYSTEM.CONFIG_STAGES "
-            "WHERE database_name = %s"
-        )
-        try:
-            result = await db.execute_system(sql, [database])
-            return [
-                {
-                    "name": row[0],
-                    "schema_name": row[1],
-                    "storage_connection": row[2],
-                    "base_prefix": row[3],
-                    "created_at": row[4],
-                }
-                for row in result["rows"]
-            ]
-        except Exception:
-            log.debug("No stages found for database %s", database)
-            return []
-
     async def list_tasks(self, database: str) -> list[dict]:
         """Nova ``CREATE TASK`` definitions from CONFIG_TASKS for a database.
 

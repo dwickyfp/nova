@@ -66,7 +66,6 @@ def setup_tool(monkeypatch, plan=None):
             }
         ),
     )
-    monkeypatch.setattr(agent_repository, "list_verified_queries", AsyncMock(return_value=[]))
     monkeypatch.setattr(agent_repository, "record_semantic_usage", AsyncMock())
     execute = AsyncMock(
         return_value=[

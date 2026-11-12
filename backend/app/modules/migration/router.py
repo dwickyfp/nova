@@ -11,6 +11,8 @@ from pydantic import BaseModel
 from app.common.responses import SanitizingJSONResponse
 from app.core.config import settings
 from app.core.deps import get_current_user
+from app.core.metadata_db import MetadataIntegrityViolation
+from app.modules.access_control.security_context import SecurityContext, SecurityContextError
 
 from .jobs import (
     MigrationJobFailed,
@@ -18,6 +20,7 @@ from .jobs import (
     MigrationJobUnavailable,
     migration_job_repo,
     public_status,
+    request_actor,
     session_fingerprint,
     submit_job,
     wait_for_job,
@@ -44,7 +47,7 @@ from .schemas import (
     SourceConnectionTestRequest,
     SourceConnectionTestResponse,
 )
-from .service import migration_service
+from .service import SourceAlreadyExists, migration_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -52,14 +55,28 @@ logger = logging.getLogger(__name__)
 CurrentUser = Annotated[dict, Depends(get_current_user)]
 
 
+def _actor(user: dict) -> SecurityContext:
+    try:
+        return request_actor(user)
+    except SecurityContextError:
+        raise HTTPException(status_code=401, detail="Session has no valid active role") from None
+
+
 class _EngineRequest(BaseModel):
     source: str = ""
 
 
-async def _worker_read(operation: str, body: MigrationJobRequest, user: dict) -> dict:
-    accepted = await submit_job(operation, body, user)
+async def _submit(operation: str, body: MigrationJobRequest, user: dict) -> MigrationJobAccepted:
     try:
-        return await wait_for_job(accepted.job_id)
+        return await submit_job(operation, body, user)
+    except MigrationJobUnavailable as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+async def _worker_read(operation: str, body: MigrationJobRequest, user: dict) -> dict:
+    accepted = await _submit(operation, body, user)
+    try:
+        return await wait_for_job(accepted.job_id, request_actor(user))
     except MigrationJobUnavailable as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     except MigrationJobFailed as exc:
@@ -107,7 +124,7 @@ async def engine_status(user: CurrentUser):
 )
 async def list_sources(user: CurrentUser):
     """List registered source connections (names, never secrets)."""
-    return await migration_service.list_sources()
+    return await migration_service.list_sources(_actor(user))
 
 
 @router.post(
@@ -132,20 +149,26 @@ async def create_source(body: SourceConnectionRequest, user: CurrentUser):
     The password is never accepted here: ``secret_ref`` names a credential in
     the configured secret store and is resolved server-side at call time.
     """
-    existing = await migration_service.list_sources()
-    if any(connection.name == body.name for connection in existing.connections):
+    try:
+        return await migration_service.create_source(
+            _actor(user),
+            name=body.name,
+            host=body.host,
+            port=body.port,
+            username=body.username,
+            secret_ref=body.secret_ref,
+            comment=body.comment,
+        )
+    except SourceAlreadyExists:
         raise HTTPException(
             status_code=400, detail=f"Source connection '{body.name}' already exists"
-        )
-    return await migration_service.create_source(
-        name=body.name,
-        host=body.host,
-        port=body.port,
-        username=body.username,
-        secret_ref=body.secret_ref,
-        comment=body.comment,
-        username_actor=user["username"],
-    )
+        ) from None
+    except MetadataIntegrityViolation:
+        # The store keeps only a secret-store reference and never echoes the value.
+        raise HTTPException(
+            status_code=400,
+            detail="secret_ref must name a secret-store reference, never a credential",
+        ) from None
 
 
 @router.post(
@@ -207,7 +230,7 @@ async def execute(body: ExecuteRequest, user: CurrentUser):
     _check_execute_gate(
         body.confirmation, body.target_database or body.database, body.acknowledge_omissions
     )
-    return await submit_job("execute", body, user)
+    return await _submit("execute", body, user)
 
 
 @router.post(
@@ -222,7 +245,7 @@ async def execute_batch(body: ExecuteBatchRequest, user: CurrentUser):
         f"MIGRATE {len(body.databases)} DATABASES",
         body.acknowledge_omissions,
     )
-    return await submit_job("execute_batch", body, user)
+    return await _submit("execute_batch", body, user)
 
 
 @router.get(
@@ -232,7 +255,9 @@ async def execute_batch(body: ExecuteBatchRequest, user: CurrentUser):
 )
 async def job_status(job_id: str, user: CurrentUser):
     try:
-        job = await migration_job_repo.get(job_id)
+        job = await migration_job_repo.get(_actor(user), job_id)
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.warning(
             "migration job status read failed exception=%s.%s",

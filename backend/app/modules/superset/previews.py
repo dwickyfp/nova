@@ -293,9 +293,10 @@ async def _resolve_notebook(locator: Locator, user: dict[str, Any]) -> ResolvedP
     from app.modules.notebooks.repository import notebook_repository
     from app.modules.workspaces.service import workspace_service
 
-    notebook_id = locator.thread_id[len(NOTEBOOK_PREFIX):]
-    username = str(user.get("username") or "")
-    row = await notebook_repository.get_execution(username, notebook_id, locator.message_id)
+    notebook_id = locator.thread_id[len(NOTEBOOK_PREFIX) :]
+    from app.core.metadata_scope import actor_for
+
+    row = await notebook_repository.get_execution(actor_for(user), notebook_id, locator.message_id)
     if row is None or row.get("status") != "succeeded" or row.get("cell_kind") != "sql":
         raise PreviewError("That notebook result is no longer available.")
     if (row.get("active_role") or "") != (user.get("active_role") or ""):

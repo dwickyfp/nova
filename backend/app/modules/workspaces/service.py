@@ -1,19 +1,27 @@
+"""Workspace files: metadata in PostgreSQL, payloads in Workspace object storage."""
+
 from __future__ import annotations
 
 import asyncio
 import json
-from uuid import uuid4
+from collections.abc import Awaitable, Callable
 
 import boto3
 from botocore.client import Config as BotoConfig
 from botocore.exceptions import BotoCoreError, ClientError
 
 from app.common.audit import write_audit_log
+from app.common.preferences import PreferenceChange, PreferenceRepository
 from app.core.config import get_storage_connection, load_nova_app_config
 from app.core.exceptions import StorageError
+from app.core.metadata_scope import actor_for, current_scope, metadata_transaction
 from app.modules.query.dialect.injector import resolve_storage_credentials
-from app.modules.workspaces.actor import acting_user
-from app.modules.workspaces.repository import workspace_repository
+from app.modules.workspaces.actor import acting_session
+from app.modules.workspaces.metadata_service import (
+    WorkspaceMetadataService,
+    WorkspaceObjectStore,
+    acting_transaction,
+)
 from app.modules.workspaces.storage_errors import classify_storage_error
 
 
@@ -28,9 +36,6 @@ class WorkspaceService:
     PREF_LAST_DATABASE = "workspace.last_database"
     PREF_LAST_SCHEMA = "workspace.last_schema"
     PREF_LAST_ROLE = "workspace.last_role"
-
-    def __init__(self):
-        self._repo = workspace_repository
 
     def _client(self):
         config = load_nova_app_config()
@@ -50,50 +55,33 @@ class WorkspaceService:
         config = load_nova_app_config()
         return get_storage_connection(config.workspace.storage_connection).bucket
 
-    def build_object_key(self, username: str, relative_path: str) -> str:
-        base_prefix = load_nova_app_config().workspace.base_prefix.strip("/")
-        clean_path = relative_path.strip("/")
-        return "/".join(part for part in [base_prefix, username, clean_path] if part)
-
-    def _version_object_key(
-        self, username: str, entry_id: str, version: int, *, extension: str = "sql"
-    ) -> str:
-        """Object key for one saved snapshot.
-
-        Kept under a ``.versions`` folder so the live file key is never
-        touched by the history path and a rename of the file does not have to
-        move its snapshot history. The key is derived from the immutable
-        ``entry_id`` plus the monotonic ``version`` number; the extension
-        follows the file's kind (``sql`` for worksheets, ``ipynb`` for
-        notebooks).
-        """
-        base_prefix = load_nova_app_config().workspace.base_prefix.strip("/")
-        return "/".join(
-            [base_prefix, username, ".versions", entry_id, f"{version}.{extension}"]
+    @property
+    def _files(self) -> WorkspaceMetadataService:
+        return WorkspaceMetadataService(
+            acting_transaction, WorkspaceObjectStore(self), audit=_audit_file_action,
         )
 
-    @staticmethod
-    def _snapshot_extension(name: str) -> str:
-        return "ipynb" if name.lower().endswith(".ipynb") else "sql"
+    _TREE_PREFERENCES = (
+        PREF_OPEN_TABS,
+        PREF_ACTIVE_TAB,
+        PREF_SIDEBAR_STATE,
+        PREF_ASSISTANT_STATE,
+        PREF_LAST_DATABASE,
+        PREF_LAST_SCHEMA,
+        PREF_LAST_ROLE,
+    )
 
     async def get_tree(self, username: str) -> dict:
-        # ``_repo`` translates NOVA_SYSTEM bootstrap failures (missing table,
-        # engine down) into ``WorkspaceNotReadyError`` already; nothing extra
-        # to catch here. Kept as a plain await so a genuine bug still surfaces
-        # as a 500 rather than being masked as "not ready".
-        entries = await self._repo.list_entries(username)
-        prefs = await self._repo.get_preferences(
-            username,
-            [
-                self.PREF_OPEN_TABS,
-                self.PREF_ACTIVE_TAB,
-                self.PREF_SIDEBAR_STATE,
-                self.PREF_ASSISTANT_STATE,
-                self.PREF_LAST_DATABASE,
-                self.PREF_LAST_SCHEMA,
-                self.PREF_LAST_ROLE,
-            ],
-        )
+        entries = await self._files.list_entries(username)
+        async with metadata_transaction(actor_for(acting_session()), read_only=True) as scope:
+            records = await PreferenceRepository(scope.connection).read(
+                username, self._TREE_PREFERENCES
+            )
+        prefs = {
+            key: record.value
+            for key, record in records.items()
+            if not record.deleted and record.value is not None
+        }
         return {
             "root_name": "My Workspace",
             "entries": entries,
@@ -108,47 +96,14 @@ class WorkspaceService:
             },
         }
 
-    async def _ensure_free_path(
-        self, username: str, path: str, *, except_id: str | None = None
-    ) -> None:
-        """Refuse a path another entry already uses.
-
-        A file's object key comes from its path, so two entries on one path
-        share one object: creating or renaming onto it would overwrite the
-        other file's content.
-        """
-        for entry in await self._repo.list_entries(username):
-            if entry["path"] == path and entry["id"] != except_id:
-                raise StorageError(
-                    "A file or folder with this name already exists here", status_code=409
-                )
-
-    async def create_file(self, username: str, parent_path: str, name: str, content: str) -> dict:
-        path = self._repo.build_path(parent_path, name)
-        await self._ensure_free_path(username, path)
-        key = self.build_object_key(username, path)
-        result = await asyncio.to_thread(self._put_object, key, content.encode("utf-8"))
-        entry_id = str(uuid4())
-        await self._repo.insert_entry(
-            entry_id=entry_id,
-            username=username,
-            parent_path=parent_path.strip("/"),
-            name=name,
-            entry_type="file",
-            object_key=key,
-            size_bytes=len(content.encode("utf-8")),
-            etag=result.get("ETag", "").strip('"'),
+    async def create_file(
+        self, username: str, parent_path: str, name: str, content: str, *,
+        on_created: Callable[[dict], Awaitable[None]] | None = None,
+    ) -> dict:
+        """Create a text file; ``on_created`` runs in the same metadata transaction."""
+        return await self._files.create_file(
+            username, parent_path, name, content, on_created=on_created
         )
-        entry = await self._repo.get_entry(username, entry_id)
-        await write_audit_log(
-            event_type="workspace",
-            user_name=acting_user(username),
-            action="create_file",
-            object_type="workspace_file",
-            object_name=path,
-            status="SUCCESS",
-        )
-        return entry
 
     async def create_file_bytes(
         self, username: str, parent_path: str, name: str, data: bytes, *, replace: bool = False
@@ -159,181 +114,38 @@ class WorkspaceService:
         text. ``replace`` overwrites an existing file at the same path (used to
         copy a runtime's output files back), keeping its entry id.
         """
-        path = self._repo.build_path(parent_path, name)
-        existing = None
-        for entry in await self._repo.list_entries(username):
-            if entry["path"] == path:
-                existing = entry
-                break
-        if existing is not None and not (replace and existing["entry_type"] == "file"):
-            raise StorageError(
-                "A file or folder with this name already exists here", status_code=409
-            )
-        key = self.build_object_key(username, path)
-        result = await asyncio.to_thread(self._put_object, key, data)
-        etag = result.get("ETag", "").strip('"')
-        if existing is not None:
-            await self._repo.update_entry(
-                entry_id=existing["id"],
-                username=username,
-                parent_path=existing["parent_path"],
-                name=existing["name"],
-                object_key=key,
-                size_bytes=len(data),
-                etag=etag,
-            )
-            return await self._repo.get_entry(username, existing["id"])
-        entry_id = str(uuid4())
-        await self._repo.insert_entry(
-            entry_id=entry_id,
-            username=username,
-            parent_path=parent_path.strip("/"),
-            name=name,
-            entry_type="file",
-            object_key=key,
-            size_bytes=len(data),
-            etag=etag,
+        return await self._files.create_file_bytes(
+            username, parent_path, name, data, replace=replace
         )
-        await write_audit_log(
-            event_type="workspace",
-            user_name=acting_user(username),
-            action="upload_file",
-            object_type="workspace_file",
-            object_name=path,
-            status="SUCCESS",
-        )
-        return await self._repo.get_entry(username, entry_id)
 
     async def create_folder(self, username: str, parent_path: str, name: str) -> dict:
-        await self._ensure_free_path(username, self._repo.build_path(parent_path, name))
-        entry_id = str(uuid4())
-        await self._repo.insert_entry(
-            entry_id=entry_id,
-            username=username,
-            parent_path=parent_path.strip("/"),
-            name=name,
-            entry_type="folder",
-            object_key=None,
-        )
-        entry = await self._repo.get_entry(username, entry_id)
-        await write_audit_log(
-            event_type="workspace",
-            user_name=acting_user(username),
-            action="create_folder",
-            object_type="workspace_folder",
-            object_name=entry["path"],
-            status="SUCCESS",
-        )
-        return entry
+        return await self._files.create_folder(username, parent_path, name)
 
     async def get_file(self, username: str, entry_id: str) -> tuple[dict, str]:
-        entry = await self._repo.get_entry(username, entry_id)
-        if not entry:
-            raise StorageError("Workspace entry not found", status_code=404)
-        if entry["entry_type"] != "file":
-            raise StorageError("Only files can be opened", status_code=400)
-        content = await asyncio.to_thread(self._read_object, entry["object_key"])
-        return entry, content.decode("utf-8")
+        return await self._files.get_file(username, entry_id)
 
-    async def update_file(self, username: str, entry_id: str, content: str) -> dict:
-        entry = await self._repo.get_entry(username, entry_id)
-        if not entry:
-            raise StorageError("Workspace entry not found", status_code=404)
-        # Snapshot the current content before it is overwritten, so every save
-        # has a recoverable predecessor. Snapshotting reads the live object; a
-        # missing object (a brand-new file whose first write is this one) is
-        # treated as no predecessor.
-        await self._snapshot_version(username, entry_id, entry, next_content=content)
-        result = await asyncio.to_thread(
-            self._put_object, entry["object_key"], content.encode("utf-8")
-        )
-        await self._repo.update_entry(
-            entry_id=entry_id,
-            username=username,
-            parent_path=entry["parent_path"],
-            name=entry["name"],
-            object_key=entry["object_key"],
-            size_bytes=len(content.encode("utf-8")),
-            etag=result.get("ETag", "").strip('"'),
-        )
-        updated = await self._repo.get_entry(username, entry_id)
-        return updated
-
-    async def _snapshot_version(
-        self, username: str, entry_id: str, entry: dict, *, next_content: str
-    ) -> None:
-        """Persist the entry's current content as the next version.
-
-        ``next_content`` is what the caller is about to write. A save that does
-        not change the content is not a new version, so the snapshot is skipped
-        when the current bytes equal the incoming bytes — this is what keeps an
-        autosave loop from piling up identical versions. The dedup is
-        content-based, not etag-based, because a rewrite that produces
-        identical bytes is still the same version to a user.
-        """
-        try:
-            current = await asyncio.to_thread(self._read_object, entry["object_key"])
-        except StorageError:
-            # No live object yet: nothing to snapshot. The next update will
-            # snapshot the content written by this one.
-            return
-
-        if not current:
-            # An empty file has no meaningful history to keep.
-            return
-
-        if current == next_content.encode("utf-8"):
-            return
-
-        version = await self._repo.next_version_number(username, entry_id)
-        key = self._version_object_key(
-            username, entry_id, version, extension=self._snapshot_extension(entry["name"])
-        )
-        result = await asyncio.to_thread(self._put_object, key, current)
-        await self._repo.insert_version(
-            version_id=str(uuid4()),
-            entry_id=entry_id,
-            username=username,
-            version=version,
-            object_key=key,
-            size_bytes=len(current),
-            etag=result.get("ETag", "").strip('"'),
+    async def update_file(
+        self, username: str, entry_id: str, content: str, *,
+        expected_revision: int | None = None,
+    ) -> dict:
+        """Save new content; the previous content becomes the next version."""
+        return await self._files.update_file(
+            username, entry_id, content, expected_revision=expected_revision
         )
 
     async def list_file_versions(
         self, username: str, entry_id: str, limit: int = 100
     ) -> list[dict]:
-        entry = await self._repo.get_entry(username, entry_id)
-        if not entry:
-            raise StorageError("Workspace entry not found", status_code=404)
-        if entry["entry_type"] != "file":
-            raise StorageError("Only files have versions", status_code=400)
-        return await self._repo.list_versions(username, entry_id, limit)
+        return await self._files.list_file_versions(username, entry_id, limit)
 
     async def get_file_version(self, username: str, entry_id: str, version: int) -> str:
-        entry = await self._repo.get_entry(username, entry_id)
-        if not entry:
-            raise StorageError("Workspace entry not found", status_code=404)
-        record = await self._repo.get_version(username, entry_id, version)
-        if not record:
-            raise StorageError("Version not found", status_code=404)
-        content = await asyncio.to_thread(self._read_object, record["object_key"])
-        return content.decode("utf-8")
+        return await self._files.get_file_version(username, entry_id, version)
 
     async def get_file_version_record(
         self, username: str, entry_id: str, version: int
     ) -> tuple[dict, str]:
         """Return one version's metadata and its content in a single lookup."""
-        entry = await self._repo.get_entry(username, entry_id)
-        if not entry:
-            raise StorageError("Workspace entry not found", status_code=404)
-        record = await self._repo.get_version(username, entry_id, version)
-        if not record:
-            raise StorageError("Version not found", status_code=404)
-        content = (await asyncio.to_thread(self._read_object, record["object_key"])).decode(
-            "utf-8"
-        )
-        return record, content
+        return await self._files.get_file_version_record(username, entry_id, version)
 
     async def rename_entry(
         self,
@@ -342,121 +154,10 @@ class WorkspaceService:
         new_name: str,
         new_parent_path: str | None = None,
     ) -> dict:
-        entry = await self._repo.get_entry(username, entry_id)
-        if not entry:
-            raise StorageError("Workspace entry not found", status_code=404)
-        target_parent = (
-            new_parent_path.strip("/") if new_parent_path is not None else entry["parent_path"]
-        )
-        old_path = entry["path"]
-        new_path = self._repo.build_path(target_parent, new_name)
-        if new_path != old_path:
-            await self._ensure_free_path(username, new_path, except_id=entry_id)
-        if entry["entry_type"] == "file":
-            new_object_key = self.build_object_key(username, new_path)
-            await asyncio.to_thread(self._move_object, entry["object_key"], new_object_key)
-            await self._repo.update_entry(
-                entry_id=entry_id,
-                username=username,
-                parent_path=target_parent,
-                name=new_name,
-                object_key=new_object_key,
-                size_bytes=entry["size_bytes"],
-                etag=entry["etag"],
-            )
-        else:
-            descendants = await self._repo.list_entries(username)
-            for item in descendants:
-                if item["path"] == old_path or not item["path"].startswith(f"{old_path}/"):
-                    continue
-                rel_suffix = item["path"][len(old_path) :].lstrip("/")
-                if item["entry_type"] == "file" and item["object_key"]:
-                    new_key = self.build_object_key(username, f"{new_path}/{rel_suffix}")
-                    await asyncio.to_thread(self._move_object, item["object_key"], new_key)
-                    await self._repo.update_entry(
-                        entry_id=item["id"],
-                        username=username,
-                        parent_path=self._parent_of(
-                            self._repo.build_path(new_path, rel_suffix.rsplit("/", 1)[0])
-                            if "/" in rel_suffix
-                            else new_path
-                        ),
-                        name=rel_suffix.split("/")[-1],
-                        object_key=new_key,
-                        size_bytes=item["size_bytes"],
-                        etag=item["etag"],
-                    )
-                elif item["entry_type"] == "folder":
-                    new_child_path = f"{new_path}/{rel_suffix}"
-                    await self._repo.update_entry(
-                        entry_id=item["id"],
-                        username=username,
-                        parent_path=self._parent_of(new_child_path),
-                        name=new_child_path.split("/")[-1],
-                        object_key=None,
-                        size_bytes=0,
-                        etag=item["etag"],
-                    )
-            await self._repo.update_entry(
-                entry_id=entry_id,
-                username=username,
-                parent_path=target_parent,
-                name=new_name,
-                object_key=None,
-                size_bytes=0,
-                etag=entry["etag"],
-            )
-        renamed = await self._repo.get_entry(username, entry_id)
-        await write_audit_log(
-            event_type="workspace",
-            user_name=acting_user(username),
-            action="rename",
-            object_type=f"workspace_{entry['entry_type']}",
-            object_name=f"{old_path} -> {renamed['path']}",
-            status="SUCCESS",
-        )
-        return renamed
+        return await self._files.rename_entry(username, entry_id, new_name, new_parent_path)
 
     async def delete_entry(self, username: str, entry_id: str) -> None:
-        entry = await self._repo.get_entry(username, entry_id)
-        if not entry:
-            raise StorageError("Workspace entry not found", status_code=404)
-        all_entries = await self._repo.list_entries(username)
-        targets = [
-            item
-            for item in all_entries
-            if item["id"] == entry_id or item["path"].startswith(f"{entry['path']}/")
-        ]
-        for item in sorted(targets, key=lambda row: len(row["path"].split("/")), reverse=True):
-            if item["entry_type"] == "file" and item["object_key"]:
-                await asyncio.to_thread(self._delete_object, item["object_key"])
-                await self._purge_versions(username, item["id"])
-            await self._repo.soft_delete_entry(username, item["id"])
-        await write_audit_log(
-            event_type="workspace",
-            user_name=acting_user(username),
-            action="delete",
-            object_type=f"workspace_{entry['entry_type']}",
-            object_name=entry["path"],
-            status="SUCCESS",
-        )
-
-    async def _purge_versions(self, username: str, entry_id: str) -> None:
-        """Delete a file's version objects and metadata when the file goes.
-
-        Soft delete already hides the file; this makes the snapshot objects
-        unreachable too, so a deleted file does not leave orphaned history in
-        the bucket.
-        """
-        offset = 0
-        while True:
-            records = await self._repo.list_versions(username, entry_id, limit=1000, offset=offset)
-            if not records:
-                break
-            for record in records:
-                await asyncio.to_thread(self._delete_object, record["object_key"])
-            offset += len(records)
-        await self._repo.delete_versions_for_entry(username, entry_id)
+        await self._files.delete_entry(username, entry_id)
 
     async def save_state(
         self,
@@ -470,20 +171,32 @@ class WorkspaceService:
         last_schema: str | None,
         last_role: str | None,
     ) -> None:
-        await self._repo.set_preference(username, self.PREF_OPEN_TABS, json.dumps(open_tabs))
-        await self._repo.set_preference(username, self.PREF_ACTIVE_TAB, active_tab or "")
-        await self._repo.set_preference(
-            username, self.PREF_SIDEBAR_STATE, "true" if sidebar_collapsed else "false"
-        )
-        await self._repo.set_preference(
-            username, self.PREF_ASSISTANT_STATE, "true" if assistant_collapsed else "false"
-        )
-        if last_database is not None:
-            await self._repo.set_preference(username, self.PREF_LAST_DATABASE, last_database)
-        if last_schema is not None:
-            await self._repo.set_preference(username, self.PREF_LAST_SCHEMA, last_schema)
-        if last_role is not None:
-            await self._repo.set_preference(username, self.PREF_LAST_ROLE, last_role)
+        values = {
+            self.PREF_OPEN_TABS: json.dumps(open_tabs),
+            self.PREF_ACTIVE_TAB: active_tab or "",
+            self.PREF_SIDEBAR_STATE: "true" if sidebar_collapsed else "false",
+            self.PREF_ASSISTANT_STATE: "true" if assistant_collapsed else "false",
+        }
+        for key, value in (
+            (self.PREF_LAST_DATABASE, last_database),
+            (self.PREF_LAST_SCHEMA, last_schema),
+            (self.PREF_LAST_ROLE, last_role),
+        ):
+            if value is not None:
+                values[key] = value
+        async with metadata_transaction(actor_for(acting_session())) as scope:
+            preferences = PreferenceRepository(scope.connection)
+            current = await preferences.read(username, list(values))
+            changes = {
+                key: PreferenceChange(
+                    current[key].revision if key in current else 0, value
+                )
+                for key, value in values.items()
+                if key not in current or current[key].deleted or current[key].value != value
+            }
+            if changes:
+                # A concurrent save of the same keys loses with a 409 conflict.
+                await preferences.change(username, changes)
 
     # ── Internal objects beside the tree (notebook outputs) ──────────────
 
@@ -507,13 +220,17 @@ class WorkspaceService:
 
     async def read_entry_bytes(self, username: str, entry_id: str) -> tuple[dict, bytes]:
         """A file entry and its raw content, for copying into a runtime."""
-        entry = await self._repo.get_entry(username, entry_id)
-        if not entry or entry["entry_type"] != "file":
-            raise StorageError("Workspace entry not found", status_code=404)
-        return entry, await asyncio.to_thread(self._read_object, entry["object_key"])
+        return await self._files.read_entry_bytes(username, entry_id)
+
+    async def get_entry(self, username: str, entry_id: str) -> dict | None:
+        return await self._files.get_entry(username, entry_id)
 
     async def list_entries(self, username: str) -> list[dict]:
-        return await self._repo.list_entries(username)
+        return await self._files.list_entries(username)
+
+    async def namespace_of(self, entry_id: str) -> str | None:
+        """Whose files a live entry belongs to, if the acting person may read it."""
+        return await self._files.namespace_of(entry_id)
 
     def _put_object(self, key: str, body: bytes) -> dict:
         try:
@@ -529,13 +246,7 @@ class WorkspaceService:
             finally:
                 body.close()
         except ClientError as exc:
-            error = classify_storage_error(exc, action="read")
-            if error.status_code == 502:
-                # A read that fails for a reason we could not classify is most
-                # likely "object gone"; preserve the endpoint's existing 404
-                # contract for the file-open path (NOVA-137).
-                error.status_code = 404
-            raise error from exc
+            raise classify_storage_error(exc, action="read") from exc
         except BotoCoreError as exc:
             raise classify_storage_error(exc, action="read") from exc
 
@@ -545,21 +256,21 @@ class WorkspaceService:
         except (ClientError, BotoCoreError) as exc:
             raise classify_storage_error(exc, action="delete") from exc
 
-    def _move_object(self, source_key: str, dest_key: str) -> None:
-        client = self._client()
-        try:
-            client.copy_object(
-                Bucket=self._bucket(),
-                CopySource={"Bucket": self._bucket(), "Key": source_key},
-                Key=dest_key,
-            )
-            client.delete_object(Bucket=self._bucket(), Key=source_key)
-        except (ClientError, BotoCoreError) as exc:
-            raise classify_storage_error(exc, action="move") from exc
 
-    @staticmethod
-    def _parent_of(path: str) -> str:
-        return path.rsplit("/", 1)[0] if "/" in path else ""
+async def _audit_file_action(action: str, object_type: str, object_name: str) -> None:
+    """The success audit of a file command, in that command's metadata transaction."""
+    actor = current_scope().actor
+    await write_audit_log(
+        event_type="workspace",
+        user_name=actor.principal,
+        action=action,
+        object_type=object_type,
+        object_name=object_name,
+        status="SUCCESS",
+        session_id=actor.session_id,
+        active_role=actor.active_role,
+        security_context_version=actor.security_context_version,
+    )
 
 
 workspace_service = WorkspaceService()

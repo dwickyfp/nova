@@ -1,4 +1,4 @@
-"""Shared Redis coordination for durable run rows and harness event writers."""
+"""Redis coordination locks for thread admission (not the run record authority)."""
 
 from __future__ import annotations
 
@@ -6,9 +6,6 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager, suppress
 from typing import Any
-
-from app.core.database import db
-from app.core.redis import session_store
 
 logger = logging.getLogger(__name__)
 
@@ -56,15 +53,3 @@ async def coordination_lock(
             renewal.cancel()
             with suppress(asyncio.CancelledError):
                 await renewal
-
-
-async def update_run(run_id: str, sql: str, params: list[Any]) -> dict:
-    # StarRocks UPDATE rewrites a row; overlapping processes can restore stale status.
-    client = session_store._redis
-    if client is None:
-        raise RuntimeError("Agent run write coordinator is unavailable")
-    async with coordination_lock(client, f"nova:agent:run-write:{run_id}") as owned:
-        await owned()
-        result = await db.execute_system(sql, params)
-        await owned()
-        return result

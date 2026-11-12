@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import base64
 import json
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from io import BytesIO
 from unittest.mock import AsyncMock
 
@@ -24,7 +26,7 @@ from app.modules.assistant.context import ContextManager, estimate_message_token
 from app.modules.assistant.intelligence import TurnIntent
 from app.modules.assistant.planning import validate_turn_plan
 from app.modules.assistant.provider import ProviderConfig
-from app.modules.assistant.repository import MESSAGES_DDL, AssistantRepository
+from app.modules.assistant.repository import AssistantRepository
 from app.modules.assistant.router import _message_view
 from app.modules.assistant.schemas import AgentMessageRequest
 from app.modules.assistant.service import AssistantLoop, LoopContext
@@ -189,36 +191,40 @@ def test_attachment_history_exposes_metadata_only():
         view = view_message(row)
         assert view.attachments[0].name == "facts.txt"
         assert "The answer is 42." not in view.model_dump_json()
-    assert "attachments       JSON" in MESSAGES_DDL
 
 
-async def test_attachment_survives_starrocks_message_roundtrip(monkeypatch):
-    class RecordingDB:
-        inserted = None
+async def test_attachment_survives_metadata_adapter_roundtrip(monkeypatch):
+    store = AsyncMock()
+    rows = []
 
-        async def execute_system(self, sql, params=None):
-            if "COUNT(*) AS n" in sql and "CONFIG_ASSISTANT_MESSAGES" in sql:
-                return {"rows": [[params[0], params[1], 0]]}
-            if "SELECT COUNT" in sql:
-                return {"rows": [[0]]}
-            if "INSERT INTO NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES" in sql:
-                self.inserted = params
-            if "SELECT message_id, role, content" in sql:
-                row = self.inserted
-                return {"rows": [[
-                    row[0], row[4], row[5], row[6], row[8], row[9], row[10],
-                    row[11], row[12], row[14], None, row[15],
-                ]]}
-            return {"rows": [], "affected": 1}
+    async def append(thread_id, **fields):
+        assert thread_id == "t1"
+        row = {
+            **fields, **fields.pop("usage"), "message_id": "m1", "feedback": None,
+            "thread_id": thread_id, "user_name": "alice", "seq": len(rows),
+            "created_at": datetime.now(UTC),
+        }
+        rows.append(row)
+        return row, True
 
-    db = RecordingDB()
-    monkeypatch.setattr(repository_module, "db", db)
+    store.append_message.side_effect = append
+    store.list_messages.return_value = rows
+    scopes = []
+
+    @asynccontextmanager
+    async def scoped(user_name, *, read_only=False):
+        assert user_name == "alice"
+        scopes.append(read_only)
+        yield store
+
+    monkeypatch.setattr(repository_module, "_store", scoped)
     file = validate_attachments([{"name": "facts.txt", "content": "The answer is 42."}])[0]
     repo = AssistantRepository()
     await repo.append_message(
         "t1", user_name="alice", role="user", content="Read this", attachments=[file],
     )
     restored = await repo.list_messages("t1", user_name="alice")
+    assert scopes == [False, True]
     assert restored[0]["content"] == "Read this"
     assert restored[0]["attachments"] == [file]
     assert "The answer is 42." not in _message_view(restored[0]).model_dump_json()

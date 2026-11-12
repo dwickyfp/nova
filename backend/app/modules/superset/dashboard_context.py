@@ -175,10 +175,12 @@ class _Ontology:
         self.available = True
 
     async def load(self) -> None:
+        from app.core.metadata_scope import acting_as, actor_for
         from app.modules.ontology.service import ontology_service
 
         try:
-            self.snapshot = await ontology_service.snapshot("current")
+            async with acting_as(actor_for(self.user)):
+                self.snapshot = await ontology_service.snapshot("current")
         except Exception as exc:  # noqa: BLE001 - the context still describes the BI side
             logger.info("Ontology unavailable for Dataviz context: %s", type(exc).__name__)
             self.available = False

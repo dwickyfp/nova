@@ -254,6 +254,38 @@ class MetadataDatabase:
         self._ready = False
         await self._pool.close()
 
+    async def probe(self) -> bool:
+        """Confirm this process can still serve its epoch; return whether writes are paused.
+
+        Readiness only: it reads deployment state without an actor and never
+        changes it. Raises the same redacted categories as a transaction.
+        """
+        if not self._ready:
+            raise MetadataUnavailable()
+        try:
+            async with (
+                asyncio.timeout(self._config.acquire_timeout),
+                self._pool.connection() as conn,
+            ):
+                cursor = await conn.execute(
+                    "SELECT schema_version, metadata_epoch, maintenance "
+                    "FROM nova_meta.deployment_state WHERE singleton = TRUE"
+                )
+                state = await cursor.fetchone()
+        except (TimeoutError, PoolTimeout, psycopg.errors.QueryCanceled) as exc:
+            _log_database_failure("timeout", exc)
+            raise MetadataTimeout() from None
+        except (psycopg.Error, PoolClosed, TooManyRequests) as exc:
+            _log_database_failure("unavailable", exc)
+            raise MetadataUnavailable() from None
+        if (
+            not state
+            or state["schema_version"] != self._schema_version
+            or str(state["metadata_epoch"]) != self._metadata_epoch
+        ):
+            raise MetadataSchemaMismatch()
+        return bool(state["maintenance"])
+
     @asynccontextmanager
     async def transaction(
         self,

@@ -160,6 +160,12 @@ class AutopilotMetadataRepository:
         )
         return list(await cursor.fetchall())
 
+    async def count(self, kind: str) -> int:
+        """How many rows of a collection this workload can see (the overview counts)."""
+        await self._bound()
+        row = await self._one(f"SELECT count(*) AS n FROM nova_meta.{_table(kind)}", ())
+        return int(row["n"]) if row else 0
+
     # ── Governed definitions ──────────────────────────────────────────────
 
     async def save_definition(

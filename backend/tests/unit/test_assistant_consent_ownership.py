@@ -151,7 +151,7 @@ def app_and_broker(monkeypatch):
 
 
 async def _open_pending(broker: ConsentBroker) -> None:
-    broker.open("victim-call", thread_id="alice-thread", user_name="alice")
+    broker.open("victim-call", thread_id="alice-thread", user=_signed_in("alice"))
 
 
 class _SeededThread:
@@ -200,7 +200,7 @@ def _open_pending_classification_sync(
         broker.open(
             tool_call_id,
             thread_id=thread_id,
-            user_name=user_name,
+            user=_signed_in(user_name),
             classification=classification,
         )
 
@@ -219,7 +219,7 @@ async def test_owner_can_resolve_their_own_pending_call(monkeypatch):
     broker = ConsentBroker()
     monkeypatch.setattr("app.modules.assistant.router.consent_broker", broker, raising=True)
     thread = thread_store.create(user_name="alice", title="A")
-    future = broker.open("victim-call", thread_id=thread.thread_id, user_name="alice")
+    future = broker.open("victim-call", thread_id=thread.thread_id, user=_signed_in("alice"))
 
     response = await resolve_tool_call(
         "victim-call",
@@ -238,7 +238,7 @@ async def test_foreign_user_gets_404_and_cannot_resolve_same_loop(monkeypatch):
     broker = ConsentBroker()
     monkeypatch.setattr("app.modules.assistant.router.consent_broker", broker, raising=True)
     thread = thread_store.create(user_name="alice", title="A")
-    future = broker.open("victim-call", thread_id=thread.thread_id, user_name="alice")
+    future = broker.open("victim-call", thread_id=thread.thread_id, user=_signed_in("alice"))
 
     with pytest.raises(HTTPException) as exc:
         await resolve_tool_call(
@@ -248,7 +248,7 @@ async def test_foreign_user_gets_404_and_cannot_resolve_same_loop(monkeypatch):
         )
     assert exc.value.status_code == 404
     assert future.done() is False
-    assert broker.owner_of("victim-call") == (thread.thread_id, "alice")
+    assert broker.owner_of("victim-call", user=_signed_in("alice")) == (thread.thread_id, "alice")
 
 
 def test_foreign_user_gets_404_and_cannot_resolve(app_and_broker):
@@ -262,7 +262,7 @@ def test_foreign_user_gets_404_and_cannot_resolve(app_and_broker):
     )
     assert resp.status_code == 404
     # The entry survives for its real owner.
-    assert broker.owner_of("victim-call") == ("alice-thread", "alice")
+    assert broker.owner_of("victim-call", user=_signed_in("alice")) == ("alice-thread", "alice")
 
 
 def test_foreign_user_cannot_deny_either(app_and_broker):
@@ -292,7 +292,7 @@ async def test_owner_sets_the_grant_on_their_own_conversation_only(monkeypatch):
     monkeypatch.setattr("app.modules.assistant.router.consent_broker", broker, raising=True)
     alice_thread = thread_store.create(user_name="alice", title="A")
     bob_thread = thread_store.create(user_name="bob", title="B")
-    broker.open("victim-call", thread_id=alice_thread.thread_id, user_name="alice")
+    broker.open("victim-call", thread_id=alice_thread.thread_id, user=_signed_in("alice"))
 
     response = await resolve_tool_call(
         "victim-call",
@@ -320,7 +320,7 @@ async def test_allow_session_on_a_read_only_call_sets_the_grant(monkeypatch):
     broker.open(
         "call-1",
         thread_id=thread.thread_id,
-        user_name="alice",
+        user=_signed_in("alice"),
         classification="read_only",
     )
 
@@ -350,7 +350,7 @@ async def test_agent_studio_allow_session_sets_the_same_read_only_grant(monkeypa
     broker.open(
         "agent-call-1",
         thread_id=thread.thread_id,
-        user_name="alice",
+        user=_signed_in("alice"),
         classification="read_only",
     )
 
@@ -377,7 +377,7 @@ async def test_allow_session_on_a_non_read_only_call_is_rejected(monkeypatch, cl
     broker.open(
         "call-1",
         thread_id=thread.thread_id,
-        user_name="alice",
+        user=_signed_in("alice"),
         classification=classification,
     )
 
@@ -391,7 +391,7 @@ async def test_allow_session_on_a_non_read_only_call_is_rejected(monkeypatch, cl
     assert exc.value.status_code == 400
     assert thread.consent.always_allow_read_only is False
     # Not consumed: the owner can still resolve it with allow_once.
-    assert broker.owner_of("call-1") == (thread.thread_id, "alice")
+    assert broker.owner_of("call-1", user=_signed_in("alice")) == (thread.thread_id, "alice")
 
     response = await resolve_tool_call(
         "call-1",
@@ -494,13 +494,13 @@ def test_read_only_approval_without_a_login_is_refused(app_and_broker, pending_c
             "/api/v1/assistant/tool-calls/call-1/decision",
             json={"decision": "allow_session"},
         )
-        assert broker.owner_of("call-1") == (thread.thread_id, "alice")
+        assert broker.owner_of("call-1", user=_signed_in("alice")) == (thread.thread_id, "alice")
     else:
         response = client.put(
             f"/api/v1/assistant/threads/{thread.thread_id}/grant",
             json={"always_allow_read_only": True},
         )
-    assert response.status_code == 401
+    assert response.status_code == (404 if pending_call else 401)
     assert not thread_store.get(thread.thread_id, user_name="alice").consent.always_allow_read_only
 
 
@@ -648,3 +648,78 @@ async def test_revoked_grant_prompts_again_on_the_next_read_only_call(
     # resolver — the opposite of the auto-approve that a live grant pins.
     assert any(frame.startswith("event: tool_call") for frame in frames)
     assert asked == ["read_only"]
+
+
+@pytest.mark.parametrize("surface", ["assistant", "agent"])
+@pytest.mark.parametrize("decision", ["allow_once", "allow_session", "deny"])
+@pytest.mark.parametrize("changed", [
+    {"session_id": "second-login"},
+    {"session_id": None},
+    {"active_role": "reviewer", "assigned_roles": ["reviewer"]},
+    {"security_context_version": 2},
+    {"username": "bob"},
+])
+async def test_pending_approval_requires_the_original_full_identity(
+    monkeypatch, surface, decision, changed,
+):
+    from unittest.mock import AsyncMock
+
+    from fastapi import HTTPException
+
+    from app.modules.agents import router as agent_router
+    from app.modules.assistant import router as assistant_module
+
+    broker = ConsentBroker()
+    for module in (assistant_module, agent_router):
+        monkeypatch.setattr(module, "consent_broker", broker)
+    monkeypatch.setattr(agent_router, "_require_agent", AsyncMock())
+    grant = AsyncMock()
+    monkeypatch.setattr(assistant_module.read_grants, "grant", grant)
+    original = _signed_in("alice")
+    thread = thread_store.create(user_name="alice", title="Approval identity")
+    future = broker.open("scoped", thread_id=thread.thread_id, user=original)
+    altered = {**original, **changed}
+    body = ConsentDecisionRequest(decision=decision)
+    try:
+        with pytest.raises(HTTPException) as refused:
+            if surface == "agent":
+                await agent_router.resolve_agent_tool_call("agent", "scoped", body, altered)
+            else:
+                await resolve_tool_call("scoped", body, altered)
+        assert refused.value.status_code == 404
+        grant.assert_not_awaited()
+        assert not future.done()
+        assert broker.owner_of("scoped", user=altered) is None
+        assert broker.owner_of("scoped", user=original) == (thread.thread_id, "alice")
+        assert not broker.resolve("scoped", True, user=altered)
+        assert broker.resolve("scoped", True, user=original)
+        assert await future is True
+        assert not broker.resolve("scoped", True, user=original)
+    finally:
+        broker.cancel_all()
+
+
+async def test_proposal_keeps_an_immutable_copy_of_the_security_identity():
+    broker = ConsentBroker()
+    original = _signed_in("alice")
+    mutable = dict(original)
+    future = broker.open("stable", thread_id="thread", user=mutable)
+    mutable["session_id"] = "replacement-login"
+    try:
+        assert not broker.resolve("stable", True, user=mutable)
+        assert broker.resolve("stable", False, user=original)
+        assert await future is False
+    finally:
+        broker.cancel_all()
+
+
+@pytest.mark.parametrize(
+    "user", [{"username": "alice"}, {**_signed_in("alice"), "session_id": None}]
+)
+async def test_proposal_without_a_complete_login_fails_closed(user):
+    from app.core.exceptions import InvalidCredentialsError
+
+    broker = ConsentBroker()
+    with pytest.raises(InvalidCredentialsError):
+        broker.open("invalid", thread_id="thread", user=user)
+    assert broker.owner_of("invalid", user=_signed_in("alice")) is None

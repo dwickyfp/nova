@@ -117,7 +117,11 @@ async def test_provision_protected_input_and_default_password_change(monkeypatch
     )
     result = await ProvisionUserTool().run(invocation, ctx)
     assert result.ok
-    flag.assert_awaited_once_with("dwicky.f.putra", required=True)
+    from app.modules.access_control.security_context import SecurityContext
+    flag.assert_awaited_once_with(
+        "dwicky.f.putra", required=True,
+        actor=SecurityContext("audit_admin", "ACCOUNTADMIN"),
+    )
     assert ranger.assign_role.await_args.kwargs == {
         "role": "ACCOUNTADMIN", "username": "dwicky.f.putra"
     }

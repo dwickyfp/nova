@@ -23,8 +23,8 @@ from fastapi.responses import StreamingResponse
 
 from app.common.audit import write_audit_log
 from app.core.deps import get_current_user
-from app.core.security import decrypt_password
-from app.modules.stages.access import StageAccessDenied, check_stage_access
+from app.core.metadata_scope import actor_for
+from app.modules.stages.access import StageAccessDenied
 from app.modules.stages.schemas import (
     StageCreate,
     StageListResponse,
@@ -41,24 +41,14 @@ logger = logging.getLogger(__name__)
 require_user = Depends(get_current_user)
 
 
-async def _authorize(stage: dict, user: dict, action: str) -> None:
+async def _authorized_stage(stage_id: str, user: dict, action: str) -> dict:
+    """The registration after Ranger allows ``action`` on its schema (404 / 403)."""
     try:
-        await check_stage_access(
-            stage,
-            action=action,
-            username=user["username"],
-            password=decrypt_password(user["encrypted_password"]),
-            active_role=user.get("active_role"),
-        )
+        stage = await stage_service.get_stage(stage_id, actor_for(user), action=action)
     except StageAccessDenied as exc:
         raise HTTPException(status_code=403, detail="Stage access denied") from exc
-
-
-async def _authorized_stage(stage_id: str, user: dict, action: str) -> dict:
-    stage = await stage_service.get_stage(stage_id)
     if stage is None:
         raise HTTPException(status_code=404, detail="Stage not found")
-    await _authorize(stage, user, action)
     return stage
 
 
@@ -106,23 +96,9 @@ async def _stage_mutation_audit(
 async def list_stages(
     user: dict = require_user,
 ):
-    """List all registered stages."""
-    rows = await stage_service.list_stages()
-    stages = []
-    allowed_scopes: dict[tuple[str, str], bool] = {}
-    for row in rows:
-        scope = (str(row["database_name"]), str(row["schema_name"]))
-        if scope not in allowed_scopes:
-            try:
-                await _authorize(row, user, "read")
-            except HTTPException as exc:
-                if exc.status_code != 403:
-                    raise
-                allowed_scopes[scope] = False
-            else:
-                allowed_scopes[scope] = True
-        if allowed_scopes[scope]:
-            stages.append(StageResponse(**row))
+    """List the registered stages in schemas the caller may read."""
+    rows = await stage_service.list_stages(actor_for(user))
+    stages = [StageResponse(**row) for row in rows]
     return StageListResponse(stages=stages, count=len(stages))
 
 
@@ -143,16 +119,16 @@ async def create_stage(
 ):
     """Create a new stage."""
     data = body.model_dump()
+    actor = actor_for(user)
     async with _stage_mutation_audit(data, user, "CREATE_STAGE", data["name"]):
-        await _authorize(data, user, "delete")
+        # Ranger authorizes the schema inside the registration transaction,
+        # before the storage connection is checked or anything is written.
         try:
-            stage = await stage_service.create_stage(
-                data, user["username"], active_role=user.get("active_role")
-            )
+            stage = await stage_service.create_stage(data, actor)
+        except StageAccessDenied as exc:
+            raise HTTPException(status_code=403, detail="Stage access denied") from exc
         except (StagePathError, StageRegistrationError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        if not stage:
-            raise HTTPException(status_code=500, detail="Failed to create stage")
     return StageResponse(**stage)
 
 
@@ -164,7 +140,10 @@ async def delete_stage(
     """Delete a stage by ID."""
     stage = await _authorized_stage(stage_id, user, "delete")
     async with _stage_mutation_audit(stage, user, "DELETE_STAGE", stage_id):
-        deleted = await stage_service.delete_stage(stage_id)
+        try:
+            deleted = await stage_service.delete_stage(stage_id, actor_for(user))
+        except StageAccessDenied as exc:
+            raise HTTPException(status_code=403, detail="Stage access denied") from exc
         if not deleted:
             raise HTTPException(status_code=404, detail=f"Stage '{stage_id}' not found")
     return {"success": True, "message": f"Stage '{stage_id}' deleted"}
@@ -186,8 +165,8 @@ async def list_files(
     except StagePathError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
-        await _authorized_stage(stage_id, user, "read")
-        files = await stage_service.list_files(stage_id, prefix=prefix)
+        stage = await _authorized_stage(stage_id, user, "read")
+        files = await stage_service.list_files(stage, prefix=prefix)
     except StagePathError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except ValueError as e:
@@ -215,7 +194,7 @@ async def upload_file(
         async with _stage_mutation_audit(
             stage, user, "UPLOAD_STAGE_FILE", f"{stage_id}/{filename}"
         ):
-            result = await stage_service.upload_stream(stage_id, filename, file.file)
+            result = await stage_service.upload_stream(stage, filename, file.file)
     except StagePathError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except ValueError as e:
@@ -234,9 +213,9 @@ async def download_file(
         stage_service._safe_relative_path(filename)
     except StagePathError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    await _authorized_stage(stage_id, user, "read")
+    stage = await _authorized_stage(stage_id, user, "read")
     try:
-        body = await stage_service.open_file(stage_id, filename)
+        body = await stage_service.open_file(stage, filename)
     except StagePathError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except ValueError as e:
@@ -274,7 +253,7 @@ async def delete_file(
         async with _stage_mutation_audit(
             stage, user, "DELETE_STAGE_FILE", f"{stage_id}/{filename}"
         ):
-            await stage_service.delete_file(stage_id, filename)
+            await stage_service.delete_file(stage, filename)
     except StagePathError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except ValueError as e:

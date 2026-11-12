@@ -88,8 +88,10 @@ The same requirement applies when registering the AI functions again.
    when no alias is named.
 6. Click **Create Alias**.
 
-**UDF Registration** shows whether each AI function is registered in the
-engine (**Registered** or **Failed**).
+Saving an alias queues its SQL function update. The update may take a moment
+to appear. **UDF Registration** shows whether each AI function is present
+(**Registered** or **Failed**). Test the function after changing its configuration;
+the presence of a function alone does not confirm that the latest update succeeded.
 
 ## Limits
 

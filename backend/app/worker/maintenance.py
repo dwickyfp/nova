@@ -17,9 +17,9 @@ class MaintenanceWorker:
         from app.modules.catalog import refresher as catalog_refresher
         from app.modules.intelligence import newsroom_refresher
         from app.modules.intelligence.search import search_service
+        from app.modules.llm_functions.registration_worker import AIFunctionRegistrationWorker
         from app.modules.ml_engine.service import ml_engine_service
 
-        await ml_engine_service.ephemeral_repository.ensure_schema()
         async with asyncio.TaskGroup() as group:
             tasks = [
                 group.create_task(_watch(name, work, stop), name=name)
@@ -28,6 +28,7 @@ class MaintenanceWorker:
                     ("news", newsroom_refresher.run(stop)),
                     ("search", search_service.run()),
                     ("ml-retention", ml_engine_service.sweep_ephemeral()),
+                    ("ai-functions", AIFunctionRegistrationWorker().run_forever(stop)),
                 )
             ]
             await stop.wait()

@@ -567,3 +567,18 @@ class TestPlanEndpoint:
 
 def test_deployment_property_keys_are_lowercase():
     assert all(k == k.lower() for k in DEPLOYMENT_PROPERTY_KEYS)
+
+
+@pytest.fixture(autouse=True)
+def metadata_source_registry(monkeypatch, fake_metadata_db):
+    from app.modules.migration import service as module
+
+    class Registry:
+        def __init__(self, connection, actor):
+            self.actor = actor
+
+        async def get_source(self, name):
+            row = await module.migration_repo.get_source(name)
+            return [row] if row else []
+
+    monkeypatch.setattr(module, "MigrationMetadataRepository", Registry)

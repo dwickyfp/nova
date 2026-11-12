@@ -29,4 +29,4 @@ def test_root_listing_authorizes_and_lists_the_stage_prefix(monkeypatch):
     authorized.assert_awaited_once_with(
         "fixture", {"username": "analyst", "active_role": "reader"}, "read"
     )
-    listing.assert_awaited_once_with("fixture", prefix="")
+    listing.assert_awaited_once_with({"id": "fixture"}, prefix="")

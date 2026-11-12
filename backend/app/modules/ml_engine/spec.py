@@ -43,6 +43,7 @@ class MLSecurityContext:
     role: str | None = None
     security_context_version: int = 1
     tenant: str = "default"
+    session_id: str | None = None
 
     def validate(self) -> None:
         if not self.username.strip() or self.username.casefold() == "root":
@@ -85,6 +86,9 @@ class MLExecutionSpec:
     parameters: dict[str, Any] = field(default_factory=dict)
     budget: ExecutionBudget | None = None
     deadline_at: float | None = None
+    #: A queued training job's durable operation id: the version it reserves
+    #: carries it, so a verifier can prove what that attempt published.
+    reservation_token: str | None = None
 
     def validate(self) -> None:
         self.security.validate()

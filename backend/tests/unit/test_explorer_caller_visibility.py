@@ -12,7 +12,13 @@ import app.modules.explorer.repository as repo_module
 import app.modules.explorer.service as module
 from app.core.exceptions import InsufficientRoleError
 
-USER = {"username": "analyst", "encrypted_password": "encrypted", "active_role": "marketing"}
+USER = {
+    "username": "analyst",
+    "encrypted_password": "encrypted",
+    "active_role": "marketing",
+    "assigned_roles": ["marketing"],
+    "session_id": "login-1",
+}
 
 
 class FakeCaller:
@@ -63,17 +69,29 @@ def install_store(monkeypatch, catalogs=None, objects=None, columns=None):
 
 def install_repo(monkeypatch, **results):
     names = (
-        "list_tables", "list_views", "list_materialized_views", "list_functions",
-        "list_pipes", "list_stages", "list_tasks", "get_table_detail", "get_view_detail",
-        "get_mv_detail", "get_function_detail", "get_pipe_detail",
+        "list_tables",
+        "list_views",
+        "list_materialized_views",
+        "list_functions",
+        "list_pipes",
+        "list_stages",
+        "list_tasks",
+        "get_table_detail",
+        "get_view_detail",
+        "get_mv_detail",
+        "get_function_detail",
+        "get_pipe_detail",
     )
     mocks = {}
     for name in names:
         default = [] if name.startswith("list") else None
         mocks[name] = AsyncMock(return_value=results.get(name, default))
-        monkeypatch.setattr(module.explorer_repo, name, mocks[name])
+        monkeypatch.setattr(
+            module.stage_service if name == "list_stages" else module.explorer_repo,
+            name,
+            mocks[name],
+        )
     install_store(monkeypatch)
-    monkeypatch.setattr(module, "decrypt_password", lambda value: "pw")
     monkeypatch.setattr(module.entity_registry, "list", AsyncMock(return_value=[]))
     monkeypatch.setattr(module.semantic_view_service, "list", AsyncMock(return_value=[]))
     monkeypatch.setattr(module.feature_store, "list_views", AsyncMock(return_value=[]))
@@ -92,11 +110,19 @@ async def test_catalog_tree_comes_from_the_callers_session(monkeypatch):
     opened = install_caller(monkeypatch, caller)
     execute_system = AsyncMock()
     monkeypatch.setattr(repo_module.db, "execute_system", execute_system)
-    install_store(monkeypatch, catalogs=[
-        {"name": "pg_sales", "managed": False, "source": "engine", "status": "ok",
-         "last_sync_at": None},
-        {"name": "hidden_lake", "managed": True, "source": "nova", "status": "ok"},
-    ])
+    install_store(
+        monkeypatch,
+        catalogs=[
+            {
+                "name": "pg_sales",
+                "managed": False,
+                "source": "engine",
+                "status": "ok",
+                "last_sync_at": None,
+            },
+            {"name": "hidden_lake", "managed": True, "source": "nova", "status": "ok"},
+        ],
+    )
 
     result = await module.ExplorerService().get_catalogs(USER)
 
@@ -127,13 +153,20 @@ async def test_hidden_database_returns_nothing_and_reads_no_system_metadata(monk
 
 @pytest.mark.asyncio
 async def test_database_objects_keep_only_relations_the_caller_lists(monkeypatch):
-    install_caller(monkeypatch, FakeCaller(
-        databases={"default_catalog": ["analytics"]},
-        relations={("default_catalog", "analytics"): {
-            "sales": "BASE TABLE", "sales_view": "VIEW", "sales_mv": "VIEW",
-        }},
-        functions={"analytics": {"allowed_fn"}},
-    ))
+    install_caller(
+        monkeypatch,
+        FakeCaller(
+            databases={"default_catalog": ["analytics"]},
+            relations={
+                ("default_catalog", "analytics"): {
+                    "sales": "BASE TABLE",
+                    "sales_view": "VIEW",
+                    "sales_mv": "VIEW",
+                }
+            },
+            functions={"analytics": {"allowed_fn"}},
+        ),
+    )
     install_repo(
         monkeypatch,
         list_tables=[{"name": "sales"}, {"name": "salaries"}],
@@ -158,10 +191,13 @@ async def test_database_objects_keep_only_relations_the_caller_lists(monkeypatch
 
 @pytest.mark.asyncio
 async def test_external_catalog_lists_its_own_tables_without_internal_objects(monkeypatch):
-    install_caller(monkeypatch, FakeCaller(
-        databases={"pg_sales": ["public"]},
-        relations={("pg_sales", "public"): {"orders": "BASE TABLE"}},
-    ))
+    install_caller(
+        monkeypatch,
+        FakeCaller(
+            databases={"pg_sales": ["public"]},
+            relations={("pg_sales", "public"): {"orders": "BASE TABLE"}},
+        ),
+    )
     mocks = install_repo(monkeypatch, list_views=[{"name": "internal_view"}])
 
     result = await module.ExplorerService().get_database_objects(
@@ -187,9 +223,12 @@ async def test_external_catalog_lists_its_own_tables_without_internal_objects(mo
 async def test_detail_of_an_object_the_caller_cannot_list_is_not_read(
     monkeypatch, method, name, repo_method
 ):
-    install_caller(monkeypatch, FakeCaller(
-        relations={("default_catalog", "analytics"): {"sales": "BASE TABLE"}},
-    ))
+    install_caller(
+        monkeypatch,
+        FakeCaller(
+            relations={("default_catalog", "analytics"): {"sales": "BASE TABLE"}},
+        ),
+    )
     mocks = install_repo(monkeypatch)
 
     result = await getattr(module.ExplorerService(), method)("analytics", name, user=USER)
@@ -200,16 +239,26 @@ async def test_detail_of_an_object_the_caller_cannot_list_is_not_read(
 
 @pytest.mark.asyncio
 async def test_pipe_detail_requires_a_visible_target_table(monkeypatch):
-    install_caller(monkeypatch, FakeCaller(
-        relations={("default_catalog", "analytics"): {"sales": "BASE TABLE"}},
-    ))
-    pipe = {"name": "load_salaries", "database": "analytics", "pipe_id": 1,
-            "state": "RUNNING", "target_table": "salaries", "properties": {}}
+    install_caller(
+        monkeypatch,
+        FakeCaller(
+            relations={("default_catalog", "analytics"): {"sales": "BASE TABLE"}},
+        ),
+    )
+    pipe = {
+        "name": "load_salaries",
+        "database": "analytics",
+        "pipe_id": 1,
+        "state": "RUNNING",
+        "target_table": "salaries",
+        "properties": {},
+    }
     install_repo(monkeypatch, get_pipe_detail=pipe)
 
-    assert await module.ExplorerService().get_pipe_detail(
-        "analytics", "load_salaries", user=USER
-    ) is None
+    assert (
+        await module.ExplorerService().get_pipe_detail("analytics", "load_salaries", user=USER)
+        is None
+    )
 
 
 @pytest.mark.asyncio
@@ -299,20 +348,23 @@ async def test_caller_session_requires_an_active_role(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_external_tables_are_described_by_the_store(monkeypatch):
-    install_caller(monkeypatch, FakeCaller(
-        databases={"lake": ["sales"]},
-        relations={("lake", "sales"): {"orders": "BASE TABLE", "stale": "BASE TABLE"}},
-    ))
-    install_repo(monkeypatch)
-    install_store(monkeypatch, objects=[
-        {"object_name": "orders", "object_type": "table", "comment": "Orders",
-         "row_count": 12},
-        {"object_name": "secret", "object_type": "table", "comment": "Not listed"},
-    ])
-
-    result = await module.ExplorerService().get_database_objects(
-        "sales", catalog="lake", user=USER
+    install_caller(
+        monkeypatch,
+        FakeCaller(
+            databases={"lake": ["sales"]},
+            relations={("lake", "sales"): {"orders": "BASE TABLE", "stale": "BASE TABLE"}},
+        ),
     )
+    install_repo(monkeypatch)
+    install_store(
+        monkeypatch,
+        objects=[
+            {"object_name": "orders", "object_type": "table", "comment": "Orders", "row_count": 12},
+            {"object_name": "secret", "object_type": "table", "comment": "Not listed"},
+        ],
+    )
+
+    result = await module.ExplorerService().get_database_objects("sales", catalog="lake", user=USER)
 
     assert [(t.name, t.comment, t.row_count) for t in result.tables] == [
         ("orders", "Orders", 12),
@@ -322,15 +374,26 @@ async def test_external_tables_are_described_by_the_store(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_external_table_detail_uses_stored_columns_after_the_gate(monkeypatch):
-    install_caller(monkeypatch, FakeCaller(
-        databases={"lake": ["sales"]},
-        relations={("lake", "sales"): {"orders": "BASE TABLE"}},
-    ))
+    install_caller(
+        monkeypatch,
+        FakeCaller(
+            databases={"lake": ["sales"]},
+            relations={("lake", "sales"): {"orders": "BASE TABLE"}},
+        ),
+    )
     mocks = install_repo(monkeypatch)
-    store = install_store(monkeypatch, columns=[
-        {"ordinal": 1, "column_name": "id", "data_type": "bigint", "is_nullable": False,
-         "column_comment": None},
-    ])
+    store = install_store(
+        monkeypatch,
+        columns=[
+            {
+                "ordinal": 1,
+                "column_name": "id",
+                "data_type": "bigint",
+                "is_nullable": False,
+                "column_comment": None,
+            },
+        ],
+    )
 
     detail = await module.ExplorerService().get_table_detail(
         "sales", "orders", user=USER, catalog="lake"
@@ -350,21 +413,35 @@ async def test_external_table_detail_uses_stored_columns_after_the_gate(monkeypa
 
 @pytest.mark.asyncio
 async def test_source_catalog_relations_are_grouped_by_their_source_kind(monkeypatch):
-    install_caller(monkeypatch, FakeCaller(
-        databases={"pg_shop": ["public"]},
-        relations={("pg_shop", "public"): {
-            "orders": "BASE TABLE", "jakarta_orders": "BASE TABLE", "customers": "BASE TABLE",
-            "city_totals": "BASE TABLE", "unsynced": "BASE TABLE",
-        }},
-    ))
+    install_caller(
+        monkeypatch,
+        FakeCaller(
+            databases={"pg_shop": ["public"]},
+            relations={
+                ("pg_shop", "public"): {
+                    "orders": "BASE TABLE",
+                    "jakarta_orders": "BASE TABLE",
+                    "customers": "BASE TABLE",
+                    "city_totals": "BASE TABLE",
+                    "unsynced": "BASE TABLE",
+                }
+            },
+        ),
+    )
     install_repo(monkeypatch)
-    install_store(monkeypatch, objects=[
-        {"object_name": "orders", "object_type": "table", "engine": "Partitioned table"},
-        {"object_name": "customers", "object_type": "table", "engine": "JDBC"},
-        {"object_name": "jakarta_orders", "object_type": "view", "engine": "View"},
-        {"object_name": "city_totals", "object_type": "materialized_view",
-         "engine": "Materialized view"},
-    ])
+    install_store(
+        monkeypatch,
+        objects=[
+            {"object_name": "orders", "object_type": "table", "engine": "Partitioned table"},
+            {"object_name": "customers", "object_type": "table", "engine": "JDBC"},
+            {"object_name": "jakarta_orders", "object_type": "view", "engine": "View"},
+            {
+                "object_name": "city_totals",
+                "object_type": "materialized_view",
+                "engine": "Materialized view",
+            },
+        ],
+    )
     entities = AsyncMock(return_value=[])
     monkeypatch.setattr(module.entity_registry, "list", entities)
 
@@ -374,7 +451,9 @@ async def test_source_catalog_relations_are_grouped_by_their_source_kind(monkeyp
 
     # The engine's generic "JDBC" is not a kind: an unclassified relation has none.
     assert [(t.name, t.engine) for t in result.tables] == [
-        ("customers", None), ("orders", "Partitioned table"), ("unsynced", None),
+        ("customers", None),
+        ("orders", "Partitioned table"),
+        ("unsynced", None),
     ]
     assert [v.name for v in result.views] == ["jakarta_orders"]
     assert [m.name for m in result.materialized_views] == ["city_totals"]
@@ -386,16 +465,26 @@ async def test_source_catalog_relations_are_grouped_by_their_source_kind(monkeyp
 
 @pytest.mark.asyncio
 async def test_source_catalog_views_are_described_like_tables(monkeypatch):
-    install_caller(monkeypatch, FakeCaller(
-        databases={"sf": ["SALES"]},
-        relations={("sf", "SALES"): {"REGION_VIEW": "BASE TABLE"}},
-    ))
+    install_caller(
+        monkeypatch,
+        FakeCaller(
+            databases={"sf": ["SALES"]},
+            relations={("sf", "SALES"): {"REGION_VIEW": "BASE TABLE"}},
+        ),
+    )
     install_repo(monkeypatch)
     install_store(
         monkeypatch,
         objects=[{"object_name": "REGION_VIEW", "object_type": "view", "engine": "Secure view"}],
-        columns=[{"ordinal": 1, "column_name": "REGION", "data_type": "varchar",
-                  "is_nullable": True, "column_comment": None}],
+        columns=[
+            {
+                "ordinal": 1,
+                "column_name": "REGION",
+                "data_type": "varchar",
+                "is_nullable": True,
+                "column_comment": None,
+            }
+        ],
     )
 
     detail = await module.ExplorerService().get_table_detail(
@@ -408,23 +497,34 @@ async def test_source_catalog_views_are_described_like_tables(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_catalogs_carry_their_source_and_groups(monkeypatch):
-    install_caller(monkeypatch, FakeCaller(catalogs=[
-        {"name": "default_catalog", "type": "Internal", "comment": None},
-        {"name": "pg_shop", "type": "Jdbc", "comment": None},
-        {"name": "raw_jdbc", "type": "Jdbc", "comment": None},
-    ], databases={"default_catalog": [], "pg_shop": ["public", "pg_catalog"], "raw_jdbc": []}))
-    install_store(monkeypatch, catalogs=[
-        {"name": "pg_shop", "catalog_type": "postgres", "managed": True, "source": "nova"},
-    ])
+    install_caller(
+        monkeypatch,
+        FakeCaller(
+            catalogs=[
+                {"name": "default_catalog", "type": "Internal", "comment": None},
+                {"name": "pg_shop", "type": "Jdbc", "comment": None},
+                {"name": "raw_jdbc", "type": "Jdbc", "comment": None},
+            ],
+            databases={"default_catalog": [], "pg_shop": ["public", "pg_catalog"], "raw_jdbc": []},
+        ),
+    )
+    install_store(
+        monkeypatch,
+        catalogs=[
+            {"name": "pg_shop", "catalog_type": "postgres", "managed": True, "source": "nova"},
+        ],
+    )
 
     catalogs = {c.name: c for c in (await module.ExplorerService().get_catalogs(USER)).catalogs}
 
     assert (catalogs["default_catalog"].source_type, catalogs["default_catalog"].source_label) == (
-        "internal", "Nova"
+        "internal",
+        "Nova",
     )
     assert "stages" in catalogs["default_catalog"].object_groups
     assert (catalogs["pg_shop"].source_type, catalogs["pg_shop"].source_label) == (
-        "postgres", "PostgreSQL"
+        "postgres",
+        "PostgreSQL",
     )
     assert catalogs["pg_shop"].object_groups == ["tables", "views", "materialized_views"]
     # Postgres's own catalog schema is not a database people query.

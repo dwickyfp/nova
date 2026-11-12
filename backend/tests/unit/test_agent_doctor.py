@@ -391,10 +391,15 @@ async def test_stale_base_and_foreign_scope_refuse_before_creating_draft(metadat
         await quality_application.review_and_apply(AGENT, "proposal", request, USER)
     assert drafts == {}
     assert (await quality.records("proposals", "agent", USER))[0]["status"] == "proposed"
-    with pytest.raises(HTTPException, match="not found"):
-        await quality_application.review_and_apply(
-            AGENT, "proposal", request, {**USER, "active_role": "ADMIN"}
-        )
+    from app.core.metadata_actor import acting_as
+    from app.modules.access_control.security_context import SecurityContext
+
+    switched = {**USER, "active_role": "ADMIN"}
+    with (
+        acting_as(SecurityContext.from_session(switched)),
+        pytest.raises(HTTPException, match="not found"),
+    ):
+        await quality_application.review_and_apply(AGENT, "proposal", request, switched)
 
 
 @pytest.mark.asyncio

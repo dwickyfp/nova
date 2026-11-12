@@ -8,56 +8,50 @@ snapshot/dedup decision, not S3 or StarRocks.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
+import pytest
+
+from app.modules.workspaces.metadata_service import WorkspaceMetadataService, WorkspaceObjectStore
 from app.modules.workspaces.service import WorkspaceService
 
 
 class _FakeRepo:
-    def __init__(self, entry: dict | None):
+    def __init__(self, entry: dict):
         self.entry = entry
         self.versions: list[dict] = []
-        self._seq = 0
 
-    def build_path(self, parent_path: str, name: str) -> str:
-        return "/".join(part for part in [parent_path.strip("/"), name.strip("/")] if part)
+    async def get_entry(self, _namespace, entry_id):
+        return dict(self.entry) if self.entry["id"] == entry_id else None
 
-    async def get_entry(self, _username, _entry_id):
-        return self.entry
+    async def update_file(self, _namespace, entry_id, *, expected_revision, **changes):
+        from app.core.metadata_db import MetadataConflict
 
-    async def update_entry(self, **_kwargs):
-        return None
+        assert entry_id == self.entry["id"]
+        if expected_revision != self.entry["metadata_revision"]:
+            raise MetadataConflict()
+        self.entry.update(changes, metadata_revision=expected_revision + 1)
+        return dict(self.entry)
 
-    async def next_version_number(self, _username, _entry_id):
-        self._seq += 1
-        return max((v["version"] for v in self.versions), default=0) + 1
+    async def reserve_version(self, _namespace, entry_id, *, object_key_for):
+        number = len(self.versions) + 1
+        row = {
+            "id": str(number),
+            "entry_id": entry_id,
+            "version": number,
+            "object_key": object_key_for(number),
+        }
+        self.versions.append(row)
+        return row
 
-    async def insert_version(self, **kwargs):
-        self.versions.append(
-            {
-                "id": kwargs["version_id"],
-                "entry_id": kwargs["entry_id"],
-                "version": kwargs["version"],
-                "object_key": kwargs["object_key"],
-                "size_bytes": kwargs["size_bytes"],
-                "etag": kwargs["etag"],
-            }
-        )
+    async def publish_version(self, _namespace, version_id, **fields):
+        next(row for row in self.versions if row["id"] == version_id).update(fields)
 
-    async def get_latest_version(self, _username, _entry_id):
-        if not self.versions:
-            return None
-        return max(self.versions, key=lambda v: v["version"])
+    async def list_versions(self, _namespace, _entry_id, limit=100):
+        return list(reversed(self.versions))[:limit]
 
-    async def list_versions(self, _username, _entry_id, limit=100, offset=0):
-        return sorted(self.versions, key=lambda v: v["version"], reverse=True)[
-            offset : offset + limit
-        ]
-
-    async def get_version(self, _username, _entry_id, version):
-        match = [v for v in self.versions if v["version"] == version]
-        return match[0] if match else None
-
-    async def delete_versions_for_entry(self, _username, _entry_id):
-        self.versions.clear()
+    async def get_version(self, _namespace, _entry_id, version):
+        return next((row for row in self.versions if row["version"] == version), None)
 
 
 class _FakeStorage:
@@ -69,6 +63,9 @@ class _FakeStorage:
         self.objects[Key] = Body
         self.put_count += 1
         return {"ETag": f'"etag-{self.put_count}"'}
+
+    def delete_object(self, Bucket, Key):  # noqa: N803
+        self.objects.pop(Key, None)
 
     def get_object(self, Bucket, Key):  # noqa: N803
         from app.core.exceptions import StorageError
@@ -102,6 +99,7 @@ def _entry(object_key: str = "workspaces/analyst/Untitled.sql") -> dict:
         "etag": None,
         "created_at": None,
         "updated_at": None,
+        "metadata_revision": 1,
     }
 
 
@@ -114,7 +112,13 @@ def _service(
         storage.objects["workspaces/analyst/Untitled.sql"] = initial.encode()
 
     service = WorkspaceService()
-    service._repo = repo
+
+    @asynccontextmanager
+    async def transaction(*, read_only=False):
+        yield repo
+
+    files = WorkspaceMetadataService(transaction, WorkspaceObjectStore(service))
+    monkeypatch.setattr(WorkspaceService, "_files", property(lambda self: files))
     service._client = lambda: storage  # type: ignore[method-assign]
     monkeypatch.setattr(
         "app.modules.workspaces.service.load_nova_app_config",
@@ -143,7 +147,8 @@ class TestSaveSnapshotsPreviousContent:
 
         assert [v["version"] for v in repo.versions] == [1]
         version = repo.versions[0]
-        assert version["object_key"].endswith(".versions/e1/1.sql")
+        assert version["object_key"] == "workspaces/analyst/Untitled.sql"
+        assert version["object_key"] != repo.entry["object_key"]
 
     async def test_second_save_snapshots_the_current_content(self, monkeypatch):
         service, repo, storage = _service(monkeypatch, initial="SELECT 1")
@@ -152,13 +157,14 @@ class TestSaveSnapshotsPreviousContent:
 
         assert [v["version"] for v in repo.versions] == [1, 2]
         # Version 2 must hold what "SELECT 2" wrote, not the first content.
-        assert storage.objects["workspaces/analyst/.versions/e1/2.sql"] == b"SELECT 2"
+        assert storage.objects[repo.versions[1]["object_key"]] == b"SELECT 2"
 
     async def test_live_object_is_updated_after_snapshot(self, monkeypatch):
-        service, _repo, storage = _service(monkeypatch, initial="SELECT 1")
+        service, repo, storage = _service(monkeypatch, initial="SELECT 1")
         await service.update_file("analyst", "e1", "SELECT 42")
 
-        assert storage.objects["workspaces/analyst/Untitled.sql"] == b"SELECT 42"
+        assert storage.objects[repo.entry["object_key"]] == b"SELECT 42"
+        assert storage.objects["workspaces/analyst/Untitled.sql"] == b"SELECT 1"
 
 
 class TestDedup:
@@ -229,11 +235,28 @@ class TestVersionReads:
 
 
 class TestVersionObjectKeysAreIsolated:
-    def test_version_key_never_equals_live_key(self, monkeypatch):
-        service, _repo, _storage = _service(monkeypatch)
+    async def test_version_key_never_equals_live_key(self, monkeypatch):
+        service, repo, storage = _service(monkeypatch)
+        await service.update_file("analyst", "e1", "SELECT 2")
+        assert repo.entry["object_key"] != repo.versions[0]["object_key"]
+        assert len(storage.objects) == 2
 
-        live = service.build_object_key("analyst", "Untitled.sql")
-        version = service._version_object_key("analyst", "e1", 1)
 
-        assert live != version
-        assert ".versions/e1/1.sql" in version
+@pytest.mark.parametrize("status", [502, 503])
+async def test_unavailable_previous_content_refuses_save_without_losing_history(
+    monkeypatch, status
+):
+    from app.core.exceptions import StorageError
+
+    service, repo, storage = _service(monkeypatch)
+    before = dict(repo.entry)
+
+    def unavailable(**kwargs):
+        raise StorageError("Storage unavailable", status_code=status)
+
+    monkeypatch.setattr(storage, "get_object", unavailable)
+    with pytest.raises(StorageError) as error:
+        await service.update_file("analyst", "e1", "SELECT 2")
+    assert error.value.status_code == status
+    assert repo.entry == before and repo.versions == []
+    assert storage.put_count == 0

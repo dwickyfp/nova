@@ -141,8 +141,13 @@ async def test_a_reaction_is_audited_without_story_content(room):
 def test_one_vote_moves_interest_a_little_and_many_move_it_more():
     def story(identifier, value):
         return {
-            "id": identifier, "view_id": "v", "metric": "revenue", "change": -1.0,
-            "relative_change": -0.2, "severity": "warning", "rank": 1,
+            "id": identifier,
+            "view_id": "v",
+            "metric": "revenue",
+            "change": -1.0,
+            "relative_change": -0.2,
+            "severity": "warning",
+            "rank": 1,
             "slice": {"dimension": "city", "value": value},
         }
 
@@ -159,9 +164,21 @@ async def test_a_reaction_store_outage_means_no_personalisation(monkeypatch):
     async def down(*_args, **_kwargs):
         raise RuntimeError("metadata unavailable")
 
-    monkeypatch.setattr(newsroom_feedback.db, "execute_system", down)
+    from contextlib import asynccontextmanager
 
-    assert await newsroom_feedback.FeedbackStore().rows("news_manager") == []
+    @asynccontextmanager
+    async def unavailable(*args, **kwargs):
+        await down()
+        yield
+
+    monkeypatch.setattr(newsroom_feedback, "intelligence_metadata", unavailable)
+
+    assert (
+        await newsroom_feedback.FeedbackStore().rows(
+            warehouse.Principal("news_manager", "news_editor").user()
+        )
+        == []
+    )
 
 
 @pytest.mark.parametrize(

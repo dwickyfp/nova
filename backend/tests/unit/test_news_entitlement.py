@@ -8,6 +8,8 @@ import pytest
 from fastapi import HTTPException
 
 from app.common import news_entitlement
+from app.core.metadata_scope import current_scope
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.agents.tools.intelligence import ContextGraphTool
 from app.modules.intelligence import engine_router
 from app.modules.users import router as users_router
@@ -52,34 +54,61 @@ class Store:
 
 
 @pytest.fixture
-def store(monkeypatch):
+def store(monkeypatch, fake_metadata_db):
     fake = Store()
-    monkeypatch.setattr(news_entitlement.db, "execute_system", fake.execute_system)
+
+    async def read(actor, owner, key):
+        assert actor.principal == owner or actor.active_role == "ACCOUNTADMIN"
+        if fake.fail_reads:
+            raise RuntimeError("metadata unavailable")
+        return fake.rows.get((owner, key))
+
+    async def write(actor, owner, values):
+        assert current_scope().actor == actor and actor.active_role == "ACCOUNTADMIN"
+        fake.rows.update({(owner, key): value for key, value in values.items()})
+
+    monkeypatch.setattr(news_entitlement, "read_value", read)
+    monkeypatch.setattr(news_entitlement, "write_values", write)
     monkeypatch.setattr(news_entitlement, "write_audit_log", fake.write_audit_log)
     return fake
 
 
 async def test_news_is_off_until_an_administrator_enables_it(store):
-    assert await news_entitlement.is_news_enabled("manager") is False
+    assert (
+        await news_entitlement.is_news_enabled("manager", SecurityContext.from_session(READER))
+        is False
+    )
 
     await news_entitlement.set_news_enabled("manager", enabled=True, actor=ADMIN)
 
-    assert await news_entitlement.is_news_enabled("manager") is True
-    assert await news_entitlement.is_news_enabled("someone_else") is False
+    assert (
+        await news_entitlement.is_news_enabled("manager", SecurityContext.from_session(READER))
+        is True
+    )
+    assert (
+        await news_entitlement.is_news_enabled("someone_else", SecurityContext.from_session(ADMIN))
+        is False
+    )
 
 
 async def test_a_store_failure_means_disabled(store):
     await news_entitlement.set_news_enabled("manager", enabled=True, actor=ADMIN)
     store.fail_reads = True
 
-    assert await news_entitlement.is_news_enabled("manager") is False
+    assert (
+        await news_entitlement.is_news_enabled("manager", SecurityContext.from_session(READER))
+        is False
+    )
 
 
 async def test_switching_off_takes_effect(store):
     await news_entitlement.set_news_enabled("manager", enabled=True, actor=ADMIN)
     await news_entitlement.set_news_enabled("manager", enabled=False, actor=ADMIN)
 
-    assert await news_entitlement.is_news_enabled("manager") is False
+    assert (
+        await news_entitlement.is_news_enabled("manager", SecurityContext.from_session(READER))
+        is False
+    )
 
 
 async def test_entitlement_changes_are_audited_with_the_administrator_context(store):
@@ -103,9 +132,7 @@ async def test_entitlement_changes_are_audited_with_the_administrator_context(st
 
 async def test_scheduled_execution_accounts_cannot_be_enabled(store):
     with pytest.raises(ValueError, match="scheduled execution account"):
-        await news_entitlement.set_news_enabled(
-            "nova_task_service_news", enabled=True, actor=ADMIN
-        )
+        await news_entitlement.set_news_enabled("nova_task_service_news", enabled=True, actor=ADMIN)
 
     assert store.rows == {}
 
@@ -211,8 +238,12 @@ class UserService:
     async def get_user_detail(self, username, host="%"):
         if username == "ghost":
             raise ValueError("User 'ghost@%' not found")
-        return {"username": username, "host": host, "identity": f"'{username}'@'{host}'",
-                "is_protected": False}
+        return {
+            "username": username,
+            "host": host,
+            "identity": f"'{username}'@'{host}'",
+            "is_protected": False,
+        }
 
     async def update_user(self, **fields):
         self.engine_updates.append(fields)
@@ -235,7 +266,10 @@ async def test_the_switch_alone_updates_no_engine_state(store, users):
 
     assert result["updated"] == ["SET NEWS ON"]
     assert users.engine_updates == []
-    assert await news_entitlement.is_news_enabled("manager") is True
+    assert (
+        await news_entitlement.is_news_enabled("manager", SecurityContext.from_session(READER))
+        is True
+    )
 
 
 async def test_the_switch_combines_with_an_engine_update(store, users):
@@ -249,9 +283,7 @@ async def test_the_switch_combines_with_an_engine_update(store, users):
 
 async def test_the_switch_is_refused_for_an_unknown_user(store, users):
     with pytest.raises(HTTPException) as refused:
-        await users_router.update_user(
-            "ghost", UserUpdate(news_enabled=True), host="%", user=ADMIN
-        )
+        await users_router.update_user("ghost", UserUpdate(news_enabled=True), host="%", user=ADMIN)
 
     assert refused.value.status_code == 400
     assert store.rows == {}

@@ -91,6 +91,9 @@ async def migration_environment(tmp_path):
                 ))
                 await provision_role_logging(admin, "nova_meta_migrator")
                 await provision_role_logging(admin, app_role)
+                await admin.execute(sql.SQL(
+                    "GRANT CONNECT ON DATABASE nova_control TO nova_meta_migrator, {}"
+                ).format(sql.Identifier(app_role)))
                 await admin.execute(sql.SQL("COMMENT ON ROLE nova_meta_owner IS {}").format(
                     sql.Literal(marker),
                 ))
@@ -130,6 +133,9 @@ async def migration_environment(tmp_path):
                 await admin.execute("REVOKE CREATE ON DATABASE nova_control FROM nova_meta_owner")
                 # ALTER DEFAULT PRIVILEGES persists outside a schema after its removal.
                 await admin.execute("DROP OWNED BY nova_meta_owner")
+                await admin.execute(sql.SQL(
+                    "REVOKE CONNECT ON DATABASE nova_control FROM nova_meta_migrator, {}"
+                ).format(sql.Identifier(app_role)))
                 for role in (app_role, *reversed(ALL_ROLES)):
                     await admin.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role)))
 

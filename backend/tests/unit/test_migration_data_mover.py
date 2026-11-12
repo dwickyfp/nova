@@ -395,3 +395,18 @@ def _run_service_execute(*, include_data: bool = False) -> dict:
         )
     )
     return response.model_dump(mode="json")
+
+
+@pytest.fixture(autouse=True)
+def metadata_source_registry(monkeypatch, fake_metadata_db):
+    from app.modules.migration import service as module
+
+    class Registry:
+        def __init__(self, connection, actor):
+            self.actor = actor
+
+        async def get_source(self, name):
+            row = await module.migration_repo.get_source(name)
+            return [row] if row else []
+
+    monkeypatch.setattr(module, "MigrationMetadataRepository", Registry)

@@ -34,6 +34,7 @@ WORKER_TARGETS = {
     "automation-worker": ("nova-automation-worker:9108", 9108),
     "autopilot-worker": ("nova-autopilot-worker:9109", 9109),
     "maintenance-worker": ("nova-maintenance-worker:9110", 9110),
+    "outbox-worker": ("nova-outbox-worker:9111", 9111),
 }
 #: Tiers a split deployment runs beside the web process. Their replicas are
 #: discovered through DNS, so there is no fixed instance to expect.

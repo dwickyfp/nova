@@ -118,9 +118,10 @@ class OntologyService:
             if existing.content_fingerprint() != domain.content_fingerprint():
                 raise HTTPException(status_code=409, detail="A domain with this name exists")
             return self._domain_view(existing, domains, user)
-        saved = await self.repository.save("domains", domain)
+        async with access.governed(user):
+            saved = await self.repository.save("domains", domain)
+            await access.audit("CREATE_DOMAIN", "ONTOLOGY_DOMAIN", saved.name, user)
         domains[saved.id] = saved
-        await access.audit("CREATE_DOMAIN", "ONTOLOGY_DOMAIN", saved.name, user)
         return self._domain_view(saved, domains, user)
 
     async def update_domain(self, domain_id: str, body: DomainUpdate, user: dict) -> dict:
@@ -136,11 +137,12 @@ class OntologyService:
                 "actor": Actor.from_user(user),
             }
         )
-        saved = await self.repository.save(
-            "domains", updated, expected_revision=body.expected_revision
-        )
+        async with access.governed(user):
+            saved = await self.repository.save(
+                "domains", updated, expected_revision=body.expected_revision
+            )
+            await access.audit("UPDATE_DOMAIN", "ONTOLOGY_DOMAIN", saved.name, user)
         domains[saved.id] = saved
-        await access.audit("UPDATE_DOMAIN", "ONTOLOGY_DOMAIN", saved.name, user)
         return self._domain_view(saved, domains, user)
 
     # --- snapshots -------------------------------------------------------------

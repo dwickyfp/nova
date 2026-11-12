@@ -10,7 +10,7 @@ rebuild).
 QA Finding 1 (High): enumerate and dry-run take a ``source`` name and read from
 that source's cluster. If the source is absent or unknown the request fails
 closed — the local engine is never used as a silent fallback. QA Finding 2
-(Medium): source registration and dry-run write ``NOVA_SYSTEM.AUDIT_LOG`` rows
+(Medium): source registration and dry-run write audit rows
 through the existing ``app.common.audit`` writer; no new audit path is added.
 
 Worker-side execution also uses this service to plan, apply DDL, copy table
@@ -24,9 +24,11 @@ import logging
 from uuid import uuid4
 
 from app.common.audit import write_audit_log
+from app.common.metadata_actors import metadata_scope
 from app.common.sql_guard import CredentialsRedactionError, redact_sql_credentials
 from app.core.config import get_storage_connection, settings, to_docker_endpoint
 from app.modules.access_control.domain import AccessRequest
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.access_control.service import access_control_service
 from app.modules.migration import verdicts
 from app.modules.migration.data_mover import (
@@ -36,6 +38,8 @@ from app.modules.migration.data_mover import (
     stage_path_for,
 )
 from app.modules.migration.engine import migration_engine
+from app.modules.migration.jobs import MIGRATION_WORKER
+from app.modules.migration.metadata_repository import MigrationMetadataRepository
 from app.modules.migration.planner import ApplyPlan, PlanCandidate, build_plan
 from app.modules.migration.preflight import (
     PlanShape,
@@ -89,6 +93,32 @@ class MigrationPreflightError(RuntimeError):
     """The caller lacks a privilege (or storage) the plan needs."""
 
 
+class SourceAlreadyExists(RuntimeError):
+    """A source connection with this name is already registered."""
+
+
+def _secret_reference(value: str) -> str:
+    """Store a bare secret name as the ``aws://`` reference it resolves through."""
+    value = value.strip()
+    if not value or "://" in value or value.startswith("arn:"):
+        return value
+    return f"aws://{value}"
+
+
+def _source_response(row: dict) -> SourceConnectionResponse:
+    return SourceConnectionResponse(
+        id=row["id"],
+        name=row["name"],
+        host=row["host"],
+        port=row["port"],
+        username=row["username"],
+        secret_ref=row.get("secret_ref") or "",
+        comment=row.get("comment") or "",
+        created_at=row.get("created_at"),
+        created_by=row.get("created_by"),
+    )
+
+
 #: Map the repository's string kinds to the schema enum. Kept explicit so a new
 #: object family is a visible, typed addition rather than a silent skip.
 _KIND_BY_NAME: dict[str, ObjectKind] = {
@@ -108,13 +138,15 @@ class MigrationService:
 
     # ── Source connections ──────────────────────────────────────
 
-    async def list_sources(self) -> SourceConnectionListResponse:
-        rows = await migration_repo.list_sources()
-        connections = [SourceConnectionResponse(**row) for row in rows]
+    async def list_sources(self, actor: SecurityContext) -> SourceConnectionListResponse:
+        async with metadata_scope(actor, read_only=True) as conn:
+            rows = await MigrationMetadataRepository(conn, actor).list_sources()
+        connections = [_source_response(row) for row in rows]
         return SourceConnectionListResponse(connections=connections, count=len(connections))
 
     async def create_source(
         self,
+        actor: SecurityContext,
         *,
         name: str,
         host: str,
@@ -122,44 +154,55 @@ class MigrationService:
         username: str,
         secret_ref: str,
         comment: str,
-        username_actor: str,
     ) -> SourceConnectionResponse:
         """Register a source cluster address and audit the action.
 
         Persists the address and the *secret reference* only — never a password
-        value. The audit row records the connection name, never the reference or
-        a credential.
+        value. A bare secret name is stored as its ``aws://`` reference, the
+        provider ``resolve_secret_reference`` already applies to it. The audit
+        row records the connection name, never the reference or a credential.
         """
-        created = await migration_repo.create_source(
-            name=name,
-            host=host,
-            port=port,
-            username=username,
-            secret_ref=secret_ref,
-            comment=comment,
-            created_by=username_actor,
-        )
-        await write_audit_log(
-            event_type="migration",
-            user_name=username_actor,
-            action="register_source",
-            object_type="migration_source",
-            object_name=name,
-            status="success",
-        )
-        return SourceConnectionResponse(**created)
+        async with metadata_scope(actor) as conn:
+            repository = MigrationMetadataRepository(conn, actor)
+            if await repository.get_source(name):
+                raise SourceAlreadyExists(name)
+            created = await repository.create_source(
+                name=name,
+                host=host,
+                port=port,
+                username=username,
+                secret_ref=_secret_reference(secret_ref),
+                comment=comment,
+            )
+            await write_audit_log(
+                event_type="migration",
+                user_name=actor.principal,
+                active_role=actor.active_role,
+                session_id=actor.session_id,
+                security_context_version=actor.security_context_version,
+                action="register_source",
+                object_type="migration_source",
+                object_name=name,
+                status="success",
+            )
+        return _source_response(created)
 
     async def resolve_source(self, name: str) -> SourceConnection:
         """Resolve a registered source to a cluster address; fail closed.
 
-        Raises ``SourceConnectionError`` when the source is unknown or cannot be
-        addressed. Callers must treat that as terminal — reading the local engine
-        instead is exactly the High finding this revision fixes.
+        Raises ``SourceConnectionError`` when the source is unknown, ambiguous or
+        cannot be addressed. Callers must treat that as terminal — reading the
+        local engine instead is exactly the High finding this revision fixes.
+        Resolution runs in the migration worker, as its service principal.
         """
-        row = await migration_repo.get_source(name)
-        if row is None:
+        async with metadata_scope(MIGRATION_WORKER, read_only=True) as conn:
+            rows = await MigrationMetadataRepository(conn, MIGRATION_WORKER).get_source(name)
+        if not rows:
             raise SourceConnectionError(f"Unknown migration source '{name}'")
-        return connection_from_row(row)
+        if len(rows) > 1:
+            # Imported duplicates are kept as they were; choosing one would be a guess.
+            raise SourceConnectionError(f"Migration source '{name}' is registered more than once")
+        return connection_from_row(rows[0])
 
     async def test_source_connection(
         self, *, name: str, host: str, port: int, username: str, secret_ref: str

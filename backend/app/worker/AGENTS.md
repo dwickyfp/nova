@@ -16,13 +16,17 @@ for the recorded ownership map; verify both against source before changing it.
 The no-argument worker launcher supervises separate OS child processes. A
 deployment worker selects one role. Do not recombine heavy workload loops in one
 HTTP process or create a new scheduler/consumer framework for a feature.
-Maintenance owns Search polling/builds, Catalog/News refresh and ML retention;
+Maintenance owns Search polling/builds, Catalog/News refresh, ML retention and
+durable AI function registration;
 HTTP requests persist the corresponding intent rather than starting these loops.
 Per-process telemetry flushing remains with the originating process until its
 own approved durable handoff is implemented.
 
-Interactive agent separation, durable outbox integration and full dependency
-readiness are target work, not implied by existing worker-role names. Current
+The outbox role publishes committed job identifiers to the capped Redis wakeup
+stream. It uses the outbox PG login, opens no engine/session pools and never
+executes a job effect. Unknown publication acknowledgments may repeat a wakeup;
+consumers still claim work in PG. Interactive agent separation and full dependency
+readiness remain target work, not implied by worker-role names. Current
 process-local consent/cancel ownership constrains agent routing. Preserve the
 gateway's affinity until durable recovery and cross-replica ownership are tested.
 An agent workload process runs the shared bounded engine; it does not restore

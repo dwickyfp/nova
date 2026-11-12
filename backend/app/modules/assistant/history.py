@@ -4,17 +4,16 @@ import base64
 import binascii
 import hashlib
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
-from app.core.database import db
 from app.modules.assistant.repository import (
     AssistantThreadListUnavailable,
     _iso,
     _security_or_none,
     _steps_or_empty,
+    _store,
     _thread_row,
-    _valid_thread_list_row,
 )
 
 
@@ -70,68 +69,30 @@ class HistoryRepository:
         if agent_ids and all_agents:
             raise ValueError("Choose specific agents or all agents")
         scope = _scope("threads", user_name, agent_ids, all_agents)
-        clauses = ["t.user_name = %s"]
-        params: list[Any] = [user_name]
-        if all_agents:
-            clauses.append("t.agent_id IS NOT NULL")
-        elif agent_ids:
-            clauses.append("t.agent_id IN (" + ",".join(["%s"] * len(agent_ids)) + ")")
-            params.extend(agent_ids)
-        else:
-            clauses.append("t.agent_id IS NULL")
+        after = None
         if cursor:
             updated_at, thread_id = _decode(cursor, scope)
-            clauses.append("(t.updated_at < %s OR (t.updated_at = %s AND t.thread_id < %s))")
-            params.extend([updated_at, updated_at, thread_id])
-        try:
-            result = await db.execute_system(
-                "SELECT t.thread_id, t.user_name, t.title, t.workspace_file_id, "
-                "t.agent_id, t.created_at, t.updated_at, 0 "
-                "FROM NOVA_SYSTEM.CONFIG_ASSISTANT_THREADS t WHERE "
-                + " AND ".join(clauses)
-                + " ORDER BY t.updated_at DESC, t.thread_id DESC LIMIT %s",
-                [*params, limit + 1],
+            after = (updated_at.replace(tzinfo=UTC), thread_id)
+        async with _store(user_name, read_only=True) as store:
+            rows = await store.thread_page(
+                limit=limit + 1, agent_ids=agent_ids or None, all_agents=all_agents, after=after,
             )
-            rows = result["rows"]
-            if not isinstance(rows, (list, tuple)) or len(rows) > limit + 1:
-                raise ValueError("Invalid thread page")
-            for row in rows:
-                if not _valid_thread_list_row(
-                    row,
-                    user_name=user_name,
-                    agent_id=agent_ids[0] if agent_ids else None,
-                    all_agents=all_agents or bool(agent_ids),
-                ) or (agent_ids and row[4] not in agent_ids):
-                    raise ValueError("Invalid thread page")
-            if len({row[0] for row in rows}) != len(rows):
-                raise ValueError("Duplicate thread rows")
-            page = [_thread_row(row) for row in rows[:limit]]
-            next_cursor = (
-                _encode(scope, page[-1]["updated_at"].isoformat(), page[-1]["thread_id"])
-                if len(rows) > limit
-                else None
-            )
-            if page:
-                ids = [row["thread_id"] for row in page]
-                counts = await db.execute_system(
-                    "SELECT thread_id, COUNT(*) FROM NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES "
-                    "WHERE user_name = %s AND thread_id IN ("
-                    + ",".join(["%s"] * len(ids))
-                    + ") GROUP BY thread_id",
-                    [user_name, *ids],
-                )
-                by_id = {}
-                for row in counts["rows"]:
-                    if len(row) != 2 or row[0] not in ids or type(row[1]) is not int or row[1] < 0:
-                        raise ValueError("Invalid message counts")
-                    by_id[row[0]] = row[1]
-                for row in page:
-                    row["message_count"] = by_id.get(row["thread_id"], 0)
-            return page, next_cursor
-        except Exception as exc:
-            raise AssistantThreadListUnavailable(
-                "Conversation history is temporarily unavailable"
-            ) from exc
+        ids = [row.get("thread_id") for row in rows]
+        if len(set(ids)) != len(ids) or any(
+            not row.get("thread_id") or row.get("user_name") != user_name
+            or (agent_ids and row.get("agent_id") not in agent_ids)
+            or (all_agents and row.get("agent_id") is None)
+            or (not agent_ids and not all_agents and row.get("agent_id") is not None)
+            for row in rows
+        ):
+            raise AssistantThreadListUnavailable("Conversation history is temporarily unavailable")
+        page = [_thread_row(row) for row in rows[:limit]]
+        next_cursor = (
+            _encode(scope, page[-1]["updated_at"].isoformat(), page[-1]["thread_id"])
+            if len(rows) > limit
+            else None
+        )
+        return page, next_cursor
 
     async def messages(
         self,
@@ -143,59 +104,34 @@ class HistoryRepository:
     ) -> tuple[list[dict], str | None]:
         _limit(limit)
         scope = _scope("messages", user_name, thread_id)
-        params: list[Any] = [thread_id, user_name]
-        where = "thread_id = %s AND user_name = %s"
-        if cursor:
-            seq, message_id = _decode(cursor, scope, message=True)
-            where += " AND (seq < %s OR (seq = %s AND message_id < %s))"
-            params.extend([seq, seq, message_id])
-        sql = (
-            "SELECT message_id, role, content, created_at, model_name, "
-            "prompt_tokens, completion_tokens, total_tokens, steps, "
-            "security_context, feedback, attachments, seq "
-            "FROM NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES WHERE "
-            + where
-            + " ORDER BY seq DESC, message_id DESC LIMIT %s"
-        )
-        params.append(limit + 1)
-        try:
-            rows = (await db.execute_system(sql, params))["rows"]
-            if not isinstance(rows, (list, tuple)) or len(rows) > limit + 1:
-                raise ValueError("Invalid message page")
-            for row in rows:
-                if (
-                    len(row) != 13
-                    or not isinstance(row[0], str)
-                    or not 1 <= len(row[0]) <= 64
-                    or row[1] not in {"user", "assistant", "tool"}
-                    or type(row[12]) is not int
-                    or row[12] < 0
-                ):
-                    raise ValueError("Invalid message row")
-            if len({row[0] for row in rows}) != len(rows):
-                raise ValueError("Duplicate message rows")
-        except Exception as exc:
-            raise AssistantThreadListUnavailable(
-                "Conversation history is temporarily unavailable"
-            ) from exc
+        before = _decode(cursor, scope, message=True) if cursor else None
+        async with _store(user_name, read_only=True) as store:
+            rows = await store.message_page(thread_id, limit=limit + 1, before=before)
+        ids = [row.get("message_id") for row in rows]
+        if len(set(ids)) != len(ids) or any(
+            not row.get("message_id") or type(row.get("seq")) is not int or row["seq"] < 0
+            for row in rows
+        ):
+            raise AssistantThreadListUnavailable("Conversation history is temporarily unavailable")
         selected = rows[:limit]
         next_cursor = (
-            _encode(scope, selected[-1][12], selected[-1][0]) if len(rows) > limit else None
+            _encode(scope, selected[-1]["seq"], selected[-1]["message_id"])
+            if len(rows) > limit else None
         )
         messages = [
             {
-                "message_id": row[0],
-                "role": row[1],
-                "content": row[2] or "",
-                "created_at": _iso(row[3]),
-                "model_name": row[4],
-                "prompt_tokens": row[5],
-                "completion_tokens": row[6],
-                "total_tokens": row[7],
-                "steps": _steps_or_empty(row[8]),
-                "security_context": _security_or_none(row[9]),
-                "feedback": row[10],
-                "attachments": _steps_or_empty(row[11]),
+                "message_id": row["message_id"],
+                "role": row["role"],
+                "content": row["content"] or "",
+                "created_at": _iso(row["created_at"]),
+                "model_name": row["model_name"],
+                "prompt_tokens": row["prompt_tokens"],
+                "completion_tokens": row["completion_tokens"],
+                "total_tokens": row["total_tokens"],
+                "steps": _steps_or_empty(row["steps"]),
+                "security_context": _security_or_none(row["security_context"]),
+                "feedback": row["feedback"],
+                "attachments": _steps_or_empty(row["attachments"]),
             }
             for row in reversed(selected)
         ]

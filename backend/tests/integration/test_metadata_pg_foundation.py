@@ -81,6 +81,9 @@ async def metadata():
                 )
             )
             await provision_role_logging(admin, role)
+            await admin.execute(
+                sql.SQL("GRANT CONNECT ON DATABASE nova_control TO {}").format(sql.Identifier(role))
+            )
             await admin.execute("CREATE SCHEMA nova_meta")
             await admin.execute(
                 sql.SQL("COMMENT ON SCHEMA nova_meta IS {}").format(sql.Literal(epoch))
@@ -146,6 +149,11 @@ async def metadata():
             if marker != (epoch,):
                 pytest.fail("Fixture ownership changed; refusing cleanup")
             await admin.execute("DROP SCHEMA nova_meta CASCADE")
+            await admin.execute(
+                sql.SQL("REVOKE CONNECT ON DATABASE nova_control FROM {}").format(
+                    sql.Identifier(role)
+                )
+            )
             await admin.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role)))
         await admin.close()
 

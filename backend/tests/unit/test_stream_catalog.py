@@ -3,11 +3,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.core.metadata_db import MetadataOutcomeUnknown
 from app.modules.streams.catalog import SourceHead, StreamCatalog
 from app.modules.streams.claims import ClaimOutcome, ClaimResult
 from app.modules.streams.namespace import StreamName
 from app.modules.streams.repository import StreamRecord, StreamRepository
 from app.modules.streams.schemas import ChangeCursor, StreamError
+from tests.unit.stream_metadata_fakes import metadata_scope
 
 
 @pytest.fixture
@@ -84,10 +86,12 @@ async def test_collision_after_creation_blocks_result_and_future_use(catalog):
 
 
 async def test_repository_lookup_uses_all_namespace_components():
-    execute = AsyncMock(return_value={"rows": []})
-    repo = StreamRepository(execute)
-    await repo.current(NAME)
-    assert execute.call_args.args[1] == NAME.key
+    scope, store = metadata_scope()
+    store.current.return_value = None
+    repo = StreamRepository(scope)
+    assert await repo.current(NAME) is None
+    store.current.assert_awaited_once_with(NAME.key)
+    assert scope.transactions == [True]
 
 
 async def test_losing_or_uncertain_claim_cannot_publish():
@@ -103,8 +107,9 @@ async def test_losing_or_uncertain_claim_cannot_publish():
 
 
 async def test_exact_readback_recovers_namespace_response_loss():
-    execute = AsyncMock(side_effect=ConnectionError("lost response"))
-    repo = StreamRepository(execute)
+    scope, store = metadata_scope()
+    store.publish_generation.side_effect = MetadataOutcomeUnknown()
+    repo = StreamRepository(scope)
     record = StreamRecord(NAME, 0, "id", SOURCE, "source", "reader", ChangeCursor(1, 2))
     repo.current = AsyncMock(return_value=record)
     repo._prepare = AsyncMock()
@@ -158,7 +163,7 @@ async def test_namespace_recovery_uses_winner_facts_not_new_request():
     repo._publish_winner = AsyncMock(return_value=record)
     assert await repo.recover_namespace(NAME, 0) == record
     repo._operation.assert_awaited_once_with(claim.operation_digest)
-    repo._publish_winner.assert_awaited_once_with(record, claim)
+    repo._publish_winner.assert_awaited_once_with(record)
 
 
 @pytest.mark.parametrize("fault", ["no_claim", "no_facts", "wrong_name", "wrong_generation", "gap"])

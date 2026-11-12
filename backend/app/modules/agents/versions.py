@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, datetime
 from uuid import uuid4
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, ValidationError
 
-from app.core.database import db
+from app.modules.agents.metadata_repository import agent_metadata
 from app.modules.agents.schemas import AgentCreateRequest, AgentUpdateRequest
 from app.modules.assistant.skills import contains_credential_shape
 from app.modules.assistant.tools.redaction import redact_row
@@ -63,13 +62,13 @@ def revision_id(agent: dict) -> str:
 
 class AgentVersions:
     async def get(self, agent_id: str, owner: str, version_id: str) -> dict | None:
-        result = await db.execute_system(
-            "SELECT version_id,configuration,label,created_at "
-            "FROM NOVA_SYSTEM.CONFIG_AGENT_VERSIONS "
-            "WHERE agent_id=%s AND owner_name=%s AND version_id=%s",
-            [agent_id, owner, version_id],
+        async with agent_metadata(read_only=True) as store:
+            row = await store.get_version(version_id)
+        if row is None or row["agent_id"] != agent_id or row["owner_name"] != owner:
+            return None
+        return self._row(
+            [row[key] for key in ("version_id", "configuration", "label", "created_at")]
         )
-        return self._row(result["rows"][0]) if result["rows"] else None
 
     @staticmethod
     def _row(row: list) -> dict:
@@ -96,38 +95,18 @@ class AgentVersions:
         if len(encoded.encode()) > 262144:
             raise HTTPException(422, "Agent configuration exceeds the version size limit")
         version_id = version_id or str(uuid4())
-        existing = await self.get(agent["agent_id"], agent["owner_name"], version_id)
-        if existing:
-            if existing["configuration"] != snapshot:
-                raise HTTPException(409, "A saved version cannot be modified")
-            return existing
-        now = datetime.now(UTC).replace(tzinfo=None)
-        await db.execute_system(
-            "INSERT INTO NOVA_SYSTEM.CONFIG_AGENT_VERSIONS "
-            "(version_id,agent_id,owner_name,configuration,label,created_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s)",
-            [version_id, agent["agent_id"], agent["owner_name"], encoded, label, now],
+        async with agent_metadata(agent["owner_name"]) as store:
+            row = await store.store_version(version_id, agent["agent_id"], encoded, label)
+        return self._row(
+            [row[key] for key in ("version_id", "configuration", "label", "created_at")]
         )
-        return {
-            "version_id": version_id,
-            "configuration": snapshot,
-            "label": label,
-            "created_at": str(now),
-        }
 
     async def list(self, agent_id: str, owner: str, offset: int, limit: int = 30) -> dict:
-        result = await db.execute_system(
-            "SELECT version_id,label,created_at FROM NOVA_SYSTEM.CONFIG_AGENT_VERSIONS "
-            "WHERE agent_id=%s AND owner_name=%s "
-            "ORDER BY created_at DESC,version_id DESC LIMIT %s OFFSET %s",
-            [agent_id, owner, limit + 1, offset],
-        )
-        rows = result["rows"]
+        async with agent_metadata(read_only=True) as store:
+            rows = await store.list_versions(agent_id, owner, offset, limit + 1)
         return {
-            "versions": [
-                {"version_id": row[0], "label": row[1], "created_at": str(row[2])}
-                for row in rows[:limit]
-            ],
+            "versions": [{"version_id": row["version_id"], "label": row["label"],
+                          "created_at": str(row["created_at"])} for row in rows[:limit]],
             "has_more": len(rows) > limit,
         }
 

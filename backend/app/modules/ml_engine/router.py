@@ -14,8 +14,10 @@ Endpoints under /api/v1/ml:
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.common.metadata_actors import owner_actor
 from app.core.deps import get_current_user
 from app.core.security import decrypt_password
+from app.modules.access_control.security_context import SecurityContext, SecurityContextError
 from app.modules.ml_engine.schemas import (
     BatchPredictRequest,
     BatchPredictResponse,
@@ -54,6 +56,18 @@ require_user = Depends(get_current_user)
 def _tenant_options(user: dict) -> dict:
     tenant = user.get("tenant", "default")
     return {"tenant": tenant} if tenant != "default" else {}
+
+
+def _actor(user: dict) -> SecurityContext:
+    """The signed-in caller as the metadata actor; fails closed without one role."""
+    try:
+        return owner_actor(
+            user.get("username"),
+            user.get("active_role"),
+            security_context_version=int(user.get("security_context_version") or 1),
+        )
+    except SecurityContextError:
+        raise HTTPException(status_code=403, detail="An active role is required") from None
 
 
 def _caller_credentials(user: dict) -> str:
@@ -220,6 +234,7 @@ async def materialize_prediction(req: BatchPredictRequest, user: dict = require_
         role=user.get("active_role"),
         tenant=user.get("tenant", "default"),
         security_context_version=user.get("security_context_version", 1),
+        session_id=user.get("session_id"),
     )
     try:
         result = await ml_engine_service.materialize_prediction(
@@ -268,6 +283,7 @@ async def result_page(
                 role=user.get("active_role"),
                 tenant=user.get("tenant", "default"),
                 security_context_version=user.get("security_context_version", 1),
+                session_id=user.get("session_id"),
             ),
         )
     except ValueError as exc:
@@ -302,7 +318,10 @@ async def list_models(
 ):
     """List all trained models."""
     models = await ml_engine_service.list_models(
-        owner_name=user["username"], database_name=database_name, **_tenant_options(user)
+        owner_name=user["username"],
+        database_name=database_name,
+        actor=_actor(user),
+        **_tenant_options(user),
     )
     return {"models": models, "count": len(models)}
 
@@ -315,7 +334,11 @@ async def get_model(
 ):
     """Get model detail with all versions."""
     result = await ml_engine_service.get_model(
-        model_id, owner_name=user["username"], database_name=database_name, **_tenant_options(user)
+        model_id,
+        owner_name=user["username"],
+        database_name=database_name,
+        actor=_actor(user),
+        **_tenant_options(user),
     )
     if not result:
         raise HTTPException(status_code=404, detail="Model not found")
@@ -332,7 +355,7 @@ async def delete_model(
     try:
         return await ml_engine_service.delete_model(
             model_id,
-            owner_name=user["username"],
+            actor=_actor(user),
             database_name=database_name,
             **_tenant_options(user),
         )
@@ -354,7 +377,10 @@ async def list_aliases(
 ):
     """List all model aliases."""
     aliases = await ml_engine_service.list_aliases(
-        owner_name=user["username"], database_name=database_name, **_tenant_options(user)
+        owner_name=user["username"],
+        database_name=database_name,
+        actor=_actor(user),
+        **_tenant_options(user),
     )
     return {"aliases": aliases, "count": len(aliases)}
 
@@ -370,7 +396,7 @@ async def create_alias(
             req.alias_name,
             req.model_id,
             req.version,
-            owner_name=user["username"],
+            actor=_actor(user),
             database_name=req.database_name,
             **_tenant_options(user),
         )
@@ -387,7 +413,7 @@ async def delete_alias(
     """Delete a model alias."""
     return await ml_engine_service.delete_alias(
         alias_name,
-        owner_name=user["username"],
+        actor=_actor(user),
         database_name=database_name,
         **_tenant_options(user),
     )
@@ -399,7 +425,7 @@ async def training_job(job_id: str, user: dict = require_user):
     from app.modules.migration.jobs import session_fingerprint
     from app.modules.ml_engine.jobs import ml_job_repo, public_status
 
-    job = await ml_job_repo.get(job_id)
+    job = await ml_job_repo.get(_actor(user), job_id)
     if (
         job is None
         or job["actor"] != user["username"]
@@ -429,6 +455,7 @@ async def execute_ml(req: MLExecuteRequest, user: dict = require_user):
                     role=user.get("active_role"),
                     tenant=user.get("tenant", "default"),
                     security_context_version=user.get("security_context_version", 1),
+                    session_id=user.get("session_id"),
                 ),
                 mode=MLMode(req.mode),
                 persist=req.persist,
@@ -468,6 +495,7 @@ async def promote_run(
             role=user.get("active_role"),
             tenant=user.get("tenant", "default"),
             security_context_version=user.get("security_context_version", 1),
+            session_id=user.get("session_id"),
         ),
     )
     return result.__dict__

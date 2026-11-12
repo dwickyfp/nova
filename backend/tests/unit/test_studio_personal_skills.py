@@ -8,6 +8,7 @@ from app.modules.agents import personal_skills, studio_router
 from app.modules.agents.repository import agent_repository
 from app.modules.agents.schemas import McpServerCreateRequest
 from app.modules.agents.service import agent_service
+from tests.unit.agent_metadata_fakes import install_agent_store
 
 DOCUMENT = (
     "---\nname: weekly-review\ndescription: Review the weekly report\n---\n\n"
@@ -76,18 +77,24 @@ async def test_large_skill_storage_roundtrip_is_owner_scoped_and_utf8_safe(monke
 
 
 async def test_failed_chunk_write_never_publishes_skill(monkeypatch):
-    from app.modules.agents import repository
+    from unittest.mock import MagicMock
 
-    execute = AsyncMock(side_effect=RuntimeError("write failed"))
-    monkeypatch.setattr(repository.db, "execute_system", execute)
-    with pytest.raises(RuntimeError):
+    from app.modules.access_control.security_context import SecurityContext
+    from app.modules.agents.metadata_repository import AgentMetadataRepository
+
+    store = AgentMetadataRepository(MagicMock(), SecurityContext("alice", "analyst"))
+    install_agent_store(monkeypatch, store)
+    monkeypatch.setattr(store, "_bound", AsyncMock())
+    monkeypatch.setattr(
+        store, "_store_skill_body", AsyncMock(side_effect=RuntimeError("write failed"))
+    )
+    publish = AsyncMock()
+    monkeypatch.setattr(store, "_one", publish)
+    with pytest.raises(RuntimeError, match="write failed"):
         await agent_repository.create_skill(
             owner_name="alice", fields={"name": "test", "body": "x" * 100000}
         )
-    assert all(
-        "INSERT INTO NOVA_SYSTEM.CONFIG_AGENT_SKILLS " not in call.args[0]
-        for call in execute.call_args_list
-    )
+    publish.assert_not_awaited()
 
 
 @pytest.mark.parametrize(
@@ -313,15 +320,19 @@ async def test_delete_does_not_reveal_or_modify_another_users_skill(monkeypatch)
 
 
 async def test_skill_update_sql_is_constrained_by_owner(monkeypatch):
-    from app.modules.agents.repository import db
-
-    execute = AsyncMock(return_value={"affected": 1})
-    monkeypatch.setattr(db, "execute_system", execute)
-    monkeypatch.setattr(agent_repository, "get_skill", AsyncMock(return_value=row()))
+    store = install_agent_store(monkeypatch, AsyncMock())
+    store.get_skill.return_value = {**row(), "metadata_revision": 7}
+    store.update_skill.return_value = row()
     await agent_repository.update_skill("s1", owner_name="alice", fields=row())
-    sql, parameters = execute.call_args.args
-    assert "WHERE skill_id = %s AND owner_name = %s" in sql
-    assert parameters[-2:] == ["s1", "alice"]
+    assert store.update_skill.await_args.args == ("s1", {
+        "name": row()["name"], "description": row()["description"],
+        "body": row()["body"], "scope": "user",
+    })
+    assert store.update_skill.await_args.kwargs == {"expected_revision": 7}
+    store.update_skill.reset_mock()
+    store.get_skill.return_value = {**row("bob"), "metadata_revision": 7}
+    assert await agent_repository.update_skill("s1", owner_name="alice", fields=row()) is None
+    store.update_skill.assert_not_awaited()
 
 
 @pytest.mark.asyncio

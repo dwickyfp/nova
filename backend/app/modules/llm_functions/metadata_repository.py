@@ -59,11 +59,16 @@ class LLMUsageMetadataRepository:
             )
         return len(totals)
 
-    async def function_tokens(self, start: datetime, end: datetime) -> list[dict[str, Any]]:
+    async def function_tokens(
+        self, start: datetime, end: datetime, *, limit: int | None = None,
+    ) -> list[dict[str, Any]]:
         """Usage between ``start`` and ``end``, newest first (administrators only)."""
         await self._bound()
+        if limit is not None and (type(limit) is not int or limit < 1):
+            raise ValueError("A positive usage limit is required")
         cursor = await self.connection.execute(
             "SELECT * FROM nova_meta.usage_llm_functions WHERE recorded_at>=%s "
-            "AND recorded_at<%s ORDER BY recorded_at DESC,record_id", (start, end),
+            "AND recorded_at<%s ORDER BY recorded_at DESC,record_id LIMIT %s",
+            (start, end, limit),
         )
         return list(await cursor.fetchall())

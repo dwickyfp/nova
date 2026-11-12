@@ -1,8 +1,7 @@
 """Assistant conversations, interactive UI state and translations in PostgreSQL.
 
-The prepared replacement for the ``NOVA_SYSTEM`` paths of
-:class:`AssistantRepository` and the translation cache in ``messages.py``,
-switched in at the all-domain cutover. It runs in the caller's actor-bound
+The storage behind :class:`AssistantRepository` and the translation cache in
+``messages.py``. It runs in the caller's actor-bound
 metadata transaction, and the database, not this class, enforces that a person
 reads and writes only their own conversations. Compared with the source it:
 
@@ -15,11 +14,12 @@ reads and writes only their own conversations. Compared with the source it:
 * saves interactive UI state only from the revision the caller read, and only
   in the role that state belongs to.
 
-Consent grants stay in process memory, as in the source.
+Pending tool decisions still use the process-local ``consent.py`` broker.
 """
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
@@ -74,6 +74,63 @@ class AssistantMetadataRepository:
         cursor = await self.connection.execute(query, params)
         return list(await cursor.fetchall())
 
+    async def quality_traces(self, agent_id: str, *, limit: int) -> list[dict[str, Any]]:
+        await self._bound()
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("Quality trace limit must be between one and 100")
+        return await self._all(
+            "SELECT message_id,steps FROM nova_meta.config_assistant_messages "
+            "WHERE agent_id=%s AND user_name=%s AND role='assistant' "
+            "AND security_context->>'active_role'=%s "
+            "AND security_context->>'security_context_version'=%s "
+            "ORDER BY created_at DESC,message_id LIMIT %s",
+            (agent_id, self.actor.principal, self.actor.active_role,
+             str(self.actor.security_context_version), limit))
+
+    async def usage_rollup(
+        self, since: datetime, agent_id: str | None,
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        await self._bound()
+        where = "t.user_name=%s AND m.created_at>=%s"
+        params: tuple[Any, ...] = (self.actor.principal, since)
+        if agent_id:
+            where += " AND t.agent_id=%s"
+            params += (agent_id,)
+        source = (
+            " FROM nova_meta.config_assistant_messages m "
+            "JOIN nova_meta.config_assistant_threads t ON t.thread_id=m.thread_id "
+            "AND t.user_name=m.user_name WHERE " + where
+        )
+        totals = await self._one(
+            "SELECT count(DISTINCT m.thread_id) AS sessions,count(DISTINCT m.user_name) AS users,"
+            "coalesce(sum(m.total_tokens),0) AS tokens" + source, params)
+        daily = await self._all(
+            "SELECT (m.created_at AT TIME ZONE 'UTC')::date AS day,"
+            "count(DISTINCT m.thread_id) AS sessions,coalesce(sum(m.total_tokens),0) AS tokens"
+            + source + " GROUP BY day ORDER BY day", params)
+        assert totals is not None
+        return totals, daily
+
+    async def observed_sessions(
+        self, agent_id: str | None, *, limit: int,
+    ) -> list[dict[str, Any]]:
+        await self._bound()
+        if type(limit) is not int or not 1 <= limit <= 500:
+            raise ValueError("Session limit must be between one and 500")
+        return await self._all(
+            "SELECT t.thread_id,t.title,t.user_name,t.created_at,t.updated_at,"
+            "(SELECT count(*) FROM nova_meta.config_assistant_messages m "
+            "WHERE m.thread_id=t.thread_id AND m.user_name=t.user_name) AS message_count,"
+            "(SELECT coalesce(sum(m.total_tokens),0) FROM nova_meta.config_assistant_messages m "
+            "WHERE m.thread_id=t.thread_id AND m.user_name=t.user_name) AS total_tokens,"
+            "coalesce((SELECT left(m.content,200) FROM nova_meta.config_assistant_messages m "
+            "WHERE m.thread_id=t.thread_id AND m.user_name=t.user_name AND m.role='user' "
+            "ORDER BY m.seq,m.message_id LIMIT 1),'') AS first_input "
+            "FROM nova_meta.config_assistant_threads t WHERE t.user_name=%s"
+            + (" AND t.agent_id=%s" if agent_id else "")
+            + " ORDER BY t.updated_at DESC,t.thread_id LIMIT %s",
+            (self.actor.principal, *((agent_id,) if agent_id else ()), limit))
+
     # ── Threads ───────────────────────────────────────────────────────────
 
     async def create_thread(
@@ -125,11 +182,39 @@ class AssistantMetadataRepository:
             + " ORDER BY t.updated_at DESC,t.thread_id DESC", params,
         )
 
+    async def thread_page(
+        self, *, limit: int, agent_ids: tuple[str, ...] | None = None,
+        all_agents: bool = False, after: tuple[Any, str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """``limit`` of the caller's threads, newest first, after a keyset position."""
+        await self._bound()
+        if all_agents and agent_ids:
+            raise ValueError("Choose specific agents or all agents")
+        clauses = ["t.user_name=%s"]
+        params: list[Any] = [self.actor.principal]
+        if all_agents:
+            clauses.append("t.agent_id IS NOT NULL")
+        elif agent_ids:
+            clauses.append("t.agent_id=ANY(%s)")
+            params.append(list(agent_ids))
+        else:
+            clauses.append("t.agent_id IS NULL")
+        if after is not None:
+            clauses.append("(t.updated_at,t.thread_id)<(%s,%s)")
+            params.extend(after)
+        return await self._all(
+            "SELECT t.*,(SELECT count(*) FROM nova_meta.config_assistant_messages m "
+            "WHERE m.thread_id=t.thread_id AND m.user_name=t.user_name) AS message_count "
+            "FROM nova_meta.config_assistant_threads t WHERE " + " AND ".join(clauses)
+            + " ORDER BY t.updated_at DESC,t.thread_id DESC LIMIT %s",
+            (*params, min(max(limit, 1), 101)),
+        )
+
     async def rename_thread(self, thread_id: str, title: str) -> dict[str, Any] | None:
         await self._bound()
         return await self._one(
-            "UPDATE nova_meta.config_assistant_threads SET title=%s "
-            "WHERE thread_id=%s AND user_name=%s RETURNING *",
+            "UPDATE nova_meta.config_assistant_threads SET title=%s,"
+            "updated_at=clock_timestamp() WHERE thread_id=%s AND user_name=%s RETURNING *",
             (title, thread_id, self.actor.principal),
         )
 
@@ -236,6 +321,41 @@ class AssistantMetadataRepository:
             "AND user_name=%s ORDER BY seq,message_id", (thread_id, self.actor.principal),
         )
 
+    async def message_page(
+        self, thread_id: str, *, limit: int, before: tuple[int, str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """``limit`` of the caller's turns on a thread, newest first, before a position."""
+        await self._bound()
+        clauses = ["thread_id=%s AND user_name=%s"]
+        params: list[Any] = [thread_id, self.actor.principal]
+        if before is not None:
+            clauses.append("(seq,message_id)<(%s,%s)")
+            params.extend(before)
+        return await self._all(
+            "SELECT * FROM nova_meta.config_assistant_messages WHERE " + " AND ".join(clauses)
+            + " ORDER BY seq DESC,message_id DESC LIMIT %s",
+            (*params, min(max(limit, 1), 101)),
+        )
+
+    async def get_message(self, thread_id: str, message_id: str) -> dict[str, Any] | None:
+        """One of the caller's own turns."""
+        await self._bound()
+        return await self._one(
+            "SELECT * FROM nova_meta.config_assistant_messages WHERE thread_id=%s "
+            "AND message_id=%s AND user_name=%s", (thread_id, message_id, self.actor.principal),
+        )
+
+    async def ui_action_seen(self, thread_id: str, operation_id: str) -> bool:
+        """Whether an interactive action with this operation id is already a turn."""
+        await self._bound()
+        row = await self._one(
+            "SELECT 1 AS seen FROM nova_meta.config_assistant_messages WHERE user_name=%s "
+            "AND thread_id=%s AND role='user' AND jsonb_typeof(steps)='array' "
+            "AND steps->0->>'operation_id'=%s LIMIT 1",
+            (self.actor.principal, thread_id, operation_id),
+        )
+        return row is not None
+
     async def set_feedback(self, thread_id: str, message_id: str, feedback: str | None) -> bool:
         await self._bound()
         if feedback not in (None, "like", "dislike"):
@@ -249,31 +369,87 @@ class AssistantMetadataRepository:
 
     # ── Learning (scheduled service principal) ────────────────────────────
 
-    async def pending_learning(self, *, limit: int = 100, after: str = "") -> list[dict[str, Any]]:
-        """Questions still waiting to be learned, on threads that allow learning."""
+    async def pending_learning(
+        self, *, limit: int = 100, after: str = "", user_name: str | None = None,
+        agent_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Questions still waiting to be learned, on threads that allow learning.
+
+        The learning service principal scans every person; a person sees only
+        their own questions (row security), optionally narrowed further here.
+        """
         await self._bound()
+        filters, params = ["m.message_id>%s"], [after]
+        for column, value in (("m.user_name", user_name), ("m.agent_id", agent_id)):
+            if value is not None:
+                filters.append(column + "=%s")
+                params.append(value)
         return await self._all(
             "SELECT m.message_id,m.thread_id,m.user_name,m.agent_id,m.security_context "
             "FROM nova_meta.config_assistant_messages m "
             "JOIN nova_meta.config_assistant_threads t "
             "ON t.thread_id=m.thread_id AND t.user_name=m.user_name "
             "WHERE m.learning_state='pending' AND m.role='user' AND t.learning_enabled "
-            "AND m.message_id>%s ORDER BY m.message_id LIMIT %s",
-            (after, min(max(limit, 1), 100)),
+            "AND " + " AND ".join(filters) + " ORDER BY m.message_id LIMIT %s",
+            (*params, min(max(limit, 1), 100)),
         )
 
-    async def record_learning_trace(self, message_id: str, trace: dict[str, Any]) -> None:
+    async def learning_enabled(self, thread_id: str, user_name: str) -> bool:
+        await self._bound()
+        row = await self._one(
+            "SELECT learning_enabled FROM nova_meta.config_assistant_threads "
+            "WHERE thread_id=%s AND user_name=%s", (thread_id, user_name),
+        )
+        return bool(row and row["learning_enabled"] is True)
+
+    async def learning_source(
+        self, thread_id: str, message_id: str, user_name: str,
+    ) -> dict[str, Any] | None:
+        """A pending question on a thread that still allows learning."""
+        await self._bound()
+        return await self._one(
+            "SELECT m.content,m.security_context,m.created_at "
+            "FROM nova_meta.config_assistant_messages m "
+            "JOIN nova_meta.config_assistant_threads t "
+            "ON t.thread_id=m.thread_id AND t.user_name=m.user_name "
+            "WHERE m.thread_id=%s AND m.message_id=%s AND m.user_name=%s AND m.role='user' "
+            "AND m.learning_state='pending' AND t.learning_enabled",
+            (thread_id, message_id, user_name),
+        )
+
+    async def liked_answers(self, *, limit: int = 2000) -> list[dict[str, Any]]:
+        """Liked answers on threads that allow learning, newest first.
+
+        Row security decides whose answers are visible: an administrator in
+        their active role reads everyone's, anyone else only their own.
+        """
+        await self._bound()
+        return await self._all(
+            "SELECT m.message_id,m.user_name,m.steps FROM nova_meta.config_assistant_messages m "
+            "JOIN nova_meta.config_assistant_threads t "
+            "ON t.thread_id=m.thread_id AND t.user_name=m.user_name "
+            "WHERE m.role='assistant' AND m.feedback='like' AND t.learning_enabled "
+            "ORDER BY m.created_at DESC,m.message_id DESC LIMIT %s",
+            (min(max(limit, 1), 5000),),
+        )
+
+    async def record_learning_trace(
+        self, message_id: str, trace: dict[str, Any], *, user_name: str | None = None,
+    ) -> None:
         """Insert or replace one trace step on a pending question, under its row lock."""
         await self._bound()
         if not isinstance(trace.get("id"), str):
             raise ValueError("A learning trace step needs an id")
         row = await self._one(
             "SELECT steps FROM nova_meta.config_assistant_messages WHERE message_id=%s "
-            "AND role='user' AND learning_state='pending' FOR UPDATE", (message_id,),
+            "AND role='user' AND learning_state='pending' AND user_name=coalesce(%s,user_name) "
+            "FOR UPDATE", (message_id, user_name),
         )
         if row is None:
             raise MetadataConflict()
-        steps = row["steps"] if isinstance(row["steps"], list) else []
+        if row["steps"] is not None and not isinstance(row["steps"], list):
+            raise MetadataConflict()
+        steps = row["steps"] or []
         if any(not isinstance(step, dict) for step in steps):
             raise MetadataConflict()
         position = next((i for i, step in enumerate(steps) if step.get("id") == trace["id"]), None)
@@ -281,17 +457,22 @@ class AssistantMetadataRepository:
             steps.append(trace)
         else:
             steps[position] = trace
-        await self.connection.execute(
+        cursor = await self.connection.execute(
             "UPDATE nova_meta.config_assistant_messages SET steps=%s WHERE message_id=%s "
             "AND learning_state='pending'", (Jsonb(steps), message_id),
         )
+        if cursor.rowcount != 1:
+            raise MetadataConflict()
 
-    async def mark_learning_complete(self, message_id: str) -> bool:
+    async def mark_learning_complete(
+        self, message_id: str, *, user_name: str | None = None,
+    ) -> bool:
         await self._bound()
         # No RETURNING: a completed question leaves the learning read scope.
         cursor = await self.connection.execute(
             "UPDATE nova_meta.config_assistant_messages SET learning_state='complete' "
-            "WHERE message_id=%s AND learning_state='pending'", (message_id,),
+            "WHERE message_id=%s AND learning_state='pending' "
+            "AND user_name=coalesce(%s,user_name)", (message_id, user_name),
         )
         return cursor.rowcount == 1
 

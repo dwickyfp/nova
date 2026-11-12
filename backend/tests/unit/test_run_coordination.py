@@ -1,73 +1,40 @@
 """API and worker updates must serialize against the same durable run row."""
 
 import asyncio
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from app.core.redis import session_store
-from app.modules.agents import run_coordination as module
 from app.modules.agents.harness_repository import AdmissionUnavailable, HarnessRepository
 from app.modules.agents.run_journal import AgentRunJournal
 from tests.unit.fake_lock_redis import FakeLockRedis
 
 
-async def test_shared_lock_prevents_a_heartbeat_from_restoring_cancelled_status(monkeypatch):
-    redis = FakeLockRedis()
-    monkeypatch.setattr(session_store, "_redis", redis)
-    entered = asyncio.Event()
-    release = asyncio.Event()
-    status = "running"
-    writes = []
+@pytest.mark.parametrize("operation", ["heartbeat", "finish"])
+async def test_lost_pg_claim_cannot_restore_a_terminal_run(operation):
+    from app.core.metadata_db import MetadataConflict
+    from app.modules.access_control.security_context import SecurityContext
+    from app.modules.agents.metadata_repository import AgentMetadataRepository
 
-    async def execute(sql, params):
-        nonlocal status
-        snapshot = status
-        writes.append(sql)
-        if len(writes) == 1:
-            entered.set()
-            await release.wait()
-        if "status = %s" in sql:
-            status = params[0]
-        elif snapshot == "running":
-            status = snapshot
-        return {"affected": 1}
-
-    monkeypatch.setattr(module.db, "execute_system", execute)
-    heartbeat = asyncio.create_task(module.update_run(
-        "run", "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS SET updated_at = NOW() WHERE run_id = %s",
-        ["run"],
-    ))
-    await entered.wait()
-    cancel = asyncio.create_task(AgentRunJournal().finish("run", "cancelled"))
-    await asyncio.sleep(0)
-    assert len(writes) == 1
-    release.set()
-    await asyncio.gather(heartbeat, cancel)
-    assert status == "cancelled"
-    assert list(redis.locks) == ["nova:agent:run-write:run"]
-    assert not await redis.locks["nova:agent:run-write:run"].owned()
+    connection = MagicMock(execute=AsyncMock())
+    repository = AgentMetadataRepository(connection, SecurityContext("alice", "analyst"))
+    repository._bound = AsyncMock()
+    repository._claimed_run = AsyncMock(side_effect=MetadataConflict())
+    if operation == "heartbeat":
+        assert await repository.heartbeat_run("run", generation=1) is False
+    else:
+        assert await repository.finish_run("run", "completed", generation=1) is False
+    repository._claimed_run.assert_awaited_once_with("run", 1)
+    connection.execute.assert_not_awaited()
 
 
-async def test_missing_coordinator_prevents_any_write(monkeypatch):
-    monkeypatch.setattr(session_store, "_redis", None)
-    write = AsyncMock()
-    monkeypatch.setattr(module.db, "execute_system", write)
-    with pytest.raises(RuntimeError, match="coordinator is unavailable"):
-        await module.update_run("run", "UPDATE", [])
-    write.assert_not_awaited()
-
-
-async def test_lost_lock_after_write_is_uncertain_and_never_replayed(monkeypatch):
-    redis = FakeLockRedis()
-    monkeypatch.setattr(session_store, "_redis", redis)
-    write = AsyncMock(return_value={"affected": 1})
-    monkeypatch.setattr(module.db, "execute_system", write)
-    lock = redis.lock("nova:agent:run-write:run", timeout=600)
-    lock.owned = AsyncMock(side_effect=[True, False])
-    with pytest.raises(RuntimeError, match="lock was lost"):
-        await module.update_run("run", "UPDATE", [])
-    write.assert_awaited_once()
+async def test_unbound_actor_prevents_a_journal_write(monkeypatch):
+    from app.core import metadata_scope
+    from app.core.metadata_db import MetadataPermissionDenied
+    monkeypatch.setattr(metadata_scope, "acting_actor", lambda: None)
+    with pytest.raises(MetadataPermissionDenied):
+        await AgentRunJournal().heartbeat("run", generation=1)
 
 
 async def test_thread_admission_serializes_the_same_owner_thread(monkeypatch):

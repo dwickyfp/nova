@@ -149,7 +149,7 @@ class FakeProvider:
 
 
 class Store:
-    """In-memory stand-ins for NOVA_SYSTEM rows and Workspace objects."""
+    """In-memory notebook metadata and Workspace payloads."""
 
     def __init__(self) -> None:
         self.runtimes: list[dict] = []
@@ -170,17 +170,21 @@ async def env(monkeypatch):
     store = Store()
     repo = worker_module.notebook_repository
 
-    async def record_runtime(row):
+    async def record_runtime(actor, row):
+        assert actor.principal == row["user_name"]
         store.runtimes.append(row)
 
-    async def record_execution(row):
+    async def record_execution(actor, row):
+        assert actor.principal == row["user_name"]
         store.executions.append(row)
 
     async def get_packages(user, notebook_id):
         return list(store.packages.get(notebook_id, []))
 
-    async def set_packages(user, notebook_id, items):
+    async def modify_packages(actor, notebook_id, change):
+        items = change(list(store.packages.get(notebook_id, [])))
         store.packages[notebook_id] = items
+        return items
 
     async def latest_executions(user, notebook_id):
         return [dict(r, outputs=None) for r in store.executions]
@@ -190,7 +194,7 @@ async def env(monkeypatch):
 
     for name, fn in {
         "record_runtime": record_runtime, "record_execution": record_execution,
-        "get_packages": get_packages, "set_packages": set_packages,
+        "get_packages": get_packages, "modify_packages": modify_packages,
         "latest_executions": latest_executions, "ensure_schema": ensure_schema,
     }.items():
         monkeypatch.setattr(repo, name, fn)
@@ -223,12 +227,12 @@ async def env(monkeypatch):
             return {"id": "nb-1", "name": "nb.ipynb", "entry_type": "file", "parent_path": ""}
         return None
 
-    monkeypatch.setattr(service_module.workspace_repository, "get_entry", get_entry)
+    monkeypatch.setattr(service_module.workspace_service, "get_entry", get_entry)
 
     async def namespace_of(entry_id):
         return "alice" if entry_id == "nb-1" else None
 
-    monkeypatch.setattr(service_module.workspace_repository, "namespace_of", namespace_of)
+    monkeypatch.setattr(service_module.workspace_service, "namespace_of", namespace_of)
 
     document = NotebookDocument(cells=[
         make_cell(kind="markdown", source="# Title", cell_id="md"),
@@ -592,7 +596,7 @@ async def test_people_on_a_shared_notebook_each_get_their_own_runtime(env, monke
         return None
 
     monkeypatch.setattr(service_module.space_service, "for_entry", for_entry)
-    monkeypatch.setattr(service_module.workspace_repository, "get_entry", get_entry)
+    monkeypatch.setattr(service_module.workspace_service, "get_entry", get_entry)
     bob = {**env["user"], "username": "bob", "session_id": "bob-session"}
 
     mine = (await env["service"].start(env["user"], "nb-1"))["runtime"]["runtime_id"]

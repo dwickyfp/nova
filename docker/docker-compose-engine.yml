@@ -215,6 +215,38 @@ services:
       retries: 3
       start_period: 60s
 
+  nova-outbox-worker:
+    <<: *nova-worker
+    entrypoint: []
+    command: ["python", "-m", "app.worker", "--role", "outbox"]
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD:-novaredis}@redis:6379/0
+      NOVA_METADATA_HOST: ${NOVA_METADATA_HOST:-nova-metadata-db}
+      NOVA_METADATA_PORT: ${NOVA_METADATA_PORT:-5432}
+      NOVA_METADATA_SSLROOTCERT: /opt/nova/metadata-tls/ca.crt
+      NOVA_METADATA_SCHEMA_VERSION: ${NOVA_METADATA_SCHEMA_VERSION:-0}
+      NOVA_METADATA_EPOCH: ${NOVA_METADATA_EPOCH:-}
+      NOVA_METADATA_PASSWORDS: ${NOVA_METADATA_OUTBOX_PASSWORDS:-}
+      NOVA_METADATA_POOL_MAX_SIZE: 2
+      NOVA_METRICS_HOST: 0.0.0.0
+    volumes:
+      - ${NOVA_METADATA_CERT_DIR:-./metadata-tls}:/opt/nova/metadata-tls:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.worker.health", "outbox", "--ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    mem_limit: 256m
+    cpus: 0.25
+    pids_limit: 128
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
   ranger-solr:
     logging: *default-logging
     image: apache/ranger-solr:${RANGER_VERSION:-2.9.0}

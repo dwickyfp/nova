@@ -12,9 +12,12 @@ import asyncio
 import logging
 
 from app.core.config import settings
+from app.core.metadata_scope import acting_as
 from app.core.redis import session_store
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.task_orchestration.transport import LeaderLock
 
+from .metadata_repository import CATALOG_REFRESHER
 from .sync import reconcile_catalogs
 
 logger = logging.getLogger(__name__)
@@ -26,14 +29,15 @@ def _interval() -> int:
     return max(30, settings.CATALOG_SYNC_INTERVAL_SECONDS)
 
 
-async def metadata_pass() -> None:
+async def metadata_pass(actor: SecurityContext) -> None:
     """Harvest lineage and re-link Semantic Views and entities to securables."""
     from .lineage import harvest_lineage
     from .links import reconcile_links
 
     for step in (harvest_lineage, reconcile_links):
         try:
-            await step()
+            async with acting_as(actor):
+                await step()
         except Exception:  # noqa: BLE001 - one step never stops the other
             logger.warning("Catalog %s pass failed", step.__name__, exc_info=True)
 
@@ -47,8 +51,8 @@ async def refresh_once() -> bool:
     if not await lock.acquire():
         return False
     try:
-        await reconcile_catalogs(trigger="schedule")
-        await metadata_pass()
+        await reconcile_catalogs(trigger="schedule", actor=CATALOG_REFRESHER)
+        await metadata_pass(CATALOG_REFRESHER)
     finally:
         await lock.release()
     return True

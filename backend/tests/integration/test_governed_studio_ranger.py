@@ -764,7 +764,7 @@ async def _consented(fixture, action, *, compensate=False, allow=True):
             if pending.done():
                 response = pending.result()
                 raise AssertionError(f"Action exited before consent: HTTP {response.status_code}")
-            return consent_broker.owner_of(call_id) is not None
+            return consent_broker.owner_of(call_id, user=fixture.user) is not None
 
         await _eventually(awaiting, "Action did not request the existing consent broker")
         stranger = await fixture.secondary.http.post(
@@ -772,7 +772,10 @@ async def _consented(fixture, action, *, compensate=False, allow=True):
             json={"decision": "allow_once"},
         )
         assert stranger.status_code == 404
-        assert consent_broker.owner_of(call_id) == (fixture.thread["thread_id"], fixture.principal)
+        assert consent_broker.owner_of(call_id, user=fixture.user) == (
+            fixture.thread["thread_id"],
+            fixture.principal,
+        )
         permanent = await fixture.primary.http.post(
             f"/api/v1/agents/{fixture.agent['agent_id']}/tool-calls/{call_id}/decision",
             json={"decision": "allow_session"},

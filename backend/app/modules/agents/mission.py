@@ -298,7 +298,7 @@ def project_event(mission: Mission, run_id: str, kind: str, payload: dict) -> No
 async def canonical_payload(
     ref: ObjectRef, scope: Scope, user: dict | None = None, *, budget=None
 ) -> dict:
-    from app.modules.intelligence.engine_schema import ENGINE_TABLES
+    from app.modules.intelligence.engine_repository import intelligence_repository
 
     key = {
         "investigation": "investigations",
@@ -306,17 +306,15 @@ async def canonical_payload(
         "action": "actions",
         "outcome": "outcomes",
     }[ref.kind]
-    table = ENGINE_TABLES.get(key)
-    if table is None:
+    try:
+        payload = await intelligence_repository.get_payload(
+            key, ref.id, scope, revision=ref.revision
+        )
+    except HTTPException:
+        # A branched revision is not a canonical object either.
+        payload = None
+    if payload is None:
         raise HTTPException(status_code=404, detail="Canonical object not found")
-    result = await db.execute_system(
-        f"SELECT payload FROM NOVA_SYSTEM.{table} WHERE id=%s AND principal=%s "
-        "AND active_role=%s AND security_context_version=%s AND revision=%s LIMIT 2",
-        [ref.id, scope.principal, scope.active_role, scope.security_context_version, ref.revision],
-    )
-    if len(result["rows"]) != 1:
-        raise HTTPException(status_code=404, detail="Canonical object not found")
-    payload = _decode(result["rows"][0][0])
     recorded_scope = payload.get("scope") or {}
     if any(
         recorded_scope.get(k) != scope.model_dump().get(k)

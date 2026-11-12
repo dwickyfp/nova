@@ -1,0 +1,85 @@
+{
+  "observed_at": "2026-11-12T17:33:25.138299+00:00",
+  "base_commit": "c1837b082b93efae7828fd32e9bdf184aa8eb61e",
+  "branch": "feat/production-control-plane",
+  "uncommitted": true,
+  "release_accepted": false,
+  "cutover_performed": false,
+  "live_dev_startup_passed": false,
+  "test_runs": [
+    {
+      "attempt": "unit_coverage_12",
+      "scope": "Complete backend unit suite; combined coverage 65%",
+      "junit_local_path": "/tmp/nova-takeover-unit-12.xml",
+      "tests": 11123,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 11123
+    },
+    {
+      "attempt": "metadata_pg_21",
+      "scope": "PG17 fixture suite plus two engine cases skipped on default test ports",
+      "junit_local_path": "/tmp/nova-takeover-pg-21.xml",
+      "tests": 946,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 2,
+      "passed": 944
+    },
+    {
+      "attempt": "engine_readonly_01",
+      "scope": "Both skipped engine cases rerun successfully on existing-stack ports",
+      "junit_local_path": "/tmp/nova-takeover-engine-readonly-01.xml",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 2
+    },
+    {
+      "attempt": "agent_eval_08",
+      "scope": "Controlled agent trajectories; no live provider",
+      "junit_local_path": "/tmp/nova-takeover-eval-08.xml",
+      "tests": 358,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 358
+    }
+  ],
+  "unit_coverage": {
+    "line-rate": "0.66",
+    "branch-rate": "0.5892",
+    "lines-valid": "137049",
+    "lines-covered": "90458",
+    "branches-valid": "34028",
+    "branches-covered": "20048"
+  },
+  "other_checks": {
+    "mypy_20": "PASS: 729 application files",
+    "changed_file_ruff_14": "PASS: 364 Python paths",
+    "agent_scorecard_05": "PASS: 54/54 scenarios, 189/189 checks",
+    "frontend_lint_03": "PASS: 0 errors, 31 warnings",
+    "frontend_build_03": "PASS",
+    "frontend_coverage_03": "PASS: 194 files, 1614 tests; two workers",
+    "docs_browser_02": "PASS: 2 files, 15 component tests; not live docs QA",
+    "compose_development_and_split_02": "PASS: config validation only",
+    "dev_launcher": "PASS: controlled startup, readiness and shutdown tests plus shell syntax/help",
+    "pg_fixture_cleanup": "PASS: no test schema, roles or database marker remain"
+  },
+  "not_executed_as_release_acceptance": [
+    "CI on a delivered commit",
+    "all-domain migration and two rehearsals",
+    "live startup of the migrated application",
+    "full UI/API/SQL/docs feature matrix",
+    "live AI capability acceptance",
+    "sandbox/ML isolation and artifact provenance",
+    "complete worker fault/recovery and replica acceptance",
+    "production Compose startup and coordinated off-host restore"
+  ],
+  "owner_waivers": [
+    "Large PoC load and 24-hour soak",
+    "Live embedding-provider tests"
+  ]
+}

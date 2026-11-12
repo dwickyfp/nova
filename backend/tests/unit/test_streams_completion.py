@@ -279,8 +279,9 @@ def snapshot_env(monkeypatch):
         _row(2, 1, "c2", "r1", "UPDATE", '{"id":1,"v":"a"}', '{"id":1,"v":"b"}'),
     ]
 
-    async def execute(sql, params=None):
-        return commits
+    async def read_commits(source, after, through):
+        return [dict(zip(("commit_seq", "commit_id", "row_count"), row, strict=True))
+                for row in commits["rows"]]
 
     async def writer_query(conn, sql, params=None):
         return journal
@@ -292,7 +293,7 @@ def snapshot_env(monkeypatch):
     monkeypatch.setattr(service_module, "writer_query", writer_query)
     monkeypatch.setattr(service_module, "writer_conn", writer_conn)
     service = service_module.StreamService()
-    monkeypatch.setattr(service, "_execute", execute)
+    monkeypatch.setattr(service_module.source_registry, "commits", read_commits)
     return service
 
 
@@ -413,25 +414,32 @@ async def test_nothing_pending_is_never_stale(monkeypatch):
     execute.assert_not_awaited()
 
 
-async def test_retention_is_measured_on_the_engine_clock(monkeypatch):
+async def test_retention_uses_the_clock_that_recorded_control_commits(monkeypatch):
+    from app.modules.access_control.security_context import SecurityContext
+    from app.modules.streams.metadata_repository import StreamMetadataRepository
+    from tests.unit.stream_metadata_fakes import metadata_scope
+
+    store = StreamMetadataRepository(None, SecurityContext("alice", "ANALYST"))
+    store._bound = AsyncMock()
+    store._one = AsyncMock(return_value={
+        "stale_after": "2026-11-25 10:00:00", "expired": False, "remaining_seconds": 3600,
+    })
+    scope, _ = metadata_scope(store)
+    monkeypatch.setattr(service_module.source_registry, "_metadata", scope)
     service = service_module.StreamService()
-    execute = AsyncMock(return_value={"rows": [["2026-11-25 10:00:00", 0, 3600]]})
-    monkeypatch.setattr(service, "_execute", execute)
     assert await service._retention(SOURCE, 4, 6) == ("2026-11-25 10:00:00", False, 3600)
-    sql = execute.await_args.args[0]
-    assert "INTERVAL 14 DAY" in sql and "TIMESTAMPDIFF(SECOND, NOW()" in sql
+    sql, params = store._one.await_args.args
+    assert "clock_timestamp()" in sql and "min(recorded_at)" in sql
+    assert params == (14, 14, 14, SOURCE.source_id, 4, 6)
 
 
 async def test_maintenance_marks_stale_streams_and_collects_journals(monkeypatch):
     service = service_module.StreamService()
 
-    async def execute(sql, params=None):
-        if "CONFIG_STREAM_SOURCES" in sql:
-            return {"rows": [[SOURCE.source_id, "READY"]]}
-        return {"rows": [["default_catalog", "shop", "default", "orders_changes",
-                          SOURCE.source_id, "READY"]]}
-
-    monkeypatch.setattr(service, "_execute", execute)
+    monkeypatch.setattr(service.repository, "current_generations", AsyncMock(return_value=[{
+        "catalog_name": "default_catalog", "database_name": "shop", "schema_name": "default",
+        "name": "orders_changes", "source_id": SOURCE.source_id, "status": "READY",
+    }]))
     monkeypatch.setattr(service.repository, "current", AsyncMock(return_value=record()))
     monkeypatch.setattr(service.journal, "committed_cursor",
                         AsyncMock(return_value=ChangeCursor(1, 4)))
@@ -441,7 +449,8 @@ async def test_maintenance_marks_stale_streams_and_collects_journals(monkeypatch
     collect = AsyncMock()
     monkeypatch.setattr(service, "collect_source", collect)
     registry = SimpleNamespace(
-        get=AsyncMock(return_value=SOURCE), head_commit=AsyncMock(return_value=(9, 20))
+        get=AsyncMock(return_value=SOURCE), head_commit=AsyncMock(return_value=(9, 20)),
+        sources=AsyncMock(return_value=[SOURCE]),
     )
     monkeypatch.setattr(service_module, "source_registry", registry)
     summary = await service.maintain()

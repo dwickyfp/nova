@@ -290,6 +290,16 @@ QUERY_ADMISSION_REFUSED = Counter(
     ("source",),
 )
 SERVICE_UP = Gauge("nova_service_up", "Whether a Nova process completed startup.", ("service",))
+METADATA_READY = Gauge(
+    "nova_metadata_ready",
+    "Whether this process can reach nova_control at its published schema and epoch.",
+    ("service",),
+)
+METADATA_WRITES_PAUSED = Gauge(
+    "nova_metadata_writes_paused",
+    "Whether nova_control is frozen for maintenance, so metadata writes are refused.",
+    ("service",),
+)
 SERVICE_HEARTBEAT = Gauge(
     "nova_service_last_heartbeat_timestamp_seconds",
     "Unix time of the last completed Nova service loop.",
@@ -307,6 +317,7 @@ _DEFAULT_PORTS = {
     "automation-worker": 9108,
     "autopilot-worker": 9109,
     "maintenance-worker": 9110,
+    "outbox-worker": 9111,
 }
 
 

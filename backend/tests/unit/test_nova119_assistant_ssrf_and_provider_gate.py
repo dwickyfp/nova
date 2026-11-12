@@ -403,7 +403,8 @@ class _SpyAIService:
         self.update_calls: list[tuple] = []
         self.delete_calls: list[str] = []
 
-    async def create_provider(self, data: dict, username: str) -> dict:
+    async def create_provider(self, data: dict, username: str, *, actor) -> dict:
+        assert actor.principal == username and actor.active_role == "ACCOUNTADMIN"
         self.create_calls.append({"data": data, "username": username})
         return {
             "id": "p1",
@@ -414,7 +415,8 @@ class _SpyAIService:
             "api_key_masked": None,
         }
 
-    async def update_provider(self, provider_id: str, data: dict) -> dict:
+    async def update_provider(self, provider_id: str, data: dict, *, actor) -> dict:
+        assert actor.principal == "admin" and actor.active_role == "ACCOUNTADMIN"
         self.update_calls.append((provider_id, data))
         return {
             "id": provider_id,
@@ -425,7 +427,8 @@ class _SpyAIService:
             "api_key_masked": None,
         }
 
-    async def delete_provider(self, provider_id: str) -> bool:
+    async def delete_provider(self, provider_id: str, *, actor) -> bool:
+        assert actor.principal == "admin" and actor.active_role == "ACCOUNTADMIN"
         self.delete_calls.append(provider_id)
         return True
 

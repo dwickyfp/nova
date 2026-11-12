@@ -483,15 +483,6 @@ async def test_default_readers_delegate_to_the_source_owners(monkeypatch):
     assert await business_events._definition(SUPPORT) == {}  # fingerprint no longer matches
     assert await business_events._visible_concepts(set(), ANALYST) == {}
 
-    executed = []
-
-    async def execute(sql, params=None):
-        executed.append(sql)
-        return {"rows": []}
-
-    monkeypatch.setattr(business_events.db, "execute_system", execute)
-    await business_events.ensure_event_schema()
-    assert len(executed) == len(business_events.EVENT_TABLES)
 
 
 async def test_visible_concept_names_follow_ontology_visibility(monkeypatch):

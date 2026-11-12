@@ -1,5 +1,6 @@
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -7,32 +8,46 @@ from fastapi.testclient import TestClient
 
 from app.core import deps
 from app.core.exceptions import register_exception_handlers
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.monitoring import ai_usage
+from app.modules.monitoring import repository as repository_module
 from app.modules.monitoring.ai_usage import AIUsageService, _event, sql_actions
 from app.modules.monitoring.router import router
 
+ADMIN = SecurityContext("admin", "ACCOUNTADMIN")
 NOW = datetime(2026, 9, 25, 12, tzinfo=UTC)
 
 
-@pytest.mark.parametrize(("sql", "expected"), [
-    ("SELECT AI_COMPLETE('hi'), AI_SENTIMENT(txt) FROM t", ["AI_COMPLETE", "AI_SENTIMENT"]),
-    ("SELECT 'AI_COMPLETE(secret)', 1 /* AI_SENTIMENT(x) */", []),
-    ("SELECT AI_COMPLETE('a'), AI_COMPLETE('b')", ["AI_COMPLETE"]),
-    ("SELECT `AI_COMPLETE`('hi')", ["AI_COMPLETE"]),
-    ("UPDATE t SET label = AI_CLASSIFY(txt, 'a,b')", ["AI_CLASSIFY"]),
-    ("DELETE FROM t WHERE AI_FILTER(txt, 'obsolete') = 'true'", ["AI_FILTER"]),
-    ("EXPLAIN SELECT AI_COMPLETE('hi')", []),
-    ("CREATE FUNCTION AI_COMPLETE(x STRING) RETURNS STRING AS x", []),
-    ("CREATE TABLE t AS SELECT AI_COMPLETE('hi') AS answer", ["AI_COMPLETE"]),
-    ("SELECT 'x\\\' AI_COMPLETE(password)'", []),
-])
+@pytest.mark.parametrize(
+    ("sql", "expected"),
+    [
+        ("SELECT AI_COMPLETE('hi'), AI_SENTIMENT(txt) FROM t", ["AI_COMPLETE", "AI_SENTIMENT"]),
+        ("SELECT 'AI_COMPLETE(secret)', 1 /* AI_SENTIMENT(x) */", []),
+        ("SELECT AI_COMPLETE('a'), AI_COMPLETE('b')", ["AI_COMPLETE"]),
+        ("SELECT `AI_COMPLETE`('hi')", ["AI_COMPLETE"]),
+        ("UPDATE t SET label = AI_CLASSIFY(txt, 'a,b')", ["AI_CLASSIFY"]),
+        ("DELETE FROM t WHERE AI_FILTER(txt, 'obsolete') = 'true'", ["AI_FILTER"]),
+        ("EXPLAIN SELECT AI_COMPLETE('hi')", []),
+        ("CREATE FUNCTION AI_COMPLETE(x STRING) RETURNS STRING AS x", []),
+        ("CREATE TABLE t AS SELECT AI_COMPLETE('hi') AS answer", ["AI_COMPLETE"]),
+        ("SELECT 'x\\' AI_COMPLETE(password)'", []),
+    ],
+)
 def test_detect_only_executable_functions(sql, expected):
     assert sql_actions(sql) == expected
 
 
 def event(name="one", at="2026-09-25T10:00:00", **kwargs):
-    values = dict(user="alice", source="assistant", action="Nova Studio / Assistant",
-                  model="model-a", prompt=100, completion=20, total=120, status="recorded")
+    values = dict(
+        user="alice",
+        source="assistant",
+        action="Nova Studio / Assistant",
+        model="model-a",
+        prompt=100,
+        completion=20,
+        total=120,
+        status="recorded",
+    )
     return _event(name, at, **{**values, **kwargs})
 
 
@@ -50,8 +65,21 @@ async def test_summary_missing_usage_comparison_and_zero_days(service):
         ([event("prior", at="2026-09-18T10:00:00", total=90)], False),
     ]
     service._functions.side_effect = [
-        ([event("query", source="functions", action="AI_COMPLETE", model=None,
-                prompt=None, completion=None, total=None, status="error")], False),
+        (
+            [
+                event(
+                    "query",
+                    source="functions",
+                    action="AI_COMPLETE",
+                    model=None,
+                    prompt=None,
+                    completion=None,
+                    total=None,
+                    status="error",
+                )
+            ],
+            False,
+        ),
         ([], False),
     ]
     data = await service.dashboard(now=NOW)
@@ -93,23 +121,47 @@ async def test_partial_data_never_has_a_comparison(service):
 
 
 async def test_all_failed_is_unavailable_not_zero(service):
-    for method in (
-        service._messages, service._functions, service._function_tokens
-    ):
+    for method in (service._messages, service._functions, service._function_tokens):
         method.side_effect = RuntimeError("offline")
     with pytest.raises(ai_usage.AIUsageUnavailable):
         await service.dashboard(now=NOW)
 
 
-async def test_message_query_excludes_retired_smart_answers_and_projects_no_content(monkeypatch):
-    execute = AsyncMock(return_value={"rows": []})
-    monkeypatch.setattr(ai_usage.db, "execute_system", execute)
-    await AIUsageService()._messages(NOW, NOW)
-    sql, params = execute.call_args.args
+@pytest.fixture
+def connection(monkeypatch):
+    from psycopg.pq import TransactionStatus
+
+    conn = MagicMock()
+    conn.info.transaction_status = TransactionStatus.INTRANS
+    cursor = AsyncMock()
+    cursor.fetchone.return_value = {"valid": True}
+    cursor.fetchall.return_value = []
+    conn.execute = AsyncMock(return_value=cursor)
+
+    @asynccontextmanager
+    async def transaction(actor, *, read_only=False):
+        assert actor == ADMIN and read_only
+        from types import SimpleNamespace
+        yield SimpleNamespace(connection=conn, actor=actor)
+
+    @asynccontextmanager
+    async def scope(actor, *, read_only=False):
+        assert actor == ADMIN and read_only
+        yield conn
+
+    monkeypatch.setattr(repository_module, "metadata_transaction", transaction)
+    monkeypatch.setattr(ai_usage, "metadata_scope", scope)
+    return conn, cursor
+
+
+async def test_message_query_excludes_retired_smart_answers_and_projects_no_content(connection):
+    conn, _ = connection
+    await AIUsageService()._messages(NOW, NOW, actor=ADMIN)
+    sql, params = conn.execute.call_args.args
+    assert "nova_meta.config_assistant_messages" in sql
     assert "NOT IN ('__smart__', '__auto__')" in sql
-    assert "content" not in sql
-    assert "steps" not in sql
-    assert params[-1] == ai_usage.SOURCE_LIMIT + 1
+    assert "content" not in sql and "steps" not in sql
+    assert params == (NOW, NOW, ai_usage.SOURCE_LIMIT + 1)
 
 
 def test_null_and_zero_are_distinct():
@@ -118,30 +170,35 @@ def test_null_and_zero_are_distinct():
     assert event(prompt=-1, completion=True, total=None)["total_tokens"] is None
 
 
-async def test_sql_history_normalizes_database_timezone_and_never_returns_sql(monkeypatch):
-    execute = AsyncMock(return_value={"rows": [
-        ("q1", NOW.replace(tzinfo=None), "alice",
-         "SELECT AI_COMPLETE('private prompt')", "SUCCESS", 40),
-        ("q2", NOW.replace(tzinfo=None), "alice", "SELECT 'AI_COMPLETE(secret)'", "SUCCESS", 10),
-    ]})
-    monkeypatch.setattr(ai_usage.db, "execute_system", execute)
-    monkeypatch.setattr(ai_usage, "configured_timezone", lambda: "Asia/Jakarta")
-    events, limited = await AIUsageService()._functions(NOW, NOW)
-    sql, params = execute.call_args.args
-    assert "CONVERT_TZ(event_time, %s, '+00:00')" in sql
-    assert "event_time >= CONVERT_TZ(%s, '+00:00', %s)" in sql
-    assert params[0] == params[2] == params[4] == "Asia/Jakarta"
-    assert len(events) == 1
-    assert events[0]["at"] == NOW.isoformat()
+async def test_sql_history_uses_pg_timestamps_and_never_returns_sql(connection):
+    conn, cursor = connection
+    cursor.fetchall.return_value = [
+        {
+            "log_id": "q1",
+            "event_time": NOW,
+            "user_name": "alice",
+            "sql_text": "SELECT AI_COMPLETE('private prompt')",
+            "status": "SUCCESS",
+            "duration_ms": 40,
+        },
+        {
+            "log_id": "q2",
+            "event_time": NOW,
+            "user_name": "alice",
+            "sql_text": "SELECT 'AI_COMPLETE(secret)'",
+            "status": "SUCCESS",
+            "duration_ms": 10,
+        },
+    ]
+    events, limited = await AIUsageService()._functions(NOW, NOW, actor=ADMIN)
+    sql, params = conn.execute.call_args.args
+    assert "nova_meta.audit_log" in sql and "CONVERT_TZ" not in sql
+    assert params[:2] == (NOW, NOW)
+    assert len(events) == 1 and events[0]["at"] == NOW.isoformat()
     assert events[0]["total_tokens"] is None
-    assert "private prompt" not in str(events)
-    assert "sql_text" not in events[0]
+    assert "private prompt" not in str(events) and "sql_text" not in events[0]
     assert not limited
-    # Only statements naming an AI function are read; a bare '%AI%' matched
-    # nearly every query in the audit log.
-    patterns = [param for param in params if isinstance(param, str) and param.startswith("%")]
-    assert "%AI%" not in patterns
-    assert sorted(patterns) == sorted(f"%{name}%" for name in ai_usage.FUNCTIONS)
+    assert sorted(params[2:-1]) == sorted(f"%{name}%" for name in ai_usage.FUNCTIONS)
     assert sql.count("UPPER(sql_text) LIKE %s") == len(ai_usage.FUNCTIONS)
 
 
@@ -151,7 +208,9 @@ def test_api_role_boundary(monkeypatch, role, status):
     register_exception_handlers(app)
     app.include_router(router)
     app.dependency_overrides[deps.get_current_user] = lambda: {
-        "username": "test", "roles": [role], "active_role": role,
+        "username": "test",
+        "roles": [role],
+        "active_role": role,
     }
     dashboard = AsyncMock(return_value={"summary": {}})
     monkeypatch.setattr(ai_usage.ai_usage_service, "dashboard", dashboard)
@@ -165,11 +224,15 @@ def test_api_bounds_and_no_exception_details(monkeypatch):
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[deps.get_current_user] = lambda: {
-        "username": "test", "roles": ["ACCOUNTADMIN"], "active_role": "ACCOUNTADMIN",
+        "username": "test",
+        "roles": ["ACCOUNTADMIN"],
+        "active_role": "ACCOUNTADMIN",
     }
-    monkeypatch.setattr(ai_usage.ai_usage_service, "dashboard", AsyncMock(
-        side_effect=ai_usage.AIUsageUnavailable("secret")
-    ))
+    monkeypatch.setattr(
+        ai_usage.ai_usage_service,
+        "dashboard",
+        AsyncMock(side_effect=ai_usage.AIUsageUnavailable("secret")),
+    )
     with TestClient(app) as client:
         assert client.get("/ai/usage?days=31").status_code == 422
         assert client.get("/ai/usage?source=invalid").status_code == 422
@@ -179,26 +242,38 @@ def test_api_bounds_and_no_exception_details(monkeypatch):
         assert "secret" not in response.text
 
 
-async def test_measured_function_tokens_are_read_from_the_gateway_usage_table(monkeypatch):
-    queries = []
-
-    async def execute_system(sql, params):
-        queries.append((sql, params))
-        return {"rows": [
-            [7, datetime(2026, 9, 25, 3), "AI_COMPLETE", "model-a", "success", 300, 40, 340, 900],
-            [6, datetime(2026, 9, 25, 2), "AI_SUMMARIZE", "model-a", "error", 0, 0, 0, 20],
-        ]}
-
-    monkeypatch.setattr(ai_usage.db, "execute_system", execute_system)
-
-    events, truncated = await AIUsageService()._function_tokens(
-        datetime(2026, 9, 19, tzinfo=UTC), NOW
+async def test_measured_function_tokens_are_read_from_the_gateway_usage_table(connection):
+    conn, cursor = connection
+    fields = (
+        "usage_id",
+        "recorded_at",
+        "function_name",
+        "model_name",
+        "status",
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "duration_ms",
     )
-
-    assert truncated is False and "USAGE_LLM_FUNCTIONS" in queries[0][0]
+    cursor.fetchall.return_value = [
+        dict(zip(fields, row, strict=True))
+        for row in [
+            [7, NOW, "AI_COMPLETE", "model-a", "success", 300, 40, 340, 900],
+            [6, NOW, "AI_SUMMARIZE", "model-a", "error", 0, 0, 0, 20],
+        ]
+    ]
+    events, truncated = await AIUsageService()._function_tokens(
+        datetime(2026, 9, 19, tzinfo=UTC),
+        NOW,
+        actor=ADMIN,
+    )
+    assert truncated is False
+    assert "nova_meta.usage_llm_functions" in conn.execute.call_args.args[0]
     first, second = events
     assert (first["source"], first["action"], first["model"]) == (
-        "function_tokens", "AI_COMPLETE", "model-a"
+        "function_tokens",
+        "AI_COMPLETE",
+        "model-a",
     )
     assert (first["input_tokens"], first["output_tokens"], first["total_tokens"]) == (300, 40, 340)
     # The engine does not tell the gateway who ran the SQL.
@@ -207,8 +282,21 @@ async def test_measured_function_tokens_are_read_from_the_gateway_usage_table(mo
 
 async def test_function_tokens_count_towards_the_dashboard_totals(service):
     service._function_tokens.side_effect = [
-        ([event("usage", source="function_tokens", action="AI_COMPLETE", user="",
-                prompt=300, completion=40, total=340, status="success")], False),
+        (
+            [
+                event(
+                    "usage",
+                    source="function_tokens",
+                    action="AI_COMPLETE",
+                    user="",
+                    prompt=300,
+                    completion=40,
+                    total=340,
+                    status="success",
+                )
+            ],
+            False,
+        ),
         ([], False),
     ]
 

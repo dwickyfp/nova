@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from app.common.crypto import encrypt
 from app.core import deps as deps_module
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.agents.prompt import _TOOL_DESCRIPTIONS
 from app.modules.agents.registry import KNOWN_TOOLS, build_registry
 from app.modules.agents.router import KNOWN_TOOLS as SAVEABLE_TOOLS
@@ -23,7 +24,12 @@ from app.modules.assistant.tools import web_search as web_search_module
 from app.modules.assistant.tools.web_search import NOT_CONFIGURED, web_search_tool
 
 SECRET = "tvly-dev-0123456789abcdefSECRET"
-USER = {"username": "alice", "session_id": "s-1", "active_role": "ANALYST"}
+USER = {
+    "username": "alice",
+    "session_id": "s-1",
+    "active_role": "ANALYST",
+    "assigned_roles": ["ANALYST"],
+}
 
 
 def _context() -> SimpleNamespace:
@@ -118,7 +124,8 @@ async def test_results_are_cited_untrusted_web_sources(audit, key, tavily):
 
     # Only http(s) results survive, numbered as web references.
     assert [r["url"] for r in outcome.data["results"]] == [
-        "https://news.example.com/rupiah", "https://www.bi.go.id/rates",
+        "https://news.example.com/rupiah",
+        "https://www.bi.go.id/rates",
     ]
     assert outcome.data["results"][1]["title"] == "www.bi.go.id"
     assert outcome.data["trust"] == "untrusted_public_web"
@@ -161,9 +168,10 @@ async def test_secret_shaped_query_never_leaves_nova(audit, key, tavily):
     assert outcome.error_class == "SECRET_EXPOSURE_RISK"
     assert tavily.calls == []
     assert audit.await_args.kwargs["status"] == "DENIED"
-    assert web_search_tool.preview(
-        _invoke({"query": "password=hunter2hunter2"})
-    ) == "web_search: [redacted]"
+    assert (
+        web_search_tool.preview(_invoke({"query": "password=hunter2hunter2"}))
+        == "web_search: [redacted]"
+    )
 
 
 async def test_invalid_arguments_and_missing_user_fail_before_search(audit, key, tavily):
@@ -188,8 +196,11 @@ async def test_result_count_is_bounded_and_bad_counts_fall_back(audit, key, tavi
 
 async def test_snippets_with_credentials_are_redacted(audit, key, tavily):
     tavily.response["results"] = [
-        {"title": "leak", "url": "https://e.example/a",
-         "content": "key sk-ABCDEFGHIJKLMNOPQRSTUVWX"}
+        {
+            "title": "leak",
+            "url": "https://e.example/a",
+            "content": "key sk-ABCDEFGHIJKLMNOPQRSTUVWX",
+        }
     ]
     outcome = await web_search_tool.run(_invoke({"query": "q"}), _context())
     assert "sk-ABCDEF" not in outcome.data["content"]
@@ -254,59 +265,67 @@ async def test_sdk_call_uses_the_async_client(monkeypatch):
 
 
 class _Prefs:
-    """An in-memory ``CONFIG_USER_PREFERENCES`` behind ``db.execute_system``."""
+    """Actor-aware preference adapter; PG RLS is tested in integration."""
 
-    def __init__(self) -> None:
-        self.rows: dict[tuple[str, str], str] = {}
-        self.statements: list[tuple[str, tuple]] = []
+    def __init__(self):
+        self.rows = {}
+        self.statements = []
 
-    async def execute_system(self, sql: str, params: tuple = ()) -> dict:
-        self.statements.append((sql, params))
-        if sql.startswith("SELECT"):
-            value = self.rows.get((params[0], params[1]))
-            return {"rows": [[value]] if value is not None else []}
-        if sql.startswith("INSERT"):
-            self.rows[(params[0], params[1])] = params[2]
-        elif sql.startswith("DELETE"):
-            self.rows.pop((params[0], params[1]), None)
-        return {"rows": []}
+    async def read(self, actor, owner, key):
+        assert actor.principal
+        return self.rows.get((owner, key))
+
+    async def write(self, actor, owner, values):
+        assert actor.active_role == "ACCOUNTADMIN"
+        self.statements.append((actor, values))
+        for key, value in values.items():
+            if value is None:
+                self.rows.pop((owner, key), None)
+            else:
+                self.rows[(owner, key)] = value
+
+
+KEY_ADMIN = SecurityContext("admin", "ACCOUNTADMIN", session_id="key-login")
 
 
 @pytest.fixture
-def prefs(monkeypatch) -> _Prefs:
+def prefs(monkeypatch):
     store = _Prefs()
-    monkeypatch.setattr(web_search_settings, "db", store)
+    monkeypatch.setattr(web_search_settings, "read_value", store.read)
+    monkeypatch.setattr(web_search_settings, "write_values", store.write)
     return store
 
 
 async def test_key_is_stored_encrypted_and_status_is_masked(prefs):
-    assert (await web_search_settings.web_search_status()).configured is False
-    status = await web_search_settings.save_tavily_api_key(SECRET)
+    assert (await web_search_settings.web_search_status(KEY_ADMIN)).configured is False
+    status = await web_search_settings.save_tavily_api_key(SECRET, KEY_ADMIN)
     assert status.model_dump() == {
-        "provider": "tavily", "configured": True, "key_hint": "tvly-dev-",
+        "provider": "tavily",
+        "configured": True,
+        "key_hint": "tvly-dev-",
     }
 
     stored = json.loads(prefs.rows[("__system__", "tavily_api_key")])
     assert stored["api_key"].startswith("enc:") and SECRET not in str(stored)
     assert stored["hint"] == "tvly-dev-"
     assert all(SECRET not in str(params) for _sql, params in prefs.statements)
-    assert await web_search_settings.tavily_api_key() == SECRET
-    assert SECRET not in (await web_search_settings.web_search_status()).model_dump_json()
+    assert await web_search_settings.tavily_api_key(KEY_ADMIN) == SECRET
+    assert SECRET not in (await web_search_settings.web_search_status(KEY_ADMIN)).model_dump_json()
 
-    await web_search_settings.clear_tavily_api_key()
-    assert await web_search_settings.tavily_api_key() is None
+    await web_search_settings.clear_tavily_api_key(KEY_ADMIN)
+    assert await web_search_settings.tavily_api_key(KEY_ADMIN) is None
 
 
 async def test_plaintext_or_undecryptable_rows_are_not_used(prefs):
     prefs.rows[("__system__", "tavily_api_key")] = SECRET
-    assert await web_search_settings.tavily_api_key() is None
+    assert await web_search_settings.tavily_api_key(KEY_ADMIN) is None
     prefs.rows[("__system__", "tavily_api_key")] = "enc:not-a-token"
-    assert await web_search_settings.tavily_api_key() is None
+    assert await web_search_settings.tavily_api_key(KEY_ADMIN) is None
     # A tampered hint is never shown: only the published prefixes are.
     prefs.rows[("__system__", "tavily_api_key")] = json.dumps(
         {"api_key": encrypt(SECRET), "hint": "tvly-dev-0123"}
     )
-    status = await web_search_settings.web_search_status()
+    status = await web_search_settings.web_search_status(KEY_ADMIN)
     assert status.configured is True and status.key_hint is None
 
 
@@ -326,17 +345,21 @@ def test_key_shape_check():
 # ── the settings routes ─────────────────────────────────────────────────
 
 ADMIN = {
-    "username": "admin", "session_id": "s", "roles": ["ACCOUNTADMIN"],
+    "username": "admin",
+    "session_id": "s",
+    "roles": ["ACCOUNTADMIN"],
     "active_role": "ACCOUNTADMIN",
 }
 ANALYST = {
-    "username": "analyst", "session_id": "s", "roles": ["test_analyst"],
+    "username": "analyst",
+    "session_id": "s",
+    "roles": ["test_analyst"],
     "active_role": "test_analyst",
 }
 
 
 @pytest.fixture
-def routes(monkeypatch, prefs):
+def routes(monkeypatch, prefs, fake_metadata_db):
     from app.core.exceptions import register_exception_handlers
     from app.modules.ai_ml import router as ai_router
 
@@ -359,7 +382,9 @@ def routes(monkeypatch, prefs):
 def test_admin_sets_and_clears_the_key_write_only(routes, prefs):
     with routes.as_user(ADMIN) as client:
         assert client.get("/api/v1/ai/web-search").json() == {
-            "provider": "tavily", "configured": False, "key_hint": None,
+            "provider": "tavily",
+            "configured": False,
+            "key_hint": None,
         }
         saved = client.put("/api/v1/ai/web-search/api-key", json={"api_key": SECRET})
         assert saved.status_code == 200
@@ -390,9 +415,12 @@ def test_non_admin_cannot_set_or_clear_the_key(routes, prefs):
     )
     with routes.as_user(ANALYST) as client:
         assert client.get("/api/v1/ai/web-search").json()["configured"] is True
-        assert client.put(
-            "/api/v1/ai/web-search/api-key", json={"api_key": "tvly-other-key-123"}
-        ).status_code == 403
+        assert (
+            client.put(
+                "/api/v1/ai/web-search/api-key", json={"api_key": "tvly-other-key-123"}
+            ).status_code
+            == 403
+        )
         assert client.delete("/api/v1/ai/web-search/api-key").status_code == 403
     assert json.loads(prefs.rows[("__system__", "tavily_api_key")])["api_key"].startswith("enc:")
     routes.audit.assert_not_awaited()

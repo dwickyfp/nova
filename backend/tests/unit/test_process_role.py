@@ -17,7 +17,7 @@ from pydantic import ValidationError
 from app import main
 from app.core.config import Settings, settings
 
-CONTROL = {"bootstrap", "llm_udfs"}
+CONTROL = {"bootstrap"}
 MAINTENANCE = {"ml_schema", "ml_sweep", "search_start", "newsroom", "search_stop", "catalog"}
 EVERY_ROLE = {"system_pool", "capabilities", "session_store", "autopilot"}
 
@@ -58,6 +58,13 @@ def duties(monkeypatch):
 
     monkeypatch.setattr(main, "require_configured_secrets", lambda: None)
     monkeypatch.setattr(main, "log_studio_capabilities", lambda *args: None)
+
+    async def open_metadata(role):
+        ran.append(f"metadata:{role}")
+        return object()
+
+    monkeypatch.setattr(main, "open_process_metadata", open_metadata)
+    monkeypatch.setattr(main, "close_process_metadata", record("close_metadata"))
     monkeypatch.setattr(main.db, "init_system_pool", record("system_pool"))
     monkeypatch.setattr(main.db, "close_system_pool", record("close_pool"))
     monkeypatch.setattr(main.db, "apply_global_time_zone", record("time_zone"))
@@ -65,11 +72,7 @@ def duties(monkeypatch):
     monkeypatch.setattr(main.session_store, "init", record("session_store"))
     monkeypatch.setattr(main.session_store, "close", record("close_sessions"))
     monkeypatch.setattr(main, "_bootstrap_exclusively", record("bootstrap"))
-    monkeypatch.setattr(main, "_register_llm_udfs", record("llm_udfs"))
     monkeypatch.setattr("app.proxy.server.MySQLProxyServer", Proxy)
-    monkeypatch.setattr(
-        ml_engine_service.ephemeral_repository, "ensure_schema", record("ml_schema")
-    )
     monkeypatch.setattr(ml_engine_service, "sweep_ephemeral", lambda: forever("ml_sweep"))
     monkeypatch.setattr(search_service, "start", record("search_start"))
     monkeypatch.setattr(search_service, "stop", record("search_stop"))
@@ -103,7 +106,7 @@ async def test_each_role_runs_only_its_own_duties(monkeypatch, duties, role, exp
     assert ran >= EVERY_ROLE
     assert ran >= expected
     assert not (absent & ran)
-    assert ran >= {"close_pool", "close_sessions"}
+    assert ran >= {"close_pool", "close_sessions", f"metadata:{role}", "close_metadata"}
 
 
 async def test_single_process_role_honours_a_disabled_proxy(monkeypatch, duties):
@@ -166,59 +169,15 @@ class _Lock:
 
 
 @pytest.fixture
-def udf_registration(monkeypatch):
-    events: list[str] = []
-    state = {"acquired": True, "error": None}
-
-    async def register_all_udfs():
-        events.append("register")
-        if state["error"]:
-            raise state["error"]
-        return {"registered": 7, "failed": 0}
-
-    from app.modules.llm_functions.service import llm_function_service
-
-    monkeypatch.setattr(llm_function_service, "register_all_udfs", register_all_udfs)
-    monkeypatch.setattr(
-        llm_function_service, "registration_is_current", AsyncMock(return_value=False)
-    )
-    monkeypatch.setattr(
-        "app.modules.task_orchestration.transport.LeaderLock",
-        lambda *args, **kwargs: _Lock(state["acquired"], events),
-    )
-    return events, state
-
-
-async def test_llm_functions_are_registered_under_the_lock(udf_registration):
-    events, _ = udf_registration
-
-    await main._register_llm_udfs()
-
-    assert events == ["acquire", "register", "release"]
-
-
-async def test_llm_functions_are_left_alone_while_another_process_registers(udf_registration):
-    events, state = udf_registration
-    state["acquired"] = False
-
-    await main._register_llm_udfs()
-
-    assert events == ["acquire"]
-
-
-async def test_failed_registration_releases_the_lock_and_does_not_stop_startup(udf_registration):
-    events, state = udf_registration
-    state["error"] = RuntimeError("engine unavailable")
-
-    await main._register_llm_udfs()
-
-    assert events == ["acquire", "register", "release"]
-
-
-@pytest.fixture
 def probe(monkeypatch):
-    """A started app whose engine and Redis answer unless told otherwise."""
-    state = {"engine": None, "redis": None}
+    """A started app whose metadata, engine and Redis answer unless told otherwise."""
+    state = {"engine": None, "redis": None, "metadata": None, "paused": False}
+
+    class Metadata:
+        async def probe(self):
+            if state["metadata"]:
+                raise state["metadata"]
+            return state["paused"]
 
     async def execute_system(sql):
         if state["engine"]:
@@ -234,6 +193,7 @@ def probe(monkeypatch):
     monkeypatch.setattr(main.db, "execute_system", execute_system)
     monkeypatch.setattr(main.session_store, "_redis", Redis())
     monkeypatch.setattr(main.app.state, "started", True, raising=False)
+    monkeypatch.setattr(main.app.state, "metadata", Metadata(), raising=False)
     return state
 
 
@@ -243,7 +203,26 @@ def test_ready_once_started_and_dependencies_answer(monkeypatch, probe):
     response = TestClient(main.app).get("/ready")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ready", "role": "query"}
+    assert response.json() == {"status": "ready", "role": "query", "metadata": "read_write"}
+
+
+def test_ready_reports_frozen_metadata_as_read_only(monkeypatch, probe):
+    monkeypatch.setattr(settings, "NOVA_PROCESS_ROLE", "web")
+    probe["paused"] = True
+
+    response = TestClient(main.app).get("/ready")
+
+    # Reads still serve during a freeze; writes are refused with 503 per request.
+    assert response.status_code == 200
+    assert response.json() == {"status": "ready", "role": "web", "metadata": "read_only"}
+
+
+def test_not_ready_without_an_installed_metadata_pool(monkeypatch, probe):
+    monkeypatch.setattr(main.app.state, "metadata", None, raising=False)
+
+    response = TestClient(main.app).get("/ready")
+
+    assert response.status_code == 503 and response.json() == {"status": "starting"}
 
 
 def test_not_ready_before_startup_has_finished(monkeypatch, probe):
@@ -254,9 +233,14 @@ def test_not_ready_before_startup_has_finished(monkeypatch, probe):
     assert response.status_code == 503 and response.json() == {"status": "starting"}
 
 
-@pytest.mark.parametrize("dependency", ["engine", "redis"])
+@pytest.mark.parametrize("dependency", ["engine", "redis", "metadata"])
 def test_not_ready_while_a_dependency_is_down(probe, dependency):
-    probe[dependency] = ConnectionError("secret-host:9030 refused")
+    from app.core.metadata_db import MetadataSchemaMismatch
+
+    probe[dependency] = (
+        MetadataSchemaMismatch() if dependency == "metadata"
+        else ConnectionError("secret-host:9030 refused")
+    )
 
     response = TestClient(main.app).get("/ready")
 
@@ -380,14 +364,12 @@ async def test_bootstrap_refuses_when_redis_is_unavailable(monkeypatch):
     assert ran == []
 
 
-async def test_current_llm_functions_are_not_dropped_and_recreated(monkeypatch, udf_registration):
+@pytest.mark.parametrize("role", ["all", "web", "query"])
+async def test_http_startup_does_not_register_ai_functions(monkeypatch, duties, role):
     from app.modules.llm_functions.service import llm_function_service
 
-    events, _ = udf_registration
-    monkeypatch.setattr(
-        llm_function_service, "registration_is_current", AsyncMock(return_value=True)
-    )
-
-    await main._register_llm_udfs()
-
-    assert events == ["acquire", "release"]
+    register = AsyncMock(side_effect=AssertionError("HTTP process registered a function"))
+    monkeypatch.setattr(llm_function_service, "register_all_udfs", register)
+    monkeypatch.setattr(settings, "NOVA_PROCESS_ROLE", role)
+    await _run_lifespan(duties)
+    register.assert_not_awaited()

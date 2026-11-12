@@ -113,9 +113,9 @@ async def test_feature_group_trains_model_with_pinned_lineage():
                 "DELETE FROM NOVA_SYSTEM.CONFIG_FEATURE_TRAINING_SETS WHERE id=%s",
                 [training_id],
             )
-        if await feature_store._group(group):
+        if await feature_store._group(group, user):
             await feature_store.drop_group(group, user)
-        if await feature_store._view(view):
+        if await feature_store._view(view, user):
             await feature_store.drop_view(view, user)
         if entity_id:
             await db.execute_system(

@@ -146,8 +146,20 @@ async def test_snapshots_and_manifests_are_immutable(agents):
                 await conn.execute(statement)
 
 
-async def test_shared_agents_follow_the_active_role_only(agents):
+async def test_immutable_version_compares_json_types_and_accepts_formatting_only(agents):
     agent = await create_agent(agents)
+    async with agents.transaction() as (store, _):
+        await store.store_version("typed", agent["agent_id"], {"number": 1}, "Saved")
+        row = await store.store_version("typed", agent["agent_id"], '{ "number" : 1 }', "Again")
+        assert row["label"] == "Saved"
+    for changed in ({"number": True}, {"number": 1.0}, {"number": "1"}):
+        with pytest.raises(MetadataConflict):
+            async with agents.transaction() as (store, _):
+                await store.store_version("typed", agent["agent_id"], changed, "Changed")
+
+
+async def test_shared_agents_follow_the_active_role_only(agents):
+    agent = await create_agent(agents, visibility="shared")
     async with agents.transaction() as (repo, _):
         await repo.create_skill({"name": "forecast", "body": "Use seasonality."})
         await repo.create_skill({"name": "private-notes", "body": "Owner only."})
@@ -667,3 +679,699 @@ async def test_legacy_import_needs_maintenance_and_keeps_rows_as_they_were(agent
         async with agents.transaction() as (_, conn):
             await conn.execute("INSERT INTO nova_meta.config_studio_dashboards (dashboard_id,"
                                "owner_name,title) VALUES ('d2','agent-owner','x')")
+
+
+@pytest_asyncio.fixture
+async def runtime_registry(agents):
+    from app.core.metadata_runtime import install_metadata_db, uninstall_metadata_db
+    from app.modules.agents.repository import AgentRepository
+
+    database = MetadataDatabase(agents.environment.role_config("nova_meta_web"))
+    try:
+        await database.open(schema_version=len(load_migrations()), metadata_epoch=agents.epoch)
+        install_metadata_db(database)
+        yield AgentRepository()
+    finally:
+        uninstall_metadata_db(database)
+        await database.close()
+
+
+async def test_runtime_registry_crud_versions_and_long_skills_use_the_real_uow(runtime_registry):
+    from app.core.metadata_actor import acting_as
+    from app.modules.agents.versions import agent_versions
+
+    repo = runtime_registry
+    actor = SecurityContext.from_session(session("agent-owner", active="ANALYST"))
+    with acting_as(actor):
+        created = await repo.create_agent(owner_name=actor.principal, fields={"name": "Analyst"})
+        assert created["semantic_view_ids"] == [] and created["policy"] == "auto_read_only"
+        assert created["resource_bindings"] == {} and created["config_revision"]
+        assert len(await repo.list_agents(owner_name=actor.principal, search="analyst")) == 1
+        updated = await repo.update_agent(
+            created["agent_id"], owner_name=actor.principal, fields={"description": "Updated"},
+            expected_revision=created["config_revision"], check_revision=True)
+        assert updated["description"] == "Updated"
+        assert updated["config_revision"] != created["config_revision"]
+        versions = await agent_versions.list(created["agent_id"], actor.principal, 0)
+        assert len(versions["versions"]) == 2 and not versions["has_more"]
+        saved = await agent_versions.get(created["agent_id"], actor.principal,
+                                         updated["config_revision"])
+        assert saved["configuration"]["description"] == "Updated"
+        with pytest.raises(Exception) as stale:
+            await repo.update_agent(
+                created["agent_id"],
+                owner_name=actor.principal,
+                fields={"name": "stale"},
+                expected_revision=created["config_revision"],
+                check_revision=True,
+            )
+        assert getattr(stale.value, "status_code", None) == 409
+        assert (
+            len((await agent_versions.list(created["agent_id"], actor.principal, 0))["versions"])
+            == 2
+        )
+
+        body = "A governed recipe. " * 4000
+        skill = await repo.create_skill(owner_name=actor.principal,
+                                        fields={"name": "recipe", "body": body})
+        assert skill["body"] == body
+        revised = await repo.update_skill(
+            skill["skill_id"],
+            owner_name=actor.principal,
+            fields={"name": "recipe", "body": "Revised", "description": ""},
+        )
+        assert revised["body"] == "Revised"
+        assert (await repo.get_skill(skill["skill_id"], owner_name=actor.principal))[
+            "body"
+        ] == "Revised"
+        assert await repo.delete_skill(skill["skill_id"], owner_name=actor.principal)
+        assert await repo.list_skills(owner_name=actor.principal) == []
+
+        custom = await repo.create_custom_tool(owner_name=actor.principal,
+                                               fields={"name": "margin", "kind": "function"})
+        custom = await repo.update_custom_tool(custom["tool_id"], owner_name=actor.principal,
+                                               fields={"description": "Measure margin"})
+        assert custom["description"] == "Measure margin"
+        assert await repo.delete_custom_tool(custom["tool_id"], owner_name=actor.principal)
+        assert await repo.delete_agent(created["agent_id"], owner_name=actor.principal)
+        assert await repo.get_agent(created["agent_id"], owner_name=actor.principal) is None
+
+
+async def test_platform_mcp_keeps_admin_actor_and_refuses_nonadmin_writes(runtime_registry):
+    from app.core.metadata_actor import acting_as
+
+    repo = runtime_registry
+    admin = SecurityContext.from_session(session("platform-admin", active="ACCOUNTADMIN"))
+    reader = SecurityContext.from_session(session("colleague", active="ANALYST"))
+    with acting_as(admin):
+        server = await repo.create_mcp_server(owner_name="__nova__", fields={
+            "name": "Synthetic arithmetic", "endpoint": "https://mcp.example.test/tools"})
+        tool = await repo.upsert_tool(owner_name="__nova__", fields={
+            "name": "total", "source": "mcp:" + server["server_id"]})
+        again = await repo.upsert_tool(owner_name="__nova__", fields={
+            "name": "total", "source": "mcp:" + server["server_id"], "description": "Sum"})
+        assert tool["tool_id"] == again["tool_id"]
+        changed = await repo.update_mcp_server(server["server_id"], owner_name="__nova__",
+                                              fields={"last_status": "connected"})
+        assert changed["last_status"] == "connected"
+    with acting_as(reader):
+        assert [row["server_id"] for row in await repo.list_mcp_servers(owner_name="__nova__")] == [
+            server["server_id"]
+        ]
+        assert [row["tool_id"] for row in await repo.list_tools(owner_name="__nova__")] == [
+            tool["tool_id"]
+        ]
+        with pytest.raises(MetadataPermissionDenied):
+            await repo.create_mcp_server(owner_name="__nova__", fields={
+                "name": "Forbidden", "endpoint": "https://mcp.example.test/forbidden"})
+        assert (
+            await repo.set_tool_enabled(tool["tool_id"], owner_name="__nova__", enabled=False)
+            is None
+        )
+        assert not await repo.delete_mcp_server(server["server_id"], owner_name="__nova__")
+    with acting_as(admin):
+        assert await repo.delete_mcp_server(server["server_id"], owner_name="__nova__")
+        assert await repo.list_tools(owner_name="__nova__") == []
+
+
+async def test_private_agent_hides_retained_role_grants_and_shared_resources(
+    agents, runtime_registry
+):
+    from app.core.metadata_actor import acting_as
+
+    agent = await create_agent(agents, visibility="private", default_tools=["custom:margin"])
+    async with agents.transaction() as (store, _):
+        await store.create_custom_tool({"name": "margin", "kind": "function"})
+        await store.create_skill({"name": "forecast", "body": "Use seasonality."})
+        await store.replace_agent_roles(agent["agent_id"], {"VIEWER": "USAGE"})
+    reader = SecurityContext.from_session(session("colleague", active="VIEWER"))
+    with acting_as(reader):
+        assert await runtime_registry.get_agent(agent["agent_id"], owner_name="agent-owner") is None
+        assert (
+            await runtime_registry.get_shared_agent(agent["agent_id"], role_name="VIEWER") is None
+        )
+        assert await runtime_registry.list_skills(owner_name="agent-owner") == []
+        assert await runtime_registry.list_custom_tools(owner_name="agent-owner") == []
+    async with agents.transaction() as (store, _):
+        await store.update_agent(agent["agent_id"], {"visibility": "shared"},
+                                 expected_config_revision="rev-0")
+    with acting_as(reader):
+        assert (await runtime_registry.get_shared_agent(agent["agent_id"], role_name="VIEWER"))[
+            "agent_id"
+        ] == agent["agent_id"]
+        assert [
+            row["name"]
+            for row in await runtime_registry.list_custom_tools(owner_name="agent-owner")
+        ] == ["margin"]
+        assert [
+            row["name"] for row in await runtime_registry.list_skills(owner_name="agent-owner")
+        ] == ["forecast"]
+        with pytest.raises(MetadataPermissionDenied):
+            await runtime_registry.get_shared_agent(agent["agent_id"], role_name="ANALYST")
+
+
+async def test_facade_racing_edits_rollback_losing_snapshots(agents, runtime_registry, monkeypatch):
+    from app.core.metadata_actor import acting_as
+    from app.modules.agents.versions import agent_versions
+
+    actor = SecurityContext.from_session(session("agent-owner", active="ANALYST"))
+    with acting_as(actor):
+        agent = await runtime_registry.create_agent(owner_name=actor.principal,
+                                                     fields={"name": "Concurrent editors"})
+    ready = asyncio.Barrier(2)
+    original = AgentMetadataRepository.get_agent
+
+    async def read_then_wait(store, agent_id):
+        row = await original(store, agent_id)
+        await ready.wait()
+        return row
+
+    monkeypatch.setattr(AgentMetadataRepository, "get_agent", read_then_wait)
+
+    async def edit(name):
+        with acting_as(actor):
+            try:
+                await runtime_registry.update_agent(
+                    agent["agent_id"], owner_name=actor.principal, fields={"name": name},
+                    expected_revision=agent["config_revision"], check_revision=True)
+                return True
+            except MetadataConflict:
+                return False
+
+    assert sorted(await asyncio.gather(edit("Editor one"), edit("Editor two"))) == [False, True]
+    monkeypatch.setattr(AgentMetadataRepository, "get_agent", original)
+    with acting_as(actor):
+        current = await runtime_registry.get_agent(agent["agent_id"], owner_name=actor.principal)
+        history = await agent_versions.list(agent["agent_id"], actor.principal, 0)
+        assert {row["version_id"] for row in history["versions"]} == {
+            agent["config_revision"], current["config_revision"],
+        }
+
+
+async def test_release_capture_commits_once_and_loads_via_runtime_facade(
+    runtime_registry, monkeypatch
+):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from fastapi import HTTPException
+
+    from app.core.metadata_actor import acting_as
+    from app.modules.agents import releases
+    from app.modules.agents.service import agent_service
+    from app.modules.agents.versions import agent_versions
+    from app.modules.assistant.provider import assistant_provider
+    from app.modules.assistant.tools import ToolRegistry
+
+    registry = ToolRegistry()
+    registry.skill_definitions = {}
+    registry.default_skills = []
+    registry.discoverable_skills = []
+    monkeypatch.setattr(
+        agent_service,
+        "build_loop_inputs",
+        AsyncMock(return_value=(registry, "Synthetic prompt", 60, None)),
+    )
+    monkeypatch.setattr(
+        assistant_provider,
+        "resolve",
+        AsyncMock(return_value=SimpleNamespace(provider_id="fixture", model="controlled")),
+    )
+    monkeypatch.setattr(
+        releases,
+        "model_contract",
+        AsyncMock(return_value={"provider_id": "fixture", "model": "controlled"}),
+    )
+    monkeypatch.setattr(releases, "ontology_release_pin", AsyncMock(return_value=None))
+    monkeypatch.setattr(releases, "resource_contracts", AsyncMock(return_value=[]))
+    user = session("agent-owner", active="ANALYST")
+    with acting_as(SecurityContext.from_session(user)):
+        agent = await runtime_registry.create_agent(owner_name=user["username"], fields={
+            "name": "Release test", "instructions_response": "Use known totals."})
+        saved = await agent_versions.store(agent, label="Baseline")
+        first, second = await asyncio.gather(*(
+            releases.capture_manifest(agent, saved["version_id"], user) for _ in range(2)))
+        assert first == second
+        assert await releases.get_manifest(agent["agent_id"], user["username"],
+                                           version_id=saved["version_id"]) == first
+        other = await agent_versions.store(agent, label="Another version")
+        with pytest.raises(HTTPException) as mismatch:
+            await releases.capture_manifest(
+                {**agent, "name": "Different"}, other["version_id"], user
+            )
+        assert mismatch.value.status_code == 409
+        assert await releases.get_manifest(agent["agent_id"], user["username"],
+                                           version_id=other["version_id"]) is None
+
+
+async def test_research_facade_serializes_updates_and_preserves_owner_scope(runtime_registry):
+    from app.core.metadata_actor import acting_as
+    from app.modules.agents.deep_research import deep_research_repository as repo
+
+    actor = SecurityContext.from_session(session("agent-owner", active="ANALYST"))
+    with acting_as(actor):
+        run_id = await repo.create(agent_id="a1", owner_name=actor.principal,
+                                   thread_id="t1", question="Why did sales change?")
+        created = await repo.get(run_id, owner_name=actor.principal)
+        assert created["status"] == "planning" and created["progress"] == []
+        assert "metadata_revision" not in created and "provenance" not in created
+        await asyncio.gather(
+            repo.update(run_id, status="running", plan=["Compare periods"]),
+            repo.update(run_id, progress=[{"status": "running"}]),
+        )
+        current = await repo.get(run_id, owner_name=actor.principal)
+        assert current["status"] == "running" and current["plan"] == ["Compare periods"]
+        assert current["progress"] == [{"status": "running"}]
+        with pytest.raises(ValueError, match="Unsupported research changes"):
+            await repo.update(run_id, owner_name="other")
+        with pytest.raises(MetadataPermissionDenied):
+            await repo.get(run_id, owner_name="other")
+        await repo.update(run_id, status="done", report="Verified totals.")
+        with pytest.raises(MetadataIntegrityViolation):
+            await repo.update(run_id, status="running")
+    with acting_as(SecurityContext.from_session(session("other", active="ANALYST"))):
+        assert await repo.get(run_id, owner_name="other") is None
+        with pytest.raises(MetadataConflict):
+            await repo.update(run_id, report="Overwritten")
+
+
+async def test_share_facade_serializes_duplicate_and_quota_and_follows_active_role(
+    runtime_registry, monkeypatch,
+):
+    from app.core.metadata_actor import acting_as
+    from app.modules.agents import sharing
+
+    monkeypatch.setattr(sharing, "MAX_SHARES_PER_OBJECT", 2)
+    repo = sharing.share_repository
+    owner = session("agent-owner", active="ANALYST")
+    target = sharing.ShareTarget(object_type="thread", object_id="shared-thread",
+                                 target_type="role", target_name="VIEWER")
+    with acting_as(SecurityContext.from_session(owner)):
+        first, second = await asyncio.gather(*(
+            repo.create(owner_name="agent-owner", body=target) for _ in range(2)))
+        assert first == second
+        assert "provenance" not in first
+        results = await asyncio.gather(*(
+            repo.create(owner_name="agent-owner", body=target.model_copy(update={
+                "target_type": "user", "target_name": name}))
+            for name in ("bob", "charlie")
+        ), return_exceptions=True)
+        assert sum(isinstance(result, dict) for result in results) == 1
+        assert sum(isinstance(result, ValueError) for result in results) == 1
+        assert len(await repo.for_object("thread", "shared-thread", owner_name="agent-owner")) == 2
+    viewer = session("reader", active="VIEWER", roles=["VIEWER", "ANALYST"])
+    with acting_as(SecurityContext.from_session(viewer)):
+        assert (await repo.visible(viewer))[0]["share_id"] == first["share_id"]
+        assert await repo.grant_for(viewer, "thread", "shared-thread") == first
+        with pytest.raises(MetadataPermissionDenied):
+            await repo.visible({**viewer, "session_id": "other-login"})
+        await repo.delete(first["share_id"], owner_name="reader")
+        assert await repo.grant_for(viewer, "thread", "shared-thread") == first
+    other_role = {**viewer, "active_role": "ANALYST"}
+    with acting_as(SecurityContext.from_session(other_role)):
+        assert await repo.visible(other_role) == []
+    with acting_as(SecurityContext.from_session(owner)):
+        await repo.delete(first["share_id"], owner_name="agent-owner")
+    with acting_as(SecurityContext.from_session(viewer)):
+        assert await repo.grant_for(viewer, "thread", "shared-thread") is None
+
+
+async def test_verified_candidate_facade_deduplicates_and_only_owner_decides(runtime_registry):
+    from app.core.metadata_actor import acting_as
+    from app.modules.agents.verified_candidates import verified_candidate_repository as repo
+
+    async def propose():
+        return await repo.propose(agent_id="a1", owner_name="agent-owner", proposed_by="reader",
+                                  thread_id="t1", message_id="m1", candidate={
+                                      "view_id": "v1", "question": "What is revenue?",
+                                      "semantic_plan": {"metrics": ["revenue"]}})
+
+    with acting_as(SecurityContext.from_session(session("reader", active="VIEWER"))):
+        ids = await asyncio.gather(propose(), propose())
+        assert sum(item is None for item in ids) == 1
+        candidate_id = next(item for item in ids if item)
+        with pytest.raises(MetadataPermissionDenied):
+            await repo.get(candidate_id, owner_name="agent-owner")
+        with pytest.raises(MetadataConflict):
+            await repo.decide(candidate_id, status="approved", decided_by="reader")
+    with acting_as(SecurityContext.from_session(session("agent-owner", active="ANALYST"))):
+        rows = await repo.list(agent_id="a1", owner_name="agent-owner", status="pending")
+        assert len(rows) == 1 and rows[0]["proposed_by"] == "reader"
+        assert "metadata_revision" not in rows[0]
+        assert rows[0]["semantic_plan"] == {"metrics": ["revenue"]}
+        await repo.decide(candidate_id, status="approved", decided_by="agent-owner")
+        with pytest.raises(MetadataConflict):
+            await repo.decide(candidate_id, status="rejected", decided_by="agent-owner")
+        assert (await repo.get(candidate_id, owner_name="agent-owner"))[
+            "decided_by"
+        ] == "agent-owner"
+
+
+async def test_shared_conversation_projection_keeps_viewer_identity_and_private_inputs(
+    agents, runtime_registry,
+):
+    from app.core.metadata_actor import acting_as
+    from app.modules.agents import sharing
+    from app.modules.assistant.repository import assistant_repository as conversations
+
+    owner = session("agent-owner", active="ANALYST")
+    viewer = session("reader", active="VIEWER", roles=["VIEWER", "ANALYST"])
+    repo = sharing.share_repository
+    with acting_as(SecurityContext.from_session(owner)):
+        thread = await conversations.create_thread(user_name="agent-owner", title="Shared totals")
+        identifier = thread["thread_id"]
+        await conversations.append_message(
+            identifier,
+            user_name="agent-owner",
+            role="assistant",
+            content="Verified report.",
+            instructions="private-instruction-canary",
+            attachments=[{"content": "private-file-canary"}],
+            steps=[
+                {
+                    "kind": "tool",
+                    "name": "semantic_query",
+                    "tool_call_id": "c1",
+                    "trace_detail": {
+                        "question": "Revenue",
+                        "rows": [["private-row-canary"]],
+                        "semantic_plan": {
+                            "metrics": ["revenue"],
+                            "result": "private-nested-canary",
+                        },
+                        "semantic_view": {"id": "v1"},
+                    },
+                },
+                {"kind": "ui", "program": "private-program-canary"},
+            ],
+        )
+        await conversations.append_message(
+            identifier, user_name="agent-owner", role="user", content="private-input-canary",
+            steps=[{"kind": "ui_action", "state": {"data": "private-state-canary"}}],
+        )
+        await conversations.append_message(identifier, user_name="agent-owner", role="assistant",
+                                             content="private-followup-canary")
+        share = await repo.create(owner_name="agent-owner", body=sharing.ShareTarget(
+            object_type="thread", object_id=identifier, target_type="role", target_name="VIEWER"))
+    with acting_as(SecurityContext.from_session(viewer)):
+        result = await repo.thread(viewer, identifier, owner_name="agent-owner")
+        assert result["title"] == "Shared totals" and len(result["messages"]) == 3
+        assert result["messages"][0]["content"] == "Verified report."
+        assert result["messages"][0]["steps"][0]["trace_detail"]["semantic_plan"] == {
+            "metrics": ["revenue"]}
+        assert all(item["steps"] == [] for item in result["messages"][1:])
+        assert "private-" not in json.dumps(result)
+        with pytest.raises(MetadataPermissionDenied):
+            await conversations.list_messages(identifier, user_name="agent-owner")
+    async with agents.transaction(name="reader", active="VIEWER") as (store, conn):
+        cursor = await conn.execute(
+            "SELECT content FROM nova_meta.config_assistant_messages WHERE thread_id=%s",
+            (identifier,))
+        assert await cursor.fetchall() == []
+        assert await store.shared_conversation(identifier, "wrong-owner") is None
+    async with agents.transaction(workload="agent", name="reader", active="VIEWER") as (store, _):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            await store.shared_conversation(identifier, "agent-owner")
+    inactive = {**viewer, "active_role": "ANALYST"}
+    with acting_as(SecurityContext.from_session(inactive)):
+        assert await repo.thread(inactive, identifier, owner_name="agent-owner") is None
+    with acting_as(SecurityContext.from_session(owner)):
+        await repo.delete(share["share_id"], owner_name="agent-owner")
+    with acting_as(SecurityContext.from_session(viewer)):
+        assert await repo.thread(viewer, identifier, owner_name="agent-owner") is None
+
+
+async def test_quality_facade_pins_inputs_and_rejects_concurrent_or_stale_identity(
+    runtime_registry,
+):
+    from fastapi import HTTPException
+
+    from app.core.metadata_actor import acting_as
+    from app.modules.agents import quality
+
+    user = session("agent-owner", active="ANALYST")
+    with acting_as(SecurityContext.from_session(user)):
+        record = await quality.save_record("cases", {"id": "case-facade", "agent_id": "a1",
+                                                     "prompt": "Revenue?"}, user)
+        results = await asyncio.gather(*(
+            quality.save_record("cases", {**record, "prompt": value}, user, 1)
+            for value in ("Revenue this month?", "Revenue last month?")
+        ), return_exceptions=True)
+        assert sum(isinstance(item, dict) for item in results) == 1
+        assert sum(isinstance(item, (MetadataConflict, HTTPException)) for item in results) == 1
+        current = (await quality.records("cases", "a1", user))[0]
+        assert current["revision"] == 2
+        run = await quality.save_record("runs", {"id": "run-facade", "agent_id": "a1",
+                                                "status": "running", "cases": [current]}, user)
+        with pytest.raises(HTTPException, match="frozen"):
+            await quality.save_record("runs", {**run, "cases": []}, user, 1)
+        await quality.save_record("runs", {**run, "status": "passed"}, user, 1)
+        with pytest.raises(HTTPException, match="immutable"):
+            await quality.save_record("runs", {**run, "status": "failed"}, user, 2)
+        with pytest.raises(MetadataPermissionDenied):
+            await quality.records("cases", "a1", {**user, "session_id": "other-login"})
+    changed = {**user, "security_context_version": 6}
+    with acting_as(SecurityContext.from_session(changed)):
+        assert await quality.records("cases", "a1", changed) == []
+        with pytest.raises(MetadataConflict):
+            await quality.save_record("cases", {"id": "case-facade", "agent_id": "a1"}, changed)
+
+
+async def test_quality_trace_facade_reads_only_current_role_version_and_limit(runtime_registry):
+    from app.core.metadata_actor import acting_as
+    from app.modules.assistant.repository import assistant_repository as repo
+    from app.modules.assistant.security import observation_context
+
+    user = session("agent-owner", active="ANALYST")
+    for principal, role, version, marker in [
+        ("agent-owner", "ANALYST", 5, "current-first"),
+        ("agent-owner", "ANALYST", 5, "current-last"),
+        ("agent-owner", "VIEWER", 5, "other-role"),
+        ("agent-owner", "ANALYST", 4, "stale-version"),
+        ("other", "ANALYST", 5, "other-user"),
+    ]:
+        actor = SecurityContext.from_session(session(principal, active=role,
+                                                      security_context_version=version))
+        with acting_as(actor):
+            thread = await repo.create_thread(user_name=principal, agent_id="a1")
+            await repo.append_message(thread["thread_id"], user_name=principal, role="assistant",
+                                       content="Trace", agent_id="a1", message_id=marker,
+                                       steps=[{"kind": "quality_observation", "marker": marker}],
+                                       security_context=observation_context(actor))
+    with acting_as(SecurityContext.from_session(user)):
+        rows = await repo.quality_traces("a1", user, limit=1)
+        assert [row["message_id"] for row in rows] == ["current-last"]
+        assert len(await repo.quality_traces("a1", user, limit=100)) == 2
+        with pytest.raises(ValueError):
+            await repo.quality_traces("a1", user, limit=101)
+        with pytest.raises(MetadataPermissionDenied):
+            await repo.quality_traces("a1", {**user, "session_id": "other-login"}, limit=1)
+
+
+async def test_usage_and_session_trace_facades_keep_owner_agent_and_time_scope(
+    agents, runtime_registry,
+):
+    from app.core.metadata_actor import acting_as
+    from app.modules.agents import observability
+    from app.modules.assistant.repository import assistant_repository as repo
+
+    actor = SecurityContext.from_session(session("agent-owner", active="ANALYST"))
+    for principal, agent, identifier, tokens in [
+        ("agent-owner", "a1", "included", 12),
+        ("agent-owner", "a1", "old", 100),
+        ("agent-owner", "a2", "different-agent", 200),
+        ("foreign", "a1", "foreign", 400),
+    ]:
+        with acting_as(SecurityContext.from_session(session(principal, active="ANALYST"))):
+            thread = await repo.create_thread(user_name=principal, agent_id=agent)
+            await repo.append_message(
+                thread["thread_id"],
+                user_name=principal,
+                agent_id=agent,
+                message_id=identifier,
+                role="user",
+                content="Question " + identifier,
+                usage={"total_tokens": tokens},
+                steps=[{"kind": "test"}],
+            )
+            if identifier == "included":
+                included = thread["thread_id"]
+    # Import can preserve historic timestamps; runtime messages remain immutable.
+    await agents.admin("UPDATE nova_meta.deployment_state SET maintenance=true")
+    try:
+        async with agents.importer() as conn:
+            await conn.execute(
+                "UPDATE nova_meta.config_assistant_messages SET created_at=%s "
+                "WHERE message_id='old'",
+                (datetime.now(UTC) - timedelta(days=3),),
+            )
+    finally:
+        await agents.admin("UPDATE nova_meta.deployment_state SET maintenance=false")
+    with acting_as(actor):
+        usage = await observability.usage_summary(owner_name=actor.principal, agent_id="a1", days=1)
+        assert usage == {
+            "total_sessions": 1,
+            "total_tokens": 12,
+            "total_active_users": 1,
+            "series": [{"date": datetime.now(UTC).date().isoformat(), "sessions": 1, "tokens": 12}],
+        }
+        sessions = await observability.list_sessions(owner_name=actor.principal, agent_id="a1")
+        assert len(sessions) == 2
+        current = next(row for row in sessions if row["thread_id"] == included)
+        assert current["message_count"] == 1 and current["total_tokens"] == 12
+        assert current["first_input"] == "Question included"
+        trace = await observability.thread_trace(
+            owner_name=actor.principal,
+            agent_id="a1",
+            thread_id=included,
+        )
+        assert trace["total_tokens"] == 12 and trace["turns"][0]["steps"] == [{"kind": "test"}]
+        assert "security_context" not in trace["turns"][0]
+        assert (
+            await observability.thread_trace(
+                owner_name=actor.principal,
+                agent_id="a2",
+                thread_id=included,
+            )
+            is None
+        )
+        with pytest.raises(MetadataPermissionDenied):
+            await observability.usage_summary(owner_name="foreign")
+        with pytest.raises(ValueError):
+            await observability.list_sessions(owner_name=actor.principal, limit=501)
+    with acting_as(SecurityContext.from_session(session("foreign", active="ANALYST"))):
+        assert (
+            await observability.thread_trace(
+                owner_name="foreign",
+                agent_id="a1",
+                thread_id=included,
+            )
+            is None
+        )
+
+
+async def test_artifact_facade_cas_and_shared_membership_preserve_the_viewer(
+    agents, runtime_registry
+):
+    from psycopg.types.json import Jsonb
+
+    from app.core.metadata_actor import acting_as
+    from app.modules.agents.artifact_repository import artifact_repository as repo
+    from app.modules.agents.sharing import ShareTarget, share_repository
+
+    owner = SecurityContext.from_session(session("agent-owner", active="ANALYST"))
+    viewer = SecurityContext.from_session(session("reader", active="VIEWER"))
+    worksheet = {
+        "version": 1,
+        "source": {"kind": "sql", "sql": "SELECT region, revenue FROM sales"},
+        "rows": [{"field": "revenue", "aggregation": "sum", "field_type": "quantitative"}],
+        "columns": [{"field": "region"}],
+        "filters": [{"kind": "categorical", "field": "region", "values": ["West"]}],
+    }
+    dashboard = {
+        "version": 1,
+        "title": "Shared",
+        "zones": [
+            {
+                "zone_id": "z1",
+                "kind": "sheet",
+                "artifact_id": "chart",
+                "rect": {"x": 0, "y": 0, "w": 12, "h": 2},
+            },
+        ],
+    }
+    await agents.admin("UPDATE nova_meta.deployment_state SET maintenance=true")
+    try:
+        async with agents.importer() as conn:
+            for identifier, kind, spec, title in [
+                ("chart", "chart", worksheet, "Revenue"),
+                ("hidden", "chart", worksheet, "private-unshared-canary"),
+                ("board", "dashboard", dashboard, "Shared"),
+            ]:
+                await conn.execute(
+                    "INSERT INTO nova_meta.config_studio_artifacts "
+                    "(artifact_id,owner_name,title,artifact_type,sql_text,viz_spec,"
+                    "created_at,updated_at) "
+                    "VALUES (%s,'agent-owner',%s,%s,'SELECT 1',%s,now(),now())",
+                    (identifier, title, kind, Jsonb(spec)),
+                )
+    finally:
+        await agents.admin("UPDATE nova_meta.deployment_state SET maintenance=false")
+    with acting_as(owner):
+        created = await repo.create_bi(
+            owner_name=owner.principal,
+            title="BI chart",
+            artifact_type="chart",
+            sql_text="SELECT 1",
+            database_name=None,
+            schema_name=None,
+            bi_kind="chart",
+            bi_object_id=4,
+            bi_dataset_id=7,
+        )
+        edits = await asyncio.gather(
+            *[
+                repo.update_bi_source(
+                    created["artifact_id"],
+                    owner_name=owner.principal,
+                    expected_updated_at=created["updated_at"],
+                    sql_text=f"SELECT {value}",
+                )
+                for value in (2, 3)
+            ]
+        )
+        assert sum(row is not None for row in edits) == 1
+        share = await share_repository.create(
+            owner_name=owner.principal,
+            body=ShareTarget(
+                object_type="dashboard",
+                object_id="board",
+                target_type="role",
+                target_name="VIEWER",
+            ),
+        )
+    with acting_as(viewer):
+        projection = await repo.shared_dashboard("board", owner_name=owner.principal)
+        assert [row["artifact_id"] for row in projection["charts"]] == ["chart"]
+        assert projection["charts"][0]["viz_spec"]["rows"][0]["field"] == "revenue"
+        assert projection["charts"][0]["viz_spec"]["filters"][0]["values"] == ["West"]
+        assert "private-unshared-canary" not in json.dumps(projection)
+        assert await repo.shared_dashboard("hidden", owner_name=owner.principal) is None
+        with pytest.raises(MetadataPermissionDenied):
+            await repo.get("hidden", owner_name=owner.principal)
+    async with agents.transaction(name="reader", active="VIEWER") as (_, conn):
+        cursor = await conn.execute("SELECT * FROM nova_meta.config_studio_artifacts")
+        assert await cursor.fetchall() == []
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            await conn.execute("SELECT * FROM nova_meta.legacy_artifact_owners()")
+    with acting_as(SecurityContext.from_session(session("reader", active="ANALYST"))):
+        assert await repo.shared_dashboard("board", owner_name=owner.principal) is None
+    with acting_as(owner):
+        await share_repository.delete(share["share_id"], owner_name=owner.principal)
+    with acting_as(viewer):
+        assert await repo.shared_dashboard("board", owner_name=owner.principal) is None
+    with acting_as(owner):
+        converted = await repo.attach_bi(
+            "chart", owner_name=owner.principal, bi_kind="chart", bi_object_id=9, bi_dataset_id=7
+        )
+        assert converted["artifact_id"] == "chart" and converted["viz_spec"] is None
+        assert (
+            await repo.attach_bi(
+                "chart",
+                owner_name=owner.principal,
+                bi_kind="chart",
+                bi_object_id=10,
+                bi_dataset_id=7,
+            )
+            is None
+        )
+    async with agents.transaction(
+        workload="maintenance",
+        actor=SecurityContext(
+            "nova-artifact-converter",
+            "NOVA_WORKER",
+            principal_type="SERVICE",
+        ),
+    ) as (_, conn):
+        cursor = await conn.execute("SELECT * FROM nova_meta.legacy_artifact_owners()")
+        assert await cursor.fetchall() == [{"owner_name": "agent-owner"}]

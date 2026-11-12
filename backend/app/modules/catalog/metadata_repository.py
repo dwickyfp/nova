@@ -1,9 +1,10 @@
 """Catalog control metadata in the caller's PostgreSQL transaction.
 
-The prepared replacement for the ``NOVA_SYSTEM`` paths of the catalog
-repositories (:mod:`.repository`, :mod:`.connections`, :mod:`.securables`,
-:mod:`.metadata`, :mod:`.lineage`, :mod:`.links`), switched in at the
-all-domain cutover. It closes the Wave G gaps in the new store:
+The only store of the catalog services (:mod:`.service`, :mod:`.sync`,
+:mod:`.connections`, :mod:`.securables`, :mod:`.governance`, :mod:`.lineage`,
+:mod:`.links`, :mod:`.writeback`). A service opens one actor-bound
+transaction per operation with :func:`catalog_transaction`. It closes the
+Wave G gaps:
 
 * definitions (catalogs, connections, annotations) change only at the
   revision the caller read, and return the row that transaction wrote;
@@ -23,7 +24,8 @@ reads) stay with their engine adapters; this repository holds Nova rows only.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Sequence
+from collections.abc import AsyncIterator, Iterable, Sequence
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any
 
@@ -32,6 +34,7 @@ from psycopg.pq import TransactionStatus
 
 from app.common.crypto import decrypt, encrypt
 from app.core.metadata_db import MetadataConflict, MetadataPermissionDenied
+from app.core.metadata_scope import metadata_transaction, scoped_transaction
 from app.modules.access_control.security_context import SecurityContext
 
 from .repository import credential_free, row_id
@@ -51,6 +54,34 @@ _CREDENTIAL_TABLES = {
     False: "nova_meta.catalog_connection_credentials",
     True: "nova_meta.catalog_connection_write_credentials",
 }
+
+#: The service principal of scheduled catalog maintenance: the refresher's
+#: catalog sync, lineage harvest and link reconciliation. Refresh is a
+#: security-admin action, so the scheduled pass acts under that role name; PG
+#: authorizes it by its workload login, and engine reads stay on the control
+#: plane's system pool.
+CATALOG_REFRESHER = SecurityContext("catalog-refresher", "SECURITYADMIN", principal_type="SERVICE")
+
+
+def actor_of(user: dict[str, Any]) -> SecurityContext:
+    """The caller's metadata actor: a validated SQL context, else its session."""
+    security = user.get("security")
+    if isinstance(security, SecurityContext):
+        return security
+    return SecurityContext.from_session(user)
+
+
+@asynccontextmanager
+async def catalog_transaction(
+    actor: SecurityContext | None = None, *, read_only: bool = False,
+) -> AsyncIterator[CatalogMetadataRepository]:
+    """One actor-bound metadata transaction with the catalog repository."""
+    transaction = (
+        metadata_transaction(actor, read_only=read_only) if actor is not None
+        else scoped_transaction(read_only=read_only)
+    )
+    async with transaction as scope:
+        yield CatalogMetadataRepository(scope.connection, scope.actor)
 
 
 def like_pattern(term: str) -> str:
@@ -316,6 +347,14 @@ class CatalogMetadataRepository:
         await self._unfence()
         return len(rows)
 
+    async def get_objects(self, ids: Sequence[str]) -> list[dict[str, Any]]:
+        """Stored objects (databases and relations) by id, dropped ones included."""
+        await self._bound()
+        return await self._all(
+            "SELECT * FROM nova_meta.catalog_objects WHERE id=ANY(%s) ORDER BY id",
+            (list(dict.fromkeys(ids)),),
+        )
+
     async def mark_objects_dropped(
         self, catalog: str, ids: Sequence[str], *, generation: int,
     ) -> int:
@@ -461,6 +500,12 @@ class CatalogMetadataRepository:
             (status, json.dumps(counts or {}, sort_keys=True, default=str), error, run_id),
         )
         return row is not None
+
+    async def get_sync_run(self, run_id: str) -> dict[str, Any] | None:
+        await self._bound()
+        return _run(await self._one(
+            "SELECT * FROM nova_meta.catalog_sync_runs WHERE id=%s", (run_id,),
+        ))
 
     async def list_sync_runs(self, catalog: str, limit: int = 20) -> list[dict[str, Any]]:
         await self._bound()
@@ -800,6 +845,13 @@ class CatalogMetadataRepository:
         )
 
     # ── Lineage ───────────────────────────────────────────────────────────
+
+    async def lineage_by_ids(self, ids: Sequence[str]) -> dict[str, dict[str, Any]]:
+        await self._bound()
+        rows = await self._all(
+            "SELECT * FROM nova_meta.catalog_lineage WHERE id=ANY(%s)", (list(ids),),
+        )
+        return {row["id"]: row for row in rows}
 
     async def lineage_edges_of(self, securable_id: str, limit: int = 200) -> list[dict[str, Any]]:
         await self._bound()

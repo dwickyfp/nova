@@ -7,6 +7,9 @@ from contextlib import asynccontextmanager
 
 import pytest
 
+from app.core.exceptions import StorageError
+from app.core.metadata_scope import metadata_transaction
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.notebooks import documents as documents_module
 from app.modules.notebooks.document import (
     MAX_CELLS,
@@ -180,23 +183,30 @@ class FakeWorkspace:
     def __init__(self) -> None:
         self.files: dict[str, dict] = {}
 
-    async def create_file(self, username, parent_path, name, content):
+    async def create_file(self, username, parent_path, name, content, *, on_created=None):
         entry = {"id": "e1", "name": name, "path": name, "parent_path": parent_path,
-                 "entry_type": "file", "user_name": username}
+                 "entry_type": "file", "user_name": username, "metadata_revision": 1}
         self.files["e1"] = {"entry": entry, "content": content}
+        async with metadata_transaction(SecurityContext(username, "ANALYST", session_id="s1")):
+            if on_created is not None:
+                await on_created(entry)
         return entry
 
     async def get_file(self, username, entry_id):
         stored = self.files[entry_id]
-        return stored["entry"], stored["content"]
+        return dict(stored["entry"]), stored["content"]
 
-    async def update_file(self, username, entry_id, content):
+    async def update_file(self, username, entry_id, content, *, expected_revision):
+        entry = self.files[entry_id]["entry"]
+        if entry["metadata_revision"] != expected_revision:
+            raise StorageError("File changed", status_code=409)
+        entry["metadata_revision"] += 1
         self.files[entry_id]["content"] = content
         return self.files[entry_id]["entry"]
 
 
 @pytest.fixture
-def workspace(monkeypatch):
+def workspace(monkeypatch, fake_metadata_db):
     fake = FakeWorkspace()
     monkeypatch.setattr(documents_module, "workspace_service", fake)
 
@@ -290,3 +300,24 @@ def test_a_title_is_one_short_line():
         validate_title("x" * 121)
     with pytest.raises(NotebookFormatError):
         validate_title(3)
+
+
+async def test_concurrent_save_is_refused_when_document_lock_is_lost(workspace, monkeypatch):
+    service = NotebookDocumentService()
+    _, doc = await service.create("ana", parent_path="", name="n.ipynb")
+    update = workspace.update_file
+
+    async def another_writer(username, entry_id, content, *, expected_revision):
+        winner = parse_ipynb(workspace.files[entry_id]["content"])
+        winner.cells[0].source = "winning edit"
+        winner.revision += 1
+        await update(username, entry_id, to_ipynb(winner), expected_revision=expected_revision)
+        return await update(username, entry_id, content, expected_revision=expected_revision)
+
+    monkeypatch.setattr(workspace, "update_file", another_writer)
+    with pytest.raises(NotebookConflictError) as error:
+        await service.edit("ana", "e1", base_revision=1,
+                           edits=[{"op": "update", "cell_id": doc.cells[0].id,
+                                   "source": "losing edit"}])
+    assert error.value.current_revision == 2
+    assert (await service.get("ana", "e1"))[1].cells[0].source == "winning edit"

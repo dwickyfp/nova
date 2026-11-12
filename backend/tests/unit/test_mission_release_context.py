@@ -46,6 +46,12 @@ class PinnedRepository(MemoryRepository):
             )
         return await super().get(kind, record_id, scope, model, **kwargs)
 
+    async def get_payload(self, kind, record_id, scope, *, revision):
+        from app.modules.intelligence.engine import MODELS
+
+        record = await self.get(kind, record_id, scope, MODELS[kind], revision=revision)
+        return record.model_dump(mode="json") if record else None
+
 
 @pytest.fixture
 def owners(monkeypatch):
@@ -86,6 +92,9 @@ def owners(monkeypatch):
 
     monkeypatch.setattr(mission_module.harness_repository, "admission_lock", lock)
     monkeypatch.setattr(intelligence_service, "repository", repository)
+    monkeypatch.setattr(
+        "app.modules.intelligence.engine_repository.intelligence_repository", repository
+    )
     authorize = AsyncMock(
         return_value={
             "status": "DEPRECATED",
@@ -332,49 +341,80 @@ async def test_mission_context_shares_query_budget_and_reuses_evidence(
 
     def pin(identifier, proof):
         source = Investigation(
-            id=identifier, scope=scope, revision=1, semantic=SEMANTIC,
-            news_id="news", status="complete", residual=0,
-            method="validated-test", evidence=[proof],
+            id=identifier,
+            scope=scope,
+            revision=1,
+            semantic=SEMANTIC,
+            news_id="news",
+            status="complete",
+            residual=0,
+            method="validated-test",
+            evidence=[proof],
         )
         repository.pins[(identifier, 1, scope.model_dump_json())] = source
         ref = ObjectRef(kind="investigation", id=identifier, revision=1)
         current = io.missions[mission.mission_id]
-        io.missions[mission.mission_id] = current.model_copy(update={
-            "object_refs": [*current.object_refs, ref],
-            "object_bindings": {**current.object_bindings, object_binding_key(ref): scope},
-        })
+        io.missions[mission.mission_id] = current.model_copy(
+            update={
+                "object_refs": [*current.object_refs, ref],
+                "object_bindings": {**current.object_bindings, object_binding_key(ref): scope},
+            }
+        )
         return ref
 
     refs = [pin(identifier, evidence) for identifier in ("first", "second")]
     if source_kind == "deliverable":
         for ref in refs:
             document = MissionDeliverable(
-                deliverable_id=ref.id, mission_id=mission.mission_id,
-                mission_revision=mission.revision, kind="investigation_report",
-                title="Pinned report", markdown="Recorded source", evidence_refs=[evidence.id],
-                object_refs=[ref], created_at=utc_now(),
+                deliverable_id=ref.id,
+                mission_id=mission.mission_id,
+                mission_revision=mission.revision,
+                kind="investigation_report",
+                title="Pinned report",
+                markdown="Recorded source",
+                evidence_refs=[evidence.id],
+                object_refs=[ref],
+                created_at=utc_now(),
             )
             io.deliverables[ref.id] = (
-                document.model_dump_json(), "request", mission_module.scope_params(scope),
+                document.model_dump_json(),
+                "request",
+                mission_module.scope_params(scope),
             )
     budget = CycleBudget(queries=19)
     for ref in refs:
         await context_sources.read_context_source(
             ContextSourceRef(
-                kind=source_kind, id=ref.id, revision=1, parent_id=mission.mission_id,
-            ), USER, budget,
+                kind=source_kind,
+                id=ref.id,
+                revision=1,
+                parent_id=mission.mission_id,
+            ),
+            USER,
+            budget,
         )
     assert budget.queries == 20
     execute.assert_awaited_once()
 
-    different = pin("different", evidence.model_copy(update={
-        "id": "different-query", "semantic_plan": {"metrics": ["order_count"]},
-    }))
+    different = pin(
+        "different",
+        evidence.model_copy(
+            update={
+                "id": "different-query",
+                "semantic_plan": {"metrics": ["order_count"]},
+            }
+        ),
+    )
     with pytest.raises(HTTPException) as refused:
         await context_sources.read_context_source(
             ContextSourceRef(
-                kind="investigation", id=different.id, revision=1, parent_id=mission.mission_id,
-            ), USER, budget,
+                kind="investigation",
+                id=different.id,
+                revision=1,
+                parent_id=mission.mission_id,
+            ),
+            USER,
+            budget,
         )
     assert refused.value.status_code == 429
     execute.assert_awaited_once()

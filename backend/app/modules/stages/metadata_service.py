@@ -6,7 +6,7 @@ outside this registration transaction.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Any, Literal
 from uuid import uuid4
@@ -27,11 +27,16 @@ StageAction = Literal["read", "write", "delete"]
 
 class StageMetadataService:
     def __init__(
-        self, connection: psycopg.AsyncConnection[dict[str, Any]], actor: SecurityContext,
+        self,
+        connection: psycopg.AsyncConnection[dict[str, Any]],
+        actor: SecurityContext,
+        *,
+        access_check: Callable[..., Awaitable[Any]] | None = None,
     ) -> None:
         self.connection = connection
         self.actor = actor
         self.repository = StageRepository(connection)
+        self._access_check = access_check
 
     async def _bound_actor(self) -> None:
         if self.connection.info.transaction_status != TransactionStatus.INTRANS:
@@ -64,7 +69,7 @@ class StageMetadataService:
         row = await cursor.fetchone()
         if row and row["active"] is not None:
             raise MetadataPermissionDenied()
-        await check_stage_access(
+        await (self._access_check or check_stage_access)(
             identity, action=action, username=self.actor.principal,
             active_role=self.actor.active_role,
         )
@@ -93,15 +98,20 @@ class StageMetadataService:
             identity=identity, name=name, database=database, schema=schema,
         )
 
-    async def list_stages(self) -> list[dict[str, Any]]:
+    async def list_stages(self, *, database: str | None = None) -> list[dict[str, Any]]:
+        """Registrations in every scope the actor may read; denied scopes are omitted."""
         scopes = {
-            (row["database_name"], row["schema_name"]) for row in await self.identities()
+            (row["database_name"], row["schema_name"])
+            for row in await self.identities(database=database)
         }
         result: list[dict[str, Any]] = []
         for database, schema in sorted(scopes):
             try:
                 async with self._scope({"database_name": database, "schema_name": schema}, "read"):
-                    result.extend(await self.repository.in_scope())
+                    result.extend(
+                        row for row in await self.repository.in_scope()
+                        if (row["database_name"], row["schema_name"]) == (database, schema)
+                    )
             except StageAccessDenied:
                 continue
         return sorted(result, key=lambda row: (row["name"], row["id"]))

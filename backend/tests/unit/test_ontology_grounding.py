@@ -16,7 +16,7 @@ from app.modules.assistant.service import LoopContext
 from app.modules.assistant.tools import ToolInvocation
 from app.modules.ontology import grounding as grounding_module
 from app.modules.ontology.contracts import RepresentationChange
-from app.modules.ontology.grounding import ground, missing_metrics, never_created, pinned_release
+from app.modules.ontology.grounding import ground, missing_metrics, pinned_release
 from app.modules.ontology.resolver import ConceptResolver, normalise
 from tests.unit._ontology import ADMIN, ANALYST, FINANCE_STEWARD, OUTSIDER, SALES_STEWARD
 from tests.unit.test_business_ontology import World
@@ -221,7 +221,7 @@ async def test_grounding_passes_through_without_a_release_or_a_metric_term(world
     assert result.provenance() is None
 
 
-async def test_an_unreadable_ontology_fails_closed_but_missing_tables_mean_none(world, monkeypatch):
+async def test_an_unreadable_ontology_fails_closed_including_missing_tables(world, monkeypatch):
     async def broken(*_args, **_kwargs):
         raise RuntimeError("metadata store down")
 
@@ -237,8 +237,9 @@ async def test_an_unreadable_ontology_fails_closed_but_missing_tables_mean_none(
                             "'NOVA_SYSTEM.CONFIG_ONTOLOGY_ALIASES'.")
 
     monkeypatch.setattr(grounding_module.concept_resolver, "resolve", missing)
-    assert (await ground("revenue", context(), models(world))).status == "no_release"
-    assert never_created(Missing(5502, "Unknown table 'NOVA_SYSTEM.CONFIG_AGENTS'")) is False
+    failed = await ground("revenue", context(), models(world))
+    assert failed.error_class == "ONTOLOGY_UNAVAILABLE"
+    assert failed.blocking
 
 
 def test_the_release_pin_comes_from_the_agent_manifest_first():
@@ -276,7 +277,6 @@ def setup_tool(monkeypatch, world, *responses):
     tool = SemanticQueryTool(provider=provider)
     model = {"semantic_model_id": "sales", "name": "sales", "definition": sales_definition()}
     monkeypatch.setattr(semantic_access, "load_authorized_models", AsyncMock(return_value=[model]))
-    monkeypatch.setattr(agent_repository, "list_verified_queries", AsyncMock(return_value=[]))
     monkeypatch.setattr(agent_repository, "record_semantic_usage", AsyncMock())
     import app.modules.agents.semantic.literals as literals
 

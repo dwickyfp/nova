@@ -17,6 +17,8 @@ from app.modules.ontology.evidence.profiling import (
     type_family,
 )
 
+pytestmark = pytest.mark.usefixtures("fake_metadata_db")
+
 
 def _h(value) -> int:
     import hashlib
@@ -37,8 +39,9 @@ def test_identifiers_are_quoted_or_refused_never_escaped():
     sql = table_profile_sql("NOVA_RETAIL_FIELD", "sales_orders", ["outlet_id", "quantity"])
     assert sql.startswith("SELECT COUNT(*) AS n, approx_count_distinct(`outlet_id`) AS d0")
     assert "FROM `NOVA_RETAIL_FIELD`.`sales_orders`" in sql
-    assert re.search(r"ORDER BY h LIMIT 256$", sketch_sql(ColumnProfile(
-        "db", "t", "c", "varchar", 1, 1, 1)))
+    assert re.search(
+        r"ORDER BY h LIMIT 256$", sketch_sql(ColumnProfile("db", "t", "c", "varchar", 1, 1, 1))
+    )
 
 
 def test_profiles_parse_counts_and_derive_uniqueness_and_nulls():
@@ -115,15 +118,26 @@ def test_no_candidate_crosses_databases_even_when_the_values_coincide():
     # even says "race": across databases that is chance, never a join to propose.
     races = profile("races", "race_id", "int", 976, 976, (1, 3), database="f1")
     hero = profile("superhero", "race_id", "int", 750, 61, (1, 2), database="heroes")
-    found = candidates([races, hero], {"f1.races.race_id": sketch(range(1, 977)),
-                                       "heroes.superhero.race_id": sketch(range(1, 62))})
+    found = candidates(
+        [races, hero],
+        {
+            "f1.races.race_id": sketch(range(1, 977)),
+            "heroes.superhero.race_id": sketch(range(1, 62)),
+        },
+    )
     assert found == []
     # Within one database the same pair is a candidate.
     local = profile("races", "race_id", "int", 976, 976, (1, 3), database="heroes")
-    found = candidates([local, hero], {"heroes.races.race_id": sketch(range(1, 977)),
-                                       "heroes.superhero.race_id": sketch(range(1, 62))})
+    found = candidates(
+        [local, hero],
+        {
+            "heroes.races.race_id": sketch(range(1, 977)),
+            "heroes.superhero.race_id": sketch(range(1, 62)),
+        },
+    )
     assert [(item.source, item.target) for item in found] == [
-        ("heroes.superhero.race_id", "heroes.races.race_id")]
+        ("heroes.superhero.race_id", "heroes.races.race_id")
+    ]
 
 
 def test_each_source_column_keeps_one_target():
@@ -178,8 +192,11 @@ async def fake_engine(sql, model, _user):
     database = model["database_name"]
     if "information_schema.columns" in sql:
         assert f"table_schema = '{database}'" in sql
-        rows = [[table, column, "int" if column == "quantity" else "varchar"]
-                for table, columns in TABLES.items() for column in columns]
+        rows = [
+            [table, column, "int" if column == "quantity" else "varchar"]
+            for table, columns in TABLES.items()
+            for column in columns
+        ]
         return ["table_name", "column_name", "data_type"], rows, None
     if sql.startswith("SELECT COUNT(*), COUNT(t.v)"):
         left = re.search(r"CAST\(`([^`]+)` AS VARCHAR\) AS v FROM `[^`]+`\.`([^`]+)`", sql)
@@ -196,8 +213,7 @@ async def fake_engine(sql, model, _user):
         row = [len(next(iter(data.values())))]
         for column in re.findall(r"approx_count_distinct\(`([^`]+)`\)", sql):
             values = [str(value) for value in data[column]]
-            row += [len(set(values)), len(values), min(map(len, values)),
-                    max(map(len, values))]
+            row += [len(set(values)), len(values), min(map(len, values)), max(map(len, values))]
         return ["n"], [row], None
     column = re.search(r"CAST\(`([^`]+)` AS VARCHAR\)", sql)[1]
     hashes = sorted({_h(value) for value in data[column]})
@@ -216,9 +232,16 @@ class FakeFamilies:
 
 
 def family(identifier, sql, principal="nova_admin", role="ACCOUNTADMIN"):
-    return {"id": identifier, "canonical": sql, "scope": {
-        "principal": principal, "active_role": role, "security_context_version": 1,
-        "database": "LAB"}}
+    return {
+        "id": identifier,
+        "canonical": sql,
+        "scope": {
+            "principal": principal,
+            "active_role": role,
+            "security_context_version": 1,
+            "database": "LAB",
+        },
+    }
 
 
 def join_service(families=()):
@@ -228,8 +251,12 @@ def join_service(families=()):
     async def models(_user):
         return {}
 
-    return EvaluationService(FakeRepository(), executor=fake_engine, models=models,
-                             autopilot=FakeFamilies(list(families)))
+    return EvaluationService(
+        FakeRepository(),
+        executor=fake_engine,
+        models=models,
+        autopilot=FakeFamilies(list(families)),
+    )
 
 
 async def test_a_join_run_profiles_as_the_caller_and_scores_against_known_joins(monkeypatch):
@@ -242,8 +269,10 @@ async def test_a_join_run_profiles_as_the_caller_and_scores_against_known_joins(
 
     monkeypatch.setattr(access, "write_audit_log", record)
     service = join_service()
-    gold = [("LAB.sales_orders.outlet_id", "LAB.outlets.outlet_id"),
-            ("LAB.sales_orders.salesman_id", "LAB.employees.employee_id")]
+    gold = [
+        ("LAB.sales_orders.outlet_id", "LAB.outlets.outlet_id"),
+        ("LAB.sales_orders.salesman_id", "LAB.employees.employee_id"),
+    ]
     run = await service.start_joins(JoinRunRequest(databases=["LAB"], gold=gold), ADMIN)
     assert run.kind == "joins" and run.items == sorted(f"LAB.{t}" for t in TABLES)
     for _ in range(10):
@@ -257,7 +286,9 @@ async def test_a_join_run_profiles_as_the_caller_and_scores_against_known_joins(
     results = await service.visible_results(run.id, ADMIN)
     proposed = [item for item in results if item.outcome == "proposed"]
     assert {item.detail["source"] for item in proposed} == {
-        "LAB.sales_orders.outlet_id", "LAB.sales_orders.salesman_id"}
+        "LAB.sales_orders.outlet_id",
+        "LAB.sales_orders.salesman_id",
+    }
     assert all(item.detail["declared"] for item in proposed)
     # Profiles reflect what one principal saw in one role: nobody else reads or advances them.
     other = user("ada", "ACCOUNTADMIN")
@@ -278,16 +309,20 @@ async def test_names_nova_cannot_quote_are_skipped_and_reported_not_fatal(monkey
     async def engine(sql, model, user):
         names, rows, error = await fake_engine(sql, model, user)
         if "information_schema.columns" in sql:
-            rows = [*rows, ["sales_orders", "Unit Price", "varchar"],
-                    ["Order Details", "order_id", "varchar"]]
+            rows = [
+                *rows,
+                ["sales_orders", "Unit Price", "varchar"],
+                ["Order Details", "order_id", "varchar"],
+            ]
         return names, rows, error
 
     async def models(_user):
         return {}
 
     monkeypatch.setattr(access, "write_audit_log", record)
-    service = EvaluationService(FakeRepository(), executor=engine, models=models,
-                                autopilot=FakeFamilies([]))
+    service = EvaluationService(
+        FakeRepository(), executor=engine, models=models, autopilot=FakeFamilies([])
+    )
     run = await service.start_joins(JoinRunRequest(databases=["LAB"]), ADMIN)
     assert run.summary["skipped"] == ["LAB.sales_orders.Unit Price", "LAB.Order Details.order_id"]
     assert "LAB.Order Details" not in run.items
@@ -317,8 +352,12 @@ async def test_the_overview_shows_a_join_run_only_to_the_context_that_ran_it(mon
     monkeypatch.setattr("app.modules.ontology.derived.visible_layer", nothing)
     monkeypatch.setattr("app.modules.ontology.lint.lint", no_findings)
     service = join_service()
-    run = await service.start_joins(JoinRunRequest(databases=["LAB"], gold=[
-        ("LAB.sales_orders.outlet_id", "LAB.outlets.outlet_id")]), ADMIN)
+    run = await service.start_joins(
+        JoinRunRequest(
+            databases=["LAB"], gold=[("LAB.sales_orders.outlet_id", "LAB.outlets.outlet_id")]
+        ),
+        ADMIN,
+    )
     while run.status == "RUNNING":
         run = await service.step(run.id, ADMIN)
     mine = (await metrics.overview(ADMIN, service))["measured"]["joins"]
@@ -339,15 +378,25 @@ async def test_reviewers_confirm_an_undeclared_join_and_the_score_follows(monkey
 
     monkeypatch.setattr(access, "write_audit_log", record)
     service = join_service()
-    run = await service.start_joins(JoinRunRequest(databases=["LAB"], gold=[
-        ("LAB.sales_orders.outlet_id", "LAB.outlets.outlet_id")]), ADMIN)
+    run = await service.start_joins(
+        JoinRunRequest(
+            databases=["LAB"], gold=[("LAB.sales_orders.outlet_id", "LAB.outlets.outlet_id")]
+        ),
+        ADMIN,
+    )
     while run.status == "RUNNING":
         run = await service.step(run.id, ADMIN)
     assert run.summary["joins"]["precision"]["value"] == 0.5
     role = "join:LAB.sales_orders.salesman_id->LAB.employees.employee_id"
-    await service.review_results(run.id, ReviewBatch(
-        reviewer="claude", kind="external",
-        items=[ReviewItem(item=role, verdict="yes", reason="salesman is an employee")]), ADMIN)
+    await service.review_results(
+        run.id,
+        ReviewBatch(
+            reviewer="claude",
+            kind="external",
+            items=[ReviewItem(item=role, verdict="yes", reason="salesman is an employee")],
+        ),
+        ADMIN,
+    )
     reviewed = (await service.runs())[0].summary
     assert reviewed["undeclared_reviewed"] == 1
     assert reviewed["joins_reviewed"]["precision"]["value"] == 1.0
@@ -355,19 +404,30 @@ async def test_reviewers_confirm_an_undeclared_join_and_the_score_follows(monkey
 
 # --- calibration and automatic decisions ----------------------------------------------------
 
+
 def labelled(n_per_class, seed=3):
     """Candidates in three databases; each evidence class is right at its own rate."""
     rng = random.Random(seed)
-    rates = {(True, True, True): 0.99, (True, False, False): 0.9, (False, False, True): 0.3,
-             (False, False, False): 0.0}
+    rates = {
+        (True, True, True): 0.99,
+        (True, False, False): 0.9,
+        (False, False, True): 0.3,
+        (False, False, False): 0.0,
+    }
     details = []
     for index, ((chosen, names, same), rate) in enumerate(sorted(rates.items()) * n_per_class):
         right = rng.random() < rate
-        details.append({
-            "source": f"db{index % 3}.t{index}.c", "target": f"db{index % 3}.k{index}.id",
-            "proposed": chosen, "names_target_table": names, "same_name": same,
-            "declared": right, "declared_direction": right,
-        })
+        details.append(
+            {
+                "source": f"db{index % 3}.t{index}.c",
+                "target": f"db{index % 3}.k{index}.id",
+                "proposed": chosen,
+                "names_target_table": names,
+                "same_name": same,
+                "declared": right,
+                "declared_direction": right,
+            }
+        )
     return details
 
 
@@ -425,8 +485,10 @@ def test_declared_joins_come_from_the_views_many_to_one_relationships():
         for name, definition in VIEWS.items()
     }
     found = declared_joins(models)
-    assert ("NOVA_RETAIL_FIELD.sales_orders.outlet_id",
-            "NOVA_RETAIL_FIELD.outlets.outlet_id") in found
+    assert (
+        "NOVA_RETAIL_FIELD.sales_orders.outlet_id",
+        "NOVA_RETAIL_FIELD.outlets.outlet_id",
+    ) in found
     # Every pair points from the many side at a column of another table.
     assert all(source.split(".")[1] != target.split(".")[1] for source, target in found)
     assert all(len(side.split(".")) == 3 for pair in found for side in pair)
@@ -441,24 +503,35 @@ async def test_query_history_counts_only_the_callers_own_families(monkeypatch):
         return "audit"
 
     monkeypatch.setattr(access, "write_audit_log", record)
-    join = ("SELECT count(*) FROM sales_orders s JOIN outlets o "
-            "ON s.outlet_id = o.outlet_id")
-    service = join_service([
-        family("f1", join),
-        family("f2", join + " WHERE s.quantity > 1"),
-        # Another principal's query is never evidence for this one.
-        family("f3", "SELECT 1 FROM sales_orders s, employees e WHERE s.salesman_id = "
-                     "e.employee_id", principal="ada"),
-    ])
-    run = await service.start_joins(JoinRunRequest(databases=["LAB"], gold=[
-        ("LAB.sales_orders.outlet_id", "LAB.outlets.outlet_id")]), ADMIN)
+    join = "SELECT count(*) FROM sales_orders s JOIN outlets o ON s.outlet_id = o.outlet_id"
+    service = join_service(
+        [
+            family("f1", join),
+            family("f2", join + " WHERE s.quantity > 1"),
+            # Another principal's query is never evidence for this one.
+            family(
+                "f3",
+                "SELECT 1 FROM sales_orders s, employees e WHERE s.salesman_id = e.employee_id",
+                principal="ada",
+            ),
+        ]
+    )
+    run = await service.start_joins(
+        JoinRunRequest(
+            databases=["LAB"], gold=[("LAB.sales_orders.outlet_id", "LAB.outlets.outlet_id")]
+        ),
+        ADMIN,
+    )
     while run.status == "RUNNING":
         run = await service.step(run.id, ADMIN)
     history = run.summary["history"]
     assert history["families"] == 2 and history["pairs"] == 1
     assert history["score"]["precision"]["value"] == 1.0
-    results = {item.detail.get("source"): item for item in await service.results(run.id)
-               if item.item.startswith("join:")}
+    results = {
+        item.detail.get("source"): item
+        for item in await service.results(run.id)
+        if item.item.startswith("join:")
+    }
     assert results["LAB.sales_orders.outlet_id"].detail["history_families"] == 2
     assert results["LAB.sales_orders.salesman_id"].detail["history_families"] == 0
 
@@ -466,16 +539,23 @@ async def test_query_history_counts_only_the_callers_own_families(monkeypatch):
 def test_join_pairs_come_from_on_and_where_equalities_between_named_tables():
     from app.sql_frontend.analysis.joins import join_pairs
 
-    explicit = join_pairs("SELECT 1 FROM db.orders o JOIN db.customer AS c "
-                          "ON o.o_custkey = c.c_custkey AND c.x > 1")
+    explicit = join_pairs(
+        "SELECT 1 FROM db.orders o JOIN db.customer AS c ON o.o_custkey = c.c_custkey AND c.x > 1"
+    )
     assert [pair.ordered() for pair in explicit] == [
-        ("db.customer.c_custkey", "db.orders.o_custkey")]
-    implicit = join_pairs("select 1 from orders o, customer c where o.o_custkey = c.c_custkey",
-                          database="tp")
+        ("db.customer.c_custkey", "db.orders.o_custkey")
+    ]
+    implicit = join_pairs(
+        "select 1 from orders o, customer c where o.o_custkey = c.c_custkey", database="tp"
+    )
     assert [pair.left_table for pair in implicit] == ["tp.orders"]
     # A subquery side is not a table column; a statement that does not parse has none.
-    assert join_pairs("select 1 from (select a v from db.x) s join (select b v from db.y) t "
-                      "on s.v = t.v") == []
+    assert (
+        join_pairs(
+            "select 1 from (select a v from db.x) s join (select b v from db.y) t on s.v = t.v"
+        )
+        == []
+    )
     assert join_pairs("not sql at all") == []
 
 
@@ -495,16 +575,28 @@ async def test_semantic_discovery_proposes_the_joins_the_data_verified(monkeypat
 
     monkeypatch.setattr(access, "write_audit_log", record)
     service = join_service()
-    run = await service.start_joins(JoinRunRequest(databases=["LAB"], gold=[
-        ("LAB.sales_orders.outlet_id", "LAB.outlets.outlet_id"),
-        ("LAB.sales_orders.salesman_id", "LAB.employees.employee_id")]), ADMIN)
+    run = await service.start_joins(
+        JoinRunRequest(
+            databases=["LAB"],
+            gold=[
+                ("LAB.sales_orders.outlet_id", "LAB.outlets.outlet_id"),
+                ("LAB.sales_orders.salesman_id", "LAB.employees.employee_id"),
+            ],
+        ),
+        ADMIN,
+    )
     while run.status == "RUNNING":
         run = await service.step(run.id, ADMIN)
-    names = {"LAB.sales_orders": "orders", "LAB.outlets": "outlets",
-             "LAB.employees": "staff"}
+    names = {"LAB.sales_orders": "orders", "LAB.outlets": "outlets", "LAB.employees": "staff"}
     found = await data_relationships(ADMIN, names, service)
-    pairs = {(item["definition"]["from"], item["definition"]["to"],
-              item["definition"]["from_columns"][0]) for item in found}
+    pairs = {
+        (
+            item["definition"]["from"],
+            item["definition"]["to"],
+            item["definition"]["from_columns"][0],
+        )
+        for item in found
+    }
     assert ("orders", "outlets", "outlet_id") in pairs
     assert ("orders", "staff", "salesman_id") in pairs
     assert all(item["evidence"]["run_id"] == run.id for item in found)
@@ -516,11 +608,24 @@ async def test_semantic_discovery_proposes_the_joins_the_data_verified(monkeypat
 
     async def describe(*, sql, **_):
         table = sql.split(".")[-1].strip("`")
-        columns = {"sales_orders": ["outlet_id", "salesman_id"], "outlets": ["outlet_id"],
-                   "employees": ["employee_id"]}[table]
-        return SimpleNamespace(error=None, query_id="q", rows=[
-            [column, "varchar", "YES", "YES" if column.endswith("_id") and
-             table != "sales_orders" else "NO"] for column in columns])
+        columns = {
+            "sales_orders": ["outlet_id", "salesman_id"],
+            "outlets": ["outlet_id"],
+            "employees": ["employee_id"],
+        }[table]
+        return SimpleNamespace(
+            error=None,
+            query_id="q",
+            rows=[
+                [
+                    column,
+                    "varchar",
+                    "YES",
+                    "YES" if column.endswith("_id") and table != "sales_orders" else "NO",
+                ]
+                for column in columns
+            ],
+        )
 
     async def evidence(caller, sources, service=None):
         assert caller["username"] == ADMIN["username"]
@@ -530,13 +635,17 @@ async def test_semantic_discovery_proposes_the_joins_the_data_verified(monkeypat
     monkeypatch.setattr(autopilot.semantic_view_service, "_source_access", visible)
     monkeypatch.setattr(query_service, "execute", describe)
     monkeypatch.setattr(discovery, "data_relationships", evidence)
-    result = await autopilot.discover(AutopilotDiscovery(sources=[
-        "LAB.sales_orders", "LAB.outlets", "LAB.employees"]),
-        {**ADMIN, "encrypted_password": "private-test-value"})
+    result = await autopilot.discover(
+        AutopilotDiscovery(sources=["LAB.sales_orders", "LAB.outlets", "LAB.employees"]),
+        {**ADMIN, "encrypted_password": "private-test-value"},
+    )
     relationships = [item for item in result["candidates"] if item["kind"] == "relationship"]
     # Too few labels to measure a probability here, so the data's joins wait for review.
-    verified = {(item["definition"]["from"], item["definition"]["to"])
-                for item in relationships if item["state"] == "DATA_REVIEW"}
+    verified = {
+        (item["definition"]["from"], item["definition"]["to"])
+        for item in relationships
+        if item["state"] == "DATA_REVIEW"
+    }
     # The salesman role has no shared key name, so only the data finds it.
     assert ("sales_orders", "employees") in verified
     assert ("sales_orders", "outlets") in verified
@@ -546,12 +655,19 @@ async def test_semantic_discovery_proposes_the_joins_the_data_verified(monkeypat
 def test_drift_names_a_lost_key_rising_nulls_shifted_values_and_broken_joins():
     from app.modules.ontology.evidence.discovery import profile_drift
 
-    before = [profile("t", "id", "varchar", 100, 100), profile("t", "city", "varchar", 100, 20),
-              ColumnProfile("db", "t", "note", "varchar", 100, 50, 98, 1, 9)]
-    after = [profile("t", "id", "varchar", 104, 90), profile("t", "city", "varchar", 104, 40),
-             ColumnProfile("db", "t", "note", "varchar", 104, 50, 80, 1, 9)]
-    found = profile_drift(before, after, {("db.s.id", "db.t.id"): 1.0},
-                          {("db.s.id", "db.t.id"): 0.93})
+    before = [
+        profile("t", "id", "varchar", 100, 100),
+        profile("t", "city", "varchar", 100, 20),
+        ColumnProfile("db", "t", "note", "varchar", 100, 50, 98, 1, 9),
+    ]
+    after = [
+        profile("t", "id", "varchar", 104, 90),
+        profile("t", "city", "varchar", 104, 40),
+        ColumnProfile("db", "t", "note", "varchar", 104, 50, 80, 1, 9),
+    ]
+    found = profile_drift(
+        before, after, {("db.s.id", "db.t.id"): 1.0}, {("db.s.id", "db.t.id"): 0.93}
+    )
     rules = {(item["column"], item["rule"]) for item in found}
     assert rules == {
         ("db.t.id", "key_no_longer_unique"),
@@ -575,8 +691,12 @@ async def test_a_second_join_run_reports_drift_since_the_first(monkeypatch):
     service = join_service()
 
     async def run_once():
-        run = await service.start_joins(JoinRunRequest(databases=["LAB"], gold=[
-            ("LAB.sales_orders.outlet_id", "LAB.outlets.outlet_id")]), ADMIN)
+        run = await service.start_joins(
+            JoinRunRequest(
+                databases=["LAB"], gold=[("LAB.sales_orders.outlet_id", "LAB.outlets.outlet_id")]
+            ),
+            ADMIN,
+        )
         while run.status == "RUNNING":
             run = await service.step(run.id, ADMIN)
         return run

@@ -82,8 +82,8 @@ async def test_change_password_clears_the_flag(service, monkeypatch):
     async def verify(username, password):
         return True
 
-    async def clear(username):
-        cleared.append(username)
+    async def clear(actor):
+        cleared.append(actor.principal)
 
     async def execute_system(sql, params=None):
         return {"columns": [], "rows": [], "affected": 1}
@@ -92,7 +92,11 @@ async def test_change_password_clears_the_flag(service, monkeypatch):
     monkeypatch.setattr(service_module, "clear_must_change_password", clear)
     monkeypatch.setattr(service_module.db, "execute_system", execute_system)
 
-    result = await service.change_password("dwicky", "old", "NewPass123!", "NewPass123!")
+    from app.modules.access_control.security_context import SecurityContext
+    result = await service.change_password(
+        "dwicky", "old", "NewPass123!", "NewPass123!",
+        actor=SecurityContext(principal="dwicky", active_role="public"),
+    )
 
     assert result["status"] == "PASSWORD_CHANGED"
     assert cleared == ["dwicky"]

@@ -25,6 +25,13 @@ from app.common.nova_system import init_task_orchestration
 from app.common.secret_keys import require_configured_secrets
 from app.core.config import settings
 from app.core.database import db
+from app.core.metadata_db import MetadataDatabase
+from app.core.metadata_process import (
+    close_process_metadata,
+    load_runtime_settings,
+    open_process_metadata,
+    watch_metadata,
+)
 from app.modules.task_orchestration.repository import task_orchestration_repository
 from app.modules.task_orchestration.schedule import engine_timezone_matches
 from app.modules.task_orchestration.service import build_scheduler_service
@@ -81,6 +88,18 @@ async def _run() -> None:
     # Fail closed before the first connection: the scheduler signs session
     # tokens with SECRET_KEY, so a missing key must abort boot (NOVA-108).
     require_configured_secrets()
+    metadata_settings = load_runtime_settings()
+    # Fail closed on schema/epoch/login problems; wait only for an outage.
+    metadata = await open_process_metadata("scheduler", settings=metadata_settings)
+    if metadata is None:  # only possible when a stop event is supplied
+        return
+    try:
+        await _run_admitted(metadata, metadata_settings.readiness_interval_seconds)
+    finally:
+        await close_process_metadata(metadata, "scheduler")
+
+
+async def _run_admitted(metadata: MetadataDatabase, readiness_interval: float) -> None:
     await db.init_system_pool()
     try:
         await _assert_engine_timezone()
@@ -117,10 +136,15 @@ async def _run() -> None:
         LeaderLock(client),
     )
     start_metrics_server("scheduler")
+    readiness = asyncio.create_task(watch_metadata(
+        metadata, "scheduler", stop_event, interval=readiness_interval,
+    ))
 
     try:
         await service.run_forever(stop_event)
     finally:
+        stop_event.set()
+        await readiness
         await client.aclose()
         await db.close_system_pool()
 

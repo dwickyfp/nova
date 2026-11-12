@@ -34,6 +34,7 @@ from app.modules.intelligence.action_contracts import (
 from app.modules.intelligence.automation_action import AutomationActionAdapter
 from app.modules.intelligence.contracts import Scope, fingerprint, utc_now
 from app.modules.intelligence.engine_repository import metadata_lock
+from app.modules.intelligence.metadata_repository import user_actor
 from app.modules.intelligence.monitor_action import MonitorActionAdapter
 from app.observability.metrics import studio_operation
 
@@ -219,7 +220,7 @@ class ActionService:
             )
         from app.modules.intelligence.decisions import current_decision_policy
 
-        current = await current_decision_policy(decision)
+        current = await current_decision_policy(decision, user)
         if (
             decision.policy != current
             or current.decision == "DENY"
@@ -230,8 +231,8 @@ class ActionService:
         return decision
 
     @staticmethod
-    async def _policy(action: Action):
-        policy = await read_business_policy()
+    async def _policy(action: Action, user: dict):
+        policy = await read_business_policy(user)
         evaluated = evaluate_business_policy(
             action_adapter_contract(action.adapter_id).policy_type(),
             policy,
@@ -270,7 +271,7 @@ class ActionService:
             if mission.cancel_requested and not compensation:
                 raise HTTPException(status_code=409, detail="This Mission has been cancelled")
         await self._decision(action, user)
-        policy, evaluated = await self._policy(action)
+        policy, evaluated = await self._policy(action, user)
         if action.policy != evaluated or evaluated.decision == "DENY":
             raise HTTPException(
                 status_code=409, detail="Action policy changed; preview and review again"
@@ -394,7 +395,7 @@ class ActionService:
             )
         contract = action_adapter_contract(body.adapter_id)
         await self._adapter(body.adapter_id).preview(body.configuration, user)
-        policy = await read_business_policy()
+        policy = await read_business_policy(user)
         evaluated = evaluate_business_policy(
             contract.policy_type(),
             policy,
@@ -445,7 +446,7 @@ class ActionService:
                 )
                 if current is None or decision_digest(current) != decision_digest(decision):
                     raise HTTPException(status_code=409, detail="Decision changed during preview")
-                if await read_business_policy() != policy:
+                if await read_business_policy(user) != policy:
                     raise HTTPException(
                         status_code=409, detail="Action policy changed during preview"
                     )
@@ -459,19 +460,23 @@ class ActionService:
 
     async def review(self, action_id: str, body: ActionReview, user: dict) -> dict:
         await self.revalidate(user)
-        candidate = await self.repository.action_for_review(action_id, Action)
+        candidate = await self.repository.action_for_review(
+            action_id, Action, actor=user_actor(user)
+        )
         if candidate is None:
             raise HTTPException(status_code=404, detail="Action unavailable")
         await self._decision(candidate, user)
         async with metadata_lock("action-dispatch:" + action_id, timeout_seconds=120) as lease:
-            action = await self.repository.action_for_review(action_id, Action)
+            action = await self.repository.action_for_review(
+            action_id, Action, actor=user_actor(user)
+        )
             if action is None:
                 raise HTTPException(status_code=404, detail="Action unavailable")
             if action.revision != candidate.revision:
                 raise HTTPException(status_code=409, detail="Action changed before review")
             await self.revalidate(user)
             await self._decision(action, user)
-            policy, evaluated = await self._policy(action)
+            policy, evaluated = await self._policy(action, user)
             if user["active_role"] not in policy.reviewer_roles:
                 raise HTTPException(
                     status_code=403, detail="This role cannot review business actions"
@@ -725,7 +730,7 @@ class ActionService:
             if action.consent_call_id:
                 from app.modules.assistant.consent import consent_broker
 
-                consent_broker.resolve(action.consent_call_id, None, user_name=user["username"])
+                consent_broker.resolve(action.consent_call_id, None, user=user)
             return saved
 
 
@@ -821,7 +826,7 @@ async def supervised_action(
     if action.status == "awaiting_consent":
         if action.consent_compensate != compensate:
             raise HTTPException(status_code=409, detail="Another action operation needs consent")
-        if action.consent_call_id and consent_broker.owner_of(action.consent_call_id):
+        if action.consent_call_id and consent_broker.owner_of(action.consent_call_id, user=user):
             raise HTTPException(
                 status_code=409, detail="This action already has a pending consent request"
             )
@@ -919,13 +924,13 @@ async def supervised_action(
             future = consent_broker.open(
                 call.tool_call_id,
                 thread_id=body.thread_id,
-                user_name=user["username"],
+                user=user,
                 classification=classification,
             )
         try:
             return await asyncio.wait_for(future, timeout=90)
         finally:
-            consent_broker.resolve(call.tool_call_id, None, user_name=user["username"])
+            consent_broker.resolve(call.tool_call_id, None, user=user)
 
     try:
         errors = validate_tool_invocation(business_action_tool, invocation)

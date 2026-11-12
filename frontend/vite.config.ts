@@ -83,14 +83,14 @@ export default defineConfig(({ command }) => ({
     watch: { ignored: ["**/coverage/**", "**/__screenshots__/**"] },
     proxy: {
       // SQL, ML and agent execution can run in a separate query process
-      // (`./dev.sh --split`). Listed first because the first match wins; the
+      // (`./dev.sh`). Listed first because the first match wins; the
       // path boundary keeps /api/v1/query-autopilot on the web process.
       "^/api/v1/(query|ml|assistant|agents|intelligence/actions)(/|$)": {
-        target: process.env.NOVA_QUERY_API_URL ?? "http://localhost:8000",
+        target: process.env.NOVA_QUERY_API_URL ?? process.env.NOVA_WEB_API_URL ?? "http://localhost:8000",
         changeOrigin: true,
       },
       "/api": {
-        target: "http://localhost:8000",
+        target: process.env.NOVA_WEB_API_URL ?? "http://localhost:8000",
         changeOrigin: true,
       },
       // Superset, served under /bi so its cookie and pages stay same-origin.

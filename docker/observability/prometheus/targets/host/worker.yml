@@ -19,3 +19,6 @@
 - targets: ["host.docker.internal:9110"]
   labels:
     service: nova-maintenance-worker
+- targets: ["host.docker.internal:9111"]
+  labels:
+    service: nova-outbox-worker

@@ -3080,6 +3080,25 @@ class AssistantLoop:
     async def _dispatch_tool(
         self, tool: Any, invocation: ToolInvocation, context: LoopContext,
     ) -> ToolOutcome:
+        if context.user is None:
+            return await self._dispatch_bound_tool(tool, invocation, context)
+        from app.core.metadata_actor import acting_as, current_actor
+        from app.modules.access_control.security_context import SecurityContext
+
+        try:
+            actor = SecurityContext.from_session(context.user)
+        except (TypeError, ValueError):
+            return ToolOutcome(
+                ok=False, summary="", error_class="ACCESS_DENIED",
+                error="The tool requires a valid active security context.",
+            )
+        with acting_as(actor):
+            current_actor()  # Refuse a role change inside an open metadata transaction.
+            return await self._dispatch_bound_tool(tool, invocation, context)
+
+    async def _dispatch_bound_tool(
+        self, tool: Any, invocation: ToolInvocation, context: LoopContext,
+    ) -> ToolOutcome:
         try:
             await self._validate_release_resources(context)
         except Exception:

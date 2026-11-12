@@ -2,46 +2,106 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+from uuid import uuid4
+
 import pytest
 
 from app.core.exceptions import StorageError
+from app.core.metadata_scope import current_scope
 from app.modules.workspaces import spaces
 from app.modules.workspaces.spaces import SpaceService
 
 SPACE = "a" * 32
-OWNER = {"username": "owner", "assigned_roles": ["analyst"], "session_id": "s0"}
-EDITOR = {"username": "eve", "assigned_roles": ["finance", "sales"], "session_id": "s1"}
-VIEWER = {"username": "vic", "assigned_roles": ["sales"], "session_id": "s2"}
-STRANGER = {"username": "sam", "assigned_roles": ["support"], "session_id": "s3"}
+OWNER = {
+    "username": "owner",
+    "assigned_roles": ["analyst"],
+    "session_id": "s0",
+    "active_role": "analyst",
+}
+EDITOR = {
+    "username": "eve",
+    "assigned_roles": ["finance", "sales"],
+    "session_id": "s1",
+    "active_role": "finance",
+}
+VIEWER = {
+    "username": "vic",
+    "assigned_roles": ["sales"],
+    "session_id": "s2",
+    "active_role": "sales",
+}
+STRANGER = {
+    "username": "sam",
+    "assigned_roles": ["support"],
+    "session_id": "s3",
+    "active_role": "support",
+}
 
 
 class FakeRepo:
-    def __init__(self) -> None:
-        self.rows = {SPACE: {"id": SPACE, "name": "Revenue", "owner": "owner",
-                             "created_at": None, "updated_at": None}}
-        self.share_rows = [{"role": "finance", "permission": "edit"},
-                           {"role": "sales", "permission": "view"}]
+    def __init__(self):
+        self.rows = {
+            SPACE: {"id": SPACE, "name": "Revenue", "owner": "owner", "metadata_revision": 1}
+        }
+        self.share_rows = {SPACE: {"finance": "edit", "sales": "view"}}
 
-    async def get(self, space_id):
-        return self.rows.get(space_id)
+    def bound(self, user):
+        store = self
 
-    async def shares(self, space_id):
-        return list(self.share_rows)
+        class Bound:
+            async def get(self, space_id):
+                row = store.rows.get(space_id)
+                if row is None:
+                    return None
+                assigned = user["assigned_roles"]
+                granted = [
+                    permission
+                    for role, permission in store.share_rows.get(space_id, {}).items()
+                    if role in assigned
+                ]
+                permission = (
+                    "owner"
+                    if row["owner"] == user["username"]
+                    else "edit"
+                    if "edit" in granted
+                    else "view"
+                    if "view" in granted
+                    else None
+                )
+                return {**row, "permission": permission} if permission else None
 
-    async def list_visible(self, username, roles):
-        return [row for row in self.rows.values()
-                if row["owner"] == username or roles & {s["role"] for s in self.share_rows}]
+            async def visible(self):
+                return [row for key in store.rows if (row := await self.get(key))]
 
-    async def replace_shares(self, space_id, shares, granted_by):
-        self.share_rows = [{"role": r, "permission": p} for r, p in shares]
+            async def create(self, name):
+                key = uuid4().hex
+                store.rows[key] = {
+                    "id": key,
+                    "name": name,
+                    "owner": user["username"],
+                    "metadata_revision": 1,
+                }
+                return await self.get(key)
 
-    async def insert(self, space_id, name, owner):
-        self.rows[space_id] = {"id": space_id, "name": name, "owner": owner,
-                               "created_at": None, "updated_at": None}
+            async def shares(self, space_id):
+                return [
+                    {"role": role, "permission": permission}
+                    for role, permission in store.share_rows.get(space_id, {}).items()
+                ]
+
+            async def replace_shares(self, space_id, shares, *, expected_revision):
+                row = store.rows[space_id]
+                assert row["owner"] == user["username"]
+                assert row["metadata_revision"] == expected_revision
+                store.share_rows[space_id] = shares
+                row["metadata_revision"] += 1
+
+        return Bound()
 
 
 @pytest.fixture
-def service(monkeypatch):
+def service(monkeypatch, fake_metadata_db):
     audits: list[dict] = []
 
     async def audit(**kwargs):
@@ -54,7 +114,15 @@ def service(monkeypatch):
 
     monkeypatch.setattr(spaces, "write_audit_log", audit)
     monkeypatch.setattr(user_service, "list_roles", roles)
-    svc = SpaceService(FakeRepo())
+    repository = FakeRepo()
+
+    @asynccontextmanager
+    async def bind(connection, user):
+        assert current_scope().actor.principal == user["username"]
+        yield repository.bound(user)
+
+    monkeypatch.setattr(spaces.WorkspaceSharingRepository, "bind", bind)
+    svc = SpaceService()
     svc.audits = audits  # type: ignore[attr-defined]
     return svc
 
@@ -125,7 +193,9 @@ async def test_a_file_is_opened_through_its_workspace(service, monkeypatch):
     async def namespace_of(entry_id):
         return {"shared-file": f"~ws/{SPACE}", "mine": "vic", "theirs": "owner"}.get(entry_id)
 
-    monkeypatch.setattr(spaces.workspace_repository, "namespace_of", namespace_of)
+    from app.modules.workspaces.service import workspace_service
+
+    monkeypatch.setattr(workspace_service, "namespace_of", namespace_of)
     assert (await service.for_entry(VIEWER, "shared-file")).kind == "shared"
     assert (await service.for_entry(VIEWER, "mine")).kind == "personal"
     for entry in ("theirs", "missing"):

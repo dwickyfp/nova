@@ -52,6 +52,12 @@ def _parent(parent_path: str) -> str:
     return clean
 
 
+def _version(row: dict[str, Any]) -> dict[str, Any]:
+    # Imported versions may lack a recorded size.
+    row["size_bytes"] = row["size_bytes"] or 0
+    return row
+
+
 def _with_path(row: dict[str, Any]) -> dict[str, Any]:
     row["path"] = build_path(row["parent_path"], row["name"])
     row["size_bytes"] = row["size_bytes"] or 0
@@ -319,7 +325,7 @@ class WorkspaceFileRepository(WorkspaceMetadataScope):
             "AND user_name=%s AND state='published' AND NOT is_deleted "
             "ORDER BY version DESC,id LIMIT %s OFFSET %s", (entry_id, namespace, limit, offset),
         )
-        return list(await cursor.fetchall())
+        return [_version(row) for row in await cursor.fetchall()]
 
     async def get_version(
         self, namespace: str, entry_id: str, version: int,
@@ -334,4 +340,4 @@ class WorkspaceFileRepository(WorkspaceMetadataScope):
         rows = await cursor.fetchall()
         if len(rows) > 1:
             raise MetadataConflict()
-        return rows[0] if rows else None
+        return _version(rows[0]) if rows else None

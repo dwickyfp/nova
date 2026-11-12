@@ -15,6 +15,23 @@ from app.worker import supervisor
 from app.worker.health import healthy
 
 
+@pytest.fixture(autouse=True)
+def metadata(monkeypatch):
+    """Every role first admits itself to nova_control; stand that in here."""
+    state = SimpleNamespace(
+        database=object(),
+        open=AsyncMock(),
+        close=AsyncMock(),
+        settings=SimpleNamespace(readiness_interval_seconds=1.0),
+    )
+    state.open.return_value = state.database
+    monkeypatch.setattr(entry, "load_runtime_settings", Mock(return_value=state.settings))
+    monkeypatch.setattr(entry, "open_process_metadata", state.open)
+    monkeypatch.setattr(entry, "close_process_metadata", state.close)
+    monkeypatch.setattr(entry, "pool_config", Mock())
+    return state
+
+
 @pytest.mark.parametrize("role", ["task", "automation"])
 def test_only_delegating_roles_require_impersonation(role, monkeypatch):
     monkeypatch.setattr(settings, "WORKER_IMPERSONATION_USER", "")
@@ -105,7 +122,7 @@ async def test_drain_timeout_cancels_work():
 
 
 @pytest.mark.parametrize("role", supervisor.ROLES)
-async def test_single_role_owns_only_its_lifecycle(role, monkeypatch):
+async def test_single_role_owns_only_its_lifecycle(role, monkeypatch, metadata):
     monkeypatch.setattr(entry, "require_configured_secrets", Mock())
     monkeypatch.setattr(entry, "validate_role", Mock())
     pool = SimpleNamespace(init_system_pool=AsyncMock(), close_system_pool=AsyncMock())
@@ -132,12 +149,23 @@ async def test_single_role_owns_only_its_lifecycle(role, monkeypatch):
     assert run.call_args.args[0] is build.return_value
     health.close.assert_awaited_once()
     client.aclose.assert_awaited_once()
-    session.close.assert_awaited_once()
-    pool.close_system_pool.assert_awaited_once()
+    if role == "outbox":
+        session.init.assert_not_awaited()
+        session.close.assert_not_awaited()
+        pool.init_system_pool.assert_not_awaited()
+        pool.close_system_pool.assert_not_awaited()
+        entry.require_configured_secrets.assert_not_called()
+    else:
+        session.close.assert_awaited_once()
+        pool.close_system_pool.assert_awaited_once()
+    metadata.open.assert_awaited_once()
+    assert metadata.open.call_args.args == (role,)
+    metadata.close.assert_awaited_once_with(metadata.database, entry.METRICS_SERVICES[role])
+    assert len(run.call_args.kwargs["monitors"]) == 1
 
 
 @pytest.mark.parametrize("failure", ["pool", "session", "ping", "build", "metrics"])
-async def test_partial_startup_releases_opened_dependencies(failure, monkeypatch):
+async def test_partial_startup_releases_opened_dependencies(failure, monkeypatch, metadata):
     monkeypatch.setattr(entry, "require_configured_secrets", Mock())
     pool = SimpleNamespace(init_system_pool=AsyncMock(), close_system_pool=AsyncMock())
     session = SimpleNamespace(init=AsyncMock(), close=AsyncMock())
@@ -160,6 +188,7 @@ async def test_partial_startup_releases_opened_dependencies(failure, monkeypatch
         client.aclose.assert_awaited_once()
     if failure == "metrics":
         health.close.assert_awaited_once()
+    metadata.close.assert_awaited_once_with(metadata.database, "ml-worker")
 
 
 class Child:
@@ -389,3 +418,80 @@ async def test_metrics_port_held_by_draining_role_is_retried(monkeypatch):
     await entry._run("ml")
     assert metrics.call_count == 2
     run.assert_awaited_once()
+
+
+@pytest.mark.parametrize("error", ["mismatch", "configuration"])
+async def test_metadata_refusal_stops_the_role_before_any_other_dependency(
+    error, monkeypatch, metadata,
+):
+    from app.core.metadata_db import MetadataSchemaMismatch
+    from app.core.metadata_process import MetadataConfigurationError
+
+    monkeypatch.setattr(entry, "require_configured_secrets", Mock())
+    pool = SimpleNamespace(init_system_pool=AsyncMock(), close_system_pool=AsyncMock())
+    monkeypatch.setattr(entry, "db", pool)
+    from_url = Mock()
+    monkeypatch.setattr(entry.aioredis, "from_url", from_url)
+    failure = MetadataSchemaMismatch() if error == "mismatch" else MetadataConfigurationError()
+    metadata.open.side_effect = failure
+    with pytest.raises(type(failure)):
+        await entry._run("ml")
+    pool.init_system_pool.assert_not_awaited()
+    from_url.assert_not_called()
+    metadata.close.assert_not_awaited()
+
+
+async def test_shutdown_while_waiting_for_metadata_opens_nothing_else(monkeypatch, metadata):
+    monkeypatch.setattr(entry, "require_configured_secrets", Mock())
+    pool = SimpleNamespace(init_system_pool=AsyncMock(), close_system_pool=AsyncMock())
+    monkeypatch.setattr(entry, "db", pool)
+    metadata.open.return_value = None
+    await entry._run("maintenance")
+    assert metadata.open.call_args.kwargs["stop"] is not None
+    pool.init_system_pool.assert_not_awaited()
+    metadata.close.assert_not_awaited()
+
+
+async def test_launcher_refuses_when_any_role_lacks_its_metadata_login(monkeypatch):
+    from app.core.metadata_process import MetadataConfigurationError
+
+    monkeypatch.setattr(entry, "require_configured_secrets", Mock())
+    monkeypatch.setattr(entry, "validate_role", Mock())
+    monkeypatch.setattr(entry, "pool_config", Mock(side_effect=MetadataConfigurationError()))
+    supervise = AsyncMock()
+    monkeypatch.setattr(entry, "supervise_processes", supervise)
+    with pytest.raises(MetadataConfigurationError):
+        await entry._run_all()
+    supervise.assert_not_awaited()
+
+
+async def test_monitors_run_beside_the_workload_and_stop_with_it():
+    stop = asyncio.Event()
+    observed = []
+
+    class Work:
+        async def run_forever(self, stopped):
+            await asyncio.sleep(0)
+            stopped.set()
+
+    heartbeat = SimpleNamespace(run=lambda stopped: stopped.wait())
+
+    async def monitor(stopped):
+        observed.append("started")
+        await stopped.wait()
+        observed.append("stopped")
+
+    await entry.run_workload(Work(), heartbeat, stop, monitors=(monitor,))
+    assert observed == ["started", "stopped"]
+
+
+@pytest.mark.parametrize("ready_value,expected", [(1, True), (0, False), (None, False)])
+def test_readiness_also_requires_metadata(ready_value, expected):
+    body = (
+        'nova_service_up{service="ml-worker"} 1\n'
+        'nova_service_last_heartbeat_timestamp_seconds{service="ml-worker"} 100\n'
+    )
+    if ready_value is not None:
+        body += f'nova_metadata_ready{{service="ml-worker"}} {ready_value}\n'
+    assert healthy(body, "ml-worker", now=100, stale_seconds=30) is True
+    assert healthy(body, "ml-worker", now=100, stale_seconds=30, ready=True) is expected

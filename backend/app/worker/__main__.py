@@ -2,7 +2,8 @@
 
 Production containers select one ``--role`` for independent limits and scaling.
 The default launcher keeps all workloads active for existing development commands.
-Metadata remains in NOVA_SYSTEM until the separately verified PG cutover.
+Every role connects to ``nova_control`` with its own workload login at the
+published schema and epoch before it opens any other dependency.
 """
 
 from __future__ import annotations
@@ -14,9 +15,9 @@ import logging
 import os
 import signal
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine, Sequence
 from contextlib import AsyncExitStack
-from typing import TYPE_CHECKING, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
 import asyncmy.errors
 import redis.asyncio as aioredis
@@ -25,6 +26,13 @@ import redis.exceptions
 from app.common.secret_keys import require_configured_secrets
 from app.core.config import settings
 from app.core.database import db
+from app.core.metadata_process import (
+    close_process_metadata,
+    load_runtime_settings,
+    open_process_metadata,
+    pool_config,
+    watch_metadata,
+)
 from app.core.redis import session_store
 from app.modules.task_orchestration.process_health import WorkerProcessHeartbeat
 from app.observability.metrics import SERVICE_UP, start_metrics_server
@@ -55,6 +63,7 @@ METRICS_SERVICES = {
     "automation": "automation-worker",
     "autopilot": "autopilot-worker",
     "maintenance": "maintenance-worker",
+    "outbox": "outbox-worker",
 }
 
 
@@ -115,6 +124,10 @@ def validate_role(role: str) -> None:
 
 
 async def build_workload(role: str, client: aioredis.Redis) -> Workload:
+    if role == "outbox":
+        from app.worker.outbox import OutboxPublisher
+
+        return OutboxPublisher(client)
     if role == "maintenance":
         from app.worker.maintenance import MaintenanceWorker
 
@@ -206,10 +219,15 @@ async def run_workload(
     stop: asyncio.Event,
     *,
     shutdown_seconds: float = SHUTDOWN_SECONDS,
+    monitors: Sequence[Callable[[asyncio.Event], Coroutine[Any, Any, None]]] = (),
 ) -> None:
     tasks = {
         asyncio.create_task(workload.run_forever(stop), name="workload"),
         asyncio.create_task(heartbeat.run(stop), name="heartbeat"),
+        *(
+            asyncio.create_task(monitor(stop), name=f"monitor-{index}")
+            for index, monitor in enumerate(monitors)
+        ),
     }
     stopped = asyncio.create_task(stop.wait(), name="shutdown-request")
     try:
@@ -258,8 +276,11 @@ async def _stop_task(task: asyncio.Task[None]) -> None:
 
 
 async def _run(role: str = "task") -> None:
-    require_configured_secrets()
     validate_role(role)
+    if role != "outbox":
+        require_configured_secrets()
+    metadata_settings = load_runtime_settings()
+    service = METRICS_SERVICES[role]
     stop = asyncio.Event()
     async with AsyncExitStack() as cleanup:
         parent = os.environ.get(PARENT_PID_ENV, "")
@@ -267,12 +288,19 @@ async def _run(role: str = "task") -> None:
             watcher = asyncio.create_task(watch_parent(stop, int(parent)))
             cleanup.push_async_callback(_stop_task, watcher)
         cleanup.enter_context(stop_signals(stop))
-        cleanup.push_async_callback(db.close_system_pool)
-        await db.init_system_pool()
+        # Fail closed on schema/epoch/login problems; wait only for an outage.
+        metadata = await open_process_metadata(role, settings=metadata_settings, stop=stop)
+        if metadata is None:
+            return
+        cleanup.push_async_callback(close_process_metadata, metadata, service)
+        if role != "outbox":
+            cleanup.push_async_callback(db.close_system_pool)
+            await db.init_system_pool()
         client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
         cleanup.push_async_callback(client.aclose)
-        cleanup.push_async_callback(session_store.close)
-        await session_store.init()
+        if role != "outbox":
+            cleanup.push_async_callback(session_store.close)
+            await session_store.init()
 
         async def prepare() -> Workload:
             await client.ping()
@@ -286,7 +314,6 @@ async def _run(role: str = "task") -> None:
         registry = settings.WORKER_REGISTRY_KEY
         if role != "task":
             registry = f"{registry}:{role}"
-        service = METRICS_SERVICES[role]
         heartbeat = WorkerProcessHeartbeat(client, registry_key=registry, service=service)
         cleanup.push_async_callback(heartbeat.close)
         await heartbeat.publish()
@@ -300,15 +327,23 @@ async def _run(role: str = "task") -> None:
             return
         try:
             logger.info("Worker role %s started", role)
-            await run_workload(workload, heartbeat, stop)
+            await run_workload(workload, heartbeat, stop, monitors=(
+                lambda stopped: watch_metadata(
+                    metadata, service, stopped,
+                    interval=metadata_settings.readiness_interval_seconds,
+                ),
+            ))
         finally:
             SERVICE_UP.labels(service=service).set(0)
 
 
 async def _run_all() -> None:
     require_configured_secrets()
+    metadata_settings = load_runtime_settings()
     for role in ROLES:
         validate_role(role)
+        # Each child connects itself; refuse here if any role lacks its login.
+        pool_config(metadata_settings, role)
     stop = asyncio.Event()
     with stop_signals(stop):
         await supervise_processes(stop)

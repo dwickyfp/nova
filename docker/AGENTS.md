@@ -16,15 +16,20 @@ commands run from the repository root unless stated otherwise. Read
 - `docker/docker-compose.split.yml` is an opt-in override that replaces the
   single backend with scalable web, query and MySQL proxy tiers behind the
   `docker/gateway/` nginx gateway. `NOVA_PROCESS_ROLE` decides which startup
-  duties a process runs; in this split deployment only web bootstraps the
-  existing StarRocks schemas, under a Redis lock. This is not PG migration.
+  duties a process runs. The integrated runtime requires a published PG schema
+  and epoch for each workload; it never migrates metadata at application
+  startup. The historical split manifests are not a completed production
+  deployment or proof that every caller has been cut over.
   Assistant and agent routes are pinned to one query replica per session
   because their consent and cancel state is process-local; do not replace that
   rule with round robin or with `hash ... consistent`, which does not pin
   replicas that share one DNS name. `/api/v1/internal/` is never routed publicly.
   `gateway/tls/` holds deployment-local certificates and is git-ignored.
-- Local frontend development uses Vite 5173 and backend 8000; the MySQL proxy
-  defaults to 4406. Compose/environment files own deployment port bindings.
+- `dev.sh` starts separate web (8000), query (8001), MySQL proxy (4406), scheduler
+  and supervised workload processes; Vite uses 5173. It checks workload
+  configuration before startup, then waits for role readiness and worker
+  heartbeats. It never publishes a metadata epoch. Compose/environment files
+  own deployment port bindings.
   The engine's native MySQL port stays internal in governed deployment;
   `docker/docker-compose.dev.yml` is an explicit development override.
 - Use the current image/build pins and

@@ -10,9 +10,13 @@ from pydantic import ValidationError
 
 from app.core import config
 from app.core.deps import get_current_user
-from app.core.exceptions import InsufficientRoleError, register_exception_handlers
+from app.core.exceptions import register_exception_handlers
+from app.core.metadata_scope import current_scope
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.query.dialect.parser import parse_sql
+from app.modules.stages import metadata_service as metadata_module
 from app.modules.stages import router, service
+from app.modules.stages.access import StageAccessDenied
 from app.modules.stages.schemas import StageCreate
 from app.sql_frontend.execution.stages import StageRuntime
 
@@ -26,57 +30,70 @@ DATA = {
 
 
 @pytest.fixture
-def registration(monkeypatch):
-    statements = []
+def registration(monkeypatch, fake_metadata_db):
+    rows = []
 
-    class Cursor:
-        async def execute(self, sql, params):
-            statements.append((sql, params))
+    async def create(identity, values, *, namespace_kind):
+        assert namespace_kind in {"MANAGED", "MAPPED"}
+        row = {
+            "id": identity,
+            **values,
+            "created_by": current_scope().actor.principal,
+            "created_at": None,
+        }
+        rows.append(row)
+        return row
+
+    async def identities(*, identity=None, name=None, database=None, schema=None):
+        return [
+            row
+            for row in rows
+            if (identity is None or row["id"] == identity)
+            and (name is None or row["name"] == name)
+            and (database is None or row["database_name"] == database)
+            and (schema is None or row["schema_name"] == schema)
+        ]
+
+    async def get(identity):
+        return next((row for row in rows if row["id"] == identity), None)
 
     @asynccontextmanager
-    async def cursor(*args):
-        yield Cursor()
-
-    @asynccontextmanager
-    async def connection():
-        yield SimpleNamespace(cursor=cursor)
-
-    async def get_stage(self, stage_id):
-        params = statements[-1][1]
-        return dict(
-            zip(
-                (
-                    "id",
-                    "name",
-                    "database_name",
-                    "schema_name",
-                    "storage_connection",
-                    "base_prefix",
-                    "created_by",
-                ),
-                params,
-                strict=True,
-            )
+    async def authorized(self, stage, action):
+        await (self._access_check or metadata_module.check_stage_access)(
+            stage,
+            action=action,
+            username=self.actor.principal,
+            active_role=self.actor.active_role,
         )
+        yield
 
-    monkeypatch.setattr(service.db, "system_conn", connection)
-    monkeypatch.setattr(service.StageService, "get_stage", get_stage)
+    monkeypatch.setattr(
+        metadata_module,
+        "StageRepository",
+        lambda connection: SimpleNamespace(
+            create=create,
+            identities=identities,
+            get=get,
+        ),
+    )
+    monkeypatch.setattr(metadata_module.StageMetadataService, "_scope", authorized)
+    monkeypatch.setattr(metadata_module.StageMetadataService, "_bound_actor", AsyncMock())
+    monkeypatch.setattr(metadata_module, "check_stage_access", AsyncMock())
     monkeypatch.setattr(
         config,
         "load_nova_app_config",
         lambda: SimpleNamespace(
-            storage_connections={"production": SimpleNamespace(name="production")}
+            storage_connections={"production": SimpleNamespace(name="production")},
         ),
     )
-    return statements
+    return rows
 
 
 async def test_new_stage_names_cannot_select_an_existing_namespace(registration):
     rows = [
         await service.stage_service.create_stage(
             {**DATA, "name": "../../other", "database_name": "workspaces"},
-            "analyst",
-            active_role="loader",
+            SecurityContext("analyst", "loader"),
         )
         for _ in range(2)
     ]
@@ -90,27 +107,25 @@ async def test_new_stage_names_cannot_select_an_existing_namespace(registration)
 
 @pytest.mark.parametrize("prefix", ["other/private", "/", "../outside", "nova/stages/victim"])
 async def test_non_admin_cannot_register_an_existing_prefix(registration, prefix):
-    with pytest.raises(InsufficientRoleError):
+    with pytest.raises(StageAccessDenied):
         await service.stage_service.create_stage(
             {**DATA, "base_prefix": prefix},
-            "analyst",
-            active_role="loader",
+            SecurityContext("analyst", "loader"),
         )
     assert registration == []
 
 
 @pytest.mark.parametrize("role", [None, ""])
 async def test_roleless_registration_is_denied(registration, role):
-    with pytest.raises(InsufficientRoleError):
-        await service.stage_service.create_stage(DATA, "admin", active_role=role)
+    with pytest.raises(StageAccessDenied):
+        await service.stage_service.create_stage(DATA, service.caller_actor("admin", role))
     assert registration == []
 
 
 async def test_active_admin_can_register_an_explicit_existing_prefix(registration):
     row = await service.stage_service.create_stage(
         {**DATA, "base_prefix": "/existing/files/"},
-        "admin",
-        active_role="ACCOUNTADMIN",
+        SecurityContext("admin", "ACCOUNTADMIN"),
     )
     assert row["base_prefix"] == "existing/files"
 
@@ -120,8 +135,7 @@ async def test_admin_prefix_must_be_a_relative_folder(registration, prefix):
     with pytest.raises(service.StagePathError):
         await service.stage_service.create_stage(
             {**DATA, "base_prefix": prefix},
-            "admin",
-            active_role="ACCOUNTADMIN",
+            SecurityContext("admin", "ACCOUNTADMIN"),
         )
     assert registration == []
 
@@ -134,8 +148,7 @@ async def test_unknown_connection_never_writes_metadata_or_resolves_secrets(
     with pytest.raises(service.StageRegistrationError, match="not configured"):
         await service.stage_service.create_stage(
             {**DATA, "storage_connection": "missing"},
-            "analyst",
-            active_role="loader",
+            SecurityContext("analyst", "loader"),
         )
     assert registration == []
     secrets.assert_not_called()
@@ -155,15 +168,7 @@ def test_legacy_stage_with_missing_connection_cannot_borrow_default(registration
 async def test_sql_stage_rejects_missing_connection_after_authorizing_before_secrets(
     registration, monkeypatch
 ):
-    monkeypatch.setattr(
-        service.db,
-        "execute_system",
-        AsyncMock(
-            return_value={
-                "rows": [("files", "db", "bronze", "missing", "other/private")],
-            }
-        ),
-    )
+    registration.append({"id": "fixture", **DATA, "storage_connection": "missing"})
     authorize = AsyncMock()
     secrets = Mock(side_effect=AssertionError("secret resolution must not run"))
     runtime = StageRuntime(access_check=authorize, credentials=secrets)
@@ -232,14 +237,14 @@ def test_http_registration_uses_active_role_and_audits_outcome(
     }
     authorize = AsyncMock()
     audit = AsyncMock()
-    monkeypatch.setattr(router, "_authorize", authorize)
+    monkeypatch.setattr(metadata_module, "check_stage_access", authorize)
     monkeypatch.setattr(router, "write_audit_log", audit)
     with TestClient(app) as client:
         response = client.post(
             "/stages", json={**DATA, "base_prefix": prefix, "storage_connection": connection}
         )
     assert response.status_code == expected
-    assert authorize.await_args.args[2] == "delete"
+    assert authorize.await_args.kwargs["action"] == "delete"
     assert audit.await_count == 2
     assert audit.await_args_list[0].kwargs["status"] == "ATTEMPTED"
     assert audit.await_args.kwargs["status"] == ("SUCCESS" if expected == 201 else "ERROR")
@@ -254,11 +259,14 @@ async def test_scope_refusal_is_audited_before_any_registration(registration, mo
     audit = AsyncMock()
     monkeypatch.setattr(router, "write_audit_log", audit)
     monkeypatch.setattr(
-        router, "_authorize", AsyncMock(side_effect=HTTPException(403, "Stage access denied"))
+        metadata_module,
+        "check_stage_access",
+        AsyncMock(side_effect=HTTPException(403, "Stage access denied")),
     )
     with pytest.raises(HTTPException):
         await router.create_stage(
-            StageCreate(**DATA), {"username": "analyst", "active_role": "loader"}
+            StageCreate(**DATA),
+            {"username": "analyst", "active_role": "loader", "assigned_roles": ["loader"]},
         )
     assert registration == []
     assert audit.await_args.kwargs["status"] == "ERROR"
@@ -279,13 +287,15 @@ def test_multipart_upload_honors_the_selected_folder(monkeypatch, folder, filena
     app.dependency_overrides[get_current_user] = lambda: {
         "username": "analyst",
         "active_role": "loader",
+        "assigned_roles": ["loader"],
     }
     authorized = AsyncMock(return_value=DATA)
     audit = AsyncMock()
     uploaded = []
 
-    async def upload(stage_id, name, stream):
-        uploaded.append((stage_id, name, stream.read()))
+    async def upload(stage, name, stream):
+        assert stage is DATA
+        uploaded.append(("fixture", name, stream.read()))
         return {"filename": name, "size": 5}
 
     monkeypatch.setattr(router, "_authorized_stage", authorized)

@@ -11,18 +11,25 @@ from app.modules.auth.router import router
 
 
 @pytest.fixture
-def profile_api(monkeypatch):
+def profile_api(monkeypatch, fake_metadata_db):
     records = {}
 
-    async def execute(sql, params):
-        username, key = params[:2]
+    async def read(actor, username, key):
+        assert actor.principal == username
+        assert actor.active_role == "ANALYST"
         assert key == profile.PROFILE_KEY
-        if sql.startswith("INSERT"):
-            records[username] = params[2]
-            return {"rows": []}
-        return {"rows": [[records[username]]] if username in records else []}
+        return records.get(username)
 
-    monkeypatch.setattr(profile.db, "execute_system", execute)
+    async def write(actor, username, values):
+        from app.core.metadata_scope import active_scope
+
+        assert actor.principal == username
+        assert active_scope().actor == actor
+        assert list(values) == [profile.PROFILE_KEY]
+        records[username] = values[profile.PROFILE_KEY]
+
+    monkeypatch.setattr(profile, "read_value", read)
+    monkeypatch.setattr(profile, "write_values", write)
     audit = AsyncMock()
     monkeypatch.setattr(profile, "write_audit_log", audit)
     app = FastAPI()
@@ -30,6 +37,7 @@ def profile_api(monkeypatch):
     app.dependency_overrides[get_current_user] = lambda: {
         "username": "alice",
         "session_id": "session-1",
+        "active_role": "ANALYST", "assigned_roles": ["ANALYST"],
     }
     return app, records, audit
 
@@ -54,7 +62,9 @@ async def test_profile_roundtrip_is_scoped_to_authenticated_user(profile_api):
         assert audit.call_args.kwargs["user_name"] == "alice"
         assert "alice@example.com" not in str(audit.call_args)
 
-        app.dependency_overrides[get_current_user] = lambda: {"username": "bob"}
+        app.dependency_overrides[get_current_user] = lambda: {
+            "username": "bob", "active_role": "ANALYST", "assigned_roles": ["ANALYST"],
+        }
         assert (await client.get("/auth/profile")).json()["email"] == ""
         await client.put("/auth/profile", json={"first_name": "Bob"})
         assert json.loads(records["alice"])["first_name"] == "Alice"
@@ -82,7 +92,7 @@ async def test_profile_rejects_invalid_or_identity_fields(profile_api, fields):
 async def test_profile_store_failure_is_not_an_empty_profile(profile_api, monkeypatch):
     app, _, _ = profile_api
     monkeypatch.setattr(
-        profile.db, "execute_system", AsyncMock(side_effect=RuntimeError("offline"))
+        profile, "read_value", AsyncMock(side_effect=RuntimeError("offline"))
     )
     async with AsyncClient(
         transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test"

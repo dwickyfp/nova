@@ -50,3 +50,7 @@ then inspect the evidence supporting the answer. See
 Use **Access** to review sharing, **Observability** to inspect runs, and
 **Improve** to review quality. Sharing the agent does not replace the active
 role's permissions on its underlying data.
+
+Agent usage groups activity by UTC calendar day, including today. The totals
+and daily chart cover the same selected period. Session traces show your own
+conversations with that agent.

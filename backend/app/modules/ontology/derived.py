@@ -32,6 +32,7 @@ from pydantic import Field
 
 from app.modules.agents.semantic.ir import FieldKind, SemanticModelIR
 from app.modules.intelligence.contracts import Contract, SemanticRef, fingerprint
+from app.modules.ontology import access
 from app.modules.ontology.contracts import Actor, ConceptKind, OntologyRecord, RelationType
 
 logger = logging.getLogger(__name__)
@@ -539,6 +540,7 @@ async def compile_view(view, actor: Actor, repository) -> Compilation:
     )
 
 
+@access.with_caller
 async def compile_after_publish(view_id: str, user: dict) -> None:
     """Called once a Semantic View version is published; never undoes the publication."""
     from app.modules.ontology.repository import ontology_repository
@@ -547,7 +549,9 @@ async def compile_after_publish(view_id: str, user: dict) -> None:
     try:
         view = await SemanticViewCatalog().published(view_id)
         if view is not None:
-            await compile_view(view, Actor.from_user(user), ontology_repository)
+            # One compilation reads and writes the derived layer in one transaction.
+            async with access.governed(user):
+                await compile_view(view, Actor.from_user(user), ontology_repository)
     except Exception as exc:  # noqa: BLE001 - the derived layer is rebuilt on the next compile
         logger.warning("Ontology derivation failed for %s: %s", view_id, type(exc).__name__)
 
@@ -560,7 +564,6 @@ async def visible_layer(user: dict, catalog, repository) -> dict:
     Evidence from a view the caller cannot see is removed; an item left without
     evidence is hidden, and a relation is shown only when both ends are.
     """
-    from app.modules.ontology import access
     from app.modules.ontology.contracts import Concept, Domain, Representation
 
     items = [item for item in await repository.current("derived", DerivedItem)

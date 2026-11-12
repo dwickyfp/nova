@@ -210,24 +210,30 @@ class TestProviderResponseNeverCarriesPlaintextKey:
         assert payload["api_key_masked"].endswith("e-key"[-4:])
 
     def test_masking_helper_strips_and_flags_the_key(self):
+        from app.modules.ai_ml.repository import _key_projection
         from app.modules.ai_ml.service import ai_service
 
         secret = "sk-live-super-secret-key"
         row = {"id": "p1", "api_key": encrypt(secret)}
-        masked = ai_service._mask_api_key(row)
+        has_key, hint = _key_projection(row["api_key"])
+        masked = ai_service._provider({**row, "has_api_key": has_key, "api_key_masked": hint})
         assert "api_key" not in masked
         assert masked["has_api_key"] is True
         assert secret not in str(masked)
 
     def test_masking_helper_flags_absent_key(self):
+        from app.modules.ai_ml.repository import _key_projection
         from app.modules.ai_ml.service import ai_service
 
-        masked = ai_service._mask_api_key({"id": "p1", "api_key": None})
+        has_key, hint = _key_projection(None)
+        masked = ai_service._provider({"id": "p1", "has_api_key": has_key, "api_key_masked": hint})
         assert masked["has_api_key"] is False
         assert masked["api_key_masked"] is None
 
     def test_secret_shorter_than_tail_is_not_leaked(self):
+        from app.modules.ai_ml.repository import _key_projection
         from app.modules.ai_ml.service import ai_service
 
-        masked = ai_service._mask_api_key({"id": "p1", "api_key": encrypt("abc")})
+        has_key, hint = _key_projection(encrypt("abc"))
+        masked = ai_service._provider({"id": "p1", "has_api_key": has_key, "api_key_masked": hint})
         assert "abc" not in str(masked)

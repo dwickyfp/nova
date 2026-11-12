@@ -126,14 +126,18 @@ async def test_research_planning_and_investigations_share_configured_timezone(
 async def test_quality_evaluation_uses_configured_timezone(
     monkeypatch, observed_loops, metadata, zone,
 ):
+    from app.core.metadata_actor import acting_as
+    from app.modules.access_control.security_context import SecurityContext
+
     monkeypatch.setattr(settings, "NOVA_TIMEZONE", zone)
     manifest = {
         "id": "manifest", "version_id": "version", "fingerprint": "digest",
         "dependencies": {"configuration": {}},
     }
     monkeypatch.setattr(quality, "load_runtime_manifest", AsyncMock(return_value=manifest))
-    run = await quality.evaluate(AGENT, manifest, [case()], USER,
-                                 PromotionGates(max_latency_ms=100000))
+    with acting_as(SecurityContext.from_session(USER)):
+        run = await quality.evaluate(AGENT, manifest, [case()], USER,
+                                     PromotionGates(max_latency_ms=100000))
     assert run["status"] == "passed"
     assert len(observed_loops) == 1 and observed_loops[0].execution_timezone == zone
     assert observed_loops[0].quality_evaluation

@@ -80,7 +80,7 @@ async def test_uncertain_native_attempt_holds_graph_and_never_submits_again(monk
     if fault == "heartbeat":
         monkeypatch.setattr(
             repo,
-            "mark_task_run_heartbeat",
+            "heartbeat_task_run",
             AsyncMock(side_effect=RuntimeError("private-heartbeat-canary")),
         )
     audit = AsyncMock()

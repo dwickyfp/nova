@@ -236,13 +236,21 @@ class MLMetadataRepository:
         self, *, model_name: str, model_type: str, tenant: str, database: str | None,
         schema: str | None, target_column: str | None, feature_columns: list[str],
         hyperparameters: dict[str, Any], training_sql: str,
+        reservation_token: str | None = None,
     ) -> dict[str, Any]:
         """Reserve the next TRAINING version of the bound actor's model.
 
         ``training_sql`` must already be redacted. Returns ``model_id``,
-        ``version`` and the ``reservation_token`` that publishing needs.
+        ``version`` and the ``reservation_token`` that publishing needs. A
+        queued training job passes its durable operation id as the token, so
+        the participant verifier can find the version that attempt reserved.
         """
         await self._bound()
+        if reservation_token is not None and (
+            not isinstance(reservation_token, str) or not reservation_token.strip()
+            or len(reservation_token) > 64
+        ):
+            raise ValueError("Invalid reservation token")
         definition = {
             "model_type": model_type, "target_column": target_column,
             "feature_columns": json.dumps(feature_columns),
@@ -285,7 +293,7 @@ class MLMetadataRepository:
         )
         version = max(int(latest["version"] if latest else 0),
                       int(model["current_version"] or 0)) + 1
-        token = str(uuid4())
+        token = reservation_token or str(uuid4())
         await self.connection.execute(
             "INSERT INTO nova_meta.ml_model_versions (model_id,version,status,reservation_token,"
             "created_by) VALUES (%s,%s,'TRAINING',%s,%s)",
@@ -348,6 +356,15 @@ class MLMetadataRepository:
             (model_id, version),
         )
         return row is None or row["status"] != "READY"
+
+    async def version_by_reservation(self, reservation_token: str) -> dict[str, Any] | None:
+        """The version a reservation token named, published or not (verifier lookup)."""
+        await self._bound()
+        return await self._one(
+            "SELECT model_id,version,status,artifact_uri,artifact_sha256,artifact_size,"
+            "created_by FROM nova_meta.ml_model_versions WHERE reservation_token=%s "
+            "ORDER BY model_id,version LIMIT 1", (reservation_token,),
+        )
 
     async def get_version(
         self, model_id: str, version: int, *, owner_name: str, database_name: str | None,

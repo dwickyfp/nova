@@ -131,7 +131,8 @@ async def test_an_unpublished_view_cannot_enable_news(room):
         await room.enable()
 
     assert (refused.value.status_code, refused.value.detail) == (
-        409, "Publish a version before enabling News",
+        409,
+        "Publish a version before enabling News",
     )
 
 
@@ -196,29 +197,41 @@ async def test_defaults_come_from_the_published_definition(room):
 
 def test_only_a_manager_sees_how_news_is_configured():
     view = {
-        "id": "v", "owner_name": "news_manager", "news_enabled": True,
-        "news_config": {"execution_role": "news_editor"}, "news_updated_by": "news_manager",
+        "id": "v",
+        "owner_name": "news_manager",
+        "news_enabled": True,
+        "news_config": {"execution_role": "news_editor"},
+        "news_updated_by": "news_manager",
         "news_updated_at": "2026-10-05",
     }
     reader = {"username": "news_bandung", "active_role": "news_reader"}
 
     assert semantic_views._public_view(view, {"username": "news_manager"}) == view
     assert semantic_views._public_view(view, reader) == {
-        "id": "v", "owner_name": "news_manager", "news_enabled": True,
+        "id": "v",
+        "owner_name": "news_manager",
+        "news_enabled": True,
     }
 
 
 def test_a_view_row_normalizes_the_news_columns():
-    result = {"columns": ["created_at", "updated_at", "news_enabled", "news_config",
-                          "news_updated_at"]}
+    result = {
+        "columns": ["created_at", "updated_at", "news_enabled", "news_config", "news_updated_at"]
+    }
 
-    assert semantic_views._view_row(result, ["c", "u", None, None, None]) == {
-        "created_at": "c", "updated_at": "u", "news_enabled": False, "news_config": None,
+    row = semantic_views._view_row(
+        dict(zip(result["columns"], ["c", "u", None, None, None], strict=True))
+    )
+    assert {key: row[key] for key in result["columns"]} == {
+        "created_at": "c",
+        "updated_at": "u",
+        "news_enabled": False,
+        "news_config": None,
         "news_updated_at": None,
     }
-    assert semantic_views._view_row(result, ["c", "u", 1, '{"metrics": ["revenue"]}', "t"])[
-        "news_config"
-    ] == {"metrics": ["revenue"]}
+    assert semantic_views._view_row(
+        dict(zip(result["columns"], ["c", "u", 1, '{"metrics": ["revenue"]}', "t"], strict=True))
+    )["news_config"] == {"metrics": ["revenue"]}
 
 
 class Tasks:

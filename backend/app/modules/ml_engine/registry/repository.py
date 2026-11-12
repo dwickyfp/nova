@@ -1,113 +1,104 @@
-"""Credential-free StarRocks model/run metadata repository."""
+"""Model registry metadata: models, versions, aliases and run telemetry.
+
+Rows live in PostgreSQL (``nova_meta``) and name artifacts by URI and SHA-256;
+model bytes stay in the artifact store.
+"""
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
-import time
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from typing import Any
-from uuid import uuid4
 
-import asyncmy
-import asyncmy.cursors
-import redis.asyncio as aioredis
-
+from app.common.metadata_actors import metadata_scope, owner_actor
 from app.core.config import settings
-from app.modules.ml_engine.spec import MLExecutionSpec, VersionReservationConflict
+from app.core.metadata_actor import bound_actor, current_actor
+from app.core.metadata_db import MetadataConflict
+from app.modules.access_control.security_context import SecurityContext
+from app.modules.ml_engine.metadata_repository import MLMetadataRepository
+from app.modules.ml_engine.spec import (
+    MLExecutionSpec,
+    MLSecurityContext,
+    VersionReservationConflict,
+)
 from app.modules.query.sql_pipeline import redact_for_output
 
 
-class ModelRegistryRepository:
-    _local_locks: dict[str, asyncio.Lock] = {}
-    _local_lock_users: dict[str, int] = {}
+def security_actor(security: MLSecurityContext) -> SecurityContext:
+    """The model owner's metadata actor; fails closed without one active role."""
+    actor = owner_actor(
+        security.username,
+        security.role,
+        session_id=security.session_id,
+        security_context_version=security.security_context_version,
+    )
+    bound = bound_actor()
+    if bound is not None and security.session_id is None and (
+        bound.principal == actor.principal and bound.active_role == actor.active_role
+        and bound.security_context_version == actor.security_context_version
+        and bound.principal_type == actor.principal_type
+    ):
+        return bound
+    return actor
 
-    async def _connect(self) -> asyncmy.Connection:
-        return await asyncmy.connect(
-            host=settings.STARROCKS_HOST,
-            port=settings.STARROCKS_FE_MYSQL_PORT,
-            user=settings.STARROCKS_ROOT_USER,
-            password=settings.STARROCKS_ROOT_PASSWORD,
-            autocommit=True,
-            connect_timeout=10,
-        )
+
+class ModelRegistryRepository:
+    """Model, version, alias and run metadata through the PostgreSQL repository.
+
+    Every call takes an actor-bound transaction from the process metadata
+    database. Writes run as the model owner; a reservation is serialized by the
+    owner's model row lock instead of a Redis lock.
+    """
+
+    @asynccontextmanager
+    async def _repository(
+        self, actor: SecurityContext, *, read_only: bool = False,
+    ) -> AsyncIterator[MLMetadataRepository]:
+        async with metadata_scope(actor, read_only=read_only) as connection:
+            yield MLMetadataRepository(connection, actor)
+
+    def _reader(self, actor: SecurityContext | None) -> SecurityContext:
+        return actor if actor is not None else current_actor()
 
     async def reserve_version(
-        self, spec: MLExecutionSpec, *, feature_columns: list[str]
-    ) -> tuple[str, int]:
-        """Reserve one unique TRAINING version without changing current_version."""
+        self,
+        spec: MLExecutionSpec,
+        *,
+        feature_columns: list[str],
+    ) -> tuple[str, int, str]:
+        """Reserve one TRAINING version; returns its model id, version and token."""
         assert spec.model_name
-        scope = self._model_scope(spec)
-        async with self._reservation_lock(scope):
-            conn = await self._connect()
-            try:
-                async with conn.cursor(asyncmy.cursors.DictCursor) as cursor:
-                    await cursor.execute(
-                        "SELECT model_id, current_version FROM NOVA_SYSTEM.ML_MODELS "
-                        "WHERE model_name=%s AND created_by=%s AND "
-                        "tenant_name=%s AND "
-                        "COALESCE(database_name, '')=COALESCE(%s, '') "
-                        "AND COALESCE(schema_name, '')=COALESCE(%s, '') "
-                        "ORDER BY updated_at DESC LIMIT 1",
-                        (
-                            spec.model_name,
-                            spec.security.username,
-                            spec.security.tenant,
-                            spec.security.database,
-                            spec.security.schema,
-                        ),
-                    )
-                    row = await cursor.fetchone()
-                    model_id = row["model_id"] if row else str(uuid4())
-                    await cursor.execute(
-                        "SELECT COALESCE(MAX(version), 0) AS version "
-                        "FROM NOVA_SYSTEM.ML_MODEL_VERSIONS WHERE model_id=%s",
-                        (model_id,),
-                    )
-                    maximum = await cursor.fetchone()
-                    registered = int(maximum["version"] or 0)
-                    advertised = int(row.get("current_version") or 0) if row else 0
-                    version = max(registered, advertised) + 1
-                    current_version = advertised if row else 0
-                    await cursor.execute(
-                        "INSERT INTO NOVA_SYSTEM.ML_MODELS "
-                        "(model_id, model_type, model_name, target_column, feature_columns, "
-                        "hyperparameters, training_sql, database_name, schema_name, created_at, "
-                        "created_by, current_version, tenant_name, updated_at) "
-                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),%s,%s,%s,NOW())",
-                        (
-                            model_id,
-                            spec.task.value,
-                            spec.model_name,
-                            spec.target_column,
-                            json.dumps(feature_columns),
-                            json.dumps(spec.parameters, default=str),
-                            spec.input_sql,
-                            spec.security.database,
-                            spec.security.schema,
-                            spec.security.username,
-                            current_version,
-                            spec.security.tenant,
-                        ),
-                    )
-                    await cursor.execute(
-                        "INSERT INTO NOVA_SYSTEM.ML_MODEL_VERSIONS "
-                        "(model_id,version,status,reservation_token,created_at,created_by) "
-                        "VALUES (%s,%s,'TRAINING',%s,NOW(),%s)",
-                        (model_id, version, str(uuid4()), spec.security.username),
-                    )
-                    return model_id, version
-            finally:
-                conn.close()
+        actor = security_actor(spec.security)
+        try:
+            async with self._repository(actor) as repository:
+                reserved = await repository.reserve_version(
+                    model_name=spec.model_name,
+                    model_type=spec.task.value,
+                    tenant=spec.security.tenant,
+                    database=spec.security.database,
+                    schema=spec.security.schema,
+                    target_column=spec.target_column,
+                    feature_columns=list(feature_columns),
+                    hyperparameters=spec.parameters,
+                    training_sql=spec.input_sql,
+                    reservation_token=spec.reservation_token,
+                )
+        except MetadataConflict:
+            raise VersionReservationConflict(
+                "Could not reserve a model version; retry the training job"
+            ) from None
+        return reserved["model_id"], int(reserved["version"]), reserved["reservation_token"]
 
     async def register_version(
         self,
         *,
         model_id: str,
         version: int,
+        reservation_token: str,
         spec: MLExecutionSpec,
         output,
         artifact_uri: str,
@@ -115,149 +106,49 @@ class ModelRegistryRepository:
         artifact_size: int,
         training_duration_ms: int,
     ) -> None:
-        async with (
-            self._reservation_lock(self._model_scope(spec)),
-            self._reservation_lock(f"version:{model_id}:{version}"),
-        ):
-            conn = await self._connect()
-            try:
-                async with conn.cursor(asyncmy.cursors.DictCursor) as cursor:
-                    await cursor.execute(
-                        "SELECT status FROM NOVA_SYSTEM.ML_MODEL_VERSIONS "
-                        "WHERE model_id=%s AND version=%s",
-                        (model_id, version),
-                    )
-                    reservation = await cursor.fetchone()
-                    if not reservation or reservation["status"] != "TRAINING":
-                        raise VersionReservationConflict(
-                            "Model version is no longer reserved for training"
-                        )
-                    await cursor.execute(
-                        "UPDATE NOVA_SYSTEM.ML_MODELS SET feature_columns=%s "
-                        "WHERE model_id=%s AND tenant_name=%s",
-                        (json.dumps(output.feature_columns), model_id, spec.security.tenant),
-                    )
-                    await cursor.execute(
-                        "INSERT INTO NOVA_SYSTEM.ML_MODEL_VERSIONS "
-                        "(model_id, version, status, training_rows, metrics, artifact_uri, "
-                        "artifact_sha256, artifact_size, task, framework, framework_version, "
-                        "algorithm, feature_schema, training_duration_ms, ready_at, "
-                        "model_binary, created_at, created_by) "
-                        "VALUES (%s,%s,'READY',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
-                        "NOW(),NULL,NOW(),%s)",
-                        (
-                            model_id,
-                            version,
-                            output.training_rows,
-                            json.dumps(output.metrics, default=str),
-                            artifact_uri,
-                            artifact_sha256,
-                            artifact_size,
-                            spec.task.value,
-                            output.engine,
-                            output.metrics.get("framework_version")
-                            or _framework_version(output.engine),
-                            output.algorithm,
-                            json.dumps(output.metrics.get("feature_metadata", []), default=str),
-                            training_duration_ms,
-                            spec.security.username,
+        """Publish the reserved version once, with its verified artifact provenance."""
+        actor = security_actor(spec.security)
+        try:
+            async with self._repository(actor) as repository:
+                await repository.publish_version(
+                    model_id=model_id,
+                    version=version,
+                    reservation_token=reservation_token,
+                    feature_columns=list(output.feature_columns),
+                    fields={
+                        "training_rows": output.training_rows,
+                        "metrics": json.dumps(output.metrics, default=str),
+                        "artifact_uri": artifact_uri,
+                        "artifact_sha256": artifact_sha256,
+                        "artifact_size": artifact_size,
+                        "task": spec.task.value,
+                        "framework": output.engine,
+                        "framework_version": output.metrics.get("framework_version")
+                        or _framework_version(output.engine),
+                        "algorithm": output.algorithm,
+                        "feature_schema": json.dumps(
+                            output.metrics.get("feature_metadata", []), default=str
                         ),
-                    )
-                    await cursor.execute(
-                        "SELECT current_version FROM NOVA_SYSTEM.ML_MODELS WHERE model_id=%s",
-                        (model_id,),
-                    )
-                    row = await cursor.fetchone()
-                    current = int(row.get("current_version") or 0) if row else 0
-                    if version > current:
-                        await cursor.execute(
-                            "UPDATE NOVA_SYSTEM.ML_MODELS SET current_version=%s,"
-                            "updated_at=NOW() WHERE model_id=%s",
-                            (version, model_id),
-                        )
-            finally:
-                conn.close()
-
-    async def abort_version(self, model_id: str, version: int) -> bool:
-        """Mark a partial version failed without moving the production pointer."""
-        async with self._reservation_lock(f"version:{model_id}:{version}"):
-            return await self._abort_version(model_id, version)
-
-    async def _abort_version(self, model_id: str, version: int) -> bool:
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cursor:
-                await cursor.execute(
-                    "SELECT status FROM NOVA_SYSTEM.ML_MODEL_VERSIONS "
-                    "WHERE model_id=%s AND version=%s",
-                    (model_id, version),
+                        "training_duration_ms": training_duration_ms,
+                    },
                 )
-                model = await cursor.fetchone()
-                if model and model.get("status") == "READY":
-                    return False
-                await cursor.execute(
-                    "UPDATE NOVA_SYSTEM.ML_MODEL_VERSIONS SET status='FAILED',failed_at=NOW(),"
-                    "failure_reason='artifact registration did not complete' "
-                    "WHERE model_id=%s AND version=%s",
-                    (model_id, version),
-                )
-                return True
-        finally:
-            conn.close()
+        except MetadataConflict:
+            raise VersionReservationConflict(
+                "Model version is no longer reserved for training"
+            ) from None
 
-    @asynccontextmanager
-    async def _reservation_lock(self, scope: str):
-        """Serialize allocation across replicas with Redis plus a local lock."""
-        digest = hashlib.sha256(scope.encode()).hexdigest()
-        local = self._local_locks.setdefault(digest, asyncio.Lock())
-        self._local_lock_users[digest] = self._local_lock_users.get(digest, 0) + 1
-        try:
-            async with local, self._distributed_lock(digest):
-                yield
-        finally:
-            self._local_lock_users[digest] -= 1
-            if self._local_lock_users[digest] == 0:
-                self._local_lock_users.pop(digest)
-                self._local_locks.pop(digest)
+    async def abort_version(
+        self, model_id: str, version: int, *, actor: SecurityContext,
+    ) -> bool:
+        """Fail an unpublished reservation; False when the version is already published."""
+        async with self._repository(actor) as repository:
+            return await repository.abort_version(model_id, version)
 
-    @asynccontextmanager
-    async def _distributed_lock(self, digest: str):
-        client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
-        key = f"nova:ml:version:{digest}"
-        token = str(uuid4())
-        deadline = time.monotonic() + 10
-        acquired = False
-        try:
-            while time.monotonic() < deadline:
-                if await client.set(key, token, nx=True, ex=30):
-                    acquired = True
-                    break
-                await asyncio.sleep(0.05)
-            if not acquired:
-                raise VersionReservationConflict(
-                    "Could not reserve a model version within 10 seconds; retry the training job"
-                )
-            yield
-        finally:
-            try:
-                if acquired:
-                    await client.eval(
-                        "if redis.call('get', KEYS[1]) == ARGV[1] then return "
-                        "redis.call('del', KEYS[1]) else return 0 end",
-                        1,
-                        key,
-                        token,
-                    )
-            finally:
-                await client.aclose()
-
-    @staticmethod
-    def _model_scope(spec: MLExecutionSpec) -> str:
-        return (
-            f"{spec.security.tenant}:{spec.security.username}:"
-            f"{spec.security.database or ''}:{spec.security.schema or ''}:"
-            f"{spec.model_name or ''}"
-        )
+    async def version_by_reservation(
+        self, reservation_token: str, *, actor: SecurityContext | None = None,
+    ) -> dict[str, Any] | None:
+        async with self._repository(self._reader(actor), read_only=True) as repository:
+            return await repository.version_by_reservation(reservation_token)
 
     async def record_run(
         self,
@@ -272,58 +163,41 @@ class ModelRegistryRepository:
         artifact_uri: str | None = None,
         error: Exception | None = None,
     ) -> None:
-        conn = await self._connect()
-        try:
-            async with conn.cursor() as cursor:
-                await cursor.execute(
-                    "INSERT INTO NOVA_SYSTEM.ML_RUNS "
-                    "(run_id, task, mode, status, owner_name, tenant_name, database_name, "
-                    "model_id, model_version, artifact_uri, fingerprint, telemetry, error_class, "
-                    "error_message, created_at, expires_at, updated_at) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),"
-                    "DATE_ADD(NOW(), INTERVAL %s SECOND),NOW())",
-                    (
-                        run_id,
-                        spec.task.value,
-                        spec.mode.value,
-                        status,
-                        spec.security.username,
-                        spec.security.tenant,
-                        spec.security.database,
-                        model_id,
-                        version,
-                        artifact_uri,
-                        fingerprint,
-                        json.dumps(telemetry, default=str),
-                        type(error).__name__ if error else None,
-                        redact_for_output(str(error))[:2000] if error else None,
-                        settings.ML_EPHEMERAL_TTL_SECONDS,
-                    ),
-                )
-        finally:
-            conn.close()
+        """Create the owner's run record once, or move a running record to its outcome."""
+        async with self._repository(security_actor(spec.security)) as repository:
+            await repository.record_run(
+                {
+                    "run_id": run_id,
+                    "task": spec.task.value,
+                    "mode": spec.mode.value,
+                    "status": status,
+                    "tenant_name": spec.security.tenant,
+                    "database_name": spec.security.database,
+                    "model_id": model_id,
+                    "model_version": version,
+                    "artifact_uri": artifact_uri,
+                    "fingerprint": fingerprint,
+                    "telemetry": telemetry,
+                    "error_class": type(error).__name__ if error else None,
+                    "error_message": redact_for_output(str(error))[:2000] if error else None,
+                },
+                ttl_seconds=settings.ML_EPHEMERAL_TTL_SECONDS,
+            )
 
     async def resolve_alias(
-        self, alias: str, *, owner_name: str, database_name: str | None, tenant: str = "default"
+        self,
+        alias: str,
+        *,
+        owner_name: str,
+        database_name: str | None,
+        tenant: str = "default",
+        actor: SecurityContext | None = None,
     ) -> dict[str, Any] | None:
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cursor:
-                await cursor.execute(
-                    "SELECT a.model_id, a.version, m.model_name, m.model_type, m.tenant_name, "
-                    "v.artifact_uri, v.artifact_sha256, v.artifact_size, v.model_binary "
-                    "FROM NOVA_SYSTEM.ML_MODEL_ALIASES a "
-                    "JOIN NOVA_SYSTEM.ML_MODELS m ON m.model_id=a.model_id "
-                    "JOIN NOVA_SYSTEM.ML_MODEL_VERSIONS v "
-                    "ON v.model_id=a.model_id AND v.version=a.version "
-                    "WHERE a.alias_name=%s AND a.owner_name=%s AND a.database_name=%s "
-                    "AND m.tenant_name=%s AND v.status='READY'",
-                    (alias, owner_name, alias_database_scope(database_name, tenant), tenant),
-                )
-                row = await cursor.fetchone()
-                return dict(row) if row else None
-        finally:
-            conn.close()
+        async with self._repository(self._reader(actor), read_only=True) as repository:
+            row = await repository.resolve_alias(
+                alias, owner_name=owner_name, database_name=database_name, tenant=tenant
+            )
+            return dict(row) if row else None
 
     async def get_version(
         self,
@@ -333,23 +207,17 @@ class ModelRegistryRepository:
         owner_name: str,
         database_name: str | None,
         tenant: str = "default",
+        actor: SecurityContext | None = None,
     ) -> dict[str, Any] | None:
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cursor:
-                await cursor.execute(
-                    "SELECT v.*, m.model_name, m.model_type, m.tenant_name "
-                    "FROM NOVA_SYSTEM.ML_MODEL_VERSIONS v "
-                    "JOIN NOVA_SYSTEM.ML_MODELS m ON m.model_id=v.model_id "
-                    "WHERE v.model_id=%s AND v.version=%s AND m.created_by=%s "
-                    "AND COALESCE(m.database_name, '')=COALESCE(%s, '') "
-                    "AND m.tenant_name=%s AND v.status='READY'",
-                    (model_id, version, owner_name, database_name, tenant),
-                )
-                row = await cursor.fetchone()
-                return dict(row) if row else None
-        finally:
-            conn.close()
+        async with self._repository(self._reader(actor), read_only=True) as repository:
+            row = await repository.get_version(
+                model_id,
+                version,
+                owner_name=owner_name,
+                database_name=database_name,
+                tenant=tenant,
+            )
+            return dict(row) if row else None
 
     async def set_alias(
         self,
@@ -357,39 +225,38 @@ class ModelRegistryRepository:
         model_id: str,
         version: int,
         *,
-        owner_name: str,
+        actor: SecurityContext,
         database_name: str | None,
         tenant: str = "default",
     ) -> dict[str, Any]:
-        if (
-            await self.get_version(
-                model_id,
-                version,
-                owner_name=owner_name,
-                database_name=database_name,
-                tenant=tenant,
-            )
-            is None
-        ):
-            raise ValueError("Model version not found")
-        conn = await self._connect()
+        """Create or move the owner's alias to a published version of their model."""
+        owner_name = actor.principal
         try:
-            async with conn.cursor() as cursor:
-                await cursor.execute(
-                    "INSERT INTO NOVA_SYSTEM.ML_MODEL_ALIASES "
-                    "(alias_name, owner_name, database_name, model_id, version, "
-                    "created_at, updated_at) "
-                    "VALUES (%s,%s,%s,%s,%s,NOW(),NOW())",
-                    (
-                        alias,
-                        owner_name,
-                        alias_database_scope(database_name, tenant),
-                        model_id,
-                        version,
+            async with self._repository(actor) as repository:
+                target = await repository.get_version(
+                    model_id,
+                    version,
+                    owner_name=owner_name,
+                    database_name=database_name,
+                    tenant=tenant,
+                )
+                if target is None:
+                    raise ValueError("Model version not found")
+                current = await repository.get_alias(
+                    alias, database_name=database_name, tenant=tenant
+                )
+                await repository.set_alias(
+                    alias,
+                    model_id,
+                    version,
+                    database_name=database_name,
+                    tenant=tenant,
+                    expected_revision=(
+                        int(current["metadata_revision"]) if current is not None else None
                     ),
                 )
-        finally:
-            conn.close()
+        except MetadataConflict:
+            raise ValueError("The alias changed while it was being updated; retry") from None
         return {
             "alias_name": alias,
             "model_id": model_id,
@@ -397,6 +264,56 @@ class ModelRegistryRepository:
             "owner_name": owner_name,
             "database_name": database_name or "",
         }
+
+    async def delete_alias(
+        self,
+        alias: str,
+        *,
+        actor: SecurityContext,
+        database_name: str | None,
+        tenant: str = "default",
+    ) -> bool:
+        async with self._repository(actor) as repository:
+            return await repository.delete_alias(
+                alias, database_name=database_name, tenant=tenant
+            )
+
+    async def list_aliases(
+        self,
+        *,
+        owner_name: str,
+        database_name: str | None,
+        tenant: str = "default",
+        actor: SecurityContext | None = None,
+    ) -> list[dict[str, Any]]:
+        async with self._repository(self._reader(actor), read_only=True) as repository:
+            return await repository.list_aliases(
+                owner_name=owner_name, database_name=database_name, tenant=tenant
+            )
+
+    async def list_models(
+        self,
+        *,
+        owner_name: str,
+        database_name: str | None,
+        tenant: str = "default",
+        actor: SecurityContext | None = None,
+    ) -> list[dict[str, Any]]:
+        async with self._repository(self._reader(actor), read_only=True) as repository:
+            return await repository.list_models(
+                owner_name=owner_name, database_name=database_name, tenant=tenant
+            )
+
+    async def list_versions(
+        self, model_id: str, *, actor: SecurityContext | None = None,
+    ) -> list[dict[str, Any]]:
+        async with self._repository(self._reader(actor), read_only=True) as repository:
+            return await repository.list_versions(model_id)
+
+    async def delete_model(self, model_id: str, *, actor: SecurityContext) -> bool:
+        """Delete the owner's model, its aliases and versions in one transaction."""
+        async with self._repository(actor) as repository:
+            return await repository.delete_model(model_id)
 
 
 model_registry_repository = ModelRegistryRepository()

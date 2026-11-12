@@ -1,55 +1,32 @@
-"""Immutable namespace generations; primary-key upserts are never used as CAS."""
+"""Immutable namespace generations, published only by their claim winner."""
 
-from contextlib import suppress
+from __future__ import annotations
+
+import logging
 from dataclasses import dataclass
+from typing import Any
 from uuid import uuid4
 
-from app.modules.streams.claims import Claim, ClaimOutcome, ClaimRepository, MetadataExecutor
+from app.core.metadata_db import (
+    MetadataConflict,
+    MetadataIntegrityViolation,
+    MetadataOperationFailed,
+    MetadataOutcomeUnknown,
+)
+from app.modules.streams.claims import Claim, ClaimOutcome, ClaimRepository
+from app.modules.streams.control import MetadataScope, stream_metadata
+from app.modules.streams.metadata_repository import NAMESPACE_FIELDS
 from app.modules.streams.namespace import StreamName
 from app.modules.streams.schemas import ChangeCursor, StreamError, operation_id
 
-STREAMS_DDL = """
-CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_STREAMS (
-    catalog_name VARCHAR(128) NOT NULL,
-    database_name VARCHAR(128) NOT NULL,
-    schema_name VARCHAR(128) NOT NULL,
-    name VARCHAR(128) NOT NULL,
-    generation BIGINT NOT NULL,
-    stream_id VARCHAR(64) NOT NULL,
-    source_database VARCHAR(128) NOT NULL,
-    source_name VARCHAR(128) NOT NULL,
-    source_id VARCHAR(64) NOT NULL,
-    owner_role VARCHAR(128) NOT NULL,
-    cursor_epoch BIGINT NOT NULL,
-    cursor_sequence BIGINT NOT NULL,
-    status VARCHAR(32) NOT NULL,
-    created_at DATETIME NOT NULL
-) PRIMARY KEY(catalog_name, database_name, schema_name, name, generation)
-DISTRIBUTED BY HASH(catalog_name, database_name, schema_name, name) BUCKETS 1
-PROPERTIES ('replication_num'='1')
-"""
+logger = logging.getLogger(__name__)
 
-NAMESPACE_OPERATIONS_DDL = """
-CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT_STREAM_NAMESPACE_OPERATIONS (
-    operation_digest VARCHAR(64) NOT NULL,
-    catalog_name VARCHAR(128) NOT NULL,
-    database_name VARCHAR(128) NOT NULL,
-    schema_name VARCHAR(128) NOT NULL,
-    name VARCHAR(128) NOT NULL,
-    generation BIGINT NOT NULL,
-    stream_id VARCHAR(64) NOT NULL,
-    source_database VARCHAR(128) NOT NULL,
-    source_name VARCHAR(128) NOT NULL,
-    source_id VARCHAR(64) NOT NULL,
-    owner_role VARCHAR(128) NOT NULL,
-    cursor_epoch BIGINT NOT NULL,
-    cursor_sequence BIGINT NOT NULL,
-    status VARCHAR(32) NOT NULL,
-    created_at DATETIME NOT NULL
-) PRIMARY KEY(operation_digest)
-DISTRIBUTED BY HASH(operation_digest) BUCKETS 1
-PROPERTIES ('replication_num'='1')
-"""
+#: A fact the database refused or whose commit outcome is unknown: only a
+#: fresh readback can tell what is durable.
+_UNVERIFIED = (
+    MetadataConflict, MetadataIntegrityViolation, MetadataOutcomeUnknown,
+    MetadataOperationFailed,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,17 +47,17 @@ class StreamRecord:
                 self.cursor.epoch, self.cursor.sequence, self.status)
 
 
-_COLUMNS = (
-    "catalog_name, database_name, schema_name, name, generation, stream_id, "
-    "source_database, source_name, source_id, owner_role, cursor_epoch, cursor_sequence, status"
-)
-_SCOPE = "catalog_name=%s AND database_name=%s AND schema_name=%s AND name=%s"
+def _mapping(record: StreamRecord) -> dict[str, Any]:
+    return dict(zip(NAMESPACE_FIELDS, record.values, strict=True))
 
 
-def _decode_record(row) -> StreamRecord:
+def _decode_record(row: dict[str, Any]) -> StreamRecord:
     record = StreamRecord(
-        StreamName(row[1], row[3], row[2], row[0]), row[4], row[5],
-        StreamName(row[6], row[7]), row[8], row[9], ChangeCursor(row[10], row[11]), row[12],
+        StreamName(row["database_name"], row["name"], row["schema_name"], row["catalog_name"]),
+        int(row["generation"]), row["stream_id"],
+        StreamName(row["source_database"], row["source_name"]), row["source_id"],
+        row["owner_role"], ChangeCursor(int(row["cursor_epoch"]), int(row["cursor_sequence"])),
+        row["status"],
     )
     if record.generation < 0 or record.status not in {"READY", "DROPPED", "STALE"}:
         raise StreamError("STREAM_METADATA_INCONSISTENT", "Stream generation is inconsistent")
@@ -88,49 +65,46 @@ def _decode_record(row) -> StreamRecord:
 
 
 class StreamRepository:
-    def __init__(self, execute: MetadataExecutor | None = None) -> None:
-        if execute is None:
-            from app.core.database import db
-
-            execute = db.execute_system
-        self.execute = execute
-        self.claims = ClaimRepository(execute)
+    def __init__(self, metadata: MetadataScope = stream_metadata) -> None:
+        self._metadata = metadata
+        self.claims = ClaimRepository(metadata)
 
     async def current(self, name: StreamName) -> StreamRecord | None:
-        result = await self.execute(
-            f"SELECT {_COLUMNS} FROM NOVA_SYSTEM.CONFIG_STREAMS WHERE {_SCOPE} "
-            "ORDER BY generation DESC LIMIT 1", name.key,
-        )
-        if not result["rows"]:
+        async with self._metadata(read_only=True) as repository:
+            row = await repository.current(name.key)
+        if row is None:
             return None
-        record = _decode_record(result["rows"][0])
+        record = _decode_record(row)
         if record.name != name:
             raise StreamError("STREAM_METADATA_INCONSISTENT", "Stream identity is inconsistent")
         return record
 
+    async def current_generations(
+        self, *, database: str | None = None, source_id: str | None = None,
+        statuses: tuple[str, ...] | None = None,
+    ) -> list[dict[str, Any]]:
+        """The newest generation of every stream name, with its definition mode."""
+        async with self._metadata(read_only=True) as repository:
+            return await repository.current_generations(
+                database=database, source_id=source_id, statuses=statuses,
+            )
+
     async def _prepare(self, record: StreamRecord) -> None:
         digest = operation_id(*record.values)
-        with suppress(Exception):
-            await self.execute(
-                "INSERT INTO NOVA_SYSTEM.AUDIT_STREAM_NAMESPACE_OPERATIONS "
-                f"(operation_digest, {_COLUMNS}, created_at) "
-                f"WITH LABEL nova_stream_namespace_facts_{digest} SELECT "
-                + ", ".join(["%s"] * 14) + ", NOW() WHERE NOT EXISTS "
-                "(SELECT 1 FROM NOVA_SYSTEM.AUDIT_STREAM_NAMESPACE_OPERATIONS "
-                "WHERE operation_digest=%s)",
-                (digest, *record.values, digest),
-            )
+        try:
+            async with self._metadata() as repository:
+                await repository.prepare_namespace_operation(digest, _mapping(record))
+        except _UNVERIFIED:
+            logger.debug("namespace facts need readback", exc_info=True)
         if await self._operation(digest) != record:
             raise StreamError("STREAM_NAMESPACE_BUSY", "Namespace operation requires verification")
 
     async def _operation(self, digest: str) -> StreamRecord:
-        result = await self.execute(
-            f"SELECT {_COLUMNS} FROM NOVA_SYSTEM.AUDIT_STREAM_NAMESPACE_OPERATIONS "
-            "WHERE operation_digest=%s LIMIT 2", (digest,),
-        )
-        if len(result["rows"]) != 1:
+        async with self._metadata(read_only=True) as repository:
+            row = await repository.namespace_operation(digest)
+        if row is None:
             raise StreamError("STREAM_NAMESPACE_BUSY", "Namespace operation facts are unavailable")
-        record = _decode_record(result["rows"][0])
+        record = _decode_record(row)
         if operation_id(*record.values) != digest:
             raise StreamError("STREAM_METADATA_INCONSISTENT", "Namespace operation is inconsistent")
         return record
@@ -149,7 +123,7 @@ class StreamRepository:
             if current == record:
                 return current
             raise StreamError("STREAM_NAMESPACE_BUSY", "Stream namespace requires verification")
-        return await self._publish_winner(record, claim)
+        return await self._publish_winner(record)
 
     async def recover_namespace(self, name: StreamName, generation: int) -> StreamRecord:
         """Repair publication from durable winner facts, never from retry input."""
@@ -169,19 +143,17 @@ class StreamRepository:
             return current
         if generation != (current.generation + 1 if current else 0):
             raise StreamError("STREAM_METADATA_INCONSISTENT", "Namespace generation is missing")
-        return await self._publish_winner(record, winner)
+        return await self._publish_winner(record)
 
-    async def _publish_winner(self, record: StreamRecord, claim: Claim) -> StreamRecord:
-        label = "nova_stream_namespace_" + claim.key
-        # Exact immutable readback acknowledges publication after response loss.
-        with suppress(Exception):
-            await self.execute(
-                f"INSERT INTO NOVA_SYSTEM.CONFIG_STREAMS ({_COLUMNS}, created_at) "
-                f"WITH LABEL {label} SELECT " + ", ".join(["%s"] * 13) + ", NOW() "
-                "WHERE NOT EXISTS (SELECT 1 FROM NOVA_SYSTEM.CONFIG_STREAMS "
-                f"WHERE {_SCOPE} AND generation=%s)",
-                (*record.values, *record.name.key, record.generation),
-            )
+    async def _publish_winner(self, record: StreamRecord) -> StreamRecord:
+        # The database refuses a publication without the winning claim and a
+        # different fact for the generation; an exact readback acknowledges a
+        # publication whose commit response was lost.
+        try:
+            async with self._metadata() as repository:
+                await repository.publish_generation(_mapping(record))
+        except _UNVERIFIED:
+            logger.debug("namespace publication needs readback", exc_info=True)
         if await self.current(record.name) != record:
             raise StreamError("STREAM_NAMESPACE_BUSY", "Stream namespace requires verification")
         return record

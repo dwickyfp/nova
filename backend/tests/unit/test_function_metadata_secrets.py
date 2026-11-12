@@ -51,44 +51,67 @@ def test_malformed_json_credential_refuses_readback():
 
 
 async def test_udf_registration_failure_cannot_echo_resolved_config(monkeypatch, caplog):
-    from app.modules.llm_functions.service import LLMFunctionService
+    import hashlib
+    import json
+    from contextlib import asynccontextmanager
+    from uuid import uuid4
 
-    service = LLMFunctionService()
-    monkeypatch.setattr(
-        service,
-        "_get_provider",
-        AsyncMock(
-            return_value={
-                "name": "fixture",
-                "type": "openai",
-                "api_key": "sentinel-key",
-                "endpoint": "https://example.com/v1",
-            }
-        ),
-    )
-    monkeypatch.setattr(
-        service,
-        "_connect",
-        AsyncMock(
-            side_effect=RuntimeError('SQL failed: ai_query(prompt, \'{"api_key":"sentinel-key"}\')')
-        ),
-    )
-    result = await service._register_single_udf(
-        "complete",
-        {
-            "id": "alias-1",
-            "provider_id": "fixture",
-            "model_name": "fixture-model",
-        },
-    )
-    assert not result["registered"]
-    assert "sentinel-key" not in str(result)
-    assert "sentinel-key" not in caplog.text
-    # Nor may the alias token that the function body now carries.
+    from app.modules.llm_functions import registration_worker as module
     from app.modules.llm_functions.gateway import alias_token
 
-    assert alias_token("alias-1") not in str(result)
-    assert alias_token("alias-1") not in caplog.text
+    snapshot = {
+        "contract_version": 1,
+        "function_type": "complete",
+        "mode": "configured",
+        "alias": {"id": "alias-1"},
+        "model": {"name": "fixture-model"},
+    }
+    payload = json.dumps(snapshot)
+    definition = {
+        "version": 1,
+        "digest": hashlib.sha256(payload.encode()).hexdigest(),
+        "payload": payload,
+        "function_type": "complete",
+    }
+    job = {
+        "id": uuid4(),
+        "lease_holder": uuid4(),
+        "lease_token": 1,
+        "revision": 1,
+        "state": "LEASED",
+        "queue": "maintenance",
+        "kind": module.JOB_KIND,
+        "definition_ref": uuid4(),
+        "definition_version": 1,
+        "definition_digest": definition["digest"],
+    }
+    registrations = AsyncMock()
+    registrations.definition.return_value = definition
+    registrations.head.return_value = {"version": 1}
+    jobs = AsyncMock()
+    for method in ("prepare", "submitted", "verifying"):
+        getattr(jobs, method).return_value = job
+    jobs.block.return_value = {"state": "BLOCKED"}
+    monkeypatch.setattr(module, "FunctionRegistrationRepository", lambda connection: registrations)
+    monkeypatch.setattr(module, "JobRepository", lambda connection: jobs)
+
+    @asynccontextmanager
+    async def transaction():
+        yield object()
+
+    token = alias_token("alias-1")
+    engine = AsyncMock()
+    engine.apply.side_effect = RuntimeError(f"SQL failed with sentinel-key {token}")
+    engine.stored_body.side_effect = RuntimeError(f"read failed with sentinel-key {token}")
+    result = await module.AIFunctionRegistrationParticipant(
+        engine=engine, transaction=transaction
+    ).handle(job)
+    assert result == "BLOCKED"
+    engine.apply.assert_awaited_once()
+    jobs.block.assert_awaited_once()
+    jobs.record_outcome.assert_not_awaited()
+    assert "sentinel-key" not in str(result) + caplog.text
+    assert token not in str(result) + caplog.text
 
 
 @pytest.mark.parametrize(

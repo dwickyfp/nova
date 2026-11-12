@@ -23,7 +23,7 @@ async def test_secure_approval_requires_the_owner_and_exact_password_field(monke
     monkeypatch.setattr("app.modules.assistant.router.consent_broker", broker)
     thread = thread_store.create(user_name="alice", title="Test")
     future = broker.open(
-        "create-user", thread_id=thread.thread_id, user_name="alice",
+        "create-user", thread_id=thread.thread_id, user=_signed_in("alice"),
         classification="destructive", secure_fields=("password",),
     )
     try:
@@ -103,7 +103,7 @@ async def test_stage_upload_approval_requires_owned_pending_call(monkeypatch) ->
     monkeypatch.setattr("app.modules.assistant.router.consent_broker", broker)
     thread = thread_store.create(user_name="alice", title="Upload")
     future = broker.open(
-        "stage-upload", thread_id=thread.thread_id, user_name="alice",
+        "stage-upload", thread_id=thread.thread_id, user=_signed_in("alice"),
         classification="destructive", upload_required=True,
     )
     try:
@@ -140,3 +140,30 @@ async def test_stage_upload_approval_requires_owned_pending_call(monkeypatch) ->
     finally:
         thread_store.clear()
         broker.clear()
+
+
+@pytest.mark.parametrize("changed", [
+    {"session_id": "second-login"},
+    {"active_role": "reviewer", "assigned_roles": ["reviewer"]},
+    {"security_context_version": 2},
+])
+async def test_upload_approval_cannot_cross_login_or_role(monkeypatch, changed):
+    broker = ConsentBroker()
+    monkeypatch.setattr("app.modules.assistant.router.consent_broker", broker)
+    original = _signed_in("alice")
+    thread = thread_store.create(user_name="alice", title="Upload identity")
+    future = broker.open("upload", thread_id=thread.thread_id, user=original,
+                         classification="destructive", upload_required=True)
+    file = UploadFile(file=BytesIO(b"private-file-data"), filename="data.csv")
+    try:
+        with pytest.raises(HTTPException) as refused:
+            await resolve_upload_tool_call("upload", file, {**original, **changed})
+        assert refused.value.status_code == 404
+        assert file.file.tell() == 0
+        assert not future.done()
+        assert broker.resolve("upload", False, user=original)
+        assert await future is False
+    finally:
+        await file.close()
+        broker.cancel_all()
+        thread_store.clear()

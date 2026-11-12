@@ -12,11 +12,14 @@ from fastapi import HTTPException
 from app.modules.catalog import refresher as catalog
 from app.modules.intelligence import newsroom_refresher as news
 from app.modules.intelligence import search
+from app.modules.llm_functions.registration_worker import AIFunctionRegistrationWorker
 from app.modules.ml_engine.service import ml_engine_service
 from app.worker.maintenance import MaintenanceWorker
 
 
-@pytest.mark.parametrize("failure", [None, "catalog", "news", "search", "ml-retention"])
+@pytest.mark.parametrize(
+    "failure", [None, "catalog", "news", "search", "ml-retention", "ai-functions"]
+)
 async def test_all_loops_are_supervised_and_cleaned_up(monkeypatch, failure):
     stop = asyncio.Event()
     started, ended = set(), set()
@@ -27,14 +30,15 @@ async def test_all_loops_are_supervised_and_cleaned_up(monkeypatch, failure):
             await asyncio.sleep(0)
             if name == failure:
                 raise RuntimeError("fixture failure")
-            if failure is None and len(started) == 4:
+            if failure is None and len(started) == 5:
                 stop.set()
             await asyncio.Event().wait()
         finally:
             ended.add(name)
 
-    schema = AsyncMock()
-    monkeypatch.setattr(ml_engine_service.ephemeral_repository, "ensure_schema", schema)
+    monkeypatch.setattr(
+        AIFunctionRegistrationWorker, "run_forever", lambda self, stop: run("ai-functions")
+    )
     monkeypatch.setattr(catalog, "run", lambda stop: run("catalog"))
     monkeypatch.setattr(news, "run", lambda stop: run("news"))
     monkeypatch.setattr(search.search_service, "run", lambda: run("search"))
@@ -45,8 +49,7 @@ async def test_all_loops_are_supervised_and_cleaned_up(monkeypatch, failure):
         assert any(isinstance(e, RuntimeError) for e in exc.value.exceptions)
     else:
         await asyncio.wait_for(MaintenanceWorker().run_forever(stop), 1)
-    assert started == ended == {"catalog", "news", "search", "ml-retention"}
-    schema.assert_awaited_once()
+    assert started == ended == {"catalog", "news", "search", "ml-retention", "ai-functions"}
 
 
 async def test_search_cancellation_drains_the_builds(monkeypatch):
@@ -108,19 +111,39 @@ async def unlocked(*args, **kwargs):
 @pytest.mark.parametrize("operation", ["create", "rebuild", "retry"])
 async def test_requests_persist_work_without_starting_a_build(monkeypatch, operation):
     service = search.SearchService()
-    user = {"username": "fixture", "active_role": "reader", "session_id": "fixture-login"}
+    user = {
+        "username": "fixture",
+        "active_role": "reader",
+        "session_id": "fixture-login",
+        "assigned_roles": ["reader"],
+    }
     definition = {"id": "index-id", "model_alias": None, "owner_name": "fixture"}
-    monkeypatch.setattr(service, "_lock", unlocked)
     monkeypatch.setattr(service, "_source_access", AsyncMock(return_value=True))
     monkeypatch.setattr(service, "_owned", AsyncMock(return_value=definition))
-    monkeypatch.setattr(service, "_get", AsyncMock(return_value=None))
-    monkeypatch.setattr(service, "_version", AsyncMock(return_value={"build_status": "FAILED"}))
     monkeypatch.setattr(service, "describe", AsyncMock(return_value={"status": "BUILDING"}))
     monkeypatch.setattr(
         search.vector_backend, "health", AsyncMock(return_value={"full_text": True})
     )
-    writes = AsyncMock(return_value={"rows": [[1]]})
-    monkeypatch.setattr(search.db, "execute_system", writes)
+    repository = AsyncMock()
+    index = {**definition, "status": "ACTIVE", "metadata_revision": 1}
+    repository.get_index.return_value = None if operation == "create" else index
+    repository.get_search_version.return_value = {
+        "build_status": "FAILED",
+        "model_id": None,
+        "model_revision": None,
+        "dimensions": None,
+        "metric": "COSINE",
+    }
+    repository.latest_search_version.return_value = 1
+    repository.add_search_version.return_value = {"version": 2}
+    actors = []
+
+    @asynccontextmanager
+    async def transaction(actor, **kwargs):
+        actors.append(actor)
+        yield repository
+
+    monkeypatch.setattr(search, "intelligence_metadata", transaction)
     monkeypatch.setattr(search, "write_audit_log", AsyncMock())
     forbidden = Mock(side_effect=AssertionError("HTTP request started a Search build"))
     monkeypatch.setattr(service, "_schedule", forbidden)
@@ -138,7 +161,15 @@ async def test_requests_persist_work_without_starting_a_build(monkeypatch, opera
         await service.rebuild("fixture_index", search.SearchRebuild(), user)
     else:
         await service.retry("fixture_index", 1, user)
-    assert any("PENDING" in call.args[0] for call in writes.call_args_list)
+    assert len(actors) == 1
+    assert actors[0].principal == "fixture" and actors[0].active_role == "reader"
+    assert actors[0].session_id == "fixture-login"
+    if operation == "create":
+        repository.create_index.assert_awaited_once()
+        assert repository.create_index.await_args.args[0]["name"] == "fixture_index"
+    else:
+        repository.add_search_version.assert_awaited_once()
+        assert repository.add_search_version.await_args.kwargs["expected_latest"] == 1
     forbidden.assert_not_called()
     assert not service._tasks
 

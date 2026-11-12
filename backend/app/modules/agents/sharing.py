@@ -11,11 +11,12 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any, Literal
-from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from app.core.database import db
+from app.core.metadata_db import MetadataConflict, MetadataPermissionDenied
+from app.modules.access_control.security_context import SecurityContext
+from app.modules.agents.metadata_repository import AgentMetadataRepository, agent_metadata
 
 SHARES_DDL = """
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_STUDIO_SHARES (
@@ -50,13 +51,16 @@ class ShareCreate(ShareTarget):
 
 def _row(values: list[Any]) -> dict[str, Any]:
     record = dict(zip(_COLUMNS.split(", "), values, strict=True))
-    record["created_at"] = str(record["created_at"])
+    created = record["created_at"]
+    if isinstance(created, datetime) and created.tzinfo is not None:
+        created = created.astimezone(UTC).replace(tzinfo=None)
+    record["created_at"] = str(created)
     return record
 
 
 def viewer_targets(user: dict[str, Any]) -> tuple[str, list[str]]:
-    roles = [str(role) for role in (user.get("assigned_roles") or user.get("roles") or [])]
-    return str(user["username"]), roles
+    actor = SecurityContext.from_session(user)
+    return actor.principal, [actor.active_role]
 
 
 def strip_rows(value: Any) -> Any:
@@ -81,7 +85,7 @@ def shared_steps(steps: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
         if step.get("kind") in {"ui", "ui_action", "smart_report", "report_context"}:
             continue
         kept = strip_rows(step)
-        trace = step.get("trace_detail") or {}
+        trace = kept.get("trace_detail") or {}
         if step.get("kind") == "tool" and step.get("name") == "semantic_query":
             kept["trace_detail"] = {
                 key: trace.get(key)
@@ -115,95 +119,75 @@ def shared_messages(messages: list[dict]) -> list[dict]:
 
 
 class ShareRepository:
+    @staticmethod
+    def _user(store: AgentMetadataRepository, user: dict) -> None:
+        actor = SecurityContext.from_session(user)
+        if actor != store.actor:
+            raise MetadataPermissionDenied()
+
     async def active_grants(
         self, user: dict, *, object_type: str, object_id: str | None = None,
         owner_name: str | None = None, after: str = "", limit: int = 101,
     ) -> list[dict]:
-        """Intelligence grants use only the current role and support bounded paging."""
-        await self.ensure_schema()
-        clauses = ["object_type=%s", "object_id>%s",
-                   "((target_type='user' AND target_name=%s) OR "
-                   "(target_type='role' AND target_name=%s))"]
-        params = [object_type, after, user["username"], user["active_role"]]
-        for name, value in (("object_id", object_id), ("owner_name", owner_name)):
-            if value is not None:
-                clauses.append(f"{name}=%s")
-                params.append(value)
-        result = await db.execute_system(
-            f"SELECT {_COLUMNS} FROM NOVA_SYSTEM.CONFIG_STUDIO_SHARES WHERE "
-            + " AND ".join(clauses) + " ORDER BY object_id,share_id LIMIT %s",
-            [*params, min(max(limit, 1), 101)],
-        )
-        return [_row(row) for row in result.get("rows") or []]
-
-    async def ensure_schema(self) -> None:
-        await db.execute_system(SHARES_DDL)
+        async with agent_metadata(read_only=True) as store:
+            self._user(store, user)
+            rows = await store.active_grants(object_type, object_id=object_id,
+                                            owner_name=owner_name, after=after,
+                                            limit=min(max(limit, 1), 101))
+            return [_row([row.get(key) for key in _COLUMNS.split(", ")]) for row in rows]
 
     async def create(self, *, owner_name: str, body: ShareTarget) -> dict[str, Any]:
-        await self.ensure_schema()
-        existing = await self.for_object(body.object_type, body.object_id, owner_name=owner_name)
-        for share in existing:
-            if (share["target_type"], share["target_name"]) == (body.target_type,
-                                                                 body.target_name):
-                return share
-        if len(existing) >= MAX_SHARES_PER_OBJECT:
-            raise ValueError(f"At most {MAX_SHARES_PER_OBJECT} shares per object.")
-        share_id = str(uuid4())
-        await db.execute_system(
-            f"INSERT INTO NOVA_SYSTEM.CONFIG_STUDIO_SHARES ({_COLUMNS}) VALUES "
-            "(%s, %s, %s, %s, %s, %s, %s)",
-            [share_id, body.object_type, body.object_id, owner_name, body.target_type,
-             body.target_name, datetime.now(UTC).replace(tzinfo=None)],
-        )
-        return {
-            "share_id": share_id, **body.model_dump(), "owner_name": owner_name,
-            "created_at": None,
-        }
+        async with agent_metadata(owner_name) as store:
+            if store.actor.principal != owner_name:
+                raise MetadataPermissionDenied()
+            await store.lock_share_object(body.object_type, body.object_id)
+            existing = await store.shares_for_object(body.object_type, body.object_id)
+            matching = [row for row in existing if
+                        (row["target_type"], row["target_name"]) ==
+                        (body.target_type, body.target_name)]
+            if len(matching) > 1:
+                raise MetadataConflict()
+            if matching:
+                row = matching[0]
+            else:
+                if len(existing) >= MAX_SHARES_PER_OBJECT:
+                    raise ValueError(f"At most {MAX_SHARES_PER_OBJECT} shares per object.")
+                row = await store.create_share(body.object_type, body.object_id,
+                                               body.target_type, body.target_name)
+            return _row([row.get(key) for key in _COLUMNS.split(", ")])
 
     async def for_object(
-        self, object_type: str, object_id: str, *, owner_name: str
+        self, object_type: str, object_id: str, *, owner_name: str,
     ) -> list[dict[str, Any]]:
-        await self.ensure_schema()
-        result = await db.execute_system(
-            f"SELECT {_COLUMNS} FROM NOVA_SYSTEM.CONFIG_STUDIO_SHARES "
-            "WHERE object_type = %s AND object_id = %s AND owner_name = %s",
-            [object_type, object_id, owner_name],
-        )
-        return [_row(row) for row in result.get("rows") or []]
+        async with agent_metadata(read_only=True) as store:
+            if store.actor.principal != owner_name:
+                raise MetadataPermissionDenied()
+            return [_row([row.get(key) for key in _COLUMNS.split(", ")])
+                    for row in await store.shares_for_object(object_type, object_id)]
 
     async def delete(self, share_id: str, *, owner_name: str) -> None:
-        await db.execute_system(
-            "DELETE FROM NOVA_SYSTEM.CONFIG_STUDIO_SHARES WHERE share_id = %s AND owner_name = %s",
-            [share_id, owner_name],
-        )
+        async with agent_metadata(owner_name) as store:
+            if store.actor.principal != owner_name:
+                raise MetadataPermissionDenied()
+            await store.delete_share(share_id)
 
     async def visible(self, user: dict[str, Any]) -> list[dict[str, Any]]:
-        """Shares addressed to this user or to one of their assigned roles."""
-        await self.ensure_schema()
-        username, roles = viewer_targets(user)
-        clauses = ["(target_type = 'user' AND target_name = %s)"]
-        params: list[Any] = [username]
-        if roles:
-            clauses.append(
-                "(target_type = 'role' AND target_name IN ("
-                + ", ".join(["%s"] * len(roles)) + "))"
-            )
-            params.extend(roles)
-        result = await db.execute_system(
-            f"SELECT {_COLUMNS} FROM NOVA_SYSTEM.CONFIG_STUDIO_SHARES WHERE "
-            + " OR ".join(clauses) + " ORDER BY created_at DESC LIMIT 500",
-            params,
-        )
-        return [_row(row) for row in result.get("rows") or []]
+        """Shares addressed to this user or their active role."""
+        async with agent_metadata(read_only=True) as store:
+            self._user(store, user)
+            rows = await store.active_grants(limit=500, latest_first=True)
+            return [_row([row.get(key) for key in _COLUMNS.split(", ")]) for row in rows]
+
+    async def thread(self, user: dict, thread_id: str, *, owner_name: str) -> dict | None:
+        async with agent_metadata(read_only=True) as store:
+            self._user(store, user)
+            return await store.shared_conversation(thread_id, owner_name)
 
     async def grant_for(
-        self, user: dict[str, Any], object_type: str, object_id: str
+        self, user: dict[str, Any], object_type: str, object_id: str,
     ) -> dict[str, Any] | None:
-        return next(
-            (share for share in await self.visible(user)
-             if share["object_type"] == object_type and share["object_id"] == object_id),
-            None,
-        )
+        grants = await self.active_grants(user, object_type=object_type, object_id=object_id)
+        return grants[0] if grants else None
 
 
 share_repository = ShareRepository()

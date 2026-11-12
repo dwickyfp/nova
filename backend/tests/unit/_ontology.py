@@ -45,27 +45,27 @@ class FakeRepository:
     def _records(self, kind: str, record_id: str) -> list[OntologyRecord]:
         return self.rows.setdefault(kind, {}).setdefault(record_id, [])
 
-    async def latest(self, kind, record_id, model):
+    async def latest(self, kind, record_id, model, *, actor=None):
         records = self._records(kind, record_id)
         return copy.deepcopy(records[-1]) if records else None
 
-    async def revision(self, kind, record_id, revision, model):
+    async def revision(self, kind, record_id, revision, model, *, actor=None):
         for record in self._records(kind, record_id):
             if record.revision == revision:
                 return copy.deepcopy(record)
         return None
 
-    async def history(self, kind, record_id, model):
+    async def history(self, kind, record_id, model, *, actor=None):
         return [copy.deepcopy(item) for item in reversed(self._records(kind, record_id))]
 
-    async def current(self, kind, model):
+    async def current(self, kind, model, *, actor=None):
         return [
             copy.deepcopy(records[-1])
             for _, records in sorted(self.rows.get(kind, {}).items())
             if records
         ]
 
-    async def latest_many(self, kind, record_ids, model):
+    async def latest_many(self, kind, record_ids, model, *, actor=None):
         found = {}
         for record_id in record_ids:
             record = await self.latest(kind, record_id, model)
@@ -73,13 +73,13 @@ class FakeRepository:
                 found[record_id] = record
         return found
 
-    async def current_matching(self, kind, model, field, value, *, limit=200):
+    async def current_matching(self, kind, model, field, value, *, limit=200, actor=None):
         return [
             item for item in await self.current(kind, model)
             if str(getattr(item, field)) == value
         ][:limit]
 
-    async def save(self, kind, record, *, expected_revision=0):
+    async def save(self, kind, record, *, expected_revision=0, actor=None):
         records = self._records(kind, record.id)
         if records:
             old = records[-1]

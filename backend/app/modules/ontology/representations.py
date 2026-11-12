@@ -16,6 +16,7 @@ from typing import Literal, Protocol
 from app.modules.agents.semantic.ir import SemanticModelIR
 from app.modules.intelligence.context_graph import _claim_fingerprint
 from app.modules.intelligence.contracts import SemanticRef, fingerprint, utc_now
+from app.modules.ontology import access
 from app.modules.ontology.contracts import (
     Actor,
     Concept,
@@ -362,6 +363,7 @@ async def refresh_view(
     return counts
 
 
+@access.with_caller
 async def refresh_after_publish(view_id: str, user: dict) -> None:
     """Called once a Semantic View version is published.
 
@@ -376,7 +378,6 @@ async def refresh_after_publish(view_id: str, user: dict) -> None:
     if counts["repinned"] or counts["stale"]:
         logger.info("Ontology bindings after publishing %s: %s", view_id, counts)
     if counts["cosmetic"]:
-        from app.modules.ontology import access
 
         await access.audit(
             "REPIN", "ONTOLOGY_REPRESENTATION", view_id, user,

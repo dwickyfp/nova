@@ -449,3 +449,102 @@ async def test_maintenance_and_transaction_lifetime_block_job_mutations(jobs, en
     await environment.admin.execute("UPDATE nova_meta.deployment_state SET maintenance=true")
     with pytest.raises(MetadataReadOnlyMaintenance):
         await enqueue(jobs)
+
+
+@pytest_asyncio.fixture
+async def publisher(jobs, environment):  # noqa: F811
+    from app.core.metadata_runtime import install_metadata_db, uninstall_metadata_db
+
+    cursor = await environment.admin.execute(
+        "SELECT metadata_epoch FROM nova_meta.deployment_state"
+    )
+    epoch = str((await cursor.fetchone())["metadata_epoch"])
+    database = MetadataDatabase(environment.role_config("nova_meta_outbox"))
+    try:
+        await database.open(schema_version=len(load_migrations()), metadata_epoch=epoch)
+        install_metadata_db(database)
+        yield
+    finally:
+        uninstall_metadata_db(database)
+        await database.close()
+
+
+async def test_publisher_retries_lost_redis_ack_without_advancing_job(jobs, publisher):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from redis.exceptions import ConnectionError as RedisConnectionError
+
+    from app.worker.outbox import OutboxPublisher
+
+    async with jobs() as connection:
+        job = await JobRepository(connection).enqueue(definition())
+    notifications = []
+
+    async def append_then_lose_ack(stream, fields, **kwargs):
+        notifications.append(fields)
+        if len(notifications) == 1:
+            raise RedisConnectionError("controlled transport loss")
+
+    client = SimpleNamespace(xadd=AsyncMock(side_effect=append_then_lose_ack))
+    assert await OutboxPublisher(client).publish_batch(asyncio.Event()) == 0
+    async with jobs("outbox") as connection:
+        cursor = await connection.execute(
+            "SELECT published_at,lease_holder FROM nova_meta.outbox_events"
+        )
+        row = await cursor.fetchone()
+        assert row["published_at"] is None and row["lease_holder"] is None
+    await asyncio.sleep(2.1)
+    assert await OutboxPublisher(client).publish_batch(asyncio.Event()) == 1
+    assert len(notifications) == 2 and notifications[0] == notifications[1]
+    assert set(notifications[0]) == {"event_id", "job_id"}
+    async with jobs() as connection:
+        current = await JobRepository(connection).get(job["id"])
+        assert current["state"] == "PENDING" and current["attempt"] == 0
+    assert await OutboxPublisher(client).publish_batch(asyncio.Event()) == 0
+
+
+async def test_concurrent_runtime_publishers_do_not_duplicate_live_claims(jobs, publisher):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from app.worker.outbox import OutboxPublisher
+
+    async with jobs() as connection:
+        for _ in range(5):
+            await JobRepository(connection).enqueue(definition())
+    client = SimpleNamespace(xadd=AsyncMock())
+    totals = await asyncio.gather(*(
+        OutboxPublisher(client).publish_batch(asyncio.Event()) for _ in range(2)))
+    assert sum(totals) == 5
+    events = [call.args[1]["event_id"] for call in client.xadd.await_args_list]
+    assert len(events) == len(set(events)) == 5
+
+
+async def test_publisher_claim_unknown_commit_never_sends_before_confirmed_commit(
+    jobs, publisher, monkeypatch,
+):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from app.core.metadata_db import MetadataOutcomeUnknown
+    from app.worker import outbox
+
+    async with jobs() as connection:
+        await JobRepository(connection).enqueue(definition())
+    real_transaction = outbox.metadata_transaction
+
+    @asynccontextmanager
+    async def lost_ack(*args, **kwargs):
+        async with real_transaction(*args, **kwargs) as scope:
+            yield scope
+        raise MetadataOutcomeUnknown()
+
+    monkeypatch.setattr(outbox, "metadata_transaction", lost_ack)
+    client = SimpleNamespace(xadd=AsyncMock())
+    with pytest.raises(MetadataOutcomeUnknown):
+        await outbox.OutboxPublisher(client).publish_batch(asyncio.Event())
+    client.xadd.assert_not_awaited()
+    async with jobs() as connection:
+        cursor = await connection.execute("SELECT attempt,state FROM nova_meta.job_queue")
+        assert await cursor.fetchone() == {"attempt": 0, "state": "PENDING"}

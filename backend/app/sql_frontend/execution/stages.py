@@ -10,7 +10,6 @@ from typing import Any
 import asyncmy  # type: ignore[import-untyped]
 
 from app.core.config import require_storage_connection, to_docker_endpoint
-from app.core.database import db
 from app.modules.query.dialect.injector import resolve_storage_credentials
 from app.modules.query.dialect.parser import CommandType, ParsedSQL
 from app.modules.query.dialect.translator import StorageConfig
@@ -42,68 +41,66 @@ class StageRuntime:
         role: str | None,
         connection: asyncmy.Connection | None = None,
     ) -> tuple[ParsedSQL, dict[int, StorageConfig]]:
-        """Bind each reference to one authorized metadata row before resolving secrets."""
-        result = await db.execute_system(
-            "SELECT name, database_name, schema_name, storage_connection, base_prefix "
-            "FROM NOVA_SYSTEM.CONFIG_STAGES"
-        )
-        rows = [
-            {
-                "name": row[0],
-                "database_name": row[1],
-                "schema_name": row[2],
-                "storage_connection": row[3],
-                "base_prefix": row[4],
-            }
-            for row in result["rows"]
-        ]
-        selected = []
-        for index, ref in enumerate(parsed.stage_refs):
-            candidates = [(database, schema, ref.stage_name, 0)]
-            if ref.path_parts:
-                candidates.append((database, ref.stage_name, ref.path_parts[0], 1))
-            if len(ref.path_parts) > 1:
-                candidates.append((ref.stage_name, ref.path_parts[0], ref.path_parts[1], 2))
-            matches = []
-            for db_name, schema_name, name, consumed in candidates:
-                found = [
-                    row
-                    for row in rows
-                    if row["name"] == name
-                    and (db_name is None or row["database_name"] == db_name)
-                    and (schema_name is None or row["schema_name"] == schema_name)
-                ]
-                if found:
-                    matches = [(row, consumed) for row in found]
-            if len(matches) != 1:
-                raise ValueError(
-                    f"Stage reference {ref.full_match!r} is "
-                    + ("ambiguous" if matches else "not found")
-                )
-            row, consumed = matches[0]
-            action = (
-                "write"
-                if parsed.command_type == CommandType.STAGE_EXPORT and index == 0
-                else "read"
-            )
-            action = ref.access or action
-            if action not in {"read", "write"}:
-                raise ValueError("Invalid stage access direction")
-            selected.append((ref, row, consumed, action))
+        """Bind each reference to one authorized metadata row before resolving secrets.
 
-        for _, row, _, action in selected:
-            await self._check_stage_access(
-                row,
-                action=action,
-                username=username,
-                password=password,
-                active_role=role,
-                connection=connection,
-            )
+        Discovery returns only identities. Every selected scope is authorized
+        by Ranger, and its registration's connection and prefix read under
+        that scope, before any storage credential is resolved.
+        """
+        from app.modules.stages.service import caller_actor, stage_metadata
+
+        del connection  # Ranger decides; no engine connection is consulted.
+        actor = caller_actor(username, role)
+        payloads: list[dict[str, Any]] = []
+        async with stage_metadata(actor, access_check=self._authorize(password)) as registrations:
+            discovered: dict[tuple[str | None, str | None, str], list[dict[str, Any]]] = {}
+
+            async def find(db_name, schema_name, name):
+                key = (db_name, schema_name, name)
+                if key not in discovered:
+                    discovered[key] = await registrations.identities(
+                        name=name, database=db_name, schema=schema_name,
+                    )
+                return discovered[key]
+
+            selected = []
+            for index, ref in enumerate(parsed.stage_refs):
+                candidates = [(database, schema, ref.stage_name, 0)]
+                if ref.path_parts:
+                    candidates.append((database, ref.stage_name, ref.path_parts[0], 1))
+                if len(ref.path_parts) > 1:
+                    candidates.append((ref.stage_name, ref.path_parts[0], ref.path_parts[1], 2))
+                matches = []
+                for db_name, schema_name, name, consumed in candidates:
+                    found = await find(db_name, schema_name, name)
+                    if found:
+                        matches = [(row, consumed) for row in found]
+                if len(matches) != 1:
+                    raise ValueError(
+                        f"Stage reference {ref.full_match!r} is "
+                        + ("ambiguous" if matches else "not found")
+                    )
+                row, consumed = matches[0]
+                action = (
+                    "write"
+                    if parsed.command_type == CommandType.STAGE_EXPORT and index == 0
+                    else "read"
+                )
+                action = ref.access or action
+                if action not in {"read", "write"}:
+                    raise ValueError("Invalid stage access direction")
+                selected.append((ref, row, consumed, action))
+
+            # All scopes are authorized before any payload or secret is used.
+            for _, row, _, action in selected:
+                payload = await registrations.get_stage(row["id"], action=action)
+                if payload is None:
+                    raise ValueError("Stage reference is not found")
+                payloads.append(payload)
 
         configs: dict[int, StorageConfig] = {}
         refs = []
-        for ref, row, consumed, _ in selected:
+        for (ref, _, consumed, _), row in zip(selected, payloads, strict=True):
             storage_conn = row["storage_connection"]
             conn = self._storage_connection(storage_conn)
             access_key, secret_key = self._resolve_credentials(storage_conn)
@@ -122,6 +119,14 @@ class StageRuntime:
                 storage_connection=storage_conn,
             )
         return replace(parsed, stage_refs=refs), configs
+
+    def _authorize(self, password: str) -> Callable[..., Awaitable[Any]]:
+        """The injected Ranger check, carrying the caller's password through."""
+
+        async def check(stage: dict, **kwargs: Any) -> Any:
+            return await self._check_stage_access(stage, password=password, **kwargs)
+
+        return check
 
     async def _detect_csv_params(
         self,

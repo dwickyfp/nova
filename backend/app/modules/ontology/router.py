@@ -8,6 +8,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.deps import get_current_user
+from app.core.metadata_scope import declare_actor
 from app.modules.intelligence.contracts import Contract
 from app.modules.ontology import access
 from app.modules.ontology.bootstrap import BootstrapRequest, bootstrap
@@ -29,8 +30,19 @@ from app.modules.ontology.releases import AliasMove, ReleasePrepare, release_ser
 from app.modules.ontology.service import DomainCreate, DomainUpdate, Scope, ontology_service
 from app.modules.ontology.stewardship import ProposalCreate, ReviewRequest, stewardship_service
 
-router = APIRouter()
 CurrentUser = Annotated[dict, Depends(get_current_user)]
+
+
+async def _metadata_actor(user: CurrentUser) -> None:
+    """Every ontology request reads and writes metadata as its caller.
+
+    Async on purpose: it runs in the request's task, so the declaration
+    reaches the handler and ends with the request.
+    """
+    declare_actor(user)
+
+
+router = APIRouter(dependencies=[Depends(_metadata_actor)])
 ScopeQuery = Annotated[Scope, Query()]
 
 
@@ -157,9 +169,10 @@ async def compile_derived(body: DerivedCompile, user: CurrentUser):
     for view_id in view_ids:
         view = await catalog.published(view_id)
         if view is not None:
-            compilations.append(await compile_view(
-                view, Actor.from_user(user), stewardship_service.repository
-            ))
+            async with access.governed(user):
+                compilations.append(await compile_view(
+                    view, Actor.from_user(user), stewardship_service.repository
+                ))
     await access.audit("DERIVE", "ONTOLOGY_DERIVED", (body.view_id or "all")[:128], user)
     return {
         "compilations": [item.model_dump(mode="json", exclude={"actor"}) for item in compilations]

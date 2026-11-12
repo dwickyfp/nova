@@ -1792,23 +1792,20 @@ async def agent_improvement_suggestions(
     view_ids = [str(item) for item in bound_view_ids(agent)]
     usage: list[dict] = []
     if view_ids:
-        rows = await db.execute_system(
-            "SELECT semantic_model_id, model_fingerprint, metric_names, dimension_names, "
-            "time_grain, succeeded FROM NOVA_SYSTEM.AUDIT_SEMANTIC_QUERY_USAGE "
-            "WHERE semantic_model_id IN (" + ", ".join(["%s"] * len(view_ids)) + ") "
-            "AND owner_name=%s AND active_role=%s AND security_context_version=%s "
-            "ORDER BY created_at DESC LIMIT 2000",
-            [*view_ids, user["username"], session_security(user).active_role,
-             session_security(user).security_context_version],
+        from app.modules.intelligence.metadata_repository import (
+            intelligence_metadata,
+            user_actor,
         )
-        for model_id, fingerprint, metrics, dimensions, grain, succeeded in rows.get("rows") or []:
+
+        async with intelligence_metadata(user_actor(user), read_only=True) as repo:
+            rows = await repo.semantic_usage_for_models(view_ids, limit=2000)
+        for row in rows:
             usage.append({
-                "semantic_model_id": model_id, "model_fingerprint": fingerprint,
-                "metrics": json.loads(metrics) if isinstance(metrics, str) else metrics or [],
-                "dimensions": (
-                    json.loads(dimensions) if isinstance(dimensions, str) else dimensions or []
-                ),
-                "time_grain": grain, "succeeded": bool(succeeded),
+                "semantic_model_id": row["semantic_model_id"],
+                "model_fingerprint": row["model_fingerprint"],
+                "metrics": row["metric_names"] or [],
+                "dimensions": row["dimension_names"] or [],
+                "time_grain": row["time_grain"], "succeeded": bool(row["succeeded"]),
             })
     return {
         "feedback": feedback_suggestions(events),
@@ -2452,10 +2449,11 @@ async def send_agent_message(
     def resolve_consent(
         invocation: ToolInvocation, classification: str
     ) -> asyncio.Future[bool | None | ConsentApproval]:
+        approval_user = dict(context.user or user)
         future = consent_broker.open(
             invocation.tool_call_id,
             thread_id=thread_id,
-            user_name=user_name,
+            user=approval_user,
             classification=classification,
         )
 
@@ -2755,7 +2753,7 @@ async def resolve_agent_tool_call(
 ):
     """Resolve a pending agent tool call with owner and grant validation."""
     await _require_agent(agent_id, user, platform=True)
-    owner = consent_broker.owner_of(tool_call_id)
+    owner = consent_broker.owner_of(tool_call_id, user=user)
     if owner is None or owner[1] != user["username"]:
         raise HTTPException(status_code=404, detail="Tool call not found")
 
@@ -2765,7 +2763,7 @@ async def resolve_agent_tool_call(
         raise HTTPException(status_code=404, detail="Tool call not found")
 
     if body.decision == "deny":
-        resolved = consent_broker.resolve(tool_call_id, False, user_name=user["username"])
+        resolved = consent_broker.resolve(tool_call_id, False, user=user)
         return ConsentDecisionResponse(
             tool_call_id=tool_call_id,
             status="denied" if resolved else "cancelled",
@@ -2780,7 +2778,7 @@ async def resolve_agent_tool_call(
             )
         await read_grants.grant(runtime, user, thread_id, True)
 
-    resolved = consent_broker.resolve(tool_call_id, True, user_name=user["username"])
+    resolved = consent_broker.resolve(tool_call_id, True, user=user)
     return ConsentDecisionResponse(
         tool_call_id=tool_call_id,
         status="approved" if resolved else "cancelled",

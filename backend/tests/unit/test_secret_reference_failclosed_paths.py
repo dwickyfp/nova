@@ -188,6 +188,7 @@ class TestMLEngineLoaderResolvesTheStageConnection:
 # ── NOVA-66: /query/explain ─────────────────────────────────────────────────
 
 
+@pytest.mark.usefixtures("fake_metadata_db")
 class TestExplainFailsClosedAndRedacted:
     """NOVA-66: a resolution failure in ``explain`` is a redacted error."""
 
@@ -229,10 +230,12 @@ class TestExplainFailsClosedAndRedacted:
 
         monkeypatch.setattr(service_module, "check_stage_access", allowed_stage)
 
-        async def fake_execute_system(sql, params=None):
-            return {"rows": [("stage1", "db", "sch", "production", "db/sch/stage1")]}
+        from tests.unit.stage_metadata_fakes import install_stages
+        install_stages(monkeypatch, [{
+            "id": "stage-id", "name": "stage1", "database_name": "db", "schema_name": "sch",
+            "storage_connection": "production", "base_prefix": "db/sch/stage1",
+        }])
 
-        monkeypatch.setattr(service_module.db, "execute_system", fake_execute_system)
         return svc, audits
 
     async def test_explain_returns_redacted_error_not_500(self, monkeypatch):
@@ -365,7 +368,7 @@ class TestStageFileOpsUseTheStageConnection:
         monkeypatch.setattr(svc, "get_stage", fake_get_stage)
         monkeypatch.setattr(svc, "_s3_client_for_stage", fake_client_for_stage)
 
-        asyncio.run(svc.list_files("id"))
+        asyncio.run(svc.list_files(asyncio.run(fake_get_stage("id"))))
 
         assert seen == ["backup"]
 

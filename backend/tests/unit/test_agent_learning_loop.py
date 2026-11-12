@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.agents import memory, verified_candidates
 from app.modules.agents.verified_candidates import candidates_from_steps
 
@@ -48,14 +50,22 @@ def test_failed_or_incomplete_steps_propose_nothing(trace):
 
 
 async def test_a_plan_already_pending_is_not_proposed_twice(monkeypatch):
-    execute = AsyncMock(side_effect=[{}, {"rows": [["existing"]]}])
-    monkeypatch.setattr(verified_candidates.db, "execute_system", execute)
+    store = SimpleNamespace(actor=SecurityContext("alice", "analyst", session_id="login"),
+                            propose_candidate=AsyncMock(return_value=None))
+
+    @asynccontextmanager
+    async def scope(*args, **kwargs):
+        yield store
+
+    monkeypatch.setattr(verified_candidates, "agent_metadata", scope)
     created = await verified_candidates.verified_candidate_repository.propose(
         agent_id="a1", owner_name="owner", proposed_by="alice", thread_id="t1",
         message_id="m1", candidate=candidates_from_steps([semantic_step()])[0],
     )
     assert created is None
-    assert not any("INSERT" in call.args[0] for call in execute.call_args_list)
+    store.propose_candidate.assert_awaited_once()
+    assert store.propose_candidate.call_args.args[0]["owner_name"] == "owner"
+    assert store.actor.principal == "alice"
 
 
 async def test_decide_accepts_only_approve_or_reject():

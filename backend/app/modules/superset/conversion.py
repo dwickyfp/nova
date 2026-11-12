@@ -122,9 +122,6 @@ async def convert_owner(
 
     owner = user["username"]
     wanted = set(artifact_ids) if artifact_ids else None
-    # Another process may have converted the last artifact and dropped the
-    # legacy columns since this one checked the table.
-    await artifact_repository.ensure_bi_columns()
     pending = await artifact_repository.list_legacy(owner_name=owner)
     if wanted is not None:
         # A dashboard converts together with the legacy charts it places.
@@ -166,8 +163,6 @@ async def convert_owner(
 
     for outcome in outcomes:
         await _audit(user, outcome)
-    if await artifact_repository.retire_legacy_columns():
-        logger.info("Every Studio artifact is in BI; the legacy columns were dropped")
     return outcomes
 
 

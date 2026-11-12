@@ -222,7 +222,7 @@ def decision_digest(decision: Decision) -> str:
     return fingerprint(payload)
 
 
-async def current_decision_policy(decision: Decision):
+async def current_decision_policy(decision: Decision, user: dict):
     option = next(
         (item for item in decision.options if item.id == decision.selected_option_id), None
     )
@@ -230,7 +230,7 @@ async def current_decision_policy(decision: Decision):
         raise HTTPException(status_code=422, detail="Select an available option")
     return evaluate_business_policy(
         option,
-        await read_business_policy(),
+        await read_business_policy(user),
         {
             "decision_id": decision.id,
             "semantic": decision.semantic.model_dump(),
@@ -567,7 +567,7 @@ async def operate_decision(
     option = next((item for item in decision.options if item.id == selected_id), None)
     if option is None:
         raise HTTPException(status_code=422, detail="Select an available option")
-    policy = await read_business_policy()
+    policy = await read_business_policy(user)
     evaluated = evaluate_business_policy(
         option,
         policy,

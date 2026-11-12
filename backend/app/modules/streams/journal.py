@@ -2,81 +2,35 @@
 
 from __future__ import annotations
 
-import json
-from contextlib import suppress
+import logging
 from dataclasses import asdict
+from typing import Any
 
-from app.modules.streams.claims import Claim, MetadataExecutor
+from app.core.metadata_db import (
+    MetadataConflict,
+    MetadataIntegrityViolation,
+    MetadataOperationFailed,
+    MetadataOutcomeUnknown,
+)
+from app.modules.streams.claims import Claim
 from app.modules.streams.consumption import Consumption, ConsumptionState
-from app.modules.streams.schemas import ChangeCursor, ChangeSnapshot, StreamError, operation_id
+from app.modules.streams.control import MetadataScope, stream_metadata
+from app.modules.streams.metadata_repository import EVENT_FACTS, OPERATION_FIELDS
+from app.modules.streams.schemas import ChangeCursor, ChangeSnapshot, StreamError
 from app.modules.streams.verification import CommitReceipt, TargetIdentity, TargetOutcome
 
-CONSUMPTIONS_DDL = """
-CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT_STREAM_CONSUMPTIONS (
-    event_id VARCHAR(64) NOT NULL,
-    consume_id VARCHAR(64) NOT NULL,
-    stream_id VARCHAR(64) NOT NULL,
-    epoch BIGINT NOT NULL,
-    generation BIGINT NOT NULL,
-    sequence_from BIGINT NOT NULL,
-    sequence_to BIGINT NOT NULL,
-    operation_digest VARCHAR(64) NOT NULL,
-    target_database VARCHAR(256) NOT NULL,
-    target_object VARCHAR(256) NOT NULL,
-    engine_label VARCHAR(128) NOT NULL,
-    principal VARCHAR(256) NOT NULL,
-    state VARCHAR(32) NOT NULL,
-    receipt JSON,
-    created_at DATETIME NOT NULL
-) PRIMARY KEY(event_id)
-DISTRIBUTED BY HASH(event_id) BUCKETS 1
-PROPERTIES ('replication_num'='1')
-"""
+logger = logging.getLogger(__name__)
 
-CONSUMPTION_OPERATIONS_DDL = """
-CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT_STREAM_CONSUMPTION_OPERATIONS (
-    consume_id VARCHAR(64) NOT NULL,
-    stream_id VARCHAR(64) NOT NULL,
-    generation BIGINT NOT NULL,
-    source_id VARCHAR(64) NOT NULL,
-    epoch BIGINT NOT NULL,
-    sequence_from BIGINT NOT NULL,
-    sequence_to BIGINT NOT NULL,
-    schema_version BIGINT NOT NULL,
-    operation_digest VARCHAR(64) NOT NULL,
-    target_database VARCHAR(256) NOT NULL,
-    target_object VARCHAR(256) NOT NULL,
-    engine_label VARCHAR(128) NOT NULL,
-    principal VARCHAR(256) NOT NULL,
-    target_load_id BIGINT,
-    target_transaction_id BIGINT,
-    active_role VARCHAR(128),
-    security_context_version BIGINT,
-    dispatch_attempt BIGINT,
-    submission_digest VARCHAR(64) NOT NULL,
-    cancellation_digest VARCHAR(64) NOT NULL,
-    created_at DATETIME NOT NULL
-) PRIMARY KEY(consume_id)
-DISTRIBUTED BY HASH(consume_id) BUCKETS 1
-PROPERTIES ('replication_num'='1')
-"""
-
-_OPERATION_COLUMNS = (
-    "consume_id,stream_id,generation,source_id,epoch,sequence_from,sequence_to,"
-    "schema_version,operation_digest,target_database,target_object,engine_label,principal,"
-    "target_load_id,target_transaction_id,active_role,security_context_version,"
-    "submission_digest,cancellation_digest,dispatch_attempt"
-)
-
-#: Added after the table shipped; ``migrate_stream_columns`` adds it.
-STREAM_COLUMN_MIGRATIONS = (
-    ("AUDIT_STREAM_CONSUMPTION_OPERATIONS", "dispatch_attempt", "BIGINT"),
-    ("CONFIG_STREAM_DEFINITIONS", "show_initial_rows", "BOOLEAN"),
-    ("CONFIG_STREAM_DEFINITIONS", "initial_commit_seq", "BIGINT"),
+#: A fact the database refused or whose commit outcome is unknown: only an
+#: exact readback in a new transaction can tell what is durable.
+_UNVERIFIED = (
+    MetadataConflict, MetadataIntegrityViolation, MetadataOutcomeUnknown,
+    MetadataOperationFailed,
 )
 
 
 def _operation_values(consume: Consumption) -> tuple:
+    """The prepared operation facts, in ``OPERATION_FIELDS`` order."""
     return (
         consume.consume_id, consume.stream_id, consume.generation, consume.snapshot.source_id,
         consume.snapshot.after.epoch, consume.snapshot.after.sequence,
@@ -84,73 +38,75 @@ def _operation_values(consume: Consumption) -> tuple:
         consume.snapshot.schema_version, consume.operation_digest, consume.target.database,
         consume.target.table, consume.target.label, consume.target.principal,
         consume.target.load_id, consume.target.transaction_id,
-        consume.active_role, consume.security_context_version,
+        consume.active_role, consume.security_context_version, consume.attempt,
         consume.decision_claim("0" * 64, "submit").operation_digest,
         consume.decision_claim("0" * 64, "cancel").operation_digest,
-        consume.attempt,
     )
 
 
-class StarRocksConsumptionJournal:
+def _operation(consume: Consumption) -> dict[str, Any]:
+    return dict(zip(OPERATION_FIELDS, _operation_values(consume), strict=True))
+
+
+def _row_values(row: dict[str, Any]) -> tuple:
+    return tuple(row[field] for field in OPERATION_FIELDS)
+
+
+class ConsumptionJournal:
     """The OFFSET_COMMITTED receipt is the authoritative offset fact.
 
     CONFIG_STREAMS may cache an offset only after reading these receipts. No
     observer is allowed to trust a cache that omits a pending generation.
     """
 
-    def __init__(self, execute: MetadataExecutor | None = None) -> None:
-        if execute is None:
-            from app.core.database import db
-
-            execute = db.execute_system
-        self._execute = execute
+    def __init__(self, metadata: MetadataScope = stream_metadata) -> None:
+        self._metadata = metadata
 
     async def prepare(self, consume: Consumption) -> None:
         values = _operation_values(consume)
-        with suppress(Exception):
-            await self._execute(
-                "INSERT INTO NOVA_SYSTEM.AUDIT_STREAM_CONSUMPTION_OPERATIONS "
-                f"({_OPERATION_COLUMNS},created_at) "
-                f"WITH LABEL nova_stream_prepared_{consume.consume_id} "
-                "SELECT " + ",".join(["%s"] * len(values)) + ",NOW() "
-                "WHERE NOT EXISTS (SELECT 1 FROM NOVA_SYSTEM.AUDIT_STREAM_CONSUMPTION_OPERATIONS "
-                "WHERE consume_id=%s)",
-                (*values, consume.consume_id),
-            )
-        result = await self._execute(
-            f"SELECT {_OPERATION_COLUMNS} FROM NOVA_SYSTEM.AUDIT_STREAM_CONSUMPTION_OPERATIONS "
-            "WHERE consume_id=%s LIMIT 2", (consume.consume_id,),
-        )
-        if len(result["rows"]) != 1 or tuple(result["rows"][0]) != values:
+        try:
+            async with self._metadata() as repository:
+                await repository.prepare_consumption(_operation(consume))
+        except _UNVERIFIED:
+            logger.debug("consumption preparation needs readback", exc_info=True)
+        async with self._metadata(read_only=True) as repository:
+            row = await repository.operation(consume.consume_id)
+        try:
+            verified = row is not None and _row_values(row) == values
+        except (KeyError, TypeError):
+            verified = False
+        if not verified:
             raise StreamError("STREAM_CONSUMPTION_BLOCKED", "Operation preparation is unverified")
         await self.record(consume, ConsumptionState.PREPARED)
 
     async def winning_operation(self, claim: Claim) -> Consumption | None:
-        result = await self._execute(
-            f"SELECT {_OPERATION_COLUMNS} FROM NOVA_SYSTEM.AUDIT_STREAM_CONSUMPTION_OPERATIONS "
-            "WHERE submission_digest=%s OR cancellation_digest=%s LIMIT 2",
-            (claim.operation_digest, claim.operation_digest),
-        )
-        if not result["rows"]:
+        async with self._metadata(read_only=True) as repository:
+            row = await repository.winning_operation(claim.operation_digest)
+        if row is None:
             return None
         try:
-            if len(result["rows"]) != 1:
-                raise ValueError("Ambiguous operation facts")
-            row = result["rows"][0]
             consume = Consumption(
-                row[0], row[1], row[2],
-                ChangeSnapshot(row[3], ChangeCursor(row[4], row[5]),
-                               ChangeCursor(row[4], row[6]), row[7]),
-                TargetIdentity(row[9], row[10], row[11], row[12], row[13], row[14]), row[8],
-                row[15], row[16], int(row[19] or 0),
+                row["consume_id"], row["stream_id"], int(row["generation"]),
+                ChangeSnapshot(
+                    row["source_id"], ChangeCursor(int(row["epoch"]), int(row["sequence_from"])),
+                    ChangeCursor(int(row["epoch"]), int(row["sequence_to"])),
+                    int(row["schema_version"]),
+                ),
+                TargetIdentity(
+                    row["target_database"], row["target_object"], row["engine_label"],
+                    row["principal"], row["target_load_id"], row["target_transaction_id"],
+                ),
+                row["operation_digest"], row["active_role"], row["security_context_version"],
+                int(row["dispatch_attempt"] or 0),
             )
             if (
-                tuple(row) != _operation_values(consume)
-                or claim.operation_digest not in row[17:19]
+                _row_values(row) != _operation_values(consume)
+                or claim.operation_digest
+                not in (row["submission_digest"], row["cancellation_digest"])
                 or consume.decision_claim("0" * 64, "submit").key != claim.key
             ):
                 raise ValueError("Operation facts do not match the winner")
-        except (TypeError, ValueError, IndexError, StreamError):
+        except (KeyError, TypeError, ValueError, IndexError, StreamError):
             raise StreamError(
                 "STREAM_CONSUMPTION_BLOCKED", "Durable operation facts are inconsistent"
             ) from None
@@ -158,6 +114,7 @@ class StarRocksConsumptionJournal:
 
     @staticmethod
     def _facts(consume: Consumption) -> tuple:
+        """The operation facts every event repeats, in ``EVENT_FACTS`` order."""
         return (
             consume.consume_id, consume.stream_id, consume.snapshot.after.epoch,
             consume.generation, consume.snapshot.after.sequence, consume.snapshot.through.sequence,
@@ -166,25 +123,20 @@ class StarRocksConsumptionJournal:
         )
 
     async def verified_receipt(self, consume: Consumption) -> CommitReceipt | None:
-        result = await self._execute(
-            "SELECT consume_id,stream_id,epoch,generation,sequence_from,sequence_to,"
-            "operation_digest,target_database,target_object,engine_label,principal,state,receipt "
-            "FROM NOVA_SYSTEM.AUDIT_STREAM_CONSUMPTIONS WHERE consume_id=%s "
-            "AND state IN ('TARGET_COMMITTED','OFFSET_COMMITTED','FAILED') LIMIT 4",
-            (consume.consume_id,),
-        )
-        if not result["rows"]:
+        async with self._metadata(read_only=True) as repository:
+            rows = await repository.terminal_events(consume.consume_id)
+        if not rows:
             return None
         receipts = []
         try:
-            if len(result["rows"]) > 3:
+            if len(rows) > 3:
                 raise ValueError("Ambiguous terminal evidence")
-            for row in result["rows"]:
-                if tuple(row[:11]) != self._facts(consume):
+            for row in rows:
+                if tuple(row[field] for field in EVENT_FACTS) != self._facts(consume):
                     raise ValueError("Receipt operation mismatch")
-                data = json.loads(row[12]) if isinstance(row[12], str) else row[12]
+                data = row["receipt"]
                 receipt = CommitReceipt(**{**data, "outcome": TargetOutcome(data["outcome"])})
-                expected = {TargetOutcome.FAILED} if row[11] == "FAILED" else {
+                expected = {TargetOutcome.FAILED} if row["state"] == "FAILED" else {
                     TargetOutcome.COMMITTED, TargetOutcome.VISIBLE,
                 }
                 if receipt.outcome not in expected:
@@ -215,46 +167,34 @@ class StarRocksConsumptionJournal:
             receipt is None or receipt.outcome != TargetOutcome.FAILED
         ):
             raise StreamError("STREAM_RECEIPT_INVALID", "Failure evidence is required")
-        event_id = operation_id(consume.consume_id, state)
-        values = (
-            event_id, *self._facts(consume), str(state),
-            None if receipt is None else json.dumps(asdict(receipt), sort_keys=True),
-        )
-        # Duplicate label or lost ACK: only exact durable readback below can
-        # establish that this event exists. Never accept an exception alone.
-        with suppress(Exception):
-            await self._execute(
-                "INSERT INTO NOVA_SYSTEM.AUDIT_STREAM_CONSUMPTIONS "
-                f"WITH LABEL nova_stream_event_{event_id} "
-                "SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW() "
-                "WHERE NOT EXISTS (SELECT 1 FROM NOVA_SYSTEM.AUDIT_STREAM_CONSUMPTIONS "
-                "WHERE event_id=%s)",
-                (*values, event_id),
-            )
-        readback = await self._execute(
-            "SELECT consume_id,stream_id,epoch,generation,sequence_from,sequence_to,"
-            "operation_digest,target_database,target_object,engine_label,principal,state,receipt "
-            "FROM NOVA_SYSTEM.AUDIT_STREAM_CONSUMPTIONS WHERE event_id=%s LIMIT 2",
-            (event_id,),
-        )
-        if len(readback["rows"]) != 1 or tuple(readback["rows"][0][:12]) != values[1:-1]:
+        facts = dict(zip(EVENT_FACTS, self._facts(consume), strict=True))
+        payload = None if receipt is None else {
+            **asdict(receipt), "outcome": str(receipt.outcome),
+        }
+        # A refused or unacknowledged insert is settled only by the exact
+        # durable readback below; never by the exception alone.
+        try:
+            async with self._metadata() as repository:
+                await repository.record_event(facts, str(state), payload)
+            return
+        except _UNVERIFIED:
+            logger.debug("consumption event needs readback", exc_info=True)
+        async with self._metadata(read_only=True) as repository:
+            row = await repository.event(consume.consume_id, str(state))
+        if row is None or (
+            tuple(row[field] for field in EVENT_FACTS) != self._facts(consume)
+            or row["state"] != str(state)
+        ):
             raise StreamError(
                 "STREAM_CONSUMPTION_BLOCKED", "Consumption event requires verification"
             )
         if state in {
             ConsumptionState.TARGET_COMMITTED, ConsumptionState.OFFSET_COMMITTED,
             ConsumptionState.FAILED,
-        }:
-            try:
-                persisted = readback["rows"][0][12]
-                persisted = json.loads(persisted) if isinstance(persisted, str) else persisted
-                matches = persisted == json.loads(values[-1])
-            except (ValueError, TypeError, IndexError):
-                matches = False
-            if not matches:
-                raise StreamError(
-                    "STREAM_CONSUMPTION_BLOCKED", "Consumption receipt requires verification"
-                )
+        } and row["receipt"] != payload:
+            raise StreamError(
+                "STREAM_CONSUMPTION_BLOCKED", "Consumption receipt requires verification"
+            )
 
     async def advance(self, consume: Consumption, receipt: CommitReceipt) -> ChangeCursor:
         await self.record(consume, ConsumptionState.OFFSET_COMMITTED, receipt)
@@ -268,56 +208,30 @@ class StarRocksConsumptionJournal:
         overlaps another, or two receipts from the same offset is not resolved
         by taking a maximum: it blocks the stream.
         """
-        result = await self._execute(
-            "SELECT sequence_from, sequence_to FROM NOVA_SYSTEM.AUDIT_STREAM_CONSUMPTIONS "
-            "WHERE stream_id=%s AND epoch=%s AND state='OFFSET_COMMITTED'",
-            (stream_id, creation.epoch),
-        )
-        by_start: dict[int, int] = {}
-        for start, end in result["rows"]:
-            start, end = int(start), int(end)
-            if end < start or by_start.get(start, end) != end:
-                raise StreamError("STREAM_CONSUMPTION_BLOCKED", "Offset receipts conflict")
-            if end <= creation.sequence and start < creation.sequence:
-                continue  # history before ``creation`` (an interval's own start)
-            if start < creation.sequence:
-                raise StreamError("STREAM_CONSUMPTION_BLOCKED", "Offset receipts overlap")
-            by_start[start] = end
-        cursor = creation.sequence
-        while cursor in by_start:
-            cursor = by_start.pop(cursor)
-        if by_start:
-            raise StreamError(
-                "STREAM_CONSUMPTION_BLOCKED", "Offset receipts are not one unbroken chain"
+        async with self._metadata(read_only=True) as repository:
+            sequence = await repository.committed_cursor(
+                stream_id, creation.epoch, creation.sequence,
             )
-        return ChangeCursor(creation.epoch, cursor)
+        return ChangeCursor(creation.epoch, sequence)
 
     async def recent(self, stream_id: str, limit: int) -> list[dict]:
         """The newest consumption events of a stream, without receipts or SQL."""
-        result = await self._execute(
-            "SELECT consume_id, state, sequence_from, sequence_to, target_database, "
-            "target_object, principal, created_at FROM NOVA_SYSTEM.AUDIT_STREAM_CONSUMPTIONS "
-            f"WHERE stream_id=%s ORDER BY created_at DESC LIMIT {int(limit)}",
-            (stream_id,),
-        )
+        async with self._metadata(read_only=True) as repository:
+            rows = await repository.recent_events(stream_id, int(limit))
         return [
             {
-                "consume_id": row[0],
-                "state": row[1],
-                "offset_from": int(row[2]),
-                "offset_to": int(row[3]),
-                "target": f"{row[4]}.{row[5]}",
-                "principal": row[6],
-                "at": row[7],
+                "consume_id": row["consume_id"],
+                "state": row["state"],
+                "offset_from": int(row["sequence_from"]),
+                "offset_to": int(row["sequence_to"]),
+                "target": f"{row['target_database']}.{row['target_object']}",
+                "principal": row["principal"],
+                "at": row["created_at"],
             }
-            for row in result["rows"]
+            for row in rows
         ]
 
     async def failed_attempts(self, stream_id: str, generation: int, start: int) -> int:
         """Proven failures from ``start``: the next attempt's arbitration slot."""
-        result = await self._execute(
-            "SELECT COUNT(DISTINCT consume_id) FROM NOVA_SYSTEM.AUDIT_STREAM_CONSUMPTIONS "
-            "WHERE stream_id=%s AND generation=%s AND sequence_from=%s AND state='FAILED'",
-            (stream_id, generation, start),
-        )
-        return int(result["rows"][0][0] or 0)
+        async with self._metadata(read_only=True) as repository:
+            return await repository.failed_attempts(stream_id, generation, start)

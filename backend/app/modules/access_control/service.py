@@ -6,14 +6,20 @@ import fnmatch
 import hashlib
 import json
 import re
-from datetime import UTC, datetime
 from typing import Literal
 
 from app.common.audit import write_audit_log
 from app.common.identifiers import check_identifier
+from app.common.sql_guard import CredentialsRedactionError, redact_sql_credentials
 from app.core.config import settings
 from app.core.database import db
-from app.integrations.ranger.client import RangerClient, RangerError, ranger_client
+from app.core.metadata_runtime import metadata_db
+from app.integrations.ranger.client import (
+    RangerClient,
+    RangerConflictError,
+    RangerError,
+    ranger_client,
+)
 from app.integrations.ranger.compiler import (
     compile_access_policy,
     compile_bi_metadata_policy,
@@ -21,10 +27,24 @@ from app.integrations.ranger.compiler import (
     compile_row_filter_policy,
     role_scope_attribute,
 )
-from app.integrations.ranger.schemas import MaskType, RangerRole, RangerRoleMember
+from app.integrations.ranger.schemas import MaskType, RangerPolicy, RangerRole, RangerRoleMember
 
 from .domain import AccessRequest, ProjectionState, RoleProjection
+from .metadata_repository import AccessControlMetadataRepository
 from .security_context import SecurityContext
+
+#: Longest projection message the store keeps.
+_MESSAGE_LIMIT = 2048
+
+
+def _stored_message(exc: BaseException | str | None) -> str | None:
+    """Ranger/StarRocks error text safe to persist: credentials redacted, bounded."""
+    if exc is None:
+        return None
+    try:
+        return redact_sql_credentials(str(exc))[:_MESSAGE_LIMIT] or None
+    except CredentialsRedactionError:
+        return "The provider error was withheld because it held credentials."
 
 
 class AccessControlError(RuntimeError):
@@ -76,24 +96,33 @@ class AccessControlService:
             ranger_policy_ids=json.dumps(ranger_ids or []),
         )
 
+    @staticmethod
     async def _record_projection(
-        self, name: str, state: ProjectionState, message: str | None = None
+        security: SecurityContext,
+        name: str,
+        state: ProjectionState,
+        message: BaseException | str | None = None,
     ) -> None:
-        await db.execute_system(
-            """
-            INSERT INTO NOVA_SYSTEM.CONFIG_SECURITY_ROLE_PROJECTIONS
-                (role_name, state, marker_exists, ranger_exists, message, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            """,
-            [
+        """Record how far a role projection got, from the revision read."""
+        async with metadata_db().transaction(security) as conn:
+            repo = AccessControlMetadataRepository(conn, security)
+            current = await repo.get_role_projection(name)
+            await repo.put_role_projection(
                 name,
-                state.value,
-                state in {ProjectionState.ACTIVE, ProjectionState.PROPAGATING},
-                state in {ProjectionState.ACTIVE, ProjectionState.PROPAGATING},
-                message,
-                datetime.now(UTC).replace(tzinfo=None),
-            ],
-        )
+                state,
+                message=_stored_message(message),
+                expected_revision=current["metadata_revision"] if current else None,
+            )
+
+    @staticmethod
+    async def _forget_projection(security: SecurityContext, name: str) -> None:
+        async with metadata_db().transaction(security) as conn:
+            repo = AccessControlMetadataRepository(conn, security)
+            current = await repo.get_role_projection(name)
+            if current is not None:
+                await repo.delete_role_projection(
+                    name, expected_revision=current["metadata_revision"]
+                )
 
     async def create_role(
         self, security: SecurityContext, name: str, description: str = ""
@@ -102,7 +131,7 @@ class AccessControlService:
         safe_name = check_identifier(name, field="role")
         if safe_name.upper() == "ACCOUNTADMIN":
             raise AccessControlError("ACCOUNTADMIN is immutable")
-        await self._record_projection(name, ProjectionState.PROVISIONING)
+        await self._record_projection(security, name, ProjectionState.PROVISIONING)
         ranger_created = False
         try:
             await self._ranger.put_role(
@@ -110,7 +139,7 @@ class AccessControlService:
             )
             ranger_created = True
             await db.execute_system(f"CREATE ROLE IF NOT EXISTS {safe_name}")
-            await self._record_projection(name, ProjectionState.ACTIVE)
+            await self._record_projection(security, name, ProjectionState.ACTIVE)
             await self._audit_admin(
                 security, action="CREATE_ROLE", object_type="ROLE", object_name=name
             )
@@ -120,11 +149,11 @@ class AccessControlService:
                 try:
                     await self._ranger.delete_role(name)
                 except Exception:
-                    await self._record_projection(name, ProjectionState.DRIFTED, str(exc))
+                    await self._record_projection(security, name, ProjectionState.DRIFTED, exc)
                     raise AccessControlError(
                         "Role provisioning partially failed and requires reconciliation"
                     ) from exc
-            await self._record_projection(name, ProjectionState.ERROR, str(exc))
+            await self._record_projection(security, name, ProjectionState.ERROR, exc)
             raise AccessControlError("Role provisioning failed") from exc
 
     async def drop_role(self, security: SecurityContext, name: str) -> None:
@@ -132,7 +161,7 @@ class AccessControlService:
         if name.upper() == "ACCOUNTADMIN":
             raise AccessControlError("ACCOUNTADMIN is immutable")
         safe_name = check_identifier(name, field="role")
-        await self._record_projection(name, ProjectionState.DELETING)
+        await self._record_projection(security, name, ProjectionState.DELETING)
         ranger_role = await self._ranger.get_role(name)
         await self._ranger.delete_role(name)
         try:
@@ -142,16 +171,13 @@ class AccessControlService:
                 try:
                     await self._ranger.put_role(RangerRole.model_validate(ranger_role))
                 except Exception:
-                    await self._record_projection(name, ProjectionState.DRIFTED, str(exc))
+                    await self._record_projection(security, name, ProjectionState.DRIFTED, exc)
                     raise AccessControlError(
                         "Role deletion partially failed and requires reconciliation"
                     ) from exc
-            await self._record_projection(name, ProjectionState.ERROR, str(exc))
+            await self._record_projection(security, name, ProjectionState.ERROR, exc)
             raise AccessControlError("Role deletion failed") from exc
-        await db.execute_system(
-            "DELETE FROM NOVA_SYSTEM.CONFIG_SECURITY_ROLE_PROJECTIONS WHERE role_name = %s",
-            [name],
-        )
+        await self._forget_projection(security, name)
         await self._audit_admin(security, action="DROP_ROLE", object_type="ROLE", object_name=name)
 
     async def assign_role(
@@ -302,8 +328,7 @@ class AccessControlService:
                 accesses=sorted(previous | {value.lower() for value in accesses}),
                 resource_type=resource_type,
             )
-        result = await self._ranger.put_policy(policy)
-        await self._record_policy_state(policy.name, result, ProjectionState.PROPAGATING)
+        result = await self._apply_policy(security, policy)
         await self._audit_admin(
             security,
             action="GRANT_ACCESS",
@@ -361,8 +386,7 @@ class AccessControlService:
             accesses=sorted(remaining),
             resource_type=resource_type,
         )
-        result = await self._ranger.put_policy(policy)
-        await self._record_policy_state(policy.name, result, ProjectionState.PROPAGATING)
+        result = await self._apply_policy(security, policy)
         await self._audit_admin(
             security,
             action="REVOKE_ACCESS",
@@ -389,7 +413,6 @@ class AccessControlService:
             if not values:
                 raise AccessControlError("A data scope assignment cannot be empty")
             attributes[role_scope_attribute(role, dimension)] = ",".join(sorted(set(values)))
-        await self._ranger.put_user_attributes(principal, attributes)
         policy = compile_row_filter_policy(
             role=role,
             catalog=catalog,
@@ -397,30 +420,22 @@ class AccessControlService:
             table=table,
             bindings=bindings,
         )
-        result = await self._ranger.put_policy(policy)
-        now = datetime.now(UTC).replace(tzinfo=None)
-        for dimension, _, values in bindings:
-            assignment_id = hashlib.sha256(
-                f"{principal}\x1f{role}\x1f{dimension}".encode()
-            ).hexdigest()
-            await db.execute_system(
-                """
-                INSERT INTO NOVA_SYSTEM.CONFIG_DATA_SCOPE_ASSIGNMENTS
-                    (assignment_id, principal, role_name, dimension_key,
-                     scope_values_json, state, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """,
-                [
-                    assignment_id,
-                    principal,
-                    role,
-                    dimension,
-                    json.dumps(sorted(set(values))),
-                    ProjectionState.PROPAGATING.value,
-                    now,
-                ],
+        # Nova's intent is committed before Ranger changes. An outcome that is
+        # not confirmed stays PENDING and is reported for verification.
+        await self._record_data_scope(
+            security, principal, role, bindings, policy, None, ProjectionState.PENDING
+        )
+        await self._ranger.put_user_attributes(principal, attributes)
+        try:
+            result = await self._ranger.put_policy(policy)
+        except RangerConflictError:
+            await self._record_data_scope(
+                security, principal, role, bindings, policy, None, ProjectionState.ERROR
             )
-        await self._record_policy_state(policy.name, result, ProjectionState.PROPAGATING)
+            raise
+        await self._record_data_scope(
+            security, principal, role, bindings, policy, result, ProjectionState.PROPAGATING
+        )
         await self._audit_admin(
             security,
             action="PUT_DATA_SCOPE",
@@ -501,8 +516,7 @@ class AccessControlService:
             mask_type=mask_type,
             value_expression=value_expression,
         )
-        result = await self._ranger.put_policy(policy)
-        await self._record_policy_state(policy.name, result, ProjectionState.PROPAGATING)
+        result = await self._apply_policy(security, policy)
         await self._audit_admin(
             security,
             action="PUT_MASK",
@@ -521,8 +535,7 @@ class AccessControlService:
         """
         self.require_security_admin(security)
         policy = compile_bi_metadata_policy(roles=[*roles, "ACCOUNTADMIN"])
-        result = await self._ranger.put_policy(policy)
-        await self._record_policy_state(policy.name, result, ProjectionState.PROPAGATING)
+        result = await self._apply_policy(security, policy)
         await self._audit_admin(
             security,
             action="PUT_BI_METADATA_ACCESS",
@@ -532,25 +545,79 @@ class AccessControlService:
         )
         return result
 
-    async def _record_policy_state(
-        self, name: str, ranger_result: dict, state: ProjectionState
+    @staticmethod
+    async def _put_policy_state(
+        repo: AccessControlMetadataRepository,
+        policy: RangerPolicy,
+        result: dict | None,
+        state: ProjectionState,
     ) -> None:
-        desired_json = json.dumps(ranger_result, sort_keys=True, default=str)
-        await db.execute_system(
-            """
-            INSERT INTO NOVA_SYSTEM.CONFIG_SECURITY_POLICIES
-                (policy_name, ranger_id, ranger_guid, state, desired_hash, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            """,
-            [
-                name,
-                ranger_result.get("id"),
-                ranger_result.get("guid"),
-                state.value,
-                hashlib.sha256(desired_json.encode()).hexdigest(),
-                datetime.now(UTC).replace(tzinfo=None),
-            ],
+        current = await repo.get_policy_state(policy.name)
+        if result is None:
+            # The intent: the definition Nova is about to send, keeping the
+            # Ranger identity already known for this managed policy.
+            result = {
+                **policy.to_api(),
+                "id": current["ranger_id"] if current else None,
+                "guid": current["ranger_guid"] if current else None,
+            }
+        await repo.put_policy_state(
+            policy.name,
+            result,
+            state,
+            expected_revision=current["metadata_revision"] if current else None,
         )
+
+    async def _record_policy_state(
+        self,
+        security: SecurityContext,
+        policy: RangerPolicy,
+        result: dict | None,
+        state: ProjectionState,
+    ) -> None:
+        async with metadata_db().transaction(security) as conn:
+            repo = AccessControlMetadataRepository(conn, security)
+            await self._put_policy_state(repo, policy, result, state)
+
+    async def _record_data_scope(
+        self,
+        security: SecurityContext,
+        principal: str,
+        role: str,
+        bindings: list[tuple[str, str, list[str]]],
+        policy: RangerPolicy,
+        result: dict | None,
+        state: ProjectionState,
+    ) -> None:
+        """Record the scope assignments and their row-filter policy together."""
+        async with metadata_db().transaction(security) as conn:
+            repo = AccessControlMetadataRepository(conn, security)
+            for dimension, _, values in bindings:
+                current = await repo.get_data_scope(principal, role, dimension)
+                await repo.put_data_scope(
+                    principal,
+                    role,
+                    dimension,
+                    values,
+                    state=state,
+                    expected_revision=current["metadata_revision"] if current else None,
+                )
+            await self._put_policy_state(repo, policy, result, state)
+
+    async def _apply_policy(self, security: SecurityContext, policy: RangerPolicy) -> dict:
+        """Write one managed policy to Ranger: intent first, then the outcome.
+
+        A refusal Ranger confirms is recorded as ``ERROR``; any other failure
+        leaves the intent ``PENDING`` for verification rather than a replay.
+        """
+        await self._record_policy_state(security, policy, None, ProjectionState.PENDING)
+        try:
+            result = await self._ranger.put_policy(policy)
+        except RangerConflictError:
+            await self._record_policy_state(security, policy, None, ProjectionState.ERROR)
+            raise
+        await self._record_policy_state(security, policy, result, ProjectionState.PROPAGATING)
+        return result
 
     async def list_managed_policies(self) -> list[dict]:
         prefix = f"{settings.RANGER_MANAGED_POLICY_PREFIX}/"
@@ -885,24 +952,18 @@ class AccessControlService:
         escaped = [value.strip().replace("'", "''") for value in raw.split(",")]
         return ",".join(f"'{value}'" for value in escaped)
 
-    async def health(self) -> dict:
+    async def health(self, security: SecurityContext) -> dict:
         try:
             health = await self._ranger.health()
         except RangerError as exc:
             return {"healthy": False, "reason": str(exc)}
-        pending = await db.execute_system(
-            "SELECT COUNT(*) FROM NOVA_SYSTEM.CONFIG_SECURITY_POLICIES "
-            "WHERE state IN ('PENDING', 'PROPAGATING')"
-        )
-        drifted = await db.execute_system(
-            "SELECT COUNT(*) FROM NOVA_SYSTEM.CONFIG_SECURITY_ROLE_PROJECTIONS "
-            "WHERE state = 'DRIFTED'"
-        )
+        async with metadata_db().transaction(security, read_only=True) as conn:
+            counts = await AccessControlMetadataRepository(conn, security).health_counts()
         return {
             "healthy": bool(health.get("reachable") and health.get("service_exists")),
             **health,
-            "pending_propagation": int(pending["rows"][0][0]) if pending["rows"] else 0,
-            "drift_count": int(drifted["rows"][0][0]) if drifted["rows"] else 0,
+            "pending_propagation": counts["pending_propagation"],
+            "drift_count": counts["drift_count"],
         }
 
 

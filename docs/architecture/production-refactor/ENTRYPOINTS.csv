@@ -16,4 +16,4 @@ Search builds and reconciliation,python -m app.worker --role maintenance,backend
 Ephemeral model cleanup,python -m app.worker --role maintenance,backend/app/modules/ml_engine/service.py:sweep_ephemeral,maintenance,NOVA_SYSTEM,managed model artifact deletion
 Buffered usage,app.main:app,backend/app/modules/llm_functions/gateway.py:UsageMeter,originating role then durable outbox,NOVA_SYSTEM and process buffers,usage persistence
 Schema bootstrap,app.main:app and app.worker and app.scheduler,backend/app/common/nova_system.py,migrator,NOVA_SYSTEM,DDL and backfills
-Durable outbox publisher,NOT_IMPLEMENTED,NOT_IMPLEMENTED,outbox,planned PG,Redis wakeups
+Durable outbox publisher,python -m app.worker --role outbox,backend/app/worker/outbox.py,outbox,PG caller prepared; epoch cutover pending,Redis wakeups

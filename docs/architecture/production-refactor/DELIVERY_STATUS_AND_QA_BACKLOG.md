@@ -1,10 +1,15 @@
 # Migration, scaling and remaining QA
 
-Updated 2026-11-12 (Asia/Jakarta), through the Workspace caller-port and worker
-readiness checkpoint ([source and evidence](../../reports/production-refactor/workspace-caller-port/README.md)).
+Updated 2026-11-13 (Asia/Jakarta), through the stopped-worktree integration
+and Agent caller-port checkpoint ([source and evidence](../../reports/production-refactor/worktree-takeover/README.md)).
 The owner requested this checkpoint before further work: finish migration and
 application scaling first, then resume the remaining whole-feature QA. Tests
 needed to validate an architecture change still run with that change.
+
+The stopped worktree ports are now being integrated in the active checkout.
+See the [takeover checkpoint](../../reports/production-refactor/worktree-takeover/README.md)
+for baseline results, failed integration attempts and remaining work. The source
+under integration is not yet a deployable cutover.
 
 ## Completion decision
 
@@ -15,11 +20,11 @@ checks do not establish a migrated or scalable production deployment.
 | Area | Verified state | Remaining implementation |
 | --- | --- | --- |
 | Metadata authority | Runtime domains still use StarRocks `NOVA_SYSTEM`; PG17 transaction, identity, migration and storage boundaries are tested | Port every domain and writer, finish import/provenance, rehearse twice, freeze all writers, validate final import, activate PG epoch and cut over once |
-| Ownership inventory | 163 source-table entries and 875 reviewed system call sites | 118 entries remain `NOT_STARTED`, 35 have tested storage with caller ports pending, ten have prepared import-only schemas; no entry records completed cutover |
-| PG schema | Revisions 0001–0018 prepare deployment state, preferences, password flags, AI registry/aliases/definitions, jobs/outbox, scheduler fencing, audit, retained history, Stages, Workspace ownership/shares, Workspace file entries/version receipts per-person Notebook runtime/execution/package metadata, Task definitions/edges/runs with version CAS and lease fencing, Stream control claims/receipt chains, and ML jobs/models/versions with leased jobs and immutable versions | Remaining domain DDL, constraints, executable grants/RLS, caller transactions and whole-import validation |
-| Durable jobs | Queue, outbox, leases/fencing and receipts pass real-PG fixture tests | Actual producers/consumers, outbox publisher, participant verification and recovery; Redis must cease being authoritative for work |
-| Agent runtime | Replay and approval defects have been repaired in the existing runtime | Transactional PG conversations/runs/events, actor-bound durable consent, exact effect intents, reconnect and restart recovery |
-| Workload processes | API supports `all`, `web`, `query`; seven workload roles now have separate processes and supervised default startup; maintenance owns Search builds, Catalog/News refresh and ML retention; a starting role now waits up to 180 s for an unavailable engine, Redis or held metrics port instead of exiting and taking every sibling down with it, and supervised roles stop when their launcher exits | Remaining agent/outbox separation; per-role admission, dependency readiness, fenced claims, isolation and validated limits across the full deployment |
+| Ownership inventory | 163 source-table entries and 875 reviewed system call sites | 153 entries have tested PG storage with caller ports pending and ten have prepared import-only schemas; none remains `NOT_STARTED` and no entry records completed cutover |
+| PG schema | Revisions 0001–0030 prepare deployment state, preferences, password flags, AI registry/aliases/definitions, jobs/outbox, scheduler fencing, audit, retained history, Stages, Workspace ownership/shares, Workspace file entries/version receipts per-person Notebook runtime/execution/package metadata, Task definitions/edges/runs with version CAS and lease fencing, Stream control claims/receipt chains, and ML jobs/models/versions with leased jobs and immutable versions; Catalog inventory with sync-generation fencing and ciphertext-only credentials, business Ontology with append-only revisions, Agent definitions with CAS and a fenced run journal, Intelligence (Semantic Views, revision stores, Search, entities and feature store), cutover-operation journals and Task graph job links, Query autopilot approvals, leases and fenced results, and assistant threads, access-control policies, BI/Dataviz publications, migration jobs and LLM usage metering | Caller transactions in every runtime writer, refusal-audit integration, import provenance and whole-import validation |
+| Durable jobs | Queue, outbox, leases/fencing and receipts pass real-PG fixture tests; AI function registration is wired to maintenance; the standalone outbox publisher commits claims before Redis notifications and fenced acknowledgment, with recovery cases tested on PG | Remaining producers/consumers, participant verification and recovery; Redis must cease being authoritative for work |
+| Agent runtime | Conversations and fenced run/event journals are ported to PG; process-local approvals now bind principal, login, active role and security version. Registry/version/release, research, rule proposals, candidates and sharing callers use PG and pass facade/concurrency fixtures; Quality Lab and owner-scoped usage/session observability use PG and pass facade tests. Artifact/tile readers and BI pointer updates use PG/CAS; shared dashboards use a bounded member projection. Shared conversations use a restricted projection under the viewer identity | Memory, Missions, automations and legacy caller/import reconciliation; scheduled Quality workload grants; durable consent and read grants, standalone agent process, exact effect intents, reconnect and restart recovery |
+| Workload processes | API supports `all`, `web`, `query`; eight workload roles now have separate processes and supervised default startup; maintenance owns Search builds, Catalog/News refresh, ML retention and durable AI function registration; a starting role now waits up to 180 s for an unavailable engine, Redis or held metrics port instead of exiting and taking every sibling down with it, and supervised roles stop when their launcher exits | Remaining interactive agent separation; per-role admission, dependency readiness, fenced claims, isolation and validated limits across the full deployment |
 | Execution security | Existing delegated SQL and Ranger path retained | Isolated ML execution/provenance, notebook/Python/MCP credential and network isolation, atomic role changes and revocation boundaries |
 | Production deployment | Existing engine/development/split Compose files remain | One production Compose with all required services active, scoped inline environment anchors, stable private secrets, pinned images, TLS/private management ports and adjustable resources |
 | Recovery | No production recovery acceptance established | PG base backup/WAL, off-host copy, coordinated recovery manifest, restore/PITR and dependency recovery tests |
@@ -48,6 +53,32 @@ repositories are not proof that their runtime callers use PostgreSQL.
    writes, recovery uses PG and receipts, never stale StarRocks metadata.
 5. Resume the full QA matrix below against the migrated runtime. Re-run affected
    checks after every subsequent code or deployment change.
+
+## Remaining implementation with concrete owners
+
+The takeover source is prepared but cannot start the full migrated application
+until these paths agree on authority and recovery:
+
+| Component | Required change before cutover | Owning source |
+| --- | --- | --- |
+| Agent memory and learning | Port projection, revisions and evidence in one transaction; preserve deterministic IDs, repeat evidence, deletion/relearning and Outcome linkage; restrict shared-domain projections | `backend/app/modules/agents/memory.py`, `knowledge_router.py`, `metadata_repository.py` |
+| Missions | Port admission, stage/run projection, resume and deliverables; fence concurrent writers and verify recovery | `backend/app/modules/agents/mission.py` |
+| Automations and scheduled Quality | Port due scan, claim and completion; reconcile execution-role grants and authorize each owner; do not replay unknown tool effects | `backend/app/modules/agents/automations.py`, `backend/app/modules/task_orchestration/internal_handlers.py` |
+| Historical Agent helpers | Move semantic/skill backfills to the importer; reconcile retained delegation data without restoring removed product modes | `backend/app/modules/agents/repository.py`, `resource_delegation.py` |
+| Durable runtime ownership | Standalone interactive agent using the existing loop; PG consent/read grants; Notebook queue replacement; durable workspace cleanup and remaining consumers | `backend/app/worker/`, `backend/app/modules/assistant/consent.py`, Notebook/workspace owners |
+| Import/cutover | Package the reviewed contract and timestamp provenance, implement resumable whole import and semantic validation, rehearse twice, freeze/drain/validate/activate once | `backend/app/core/metadata_import*.py`, `metadata_export.py`, missing `backend/metadata_import/` package |
+| Production operations | One complete production Compose, scoped stable secrets, separate Redis workloads, TLS/private ports, ML/sandbox isolation and provenance, coordinated off-host backup/restore | `docker/`, ML/Notebook/backup owners |
+| Integration harness | Replace pre-cutover metadata setup/cleanup and bind actual PG processes without reseeding development; validate final CI, live providers and governed engine | `.github/workflows/ci.yml`, `backend/tests/integration/` |
+
+Memory compatibility needs particular care: the legacy upsert uses a deterministic
+memory ID and retains history after deleting the projection. The prepared PG
+revision guard currently requires an existing projection for revisions after 1,
+while projection inserts must start at 1. A deleted/relearned fact therefore needs
+an explicit, tested restoration path during the caller port; a happy-path
+`create_memory` fixture does not establish that behavior. Source evidence:
+`AgentMemoryRepository.upsert/delete` and migration 0021's
+`agent_knowledge_guard`. This is an unported-path finding, not a reported failure
+of the current StarRocks development runtime.
 
 ## Whole-feature QA still outstanding
 
@@ -80,10 +111,11 @@ Its current results are separate from unit-test counts:
 The [risk register](RISK_REGISTER.md) remains authoritative for individual
 findings. In particular:
 
-- Pending approval still lacks login/role/version binding. A controlled API
-  probe with two logins of one account records two failed isolation cases:
-  the other login consumes the pending approval. All synthetic fixtures and
-  logins were cleaned. See [baseline](../../reports/production-refactor/proposal-identity/pending-context-baseline.json).
+- The earlier two-login approval probe failed and remains in the
+  [baseline](../../reports/production-refactor/proposal-identity/pending-context-baseline.json).
+  The integrated broker now binds principal/login/role/version; controlled
+  unit/eval cases pass for decisions and secure uploads. Live acceptance on the
+  final runtime is still required, and durable consent remains incomplete.
 - Pending consent remains process-local. Durable PG consent, crash recovery,
   atomic consent consumption and mid-turn remote revocation are incomplete.
 - Earlier live AI/MCP/Studio timeouts, a stalled run and one creation failure

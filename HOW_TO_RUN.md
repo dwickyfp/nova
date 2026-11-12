@@ -5,16 +5,22 @@ Panduan ini menjelaskan cara menjalankan environment development Nova.
 Refactor produksi sedang berlangsung mengikuti
 [kontrak acceptance](docs/architecture/production-refactor/ACCEPTANCE.md) dan
 [baseline terverifikasi](docs/architecture/production-refactor/BASELINE_AUDIT.md).
-Domain aplikasi masih memakai `NOVA_SYSTEM`. Fondasi dan
-[migrator PG17](docs/architecture/production-refactor/PG_MIGRATIONS.md) diuji
-terpisah; schema terpasang belum berarti migrasi data atau cutover selesai.
+Integrasi caller PostgreSQL sedang dikerjakan di checkout ini. Runtime baru
+mensyaratkan konfigurasi PG17 dan metadata epoch yang sudah dipublikasikan;
+runtime tidak membuat schema atau memindahkan data saat startup. Caller lama
+yang belum dipindahkan masih memblokir cutover. Lihat
+[status integrasi](docs/reports/production-refactor/worktree-takeover/README.md)
+sebelum menjalankan checkout ini. Schema terpasang belum berarti migrasi data
+atau cutover selesai.
 Compose produksi tunggal dan pemisahan seluruh runtime belum tersedia. Perintah
 development di bawah tetap memakai stack yang ada, tanpa membuat stack duplikat.
 
 Komponen development:
 
-- Infrastructure: StarRocks, Redis, dan object storage
-- Backend FastAPI: port `8000`
+- Infrastructure: PostgreSQL 17, StarRocks, Ranger, Redis, dan object storage
+- Web API: port `8000`; query API: `8001`; proxy MySQL: `4406`
+- Scheduler serta worker task, ingestion, ML, notebook, automation, Autopilot,
+  maintenance, dan outbox berjalan sebagai proses terpisah
 - Frontend React/Vite: port `5173`
 
 Untuk workflow Studio baru, baca [arsitektur governed Studio](docs/arch-15-governed-studio.md)
@@ -269,14 +275,14 @@ BI/ETL tidak memperlambat aplikasi.
 | Web | `NOVA_PROCESS_ROLE=web PROXY_ENABLED=false uvicorn app.main:app --port 8000` | API aplikasi, bootstrap skema `NOVA_SYSTEM`, loop latar belakang. Boleh lebih dari satu replika. |
 | Query tier | `NOVA_PROCESS_ROLE=query PROXY_ENABLED=false uvicorn app.main:app --port 8001` | Eksekusi SQL, ML, dan run assistant/agent. Boleh banyak replika. |
 | Proxy MySQL | `python -m app.proxy` | Port 4406. Boleh banyak replika. |
-| Worker launcher | `python -m app.worker` | Tujuh proses: task, ingestion, ML, notebook, automation, autopilot, dan maintenance. |
+| Worker launcher | `python -m app.worker` | Delapan proses: task, ingestion, ML, notebook, automation, autopilot, maintenance, dan outbox. |
 
 `python -m app.worker` menjalankan supervisor lokal dengan tujuh child process.
 Jika salah satu child keluar, supervisor menghentikan yang lain dan keluar dengan
 status gagal. SIGINT/SIGTERM diteruskan; setelah 40 detik child yang belum berhenti
 dihentikan paksa. Setiap role memiliki pool dan event loop sendiri. Untuk container
 atau kapasitas berbeda, gunakan `python -m app.worker --role ROLE`, dengan `ROLE`
-bernilai `task`, `ingestion`, `ml`, `notebook`, `automation`, `autopilot`, atau `maintenance`.
+bernilai `task`, `ingestion`, `ml`, `notebook`, `automation`, `autopilot`, `maintenance`, atau `outbox`.
 Role `task` dan `automation` membutuhkan akun impersonasi khusus. Maintenance
 menangani build Search, refresh katalog/News dan pembersihan artifact ML; proses
 HTTP hanya menyimpan permintaan build Search untuk diambil poller.
@@ -287,9 +293,18 @@ bukan Compose produksi satu file yang ditargetkan refactor. `python -m
 app.worker.health ROLE` memeriksa proses lokal dan freshness heartbeat Redis;
 health ini belum membuktikan recovery job atau readiness semua dependency domain.
 Port metrics: task 9102, ingestion 9105, ML 9106, notebook 9107, automation 9108,
-autopilot 9109, maintenance 9110. Override port memakai `NOVA_METRICS_<SERVICE>_PORT`, misalnya
+autopilot 9109, maintenance 9110, outbox 9111. Override port memakai `NOVA_METRICS_<SERVICE>_PORT`, misalnya
 `NOVA_METRICS_ML_WORKER_PORT`. Jangan menjalankan supervisor lokal bersamaan
 dengan container worker pada stack yang sama.
+
+Outbox hanya memerlukan PG dan Redis. Untuk service container development,
+`NOVA_METADATA_OUTBOX_PASSWORDS` berisi JSON dengan satu login `nova_meta_outbox`;
+`NOVA_METADATA_CERT_DIR` menyediakan `ca.crt`. Host, port, schema version dan
+epoch memakai pengaturan metadata deployment yang sudah tervalidasi. Tanpa
+schema/epoch tersebut startup menolak berjalan. Service ini tidak mendapat
+kredensial StarRocks, Ranger, storage, session, atau kunci enkripsi aplikasi.
+Ini masih wiring development; Compose produksi satu file dan cutover lengkap
+belum tersedia.
 
 `NOVA_PROCESS_ROLE` bernilai `all` (default), `web`, atau `query`. Setiap peran
 tetap memasang semua route; yang menentukan tujuan request adalah gateway
@@ -315,7 +330,7 @@ Lokal, satu perintah menjalankan semuanya dan Vite merutekan path seperti
 gateway:
 
 ```bash
-./dev.sh --split
+./dev.sh
 ```
 
 Dengan Docker, tambahkan file override. Gateway nginx mengambil alih port API
@@ -342,25 +357,18 @@ Pengaturan beban, semuanya per proses:
 | `PROXY_MAX_CONNECTIONS` | `100` | Sesi MySQL per proses proxy. |
 | `PROXY_MAX_ROWS` | `0` (tanpa batas) | Batas baris per statement lewat proxy. Hasil yang melebihi batas ditolak, tidak dipotong. |
 | `LLM_GATEWAY_MAX_CONCURRENCY` | `32` | Panggilan provider LLM yang diteruskan sekaligus untuk fungsi `AI_*`; sisanya menunggu. |
-| `AUDIT_GROUP_MAX_ROWS` | `200` | Baris audit yang ditulis satu `INSERT` bila datang bersamaan. Setiap pemanggil tetap menunggu barisnya tercatat sebelum respons dikirim. `1` menulis tiap baris sendiri. |
 
-Thread menjaga proses tetap responsif, tetapi tidak menambah throughput karena
-Python tetap memakai satu core per proses. Replika query tier dan proxy menambah
-kapasitas CPU untuk statement besar.
-
-Untuk banyak statement kecil, batasnya bukan Nova melainkan tulisan audit: satu
-`INSERT` baris ke StarRocks butuh sekitar 100 ms dan insert yang bersamaan tidak
-saling tumpang tindih (sekitar 58 per detik pada stack lokal, berapa pun jumlah
-replika). Karena itu baris audit yang datang bersamaan digabung ke satu `INSERT`.
-Pada stack lokal, satu replika query naik dari sekitar 60 ke sekitar 135
-statement per detik pada 48 klien bersamaan. Latensi per statement tetap sekitar
-0,2 detik karena setiap statement menunggu audit-nya tercatat; menurunkannya
-berarti menulis audit secara asinkron, yang mengubah jaminan audit dan sengaja
-tidak dilakukan.
+Angka kapasitas implementasi audit StarRocks sebelumnya tidak berlaku untuk
+port PostgreSQL ini. Audit sukses bergabung dengan transaksi metadata pemanggil
+yang identitasnya cocok; penolakan dan kegagalan dicatat dalam transaksi
+terpisah. Pemisahan proses belum membuktikan replica safety. Perintah scale di
+atas menjelaskan wiring Compose lama, bukan acceptance scaling hasil refactor;
+jangan menaikkan replika sebelum claim/fencing, pemulihan efek dan batas sesi
+tervalidasi pada deployment yang sama.
 
 ### Training ML di worker
 
-`ML_TRAINING_EXECUTOR=worker` (dipakai `./dev.sh --split` dan compose split)
+`ML_TRAINING_EXECUTOR=worker` (dipakai `./dev.sh` dan compose split)
 membuat `CREATE ML_MODEL` dan `POST /api/v1/ml/train` mengantrekan job untuk
 `nova-worker`, lalu menunggu hasilnya; kontrak respons tidak berubah. Job tidak
 menyimpan kredensial. Worker melatih sebagai user pemanggil hanya selama sesi
@@ -939,7 +947,7 @@ diganti ketika diminta.
 
 ## Mode Development Cepat (hot reload)
 
-Selama development, hanya infrastruktur (StarRocks, Ranger, Redis, MinIO) yang
+Selama development, infrastruktur (PG17, StarRocks, Ranger, Redis, MinIO) yang
 berjalan di Docker. Backend, scheduler, worker, dan Vite
 berjalan di host lewat satu perintah, sehingga perubahan kode langsung berlaku
 tanpa rebuild image:
@@ -950,7 +958,9 @@ docker stop nova-backend nova-worker   # sekali, jika profil app pernah dijalank
 UV_NO_SYNC=1 ./dev.sh
 ```
 
-- Backend memakai `uvicorn --reload` yang mengawasi `backend/app`.
+- Web dan query memakai `uvicorn --reload` yang mengawasi `backend/app`.
+  Proxy MySQL berjalan sebagai proses tersendiri. `--split` tetap diterima
+  untuk kompatibilitas; pemisahan ini adalah perilaku default.
 - Scheduler dan `nova-worker` dijalankan lewat
   `watchfiles` dan restart sendiri saat file Python di `backend/app` berubah.
 - Vite me-reload UI seperti biasa.
@@ -958,7 +968,27 @@ UV_NO_SYNC=1 ./dev.sh
   scipy versi lock (`dlopen ... zero-fill section type`), pasang versi yang
   bisa dimuat dan selalu jalankan dengan variabel ini:
   `cd backend && VIRTUAL_ENV=.venv uv pip install scipy==1.17.1`.
-- Log tiap proses ada di `.dev-logs/`. Ctrl+C menghentikan semuanya.
+- Log tiap proses ada di `.dev-logs/` dengan izin `600`. Ctrl+C menghentikan
+  admission dan memberi proses serta turunannya hingga 50 detik untuk keluar.
+- Launcher menolak port yang bertabrakan, lalu menunggu readiness web/query,
+  metadata epoch, heartbeat worker dan frontend. Batas startup diatur melalui
+  `DEV_STARTUP_SECONDS` (default 240). Startup yang gagal keluar nonzero dan
+  membersihkan proses yang sudah dimulai. `--kill` hanya menghentikan listener
+  dari checkout ini; listener milik checkout lain harus dihentikan oleh pemiliknya.
+
+Setelah cutover tervalidasi, konfigurasi runtime host juga memerlukan
+`NOVA_METADATA_HOST`, `NOVA_METADATA_PORT`, `NOVA_METADATA_SSLROOTCERT`,
+`NOVA_METADATA_SCHEMA_VERSION`, dan `NOVA_METADATA_EPOCH`. Gunakan tepat satu
+`NOVA_METADATA_PASSWORDS` atau `NOVA_METADATA_PASSWORDS_FILE`; isinya JSON
+login workload ke password. File harus milik user proses dengan izin `600`,
+bukan symlink. Jangan masukkan login owner/migrator. `dev.sh` memeriksa
+konfigurasi seluruh role sebelum memulai aplikasi; `--no-infra-check` hanya
+melewati probe infrastructure, bukan validasi metadata atau readiness.
+
+Gunakan schema version dan epoch dari manifest cutover yang tervalidasi.
+Jangan membuat epoch sendiri atau memakai fixture tes untuk menjalankan data
+development. Pada checkpoint integrasi saat ini, startup aplikasi nyata belum
+lulus karena cutover seluruh domain belum selesai.
 
 Jangan jalankan container aplikasi dan `dev.sh` bersamaan: keduanya memakai
 port 8000 dan worker yang sama akan berebut antrean run.

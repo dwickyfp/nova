@@ -41,7 +41,7 @@ def _require_security_admin(user: dict) -> None:
 @router.get("/health")
 async def health(user: CurrentUser):
     _require_security_admin(user)
-    return await access_control_service.health()
+    return await access_control_service.health(SecurityContext.from_session(user))
 
 
 @router.get("/policies")

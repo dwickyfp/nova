@@ -1,8 +1,8 @@
 """Workspace ownership and shares in the caller's PostgreSQL transaction.
 
 The authenticated session supplies assigned roles for file sharing. Data queries
-retain the actor's single active role. Runtime callers switch at the all-domain
-cutover; this repository never falls back to StarRocks or writes file objects.
+retain the actor's single active role. ``SpaceService`` is the runtime caller;
+this repository never falls back to StarRocks or writes file objects.
 """
 
 from __future__ import annotations
@@ -16,9 +16,23 @@ from uuid import uuid4
 import psycopg
 from psycopg.pq import TransactionStatus
 
+from app.core.exceptions import StorageError
 from app.core.metadata_db import MetadataConflict, MetadataPermissionDenied
 from app.modules.access_control.security_context import SecurityContext
-from app.modules.workspaces.spaces import _clean_name
+
+_NAME_MAX = 120
+
+
+def _clean_name(name: str) -> str:
+    clean = " ".join(str(name or "").split())
+    if not clean:
+        raise StorageError("Name the workspace", status_code=400)
+    if len(clean) > _NAME_MAX:
+        raise StorageError(f"A workspace name holds at most {_NAME_MAX} characters",
+                           status_code=400)
+    if "/" in clean:
+        raise StorageError("A workspace name cannot contain /", status_code=400)
+    return clean
 
 
 def _revision(value: int) -> None:

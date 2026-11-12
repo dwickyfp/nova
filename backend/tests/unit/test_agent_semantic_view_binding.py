@@ -16,6 +16,7 @@ from app.modules.agents.semantic.access import bound_view_ids, load_authorized_m
 from app.modules.agents.semantic.ossie import parse_ossie
 from app.modules.assistant.service import LoopContext, _has_semantic_binding
 from app.modules.intelligence.semantic_views import semantic_view_service
+from tests.unit.agent_metadata_fakes import install_agent_store
 
 
 @pytest.fixture
@@ -105,39 +106,21 @@ async def test_new_agent_writes_only_canonical_view_binding(monkeypatch) -> None
     from app.modules.agents.versions import agent_versions
 
     monkeypatch.setattr(agent_versions, "store", AsyncMock())
-    writes = []
-
-    class FakeDB:
-        async def execute_system(self, sql, params=None):
-            writes.append((sql, params))
-            return {"rows": [], "affected": 1}
-
-    monkeypatch.setattr(repository, "db", FakeDB())
-    monkeypatch.setattr(
-        repository.AgentRepository, "get_agent", AsyncMock(return_value={
-            "agent_id": "created", "owner_name": "owner", "name": "Analyst",
-        })
-    )
+    store = install_agent_store(monkeypatch, AsyncMock(), principal="owner")
+    row = {"agent_id": "created", "owner_name": "owner", "name": "Analyst"}
+    store.create_agent.return_value = row
+    store.get_agent.return_value = row
+    store.update_agent.return_value = row
     repo = repository.AgentRepository()
-    await repo.create_agent(
-        owner_name="owner", fields={"name": "Analyst", "semantic_view_ids": ["v1", "v2"]}
-    )
-    sql, values = writes[0]
-    columns = [item.strip() for item in sql.split("(", 1)[1].split(") VALUES", 1)[0].split(",")]
-    inserted = dict(zip(columns, values, strict=True))
-    assert inserted["semantic_model_id"] is None
-    assert inserted["semantic_model_ids"] is None
-    assert json.loads(inserted["semantic_view_ids"]) == ["v1", "v2"]
-
-    await repo.update_agent(
-        "created", owner_name="owner", fields={"semantic_view_ids": []}
-    )
-    update_sql, update_values = next(
-        (sql, values) for sql, values in writes if sql.startswith("UPDATE")
-    )
-    assert "semantic_view_ids = %s" in update_sql
-    assert "semantic_model_ids = %s" not in update_sql
-    assert update_values[0] == "[]"
+    await repo.create_agent(owner_name="owner", fields={
+        "name": "Analyst", "semantic_view_ids": ["v1", "v2", "v1"],
+        "semantic_model_id": "legacy", "semantic_model_ids": ["legacy"],
+    })
+    fields = store.create_agent.await_args.args[0]
+    assert fields["semantic_model_id"] is None and fields["semantic_model_ids"] is None
+    assert fields["semantic_view_ids"] == ["v1", "v2"]
+    await repo.update_agent("created", owner_name="owner", fields={"semantic_view_ids": []})
+    assert store.update_agent.await_args.args == ("created", {"semantic_view_ids": []})
 
 
 @pytest.mark.asyncio

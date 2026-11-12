@@ -1,440 +1,307 @@
-"""AI Provider Management service — CRUD for providers and models via direct asyncmy connections.
+"""AI provider and model registry service over actor-bound PostgreSQL metadata.
 
-Tables:
-  NOVA_SYSTEM.CONFIG_AI_PROVIDERS  — registered AI providers (OpenAI, Anthropic, etc.)
-  NOVA_SYSTEM.CONFIG_AI_MODELS     — models registered under each provider
+Reads and writes go through ``AIRegistryRepository`` in a transaction bound to
+an explicit actor. Mutations run through ``AIConfigurationService`` so the
+configuration change, immutable function definitions, registration jobs and
+outbox wakeups commit together. Encrypted provider keys stay in the companion
+credential table: responses carry only presence and the masked hint, and the
+plaintext is produced only for an outbound provider request.
+
+Metadata-only reads without a caller (assistant, embeddings, gateway) use the
+explicit ``nova-ai`` SERVICE actor. Credential resolution with that actor
+returns a key only in the agent workload; other workloads fail closed.
 """
 
 import json
 import logging
 from contextlib import suppress
+from typing import Any
 from uuid import uuid4
 
-import asyncmy
-import asyncmy.cursors
 import httpx
 
-from app.common.crypto import decrypt, encrypt, mask_secret
+from app.common.crypto import EncryptionError, decrypt, encrypt
+from app.common.metadata_actors import metadata_scope, service_actor
 from app.common.ssrf_guard import (
     BlockedEndpointError,
     guarded_async_client,
     resolve_and_validate_url,
 )
 from app.core.config import settings
+from app.modules.access_control.security_context import SecurityContext
+from app.modules.ai_ml.metadata_service import AIConfigurationService
+from app.modules.ai_ml.repository import (
+    AIRegistryRepository,
+    ModelDefinition,
+    ProviderDefinition,
+)
 from app.modules.ai_ml.schemas import AIModelCreate
 
 logger = logging.getLogger(__name__)
 
+#: The SERVICE actor for metadata reads that have no calling user.
+REGISTRY_READER = service_actor("ai")
+
+_PROVIDER_FIELDS = (
+    "id", "name", "type", "endpoint", "default_params", "is_active", "created_at",
+    "created_by", "has_api_key", "api_key_masked",
+)
+_MODEL_FIELDS = (
+    "id", "provider_id", "name", "display_name", "type", "max_tokens", "logical_alias",
+    "revision", "dimensions", "modality", "metric", "default_params", "is_active",
+    "created_at", "created_by",
+)
+_EMBEDDING_IMMUTABLE = ("name", "revision", "dimensions", "modality", "metric")
+
+
+def _params_text(value: Any) -> str | None:
+    return json.dumps(value) if value else None
+
+
+def _api_key_ciphertext(value: str | None) -> str | None:
+    """Encrypt a newly supplied key; an empty value means "no key"."""
+    if not value:
+        return None
+    if value.startswith("enc:"):
+        # Only the existing owner produces ciphertext; a caller cannot inject it.
+        raise ValueError("Enter the provider API key itself")
+    return encrypt(value)
+
 
 class AIService:
-    """Manage AI providers and models in NOVA_SYSTEM.
+    """Manage AI providers and models in the PostgreSQL metadata store."""
 
-    Every method opens a fresh root-level asyncmy connection, executes,
-    and closes. This keeps the service stateless and avoids pool contention
-    with the system pool used elsewhere.
-    """
+    # ── Projections ────────────────────────────────────────────
 
-    # ── DB helpers ──────────────────────────────────────────────
+    @classmethod
+    def _provider(cls, row: dict[str, Any]) -> dict[str, Any]:
+        return cls._deserialize_row({name: row.get(name) for name in _PROVIDER_FIELDS})
 
-    @staticmethod
-    async def _connect() -> asyncmy.Connection:
-        """Open a root-level connection to StarRocks."""
-        return await asyncmy.connect(
-            host=settings.STARROCKS_HOST,
-            port=settings.STARROCKS_FE_MYSQL_PORT,
-            user=settings.STARROCKS_ROOT_USER,
-            password=settings.STARROCKS_ROOT_PASSWORD,
-            autocommit=True,
-            connect_timeout=10,
-        )
+    @classmethod
+    def _model(cls, row: dict[str, Any]) -> dict[str, Any]:
+        return cls._deserialize_row({name: row.get(name) for name in _MODEL_FIELDS})
 
     # ── Providers ──────────────────────────────────────────────
 
-    async def list_providers(self) -> list[dict]:
-        """List all registered AI providers, with the API key masked.
+    async def list_providers(self, *, actor: SecurityContext | None = None) -> list[dict]:
+        """Every live provider, with presence and a masked hint instead of the key."""
+        async with metadata_scope(actor or REGISTRY_READER, read_only=True) as connection:
+            rows = await AIRegistryRepository(connection).providers()
+        return [self._provider(row) for row in rows]
 
-        The stored key is never returned — callers get ``has_api_key`` plus a
-        masked preview so the UI can render ``••••abcd`` without the plaintext
-        ever leaving the backend (AGENTS.md: credential-invisible).
-        """
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(
-                    "SELECT id, name, type, endpoint, api_key, "
-                    "default_params, is_active, created_at, created_by "
-                    "FROM NOVA_SYSTEM.CONFIG_AI_PROVIDERS ORDER BY name"
-                )
-                rows = await cur.fetchall()
-                result = []
-                for row in rows:
-                    d = self._deserialize_row(row)
-                    d = self._mask_api_key(d)
-                    result.append(d)
-                return result
-        finally:
-            conn.close()
-
-    async def get_provider(self, provider_id: str, *, reveal: bool = False) -> dict | None:
-        """Get a single provider by ID.
-
-        The API key is masked unless ``reveal=True`` (internal callers only,
-        e.g. building an outbound LLM request).
-        """
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(
-                    "SELECT id, name, type, endpoint, api_key, "
-                    "default_params, is_active, created_at, created_by "
-                    "FROM NOVA_SYSTEM.CONFIG_AI_PROVIDERS WHERE id = %s",
-                    (provider_id,),
-                )
-                row = await cur.fetchone()
-                if not row:
-                    return None
-                d = self._deserialize_row(row)
-                return d if reveal else self._mask_api_key(d)
-        finally:
-            conn.close()
-
-    async def get_provider_api_key(self, provider_id: str) -> str | None:
-        """Return the decrypted API key for a provider. Internal use only.
-
-        The value read from the table is Fernet ciphertext (``enc:...``), so it
-        must be decrypted here: handing the ciphertext to a provider client made
-        every outbound call carry the wrong bearer token and fail with 401.
-        """
-        provider = await self.get_provider(provider_id, reveal=True)
-        if not provider:
+    async def get_provider(
+        self, provider_id: str, *, actor: SecurityContext | None = None,
+    ) -> dict | None:
+        """One live provider; never includes the stored key."""
+        async with metadata_scope(actor or REGISTRY_READER, read_only=True) as connection:
+            row = await AIRegistryRepository(connection).provider(provider_id)
+        if row is None or row.get("is_deleted"):
             return None
-        return self._safe_decrypt(provider.get("api_key"))
+        return self._provider(row)
 
-    @staticmethod
-    def _api_key_is_set(value: str | None) -> bool:
-        """True when a stored (encrypted) key decrypts to a non-empty value."""
-        if not value:
-            return False
-        try:
-            return bool(decrypt(value))
-        except Exception:
-            # Undecryptable ciphertext still means a key is on file.
-            return True
+    async def get_provider_api_key(
+        self, provider_id: str, *, actor: SecurityContext | None = None,
+    ) -> str | None:
+        """The decrypted key for an outbound provider request. Internal use only.
 
-    @classmethod
-    def _mask_api_key(cls, row: dict) -> dict:
-        """Replace the stored key with a presence flag + masked preview."""
-        raw = row.pop("api_key", None)
-        row["has_api_key"] = cls._api_key_is_set(raw)
-        row["api_key_masked"] = mask_secret(cls._safe_decrypt(raw))
-        return row
-
-    @staticmethod
-    def _safe_decrypt(value: str | None) -> str | None:
-        if not value:
+        The database decides who may read ciphertext (agent workload for active
+        providers, an administrator in the web workload). Anyone else gets
+        ``None`` and the caller refuses the request.
+        """
+        async with metadata_scope(actor or REGISTRY_READER, read_only=True) as connection:
+            credential = await AIRegistryRepository(connection).credential(provider_id)
+        if credential is None or not credential.ciphertext:
             return None
         try:
-            return decrypt(value)
-        except Exception:
+            return decrypt(credential.ciphertext) or None
+        except EncryptionError:
+            logger.warning("Stored AI provider key could not be decrypted")
             return None
 
-    async def create_provider(self, data: dict, username: str) -> dict | None:
-        """INSERT a new AI provider. Returns the created provider."""
-        provider_id = str(uuid4())
-        default_params_json = (
-            json.dumps(data.get("default_params")) if data.get("default_params") else None
+    async def create_provider(
+        self, data: dict, username: str, *, actor: SecurityContext,
+    ) -> dict | None:
+        """Register a provider; ``created_by`` is the bound actor (``username``)."""
+        definition = ProviderDefinition(
+            name=data["name"],
+            type=data["type"],
+            endpoint=data["endpoint"],
+            encrypted_api_key=_api_key_ciphertext(data.get("api_key")),
+            default_params=_params_text(data.get("default_params")),
+            is_active=True,
         )
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(
-                    "INSERT INTO NOVA_SYSTEM.CONFIG_AI_PROVIDERS "
-                    "(id, name, type, endpoint, api_key, default_params, "
-                    "is_active, created_at, created_by) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, true, NOW(), %s)",
-                    (
-                        provider_id,
-                        data["name"],
-                        data["type"],
-                        data["endpoint"],
-                        encrypt(data.get("api_key")),
-                        default_params_json,
-                        username,
-                    ),
-                )
-            return await self.get_provider(provider_id)
-        finally:
-            conn.close()
+        async with metadata_scope(actor) as connection:
+            change = await AIConfigurationService(connection).create_provider(
+                str(uuid4()), definition,
+            )
+        return self._provider(change.record) if change.record else None
 
-    async def delete_provider(self, provider_id: str) -> bool:
-        """DELETE a provider by ID. Cascades to delete all models under this provider."""
-        conn = await self._connect()
-        try:
-            async with conn.cursor() as cur:
-                # Cascade: delete models first
-                await cur.execute(
-                    "DELETE FROM NOVA_SYSTEM.CONFIG_AI_MODELS WHERE provider_id = %s",
-                    (provider_id,),
-                )
-                # Then delete the provider
-                await cur.execute(
-                    "DELETE FROM NOVA_SYSTEM.CONFIG_AI_PROVIDERS WHERE id = %s",
-                    (provider_id,),
-                )
-                return cur.rowcount > 0
-        finally:
-            conn.close()
+    async def update_provider(
+        self, provider_id: str, data: dict, *, actor: SecurityContext,
+    ) -> dict | None:
+        """Merge the supplied fields into the live provider; an omitted key is kept."""
+        async with metadata_scope(actor) as connection:
+            registry = AIRegistryRepository(connection)
+            existing = await registry.provider(provider_id)
+            if existing is None or existing["is_deleted"]:
+                return None
+            ciphertext = _api_key_ciphertext(data.get("api_key"))
+            if ciphertext is None:
+                credential = await registry.credential(provider_id)
+                ciphertext = credential.ciphertext if credential else None
+            params = data.get("default_params", self._parsed(existing["default_params"]))
+            definition = ProviderDefinition(
+                name=data.get("name", existing["name"]),
+                type=data.get("type", existing["type"]),
+                endpoint=data.get("endpoint", existing["endpoint"]),
+                encrypted_api_key=ciphertext,
+                default_params=(
+                    existing["default_params"] if "default_params" not in data
+                    else _params_text(params)
+                ),
+                is_active=bool(data.get("is_active", existing["is_active"] is not False)),
+            )
+            change = await AIConfigurationService(connection).replace_provider(
+                provider_id, definition, expected_revision=existing["metadata_revision"],
+            )
+        return self._provider(change.record) if change.record else None
 
-    async def update_provider(self, provider_id: str, data: dict) -> dict | None:
-        """Update an AI provider. Uses INSERT to replace (Primary Key table auto-upsert).
+    async def set_provider_api_key(
+        self, provider_id: str, api_key: str, *, actor: SecurityContext,
+    ) -> bool:
+        """Rotate only the provider key. Returns False for an unknown provider."""
+        updated = await self.update_provider(provider_id, {"api_key": api_key}, actor=actor)
+        return updated is not None
 
-        Only fields present in `data` are updated; existing values are preserved.
-        """
-        # ``reveal=True`` is required here: ``get_provider`` strips ``api_key``
-        # into ``has_api_key``/``api_key_masked`` when masked, so reading the
-        # masked row would treat the key as absent and wipe it on every update
-        # that does not supply a new one.
-        existing = await self.get_provider(provider_id, reveal=True)
-        if not existing:
-            return None
-
-        new_key = data.get("api_key")
-        merged = {
-            "name": data.get("name", existing["name"]),
-            "type": data.get("type", existing["type"]),
-            "endpoint": data.get("endpoint", existing["endpoint"]),
-            # Empty/omitted key means "keep the stored one"; the stored value is
-            # already ciphertext and ``encrypt`` passes it through unchanged.
-            "api_key": encrypt(new_key) if new_key else existing.get("api_key"),
-            "default_params": data.get("default_params", existing.get("default_params")),
-            "is_active": data.get("is_active", existing.get("is_active", True)),
-            "created_at": existing.get("created_at"),
-            "created_by": existing.get("created_by"),
-        }
-
-        default_params_json = (
-            json.dumps(merged["default_params"])
-            if merged["default_params"]
-            else None
-        )
-
-        conn = await self._connect()
-        try:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "INSERT INTO NOVA_SYSTEM.CONFIG_AI_PROVIDERS "
-                    "(id, name, type, endpoint, api_key, default_params, "
-                    "is_active, created_at, created_by) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                    (
-                        provider_id,
-                        merged["name"],
-                        merged["type"],
-                        merged["endpoint"],
-                        encrypt(merged["api_key"]) if merged.get("api_key") else None,
-                        default_params_json,
-                        merged["is_active"],
-                        merged["created_at"],
-                        merged["created_by"],
-                    ),
-                )
-            return await self.get_provider(provider_id)
-        finally:
-            conn.close()
+    async def delete_provider(self, provider_id: str, *, actor: SecurityContext) -> bool:
+        """Retire a provider with its models and the function aliases that use it."""
+        async with metadata_scope(actor) as connection:
+            existing = await AIRegistryRepository(connection).provider(provider_id)
+            if existing is None or existing["is_deleted"]:
+                return False
+            await AIConfigurationService(connection).retire_provider(
+                provider_id, expected_revision=existing["metadata_revision"],
+            )
+        return True
 
     # ── Models ─────────────────────────────────────────────────
 
-    async def list_models(self, provider_id: str | None = None) -> list[dict]:
-        """List all AI models, optionally filtered by provider_id."""
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                if provider_id:
-                    await cur.execute(
-                        "SELECT id, provider_id, name, display_name, type, "
-                        "max_tokens, logical_alias, revision, dimensions, modality, metric, "
-                        "default_params, is_active, created_at, created_by "
-                        "FROM NOVA_SYSTEM.CONFIG_AI_MODELS "
-                        "WHERE provider_id = %s ORDER BY name",
-                        (provider_id,),
-                    )
-                else:
-                    await cur.execute(
-                        "SELECT id, provider_id, name, display_name, type, "
-                        "max_tokens, logical_alias, revision, dimensions, modality, metric, "
-                        "default_params, is_active, created_at, created_by "
-                        "FROM NOVA_SYSTEM.CONFIG_AI_MODELS ORDER BY name"
-                    )
-                rows = await cur.fetchall()
-                result = []
-                for row in rows:
-                    d = self._deserialize_row(row)
-                    result.append(d)
-                return result
-        finally:
-            conn.close()
+    async def list_models(
+        self, provider_id: str | None = None, *, actor: SecurityContext | None = None,
+    ) -> list[dict]:
+        """Live models, optionally of one provider."""
+        async with metadata_scope(actor or REGISTRY_READER, read_only=True) as connection:
+            rows = await AIRegistryRepository(connection).models(provider_id or None)
+        return [self._model(row) for row in rows]
 
-    async def get_model(self, model_id: str) -> dict | None:
-        """Get a single model by ID."""
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(
-                    "SELECT id, provider_id, name, display_name, type, "
-                    "max_tokens, logical_alias, revision, dimensions, modality, metric, "
-                    "default_params, is_active, created_at, created_by "
-                    "FROM NOVA_SYSTEM.CONFIG_AI_MODELS WHERE id = %s",
-                    (model_id,),
-                )
-                row = await cur.fetchone()
-                return self._deserialize_row(row) if row else None
-        finally:
-            conn.close()
-
-    async def create_model(self, data: dict, username: str) -> dict | None:
-        """INSERT a new AI model. Returns the created model."""
-        data = AIModelCreate.model_validate(data).model_dump()
-        if not await self.get_provider(data["provider_id"]):
-            raise ValueError("Provider not found")
-        if data["type"] == "embedding":
-            await self._assert_unique_alias(data["logical_alias"])
-        model_id = str(uuid4())
-        default_params_json = (
-            json.dumps(data.get("default_params")) if data.get("default_params") else None
-        )
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(
-                    "INSERT INTO NOVA_SYSTEM.CONFIG_AI_MODELS "
-                    "(id, provider_id, name, display_name, type, max_tokens, "
-                    "logical_alias, revision, dimensions, modality, metric, "
-                    "default_params, is_active, created_at, created_by) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, true, NOW(), %s)",
-                    (
-                        model_id,
-                        data["provider_id"],
-                        data["name"],
-                        data.get("display_name"),
-                        data["type"],
-                        data.get("max_tokens"),
-                        data.get("logical_alias"),
-                        data.get("revision"),
-                        data.get("dimensions"),
-                        data.get("modality") or ("text" if data["type"] == "embedding" else None),
-                        data.get("metric") or ("cosine" if data["type"] == "embedding" else None),
-                        default_params_json,
-                        username,
-                    ),
-                )
-            return await self.get_model(model_id)
-        finally:
-            conn.close()
-
-    async def delete_model(self, model_id: str) -> bool:
-        """DELETE a model by ID. Returns True if a row was deleted."""
-        conn = await self._connect()
-        try:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "DELETE FROM NOVA_SYSTEM.CONFIG_AI_MODELS WHERE id = %s",
-                    (model_id,),
-                )
-                return cur.rowcount > 0
-        finally:
-            conn.close()
-
-    async def update_model(self, model_id: str, data: dict) -> dict | None:
-        """Update an AI model. Uses INSERT to replace (Primary Key table auto-upsert).
-
-        Only fields present in `data` are updated; existing values are preserved.
-        """
-        existing = await self.get_model(model_id)
-        if not existing:
+    async def get_model(
+        self, model_id: str, *, actor: SecurityContext | None = None,
+    ) -> dict | None:
+        async with metadata_scope(actor or REGISTRY_READER, read_only=True) as connection:
+            row = await AIRegistryRepository(connection).model(model_id)
+        if row is None or row.get("is_deleted"):
             return None
-        if data.get("type", existing["type"]) != existing["type"]:
-            raise ValueError("Model type cannot be changed after creation")
-        if existing["type"] == "embedding":
-            for field in ("name", "revision", "dimensions", "modality", "metric"):
-                if field in data and data[field] != existing.get(field):
-                    raise ValueError(f"Embedding {field} is immutable; register a new model")
+        return self._model(row)
 
-        validated = AIModelCreate.model_validate({**existing, **data})
-        if validated.type == "embedding":
-            await self._assert_unique_alias(validated.logical_alias, exclude_id=model_id)
-
-        merged = {
-            "provider_id": existing["provider_id"],
-            "name": data.get("name", existing["name"]),
-            "display_name": data.get("display_name", existing.get("display_name")),
-            "type": data.get("type", existing["type"]),
-            "max_tokens": data.get("max_tokens", existing.get("max_tokens")),
-            "logical_alias": data.get("logical_alias", existing.get("logical_alias")),
-            "revision": data.get("revision", existing.get("revision")),
-            "dimensions": data.get("dimensions", existing.get("dimensions")),
-            "modality": data.get("modality", existing.get("modality")),
-            "metric": data.get("metric", existing.get("metric")),
-            "default_params": data.get("default_params", existing.get("default_params")),
-            "is_active": data.get("is_active", existing.get("is_active", True)),
-            "created_at": existing.get("created_at"),
-            "created_by": existing.get("created_by"),
-        }
-
-        default_params_json = (
-            json.dumps(merged["default_params"])
-            if merged["default_params"]
-            else None
+    @staticmethod
+    def _model_definition(data: dict[str, Any]) -> ModelDefinition:
+        embedding = data["type"] == "embedding"
+        return ModelDefinition(
+            provider_id=data["provider_id"],
+            name=data["name"],
+            type=data["type"],
+            display_name=data.get("display_name"),
+            max_tokens=data.get("max_tokens"),
+            logical_alias=data.get("logical_alias"),
+            revision=data.get("revision"),
+            dimensions=data.get("dimensions"),
+            modality=data.get("modality") or ("text" if embedding else None),
+            metric=data.get("metric") or ("cosine" if embedding else None),
+            default_params=_params_text(data.get("default_params")),
+            is_active=bool(data.get("is_active", True) is not False),
         )
 
-        conn = await self._connect()
-        try:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "INSERT INTO NOVA_SYSTEM.CONFIG_AI_MODELS "
-                    "(id, provider_id, name, display_name, type, max_tokens, "
-                    "logical_alias, revision, dimensions, modality, metric, "
-                    "default_params, is_active, created_at, created_by) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                    (
-                        model_id,
-                        merged["provider_id"],
-                        merged["name"],
-                        merged["display_name"],
-                        merged["type"],
-                        merged["max_tokens"],
-                        merged["logical_alias"],
-                        merged["revision"],
-                        merged["dimensions"],
-                        merged["modality"],
-                        merged["metric"],
-                        default_params_json,
-                        merged["is_active"],
-                        merged["created_at"],
-                        merged["created_by"],
-                    ),
-                )
-            return await self.get_model(model_id)
-        finally:
-            conn.close()
+    async def create_model(
+        self, data: dict, username: str, *, actor: SecurityContext,
+    ) -> dict | None:
+        """Register a model under a live provider; ``created_by`` is the bound actor."""
+        data = {**AIModelCreate.model_validate(data).model_dump(), "is_active": True}
+        definition = self._model_definition(data)
+        async with metadata_scope(actor) as connection:
+            registry = AIRegistryRepository(connection)
+            provider = await registry.provider(data["provider_id"])
+            if provider is None or provider["is_deleted"]:
+                raise ValueError("Provider not found")
+            if data["type"] == "embedding":
+                await self._assert_unique_alias(registry, data["logical_alias"])
+            change = await AIConfigurationService(connection).create_model(
+                str(uuid4()), definition,
+            )
+        return self._model(change.record) if change.record else None
 
+    async def delete_model(self, model_id: str, *, actor: SecurityContext) -> bool:
+        """Retire a model. A model still used by a function alias is refused."""
+        async with metadata_scope(actor) as connection:
+            existing = await AIRegistryRepository(connection).model(model_id)
+            if existing is None or existing["is_deleted"]:
+                return False
+            cursor = await connection.execute(
+                "SELECT 1 FROM nova_meta.config_model_aliases "
+                "WHERE model_id=%s AND NOT is_deleted LIMIT 1",
+                (model_id,),
+            )
+            if await cursor.fetchone() is not None:
+                raise ValueError(
+                    "This model is used by an AI function alias; change or delete the alias first"
+                )
+            await AIConfigurationService(connection).delete_model(
+                model_id,
+                provider_id=existing["provider_id"],
+                expected_revision=existing["metadata_revision"],
+            )
+        return True
+
+    async def update_model(
+        self, model_id: str, data: dict, *, actor: SecurityContext,
+    ) -> dict | None:
+        """Merge the supplied fields into the live model."""
+        async with metadata_scope(actor) as connection:
+            registry = AIRegistryRepository(connection)
+            row = await registry.model(model_id)
+            if row is None or row["is_deleted"]:
+                return None
+            existing = self._model(row)
+            if data.get("type", existing["type"]) != existing["type"]:
+                raise ValueError("Model type cannot be changed after creation")
+            if existing["type"] == "embedding":
+                for field in _EMBEDDING_IMMUTABLE:
+                    if field in data and data[field] != existing.get(field):
+                        raise ValueError(f"Embedding {field} is immutable; register a new model")
+            merged = {**existing, **data}
+            validated = AIModelCreate.model_validate(merged)
+            if validated.type == "embedding":
+                await self._assert_unique_alias(
+                    registry, validated.logical_alias, exclude_id=model_id,
+                )
+            change = await AIConfigurationService(connection).replace_model(
+                model_id,
+                self._model_definition(merged),
+                expected_revision=row["metadata_revision"],
+            )
+        return self._model(change.record) if change.record else None
+
+    @staticmethod
     async def _assert_unique_alias(
-        self, alias: str | None, *, exclude_id: str | None = None
+        registry: AIRegistryRepository, alias: str | None, *, exclude_id: str | None = None,
     ) -> None:
         if not alias:
             return
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(
-                    "SELECT id FROM NOVA_SYSTEM.CONFIG_AI_MODELS "
-                    "WHERE logical_alias = %s AND type = 'embedding' LIMIT 1",
-                    (alias,),
-                )
-                row = await cur.fetchone()
-                if row and row["id"] != exclude_id:
-                    raise ValueError("Embedding alias already exists")
-        finally:
-            conn.close()
+        for model in await registry.models():
+            if (
+                model["type"] == "embedding" and model["logical_alias"] == alias
+                and model["id"] != exclude_id
+            ):
+                raise ValueError("Embedding alias already exists")
 
     # ── Test Connection ─────────────────────────────────────────
 
@@ -586,12 +453,18 @@ class AIService:
     # ── Internal helpers ───────────────────────────────────────
 
     @staticmethod
-    def _deserialize_row(row: dict) -> dict:
-        """Deserialize a DB row, parsing JSON fields (default_params)."""
-        result = dict(row)
-        if result.get("default_params") and isinstance(result["default_params"], str):
+    def _parsed(value: Any) -> Any:
+        if isinstance(value, str):
             with suppress(json.JSONDecodeError, TypeError):
-                result["default_params"] = json.loads(result["default_params"])
+                return json.loads(value)
+        return value
+
+    @classmethod
+    def _deserialize_row(cls, row: dict) -> dict:
+        """Parse the stored JSON text of ``default_params``."""
+        result = dict(row)
+        if result.get("default_params"):
+            result["default_params"] = cls._parsed(result["default_params"])
         return result
 
 

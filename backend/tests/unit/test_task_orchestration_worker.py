@@ -171,18 +171,63 @@ class FakeRepository:
             row["error_message"] = error_message
         return True
 
-    async def transition_graph_run(self, run_id, from_states, to_state):
+    async def claim_graph_run(self, run_id, from_states, to_state):
         row = self.graph_runs[run_id]
         if row["state"] not in from_states:
+            return None
+        row["state"] = to_state
+        row["lease_generation"] = row.get("lease_generation", 0) + 1
+        return row["lease_generation"]
+
+    async def transition_graph_run(self, run_id, from_states, to_state, *, generation):
+        row = self.graph_runs[run_id]
+        if row["state"] not in from_states or row.get("lease_generation", 0) != generation:
             return False
         row["state"] = to_state
         return True
 
-    async def mark_task_run_heartbeat(self, run_id):
-        self.task_runs[run_id]["heartbeat_at"] = "now"
+    async def claim_task_run(self, run_id, from_states):
+        row = self.task_runs[run_id]
+        if row["state"] not in from_states:
+            return None
+        row["state"] = "running"
+        row["lease_generation"] = row.get("lease_generation", 0) + 1
+        return row["lease_generation"]
 
-    async def mark_graph_run_heartbeat(self, run_id):
-        self.graph_runs[run_id]["heartbeat_at"] = "now"
+    async def finish_task_run(self, run_id, to_state, *, generation,
+                              query_id=None, error_message=None, output=None):
+        row = self.task_runs[run_id]
+        if row["state"] != "running" or row.get("lease_generation", 0) != generation:
+            return False
+        row["state"] = to_state
+        for key, value in [("starrocks_query_id", query_id),
+                           ("error_message", error_message), ("output", output)]:
+            if value is not None:
+                row[key] = value
+        return True
+
+    async def abandon_task_run(self, run_id, *, generation, query_id=None, error_message=None):
+        return await self.finish_task_run(
+            run_id, "abandoned", generation=generation,
+            query_id=query_id, error_message=error_message,
+        )
+
+    async def skip_pending_task_run(self, run_id):
+        return await self.transition_task_run(run_id, ["pending"], "skipped")
+
+    async def heartbeat_task_run(self, run_id, *, generation):
+        row = self.task_runs[run_id]
+        if row["state"] != "running" or row.get("lease_generation", 0) != generation:
+            return False
+        row["heartbeat_at"] = "now"
+        return True
+
+    async def heartbeat_graph_run(self, run_id, *, generation):
+        row = self.graph_runs[run_id]
+        if row["state"] != "running" or row.get("lease_generation", 0) != generation:
+            return False
+        row["heartbeat_at"] = "now"
+        return True
 
     async def list_stale_task_runs(self, older_than_seconds, *, limit=200):
         return [
@@ -494,9 +539,9 @@ class _DenyProvider(OwnerCredentialProvider):
 class TestIdempotency:
     async def test_late_claim_cannot_reset_a_settled_graph(self, audit):
         class RacingRepository(FakeRepository):
-            async def transition_graph_run(self, run_id, from_states, to_state):
+            async def claim_graph_run(self, run_id, from_states, to_state):
                 self.graph_runs[run_id]["state"] = "success"
-                return await super().transition_graph_run(run_id, from_states, to_state)
+                return await super().claim_graph_run(run_id, from_states, to_state)
 
         repo = RacingRepository()
         repo.add_task("A")
@@ -659,6 +704,8 @@ class TestFinalizeOwnership:
         row = await repo.create_task_run_once("gr1", "id_A")
         row["state"] = "running"
 
+        row["lease_generation"] = 1
+
         class AbandoningExecutor(RecordingExecutor):
             async def execute(self, spec, owner, *, heartbeat=None):
                 # Simulate the reconciler abandoning the node mid-flight.
@@ -667,7 +714,7 @@ class TestFinalizeOwnership:
 
         executor = AbandoningExecutor()
         await GraphRunWorker(repo, executor)._execute_one(
-            GraphRunJob("gr1", "id_A"), repo.tasks["id_A"], row["id"]
+            GraphRunJob("gr1", "id_A"), repo.tasks["id_A"], row["id"], 1
         )
 
         assert repo.task_runs[row["id"]]["state"] == "abandoned"

@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any
 
 from app.common.audit import write_audit_log
 from app.core.config import settings
-from app.modules.notebooks.repository import notebook_repository
+from app.modules.notebooks.repository import notebook_repository, runtime_actor
 from app.modules.notebooks.runtime import events, kernel_calls, state
 from app.modules.notebooks.runtime.provider import KernelEvent, ProviderError
 from app.modules.workspaces.actor import acting_as
@@ -163,14 +163,13 @@ async def run_install(worker: NotebookRuntimeWorker, job: dict[str, Any]) -> Non
         result = {"ok": False, "error": str(exc)}
     ok = bool(result.get("ok"))
     if ok:
-        manifest = [
-            item for item in await notebook_repository.get_packages(runtime.user,
-                                                                     runtime.notebook_id)
-            if canonical(item.get("name", "")) != package["name"]
-        ]
         version = (result.get("versions") or {}).get(package["name"])
-        manifest.append({**package, "installed_version": version})
-        await notebook_repository.set_packages(runtime.user, runtime.notebook_id, manifest)
+        await notebook_repository.modify_packages(
+            runtime_actor(runtime), runtime.notebook_id,
+            lambda manifest: [
+                item for item in manifest if canonical(item.get("name", "")) != package["name"]
+            ] + [{**package, "installed_version": version}],
+        )
     with contextlib.suppress(Exception):
         await write_audit_log(
             event_type="notebook",
@@ -210,7 +209,7 @@ async def restore_packages(
     """
     if not reinstall:
         return
-    manifest = await notebook_repository.get_packages(runtime.user, runtime.notebook_id)
+    manifest = await notebook_repository.get_packages(runtime_actor(runtime), runtime.notebook_id)
     if not manifest:
         return
     allowed = allowlist()
@@ -249,43 +248,60 @@ def _relative(path: str, folder: str) -> str | None:
     return rel
 
 
+@contextlib.asynccontextmanager
+async def runtime_files(runtime: state.RuntimeState):
+    from app.core.exceptions import StorageError
+    from app.core.redis import session_store
+
+    session = await session_store.get(runtime.session_id)
+    if (
+        not session or session.get("username") != runtime.user
+        or session.get("active_role") != runtime.active_role
+        or session.get("security_context_version") != runtime.security_version
+    ):
+        raise StorageError("The notebook session has changed; restart its runtime", status_code=403)
+    with acting_as({**session, "session_id": runtime.session_id}):
+        yield
+
+
 async def hydrate_files(worker: NotebookRuntimeWorker, runtime: state.RuntimeState) -> None:
     """Copy the notebook's Workspace folder into ``/workspace`` (bounded)."""
-    entries = await workspace_service.list_entries(runtime.files_namespace)
-    notebook = next((e for e in entries if e["id"] == runtime.notebook_id), None)
-    if notebook is None:
-        return
-    folder = notebook.get("parent_path") or ""
-    selected: list[tuple[dict, str]] = []
-    total = 0
-    for entry in entries:
-        if entry["entry_type"] != "file" or entry["id"] == runtime.notebook_id:
-            continue
-        rel = _relative(entry["path"], folder)
-        if rel is None or rel.startswith("."):
-            continue
-        size = int(entry.get("size_bytes") or 0)
-        if size > _HYDRATE_FILE_MAX_BYTES or total + size > _HYDRATE_MAX_BYTES:
-            continue
-        if len(selected) >= _HYDRATE_MAX_FILES:
-            break
-        selected.append((entry, rel))
-        total += size
-    gate = asyncio.Semaphore(8)
+    async with runtime_files(runtime):
+        entries = await workspace_service.list_entries(runtime.files_namespace)
+        notebook = next((e for e in entries if e["id"] == runtime.notebook_id), None)
+        if notebook is None:
+            return
+        folder = notebook.get("parent_path") or ""
+        selected: list[tuple[dict, str]] = []
+        total = 0
+        for entry in entries:
+            if entry["entry_type"] != "file" or entry["id"] == runtime.notebook_id:
+                continue
+            rel = _relative(entry["path"], folder)
+            if rel is None or rel.startswith("."):
+                continue
+            size = int(entry.get("size_bytes") or 0)
+            if size > _HYDRATE_FILE_MAX_BYTES or total + size > _HYDRATE_MAX_BYTES:
+                continue
+            if len(selected) >= _HYDRATE_MAX_FILES:
+                break
+            selected.append((entry, rel))
+            total += size
+        gate = asyncio.Semaphore(8)
 
-    async def copy(entry: dict, rel: str) -> None:
-        async with gate:
-            try:
-                _entry, data = await workspace_service.read_entry_bytes(
-                    runtime.files_namespace, entry["id"]
-                )
-                await worker._provider.write_file(
-                    worker.handle_of(runtime), f"/workspace/{rel}", data
-                )
-            except Exception:  # noqa: BLE001 - one unreadable file does not stop the start
-                logger.info("Workspace file could not be copied into runtime %s", runtime.id)
+        async def copy(entry: dict, rel: str) -> None:
+            async with gate:
+                try:
+                    _entry, data = await workspace_service.read_entry_bytes(
+                        runtime.files_namespace, entry["id"]
+                    )
+                    await worker._provider.write_file(
+                        worker.handle_of(runtime), f"/workspace/{rel}", data
+                    )
+                except Exception:  # noqa: BLE001 - one unreadable file does not stop the start
+                    logger.info("Workspace file could not be copied into runtime %s", runtime.id)
 
-    await asyncio.gather(*(copy(entry, rel) for entry, rel in selected))
+        await asyncio.gather(*(copy(entry, rel) for entry, rel in selected))
 
 
 async def sync_file(user: str, notebook_id: str, entry_id: str) -> None:
@@ -295,24 +311,25 @@ async def sync_file(user: str, notebook_id: str, entry_id: str) -> None:
     runtime = await state.active_runtime(state.channel(notebook_id, user))
     if runtime is None or runtime.status not in {"READY", "BUSY"}:
         return
-    entries = await workspace_service.list_entries(runtime.files_namespace)
-    notebook = next((e for e in entries if e["id"] == notebook_id), None)
-    entry = next((e for e in entries if e["id"] == entry_id), None)
-    if notebook is None or entry is None:
-        return
-    rel = _relative(entry["path"], notebook.get("parent_path") or "")
-    if rel is None:
-        return
-    _entry, data = await workspace_service.read_entry_bytes(runtime.files_namespace, entry_id)
-    from app.modules.notebooks.runtime.provider import SandboxHandle
+    async with runtime_files(runtime):
+        entries = await workspace_service.list_entries(runtime.files_namespace)
+        notebook = next((e for e in entries if e["id"] == notebook_id), None)
+        entry = next((e for e in entries if e["id"] == entry_id), None)
+        if notebook is None or entry is None:
+            return
+        rel = _relative(entry["path"], notebook.get("parent_path") or "")
+        if rel is None:
+            return
+        _entry, data = await workspace_service.read_entry_bytes(runtime.files_namespace, entry_id)
+        from app.modules.notebooks.runtime.provider import SandboxHandle
 
-    provider = OpenSandboxProvider()
-    try:
-        await provider.write_file(
-            SandboxHandle(runtime.sandbox_id, runtime.context_id), f"/workspace/{rel}", data
-        )
-    finally:
-        await provider.close()
+        provider = OpenSandboxProvider()
+        try:
+            await provider.write_file(
+                SandboxHandle(runtime.sandbox_id, runtime.context_id), f"/workspace/{rel}", data
+            )
+        finally:
+            await provider.close()
 
 
 async def flush_outputs(worker: NotebookRuntimeWorker, runtime: state.RuntimeState) -> int:
@@ -324,27 +341,27 @@ async def flush_outputs(worker: NotebookRuntimeWorker, runtime: state.RuntimeSta
     if not files or not runtime.files_writable:
         # A view-only member's runtime never writes into a shared workspace.
         return 0
-    entries = await workspace_service.list_entries(runtime.files_namespace)
-    notebook = next((e for e in entries if e["id"] == runtime.notebook_id), None)
-    if notebook is None:
-        return 0
-    base = notebook.get("parent_path") or ""
-    copied = 0
-    for item in files:
-        rel = posixpath.normpath(str(item.get("path") or ""))
-        if rel.startswith("..") or rel.startswith("/"):
-            continue
-        data = await worker._provider.read_file(
-            worker.handle_of(runtime), f"/workspace/outputs/{rel}"
-        )
-        parent = "/".join(p for p in [base, "outputs", posixpath.dirname(rel)] if p)
-        await _ensure_folders(runtime.files_namespace, parent)
-        with acting_as(runtime.user):
+    async with runtime_files(runtime):
+        entries = await workspace_service.list_entries(runtime.files_namespace)
+        notebook = next((e for e in entries if e["id"] == runtime.notebook_id), None)
+        if notebook is None:
+            return 0
+        base = notebook.get("parent_path") or ""
+        copied = 0
+        for item in files:
+            rel = posixpath.normpath(str(item.get("path") or ""))
+            if rel.startswith("..") or rel.startswith("/"):
+                continue
+            data = await worker._provider.read_file(
+                worker.handle_of(runtime), f"/workspace/outputs/{rel}"
+            )
+            parent = "/".join(p for p in [base, "outputs", posixpath.dirname(rel)] if p)
+            await _ensure_folders(runtime.files_namespace, parent)
             await workspace_service.create_file_bytes(
                 runtime.files_namespace, parent, posixpath.basename(rel), data, replace=True
             )
-        copied += 1
-    return copied
+            copied += 1
+        return copied
 
 
 async def _ensure_folders(user: str, path: str) -> None:

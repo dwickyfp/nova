@@ -207,14 +207,22 @@ class StreamMetadataRepository:
         )
 
     async def current_generations(
-        self, *, source_id: str | None = None, statuses: tuple[str, ...] | None = None,
+        self, *, database: str | None = None, source_id: str | None = None,
+        statuses: tuple[str, ...] | None = None,
     ) -> list[dict[str, Any]]:
-        """The newest generation of every name, optionally of one source/status."""
+        """The newest generation of every name, with its definition ``mode``.
+
+        Optionally only names in one database, of one source or in some
+        statuses (applied after picking the newest generation of each name).
+        """
         await self._bound()
         rows = await self._all(
-            "SELECT DISTINCT ON (catalog_name,database_name,schema_name,name) * "
-            "FROM nova_meta.config_streams "
-            "ORDER BY catalog_name,database_name,schema_name,name,generation DESC",
+            "SELECT s.*,d.mode FROM (SELECT DISTINCT ON (catalog_name,database_name,schema_name,"
+            "name) * FROM nova_meta.config_streams WHERE (%s::text IS NULL OR database_name=%s) "
+            "ORDER BY catalog_name,database_name,schema_name,name,generation DESC) s "
+            "LEFT JOIN nova_meta.config_stream_definitions d ON d.stream_id=s.stream_id "
+            "ORDER BY s.catalog_name,s.database_name,s.schema_name,s.name",
+            (database, database),
         )
         return [
             row for row in rows
@@ -326,6 +334,32 @@ class StreamMetadataRepository:
             (source_id, after, through),
         )
 
+    async def commit_window(
+        self, source_id: str, after: int, through: int, *, retention_days: int,
+    ) -> dict[str, Any]:
+        """Pending commits after an offset, and when the oldest one goes stale.
+
+        ``commits``, ``changes`` (rows before reduction), ``oldest`` and, in the
+        database clock that recorded the commits, ``stale_after``, ``expired``
+        and ``remaining_seconds`` (all ``None`` with nothing pending).
+        """
+        await self._bound()
+        if type(retention_days) is not int or retention_days < 1:
+            raise ValueError("A positive retention in days is required")
+        row = await self._one(
+            "SELECT count(*) AS commits,coalesce(sum(row_count),0) AS changes,"
+            "min(recorded_at) AS oldest,"
+            "min(recorded_at)+make_interval(days=>%s) AS stale_after,"
+            "min(recorded_at)+make_interval(days=>%s)<=clock_timestamp() AS expired,"
+            "trunc(extract(epoch FROM min(recorded_at)+make_interval(days=>%s)"
+            "-clock_timestamp()))::bigint AS remaining_seconds "
+            "FROM nova_meta.audit_stream_source_commits WHERE source_id=%s "
+            "AND commit_seq>%s AND commit_seq<=%s",
+            (retention_days, retention_days, retention_days, source_id, after, through),
+        )
+        assert row is not None
+        return row
+
     # ── Consumption operations and receipts ──────────────────────────────
 
     async def prepare_consumption(self, operation: Mapping[str, Any]) -> dict[str, Any]:
@@ -390,6 +424,22 @@ class StreamMetadataRepository:
         if len(rows) > 3 or any(row["receipt"] != rows[0]["receipt"] for row in rows[1:]):
             raise _blocked("Conflicting terminal receipts")
         return rows[0]["receipt"]
+
+    async def event(self, consume_id: str, state: str) -> dict[str, Any] | None:
+        """The one event of a consumption in a state, for readback after a lost ACK."""
+        await self._bound()
+        return await self._one(
+            "SELECT * FROM nova_meta.audit_stream_consumptions WHERE event_id=%s",
+            (event_id(consume_id, state),),
+        )
+
+    async def terminal_events(self, consume_id: str) -> list[dict[str, Any]]:
+        """Up to four terminal events of a consumption, for exact verification."""
+        await self._bound()
+        return await self._all(
+            "SELECT * FROM nova_meta.audit_stream_consumptions WHERE consume_id=%s "
+            "AND state=ANY(%s) ORDER BY event_id LIMIT 4", (consume_id, list(TERMINAL_STATES)),
+        )
 
     async def committed_cursor(self, stream_id: str, epoch: int, creation: int) -> int:
         """The committed offset, proven by one unbroken chain of offset receipts.

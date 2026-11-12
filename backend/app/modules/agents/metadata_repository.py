@@ -25,6 +25,8 @@ refused before it reaches the database, without echoing the value.
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any
 from uuid import uuid4
@@ -33,6 +35,7 @@ import psycopg
 from psycopg.pq import TransactionStatus
 from psycopg.types.json import Jsonb
 
+from app.core.metadata_actor import actor_for, current_actor, metadata_transaction
 from app.core.metadata_db import MetadataConflict, MetadataPermissionDenied
 from app.modules.access_control.security_context import SecurityContext
 from app.modules.assistant.skills import contains_credential_shape
@@ -178,6 +181,15 @@ class AgentMetadataRepository:
         assert row is not None
         return row
 
+    async def lock_agent(self, agent_id: str) -> dict[str, Any]:
+        await self._bound()
+        row = await self._one(
+            "SELECT * FROM nova_meta.config_agents WHERE agent_id=%s AND owner_name=%s FOR UPDATE",
+            (agent_id, self.actor.principal))
+        if row is None:
+            raise MetadataConflict()
+        return row
+
     async def get_agent(self, agent_id: str) -> dict[str, Any] | None:
         """The agent if the caller owns it or their active role holds a grant on it."""
         await self._bound()
@@ -281,8 +293,13 @@ class AgentMetadataRepository:
             return row
         existing = await self._one(
             "SELECT * FROM nova_meta.config_agent_versions WHERE version_id=%s", (version_id,))
-        if existing is None or (existing["agent_id"], existing["configuration"]) != (
-                agent_id, text):
+        if existing is None or existing["agent_id"] != agent_id:
+            raise MetadataConflict()
+        stored_content = json.dumps(json.loads(existing["configuration"]), sort_keys=True,
+                                    separators=(",", ":"), allow_nan=False)
+        proposed_content = json.dumps(json.loads(text or "null"), sort_keys=True,
+                                      separators=(",", ":"), allow_nan=False)
+        if stored_content != proposed_content:
             raise MetadataConflict()
         return existing
 
@@ -413,19 +430,22 @@ class AgentMetadataRepository:
         return {key: Jsonb(value) if key == "args" and value is not None else value
                 for key, value in fields.items()}
 
-    async def create_mcp_server(self, fields: dict[str, Any]) -> dict[str, Any]:
+    async def create_mcp_server(
+        self, fields: dict[str, Any], *, owner_name: str | None = None
+    ) -> dict[str, Any]:
         await self._bound()
         values = self._mcp_values(fields)
         columns = ["server_id", "owner_name", *values]
         row = await self._one(
             f"INSERT INTO nova_meta.config_mcp_servers ({','.join(columns)}) VALUES ("
             + ",".join(["%s"] * len(columns)) + ") RETURNING *",
-            (str(uuid4()), self.actor.principal, *values.values()))
+            (str(uuid4()), (owner_name or self.actor.principal), *values.values()))
         assert row is not None
         return row
 
     async def update_mcp_server(
         self, server_id: str, changes: dict[str, Any], *, expected_revision: int,
+        owner_name: str | None = None,
     ) -> dict[str, Any]:
         await self._bound()
         values = self._mcp_values(changes)
@@ -436,38 +456,68 @@ class AgentMetadataRepository:
             + ",".join(f"{field}=%s" for field in values)
             + ",metadata_revision=metadata_revision+1 WHERE server_id=%s AND owner_name=%s "
             "AND metadata_revision=%s RETURNING *",
-            (*values.values(), server_id, self.actor.principal, _positive(expected_revision)))
+            (
+                *values.values(),
+                server_id,
+                (owner_name or self.actor.principal),
+                _positive(expected_revision),
+            ),
+        )
         if row is None:
             raise MetadataConflict()
         return row
 
-    async def set_mcp_status(self, server_id: str, status: str) -> bool:
+    async def set_mcp_status(
+        self, server_id: str, status: str, *, owner_name: str | None = None
+    ) -> bool:
         await self._bound()
-        return await self._count(
-            "UPDATE nova_meta.config_mcp_servers SET last_status=%s WHERE server_id=%s "
-            "AND owner_name=%s", (status[:32], server_id, self.actor.principal)) == 1
+        return (
+            await self._count(
+                "UPDATE nova_meta.config_mcp_servers SET last_status=%s WHERE server_id=%s "
+                "AND owner_name=%s",
+                (status[:32], server_id, (owner_name or self.actor.principal)),
+            )
+            == 1
+        )
 
-    async def list_mcp_servers(self) -> list[dict[str, Any]]:
+    async def list_mcp_servers(self, owner_name: str | None = None) -> list[dict[str, Any]]:
         await self._bound()
         return await self._all(
             "SELECT * FROM nova_meta.config_mcp_servers WHERE owner_name=%s ORDER BY name",
-            (self.actor.principal,))
+            ((owner_name or self.actor.principal),))
 
-    async def delete_mcp_server(self, server_id: str) -> bool:
+    async def delete_mcp_server(self, server_id: str, *, owner_name: str | None = None) -> bool:
         """Remove the registration and the tools it contributed, together."""
         await self._bound()
         await self.connection.execute(
             "DELETE FROM nova_meta.config_tools WHERE owner_name=%s AND source=%s",
-            (self.actor.principal, f"mcp:{server_id}"))
+            ((owner_name or self.actor.principal), f"mcp:{server_id}"))
         return await self._count(
             "DELETE FROM nova_meta.config_mcp_servers WHERE server_id=%s AND owner_name=%s",
-            (server_id, self.actor.principal)) == 1
+            (server_id, (owner_name or self.actor.principal))) == 1
 
-    async def upsert_tool(self, fields: dict[str, Any]) -> dict[str, Any]:
+    async def upsert_tool(
+        self, fields: dict[str, Any], *, owner_name: str | None = None
+    ) -> dict[str, Any]:
         """Register a tool idempotently on (owner, source, name)."""
         await self._bound()
         _screen(fields.get("description"), fields.get("input_schema"))
         schema = fields.get("input_schema") or {}
+        existing = await self._all(
+            "SELECT tool_id FROM nova_meta.config_tools WHERE owner_name=%s AND source=%s "
+            "AND name=%s ORDER BY tool_id LIMIT 2 FOR UPDATE",
+            (owner_name or self.actor.principal, fields["source"], fields["name"]))
+        if len(existing) > 1:
+            raise MetadataConflict()
+        if existing:
+            updated = await self._one(
+                "UPDATE nova_meta.config_tools SET description=%s,input_schema=%s,is_enabled=%s,"
+                "metadata_revision=metadata_revision+1 WHERE tool_id=%s RETURNING *",
+                (fields.get("description", ""), Jsonb(schema), bool(fields.get("is_enabled", True)),
+                 existing[0]["tool_id"]))
+            if updated is None:
+                raise MetadataConflict()
+            return updated
         row = await self._one(
             "INSERT INTO nova_meta.config_tools (tool_id,owner_name,name,description,source,"
             "input_schema,is_enabled) VALUES (%s,%s,%s,%s,%s,%s,%s) "
@@ -475,23 +525,33 @@ class AgentMetadataRepository:
             "description=EXCLUDED.description,input_schema=EXCLUDED.input_schema,"
             "is_enabled=EXCLUDED.is_enabled,metadata_revision=config_tools.metadata_revision+1 "
             "RETURNING *",
-            (str(uuid4()), self.actor.principal, fields["name"], fields.get("description", ""),
-             fields["source"], Jsonb(schema), bool(fields.get("is_enabled", True))))
+            (
+                str(uuid4()),
+                (owner_name or self.actor.principal),
+                fields["name"],
+                fields.get("description", ""),
+                fields["source"],
+                Jsonb(schema),
+                bool(fields.get("is_enabled", True)),
+            ),
+        )
         assert row is not None
         return row
 
-    async def set_tool_enabled(self, tool_id: str, enabled: bool) -> dict[str, Any] | None:
+    async def set_tool_enabled(
+        self, tool_id: str, enabled: bool, *, owner_name: str | None = None
+    ) -> dict[str, Any] | None:
         await self._bound()
         return await self._one(
             "UPDATE nova_meta.config_tools SET is_enabled=%s,metadata_revision=metadata_revision+1 "
             "WHERE tool_id=%s AND owner_name=%s RETURNING *",
-            (enabled, tool_id, self.actor.principal))
+            (enabled, tool_id, (owner_name or self.actor.principal)))
 
-    async def list_tools(self) -> list[dict[str, Any]]:
+    async def list_tools(self, owner_name: str | None = None) -> list[dict[str, Any]]:
         await self._bound()
         return await self._all(
             "SELECT * FROM nova_meta.config_tools WHERE owner_name=%s ORDER BY source,name",
-            (self.actor.principal,))
+            ((owner_name or self.actor.principal),))
 
     async def create_custom_tool(self, fields: dict[str, Any]) -> dict[str, Any]:
         await self._bound()
@@ -516,6 +576,84 @@ class AgentMetadataRepository:
             "SELECT * FROM nova_meta.config_custom_tools WHERE owner_name=%s ORDER BY name",
             (owner_name,))
 
+    async def get_mcp_server(self, server_id: str) -> dict[str, Any] | None:
+        await self._bound()
+        return await self._one("SELECT * FROM nova_meta.config_mcp_servers WHERE server_id=%s",
+                               (server_id,))
+
+    async def get_tool(self, tool_id: str) -> dict[str, Any] | None:
+        await self._bound()
+        return await self._one("SELECT * FROM nova_meta.config_tools WHERE tool_id=%s", (tool_id,))
+
+    async def get_custom_tool(self, tool_id: str) -> dict[str, Any] | None:
+        await self._bound()
+        return await self._one("SELECT * FROM nova_meta.config_custom_tools WHERE tool_id=%s",
+                               (tool_id,))
+
+    async def update_custom_tool(
+        self, tool_id: str, changes: dict[str, Any], *, expected_revision: int,
+    ) -> dict[str, Any]:
+        await self._bound()
+        unknown = set(changes) - set(_CUSTOM_TOOL_FIELDS)
+        if unknown or not changes:
+            raise ValueError("Unsupported custom tool changes")
+        _screen(*changes.values())
+        values = {key: Jsonb(value) if key == "definition" and value is not None else value
+                  for key, value in changes.items()}
+        row = await self._one(
+            "UPDATE nova_meta.config_custom_tools SET "
+            + ",".join(f"{field}=%s" for field in values)
+            + ",metadata_revision=metadata_revision+1 WHERE tool_id=%s AND owner_name=%s "
+            "AND metadata_revision=%s RETURNING *",
+            (*values.values(), tool_id, self.actor.principal, _positive(expected_revision)))
+        if row is None:
+            raise MetadataConflict()
+        return row
+
+    async def delete_custom_tool(self, tool_id: str) -> bool:
+        await self._bound()
+        return await self._count(
+            "DELETE FROM nova_meta.config_custom_tools WHERE tool_id=%s AND owner_name=%s",
+            (tool_id, self.actor.principal)) == 1
+
+    async def add_agent_role(self, agent_id: str, role: str, grant_type: str) -> None:
+        await self._bound()
+        await self.connection.execute(
+            "INSERT INTO nova_meta.config_agent_roles (agent_id,role_name,owner_name,grant_type) "
+            "VALUES (%s,%s,%s,%s) ON CONFLICT (agent_id,role_name) DO UPDATE "
+            "SET grant_type=EXCLUDED.grant_type,verified_fingerprint=NULL,"
+            "metadata_revision=config_agent_roles.metadata_revision+1 "
+            "WHERE config_agent_roles.owner_name=EXCLUDED.owner_name",
+            (agent_id, role, self.actor.principal, grant_type))
+
+    async def remove_agent_role(self, agent_id: str, role: str) -> bool:
+        await self._bound()
+        return await self._count(
+            "DELETE FROM nova_meta.config_agent_roles WHERE agent_id=%s AND role_name=%s "
+            "AND owner_name=%s", (agent_id, role, self.actor.principal)) == 1
+
+    async def list_versions(self, agent_id: str, owner: str, offset: int, limit: int) -> list[dict]:
+        await self._bound()
+        if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 101:
+            raise ValueError("Invalid agent version page")
+        return await self._all(
+            "SELECT version_id,label,created_at FROM nova_meta.config_agent_versions "
+            "WHERE agent_id=%s AND owner_name=%s ORDER BY created_at DESC,version_id DESC "
+            "LIMIT %s OFFSET %s", (agent_id, owner, limit, offset))
+
+    async def find_manifests(
+        self, agent_id: str, owner: str, *, manifest_id: str | None = None,
+        version_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        await self._bound()
+        if manifest_id is None and version_id is None:
+            raise ValueError("A manifest or version identifier is required")
+        column, value = ("manifest_id", manifest_id) if manifest_id else ("version_id", version_id)
+        return await self._all(
+            "SELECT * FROM nova_meta.config_agent_release_manifests "
+            f"WHERE agent_id=%s AND owner_name=%s AND {column}=%s LIMIT 2",
+            (agent_id, owner, value))
+
     # ── Shares ────────────────────────────────────────────────────────────
 
     async def create_share(
@@ -530,14 +668,53 @@ class AgentMetadataRepository:
         assert row is not None
         return row
 
-    async def active_grants(self, object_type: str) -> list[dict[str, Any]]:
-        """Shares addressed to the caller or the caller's active role."""
+    async def lock_share_object(self, object_type: str, object_id: str) -> None:
+        await self._bound()
+        await self.connection.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+            (json.dumps(["agent-shares", self.actor.principal, object_type, object_id]),))
+
+    async def shares_for_object(self, object_type: str, object_id: str) -> list[dict[str, Any]]:
         await self._bound()
         return await self._all(
             "SELECT * FROM nova_meta.config_studio_shares WHERE object_type=%s "
-            "AND ((target_type='user' AND target_name=%s) OR "
-            "(target_type='role' AND target_name=%s)) ORDER BY object_id,share_id LIMIT 101",
-            (object_type, self.actor.principal, self.actor.active_role))
+            "AND object_id=%s AND owner_name=%s ORDER BY created_at,share_id",
+            (object_type, object_id, self.actor.principal))
+
+    async def active_grants(
+        self, object_type: str | None = None, *, object_id: str | None = None,
+        owner_name: str | None = None, after: str = "", limit: int = 101,
+        latest_first: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Shares addressed to the caller or the caller's active role."""
+        await self._bound()
+        clauses = ["((target_type='user' AND target_name=%s) OR "
+                   "(target_type='role' AND target_name=%s))", "object_id>%s"]
+        params: list[Any] = [self.actor.principal, self.actor.active_role, after]
+        for column, value in (("object_type", object_type), ("object_id", object_id),
+                              ("owner_name", owner_name)):
+            if value is not None:
+                clauses.append(f"{column}=%s")
+                params.append(value)
+        if type(limit) is not int or not 1 <= limit <= 500:
+            raise ValueError("Share limit must be between one and 500")
+        return await self._all(
+            "SELECT * FROM nova_meta.config_studio_shares WHERE "
+            + " AND ".join(clauses)
+            + (
+                " ORDER BY created_at DESC,share_id"
+                if latest_first
+                else " ORDER BY object_id,share_id"
+            )
+            + " LIMIT %s",
+            (*params, limit),
+        )
+
+    async def shared_conversation(self, thread_id: str, owner: str) -> dict[str, Any] | None:
+        await self._bound()
+        row = await self._one(
+            "SELECT nova_meta.shared_conversation(%s,%s) AS payload", (thread_id, owner))
+        return row["payload"] if row else None
 
     async def delete_share(self, share_id: str) -> bool:
         await self._bound()
@@ -969,7 +1146,7 @@ class AgentMetadataRepository:
         return int(row["revision"])
 
     async def current_quality_records(
-        self, kind: str, agent_id: str, record_id: str | None = None,
+        self, kind: str, agent_id: str | None, record_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """The head revision of each record in the caller's scope; a forked head is refused."""
         await self._bound()
@@ -978,10 +1155,12 @@ class AgentMetadataRepository:
             "SELECT id,revision,payload,branches FROM (SELECT id,revision,payload,"
             "rank() OVER (PARTITION BY id ORDER BY revision DESC) rn,"
             "count(*) OVER (PARTITION BY id,revision) branches "
-            f"FROM nova_meta.{table} WHERE agent_id=%s AND security_context_version=%s"
+            f"FROM nova_meta.{table} WHERE security_context_version=%s"
+            + (" AND agent_id=%s" if agent_id is not None else "")
             + (" AND id=%s" if record_id else "")
             + ") heads WHERE rn=1 ORDER BY id,revision LIMIT 101",
-            (agent_id, self.actor.security_context_version, *([record_id] if record_id else [])))
+            (self.actor.security_context_version, *([agent_id] if agent_id is not None else []),
+             *([record_id] if record_id else [])))
         if len(rows) > 100 or any(row["branches"] != 1 for row in rows):
             raise MetadataConflict()
         return rows
@@ -1005,6 +1184,22 @@ class AgentMetadataRepository:
              data["plan_sha256"], data["thread_id"], data["message_id"]))
         return str(row["candidate_id"]) if row else None
 
+    async def get_candidate(self, candidate_id: str) -> dict[str, Any] | None:
+        await self._bound()
+        return await self._one(
+            "SELECT * FROM nova_meta.config_verified_query_candidates WHERE candidate_id=%s "
+            "AND owner_name=%s", (candidate_id, self.actor.principal))
+
+    async def list_candidates(
+        self, agent_id: str, status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        await self._bound()
+        return await self._all(
+            "SELECT * FROM nova_meta.config_verified_query_candidates WHERE agent_id=%s "
+            "AND owner_name=%s" + (" AND status=%s" if status else "")
+            + " ORDER BY created_at DESC,candidate_id LIMIT 200",
+            (agent_id, self.actor.principal, *((status,) if status else ())))
+
     async def decide_candidate(self, candidate_id: str, status: str) -> bool:
         """Approve or reject once, as the agent owner; a second decision loses."""
         await self._bound()
@@ -1023,13 +1218,46 @@ class AgentMetadataRepository:
             "role_name,memory_id,semantic_model_id,metric_name,prior_expression,"
             "proposed_expression,prior_fingerprint,proposed_fingerprint,status,proposal_kind,"
             "details) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending',%s,%s) RETURNING *",
-            (str(uuid4()), self.actor.principal, data["agent_id"], self.actor.active_role,
-             data["memory_id"], data["semantic_model_id"], data["metric_name"],
-             data["prior_expression"], data["proposed_expression"], data["prior_fingerprint"],
-             data["proposed_fingerprint"], data.get("proposal_kind", "metric"),
-             _json_text(data.get("details"))))
+            (
+                data.get("proposal_id") or str(uuid4()),
+                self.actor.principal,
+                data["agent_id"],
+                self.actor.active_role,
+                data["memory_id"],
+                data["semantic_model_id"],
+                data["metric_name"],
+                data["prior_expression"],
+                data["proposed_expression"],
+                data["prior_fingerprint"],
+                data["proposed_fingerprint"],
+                data.get("proposal_kind", "metric"),
+                _json_text(data.get("details")),
+            ),
+        )
         assert row is not None
         return row
+
+    async def get_rule_proposal(self, proposal_id: str) -> dict[str, Any] | None:
+        await self._bound()
+        return await self._one(
+            "SELECT * FROM nova_meta.config_agent_rule_proposals WHERE proposal_id=%s "
+            "AND owner_name=%s AND role_name=%s",
+            (proposal_id, self.actor.principal, self.actor.active_role))
+
+    async def list_rule_proposals(self, semantic_model_id: str) -> list[dict[str, Any]]:
+        await self._bound()
+        return await self._all(
+            "SELECT * FROM nova_meta.config_agent_rule_proposals WHERE owner_name=%s "
+            "AND role_name=%s AND semantic_model_id=%s ORDER BY created_at DESC,proposal_id "
+            "LIMIT 100", (self.actor.principal, self.actor.active_role, semantic_model_id))
+
+    async def preview_rule_proposal(self, proposal_id: str) -> bool:
+        await self._bound()
+        return await self._count(
+            "UPDATE nova_meta.config_agent_rule_proposals SET previewed_at=clock_timestamp(),"
+            "metadata_revision=metadata_revision+1 WHERE proposal_id=%s AND owner_name=%s "
+            "AND role_name=%s AND status='pending'",
+            (proposal_id, self.actor.principal, self.actor.active_role)) == 1
 
     async def set_rule_proposal_status(self, proposal_id: str, status: str) -> bool:
         await self._bound()
@@ -1073,11 +1301,15 @@ class AgentMetadataRepository:
             raise MetadataConflict()
         return row
 
-    async def get_research_run(self, run_id: str) -> dict[str, Any] | None:
+    async def get_research_run(
+        self, run_id: str, *, for_update: bool = False,
+    ) -> dict[str, Any] | None:
         await self._bound()
         return await self._one(
-            "SELECT * FROM nova_meta.config_deep_research_runs WHERE run_id=%s AND owner_name=%s",
-            (run_id, self.actor.principal))
+            "SELECT * FROM nova_meta.config_deep_research_runs WHERE run_id=%s AND owner_name=%s"
+            + (" FOR UPDATE" if for_update else ""),
+            (run_id, self.actor.principal),
+        )
 
     async def create_artifact(self, data: dict[str, Any]) -> dict[str, Any]:
         await self._bound()
@@ -1086,15 +1318,64 @@ class AgentMetadataRepository:
             "INSERT INTO nova_meta.config_studio_artifacts (artifact_id,owner_name,agent_id,"
             "thread_id,title,artifact_type,sql_text,database_name,schema_name,bi_kind,"
             "bi_object_id,bi_dataset_id) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",
-            (data.get("artifact_id") or str(uuid4()), self.actor.principal, data.get("agent_id"),
-             data.get("thread_id"), data["title"], data.get("artifact_type", "chart"),
-             data["sql_text"], data.get("database_name"), data.get("schema_name"),
-             data.get("bi_kind"), data.get("bi_object_id"), data.get("bi_dataset_id")))
+            (
+                data.get("artifact_id") or str(uuid4()),
+                self.actor.principal,
+                data.get("agent_id"),
+                data.get("thread_id"),
+                data["title"],
+                data.get("artifact_type", "chart"),
+                data["sql_text"],
+                data.get("database_name"),
+                data.get("schema_name"),
+                data.get("bi_kind"),
+                data.get("bi_object_id"),
+                data.get("bi_dataset_id"),
+            ),
+        )
         assert row is not None
         return row
 
+    async def get_artifact(self, artifact_id: str) -> dict[str, Any] | None:
+        await self._bound()
+        return await self._one(
+            "SELECT * FROM nova_meta.config_studio_artifacts "
+            "WHERE artifact_id=%s AND owner_name=%s",
+            (artifact_id, self.actor.principal),
+        )
+
+    async def list_artifacts(self) -> list[dict[str, Any]]:
+        await self._bound()
+        return await self._all(
+            "SELECT * FROM nova_meta.config_studio_artifacts WHERE owner_name=%s "
+            "ORDER BY updated_at DESC,artifact_id",
+            (self.actor.principal,),
+        )
+
+    async def delete_artifact(self, artifact_id: str) -> bool:
+        await self._bound()
+        return (
+            await self._count(
+                "DELETE FROM nova_meta.config_studio_artifacts "
+                "WHERE artifact_id=%s AND owner_name=%s",
+                (artifact_id, self.actor.principal),
+            )
+            == 1
+        )
+
+    async def shared_dashboard(self, dashboard_id: str, owner: str) -> dict[str, Any] | None:
+        await self._bound()
+        row = await self._one(
+            "SELECT nova_meta.shared_dashboard(%s,%s) AS projection", (dashboard_id, owner)
+        )
+        return row["projection"] if row else None
+
     async def update_artifact(
-        self, artifact_id: str, changes: dict[str, Any], *, expected_revision: int,
+        self,
+        artifact_id: str,
+        changes: dict[str, Any],
+        *,
+        expected_revision: int,
     ) -> dict[str, Any]:
         """A revision CAS in place of the source's timestamp predicate."""
         await self._bound()
@@ -1107,7 +1388,8 @@ class AgentMetadataRepository:
             + ",".join(f"{field}=%s" for field in changes)
             + ",metadata_revision=metadata_revision+1 WHERE artifact_id=%s AND owner_name=%s "
             "AND metadata_revision=%s RETURNING *",
-            (*changes.values(), artifact_id, self.actor.principal, _positive(expected_revision)))
+            (*changes.values(), artifact_id, self.actor.principal, _positive(expected_revision)),
+        )
         if row is None:
             raise MetadataConflict()
         return row
@@ -1133,3 +1415,15 @@ class AgentMetadataRepository:
             "SELECT * FROM nova_meta.config_studio_resources WHERE thread_id=%s "
             "AND session_id=%s AND security_version=%s ORDER BY message_id,attachment_index",
             (thread_id, self.actor.session_id, self.actor.security_context_version))
+
+
+@asynccontextmanager
+async def agent_metadata(
+    owner: str | None = None, *, read_only: bool = False,
+) -> AsyncIterator[AgentMetadataRepository]:
+    # Shared reads retain the reader; the owner name is never a delegated credential.
+    actor = (
+        current_actor() if read_only or owner is None or owner == "__nova__" else actor_for(owner)
+    )
+    async with metadata_transaction(actor, read_only=read_only) as (connection, bound):
+        yield AgentMetadataRepository(connection, bound)

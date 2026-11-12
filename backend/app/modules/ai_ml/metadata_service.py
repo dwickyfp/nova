@@ -95,6 +95,33 @@ class AIConfigurationService:
             )
         )
 
+    async def retire_provider(
+        self, identity: str, *, expected_revision: int
+    ) -> AIConfigurationChange:
+        """Delete the function aliases that use a provider, then the provider.
+
+        A referenced provider cannot be tombstoned on its own, so the API's
+        cascading delete composes both in one savepoint with their intents.
+        """
+
+        async def retire() -> dict[str, Any] | None:
+            while True:
+                cursor = await self._connection.execute(
+                    "SELECT id,metadata_revision FROM nova_meta.config_model_aliases "
+                    "WHERE provider_id=%s AND NOT is_deleted ORDER BY id LIMIT 1",
+                    (identity,),
+                )
+                alias = await cursor.fetchone()
+                if alias is None:
+                    break
+                await self._aliases.delete(
+                    alias["id"], expected_revision=alias["metadata_revision"]
+                )
+            await self._registry.delete_provider(identity, expected_revision=expected_revision)
+            return None
+
+        return await self._mutate(retire)
+
     async def create_model(
         self, identity: str, definition: ModelDefinition
     ) -> AIConfigurationChange:

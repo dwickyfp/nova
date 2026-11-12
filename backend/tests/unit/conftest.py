@@ -14,6 +14,7 @@ import pytest
 from cryptography.fernet import Fernet
 
 from app.core.config import settings
+from tests.unit.metadata_fakes import fake_metadata_db  # noqa: F401
 
 #: Fixed for the whole run so ciphertext written by one test is readable by the
 #: next (a per-test key would hide the cross-process bug this issue is about).
@@ -51,3 +52,21 @@ def _no_published_ontology(monkeypatch):
         return Resolution(status="no_release")
 
     monkeypatch.setattr(concept_resolver, "resolve", no_release)
+
+
+@pytest.fixture(autouse=True)
+def audit_events(monkeypatch):
+    """Audit events this test wrote, recorded instead of sent to PostgreSQL.
+
+    Each item is ``(actor, event, success)``. Tests of the PostgreSQL write
+    itself import ``app.common.audit._persist`` before this patch applies.
+    """
+    from app.common import audit
+
+    events: list = []
+
+    async def record(actor, identity, event, *, success):
+        events.append((actor, event, success))
+
+    monkeypatch.setattr(audit, "_persist", record)
+    return events
