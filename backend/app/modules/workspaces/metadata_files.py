@@ -158,12 +158,14 @@ class WorkspaceFileRepository(WorkspaceMetadataScope):
 
     async def move(
         self, namespace: str, entry_id: str, *, expected_revision: int,
-        new_parent_path: str, new_name: str, object_key_for: Callable[[str], str],
+        new_parent_path: str, new_name: str,
+        object_key_for: Callable[[str], str] | None = None,
     ) -> tuple[dict[str, Any], list[tuple[str, str]]]:
         """Rename or move an entry and every descendant in one transaction.
 
-        Returns the moved entry and the ``(old, new)`` object keys the caller
-        must reconcile in object storage. Path collisions raise a conflict.
+        Without ``object_key_for`` object keys are opaque and stay unchanged.
+        Otherwise returns the ``(old, new)`` object keys the caller must
+        reconcile in object storage. Path collisions raise a conflict.
         """
         await self._transaction()
         parent, name = _parent(new_parent_path), _name(new_name)
@@ -183,8 +185,8 @@ class WorkspaceFileRepository(WorkspaceMetadataScope):
                 else:
                     target_path = new_path + item["path"][len(old_path):]
                     target_parent, _, target_name = target_path.rpartition("/")
-                key = None
-                if item["entry_type"] == "file":
+                key = item["object_key"]
+                if item["entry_type"] == "file" and object_key_for is not None:
                     key = object_key_for(target_path)
                     if item["object_key"] != key:
                         moves.append((item["object_key"], key))

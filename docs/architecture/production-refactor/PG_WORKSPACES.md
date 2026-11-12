@@ -98,18 +98,54 @@ needs object verification and an explicit conflict manifest before cutover.
 Success audit records only the row ID and revision: names, paths, object keys
 and file contents are not copied into audit metadata.
 
+## Prepared caller port
+
+`WorkspaceMetadataService` is the prepared replacement for `WorkspaceService`
+file commands. It keeps the method names and arguments that the Workspace router
+and Notebook callers use today (`create_file`, `create_file_bytes`,
+`create_folder`, `get_file`, `read_entry_bytes`, `update_file`, `rename_entry`,
+`delete_entry`, `list_entries`, version reads), so wiring it in at cutover does
+not change those callers. It is not wired in yet; nothing in the running
+application imports it.
+
+Each command uses one actor-bound metadata transaction. Object effects go
+through the existing Workspace storage owner:
+
+- Every save writes a new object under a fresh `.objects/<entry>/<random>` key,
+  then updates the entry with a revision check. The previous live object becomes
+  the new version in that same transaction, with its size, ETag and SHA-256, so
+  history needs no copy. A source row without an ETag records `sha256:<digest>`.
+- A concurrent writer from the same revision gets 409 and its new object is
+  removed. A permission refusal (403), metadata failure, version-receipt
+  failure or cancellation also removes it and leaves metadata unchanged.
+- An identical save writes nothing. An object-store outage changes no metadata.
+- Renames and moves change metadata only; object keys are opaque and stay.
+- Deletion retires metadata first, then drains entry and version objects. A
+  failed object deletion leaves an unreferenced object and a logged count;
+  metadata is never restored for it.
+- An unknown commit outcome leaves the new object in place for recovery.
+- Opening an imported duplicate version number returns 409.
+
+The new object layout leaves legacy path-derived and `.versions` objects in
+place: the first save of an imported file keeps its legacy object as history.
+
 ## Remaining workspace and notebook work
 
-- Port `WorkspaceService` and the Notebook callers to these repositories inside
-  one metadata transaction per operation, with content-addressed or reserved
-  object keys so a lost writer cannot overwrite the live object, then expose
-  revision conflicts through the established 409 response and user docs.
-- Implement the version-reservation recovery worker: verify each `reserved`
-  row against object storage, then publish or abandon it.
+- At cutover, wire `WorkspaceMetadataService` into the router and Notebook
+  callers, pass the read revision from the editor so saves report 409 to users,
+  and update the Workspace user docs with the conflict message. Notebook
+  output objects (`internal_object_key` and its put/read) carry no metadata and
+  stay with `WorkspaceService`. One Notebook site reads
+  `workspace_repository.get_entry` directly and must move to the service.
+- Version reservations made by this service publish in the same transaction, so
+  it leaves no `reserved` rows. A recovery worker is still needed for unknown
+  commit outcomes and for any other reserver.
 - Produce the redacted duplicate-version conflict manifest and stop import until
   its reconciliation policy is applied.
-- Port Notebook package, execution, runtime generation and claim metadata. The
-  existing per-person package identity defect remains open.
+- Port Notebook package, execution, runtime generation and claim metadata
+  (`CONFIG_NOTEBOOK_*`); these tables have no PG store yet. The existing
+  per-person package identity defect remains open.
+- Workspace UI preferences use the separately prepared preference store.
 - Session-role revocation (stale cached assignments) remains open.
 - Rehearse the full import, verify the migration manifest and all writers, then
   activate PG authority once. Prepared repository tests are not migration or

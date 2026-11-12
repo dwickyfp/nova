@@ -1,5 +1,8 @@
+import asyncio
 import logging
 from typing import Any
+
+import asyncmy.errors
 
 from app.common.identifiers import (
     check_column_type,
@@ -912,6 +915,10 @@ BUILTIN_FUNCTIONS: dict[str, list[dict]] = {
 }
 
 
+#: Parallel per-database listings; 220 databases take well under a second.
+_UDF_SCAN_CONCURRENCY = 8
+_UNKNOWN_DATABASE = 1049
+
 class FunctionService:
     """Service for built-in function reference and UDF management."""
 
@@ -920,70 +927,80 @@ class FunctionService:
     # ------------------------------------------------------------------
 
     async def list_udfs(self, database: str | None = None) -> list[UDFResponse]:
-        """List UDFs via SHOW FULL FUNCTIONS."""
-        async with db.system_conn() as conn, conn.cursor() as cur:
-            await cur.execute("SHOW FULL FUNCTIONS")
-            rows = await cur.fetchall()
-            desc = [d[0] for d in cur.description]
-
-        functions, _ = self._project_udfs(rows, desc, database)
+        """List global and database UDFs, optionally narrowed to one database."""
+        functions, _ = await self.list_udfs_with_databases(database=database)
         return functions
+
+    @staticmethod
+    async def _show(sql: str) -> tuple[list[tuple], list[str]]:
+        async with db.system_conn() as conn, conn.cursor() as cur:
+            await cur.execute(sql)
+            rows = await cur.fetchall()
+            return list(rows), [d[0] for d in cur.description or ()]
 
     async def list_udfs_with_databases(
         self, database: str | None = None
     ) -> tuple[list[UDFResponse], list[str]]:
         """List UDFs, plus every database holding one.
 
-        Returns ``(functions, databases)`` from a single ``SHOW FULL
-        FUNCTIONS``. The two differ on purpose: ``database`` narrows the
-        listing, but the UI's filter must still offer every choice, so
-        ``databases`` is the unfiltered set. Deriving it here rather than
-        issuing a second query keeps the two views consistent by construction
-        - both come from the same rows.
+        The pinned StarRocks lists functions one database at a time
+        (``SHOW FULL FUNCTIONS FROM db``) and global functions separately
+        (``SHOW FULL GLOBAL FUNCTIONS``); an unqualified ``SHOW FULL
+        FUNCTIONS`` needs a current database and fails without one.
 
-        A ``GLOBAL`` function reports an empty ``Db`` and contributes nothing
-        to ``databases``.
+        ``database`` narrows the functions, but ``databases`` is always the
+        full set of choices, so the UI filter keeps every option. Global
+        functions have no database and appear only in the unfiltered list.
         """
-        async with db.system_conn() as conn, conn.cursor() as cur:
-            await cur.execute("SHOW FULL FUNCTIONS")
-            rows = await cur.fetchall()
-            desc = [d[0] for d in cur.description]
+        global_rows, global_desc = await self._show("SHOW FULL GLOBAL FUNCTIONS")
+        names = [str(row[0]) for row in (await self._show("SHOW DATABASES"))[0]]
+        limit = asyncio.Semaphore(_UDF_SCAN_CONCURRENCY)
 
-        return self._project_udfs(rows, desc, database)
+        async def scan(name: str) -> tuple[str, list[tuple], list[str]]:
+            quoted = name.replace("`", "``")
+            async with limit:
+                try:
+                    rows, desc = await self._show(f"SHOW FULL FUNCTIONS FROM `{quoted}`")
+                except asyncmy.errors.Error as error:
+                    # A database dropped during the scan has no functions to list.
+                    if error.args and error.args[0] == _UNKNOWN_DATABASE:
+                        return name, [], []
+                    raise
+            return name, rows, desc
+
+        functions: list[UDFResponse] = []
+        if not database:
+            functions += self._project_udfs(global_rows, global_desc, "", "global")
+        databases: list[str] = []
+        for name, rows, desc in await asyncio.gather(*(scan(name) for name in names)):
+            if rows:
+                databases.append(name)
+            if not database or name == database:
+                functions += self._project_udfs(rows, desc, name, "database")
+        return functions, sorted(databases)
 
     @staticmethod
     def _project_udfs(
-        rows: list, desc: list[str], database: str | None
-    ) -> tuple[list[UDFResponse], list[str]]:
-        """Project ``SHOW FULL FUNCTIONS`` rows into functions + databases.
-
-        One pass over the rows serves both outputs, so the listing and the set
-        of filter choices cannot disagree.
-        """
+        rows: list[tuple], desc: list[str], database: str, scope: str,
+    ) -> list[UDFResponse]:
+        """Project ``SHOW FULL ... FUNCTIONS`` rows (``Signature``, ``Return Type``,
+        ``Function Type``) into the API shape."""
         functions: list[UDFResponse] = []
-        databases: set[str] = set()
         for row in rows:
             record = dict(zip(desc, row, strict=False))
-            db_name = str(record.get("Db", ""))
-            if db_name:
-                databases.add(db_name)
-            if database and db_name != database:
-                continue
+            signature = str(record.get("Signature") or "")
+            name, _, rest = signature.partition("(")
             functions.append(
                 UDFResponse(
-                    name=str(record.get("Name", "")),
-                    database=db_name,
-                    function_type=str(record.get("Type", "")),
-                    scope=(
-                        "global"
-                        if "GLOBAL" in str(record.get("Type", "")).upper()
-                        else "database"
-                    ),
-                    args=str(record.get("Arguments", "")),
-                    return_type=str(record.get("Return_type", "")),
+                    name=name.strip(),
+                    database=database,
+                    function_type=str(record.get("Function Type") or ""),
+                    scope=scope,
+                    args=rest[:-1] if rest.endswith(")") else rest,
+                    return_type=str(record.get("Return Type") or ""),
                 )
             )
-        return functions, sorted(databases)
+        return functions
 
     @staticmethod
     def _qualified_udf_name(data: UDFCreate) -> str:

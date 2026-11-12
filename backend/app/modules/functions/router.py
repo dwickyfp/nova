@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,6 +12,7 @@ from app.modules.functions.schemas import (
 from app.modules.functions.service import function_service
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 #: ``Annotated`` dependency aliases (the convention used across the tree); a
 #: ``Depends()`` in an argument default trips ruff B008. UDF DDL runs on the
@@ -45,7 +47,10 @@ async def list_udfs(
             database=database
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list UDFs: {e}") from e
+        logger.warning("UDF listing failed: %s", type(e).__name__)
+        raise HTTPException(
+            status_code=503, detail="User-defined functions are unavailable right now",
+        ) from e
     return UDFListResponse(
         functions=functions, count=len(functions), databases=databases
     )

@@ -246,3 +246,100 @@ def test_health_requires_this_roles_fresh_heartbeat(stamp, up, service, expected
         f'nova_service_last_heartbeat_timestamp_seconds{{service="{service}"}} {stamp}\n'
     )
     assert healthy(body, "ml-worker", now=100, stale_seconds=30) is expected
+
+
+class FakeClock:
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+
+def _planner_timeout():
+    import asyncmy.errors
+
+    return asyncmy.errors.ProgrammingError(1064, "planner use long time")
+
+
+async def test_readiness_retries_transient_engine_failure(monkeypatch):
+    clock, stop, calls = FakeClock(), asyncio.Event(), []
+
+    async def instant_wait(awaitable, timeout):
+        awaitable.close()
+        clock.now += timeout
+        raise TimeoutError
+
+    monkeypatch.setattr(entry.asyncio, "wait_for", instant_wait)
+
+    async def prepare():
+        calls.append(clock.now)
+        if len(calls) < 3:
+            raise _planner_timeout()
+        return "ready"
+
+    assert await entry.await_dependencies(prepare, stop, role="task", clock=clock) == "ready"
+    assert calls == [0.0, 1.0, 3.0]
+
+
+async def test_readiness_gives_up_after_deadline(monkeypatch):
+    clock, stop = FakeClock(), asyncio.Event()
+
+    async def instant_wait(awaitable, timeout):
+        awaitable.close()
+        clock.now += timeout
+        raise TimeoutError
+
+    monkeypatch.setattr(entry.asyncio, "wait_for", instant_wait)
+    prepare = AsyncMock(side_effect=ConnectionRefusedError("engine down"))
+    with pytest.raises(ConnectionRefusedError):
+        await entry.await_dependencies(prepare, stop, role="task", clock=clock,
+                                       deadline_seconds=20)
+    assert clock.now <= 20
+    assert prepare.await_count == 5  # 0, 1, 3, 7, 15 seconds
+
+
+async def test_readiness_does_not_retry_configuration_errors():
+    prepare = AsyncMock(side_effect=ValueError("bad configuration"))
+    with pytest.raises(ValueError):
+        await entry.await_dependencies(prepare, asyncio.Event(), role="ml")
+    prepare.assert_awaited_once()
+
+
+async def test_shutdown_while_waiting_returns_without_workload():
+    stop = asyncio.Event()
+
+    async def prepare():
+        stop.set()
+        raise _planner_timeout()
+
+    assert await entry.await_dependencies(prepare, stop, role="notebook") is None
+
+
+async def test_role_waits_for_engine_instead_of_exiting(monkeypatch):
+    monkeypatch.setattr(entry, "require_configured_secrets", Mock())
+    monkeypatch.setattr(entry, "validate_role", Mock())
+    monkeypatch.setattr(entry, "db", SimpleNamespace(
+        init_system_pool=AsyncMock(), close_system_pool=AsyncMock()))
+    session = SimpleNamespace(init=AsyncMock(), close=AsyncMock())
+    monkeypatch.setattr(entry, "session_store", session)
+    client = SimpleNamespace(ping=AsyncMock(), aclose=AsyncMock())
+    monkeypatch.setattr(entry.aioredis, "from_url", Mock(return_value=client))
+    health = SimpleNamespace(publish=AsyncMock(), close=AsyncMock())
+    monkeypatch.setattr(entry, "WorkerProcessHeartbeat", Mock(return_value=health))
+    monkeypatch.setattr(entry, "start_metrics_server", Mock())
+    workload = object()
+    build = AsyncMock(side_effect=[_planner_timeout(), workload])
+    monkeypatch.setattr(entry, "build_workload", build)
+    run = AsyncMock()
+    monkeypatch.setattr(entry, "run_workload", run)
+
+    async def instant_wait(awaitable, timeout):
+        awaitable.close()
+        raise TimeoutError
+
+    monkeypatch.setattr(entry.asyncio, "wait_for", instant_wait)
+    await entry._run("task")
+    assert build.await_count == 2
+    assert run.await_count == 1 and run.call_args.args[0] is workload
+    health.publish.assert_awaited_once()

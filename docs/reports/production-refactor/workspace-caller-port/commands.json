@@ -1,0 +1,82 @@
+{
+  "source_parent_commit": "4d33e5d4",
+  "environment": "local macOS device; existing docker project (patched FE/Ranger, PG17 fixture on 55432); host dev processes via dev.sh; no additional stack",
+  "postgresql": {
+    "tests": 582,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "time_seconds": 750.625,
+    "caller_port_cases": 11,
+    "artifact_sha256": "ec557146b4bac4ceb63692291da472badd1df030abda46343a9a579e72fb3763"
+  },
+  "mutation_check": {
+    "change": "WorkspaceMetadataService._discard made a no-op",
+    "result": "6 of 11 caller-port tests failed; code restored"
+  },
+  "unit": {
+    "tests": 10913,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "time_seconds": 568.515,
+    "artifact_sha256": "2c82153ba07d2abdf19df4b579b5ffe0c45a248bdb8841bdc06694dc31c19766",
+    "note": "two earlier runs were superseded by later edits and are not counted"
+  },
+  "eval": {
+    "tests": 358,
+    "failures": 0,
+    "skipped": 0
+  },
+  "scorecard": {
+    "scenarios": 54,
+    "checks": 189,
+    "status": "PASS"
+  },
+  "mypy": {
+    "status": "PASS"
+  },
+  "ruff_changed_python": {
+    "paths": 8,
+    "status": "PASS"
+  },
+  "boundary": {
+    "status": "PASS"
+  },
+  "ui_qa": {
+    "user": "nova_admin",
+    "active_role": "ACCOUNTADMIN",
+    "passed": [
+      "workspace tree",
+      "create SQL file",
+      "run query (1 row)",
+      "save",
+      "version history v1",
+      "rename to existing name refused 409",
+      "valid rename",
+      "delete with confirmation",
+      "User-Defined Functions tab after fix (8 global functions)"
+    ],
+    "blocked": [
+      "notebook run: OpenSandbox egress image missing locally; runtime create timed out after 60 s"
+    ],
+    "cleanup": "QA file and notebook deleted; session logged out (token then 401)"
+  },
+  "api_smoke": {
+    "get_endpoints": 113,
+    "2xx": 91,
+    "4xx": 11,
+    "5xx_before_fix": 1,
+    "timeouts_at_40s_parallel6": 10,
+    "timeouts_sequential": 0,
+    "slowest_sequential_seconds": {
+      "monitoring/loads/stats": 65.7,
+      "ontology/metrics": 29.1
+    }
+  },
+  "worker_incident": {
+    "cause": "StarRocks planner 12988 ms during role startup schema check",
+    "effect": "role exited; supervisor stopped all seven roles",
+    "fix": "bounded dependency readiness (180 s) for engine/Redis/OS errors"
+  }
+}

@@ -12,10 +12,14 @@ import asyncio
 import contextlib
 import logging
 import signal
+import time
+from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, TypeVar
 
+import asyncmy.errors
 import redis.asyncio as aioredis
+import redis.exceptions
 
 from app.common.secret_keys import require_configured_secrets
 from app.core.config import settings
@@ -31,6 +35,17 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 SHUTDOWN_SECONDS = 30.0
+#: How long a starting role waits for the engine and Redis before it exits.
+READINESS_SECONDS = 180.0
+#: Unavailable or overloaded dependencies, as opposed to configuration or code errors.
+DEPENDENCY_ERRORS: tuple[type[BaseException], ...] = (
+    asyncmy.errors.Error,
+    redis.exceptions.ConnectionError,
+    redis.exceptions.TimeoutError,
+    TimeoutError,
+    OSError,
+)
+T = TypeVar("T")
 METRICS_SERVICES = {
     "task": "worker",
     "ingestion": "ingestion-worker",
@@ -137,6 +152,39 @@ async def build_workload(role: str, client: aioredis.Redis) -> Workload:
     raise ValueError("Unknown worker role")
 
 
+async def await_dependencies(
+    prepare: Callable[[], Awaitable[T]],
+    stop: asyncio.Event,
+    *,
+    role: str,
+    deadline_seconds: float = READINESS_SECONDS,
+    clock: Callable[[], float] = time.monotonic,
+) -> T | None:
+    """Retry startup while a dependency is unavailable, within one bounded deadline.
+
+    A transient engine or Redis failure must not crash the role or, through the
+    fail-fast supervisor, every sibling role. Configuration and code errors are
+    not retried. Returns ``None`` when shutdown is requested while waiting.
+    """
+    started, delay = clock(), 1.0
+    while True:
+        try:
+            return await prepare()
+        except DEPENDENCY_ERRORS as error:
+            if clock() - started + delay > deadline_seconds:
+                logger.error("Worker role %s dependencies stayed unavailable", role)
+                raise
+            logger.warning(
+                "Worker role %s waiting for dependencies (%s); retry in %.0fs",
+                role, type(error).__name__, delay,
+            )
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(stop.wait(), delay)
+        if stop.is_set():
+            return None
+        delay = min(delay * 2, 30.0)
+
+
 @contextlib.contextmanager
 def stop_signals(stop: asyncio.Event):
     loop = asyncio.get_running_loop()
@@ -197,8 +245,17 @@ async def _run(role: str = "task") -> None:
         cleanup.push_async_callback(client.aclose)
         cleanup.push_async_callback(session_store.close)
         await session_store.init()
-        await client.ping()
-        workload = await build_workload(role, client)
+        stop = asyncio.Event()
+
+        async def prepare() -> Workload:
+            await client.ping()
+            return await build_workload(role, client)
+
+        with stop_signals(stop):
+            ready = await await_dependencies(prepare, stop, role=role)
+        if ready is None:
+            return
+        workload = ready
         # Only task consumers count toward the existing task-worker health check.
         registry = settings.WORKER_REGISTRY_KEY
         if role != "task":
@@ -208,7 +265,6 @@ async def _run(role: str = "task") -> None:
         cleanup.push_async_callback(heartbeat.close)
         await heartbeat.publish()
         start_metrics_server(service)
-        stop = asyncio.Event()
         try:
             with stop_signals(stop):
                 logger.info("Worker role %s started", role)
