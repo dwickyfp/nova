@@ -306,6 +306,7 @@ _DEFAULT_PORTS = {
     "notebook-worker": 9107,
     "automation-worker": 9108,
     "autopilot-worker": 9109,
+    "maintenance-worker": 9110,
 }
 
 

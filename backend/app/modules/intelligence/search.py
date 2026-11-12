@@ -331,7 +331,6 @@ class SearchService:
             session_id=user.get("session_id"),
             active_role=user.get("active_role"),
         )
-        self._schedule(body.name, 1)
         return await self.describe(body.name, user)
 
     @staticmethod
@@ -369,16 +368,28 @@ class SearchService:
         if self._poller is None:
             self._poller = asyncio.create_task(self._poll())
 
+    async def run(self) -> None:
+        """Own the poll/build lifecycle in the maintenance worker."""
+        if self._poller is not None:
+            raise RuntimeError("Search polling is already running")
+        await self.start()
+        try:
+            assert self._poller is not None
+            await self._poller
+        finally:
+            await self.stop()
+
     async def stop(self) -> None:
         if self._poller:
             self._poller.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._poller
-            self._poller = None
-        for task in self._tasks:
+            await asyncio.gather(self._poller, return_exceptions=True)
+        tasks = tuple(self._tasks)
+        for task in tasks:
             task.cancel()
-        if self._tasks:
-            await asyncio.gather(*self._tasks, return_exceptions=True)
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._tasks.difference_update(tasks)
+        self._poller = None
 
     async def _poll(self) -> None:
         ticks = 0
@@ -791,7 +802,6 @@ class SearchService:
             session_id=user.get("session_id"),
             active_role=user.get("active_role"),
         )
-        self._schedule(name, version)
         return {"index": name, "version": version, "status": "PENDING"}
 
     async def retry(self, name: str, version: int, user: dict) -> dict:
@@ -812,7 +822,6 @@ class SearchService:
                 "SET status='PENDING',updated_at=NOW() WHERE index_name=%s AND version=%s",
                 [name, version],
             )
-        self._schedule(name, version)
         await write_audit_log(
             event_type="AI_SEARCH",
             user_name=user["username"],

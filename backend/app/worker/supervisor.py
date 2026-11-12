@@ -8,7 +8,7 @@ import os
 import signal
 import sys
 
-ROLES = ("task", "ingestion", "ml", "notebook", "automation", "autopilot")
+ROLES = ("task", "ingestion", "ml", "notebook", "automation", "autopilot", "maintenance")
 
 
 async def supervise_processes(

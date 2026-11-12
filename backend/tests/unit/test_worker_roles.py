@@ -223,7 +223,7 @@ async def test_supervisor_reaps_children_on_every_exit(reason, monkeypatch):
             await supervisor.supervise_processes(stop, shutdown_seconds=0.01)
     else:
         await supervisor.supervise_processes(stop, shutdown_seconds=0.01)
-    assert len(children) == (2 if reason == "spawn" else 6)
+    assert len(children) == (2 if reason == "spawn" else len(supervisor.ROLES))
     assert [command[-1] for command in commands] == list(supervisor.ROLES[:len(children)])
     assert all(child.returncode is not None for child in children)
     assert all(child.terminated for child in children if child.returncode != 1)

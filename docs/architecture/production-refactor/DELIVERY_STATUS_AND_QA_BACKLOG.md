@@ -1,7 +1,7 @@
 # Migration, scaling and remaining QA
 
-Updated 2026-11-12 (Asia/Jakarta), from parent `97012355` through the workload
-separation checkpoint ([source and evidence](../../reports/production-refactor/worker-roles/README.md)).
+Updated 2026-11-12 (Asia/Jakarta), from parent `97012355` through the maintenance
+checkpoint ([source and evidence](../../reports/production-refactor/maintenance-runtime/README.md)).
 The owner requested this checkpoint before further work: finish migration and
 application scaling first, then resume the remaining whole-feature QA. Tests
 needed to validate an architecture change still run with that change.
@@ -19,7 +19,7 @@ checks do not establish a migrated or scalable production deployment.
 | PG schema | Revisions 0001–0012 prepare deployment state, preferences, password flags, AI registry/aliases/definitions, jobs/outbox, scheduler fencing, audit, retained history and Stages | Remaining domain DDL, constraints, executable grants/RLS, caller transactions and whole-import validation |
 | Durable jobs | Queue, outbox, leases/fencing and receipts pass real-PG fixture tests | Actual producers/consumers, outbox publisher, participant verification and recovery; Redis must cease being authoritative for work |
 | Agent runtime | Replay and approval defects have been repaired in the existing runtime | Transactional PG conversations/runs/events, actor-bound durable consent, exact effect intents, reconnect and restart recovery |
-| Workload processes | API supports `all`, `web`, `query`; six workload roles now have separate processes and supervised default startup (workload separation checkpoint) | Independent query/proxy/agent/scheduler/task/ingestion/ML/notebook/automation/maintenance/outbox lifecycles, admission, supervision, readiness and limits |
+| Workload processes | API supports `all`, `web`, `query`; seven workload roles now have separate processes and supervised default startup; maintenance owns Search builds, Catalog/News refresh and ML retention | Remaining agent/outbox separation; per-role admission, dependency readiness, fenced claims, isolation and validated limits across the full deployment |
 | Execution security | Existing delegated SQL and Ranger path retained | Isolated ML execution/provenance, notebook/Python/MCP credential and network isolation, atomic role changes and revocation boundaries |
 | Production deployment | Existing engine/development/split Compose files remain | One production Compose with all required services active, scoped inline environment anchors, stable private secrets, pinned images, TLS/private management ports and adjustable resources |
 | Recovery | No production recovery acceptance established | PG base backup/WAL, off-host copy, coordinated recovery manifest, restore/PITR and dependency recovery tests |
@@ -29,7 +29,7 @@ Source evidence: [ownership](METADATA_OWNERSHIP.csv),
 [dependencies](DEPENDENCIES.md), [traceability](TRACEABILITY.md).
 `backend/app/core/config.py` still restricts API roles to `all/web/query`;
 `backend/app/worker/__main__.py` now owns one selected workload, while its default
-launcher supervises six child processes. Prepared PG
+launcher supervises seven child processes. Prepared PG
 repositories are not proof that their runtime callers use PostgreSQL.
 
 ## Implementation order from this checkpoint
@@ -97,6 +97,14 @@ findings. In particular:
   is unresolved. Do not fabricate events or silently discard history.
 
 ## Existing validation to reuse only when applicable
+
+The maintenance checkpoint passes 10,909 unit/coverage tests (zero skips),
+358 evals, the 54/189 scorecard, 84 focused tests, mypy, Ruff on 129 changed
+Python files and 12 monitoring tests. Local metrics confirm Search polling in
+maintenance and none in the API. Seven worker roles each report one fresh
+instance; API readiness/frontend return 200 and the proxy listens. The first
+probe's missing host-service prerequisite and its restoration remain recorded.
+See the maintenance evidence linked above. Delivered-commit CI is still required.
 
 The workload-separation checkpoint passes 10,895 unit/coverage tests (zero
 skips), 358 evals, the 54/189 scorecard, mypy, Ruff on 125 changed Python paths,

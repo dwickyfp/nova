@@ -1,7 +1,7 @@
 # Runtime dependencies and migration boundaries
 
 Observed application tree:
-`e104ceccc0300cc7ae65ef9e7b64dfe6c244e0a369b10dcb74498d36fc5031b0`.
+`e655d5babeb295e505c968784669d4d30770428b54a5f544b5d35064d1e8fead`.
 This is the current source dependency graph. It is not the target deployment
 and does not imply that a process has the planned isolation already.
 
@@ -23,7 +23,7 @@ flowchart LR
     SQL --> DATA[Caller StarRocks session and Ranger enforcement]
     SCHED[Scheduler] --> CP
     SCHED --> REDIS[Redis sessions leases queues and wakeups]
-    WORKER[Six dedicated worker processes] --> CP
+    WORKER[Seven dedicated worker processes] --> CP
     WORKER --> REDIS
     WORKER --> DATA
     WORKER --> SANDBOX[OpenSandbox controller and kernels]
@@ -44,28 +44,30 @@ a system identity.
 ## Current process ownership
 
 `backend/app/main.py::lifespan` opens the system pool and session store for each
-API role. A role other than `query` owns schema bootstrap, LLM registration,
-Search lifecycle, News refresh and Catalog refresh. A role other than `web`
-starts ephemeral ML sweeping. Each API role runs its own Autopilot telemetry
-and AI usage flushers. The `all` role can also embed the MySQL proxy. These are
-current duties to retire or move, not the approved target separation.
+API role. A role other than `query` owns schema bootstrap and LLM registration.
+Search builds, News proof refresh, Catalog refresh and expired ML artifact cleanup
+belong to the dedicated maintenance worker. Search create/rebuild/retry requests
+persist pending work; only the maintenance poller schedules builds. Each API role
+still flushes its own buffered Autopilot telemetry and AI usage. The `all` role
+can also embed the MySQL proxy. Schema bootstrap, buffered writes and request
+execution still require further separation or durable PG integration.
 
 `backend/app/worker/__main__.py::_run` owns exactly one selected workload:
-Task execution, ingestion, ML, automation, notebook or Autopilot. Each process
+Task execution, ingestion, ML, automation, notebook, Autopilot or maintenance. Each process
 opens its own system pool/session store and publishes a role-specific liveness
 marker. Only Task consumers enter the original Task-worker health registry.
 Schema initialization is still owned by the applicable legacy domain until PG
 cutover; application processes do not migrate PG.
 
-The no-argument development launcher supervises six child processes and stops
+The no-argument development launcher supervises seven child processes and stops
 all children if one exits. It forwards graceful shutdown and kills remaining
-process groups after 40 seconds. Compose's `app` profile instead runs six
+process groups after 40 seconds. Compose's `app` profile instead runs seven
 individual worker services, with per-service CPU/memory/PID bounds and local
 heartbeat health checks. No fixed worker container name prevents replicas.
-Metrics discovery includes all six processes in the existing worker scrape job.
+Metrics discovery includes all seven processes in the existing worker scrape job.
 This does not establish safe concurrent claims for every domain: PG fencing,
 participant receipts, role admission and actual capacity remain open. Interactive
-agents, maintenance and outbox processes are not separated yet. The target role
+agents and outbox processes are not separated yet. The target role
 assignments are recorded in `ENTRYPOINTS.csv`.
 
 The scheduler uses Redis leadership/transport and StarRocks control rows. The

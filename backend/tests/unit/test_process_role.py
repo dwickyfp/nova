@@ -1,9 +1,8 @@
 """``NOVA_PROCESS_ROLE`` decides which startup duties a process takes on.
 
-A split deployment runs the same application as a ``web`` process and any
-number of ``query`` processes. Schema bootstrap and the singleton loops must run
-in exactly one of them, and neither may open the MySQL port the standalone proxy
-owns; ``all`` must keep doing everything a single process did before.
+Web owns schema bootstrap and UDF registration; query owns request execution.
+Maintenance loops run in their dedicated worker. Neither HTTP role may bind the
+standalone proxy port; ``all`` retains the embedded proxy for development.
 """
 
 from __future__ import annotations
@@ -18,8 +17,8 @@ from pydantic import ValidationError
 from app import main
 from app.core.config import Settings, settings
 
-CONTROL = {"bootstrap", "llm_udfs", "search_start", "newsroom", "search_stop"}
-EXECUTION = {"ml_schema", "ml_sweep"}
+CONTROL = {"bootstrap", "llm_udfs"}
+MAINTENANCE = {"ml_schema", "ml_sweep", "search_start", "newsroom", "search_stop", "catalog"}
 EVERY_ROLE = {"system_pool", "capabilities", "session_store", "autopilot"}
 
 
@@ -50,7 +49,9 @@ def duties(monkeypatch):
         async def stop(self):
             ran.append("proxy_stop")
 
+    from app.modules.catalog import refresher as catalog_refresher
     from app.modules.intelligence import newsroom_refresher
+    from app.modules.intelligence.search import search_service
     from app.modules.ml_engine.service import ml_engine_service
     from app.modules.query_autopilot.telemetry import collector
     from app.sql_frontend.capabilities import starrocks
@@ -70,9 +71,10 @@ def duties(monkeypatch):
         ml_engine_service.ephemeral_repository, "ensure_schema", record("ml_schema")
     )
     monkeypatch.setattr(ml_engine_service, "sweep_ephemeral", lambda: forever("ml_sweep"))
-    monkeypatch.setattr(main.search_service, "start", record("search_start"))
-    monkeypatch.setattr(main.search_service, "stop", record("search_stop"))
+    monkeypatch.setattr(search_service, "start", record("search_start"))
+    monkeypatch.setattr(search_service, "stop", record("search_stop"))
     monkeypatch.setattr(newsroom_refresher, "run", lambda stop: until_stopped("newsroom", stop))
+    monkeypatch.setattr(catalog_refresher, "run", lambda stop: until_stopped("catalog", stop))
     monkeypatch.setattr(collector, "run", lambda stop, repo: until_stopped("autopilot", stop))
     return ran
 
@@ -87,9 +89,9 @@ async def _run_lifespan(ran: list[str]) -> set[str]:
 @pytest.mark.parametrize(
     ("role", "expected", "absent"),
     [
-        ("all", CONTROL | EXECUTION | {"proxy", "proxy_stop"}, set()),
-        ("web", CONTROL, EXECUTION | {"proxy"}),
-        ("query", EXECUTION, CONTROL | {"proxy"}),
+        ("all", CONTROL | {"proxy", "proxy_stop"}, MAINTENANCE),
+        ("web", CONTROL, MAINTENANCE | {"proxy"}),
+        ("query", set(), CONTROL | MAINTENANCE | {"proxy"}),
     ],
 )
 async def test_each_role_runs_only_its_own_duties(monkeypatch, duties, role, expected, absent):

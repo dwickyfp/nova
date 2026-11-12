@@ -16,3 +16,6 @@
 - targets: ["host.docker.internal:9109"]
   labels:
     service: nova-autopilot-worker
+- targets: ["host.docker.internal:9110"]
+  labels:
+    service: nova-maintenance-worker

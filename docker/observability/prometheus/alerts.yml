@@ -146,7 +146,7 @@ groups:
           description: "Inspect worker logs and job claim or reconciliation state."
 
       - alert: NovaSearchIndexingLoopErrors
-        expr: (sum(increase(nova_search_poll_errors_total{job="nova-backend"}[10m])) > 3) or (sum(increase(nova_search_reconciliation_errors_total{job="nova-backend"}[10m])) > 3)
+        expr: (sum(increase(nova_search_poll_errors_total{job="nova-worker",service="nova-maintenance-worker"}[10m])) > 3) or (sum(increase(nova_search_reconciliation_errors_total{job="nova-worker",service="nova-maintenance-worker"}[10m])) > 3)
         for: 2m
         labels:
           severity: warning
@@ -155,7 +155,7 @@ groups:
           description: "Inspect the Search indexing panels and backend logs; builds may remain pending or indexes may become stale."
 
       - alert: NovaSearchPollStale
-        expr: (time() - nova_search_last_successful_poll_timestamp_seconds{job="nova-backend"} > 120) and on(instance) (time() - process_start_time_seconds{job="nova-backend"} > 120)
+        expr: (time() - nova_search_last_successful_poll_timestamp_seconds{job="nova-worker",service="nova-maintenance-worker"} > 120) and on(instance) (time() - process_start_time_seconds{job="nova-worker",service="nova-maintenance-worker"} > 120)
         for: 2m
         labels:
           severity: warning
@@ -164,7 +164,7 @@ groups:
           description: "The backend is running, but search queue polling has not succeeded for over two minutes. A new process gets a two-minute startup grace period."
 
       - alert: NovaSearchBuildFailure
-        expr: increase(nova_search_build_errors_total{job="nova-backend"}[10m]) > 0
+        expr: increase(nova_search_build_errors_total{job="nova-worker",service="nova-maintenance-worker"}[10m]) > 0
         for: 0m
         labels:
           severity: warning

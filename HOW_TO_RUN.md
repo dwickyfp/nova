@@ -269,23 +269,25 @@ BI/ETL tidak memperlambat aplikasi.
 | Web | `NOVA_PROCESS_ROLE=web PROXY_ENABLED=false uvicorn app.main:app --port 8000` | API aplikasi, bootstrap skema `NOVA_SYSTEM`, loop latar belakang. Boleh lebih dari satu replika. |
 | Query tier | `NOVA_PROCESS_ROLE=query PROXY_ENABLED=false uvicorn app.main:app --port 8001` | Eksekusi SQL, ML, dan run assistant/agent. Boleh banyak replika. |
 | Proxy MySQL | `python -m app.proxy` | Port 4406. Boleh banyak replika. |
-| Worker launcher | `python -m app.worker` | Enam proses: task, ingestion, ML, notebook, automation, dan autopilot. |
+| Worker launcher | `python -m app.worker` | Tujuh proses: task, ingestion, ML, notebook, automation, autopilot, dan maintenance. |
 
-`python -m app.worker` menjalankan supervisor lokal dengan enam child process.
+`python -m app.worker` menjalankan supervisor lokal dengan tujuh child process.
 Jika salah satu child keluar, supervisor menghentikan yang lain dan keluar dengan
 status gagal. SIGINT/SIGTERM diteruskan; setelah 40 detik child yang belum berhenti
 dihentikan paksa. Setiap role memiliki pool dan event loop sendiri. Untuk container
 atau kapasitas berbeda, gunakan `python -m app.worker --role ROLE`, dengan `ROLE`
-bernilai `task`, `ingestion`, `ml`, `notebook`, `automation`, atau `autopilot`.
-Role `task` dan `automation` membutuhkan akun impersonasi khusus.
+bernilai `task`, `ingestion`, `ml`, `notebook`, `automation`, `autopilot`, atau `maintenance`.
+Role `task` dan `automation` membutuhkan akun impersonasi khusus. Maintenance
+menangani build Search, refresh katalog/News dan pembersihan artifact ML; proses
+HTTP hanya menyimpan permintaan build Search untuk diambil poller.
 
-Profile `app` pada Compose engine menjalankan enam container worker dengan batas
+Profile `app` pada Compose engine menjalankan tujuh container worker dengan batas
 CPU, memori, PID, dan waktu shutdown masing-masing. Ini masih konfigurasi development,
 bukan Compose produksi satu file yang ditargetkan refactor. `python -m
 app.worker.health ROLE` memeriksa proses lokal dan freshness heartbeat Redis;
 health ini belum membuktikan recovery job atau readiness semua dependency domain.
 Port metrics: task 9102, ingestion 9105, ML 9106, notebook 9107, automation 9108,
-autopilot 9109. Override port memakai `NOVA_METRICS_<SERVICE>_PORT`, misalnya
+autopilot 9109, maintenance 9110. Override port memakai `NOVA_METRICS_<SERVICE>_PORT`, misalnya
 `NOVA_METRICS_ML_WORKER_PORT`. Jangan menjalankan supervisor lokal bersamaan
 dengan container worker pada stack yang sama.
 

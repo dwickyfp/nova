@@ -33,6 +33,7 @@ WORKER_TARGETS = {
     "notebook-worker": ("nova-notebook-worker:9107", 9107),
     "automation-worker": ("nova-automation-worker:9108", 9108),
     "autopilot-worker": ("nova-autopilot-worker:9109", 9109),
+    "maintenance-worker": ("nova-maintenance-worker:9110", 9110),
 }
 #: Tiers a split deployment runs beside the web process. Their replicas are
 #: discovered through DNS, so there is no fixed instance to expect.
@@ -232,13 +233,16 @@ def metric_queries(topology: str = "single") -> dict[str, str]:
     proxy_job = "nova-proxy" if split else "nova-backend"
     queries["SQL proxy listener"] = f'nova_proxy_listener_up{{job="{proxy_job}"}}'
     queries["Search indexing metrics"] = (
-        'count(nova_search_builds_active{job="nova-backend"}) > bool 0'
+        'count(nova_search_builds_active{job="nova-worker",'
+        'service="nova-maintenance-worker"}) > bool 0'
     )
     queries["Search build error metrics"] = (
-        'count(nova_search_build_errors_total{job="nova-backend"}) > bool 0'
+        'count(nova_search_build_errors_total{job="nova-worker",'
+        'service="nova-maintenance-worker"}) > bool 0'
     )
     queries["Search indexing poll succeeded"] = (
-        'nova_search_last_successful_poll_timestamp_seconds{job="nova-backend"} > bool 0'
+        'nova_search_last_successful_poll_timestamp_seconds{job="nova-worker",'
+        'service="nova-maintenance-worker"} > bool 0'
     )
     queries["Redis service"] = 'redis_up{job="redis"}'
     queries["Docker Linux CPU metrics"] = (

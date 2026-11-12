@@ -1,4 +1,4 @@
-"""Run one workload, or supervise all six in separate child processes.
+"""Run one workload, or supervise all workloads in separate child processes.
 
 Production containers select one ``--role`` for independent limits and scaling.
 The default launcher keeps all workloads active for existing development commands.
@@ -38,6 +38,7 @@ METRICS_SERVICES = {
     "notebook": "notebook-worker",
     "automation": "automation-worker",
     "autopilot": "autopilot-worker",
+    "maintenance": "maintenance-worker",
 }
 
 
@@ -98,6 +99,10 @@ def validate_role(role: str) -> None:
 
 
 async def build_workload(role: str, client: aioredis.Redis) -> Workload:
+    if role == "maintenance":
+        from app.worker.maintenance import MaintenanceWorker
+
+        return MaintenanceWorker()
     if role == "task":
         from app.common.nova_system import init_task_orchestration
 

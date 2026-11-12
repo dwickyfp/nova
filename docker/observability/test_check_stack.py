@@ -100,6 +100,10 @@ class StackAcceptanceTests(unittest.TestCase):
         self.assertIn('job="nova-proxy"', split["SQL proxy listener"])
         self.assertIn('service="query"', split["Startup query"])
         self.assertNotIn("Startup query", single)
+        for name, query in single.items():
+            if name.startswith("Search "):
+                self.assertIn('job="nova-worker"', query)
+                self.assertIn('service="nova-maintenance-worker"', query)
 
     def test_split_prometheus_config_is_the_base_config_with_dns_discovery(self) -> None:
         import build_prometheus_split as builder

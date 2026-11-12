@@ -1,0 +1,101 @@
+{
+  "source_parent_commit": "3f6b378977d562b6584caba3d595609b97060f1f",
+  "application_tree_sha256": "e655d5babeb295e505c968784669d4d30770428b54a5f544b5d35064d1e8fead",
+  "reviewed_calls": 875,
+  "live_observation_refreshed": false,
+  "feature_acceptance_statuses_changed": false,
+  "before": {
+    "tests": 3,
+    "failures": 3,
+    "errors": 0,
+    "skipped": 0,
+    "time_seconds": 1.812,
+    "artifact_sha256": "95138ee9e274570da9e1b92283e13a67f45473dd953396cec8df3f6e333287f4"
+  },
+  "focused": {
+    "tests": 84,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "time_seconds": 2.072,
+    "artifact_sha256": "607382df03426cf0d42e59a24f77e0fd977b80c40549f05dcdffb5af67debb4d"
+  },
+  "unit": {
+    "tests": 10909,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "time_seconds": 507.69,
+    "artifact_sha256": "dd4216ac3112da1f430fa599bd01404b8c7c2532d98f2d3efdaaf633101e704e"
+  },
+  "eval": {
+    "tests": 358,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "time_seconds": 18.412,
+    "artifact_sha256": "40e8f4b5b6e1054f56697dc89941fb42c0173db6cdff2c28531235482919cf1a"
+  },
+  "scorecard": {
+    "scenarios": 54,
+    "checks": 189,
+    "status": "PASS"
+  },
+  "mypy": {
+    "status": "PASS",
+    "existing_notes": 3
+  },
+  "ruff": {
+    "status": "PASS",
+    "python_files": 129
+  },
+  "observability_tests": {
+    "tests": 12,
+    "status": "PASS"
+  },
+  "compose": {
+    "engine": "config --quiet PASS",
+    "engine_plus_observability": "config --quiet PASS",
+    "container_startup": "NOT_RUN; existing host deployment reused"
+  },
+  "user_data_boundary": "PASS",
+  "inventory": {
+    "reviewed": 875,
+    "rechecked": 41,
+    "sql_call_asts_unchanged": true,
+    "live_inventory_refreshed": false
+  },
+  "reused": {
+    "postgresql": 489,
+    "frontend": 1609,
+    "condition": "Relevant storage/frontend code and dependencies unchanged; no final migrated-runtime acceptance claim"
+  },
+  "generator": {
+    "format_ast_unchanged": true,
+    "generated_dashboard_files_unchanged_by_format": 7,
+    "generator_changed_file_ruff": "PASS",
+    "prior_generator_E501_findings": 139
+  },
+  "runtime_attempts": [
+    {
+      "status": "FAILED_PREREQUISITE",
+      "reason": "API, UI, proxy and scheduler host processes were no longer running after the prior launcher replacement; no polling ownership result recorded."
+    },
+    {
+      "status": "PASS",
+      "reason": "Missing host services restored in active checkout using existing backing services; API/frontend HTTP 200, proxy listening, Search polling advances in maintenance and remains zero in API."
+    }
+  ],
+  "commands": [
+    "uv run --offline --no-sync pytest tests/unit --cov=app --cov-branch --cov-report=term-missing --cov-report=xml:/tmp/nova-maintenance-coverage.xml --junit-xml=/tmp/nova-maintenance-unit.xml",
+    "uv run --offline --no-sync python -m tests.eval.report",
+    "uv run --offline --no-sync pytest tests/eval -q",
+    "uv run --offline --no-sync mypy app --no-error-summary",
+    "uv run --offline --no-sync ruff check --force-exclude <129 changed Python paths>",
+    "python -m unittest discover -s docker/observability -p test_*.py",
+    "python docker/observability/build_dashboards.py",
+    "uv run --offline --no-sync python scripts/check_user_data_system_access.py",
+    "docker compose --env-file docker/.env -f docker/docker-compose-engine.yml config --quiet",
+    "docker compose --env-file docker/.env -f docker/docker-compose-engine.yml -f docker/docker-compose-observability.yml config --quiet"
+  ]
+}

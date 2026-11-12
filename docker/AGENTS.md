@@ -8,7 +8,7 @@ commands run from the repository root unless stated otherwise. Read
 
 - `docker/docker-compose-engine.yml` owns the governed local stack: patched
   StarRocks FE, pinned BE, Ranger services/policy bridge/bootstrap, Redis, and
-  object storage. Its `app` profile adds the backend and six separate workload workers.
+  object storage. Its `app` profile adds the backend and seven separate workload workers.
   Do not assume it also starts every scheduler or Studio worker; inspect
   `dev.sh` and the run guide for separate process ownership.
 - `docker/docker-compose.split.yml` is an opt-in override that replaces the

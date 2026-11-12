@@ -1470,14 +1470,14 @@
     {
       "type": "stat",
       "title": "Active builds",
-      "description": "Search index builds currently executing in the API process.",
+      "description": "Search index builds currently executing in the maintenance worker.",
       "datasource": {
         "type": "prometheus",
         "uid": "nova-prometheus"
       },
       "targets": [
         {
-          "expr": "sum(nova_search_builds_active{job=\"nova-backend\"})",
+          "expr": "sum(nova_search_builds_active{job=\"nova-worker\",service=\"nova-maintenance-worker\"})",
           "legendFormat": "",
           "refId": "A"
         }
@@ -1517,14 +1517,14 @@
     {
       "type": "stat",
       "title": "Last successful poll age",
-      "description": "No data means the backend has not completed a successful search poll, or its scrape is unavailable.",
+      "description": "No data means maintenance has not completed a successful Search poll, or its scrape is unavailable.",
       "datasource": {
         "type": "prometheus",
         "uid": "nova-prometheus"
       },
       "targets": [
         {
-          "expr": "time() - (nova_search_last_successful_poll_timestamp_seconds{job=\"nova-backend\"} > 0)",
+          "expr": "time() - (nova_search_last_successful_poll_timestamp_seconds{job=\"nova-worker\",service=\"nova-maintenance-worker\"} > 0)",
           "legendFormat": "",
           "refId": "A"
         }
@@ -1588,7 +1588,7 @@
       },
       "targets": [
         {
-          "expr": "sum(increase(nova_search_build_errors_total{job=\"nova-backend\"}[1h]))",
+          "expr": "sum(increase(nova_search_build_errors_total{job=\"nova-worker\",service=\"nova-maintenance-worker\"}[1h]))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -1652,7 +1652,7 @@
       },
       "targets": [
         {
-          "expr": "sum(increase(nova_search_poll_errors_total{job=\"nova-backend\"}[1h]))",
+          "expr": "sum(increase(nova_search_poll_errors_total{job=\"nova-worker\",service=\"nova-maintenance-worker\"}[1h]))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -1716,7 +1716,7 @@
       },
       "targets": [
         {
-          "expr": "sum(increase(nova_search_reconciliation_errors_total{job=\"nova-backend\"}[1h]))",
+          "expr": "sum(increase(nova_search_reconciliation_errors_total{job=\"nova-worker\",service=\"nova-maintenance-worker\"}[1h]))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -1780,7 +1780,7 @@
       },
       "targets": [
         {
-          "expr": "sum by(status) (rate(nova_search_builds_total{job=\"nova-backend\"}[5m]))",
+          "expr": "sum by(status) (rate(nova_search_builds_total{job=\"nova-worker\",service=\"nova-maintenance-worker\"}[5m]))",
           "legendFormat": "{{status}}",
           "refId": "A"
         }
@@ -1841,7 +1841,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by(le) (rate(nova_search_build_duration_seconds_bucket{job=\"nova-backend\",status=~\"success|failed\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by(le) (rate(nova_search_build_duration_seconds_bucket{job=\"nova-worker\",service=\"nova-maintenance-worker\",status=~\"success|failed\"}[5m])))",
           "legendFormat": "Build duration, p95",
           "refId": "A"
         }
@@ -1902,12 +1902,12 @@
       },
       "targets": [
         {
-          "expr": "rate(nova_search_poll_errors_total{job=\"nova-backend\"}[5m])",
+          "expr": "rate(nova_search_poll_errors_total{job=\"nova-worker\",service=\"nova-maintenance-worker\"}[5m])",
           "legendFormat": "Poll failures",
           "refId": "A"
         },
         {
-          "expr": "rate(nova_search_reconciliation_errors_total{job=\"nova-backend\"}[5m])",
+          "expr": "rate(nova_search_reconciliation_errors_total{job=\"nova-worker\",service=\"nova-maintenance-worker\"}[5m])",
           "legendFormat": "Reconciliation failures",
           "refId": "B"
         }

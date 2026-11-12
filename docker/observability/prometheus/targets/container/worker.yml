@@ -16,3 +16,6 @@
 - targets: ["nova-autopilot-worker:9109"]
   labels:
     service: nova-autopilot-worker
+- targets: ["nova-maintenance-worker:9110"]
+  labels:
+    service: nova-maintenance-worker

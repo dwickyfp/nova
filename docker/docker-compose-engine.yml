@@ -205,6 +205,16 @@ services:
       retries: 3
       start_period: 60s
 
+  nova-maintenance-worker:
+    <<: *nova-worker
+    command: ["python", "-m", "app.worker", "--role", "maintenance"]
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.worker.health", "maintenance"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
   ranger-solr:
     logging: *default-logging
     image: apache/ranger-solr:${RANGER_VERSION:-2.9.0}

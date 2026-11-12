@@ -1,14 +1,14 @@
 {
-  "python_files": 699,
-  "application_tree_sha256": "e104ceccc0300cc7ae65ef9e7b64dfe6c244e0a369b10dcb74498d36fc5031b0",
+  "python_files": 700,
+  "application_tree_sha256": "e655d5babeb295e505c968784669d4d30770428b54a5f544b5d35064d1e8fead",
   "references": {
     "AI_SEARCH_EVAL_RUNS": [
-      "backend/app/modules/intelligence/search.py:1017",
+      "backend/app/modules/intelligence/search.py:1026",
       "backend/app/modules/intelligence/search_schema.py:71",
       "backend/migrations/20260923_ai_search.sql:62"
     ],
     "AI_SEARCH_QUERY_LOG": [
-      "backend/app/modules/intelligence/search.py:962",
+      "backend/app/modules/intelligence/search.py:971",
       "backend/app/modules/intelligence/search_schema.py:55",
       "backend/migrations/20260923_ai_search.sql:47"
     ],
@@ -418,41 +418,41 @@
       "backend/app/modules/intelligence/search.py:218",
       "backend/app/modules/intelligence/search.py:250",
       "backend/app/modules/intelligence/search.py:307",
-      "backend/app/modules/intelligence/search.py:438",
-      "backend/app/modules/intelligence/search.py:732",
-      "backend/app/modules/intelligence/search.py:780",
-      "backend/app/modules/intelligence/search.py:837",
-      "backend/app/modules/intelligence/search.py:854",
+      "backend/app/modules/intelligence/search.py:449",
+      "backend/app/modules/intelligence/search.py:743",
+      "backend/app/modules/intelligence/search.py:791",
+      "backend/app/modules/intelligence/search.py:846",
+      "backend/app/modules/intelligence/search.py:863",
       "backend/app/modules/intelligence/search_schema.py:6",
       "backend/migrations/20260923_ai_search.sql:1"
     ],
     "CONFIG_AI_SEARCH_SYNC_STATE": [
-      "backend/app/modules/intelligence/search.py:357",
-      "backend/app/modules/intelligence/search.py:450",
-      "backend/app/modules/intelligence/search.py:678",
-      "backend/app/modules/intelligence/search.py:690",
-      "backend/app/modules/intelligence/search.py:709",
-      "backend/app/modules/intelligence/search.py:811",
-      "backend/app/modules/intelligence/search.py:851",
+      "backend/app/modules/intelligence/search.py:356",
+      "backend/app/modules/intelligence/search.py:461",
+      "backend/app/modules/intelligence/search.py:689",
+      "backend/app/modules/intelligence/search.py:701",
+      "backend/app/modules/intelligence/search.py:720",
+      "backend/app/modules/intelligence/search.py:821",
+      "backend/app/modules/intelligence/search.py:860",
       "backend/app/modules/intelligence/search_schema.py:42",
       "backend/migrations/20260923_ai_search.sql:35"
     ],
     "CONFIG_AI_SEARCH_VERSIONS": [
       "backend/app/modules/intelligence/search.py:235",
       "backend/app/modules/intelligence/search.py:265",
-      "backend/app/modules/intelligence/search.py:342",
-      "backend/app/modules/intelligence/search.py:388",
-      "backend/app/modules/intelligence/search.py:461",
-      "backend/app/modules/intelligence/search.py:480",
-      "backend/app/modules/intelligence/search.py:542",
-      "backend/app/modules/intelligence/search.py:684",
-      "backend/app/modules/intelligence/search.py:703",
-      "backend/app/modules/intelligence/search.py:722",
-      "backend/app/modules/intelligence/search.py:727",
-      "backend/app/modules/intelligence/search.py:772",
-      "backend/app/modules/intelligence/search.py:806",
-      "backend/app/modules/intelligence/search.py:832",
-      "backend/app/modules/intelligence/search.py:848",
+      "backend/app/modules/intelligence/search.py:341",
+      "backend/app/modules/intelligence/search.py:399",
+      "backend/app/modules/intelligence/search.py:472",
+      "backend/app/modules/intelligence/search.py:491",
+      "backend/app/modules/intelligence/search.py:553",
+      "backend/app/modules/intelligence/search.py:695",
+      "backend/app/modules/intelligence/search.py:714",
+      "backend/app/modules/intelligence/search.py:733",
+      "backend/app/modules/intelligence/search.py:738",
+      "backend/app/modules/intelligence/search.py:783",
+      "backend/app/modules/intelligence/search.py:816",
+      "backend/app/modules/intelligence/search.py:841",
+      "backend/app/modules/intelligence/search.py:857",
       "backend/app/modules/intelligence/search_schema.py:24",
       "backend/migrations/20260923_ai_search.sql:18"
     ],
@@ -3265,9 +3265,9 @@
     },
     {
       "path": "backend/app/main.py",
-      "line": 593,
+      "line": 566,
       "column": 22,
-      "end_line": 593,
+      "end_line": 566,
       "end_column": 51,
       "api": "execute_system",
       "dispatch": "direct",
@@ -3276,10 +3276,10 @@
       "statement_kind": "SELECT",
       "literal_tables": [],
       "function_candidate_tables": [],
-      "source_file_sha256": "a9c107afaf1da772ea1fedeaf91d4cf0bd632750bd66b831bab0af22e8661a37",
+      "source_file_sha256": "bf5ad8f71e6cdbb8f64d5e9f61d39018b59ea712d1fc3dc0492e810c6d6fd360",
       "callsite_sha256": "4d3cd0d1875f7f0ad6d5f1b2cfc2bb9b341e122a63d7c268772d6f5afe449afe",
       "review_status": "CLASSIFIED_ENGINE_OBSERVATION",
-      "review_notes": "Reviewed current SQL and fixed dynamic table callers; see WAVE_H_REVIEW.md for governance, publication, bootstrap and raw-connection inventory gap."
+      "review_notes": "Reviewed current SQL and fixed dynamic table callers; see WAVE_H_REVIEW.md for governance, publication, bootstrap and raw-connection inventory gap.; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/access_control/business_policy.py",
@@ -12512,10 +12512,10 @@
       "function_candidate_tables": [
         "CONFIG_AI_SEARCH_INDEXES"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "3d1a279048538fee3f15270bd3745f5554ae07d7185617394b952fe720e6ee10",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_READ: CONFIG_AI_SEARCH_INDEXES; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_READ: CONFIG_AI_SEARCH_INDEXES; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
@@ -12534,10 +12534,10 @@
       "function_candidate_tables": [
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "a8336ba29ecd85caedc13d7002d6b41c1dc3c37000b0ac4e6865a1e202b262b8",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_READ: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_READ: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
@@ -12556,10 +12556,10 @@
       "function_candidate_tables": [
         "CONFIG_AI_SEARCH_INDEXES"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "003024806f7b9c59fd7239eeeffd9c00f4fe25f614ef032e5ba96146a12fb707",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_READ: CONFIG_AI_SEARCH_INDEXES; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_READ: CONFIG_AI_SEARCH_INDEXES; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
@@ -12578,10 +12578,10 @@
       "function_candidate_tables": [
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "fde68bcb0d0540c392a301d6e33e0e68c1dbeca68845173d7ae9a37ed38b60e5",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_READ: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_READ: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
@@ -12600,16 +12600,16 @@
       "function_candidate_tables": [
         "CONFIG_AI_SEARCH_INDEXES"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "bae948bb39fe5bb49bce98ae9c3c5b461705c2403752c9f91c836ab436c3e202",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_INDEXES; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_INDEXES; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 341,
+      "line": 340,
       "column": 14,
-      "end_line": 355,
+      "end_line": 354,
       "end_column": 9,
       "api": "execute_system",
       "dispatch": "direct",
@@ -12623,16 +12623,16 @@
         "CONFIG_AI_SEARCH_SYNC_STATE",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "c4315f60315f31dc62cd39f420cca8673f4444fa8426df70e8409bb1b37ca0bd",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 356,
+      "line": 355,
       "column": 14,
-      "end_line": 361,
+      "end_line": 360,
       "end_column": 9,
       "api": "execute_system",
       "dispatch": "direct",
@@ -12646,16 +12646,16 @@
         "CONFIG_AI_SEARCH_SYNC_STATE",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "5f6bbcd85b62cce008959d39cdef7f00ececfbc0f0057045fd1116c173c38ad9",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_SYNC_STATE; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_SYNC_STATE; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 387,
+      "line": 398,
       "column": 31,
-      "end_line": 391,
+      "end_line": 402,
       "end_column": 17,
       "api": "execute_system",
       "dispatch": "direct",
@@ -12668,16 +12668,16 @@
       "function_candidate_tables": [
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "fa7a0d8330955e50e5afa120554b9f0a53ee47c8d3a2c7f2d88589876949a56b",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_READ: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_READ: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 423,
+      "line": 434,
       "column": 27,
-      "end_line": 425,
+      "end_line": 436,
       "end_column": 13,
       "api": "execute_system",
       "dispatch": "direct",
@@ -12686,16 +12686,16 @@
       "statement_kind": "SELECT",
       "literal_tables": [],
       "function_candidate_tables": [],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "5035badcefebb9ef33527579dd7fdfb0d49238f88eed154be8bd7b5c469865c0",
       "review_status": "CLASSIFIED_ENGINE_DATA",
-      "review_notes": "ENGINE_DATA: configured source scan; root-capable path and caller-derived signals require R15 remediation; see WAVE_C_REVIEW.md"
+      "review_notes": "ENGINE_DATA: configured source scan; root-capable path and caller-derived signals require R15 remediation; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 437,
+      "line": 448,
       "column": 27,
-      "end_line": 440,
+      "end_line": 451,
       "end_column": 13,
       "api": "execute_system",
       "dispatch": "direct",
@@ -12710,16 +12710,16 @@
         "CONFIG_AI_SEARCH_SYNC_STATE",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "45fee1a979b9b426bd2071d5cfc62cc522c39a18273299080c8709bbe487b0ac",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_READ: CONFIG_AI_SEARCH_INDEXES; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_READ: CONFIG_AI_SEARCH_INDEXES; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 449,
+      "line": 460,
       "column": 30,
-      "end_line": 453,
+      "end_line": 464,
       "end_column": 17,
       "api": "execute_system",
       "dispatch": "direct",
@@ -12734,16 +12734,16 @@
         "CONFIG_AI_SEARCH_SYNC_STATE",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "de292dc3b435841ae968cb51bc9381950a3172fb4466710d94a35757479ff1d2",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_READ: CONFIG_AI_SEARCH_SYNC_STATE; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_READ: CONFIG_AI_SEARCH_SYNC_STATE; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 460,
+      "line": 471,
       "column": 35,
-      "end_line": 464,
+      "end_line": 475,
       "end_column": 21,
       "api": "execute_system",
       "dispatch": "direct",
@@ -12758,16 +12758,16 @@
         "CONFIG_AI_SEARCH_SYNC_STATE",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "e0c5c8735f474e7a558bd143b7f703c421d60b0962e2a86ab3b8ecf627cef67a",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_READ: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_READ: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 479,
+      "line": 490,
       "column": 26,
-      "end_line": 483,
+      "end_line": 494,
       "end_column": 21,
       "api": "execute_system",
       "dispatch": "direct",
@@ -12782,16 +12782,16 @@
         "CONFIG_AI_SEARCH_SYNC_STATE",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "077b0f08124fc69a5dbf3683fa1af9140ab6ed1869522bf68206cfad6c2b3a51",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 541,
+      "line": 552,
       "column": 18,
-      "end_line": 546,
+      "end_line": 557,
       "end_column": 13,
       "api": "execute_system",
       "dispatch": "direct",
@@ -12805,16 +12805,16 @@
         "CONFIG_AI_SEARCH_SYNC_STATE",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "1a7d3590d2cbccf11c89b39fcbdd5ff293b37322928697f16952b0a9fa8fb900",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 582,
+      "line": 593,
       "column": 31,
-      "end_line": 584,
+      "end_line": 595,
       "end_column": 17,
       "api": "execute_system",
       "dispatch": "direct",
@@ -12826,16 +12826,16 @@
         "CONFIG_AI_SEARCH_SYNC_STATE",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "dbbfb3f8de02ca7c2e83984fc22f841463cce90cf97e534a1eb1e4797fa14e11",
       "review_status": "CLASSIFIED_ENGINE_DATA",
-      "review_notes": "ENGINE_DATA: configured source scan; root-capable path and caller-derived signals require R15 remediation; see WAVE_C_REVIEW.md"
+      "review_notes": "ENGINE_DATA: configured source scan; root-capable path and caller-derived signals require R15 remediation; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 611,
+      "line": 622,
       "column": 37,
-      "end_line": 615,
+      "end_line": 626,
       "end_column": 21,
       "api": "execute_system",
       "dispatch": "direct",
@@ -12847,16 +12847,16 @@
         "CONFIG_AI_SEARCH_SYNC_STATE",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "e0f2018d7cc5ef1d5551c274791a28debed055a5ed9d6f078257a1bb8ab618a9",
       "review_status": "CLASSIFIED_ENGINE_DATA",
-      "review_notes": "ENGINE_DATA: _NOVA_AI_SEARCH version projection; root-capable path and caller-derived signals require R15 remediation; see WAVE_C_REVIEW.md"
+      "review_notes": "ENGINE_DATA: _NOVA_AI_SEARCH version projection; root-capable path and caller-derived signals require R15 remediation; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 640,
+      "line": 651,
       "column": 30,
-      "end_line": 656,
+      "end_line": 667,
       "end_column": 25,
       "api": "execute_system",
       "dispatch": "direct",
@@ -12868,16 +12868,16 @@
         "CONFIG_AI_SEARCH_SYNC_STATE",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "302609e4585f6dbc8632f30aa0f5dbefa1d69d133dd606500b1d2e44ea3f5670",
       "review_status": "CLASSIFIED_ENGINE_DATA",
-      "review_notes": "ENGINE_DATA: _NOVA_AI_SEARCH version projection; root-capable path and caller-derived signals require R15 remediation; see WAVE_C_REVIEW.md"
+      "review_notes": "ENGINE_DATA: _NOVA_AI_SEARCH version projection; root-capable path and caller-derived signals require R15 remediation; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 662,
+      "line": 673,
       "column": 26,
-      "end_line": 675,
+      "end_line": 686,
       "end_column": 21,
       "api": "execute_system",
       "dispatch": "direct",
@@ -12889,16 +12889,16 @@
         "CONFIG_AI_SEARCH_SYNC_STATE",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "6f8357f60cc7e77398001354fa8eb70a2287bc478973c3a285d71af74e958c00",
       "review_status": "CLASSIFIED_ENGINE_DATA",
-      "review_notes": "ENGINE_DATA: _NOVA_AI_SEARCH version projection; root-capable path and caller-derived signals require R15 remediation; see WAVE_C_REVIEW.md"
+      "review_notes": "ENGINE_DATA: _NOVA_AI_SEARCH version projection; root-capable path and caller-derived signals require R15 remediation; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 677,
+      "line": 688,
       "column": 22,
-      "end_line": 682,
+      "end_line": 693,
       "end_column": 17,
       "api": "execute_system",
       "dispatch": "direct",
@@ -12912,16 +12912,16 @@
         "CONFIG_AI_SEARCH_SYNC_STATE",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "b023b33f07c39ab583cac89fb4ccf2dcf4eaf1ec76f73c538e07fabccb96e4a7",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_SYNC_STATE; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_SYNC_STATE; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 683,
+      "line": 694,
       "column": 18,
-      "end_line": 688,
+      "end_line": 699,
       "end_column": 13,
       "api": "execute_system",
       "dispatch": "direct",
@@ -12935,16 +12935,16 @@
         "CONFIG_AI_SEARCH_SYNC_STATE",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "e8ae6e8140a524c23cc755ae9bec05aad50738daf74d38b4eb8f9e8d447e4c0e",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 689,
+      "line": 700,
       "column": 18,
-      "end_line": 695,
+      "end_line": 706,
       "end_column": 13,
       "api": "execute_system",
       "dispatch": "direct",
@@ -12958,16 +12958,16 @@
         "CONFIG_AI_SEARCH_SYNC_STATE",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "141f7d1308e2d4b97c1cc3fd7428532e5ce62cd7d51754c7c800da219f9fbb3b",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_SYNC_STATE; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_SYNC_STATE; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 702,
+      "line": 713,
       "column": 18,
-      "end_line": 707,
+      "end_line": 718,
       "end_column": 13,
       "api": "execute_system",
       "dispatch": "direct",
@@ -12981,16 +12981,16 @@
         "CONFIG_AI_SEARCH_SYNC_STATE",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "cef9809e773594acafa4d9cd37a49523cc509e3742722c0316612ac1d8527dd3",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 708,
+      "line": 719,
       "column": 18,
-      "end_line": 713,
+      "end_line": 724,
       "end_column": 13,
       "api": "execute_system",
       "dispatch": "direct",
@@ -13004,16 +13004,16 @@
         "CONFIG_AI_SEARCH_SYNC_STATE",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "3bb1ffb64b7bb0c5f9b8e22c9caa5ae88508bfb0456f617fd938ac08c277e6ca",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_SYNC_STATE; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_SYNC_STATE; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 721,
+      "line": 732,
       "column": 14,
-      "end_line": 725,
+      "end_line": 736,
       "end_column": 9,
       "api": "execute_system",
       "dispatch": "direct",
@@ -13027,16 +13027,16 @@
         "CONFIG_AI_SEARCH_INDEXES",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "6a48ed9a5272cd6751af427ec828d84e24f8dabdf5c944ad724ec83c577455cd",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 726,
+      "line": 737,
       "column": 14,
-      "end_line": 730,
+      "end_line": 741,
       "end_column": 9,
       "api": "execute_system",
       "dispatch": "direct",
@@ -13050,16 +13050,16 @@
         "CONFIG_AI_SEARCH_INDEXES",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "8067d9903bc7db019aa65290ee48b2f2ea68500311e5d75c89184bb02675438a",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 731,
+      "line": 742,
       "column": 14,
-      "end_line": 735,
+      "end_line": 746,
       "end_column": 9,
       "api": "execute_system",
       "dispatch": "direct",
@@ -13073,16 +13073,16 @@
         "CONFIG_AI_SEARCH_INDEXES",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "5dce8fdeb37c25e962da8645c46fb3bbc4bd7a03ed85a26b17363413ab53ab31",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_INDEXES; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_INDEXES; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 771,
+      "line": 782,
       "column": 27,
-      "end_line": 775,
+      "end_line": 786,
       "end_column": 13,
       "api": "execute_system",
       "dispatch": "direct",
@@ -13096,16 +13096,16 @@
         "CONFIG_AI_SEARCH_INDEXES",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "e0c5c8735f474e7a558bd143b7f703c421d60b0962e2a86ab3b8ecf627cef67a",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_READ: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_READ: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 779,
+      "line": 790,
       "column": 22,
-      "end_line": 783,
+      "end_line": 794,
       "end_column": 17,
       "api": "execute_system",
       "dispatch": "direct",
@@ -13119,16 +13119,16 @@
         "CONFIG_AI_SEARCH_INDEXES",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "0c52752d88ff66637306ac2218681b87f0471facae4f901176de08195607fdb5",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_INDEXES; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_INDEXES; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 805,
+      "line": 815,
       "column": 18,
-      "end_line": 809,
+      "end_line": 819,
       "end_column": 13,
       "api": "execute_system",
       "dispatch": "direct",
@@ -13142,16 +13142,16 @@
         "CONFIG_AI_SEARCH_SYNC_STATE",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "c09912c84662414558a61bf6097ccd1ff77ce39adf18a8bef24ca72bafee4426",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 810,
+      "line": 820,
       "column": 18,
-      "end_line": 814,
+      "end_line": 824,
       "end_column": 13,
       "api": "execute_system",
       "dispatch": "direct",
@@ -13165,16 +13165,16 @@
         "CONFIG_AI_SEARCH_SYNC_STATE",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "19b7053d5aef69d0d09fa7d44a35fdfec3fe2a149b6e2650095ffbbd7d877c7b",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_SYNC_STATE; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_SYNC_STATE; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 831,
+      "line": 840,
       "column": 29,
-      "end_line": 835,
+      "end_line": 844,
       "end_column": 13,
       "api": "execute_system",
       "dispatch": "direct",
@@ -13189,38 +13189,14 @@
         "CONFIG_AI_SEARCH_SYNC_STATE",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "faf3f4dbea407a5021a014fbaf0ac5eaa818288e53079c691c2c5b945c9771a5",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_READ: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_READ: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 836,
-      "column": 18,
-      "end_line": 840,
-      "end_column": 13,
-      "api": "execute_system",
-      "dispatch": "direct",
-      "receiver": "db",
-      "function": "SearchService.drop",
-      "statement_kind": "UPDATE",
-      "literal_tables": [
-        "CONFIG_AI_SEARCH_INDEXES"
-      ],
-      "function_candidate_tables": [
-        "CONFIG_AI_SEARCH_INDEXES",
-        "CONFIG_AI_SEARCH_SYNC_STATE",
-        "CONFIG_AI_SEARCH_VERSIONS"
-      ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
-      "callsite_sha256": "4e1b02fb10b969a8efcfe1ad5acea345828dcaef890e6b8dee6a29d4e3159108",
-      "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_INDEXES; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
-    },
-    {
-      "path": "backend/app/modules/intelligence/search.py",
-      "line": 847,
+      "line": 845,
       "column": 18,
       "end_line": 849,
       "end_column": 13,
@@ -13228,6 +13204,30 @@
       "dispatch": "direct",
       "receiver": "db",
       "function": "SearchService.drop",
+      "statement_kind": "UPDATE",
+      "literal_tables": [
+        "CONFIG_AI_SEARCH_INDEXES"
+      ],
+      "function_candidate_tables": [
+        "CONFIG_AI_SEARCH_INDEXES",
+        "CONFIG_AI_SEARCH_SYNC_STATE",
+        "CONFIG_AI_SEARCH_VERSIONS"
+      ],
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
+      "callsite_sha256": "4e1b02fb10b969a8efcfe1ad5acea345828dcaef890e6b8dee6a29d4e3159108",
+      "review_status": "CLASSIFIED_METADATA",
+      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_INDEXES; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "line": 856,
+      "column": 18,
+      "end_line": 858,
+      "end_column": 13,
+      "api": "execute_system",
+      "dispatch": "direct",
+      "receiver": "db",
+      "function": "SearchService.drop",
       "statement_kind": "DELETE",
       "literal_tables": [
         "CONFIG_AI_SEARCH_VERSIONS"
@@ -13237,16 +13237,16 @@
         "CONFIG_AI_SEARCH_SYNC_STATE",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "1d8d2e5f59f01f5559ba9933b1ac711d7aac5bf50c300462c04905d5d1a35ebd",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_VERSIONS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 850,
+      "line": 859,
       "column": 18,
-      "end_line": 852,
+      "end_line": 861,
       "end_column": 13,
       "api": "execute_system",
       "dispatch": "direct",
@@ -13261,16 +13261,16 @@
         "CONFIG_AI_SEARCH_SYNC_STATE",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "134206a79d53315ba0d5799f26f81b201b04f39daac0e18c64a9f4591144560b",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_SYNC_STATE; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_SYNC_STATE; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 853,
+      "line": 862,
       "column": 18,
-      "end_line": 855,
+      "end_line": 864,
       "end_column": 13,
       "api": "execute_system",
       "dispatch": "direct",
@@ -13285,16 +13285,16 @@
         "CONFIG_AI_SEARCH_SYNC_STATE",
         "CONFIG_AI_SEARCH_VERSIONS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "73efda9d8b00790802e574c09e9213d2eba2551cdf2a8196eff0c6d799e22457",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_INDEXES; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_WRITE: CONFIG_AI_SEARCH_INDEXES; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 896,
+      "line": 905,
       "column": 27,
-      "end_line": 900,
+      "end_line": 909,
       "end_column": 13,
       "api": "execute_system",
       "dispatch": "direct",
@@ -13305,16 +13305,16 @@
       "function_candidate_tables": [
         "AI_SEARCH_QUERY_LOG"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "19adab3e818f57409fdfaa2d0c1d1ef15515febd858728d4d1494d3723973cfc",
       "review_status": "CLASSIFIED_ENGINE_DATA",
-      "review_notes": "ENGINE_DATA: _NOVA_AI_SEARCH version projection; root-capable path and caller-derived signals require R15 remediation; see WAVE_C_REVIEW.md"
+      "review_notes": "ENGINE_DATA: _NOVA_AI_SEARCH version projection; root-capable path and caller-derived signals require R15 remediation; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 912,
+      "line": 921,
       "column": 27,
-      "end_line": 912,
+      "end_line": 921,
       "end_column": 64,
       "api": "execute_system",
       "dispatch": "direct",
@@ -13325,16 +13325,16 @@
       "function_candidate_tables": [
         "AI_SEARCH_QUERY_LOG"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "d64cc6427a80f0a6aeffa08f39498d95ed52058e9d1776d44c124004701e74c8",
       "review_status": "CLASSIFIED_ENGINE_DATA",
-      "review_notes": "ENGINE_DATA: _NOVA_AI_SEARCH version projection; root-capable path and caller-derived signals require R15 remediation; see WAVE_C_REVIEW.md"
+      "review_notes": "ENGINE_DATA: _NOVA_AI_SEARCH version projection; root-capable path and caller-derived signals require R15 remediation; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 928,
+      "line": 937,
       "column": 27,
-      "end_line": 941,
+      "end_line": 950,
       "end_column": 13,
       "api": "execute",
       "dispatch": "metadata_cursor_candidate",
@@ -13345,16 +13345,16 @@
       "function_candidate_tables": [
         "AI_SEARCH_QUERY_LOG"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "f51b71d10d9aea9c089e41ed59ebc874a4319713cafa5573b28819e1419af0fe",
       "review_status": "CLASSIFIED_ENGINE_DATA",
-      "review_notes": "Raw factory/cursor path reviewed by SQL and caller identity; WAVE_I_REVIEW.md records target, transaction, credential and timezone contracts."
+      "review_notes": "Raw factory/cursor path reviewed by SQL and caller identity; WAVE_I_REVIEW.md records target, transaction, credential and timezone contracts.; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 961,
+      "line": 970,
       "column": 14,
-      "end_line": 977,
+      "end_line": 986,
       "end_column": 9,
       "api": "execute_system",
       "dispatch": "direct",
@@ -13367,16 +13367,16 @@
       "function_candidate_tables": [
         "AI_SEARCH_QUERY_LOG"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "83b831954789bf9af08f51e2f866315e5441259976ef415f45a51b384603c922",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_WRITE: AI_SEARCH_QUERY_LOG; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_WRITE: AI_SEARCH_QUERY_LOG; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search.py",
-      "line": 1016,
+      "line": 1025,
       "column": 14,
-      "end_line": 1029,
+      "end_line": 1038,
       "end_column": 9,
       "api": "execute_system",
       "dispatch": "direct",
@@ -13389,10 +13389,10 @@
       "function_candidate_tables": [
         "AI_SEARCH_EVAL_RUNS"
       ],
-      "source_file_sha256": "456e2d39f217aa8f348a489a1657f3df99922c7968c89ef6570f900d871827e1",
+      "source_file_sha256": "9c292d3215733c0b2e54e6d946aaa8b81ecc1ff072a8dd54aac00e737e025a53",
       "callsite_sha256": "6873c62606fc6ca993fb22302545555c4e28e95ed9fec508e3116be72e3fe4b4",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "METADATA_WRITE: AI_SEARCH_EVAL_RUNS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md"
+      "review_notes": "METADATA_WRITE: AI_SEARCH_EVAL_RUNS; preserve IDs/versions/JSON and engine NOW timezone; see WAVE_C_REVIEW.md; lifecycle separation review: unchanged SQL call AST/adapter/function; maintenance now owns polling, API persists requests only; pre-existing identity risks remain open"
     },
     {
       "path": "backend/app/modules/intelligence/search_schema.py",
@@ -33035,7 +33035,7 @@
       "system_calls": []
     }
   },
-  "source_commit": "97012355d64e987bd1c9bf05f49e4ad80857ae09",
+  "source_commit": "3f6b378977d562b6584caba3d595609b97060f1f",
   "live": {
     "started_at": "2026-11-12T00:06:30.186499+00:00",
     "finished_at": "2026-11-12T00:06:37.302279+00:00",

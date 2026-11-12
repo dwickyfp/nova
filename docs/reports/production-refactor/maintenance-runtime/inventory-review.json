@@ -1,0 +1,214 @@
+{
+  "source_parent_commit": "3f6b378977d562b6584caba3d595609b97060f1f",
+  "application_tree_sha256": "e655d5babeb295e505c968784669d4d30770428b54a5f544b5d35064d1e8fead",
+  "reviewed_calls": 875,
+  "rechecked_calls": [
+    {
+      "path": "backend/app/main.py",
+      "function": "create_app.ready",
+      "callsite_sha256": "4d3cd0d1875f7f0ad6d5f1b2cfc2bb9b341e122a63d7c268772d6f5afe449afe"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService._get",
+      "callsite_sha256": "3d1a279048538fee3f15270bd3745f5554ae07d7185617394b952fe720e6ee10"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService._version",
+      "callsite_sha256": "a8336ba29ecd85caedc13d7002d6b41c1dc3c37000b0ac4e6865a1e202b262b8"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService.list",
+      "callsite_sha256": "003024806f7b9c59fd7239eeeffd9c00f4fe25f614ef032e5ba96146a12fb707"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService.describe",
+      "callsite_sha256": "fde68bcb0d0540c392a301d6e33e0e68c1dbeca68845173d7ae9a37ed38b60e5"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService.create",
+      "callsite_sha256": "bae948bb39fe5bb49bce98ae9c3c5b461705c2403752c9f91c836ab436c3e202"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService._insert_version",
+      "callsite_sha256": "c4315f60315f31dc62cd39f420cca8673f4444fa8426df70e8409bb1b37ca0bd"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService._insert_version",
+      "callsite_sha256": "5f6bbcd85b62cce008959d39cdef7f00ececfbc0f0057045fd1116c173c38ad9"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService._poll",
+      "callsite_sha256": "fa7a0d8330955e50e5afa120554b9f0a53ee47c8d3a2c7f2d88589876949a56b"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService._source_fingerprint",
+      "callsite_sha256": "5035badcefebb9ef33527579dd7fdfb0d49238f88eed154be8bd7b5c469865c0"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService._reconcile",
+      "callsite_sha256": "45fee1a979b9b426bd2071d5cfc62cc522c39a18273299080c8709bbe487b0ac"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService._reconcile",
+      "callsite_sha256": "de292dc3b435841ae968cb51bc9381950a3172fb4466710d94a35757479ff1d2"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService._reconcile",
+      "callsite_sha256": "e0c5c8735f474e7a558bd143b7f703c421d60b0962e2a86ab3b8ecf627cef67a"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService._reconcile",
+      "callsite_sha256": "077b0f08124fc69a5dbf3683fa1af9140ab6ed1869522bf68206cfad6c2b3a51"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService._build_locked",
+      "callsite_sha256": "1a7d3590d2cbccf11c89b39fcbdd5ff293b37322928697f16952b0a9fa8fb900"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService._build_locked",
+      "callsite_sha256": "dbbfb3f8de02ca7c2e83984fc22f841463cce90cf97e534a1eb1e4797fa14e11"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService._build_locked",
+      "callsite_sha256": "e0f2018d7cc5ef1d5551c274791a28debed055a5ed9d6f078257a1bb8ab618a9"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService._build_locked",
+      "callsite_sha256": "302609e4585f6dbc8632f30aa0f5dbefa1d69d133dd606500b1d2e44ea3f5670"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService._build_locked",
+      "callsite_sha256": "6f8357f60cc7e77398001354fa8eb70a2287bc478973c3a285d71af74e958c00"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService._build_locked",
+      "callsite_sha256": "b023b33f07c39ab583cac89fb4ccf2dcf4eaf1ec76f73c538e07fabccb96e4a7"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService._build_locked",
+      "callsite_sha256": "e8ae6e8140a524c23cc755ae9bec05aad50738daf74d38b4eb8f9e8d447e4c0e"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService._build_locked",
+      "callsite_sha256": "141f7d1308e2d4b97c1cc3fd7428532e5ce62cd7d51754c7c800da219f9fbb3b"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService._build_locked",
+      "callsite_sha256": "cef9809e773594acafa4d9cd37a49523cc509e3742722c0316612ac1d8527dd3"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService._build_locked",
+      "callsite_sha256": "3bb1ffb64b7bb0c5f9b8e22c9caa5ae88508bfb0456f617fd938ac08c277e6ca"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService._activate_locked",
+      "callsite_sha256": "6a48ed9a5272cd6751af427ec828d84e24f8dabdf5c944ad724ec83c577455cd"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService._activate_locked",
+      "callsite_sha256": "8067d9903bc7db019aa65290ee48b2f2ea68500311e5d75c89184bb02675438a"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService._activate_locked",
+      "callsite_sha256": "5dce8fdeb37c25e962da8645c46fb3bbc4bd7a03ed85a26b17363413ab53ab31"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService.rebuild",
+      "callsite_sha256": "e0c5c8735f474e7a558bd143b7f703c421d60b0962e2a86ab3b8ecf627cef67a"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService.rebuild",
+      "callsite_sha256": "0c52752d88ff66637306ac2218681b87f0471facae4f901176de08195607fdb5"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService.retry",
+      "callsite_sha256": "c09912c84662414558a61bf6097ccd1ff77ce39adf18a8bef24ca72bafee4426"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService.retry",
+      "callsite_sha256": "19b7053d5aef69d0d09fa7d44a35fdfec3fe2a149b6e2650095ffbbd7d877c7b"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService.drop",
+      "callsite_sha256": "faf3f4dbea407a5021a014fbaf0ac5eaa818288e53079c691c2c5b945c9771a5"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService.drop",
+      "callsite_sha256": "4e1b02fb10b969a8efcfe1ad5acea345828dcaef890e6b8dee6a29d4e3159108"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService.drop",
+      "callsite_sha256": "1d8d2e5f59f01f5559ba9933b1ac711d7aac5bf50c300462c04905d5d1a35ebd"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService.drop",
+      "callsite_sha256": "134206a79d53315ba0d5799f26f81b201b04f39daac0e18c64a9f4591144560b"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService.drop",
+      "callsite_sha256": "73efda9d8b00790802e574c09e9213d2eba2551cdf2a8196eff0c6d799e22457"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService.query",
+      "callsite_sha256": "19adab3e818f57409fdfaa2d0c1d1ef15515febd858728d4d1494d3723973cfc"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService.query",
+      "callsite_sha256": "d64cc6427a80f0a6aeffa08f39498d95ed52058e9d1776d44c124004701e74c8"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService.query",
+      "callsite_sha256": "f51b71d10d9aea9c089e41ed59ebc874a4319713cafa5573b28819e1419af0fe"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService.query",
+      "callsite_sha256": "83b831954789bf9af08f51e2f866315e5441259976ef415f45a51b384603c922"
+    },
+    {
+      "path": "backend/app/modules/intelligence/search.py",
+      "function": "SearchService.evaluate",
+      "callsite_sha256": "6873c62606fc6ca993fb22302545555c4e28e95ed9fec508e3116be72e3fe4b4"
+    }
+  ],
+  "live_observation_refreshed": false,
+  "feature_acceptance_statuses_changed": false
+}

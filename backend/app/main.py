@@ -47,7 +47,6 @@ from app.modules.intelligence.entities import router as entities_router
 from app.modules.intelligence.feature_schema import ensure_feature_schema
 from app.modules.intelligence.feature_store import router as feature_store_router
 from app.modules.intelligence.search import router as search_router
-from app.modules.intelligence.search import search_service
 from app.modules.intelligence.search_schema import ensure_search_schema
 from app.modules.intelligence.semantic_view_schema import ensure_semantic_view_schema
 from app.modules.intelligence.semantic_views import router as semantic_views_router
@@ -108,13 +107,8 @@ READINESS_TIMEOUT_SECONDS = 3
 
 
 def _owns_control_plane(role: str) -> bool:
-    """Whether this process bootstraps schemas and runs the singleton loops."""
+    """Whether this process bootstraps schemas and registers LLM functions."""
     return role != "query"
-
-
-def _serves_execution(role: str) -> bool:
-    """Whether this process is where SQL and ML execution is routed."""
-    return role != "web"
 
 
 def _service_label(role: str) -> str:
@@ -360,20 +354,6 @@ async def lifespan(app: FastAPI):
             logger.warning("MySQL proxy did not start: %s", e)
             proxy_server = None
 
-    background: list[asyncio.Task] = []
-    if _serves_execution(role):
-        from app.modules.ml_engine.service import ml_engine_service
-
-        await ml_engine_service.ephemeral_repository.ensure_schema()
-        background.append(asyncio.create_task(ml_engine_service.sweep_ephemeral()))
-    news_stop = asyncio.Event()
-    if control:
-        from app.modules.catalog import refresher as catalog_refresher
-        from app.modules.intelligence import newsroom_refresher
-
-        await search_service.start()
-        background.append(asyncio.create_task(newsroom_refresher.run(news_stop)))
-        background.append(asyncio.create_task(catalog_refresher.run(news_stop)))
     # Telemetry is buffered per process, so every role flushes its own.
     from app.modules.query_autopilot.repository import repository as autopilot_repository
     from app.modules.query_autopilot.telemetry import collector as autopilot_collector
@@ -393,13 +373,6 @@ async def lifespan(app: FastAPI):
     finally:
         app.state.started = False
         SERVICE_UP.labels(service=service).set(0)
-        news_stop.set()
-        for task in background:
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
-        if control:
-            await search_service.stop()
     # Shutdown
     if proxy_server is not None:
         try:
