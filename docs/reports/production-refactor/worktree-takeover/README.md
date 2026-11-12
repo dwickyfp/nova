@@ -426,3 +426,39 @@ to validate or rehearse, and runtime PG credentials/epoch configuration is not
 ready. No schema-only activation, reset, reseed, fallback or shared-dependency
 restart was used. Full development startup remains unverified until these
 prerequisites are implemented and the one-way cutover passes its checks.
+
+The follow-up `433f1c60c74c39a4d1b2dd80e6a5831ffa8d97c5` was also pushed. Its
+[CI attempt 43272753557](https://github.com/dwickyfp/nova/actions/runs/43272753557)
+passed frontend, static checks, grammar, Superset and Notebook image jobs. The
+unit job reported 11,121 passes and three failures: the missing-secret tests
+assumed valid worker impersonation configuration from the developer's `.env`.
+With that configuration absent, the worker correctly refused its role first.
+The same three failures reproduced locally with empty worker settings. The
+test fixture now supplies a dedicated fake worker identity so each test reaches
+the intended signing/encryption-key refusal, retaining the assertion that no
+database connection opens. The failed CI unit job prevented engine integration
+from running; that skipped job is not a pass. The corrected entrypoint, worker,
+launcher and readiness selection passed 78 cases with the worker environment
+explicitly empty, and changed-file Ruff passed.
+
+The updated metadata test image built locally as
+`sha256:5846c1b63bef01949ee91964f264824e1a82c7829a3ac81f714e4ddb7c065047`.
+A read-only, network-disabled container collected all 47 cases from the two
+previously failing modules. This is packaging evidence, not execution of those
+cases. Whole-engine collection separately failed with 11 import errors, including
+references to removed `ENGINE_TABLES`, `SEMANTIC_USAGE_DDL` and `CLAIMS_DDL`. The
+remaining integration harness must be reconciled with the PG runtime; restoring
+legacy metadata bootstrap only to make collection pass would not validate it.
+No local engine fixtures or seed scripts were run by this collection check.
+
+CI attempt 43272753557 finished failed. Its PostgreSQL job executed 944 cases:
+942 passed and two Catalog credential cases failed because no test Fernet key
+was configured in the clean container. There were no skips. Both failures also
+reproduced locally with an empty encryption-key environment. The Catalog fixture
+now supplies a freshly generated key through the normal settings/crypto path
+and clears the cached cipher for that test; ciphertext, decryption and privilege
+assertions are unchanged. This does not change deployment secret requirements.
+The complete Catalog PG selection then passed 29 cases (28.99 s) with the
+encryption-key environment empty. Fixture cleanup left no metadata schema,
+workload roles or deployment marker. Changed-file Ruff passed for both repaired
+fixture files. Final CI remains required on the follow-up commit.

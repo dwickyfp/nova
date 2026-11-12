@@ -113,8 +113,10 @@ start another stack next to them.
 - Apply new work to the running stack:
   - Backend, worker, and frontend run as host processes in local development
     (`dev.sh` or a local launch configuration). Restart them to load new
-    code. Backend startup runs the `NOVA_SYSTEM` bootstrap, so a restart also
-    applies additive schema changes to the running engine.
+    code only after the required metadata schema and epoch have been published.
+    Startup checks that state; restarting is not a PG migration or cutover.
+    Keep remaining engine-side initialization with its owning domain until
+    its verified cutover.
   - After seed or test-schema changes, rerun
     `backend/tests/integration/seed_engine.sh` with `COMPOSE_PROJECT_NAME` and
     `STARROCKS_PORT` set to the running test project.

@@ -49,6 +49,9 @@ class _DbInitSpy:
 @pytest.fixture
 def entrypoint_module(monkeypatch):
     """Yield a loader that wires each entrypoint to the DB spy."""
+    monkeypatch.setattr(settings, "WORKER_IMPERSONATION_USER", "fixture_worker")
+    monkeypatch.setattr(settings, "WORKER_IMPERSONATION_PASSWORD", "fixture-worker-password")
+    monkeypatch.setattr(settings, "WORKER_IMPERSONATION_ROLE", "FIXTURE_IMPERSONATOR")
 
     def _load(module_name: str):
         module = importlib.import_module(module_name)

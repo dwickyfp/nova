@@ -10,7 +10,10 @@ from uuid import uuid4
 import psycopg
 import pytest
 import pytest_asyncio
+from cryptography.fernet import Fernet
 
+from app.common import crypto
+from app.core.config import settings
 from app.core.metadata_bootstrap import WORKLOAD_ROLES
 from app.core.metadata_db import (
     MetadataConflict,
@@ -59,7 +62,9 @@ class Catalogs:
 
 
 @pytest_asyncio.fixture
-async def catalogs(environment):  # noqa: F811
+async def catalogs(environment, monkeypatch):  # noqa: F811
+    monkeypatch.setattr(settings, "FERNET_KEY", Fernet.generate_key().decode())
+    monkeypatch.setattr(crypto, "_fernet", None)
     await environment.bootstrap()
     await migrate(environment.role_config("nova_meta_migrator"), app_version="e" * 40)
     epoch = str(uuid4())
