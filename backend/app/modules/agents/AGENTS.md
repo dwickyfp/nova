@@ -13,13 +13,16 @@ Missions, automations, and the Studio turn routes live here. A Studio turn runs
 one selected agent through the shared `AssistantLoop`; this module must not add
 another independent inference/tool loop.
 
-Smart/Auto multi-agent collaboration (`__smart__`, `__auto__`, the agent worker,
-delegation tools) was removed. Its architecture docs
+Smart/Auto multi-agent collaboration (`__smart__`, `__auto__`, its historical
+worker and delegation tools) was removed. Its architecture docs
 ([Smart](../../../../docs/arch-11-smart-collaboration.md),
 [Auto](../../../../docs/arch-08-agent-harness.md)) are historical. Do not
-reintroduce delegation, a second worker loop, or Smart-only routes unless the
-user explicitly asks for it. Preserve historical Smart rows during the approved
-metadata migration; no runtime writer or delegation feature is restored for them.
+reintroduce delegation, a separate inference loop or Smart-only routes unless
+the user explicitly asks for it. The approved standalone agent runtime must
+execute the existing shared loop; process isolation does not restore Smart/Auto.
+Follow the [runtime guide](../../worker/AGENTS.md) when moving process ownership.
+Preserve historical Smart rows during metadata migration; no runtime writer or
+delegation feature is restored for them.
 
 ## Contracts
 
@@ -40,7 +43,9 @@ metadata migration; no runtime writer or delegation feature is restored for them
   one-way migration contract rather than adding a second active persistence path.
 - Missions link to direct turns through the turn hooks; keep their admission
   lock, scope checks, and cancellation semantics. Automations run per agent in
-  the task worker as the schedule owner through the worker execution account.
+  the dedicated automation workload as the schedule owner through the authorized
+  worker execution account. Sharing the task executor does not make the task
+  process their lifecycle owner.
 - Apply the loop's step, time, context, and token budgets from current settings
   and the agent's budget profile. Public timelines exclude credentials and
   private provider reasoning.
