@@ -5,7 +5,10 @@ Updated 2026-11-13, Asia/Jakarta. Branch `feat/production-control-plane`, based 
 this checkpoint identifies the delivered repair source. Commit `e83aa09a`
 was pushed; [CI 43303791124](https://github.com/dwickyfp/nova/actions/runs/43303791124)
 passed seven jobs but failed the engine job. Follow-up caller and fixture fixes
-are under validation.
+were pushed in `6c4ae0e7`; [CI 43312594237](https://github.com/dwickyfp/nova/actions/runs/43312594237)
+passed seven jobs but failed the engine job: 203 passed, 24 skipped, 12 failed
+and two setup errors. The earlier 91 setup errors are gone. Follow-up validation
+is in progress, including schema revision 0039 for maintenance lineage reads.
 No development cutover or backend/workload startup has occurred. A frontend-only
 preview reached the login screen; authenticated docs inspection awaits cutover. Existing StarRocks
 metadata and payloads have not been modified by import rehearsal.
@@ -85,7 +88,7 @@ unchanged `docker` development project. No second engine stack was created.
 | Full unit/coverage 05 | 11,138 passed, 64% coverage in 484.18 seconds on final application source |
 | Engine collection 06 | 241 engine cases / 1,228 total, no collection errors |
 | Owned diff / docs links / credential scan | PASS; checksum-bound import contracts preserve exact bytes across Git checkouts |
-| Rehearsal 05/06 and new CI | IN PROGRESS / NOT RUN |
+| Final rehearsal 05/06 | PASS; interrupted/resumed imports, full row/key/payload and semantic verification, committed validation receipts. CI results are recorded separately |
 
 The deployment owner confirmed historical engine timestamps always used
 `Asia/Jakarta`; reviewed Python UTC writers retain UTC conversion. Six Semantic
@@ -102,7 +105,9 @@ remain refusals, not implicit Jakarta defaults.
    committed validation receipts. Their validation digests are
    `b018da3153126e1bce5e9f6a9c0188786ecefbd53c6593252c0054f4c4426180` and
    `79a8ee7f066d0df641bca6f79abb8a352a14ff5034c156b0e36dfd8ee9a67ca0`.
-   Importer and schema remain unchanged by the follow-up caller ports.
+   These receipts cover schema 0038. Revision 0039 now adds the restricted
+   Catalog lineage audit projection, so two new rehearsals are required before
+   publishing an epoch on the final schema.
 3. Fetch/integrate remote main; commit and push owned changes. Follow CI to a
    passing conclusion. The owner authorizes destructive seeded integration in
    CI; it must not reseed this development stack.
@@ -150,11 +155,48 @@ remain refusals, not implicit Jakarta defaults.
 - Seeded/destructive engine integration remains delegated to CI under the
   owner's existing authorization. Final local checks above are complete; the
   follow-up commit still requires green CI before cutover.
+- Receipt fixture attempt 01 against real PG refused a target-commit record
+  without the dispatch claim. Attempt 02 passed after binding both consumption
+  claims and recording each target commit before advancing its offset. The test
+  also verifies refusal before claim acquisition and before the target-commit
+  record. This is PG control-plane evidence, not engine execution evidence.
+- Imported running Agent regression 01 passed on real PG: reading preserves
+  incomplete history, a new login cannot heartbeat or finish without its claim,
+  explicit stale interruption fences the old producer, and stored events and
+  original start time remain intact.
+- CI 43312594237 exposed stale Catalog actor calls, retired Studio bootstrap
+  helpers, password-flag calls without actor context, and missing timestamps in
+  the synthetic Autopilot verdict. Migration tests patched settings and policy
+  methods in the API process while execution now belongs to an independent
+  worker. They now send the real confirmation and temporarily change only the
+  disposable fixture role's Ranger policies, retaining negative assertions.
+  Idempotency also asserts successful job completion on both attempts.
+- The follow-up audit found maintenance lineage reads filtered out by ordinary
+  audit RLS, plus naive deployment-time watermarks interpreted as UTC. Revision
+  0039 provides the fixed maintenance-only projection; manual callers keep audit
+  RLS. A real-PG regression covers the narrow result, wrong identity/workload
+  refusal, private direct audit access and repeated refresh across a historical
+  Asia/Jakarta watermark. Attempt 01/02 refused an unsupported function-local
+  custom parameter; attempt 03 passed with the existing fixed-projection policy
+  pattern. Expanded attempt 04 passed all 89 Catalog/audit/migrator cases,
+  including malformed bounds, all workload grants and manual caller scope.
+- Final schema-0039 local checks: 11,139 unit tests passed with 64% coverage
+  (run 09, 427.02 seconds); mypy 12 passed; Agent eval 08 passed 358 cases and
+  scorecard 06 passed 54/54 scenarios and 189/189 checks. Importer/process PG
+  run 09 passed 17 cases. Receipt recovery run 03 passed on the same schema.
+  Metadata image build 07, docs run 05 (15 cases), changed-file Ruff, boundary
+  scan, local links, diff and credential scan passed. Engine collection remains
+  241 cases without collection errors. Full PG and seeded engine acceptance
+  remain required in the next CI run; the prior CI PG job passed 967 cases.
 
 
 The retained source snapshot was also inspected for interrupted work before
 starting the cutover operator. Task graph/node runs, migration jobs, ML runs and
 Notebook executions are terminal; Notebook runtimes are STOPPED/LOST/FAILED.
 All six Dataviz publications are terminal (five SUCCEEDED, one FAILED_FINAL).
+Four historical Agent runs still record `running`; no producer process remains.
+Startup does not resume these turns or replay tools. Their source status and
+events remain intact through import; scoped replay can interrupt a stale turn
+without inventing missing history. There are no Agent automation definitions.
 These observations must be confirmed against the final frozen export; they do
 not authorize replay of an uncertain external effect.

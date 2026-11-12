@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.metadata_actor import acting_as
 from app.modules.catalog import visibility
+from app.modules.catalog.metadata_repository import CATALOG_REFRESHER
 from app.modules.catalog.sync import reconcile_catalogs, sync_catalog
 from tests.conftest import s3_credentials
 from tests.integration import test_external_catalogs_l3 as external_l3
@@ -38,6 +40,22 @@ admin_client = external_l3.admin_client
 namespace = external_l3.namespace
 
 MINIO_ACCESS, MINIO_SECRET = s3_credentials()
+
+
+@pytest.fixture
+def catalog_refresh(engine_workload):
+    async def refresh(name=None, *, lineage=False):
+        async with engine_workload("maintenance"):
+            with acting_as(CATALOG_REFRESHER):
+                if lineage:
+                    from app.modules.catalog.lineage import harvest_lineage
+
+                    return await harvest_lineage()
+                if name is None:
+                    return await reconcile_catalogs(actor=CATALOG_REFRESHER, trigger="manual")
+                return await sync_catalog(name, actor=CATALOG_REFRESHER, trigger="manual")
+
+    return refresh
 
 
 async def _create_raw_catalog(names: dict) -> None:
@@ -72,7 +90,7 @@ def _assert_no_credential(value: object) -> None:
 
 class TestRawSqlCatalogSync:
     async def test_raw_catalog_tables_columns_and_drops_are_recorded(
-        self, admin_client, namespace, metadata_inspect
+        self, admin_client, namespace, metadata_inspect, catalog_refresh
     ):
         catalog, database, table = namespace["catalog"], namespace["database"], namespace["table"]
         await _create_raw_catalog(namespace)
@@ -81,7 +99,7 @@ class TestRawSqlCatalogSync:
             "PROPERTIES ('write.format.default'='parquet')"
         )
 
-        runs = await reconcile_catalogs(trigger="manual")
+        runs = await catalog_refresh()
 
         run = next(r for r in runs if r["catalog_name"] == catalog)
         assert run["status"] == "ok", run
@@ -98,7 +116,7 @@ class TestRawSqlCatalogSync:
 
         # A table dropped outside Nova is marked, not forgotten.
         await _admin_execute(f"DROP TABLE {catalog}.{database}.{table} FORCE")
-        run = await sync_catalog(catalog, trigger="manual")
+        run = await catalog_refresh(catalog)
         assert run["counts"]["dropped"] == 1
         dropped = await metadata_inspect(
             "SELECT dropped_at FROM nova_meta.catalog_objects "
@@ -108,7 +126,7 @@ class TestRawSqlCatalogSync:
 
         # So is the catalog itself once the engine no longer has it.
         await _admin_execute(f"DROP CATALOG {catalog}")
-        await reconcile_catalogs(trigger="manual")
+        await catalog_refresh()
         gone = await metadata_inspect(
             f"SELECT dropped_at FROM nova_meta.catalog_catalogs WHERE name = '{catalog}'"
         )
@@ -117,7 +135,7 @@ class TestRawSqlCatalogSync:
 
 class TestCatalogApi:
     async def test_caller_lists_catalogs_columns_and_cannot_refresh(
-        self, admin_client, namespace, metadata_inspect
+        self, admin_client, namespace, metadata_inspect, catalog_refresh
     ):
         catalog, database, table = namespace["catalog"], namespace["database"], namespace["table"]
         await _create_raw_catalog(namespace)
@@ -130,8 +148,7 @@ class TestCatalogApi:
             f"GRANT ALL ON DATABASE `{database}` TO '{L3_ADMIN_USER}'",
             f"GRANT ALL ON ALL TABLES IN DATABASE `{database}` TO '{L3_ADMIN_USER}'",
         )
-        await sync_catalog(catalog, trigger="manual")
-        await reconcile_catalogs(trigger="manual")
+        await catalog_refresh()
         await visibility.bump()
 
         resp = await admin_client.get("/api/v1/catalog/catalogs")

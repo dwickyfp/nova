@@ -179,8 +179,10 @@ async def test_approved_statistics_application_is_durable_and_verification_waits
             ):
                 await connection.execute(
                     f"INSERT INTO nova_meta.query_autopilot_{table} "
-                    "(id,family_id,cohort_id,version,state,payload) VALUES (%s,%s,%s,1,%s,%s)",
-                    (prefix, family, scope.cohort_id, payload["state"], Jsonb(payload)),
+                    "(id,family_id,cohort_id,version,state,payload,created_at,updated_at) "
+                    "VALUES (%s,%s,%s,1,%s,%s,%s,%s)",
+                    (prefix, family, scope.cohort_id, payload["state"], Jsonb(payload),
+                     utcnow(), utcnow()),
                 )
         approved = await service.mutate(
             prefix,

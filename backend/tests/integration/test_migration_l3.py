@@ -215,6 +215,34 @@ def _l3_admin_ranger_policies() -> list:
     ]
 
 
+@contextlib.asynccontextmanager
+async def _limited_migration_access(allowed: set[str]):
+    """Change only this disposable role's policies, observed by the real worker."""
+    from app.integrations.ranger.client import ranger_client
+
+    policies = _l3_admin_ranger_policies()
+
+    async def remove(policy):
+        existing = await ranger_client.get_policy(policy.name)
+        if existing and existing.get("id") is not None:
+            await ranger_client.delete_policy(int(existing["id"]))
+
+    try:
+        for policy in policies:
+            await remove(policy)
+            limited = policy.model_copy(deep=True)
+            for item in limited.policyItems:
+                item.accesses = [access for access in item.accesses if access.type in allowed]
+            limited.policyItems = [item for item in limited.policyItems if item.accesses]
+            if limited.policyItems:
+                await ranger_client.put_policy(limited)
+        yield
+    finally:
+        for policy in policies:
+            await remove(policy)
+            await ranger_client.put_policy(policy)
+
+
 @pytest_asyncio.fixture
 async def engine(request):
     require_shared_stack(request)
@@ -543,17 +571,12 @@ class TestExecuteGateOnRealEngine:
         )
         assert resp.status_code == 422, resp.text
 
-    async def test_execute_applies_to_target(self, admin_client, source, namespace, monkeypatch):
+    async def test_execute_applies_to_target(self, admin_client, source, namespace):
         """Execute creates the target objects for real.
 
         Proves the whole 11-B path: plan → execute through the query pipeline →
         target exists with matching schema.
         """
-        from app.core.config import settings
-
-        monkeypatch.setattr(
-            settings, "MIGRATION_EXECUTE_REQUIRE_CONFIRMATION", False, raising=False
-        )
         db = namespace["database"]
         target = f"{db}_exec"
         with contextlib.suppress(Exception):
@@ -565,6 +588,7 @@ class TestExecuteGateOnRealEngine:
                 "source": source,
                 "database": db,
                 "target_database": target,
+                "confirmation": target,
                 "acknowledge_omissions": True,
             },
         )
@@ -615,23 +639,14 @@ class TestExecuteGateOnRealEngine:
         }
 
     async def test_preflight_reports_missing_privilege(
-        self, admin_client, source, namespace, monkeypatch
+        self, admin_client, source, namespace
     ):
         """A caller without table-creation rights is told before execute.
 
-        The L3 admin holds the Ranger policies; here the active role's Ranger
-        answer is stubbed to allow only CREATE DATABASE so the analyzer's
-        refusal is exercised against a real engine connection.
+        The disposable role temporarily holds only CREATE DATABASE in Ranger.
+        The independently running ingestion worker must observe that refusal.
         """
-        from app.modules.migration import service as service_module
-
-        original = service_module.MigrationService._check_caller_access
-
-        async def _limited(self, *, requests, **kwargs):
-            return [request.access == "create database" for request in requests]
-
-        monkeypatch.setattr(service_module.MigrationService, "_check_caller_access", _limited)
-        try:
+        async with _limited_migration_access({"create database"}):
             resp = await admin_client.post(
                 "/api/v1/migration/preflight",
                 json={
@@ -644,38 +659,28 @@ class TestExecuteGateOnRealEngine:
             body = resp.json()
             assert body["ok"] is False
             assert "CREATE TABLE" in body["missing"]
-        finally:
-            monkeypatch.setattr(service_module.MigrationService, "_check_caller_access", original)
 
-    async def test_execute_blocked_by_preflight(self, admin_client, source, namespace, monkeypatch):
-        """Execute fails fast (409) when the preflight finds a missing privilege."""
-        from app.core.config import settings
-        from app.modules.migration import service as service_module
-
-        monkeypatch.setattr(
-            settings, "MIGRATION_EXECUTE_REQUIRE_CONFIRMATION", False, raising=False
-        )
-        monkeypatch.setattr(settings, "MIGRATION_EXECUTE_PREFLIGHT", True, raising=False)
-
-        async def _no_access(self, *, requests, **kwargs):
-            return [False for _ in requests]
-
-        monkeypatch.setattr(service_module.MigrationService, "_check_caller_access", _no_access)
-        resp = await admin_client.post(
-            "/api/v1/migration/execute",
-            json={
-                "source": source,
-                "database": namespace["database"],
-                "target_database": f"{namespace['database']}_pf3",
-                "acknowledge_omissions": True,
-            },
-        )
-        body = await _await_execute(admin_client, resp)
-        assert body["status"] == "failed", body
-        assert body["results"][0]["error"] == "preflight_failed"
+    async def test_execute_blocked_by_preflight(self, admin_client, source, namespace):
+        """The worker records preflight failure before any target mutation."""
+        target = f"{namespace['database']}_pf3"
+        async with _limited_migration_access(set()):
+            resp = await admin_client.post(
+                "/api/v1/migration/execute",
+                json={
+                    "source": source,
+                    "database": namespace["database"],
+                    "target_database": target,
+                    "confirmation": target,
+                    "acknowledge_omissions": True,
+                },
+            )
+            body = await _await_execute(admin_client, resp)
+            assert body["status"] == "failed", body
+            assert body["results"][0]["error"] == "preflight_failed"
+            assert (target,) not in await _admin_execute("SHOW DATABASES")
 
     async def test_execute_moves_data_with_verification(
-        self, admin_client, source, namespace, monkeypatch, transfer_bucket
+        self, admin_client, source, namespace, transfer_bucket
     ):
         """11-C: schema + data. Export to a stage, import to the target, verify.
 
@@ -683,11 +688,6 @@ class TestExecuteGateOnRealEngine:
         storage. Skips when the test MinIO is not engine-reachable, because that
         is an environment precondition, not a Nova defect.
         """
-        from app.core.config import settings
-
-        monkeypatch.setattr(
-            settings, "MIGRATION_EXECUTE_REQUIRE_CONFIRMATION", False, raising=False
-        )
         db = namespace["database"]
         table = namespace["table"]
         target = f"{db}_data"
@@ -705,6 +705,7 @@ class TestExecuteGateOnRealEngine:
                 "source": source,
                 "database": db,
                 "target_database": target,
+                "confirmation": target,
                 "acknowledge_omissions": True,
                 "include_data": True,
             },
@@ -733,14 +734,9 @@ class TestExecuteGateOnRealEngine:
                 await _admin_execute(f"DROP DATABASE IF EXISTS {target}")
 
     async def test_execute_is_idempotent_on_rerun(
-        self, admin_client, source, namespace, monkeypatch
+        self, admin_client, source, namespace
     ):
         """Running execute twice must not fail — the second run is a no-op."""
-        from app.core.config import settings
-
-        monkeypatch.setattr(
-            settings, "MIGRATION_EXECUTE_REQUIRE_CONFIRMATION", False, raising=False
-        )
         db = namespace["database"]
         target = f"{db}_idem"
         with contextlib.suppress(Exception):
@@ -749,14 +745,17 @@ class TestExecuteGateOnRealEngine:
             "source": source,
             "database": db,
             "target_database": target,
+            "confirmation": target,
             "acknowledge_omissions": True,
         }
         try:
             first = await admin_client.post("/api/v1/migration/execute", json=payload)
             first_body = await _await_execute(admin_client, first)
+            assert first_body["status"] == "succeeded", first_body
             assert first_body["results"][0]["failed"] == 0
             second = await admin_client.post("/api/v1/migration/execute", json=payload)
             second_body = await _await_execute(admin_client, second)
+            assert second_body["status"] == "succeeded", second_body
             # Second run creates nothing new but must not fail.
             assert second_body["results"][0]["failed"] == 0
         finally:

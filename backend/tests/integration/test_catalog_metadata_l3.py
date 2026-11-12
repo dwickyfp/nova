@@ -24,9 +24,7 @@ import uuid
 import pytest
 
 from app.modules.catalog import visibility
-from app.modules.catalog.lineage import harvest_lineage
 from app.modules.catalog.securables import column_id, relation_id
-from app.modules.catalog.sync import reconcile_catalogs, sync_catalog
 from tests.integration import test_catalog_l3 as catalog_l3
 from tests.integration import test_external_catalogs_l3 as external_l3
 from tests.integration.test_external_catalogs_l3 import _admin_execute
@@ -37,6 +35,7 @@ l3_admin_user = external_l3.l3_admin_user
 engine = external_l3.engine
 admin_client = external_l3.admin_client
 namespace = external_l3.namespace
+catalog_refresh = catalog_l3.catalog_refresh
 
 NATIVE = "default_catalog"
 
@@ -77,7 +76,7 @@ async def _search(client, headers, **params):
 
 class TestNativeTableMetadata:
     async def test_tagged_column_is_searchable_has_lineage_and_survives_a_drop(
-        self, engine, client, metadata_inspect
+        self, engine, client, metadata_inspect, catalog_refresh
     ):
         database = f"p3_l3_{uuid.uuid4().hex[:10]}"
         source, target = "customers", "customers_by_region"
@@ -103,8 +102,9 @@ class TestNativeTableMetadata:
                 headers=headers,
             )
             assert run.status_code == 200 and not run.json()[0].get("error"), run.text
-            assert (await sync_catalog(NATIVE, trigger="manual"))["status"] == "ok"
-            assert (await harvest_lineage())["status"] == "ok"
+            runs = await catalog_refresh()
+            assert next(run for run in runs if run["catalog_name"] == NATIVE)["status"] == "ok"
+            assert (await catalog_refresh(lineage=True))["status"] == "ok"
             await visibility.bump()
 
             resolved = await client.get(
@@ -147,7 +147,7 @@ class TestNativeTableMetadata:
 
             # Dropped at the source: the column keeps its tag and shows dropped.
             await _admin_execute(f"DROP TABLE {database}.{source} FORCE")
-            assert (await sync_catalog(NATIVE, trigger="manual"))["status"] == "ok"
+            assert (await catalog_refresh(NATIVE))["status"] == "ok"
             assert name not in await _search(client, headers, tag="pii")
             dropped = (await _search(client, headers, tag="pii", include_dropped="true"))[name]
             assert dropped["status"] == "dropped"
@@ -173,7 +173,7 @@ class TestNativeTableMetadata:
 
 class TestIcebergColumnMetadata:
     async def test_iceberg_column_tag_is_governed_and_kept_after_a_drop(
-        self, admin_client, namespace, metadata_inspect
+        self, admin_client, namespace, metadata_inspect, catalog_refresh
     ):
         catalog, database, table = namespace["catalog"], namespace["database"], namespace["table"]
         await catalog_l3._create_raw_catalog(namespace)
@@ -183,7 +183,7 @@ class TestIcebergColumnMetadata:
         )
         ip = column_id(catalog, database, table, "ip")
         try:
-            await reconcile_catalogs(trigger="manual")
+            await catalog_refresh()
             await visibility.bump()
             headers = await _nova_admin_headers(admin_client)
             # The suite's own admin role is neither a security admin nor granted
@@ -208,7 +208,7 @@ class TestIcebergColumnMetadata:
             assert (await _search(admin_client, headers, tag="pii=ip"))[name]["status"] == "live"
 
             await _admin_execute(f"DROP TABLE {catalog}.{database}.{table} FORCE")
-            assert (await sync_catalog(catalog, trigger="manual"))["status"] == "ok"
+            assert (await catalog_refresh(catalog))["status"] == "ok"
             dropped = await _search(admin_client, headers, tag="pii=ip", include_dropped="true")
             assert dropped[name]["status"] == "dropped"
             assert dropped[name]["tags"][0]["key"] == "pii"

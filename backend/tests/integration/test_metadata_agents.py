@@ -627,6 +627,41 @@ async def test_maintenance_blocks_writes_and_keeps_reads(agents):
         assert await repo.get_agent(agent["agent_id"])
 
 
+async def test_imported_running_turn_keeps_history_and_requires_explicit_interruption(agents):
+    await agents.admin("UPDATE nova_meta.deployment_state SET maintenance=true")
+    async with agents.importer() as conn:
+        await conn.execute(
+            "INSERT INTO nova_meta.config_agent_runs (run_id,owner_name,agent_id,thread_id,"
+            "role_name,status,last_sequence,started_at,updated_at,session_id,security_version) "
+            "VALUES ('legacy-running','agent-owner','agent-1','thread-old','ANALYST',"
+            "'running',3,'2026-09-01 10:00:00+00','2026-09-01 10:05:00+00','old-login',5)"
+        )
+        await conn.execute(
+            "INSERT INTO nova_meta.config_agent_run_events (run_id,sequence,frame,created_at) "
+            "VALUES ('legacy-running',0,%s,'2026-09-01 10:00:01+00')", (frame(0),)
+        )
+    await agents.admin("UPDATE nova_meta.deployment_state SET maintenance=false")
+    async with agents.transaction(login="new-login", read_only=True) as (repo, _):
+        before = await repo.get_run("legacy-running")
+        history = await repo.history("legacy-running")
+        assert before["status"] == "running" and before["claim_generation"] == 0
+        assert history["frames"] == [frame(0)] and history["complete"] is False
+    async with agents.transaction(login="new-login") as (repo, _):
+        assert not await repo.heartbeat_run("legacy-running", generation=1)
+        assert not await repo.finish_run("legacy-running", "completed", generation=1)
+        assert await repo.interrupt_stale("legacy-running", stale_after_seconds=60)
+    async with agents.transaction(login="old-login") as (repo, _):
+        with pytest.raises(MetadataConflict):
+            await repo.append_events("legacy-running", [frame(1)], generation=1)
+    async with agents.transaction(login="new-login", read_only=True) as (repo, _):
+        after = await repo.get_run("legacy-running")
+        assert after["status"] == "interrupted" and after["claim_generation"] == 1
+        assert after["provenance"] == "imported" and after["last_sequence"] == 3
+        assert after["started_at"] == before["started_at"]
+        history = await repo.history("legacy-running")
+        assert history["frames"] == [frame(0)] and history["complete"] is False
+
+
 async def test_legacy_import_needs_maintenance_and_keeps_rows_as_they_were(agents):
     with pytest.raises(psycopg.errors.ObjectNotInPrerequisiteState):
         async with agents.importer() as conn:

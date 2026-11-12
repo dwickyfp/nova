@@ -42,7 +42,7 @@ async def test_typed_provisioning_default_role_and_first_login(client, admin_tok
         )
         assert result.ok, result.error
         assert ctx.secure_input is None and password not in repr(result)
-        assert await is_must_change_password(username)
+        assert await is_must_change_password(SecurityContext(username, role))
         response = await client.post(
             "/api/v1/auth/login", json={"username": username, "password": password}
         )
@@ -86,7 +86,7 @@ async def test_sql_card_account_batch_redacts_password_and_stops_on_error(client
             r.get("error") for r in results
         ]
         assert password not in response.text
-        assert await is_must_change_password(username)
+        assert await is_must_change_password(SecurityContext(username, role))
 
         response = await client.post(
             "/api/v1/query/execute",

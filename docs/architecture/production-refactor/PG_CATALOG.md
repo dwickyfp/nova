@@ -7,10 +7,9 @@ Revision 0019 prepares the thirteen Catalog tables in `nova_meta`:
 `CATALOG_ANNOTATIONS`, `CONFIG_OBJECT_TAGS`, `CATALOG_LINEAGE`,
 `CATALOG_SECURABLE_LINKS` and the retained legacy `CONFIG_EXTERNAL_CATALOGS`.
 `CatalogMetadataRepository` (`backend/app/modules/catalog/metadata_repository.py`)
-is the prepared replacement for the `NOVA_SYSTEM` paths of the catalog,
-connection, securable, business-metadata, lineage and link repositories.
-Running API, SQL, refresher, agent and write-back code still uses `NOVA_SYSTEM`;
-nothing in the running application imports the new repository.
+owns the ported catalog, connection, securable, business-metadata, lineage and
+link callers. Development activation still awaits verified cutover; the old
+source metadata is retained. See the [current delivery evidence](../../reports/production-refactor/importer-agent-cutover/README.md).
 
 Only Nova's own rows move. What the engine lists for a caller, `SHOW CREATE`,
 information-schema harvests and source reads stay engine observations behind
@@ -41,6 +40,14 @@ catalog SQL through the query service and MySQL proxy (`CREATE CONNECTION`,
 `CREATE CATALOG`, `REFRESH CATALOG`), the maintenance refresher, the agent's
 catalog search and Semantic View tool, and notebook/task write-back. Scheduler,
 ingestion, ML, automation and outbox have no grant.
+
+Revision 0039 adds a fixed audit projection for the maintenance login, bound to
+the `catalog-refresher` service principal and its `SECURITYADMIN` role. It returns
+only query ID, event time, database and redacted statement text for successful
+INSERT/CREATE query events, with a required time bound and at most 5,000 rows.
+It grants no general audit visibility. Manual refresh retains the caller's
+existing audit RLS. Lineage passes use aware timestamps; imported naive
+watermarks retain the reviewed deployment timezone.
 
 ## Gaps closed in the new store (Wave G)
 
@@ -102,11 +109,11 @@ audited, as in the source.
   web, query and proxy processes. The runtime target gives catalog refresh to
   maintenance with HTTP persisting intent; grants follow today's callers and
   should narrow when that moves.
-- The sync writes many statements; at cutover each harvest should claim, write
-  and record its run with the generation it claimed, in bounded transactions.
-- `migrate_legacy_catalogs` and the legacy tag migrator run at application
-  startup today. They move to the one-shot migrator; the renamed legacy tag table
-  stays in the preservation inventory.
+- Runtime sync claims its catalog generation and commits the harvested metadata
+  and completion together. External catalog DDL still needs the effect recovery
+  work above.
+- Legacy catalog/tag migration no longer runs at application startup. The
+  one-shot import owns historical preservation.
 - Source timestamps are naive deployment-zone values (`nova_now`); import must
   convert them with the recorded zone. Runtime rows use the database clock, and
   lineage times come from audit event times, which must be timezone-aware.

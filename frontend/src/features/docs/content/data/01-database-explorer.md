@@ -70,8 +70,9 @@ rules still decide that.
 | Column details | Click the edit button next to a column to set its **Classification** (**PUBLIC**, **INTERNAL**, **CONFIDENTIAL**, or **RESTRICTED**), **Description**, and **Tags**. |
 
 **Lineage** lists the tables this table was filled from and the tables filled
-from it. It is recorded when you run `INSERT ... SELECT` or
-`CREATE TABLE ... AS SELECT` in Nova. For example, after
+from it. Successful `INSERT ... SELECT` and `CREATE TABLE ... AS SELECT` queries
+in Nova appear after the next catalog refresh. You see a relationship only
+when your active role can access both tables. For example, after
 
 ```sql
 INSERT INTO orders_archive SELECT * FROM orders WHERE order_date < '2026-05-04';

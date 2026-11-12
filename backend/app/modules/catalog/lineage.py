@@ -29,10 +29,10 @@ from typing import Any
 from app.common.metadata_audit import AuditFilter, AuditReader
 from app.sql_frontend.analysis.lineage import StatementLineage, statement_lineage
 
-from .metadata_repository import catalog_transaction
+from .metadata_repository import CATALOG_REFRESHER, catalog_transaction
 from .repository import row_id
 from .securables import relation_id
-from .sync import nova_now, redact_error
+from .sync import engine_time, nova_now, redact_error
 
 log = logging.getLogger(__name__)
 
@@ -77,11 +77,18 @@ class LineageRepository:
     async def statements(self, since: datetime) -> list[tuple]:
         async with catalog_transaction(read_only=True) as repo:
             columns = ("query_id", "event_time", "database_name", "sql_text")
-            rows = await AuditReader(repo.connection).events(
-                AuditFilter(event_type="query", status="SUCCESS", since=since,
-                            sql_present=True, sql_contains_any=("insert", "create")),
-                columns, limit=MAX_ROWS, newest_first=False,
-            )
+            if repo.actor == CATALOG_REFRESHER:
+                cursor = await repo.connection.execute(
+                    "SELECT * FROM nova_meta.catalog_lineage_statements(%s,%s)",
+                    (engine_time(since), MAX_ROWS),
+                )
+                rows = await cursor.fetchall()
+            else:
+                rows = await AuditReader(repo.connection).events(
+                    AuditFilter(event_type="query", status="SUCCESS", since=engine_time(since),
+                                sql_present=True, sql_contains_any=("insert", "create")),
+                    columns, limit=MAX_ROWS, newest_first=False,
+                )
         return [tuple(row[column] for column in columns) for row in rows]
 
 
@@ -113,7 +120,7 @@ async def harvest_lineage(repo: LineageRepository | None = None) -> dict[str, An
     from .repository import catalog_repo
 
     repo = repo or lineage_repo
-    started = nova_now()
+    started = engine_time(nova_now())
     run: dict[str, Any] = {
         "id": str(uuid.uuid4()),
         "catalog_name": LINEAGE_RUN,
@@ -122,7 +129,7 @@ async def harvest_lineage(repo: LineageRepository | None = None) -> dict[str, An
         "started_at": started,
     }
     previous = await repo.watermark()
-    since = (previous - OVERLAP) if previous else (started - FIRST_PASS_LOOKBACK)
+    since = (engine_time(previous) - OVERLAP) if previous else (started - FIRST_PASS_LOOKBACK)
     try:
         rows = await repo.statements(since)
         found: dict[str, dict] = {}
@@ -130,7 +137,7 @@ async def harvest_lineage(repo: LineageRepository | None = None) -> dict[str, An
             lineage = statement_lineage(str(sql_text), database=database or None)
             if lineage is None:
                 continue
-            for edge in _edges(lineage, query_id, event_time or started):
+            for edge in _edges(lineage, query_id, engine_time(event_time or started)):
                 current = found.get(edge["id"])
                 found[edge["id"]] = (
                     {**edge, "first_seen_at": current["first_seen_at"]} if current else edge
@@ -141,10 +148,10 @@ async def harvest_lineage(repo: LineageRepository | None = None) -> dict[str, An
             if earlier and earlier.get("first_seen_at"):
                 edge["first_seen_at"] = min(earlier["first_seen_at"], edge["first_seen_at"])
         await repo.upsert(list(found.values()))
-        watermark = rows[-1][1] if len(rows) >= MAX_ROWS and rows[-1][1] else started
+        watermark = engine_time(rows[-1][1]) if len(rows) >= MAX_ROWS and rows[-1][1] else started
         run.update(
             status="ok",
-            finished_at=nova_now(),
+            finished_at=engine_time(nova_now()),
             counts={
                 "statements": len(rows),
                 "edges": len(found),
@@ -153,6 +160,7 @@ async def harvest_lineage(repo: LineageRepository | None = None) -> dict[str, An
         )
     except Exception as exc:  # noqa: BLE001 - recorded on the run; next pass retries
         log.warning("Lineage harvest failed: %s", redact_error(exc))
-        run.update(status="error", finished_at=nova_now(), error=redact_error(exc), counts={})
+        run.update(status="error", finished_at=engine_time(nova_now()),
+                   error=redact_error(exc), counts={})
     await catalog_repo.write_sync_run(run)
     return run

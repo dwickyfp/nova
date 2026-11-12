@@ -359,9 +359,10 @@ async def _import_generation(environment, *consumptions):
 async def test_durable_offset_receipt_survives_repeated_and_late_recovery(
     source, engine_metadata,
 ):
+    from app.modules.streams.claims import ClaimOutcome, ClaimRepository
     from app.modules.streams.consumption import Consumption, ConsumptionState
     from app.modules.streams.journal import ConsumptionJournal
-    from app.modules.streams.schemas import ChangeCursor, ChangeSnapshot, operation_id
+    from app.modules.streams.schemas import ChangeCursor, ChangeSnapshot, StreamError, operation_id
     from app.modules.streams.verification import CommitReceipt
 
     journal = ConsumptionJournal()
@@ -385,8 +386,19 @@ async def test_durable_offset_receipt_survives_repeated_and_late_recovery(
     await journal.prepare(first)
     await journal.prepare(second)
     await journal.record(first, ConsumptionState.PREPARED)
+    with pytest.raises(StreamError):
+        await journal.record(first, ConsumptionState.TARGET_COMMITTED, receipt)
+    claims = ClaimRepository()
+    for consume in (first, second):
+        claimed = await claims.acquire(
+            consume.decision_claim(operation_id(consume.consume_id), "submit")
+        )
+        assert claimed.outcome == ClaimOutcome.ACQUIRED
+    with pytest.raises(StreamError):
+        await journal.advance(second, receipt)
     await journal.record(first, ConsumptionState.TARGET_COMMITTED, receipt)
     assert await journal.advance(first, receipt) == ChangeCursor(1, 1)
+    await journal.record(second, ConsumptionState.TARGET_COMMITTED, receipt)
     assert await journal.advance(second, receipt) == ChangeCursor(1, 2)
     assert await journal.advance(first, receipt) == ChangeCursor(1, 2)
     assert await journal.committed_cursor(stream_id, ChangeCursor(2, 0)) == ChangeCursor(2, 0)

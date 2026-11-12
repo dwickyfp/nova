@@ -19,6 +19,7 @@ from app.core.metadata_db import (
     MetadataConflict,
     MetadataDatabase,
     MetadataIntegrityViolation,
+    MetadataOperationFailed,
     MetadataPermissionDenied,
     MetadataReadOnlyMaintenance,
 )
@@ -484,6 +485,95 @@ async def test_tags_keep_creator_and_steward_rules(catalogs):
     audit = await catalogs.admin("SELECT * FROM nova_meta.audit_log "
                                  "WHERE metadata_table='config_object_tags'")
     assert all("finance" not in str(r) and "gold" not in str(r) for r in audit)
+
+
+async def test_lineage_maintenance_projection_and_legacy_watermark(catalogs, monkeypatch):
+    from dataclasses import replace
+    from zoneinfo import ZoneInfo
+
+    from app.common.metadata_audit import AuditEvent, AuditIdentity, AuditRepository
+    from app.core.metadata_actor import acting_as
+    from app.core.metadata_runtime import install_metadata_db, uninstall_metadata_db
+    from app.modules.catalog.lineage import LineageRepository, harvest_lineage
+    from app.modules.catalog.metadata_repository import CATALOG_REFRESHER
+
+    monkeypatch.setattr(settings, "NOVA_TIMEZONE", "Asia/Jakarta")
+    now = datetime.now(UTC)
+    for event_type, status, statement in (
+        ("query", "SUCCESS", "INSERT INTO archive SELECT * FROM orders"),
+        ("query", "FAILED", "INSERT INTO failed SELECT * FROM orders"),
+        ("query", "SUCCESS", "SELECT * FROM orders"),
+        ("login", "SUCCESS", "INSERT INTO other SELECT * FROM orders"),
+    ):
+        async with catalogs.transaction(name="query-author", active="ANALYST") as (_, conn):
+            await AuditRepository(conn).append(
+                AuditIdentity(uuid4(), now),
+                AuditEvent(event_type, "EXECUTE", "TABLE", "orders", status,
+                           sql_text=statement, database_name="sales"),
+            )
+    legacy = (now - timedelta(minutes=1)).astimezone(ZoneInfo("Asia/Jakarta")).replace(tzinfo=None)
+    async with catalogs.transaction("maintenance") as (repo, _):
+        await repo.create_sync_run_once({"id": "old-lineage", "catalog_name": "lineage:audit",
+                                         "trigger": "lineage"})
+        await repo.finish_sync_run("old-lineage", "ok", counts={"watermark": legacy.isoformat()})
+    database = MetadataDatabase(catalogs.environment.role_config("nova_meta_maintenance"))
+    await database.open(schema_version=len(load_migrations()), metadata_epoch=catalogs.epoch)
+    install_metadata_db(database)
+    try:
+        with acting_as(CATALOG_REFRESHER):
+            rows = await LineageRepository().statements(now - timedelta(minutes=2))
+            assert len(rows) == 1 and rows[0][3] == "INSERT INTO archive SELECT * FROM orders"
+            for _ in range(2):
+                run = await harvest_lineage()
+                assert run["status"] == "ok" and run["counts"]["edges"] == 1
+                assert datetime.fromisoformat(run["counts"]["watermark"]).utcoffset() is not None
+        async with database.transaction(CATALOG_REFRESHER, read_only=True) as conn:
+            cursor = await conn.execute("SELECT sql_text FROM nova_meta.audit_log")
+            assert await cursor.fetchall() == []
+            row = await (await conn.execute("SELECT current_user AS login")).fetchone()
+            assert row["login"] == "nova_meta_maintenance"
+        for limit in (0, 5001, None):
+            with pytest.raises(MetadataOperationFailed):
+                async with database.transaction(CATALOG_REFRESHER, read_only=True) as conn:
+                    await conn.execute("SELECT * FROM nova_meta.catalog_lineage_statements(%s,%s)",
+                                       (now - timedelta(minutes=2), limit))
+        for actor in (
+            replace(CATALOG_REFRESHER, principal_type="USER"),
+            replace(CATALOG_REFRESHER, principal="other-maintenance"),
+            replace(CATALOG_REFRESHER, active_role="ANALYST"),
+        ):
+            with pytest.raises(MetadataPermissionDenied):
+                async with database.transaction(actor, read_only=True) as conn:
+                    await conn.execute("SELECT * FROM nova_meta.catalog_lineage_statements(%s,1)",
+                                       (now - timedelta(minutes=2),))
+        with pytest.raises(MetadataPermissionDenied):
+            async with catalogs.transaction("web", read_only=True) as (_, conn):
+                await conn.execute("SELECT * FROM nova_meta.catalog_lineage_statements(%s,1)",
+                                   (now - timedelta(minutes=2),))
+    finally:
+        uninstall_metadata_db(database)
+        await database.close()
+    async with catalogs.transaction("maintenance", read_only=True) as (repo, _):
+        source_id = row_id("default_catalog", "sales", "orders", "relation")
+        edges = await repo.lineage_edges_of(source_id)
+        assert len(edges) == 1 and edges[0]["first_seen_at"] == now
+    grants = await catalogs.admin(
+        "SELECT rolname FROM pg_catalog.pg_roles WHERE rolname=ANY(%s) AND "
+        "has_function_privilege(rolname,'nova_meta.catalog_lineage_statements(timestamptz,integer)',"
+        "'EXECUTE')", (list(WORKLOAD_ROLES),),
+    )
+    assert [row["rolname"] for row in grants] == ["nova_meta_maintenance"]
+    web = MetadataDatabase(catalogs.environment.role_config("nova_meta_web"))
+    await web.open(schema_version=len(load_migrations()), metadata_epoch=catalogs.epoch)
+    install_metadata_db(web)
+    try:
+        for name, count in (("query-author", 1), ("different-author", 0)):
+            with acting_as(SecurityContext(name, "ANALYST")):
+                rows = await LineageRepository().statements(now - timedelta(minutes=2))
+                assert len(rows) == count
+    finally:
+        uninstall_metadata_db(web)
+        await web.close()
 
 
 async def test_lineage_spans_only_widen(catalogs):
