@@ -142,9 +142,9 @@ place: the first save of an imported file keeps its legacy object as history.
   commit outcomes and for any other reserver.
 - Produce the redacted duplicate-version conflict manifest and stop import until
   its reconciliation policy is applied.
-- Port Notebook package, execution, runtime generation and claim metadata
-  (`CONFIG_NOTEBOOK_*`); these tables have no PG store yet. The existing
-  per-person package identity defect remains open.
+- Notebook runtime, execution and package metadata now have a prepared PG store
+  (revision 0015, [contract](PG_NOTEBOOKS.md)); wiring it in, durable execution
+  intent and generation fencing remain open.
 - Workspace UI preferences use the separately prepared preference store.
 - Session-role revocation (stale cached assignments) remains open.
 - Rehearse the full import, verify the migration manifest and all writers, then
