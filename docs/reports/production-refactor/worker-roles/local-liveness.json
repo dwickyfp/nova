@@ -1,0 +1,54 @@
+{
+  "topology": "Existing docker project; host worker launcher; no added infrastructure containers",
+  "checks": [
+    {
+      "role": "task",
+      "local_health_passed": true,
+      "fresh_registry_instances": 1
+    },
+    {
+      "role": "ingestion",
+      "local_health_passed": true,
+      "fresh_registry_instances": 1
+    },
+    {
+      "role": "ml",
+      "local_health_passed": true,
+      "fresh_registry_instances": 1
+    },
+    {
+      "role": "notebook",
+      "local_health_passed": true,
+      "fresh_registry_instances": 1
+    },
+    {
+      "role": "automation",
+      "local_health_passed": true,
+      "fresh_registry_instances": 1
+    },
+    {
+      "role": "autopilot",
+      "local_health_passed": true,
+      "fresh_registry_instances": 1
+    }
+  ],
+  "started_roles": [
+    "ml",
+    "automation",
+    "notebook",
+    "task",
+    "autopilot",
+    "ingestion",
+    "ml",
+    "notebook",
+    "automation",
+    "task",
+    "autopilot",
+    "ingestion"
+  ],
+  "secret_scan": {
+    "configured_values": 16,
+    "matching_values": 0
+  },
+  "limits": "Role liveness only. No failure injection, workload completion, isolated-container startup, durable recovery or capacity claim."
+}

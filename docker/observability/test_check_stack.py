@@ -2,10 +2,10 @@
 
 import json
 import os
-from pathlib import Path
 import re
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import check_stack
@@ -17,15 +17,18 @@ class StackAcceptanceTests(unittest.TestCase):
             {"labels": {"job": job, "instance": job}, "health": "up"}
             for job in check_stack.CORE_JOBS
         ]
-        targets.append({"labels": {"job": "nova-backend", "instance": "nova-backend:8000"},
-                        "health": "up"})
-        checks = {check.name: check for check in check_stack.check_targets(
-            {"data": {"activeTargets": targets}}, "host")}
+        targets.append(
+            {"labels": {"job": "nova-backend", "instance": "nova-backend:8000"}, "health": "up"}
+        )
+        checks = {
+            check.name: check
+            for check in check_stack.check_targets({"data": {"activeTargets": targets}}, "host")
+        }
 
         self.assertFalse(checks["Scrape nova-backend"].ok)
         self.assertFalse(checks["Scrape nova-scheduler"].ok)
         self.assertFalse(checks["Scrape nova-worker"].ok)
-        self.assertFalse(checks["Scrape nova-agent-worker"].ok)
+        self.assertFalse(checks["Scrape role automation-worker"].ok)
         self.assertFalse(checks["Scrape probe stage-storage"].ok)
 
     def _targets(self, jobs: dict[str, list[str]]) -> dict:
@@ -42,30 +45,50 @@ class StackAcceptanceTests(unittest.TestCase):
 
     def test_split_topology_requires_the_query_tier_and_the_standalone_proxy(self) -> None:
         payload = self._targets({"nova-backend": ["172.18.0.5:8000", "172.18.0.6:8000"]})
-        checks = {check.name: check for check in check_stack.check_targets(
-            payload, "container", "split")}
+        checks = {
+            check.name: check for check in check_stack.check_targets(payload, "container", "split")
+        }
 
         # Replicas are discovered by address, so no fixed web instance is expected.
         self.assertTrue(checks["Scrape nova-backend"].ok)
         self.assertFalse(checks["Scrape nova-query"].ok)
         self.assertFalse(checks["Scrape nova-proxy"].ok)
 
+    def test_other_healthy_workers_cannot_hide_a_missing_ml_worker(self) -> None:
+        payload = self._targets(
+            {
+                "nova-worker": [
+                    instance
+                    for role, (instance, _) in check_stack.WORKER_TARGETS.items()
+                    if role != "ml-worker"
+                ]
+            }
+        )
+        checks = {check.name: check for check in check_stack.check_targets(payload, "container")}
+        self.assertTrue(checks["Scrape role worker"].ok)
+        self.assertFalse(checks["Scrape role ml-worker"].ok)
+        queries = check_stack.metric_queries()
+        for role in check_stack.WORKER_TARGETS:
+            self.assertIn(f'service="{role}"', queries[f"Startup {role}"])
+
     def test_split_topology_passes_when_every_replica_is_up(self) -> None:
-        payload = self._targets({
-            "nova-backend": ["172.18.0.5:8000"],
-            "nova-query": ["172.18.0.7:8000", "172.18.0.8:8000"],
-            "nova-proxy": ["172.18.0.9:9104"],
-        })
-        checks = {check.name: check for check in check_stack.check_targets(
-            payload, "container", "split")}
+        payload = self._targets(
+            {
+                "nova-backend": ["172.18.0.5:8000"],
+                "nova-query": ["172.18.0.7:8000", "172.18.0.8:8000"],
+                "nova-proxy": ["172.18.0.9:9104"],
+            }
+        )
+        checks = {
+            check.name: check for check in check_stack.check_targets(payload, "container", "split")
+        }
 
         self.assertTrue(checks["Scrape nova-query"].ok)
         self.assertEqual(checks["Scrape nova-query"].detail, "2/2 up")
         self.assertTrue(checks["Scrape nova-proxy"].ok)
 
     def test_single_topology_does_not_ask_for_split_tiers(self) -> None:
-        names = {check.name for check in check_stack.check_targets(
-            self._targets({}), "container")}
+        names = {check.name for check in check_stack.check_targets(self._targets({}), "container")}
 
         self.assertNotIn("Scrape nova-query", names)
         self.assertNotIn("Scrape nova-proxy", names)
@@ -86,8 +109,7 @@ class StackAcceptanceTests(unittest.TestCase):
 
     def test_empty_or_failed_probe_sample_is_not_healthy(self) -> None:
         empty = {"data": {"resultType": "vector", "result": []}}
-        failed = {"data": {"resultType": "vector", "result": [
-            {"value": [0, "0"]}]}}
+        failed = {"data": {"resultType": "vector", "result": [{"value": [0, "0"]}]}}
         self.assertFalse(check_stack.check_instant_vector(empty, "Probe").ok)
         self.assertFalse(check_stack.check_instant_vector(failed, "Probe").ok)
         self.assertFalse(check_stack.check_instant_vector({"data": []}, "Probe").ok)
@@ -96,19 +118,25 @@ class StackAcceptanceTests(unittest.TestCase):
         rules = {"data": {"groups": [{"rules": [{"name": "NovaA", "health": "ok"}]}]}}
         checks = check_stack.check_rules(rules, {"NovaA", "NovaB"})
         self.assertFalse(checks[0].ok)
-        dashboards = [{"uid": "nova-overview", "type": "dash-db",
-                       "url": "/d/nova-overview/wrong-slug"}]
+        dashboards = [
+            {"uid": "nova-overview", "type": "dash-db", "url": "/d/nova-overview/wrong-slug"}
+        ]
         self.assertFalse(check_stack.check_dashboards(dashboards)[0].ok)
 
     def test_process_credentials_override_default_env_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / ".env"
-            path.write_text("GRAFANA_ADMIN_USER='from-file'\n"
-                            "GRAFANA_ADMIN_PASSWORD=from-file # comment\n", encoding="utf-8")
-            with patch.dict(os.environ, {"GRAFANA_ADMIN_USER": "from-process",
-                                        "GRAFANA_ADMIN_PASSWORD": "from-process"}):
-                self.assertEqual(check_stack.grafana_credentials(path),
-                                 ("from-process", "from-process"))
+            path.write_text(
+                "GRAFANA_ADMIN_USER='from-file'\nGRAFANA_ADMIN_PASSWORD=from-file # comment\n",
+                encoding="utf-8",
+            )
+            with patch.dict(
+                os.environ,
+                {"GRAFANA_ADMIN_USER": "from-process", "GRAFANA_ADMIN_PASSWORD": "from-process"},
+            ):
+                self.assertEqual(
+                    check_stack.grafana_credentials(path), ("from-process", "from-process")
+                )
 
     def test_credentials_cannot_be_sent_over_remote_http(self) -> None:
         with self.assertRaises(ValueError):

@@ -269,7 +269,25 @@ BI/ETL tidak memperlambat aplikasi.
 | Web | `NOVA_PROCESS_ROLE=web PROXY_ENABLED=false uvicorn app.main:app --port 8000` | API aplikasi, bootstrap skema `NOVA_SYSTEM`, loop latar belakang. Boleh lebih dari satu replika. |
 | Query tier | `NOVA_PROCESS_ROLE=query PROXY_ENABLED=false uvicorn app.main:app --port 8001` | Eksekusi SQL, ML, dan run assistant/agent. Boleh banyak replika. |
 | Proxy MySQL | `python -m app.proxy` | Port 4406. Boleh banyak replika. |
-| Worker | `python -m app.worker` | Task graph, migrasi, dan training ML bila `ML_TRAINING_EXECUTOR=worker`. |
+| Worker launcher | `python -m app.worker` | Enam proses: task, ingestion, ML, notebook, automation, dan autopilot. |
+
+`python -m app.worker` menjalankan supervisor lokal dengan enam child process.
+Jika salah satu child keluar, supervisor menghentikan yang lain dan keluar dengan
+status gagal. SIGINT/SIGTERM diteruskan; setelah 40 detik child yang belum berhenti
+dihentikan paksa. Setiap role memiliki pool dan event loop sendiri. Untuk container
+atau kapasitas berbeda, gunakan `python -m app.worker --role ROLE`, dengan `ROLE`
+bernilai `task`, `ingestion`, `ml`, `notebook`, `automation`, atau `autopilot`.
+Role `task` dan `automation` membutuhkan akun impersonasi khusus.
+
+Profile `app` pada Compose engine menjalankan enam container worker dengan batas
+CPU, memori, PID, dan waktu shutdown masing-masing. Ini masih konfigurasi development,
+bukan Compose produksi satu file yang ditargetkan refactor. `python -m
+app.worker.health ROLE` memeriksa proses lokal dan freshness heartbeat Redis;
+health ini belum membuktikan recovery job atau readiness semua dependency domain.
+Port metrics: task 9102, ingestion 9105, ML 9106, notebook 9107, automation 9108,
+autopilot 9109. Override port memakai `NOVA_METRICS_<SERVICE>_PORT`, misalnya
+`NOVA_METRICS_ML_WORKER_PORT`. Jangan menjalankan supervisor lokal bersamaan
+dengan container worker pada stack yang sama.
 
 `NOVA_PROCESS_ROLE` bernilai `all` (default), `web`, atau `query`. Setiap peran
 tetap memasang semua route; yang menentukan tujuan request adalah gateway
@@ -663,12 +681,11 @@ Streams, mengeksekusi node DAG yang siap, dan memajukan state graph di
 `NOVA_SYSTEM`. Eksekusi memakai **delegate-first**: `SUBMIT TASK` dikirim pada
 koneksi user pemilik task, sehingga RBAC StarRocks ditegakkan engine.
 
-Buka satu terminal per worker (boleh banyak — mereka berbagi stream lewat
-consumer group):
+Untuk satu proses task (replikanya berbagi stream lewat consumer group):
 
 ```bash
 cd /Users/dwickyferiansyahputra/Public/Research/nova/backend
-uv run python -m app.worker
+uv run python -m app.worker --role task
 ```
 
 Prasyarat:

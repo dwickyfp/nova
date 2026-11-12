@@ -214,7 +214,7 @@ async def test_batch_executes_in_standalone_worker_across_two_clusters(
                 "WORKER_IMPERSONATION_PASSWORD": worker_password,
                 "RANGER_ENABLED": "false",
                 "NOVA_METRICS_HOST": "127.0.0.1",
-                "NOVA_METRICS_WORKER_PORT": str(_free_port()),
+                "NOVA_METRICS_INGESTION_WORKER_PORT": str(_free_port()),
             }
         )
         worker_log_path = config_path.parent / "worker.log"
@@ -223,6 +223,8 @@ async def test_batch_executes_in_standalone_worker_across_two_clusters(
                 sys.executable,
                 "-m",
                 "app.worker",
+                "--role",
+                "ingestion",
                 cwd=BACKEND_DIR,
                 env=worker_env,
                 stdout=worker_log,

@@ -34,6 +34,7 @@ class WorkerProcessHeartbeat:
         interval_seconds: float | None = None,
         stale_seconds: int | None = None,
         clock: Callable[[], float] = time.time,
+        service: str | None = None,
     ) -> None:
         self._client = client
         self._instance_id = instance_id or f"{settings.WORKER_NAME}:{uuid.uuid4()}"
@@ -47,6 +48,7 @@ class WorkerProcessHeartbeat:
             stale_seconds if stale_seconds is not None else settings.WORKER_PROCESS_STALE_SECONDS
         )
         self._clock = clock
+        self._service = service
 
     async def publish(self) -> None:
         """Record a fresh timestamp and prune long-dead registry entries."""
@@ -57,6 +59,10 @@ class WorkerProcessHeartbeat:
             "-inf",
             now - (self._stale_seconds * 10),
         )
+        if self._service is not None:
+            from app.observability.metrics import heartbeat
+
+            heartbeat(self._service)
 
     async def run(self, stop_event: asyncio.Event) -> None:
         """Publish immediately, then continue until the worker stops."""

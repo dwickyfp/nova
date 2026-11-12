@@ -1,7 +1,7 @@
 # Runtime dependencies and migration boundaries
 
 Observed application tree:
-`e3bcb3f5604f20c68c98e8beb3f5e9c67abfcee416c7ab4767dc8954ae546759`.
+`e104ceccc0300cc7ae65ef9e7b64dfe6c244e0a369b10dcb74498d36fc5031b0`.
 This is the current source dependency graph. It is not the target deployment
 and does not imply that a process has the planned isolation already.
 
@@ -23,7 +23,7 @@ flowchart LR
     SQL --> DATA[Caller StarRocks session and Ranger enforcement]
     SCHED[Scheduler] --> CP
     SCHED --> REDIS[Redis sessions leases queues and wakeups]
-    WORKER[General worker] --> CP
+    WORKER[Six dedicated worker processes] --> CP
     WORKER --> REDIS
     WORKER --> DATA
     WORKER --> SANDBOX[OpenSandbox controller and kernels]
@@ -50,12 +50,23 @@ starts ephemeral ML sweeping. Each API role runs its own Autopilot telemetry
 and AI usage flushers. The `all` role can also embed the MySQL proxy. These are
 current duties to retire or move, not the approved target separation.
 
-`backend/app/worker/__main__.py::_run` creates Task execution, migration, ML,
-automation, notebook and Autopilot loops in one process, with a worker heartbeat
-and shared shutdown event. It initializes Task, Autopilot and migration schema
-before consuming work. Awaiting the Task service while other loops run as
-background tasks does not establish independent supervision or resource limits.
-The target role assignments are recorded in `ENTRYPOINTS.csv`.
+`backend/app/worker/__main__.py::_run` owns exactly one selected workload:
+Task execution, ingestion, ML, automation, notebook or Autopilot. Each process
+opens its own system pool/session store and publishes a role-specific liveness
+marker. Only Task consumers enter the original Task-worker health registry.
+Schema initialization is still owned by the applicable legacy domain until PG
+cutover; application processes do not migrate PG.
+
+The no-argument development launcher supervises six child processes and stops
+all children if one exits. It forwards graceful shutdown and kills remaining
+process groups after 40 seconds. Compose's `app` profile instead runs six
+individual worker services, with per-service CPU/memory/PID bounds and local
+heartbeat health checks. No fixed worker container name prevents replicas.
+Metrics discovery includes all six processes in the existing worker scrape job.
+This does not establish safe concurrent claims for every domain: PG fencing,
+participant receipts, role admission and actual capacity remain open. Interactive
+agents, maintenance and outbox processes are not separated yet. The target role
+assignments are recorded in `ENTRYPOINTS.csv`.
 
 The scheduler uses Redis leadership/transport and StarRocks control rows. The
 Task worker has an explicit dedicated unprivileged execution identity contract;

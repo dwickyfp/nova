@@ -1,3 +1,18 @@
 - targets: ["host.docker.internal:9102"]
   labels:
     service: nova-worker
+- targets: ["host.docker.internal:9105"]
+  labels:
+    service: nova-ingestion-worker
+- targets: ["host.docker.internal:9106"]
+  labels:
+    service: nova-ml-worker
+- targets: ["host.docker.internal:9107"]
+  labels:
+    service: nova-notebook-worker
+- targets: ["host.docker.internal:9108"]
+  labels:
+    service: nova-automation-worker
+- targets: ["host.docker.internal:9109"]
+  labels:
+    service: nova-autopilot-worker

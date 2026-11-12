@@ -100,14 +100,24 @@ services:
     networks:
       - nova
 
-  nova-worker:
+  nova-worker: &nova-worker
     logging: *default-logging
     profiles: ["app"]
     build:
       context: ..
       dockerfile: docker/backend.Dockerfile
-    container_name: nova-worker
-    command: ["python", "-m", "app.worker"]
+    command: ["python", "-m", "app.worker", "--role", "task"]
+    init: true
+    stop_grace_period: 45s
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.worker.health", "task"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     depends_on:
       starrocks-init:
         condition: service_completed_successfully
@@ -142,6 +152,58 @@ services:
     restart: unless-stopped
     networks:
       - nova
+
+  nova-ingestion-worker:
+    <<: *nova-worker
+    command: ["python", "-m", "app.worker", "--role", "ingestion"]
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.worker.health", "ingestion"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  nova-ml-worker:
+    <<: *nova-worker
+    command: ["python", "-m", "app.worker", "--role", "ml"]
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.worker.health", "ml"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    mem_limit: 2g
+    cpus: 2.0
+
+  nova-notebook-worker:
+    <<: *nova-worker
+    command: ["python", "-m", "app.worker", "--role", "notebook"]
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.worker.health", "notebook"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  nova-automation-worker:
+    <<: *nova-worker
+    command: ["python", "-m", "app.worker", "--role", "automation"]
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.worker.health", "automation"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  nova-autopilot-worker:
+    <<: *nova-worker
+    command: ["python", "-m", "app.worker", "--role", "autopilot"]
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.worker.health", "autopilot"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
 
   ranger-solr:
     logging: *default-logging

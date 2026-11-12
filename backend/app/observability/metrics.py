@@ -296,15 +296,29 @@ SERVICE_HEARTBEAT = Gauge(
     ("service",),
 )
 
-_DEFAULT_PORTS = {"scheduler": 9101, "worker": 9102, "agent-worker": 9103, "proxy": 9104}
+_DEFAULT_PORTS = {
+    "scheduler": 9101,
+    "worker": 9102,
+    "agent-worker": 9103,
+    "proxy": 9104,
+    "ingestion-worker": 9105,
+    "ml-worker": 9106,
+    "notebook-worker": 9107,
+    "automation-worker": 9108,
+    "autopilot-worker": 9109,
+}
+
+
+def metrics_port(service: str) -> int:
+    if service not in _DEFAULT_PORTS:
+        raise ValueError(f"unknown metrics service: {service}")
+    env_name = f"NOVA_METRICS_{service.upper().replace('-', '_')}_PORT"
+    return int(os.getenv(env_name, str(_DEFAULT_PORTS[service])))
 
 
 def start_metrics_server(service: str) -> None:
     """Expose metrics from a standalone process on its dedicated internal port."""
-    if service not in _DEFAULT_PORTS:
-        raise ValueError(f"unknown metrics service: {service}")
-    env_name = f"NOVA_METRICS_{service.upper().replace('-', '_')}_PORT"
-    port = int(os.getenv(env_name, str(_DEFAULT_PORTS[service])))
+    port = metrics_port(service)
     host = os.getenv("NOVA_METRICS_HOST", "0.0.0.0")
     start_http_server(port, addr=host)
     SERVICE_UP.labels(service=service).set(1)

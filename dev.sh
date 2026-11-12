@@ -372,10 +372,8 @@ else
     uv run uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port "$BACKEND_PORT"
 fi
 
-# Standalone workers. They share NOVA_SYSTEM + Redis; migration jobs are
-# claimed by app.worker, never executed in the FastAPI process. Like the
-# backend, each restarts when a Python file under backend/app changes, so an
-# edit to Smart or a worker is live without restarting dev.sh.
+# The worker launcher supervises one child process per workload. Watchfiles
+# restarts the launcher and its children together when Python code changes.
 WATCH=(uv run watchfiles --filter python)
 
 run scheduler "$C_CYAN" "$BACKEND_DIR" \

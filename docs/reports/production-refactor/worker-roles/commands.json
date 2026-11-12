@@ -1,0 +1,97 @@
+{
+  "source_parent_commit": "97012355d64e987bd1c9bf05f49e4ad80857ae09",
+  "application_tree_sha256": "e104ceccc0300cc7ae65ef9e7b64dfe6c244e0a369b10dcb74498d36fc5031b0",
+  "sandbox_interrupted": {
+    "tests": 6729,
+    "failures": 8,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 6721,
+    "time_seconds": 473.775,
+    "report_sha256": "2452b0ffe4b061263b159570c93120e70d8638e7ab8cd37dcccd94b798de0dd2",
+    "status": "INTERRUPTED; not acceptance",
+    "reason": "Eight temporary-localhost socket tests failed inside the network sandbox; the run was interrupted, then the entire final suite passed with local socket permission."
+  },
+  "unit": {
+    "tests": 10895,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 10895,
+    "time_seconds": 615.221,
+    "report_sha256": "c864cb0514e80080aa532bd95d737daaad9c9860ca717a2f42aec9f3cdd7a45e"
+  },
+  "focused": {
+    "tests": 55,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 55,
+    "time_seconds": 10.746,
+    "report_sha256": "6e79b957078506f96ae1b8eeda6fa28435eae4323aa3f381107eccf3f15b3ce5"
+  },
+  "eval": {
+    "tests": 358,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 358,
+    "time_seconds": 15.123,
+    "report_sha256": "da91d6de74405a6e86755bb466abcb3be0655dc2cc13158623b5ee8266a230a4"
+  },
+  "localhost_proxy_recheck": {
+    "tests": 1,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 1,
+    "time_seconds": 3.515,
+    "report_sha256": "5e1329fcfe41462153d44b2efa7529b0cb5e8b5762288724cb5be1d85116bb16"
+  },
+  "scorecard": {
+    "scenarios": 54,
+    "checks": 189,
+    "status": "PASS"
+  },
+  "mypy": {
+    "status": "PASS",
+    "existing_notes": 3
+  },
+  "ruff": {
+    "status": "PASS",
+    "changed_python_files": 125
+  },
+  "observability": {
+    "tests": 12,
+    "status": "PASS"
+  },
+  "compose": {
+    "engine": "config --quiet PASS",
+    "engine_plus_observability": "config --quiet PASS",
+    "container_startup": "NOT_RUN; existing host workers reused, no duplicate workers provisioned"
+  },
+  "boundary_check": "PASS",
+  "shell_syntax": "PASS",
+  "inventory": {
+    "reviewed_calls": 875,
+    "call_sites_unchanged": true,
+    "live_observation_refreshed": false
+  },
+  "reused": {
+    "postgresql": 489,
+    "frontend": 1609,
+    "reason": "Relevant storage/frontend source and dependencies unchanged; this does not establish cutover acceptance."
+  },
+  "commands": [
+    "uv run --offline --no-sync pytest tests/unit --cov=app --cov-branch --cov-report=term-missing --cov-report=xml:/tmp/nova-worker-roles-coverage-final.xml --junit-xml=/tmp/nova-worker-roles-unit-final.xml",
+    "uv run --offline --no-sync python -m tests.eval.report",
+    "uv run --offline --no-sync pytest tests/eval -q",
+    "uv run --offline --no-sync mypy app --no-error-summary",
+    "uv run --offline --no-sync ruff check --force-exclude <125 changed Python paths>",
+    "python -m unittest discover -s docker/observability -p test_*.py",
+    "uv run --offline --no-sync python scripts/check_user_data_system_access.py",
+    "docker compose --env-file docker/.env -f docker/docker-compose-engine.yml config --quiet",
+    "docker compose --env-file docker/.env -f docker/docker-compose-engine.yml -f docker/docker-compose-observability.yml config --quiet",
+    "bash -n dev.sh"
+  ]
+}
