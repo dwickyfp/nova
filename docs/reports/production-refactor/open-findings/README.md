@@ -22,13 +22,21 @@ Each item records what was found, the decision and how it was verified.
 | `monitoring/alerts` | 8.0 s | 0.9–1.0 s | Six independent probes run concurrently; each keeps its own failure |
 | `objects/databases` | 8.1 s | 2.2–3.0 s | `SHOW FULL TABLES` plus one materialized-view listing per database over four caller connections, keeping `?role=` |
 | `agents/studio/capabilities` | 8.9 s | 3.3–4.0 s | Agent access checks run two at a time (in order for a delegated caller); still checked on every request |
-| `ontology/metrics` | 29.1 s | 16.3–21.4 s | Each ontology kind read once per request; the visible layer reused by the meaning checks |
-| `ontology/lint` | 9.5 s | 7.7–9.9 s | Unchanged path; dominated by per-view visibility checks |
+| `ontology/metrics` | 29.1 s | 16.0 s cold, 5.5–8.1 s warm | Each ontology kind read once per request; the visible layer reused by the meaning checks; view visibility cached briefly (below) |
+| `ontology/lint` | 9.5 s | 4.3 s cold, 1.7 s warm | Same view visibility cache |
 
-The remaining ontology cost is the per-view visibility check (Ranger plus an
-`EXPLAIN` on a caller connection) and the full `eval_results` window scans.
-Caching visibility across requests conflicts with the deliberate "check every
-time" rule and needs an owner decision; it was not changed.
+### Owner decision: short visibility cache for ontology reports
+
+On 2026-11-12 the owner approved a short cache ("Yes, short cache"). The
+ontology view catalog now reuses a Semantic View visibility answer for the
+existing catalog visibility TTL (60 s). The key is the caller's principal,
+active role and security-context version, the access epoch that every managed
+access change in Nova bumps, and the view's status and active version. A role
+switch, a grant or revoke made through Nova, or a newly published version is
+therefore checked again at once; a grant changed directly in Ranger takes effect
+within 60 s. An engine failure raises and is never cached. Query execution,
+agents and the Semantic View service itself still check on every request.
+Responses were byte-identical across cold and warm runs.
 
 ## Defects found and fixed during this QA
 
@@ -60,11 +68,16 @@ temporary docs database were removed and the session signed out.
   reproduction there is nothing to fix; it stays recorded.
 - **Object browser `?role=`**: the faster path keeps the existing behavior.
   Moving it to the session's active role is a product decision.
-- **Ontology visibility caching**: needs the owner decision described above.
+- **Docker disk floor**: while the unit, build and coverage runs overlapped, the
+  Docker VM briefly dropped below the engine's 5 GB free-disk floor and the
+  StarRocks FE stopped itself (`DiskLimitException`, exit 255). After the space
+  recovered (15.6 GB free) the same FE container was started again, OLAP reads
+  succeeded, and the dev backend was reloaded; all seven worker roles stayed up.
+  Heavy suites now run one at a time on this device.
 
 ## Validation
 
-- Backend unit/coverage: 10,938 passed, 0 skipped. Evals 358 passed; scorecard
+- Backend unit/coverage: 10,938 passed, 0 skipped; after the visibility cache, 10,946 passed, 0 skipped. Evals 358 passed; scorecard
   54/189; mypy; Ruff on the 22 changed Python files; user-data boundary check.
 - Frontend: `pnpm lint` (0 errors; existing warnings only), `pnpm build`, and
   `pnpm test:coverage` 194 files / 1,614 tests passed. An earlier run, made while

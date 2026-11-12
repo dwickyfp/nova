@@ -97,9 +97,9 @@ findings. In particular:
   and [the open-findings record](../../reports/production-refactor/open-findings/README.md)):
   the CDN editor dependency, pipe listing, sandbox start timeout, UDF create/drop
   and docs, and four slow endpoints are fixed. The engine shows its recycle bin
-  only to root, so Nova refuses that listing explicitly. `ontology/metrics`
-  (16–21 s) and `ontology/lint` (8–10 s) remain slow pending a decision on
-  visibility caching; one page reload did not recur.
+  only to root, so Nova refuses that listing explicitly. With the owner-approved
+  60-second per-role visibility cache, `ontology/metrics` takes 5.5–8 s warm
+  (16 s cold) and `ontology/lint` 1.7 s warm; one page reload did not recur.
 - Historical Agent runs with missing events remain preserved; their provenance
   is unresolved. Do not fabricate events or silently discard history.
 

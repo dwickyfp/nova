@@ -69,9 +69,29 @@ class SemanticViewCatalog:
         )
 
     async def visible(self, view_id: str, user: dict) -> bool:
+        """Whether ``user`` may see the view, briefly reused for ontology reports.
+
+        Each check asks Ranger and plans a query on the caller's connection, so
+        the Overview and meaning checks reuse an answer for the catalog
+        visibility TTL. The key covers the caller's principal, active role and
+        security-context version, every managed access change, and the view's
+        status and active version, so a role switch, a grant or revoke made in
+        Nova, or a new published version is checked again at once. Grants
+        changed outside Nova take effect within the TTL. Query execution still
+        checks access on every request.
+        """
+        from app.modules.catalog.visibility import cached_answer
         from app.modules.intelligence.semantic_views import semantic_view_service
 
-        return await semantic_view_service.is_visible(view_id, user)
+        view = await semantic_view_service._get(view_id)
+        if not view:
+            return False
+        scope = f"semantic-view:{view_id}:{view.get('status')}:{view.get('active_version')}"
+
+        async def load() -> bool:
+            return await semantic_view_service.is_visible(view_id, user)
+
+        return bool(await cached_answer(user, scope, load))
 
     async def version(self, view_id: str, version: int) -> PublishedView | None:
         """One version of a view, published now or before."""
