@@ -1,7 +1,7 @@
 """Reviewed source-to-target contract for the one-shot metadata import.
 
 ``metadata_import/contract.json`` is generated from the reviewed ownership and
-column-transform inventories plus the installed PG schema (``generate``). It is
+column-transform inventories; the importer checks the installed PG schema. It is
 packaged with the backend so the import never reads engineering documents at
 run time. ``metadata_import/timestamp_provenance.csv`` records, per DATETIME
 column, which writer clock produced the naive source value; a deployment
@@ -134,6 +134,7 @@ class ColumnProvenance:
     source_column: str
     classification: str
     clock: str | None
+    source_row_digest: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,10 +142,15 @@ class TimestampProvenance:
     sha256: str
     columns: Mapping[tuple[str, str], ColumnProvenance]
 
-    def zone_for(self, table: str, column: str, binding: Mapping[str, str]) -> str | None:
+    def zone_for(
+        self, table: str, column: str, binding: Mapping[str, str], *,
+        source_row_digest: str | None = None,
+    ) -> str | None:
         """Return the bound zone, or None when the column needs reconciliation."""
         entry = self.columns.get((table, column))
         if entry is None or entry.clock is None:
+            return None
+        if entry.source_row_digest is not None and entry.source_row_digest != source_row_digest:
             return None
         return binding[entry.clock]
 
@@ -160,16 +166,23 @@ def load_provenance(path: Path = PROVENANCE_PATH) -> TimestampProvenance:
         try:
             table, column = row["source_table"], row["source_column"]
             classification, clock = row["classification"], row["clock"] or None
+            source_row_digest = row.get("source_row_digest") or None
         except KeyError:
             raise ImportContractError() from None
         if (
             not _TABLE.fullmatch(table) or not _TARGET.fullmatch(column)
             or (table, column) in columns
+            or classification not in (*BLOCKED_CLASSES, "REVIEWED_WRITER", "DEPLOYMENT_REVIEW")
             or (clock is not None and clock not in CLOCKS)
             or (clock is None) != (classification in BLOCKED_CLASSES)
+            or (source_row_digest is not None
+                and not re.fullmatch(r"[0-9a-f]{64}", source_row_digest))
+            or (classification == "DEPLOYMENT_REVIEW" and source_row_digest is None)
         ):
             raise ImportContractError()
-        columns[(table, column)] = ColumnProvenance(table, column, classification, clock)
+        columns[(table, column)] = ColumnProvenance(
+            table, column, classification, clock, source_row_digest,
+        )
     return TimestampProvenance(hashlib.sha256(data).hexdigest(), columns)
 
 
@@ -197,12 +210,15 @@ def parse_clock_binding(text: str) -> dict[str, str]:
 
 def import_columns(
     table: TableContract, provenance: TimestampProvenance, binding: Mapping[str, str],
+    *, source_row_digest: str | None = None,
 ) -> tuple[ImportColumn | None, ...]:
     """Typed converters; None marks a DATETIME column without a proven zone."""
     result: list[ImportColumn | None] = []
     for column in table.columns:
         if column.source_type == "datetime":
-            zone = provenance.zone_for(table.source_table, column.name, binding)
+            zone = provenance.zone_for(
+                table.source_table, column.name, binding, source_row_digest=source_row_digest,
+            )
             result.append(
                 None if zone is None else
                 ImportColumn(column.name, column.source_type, column.nullable, zone)

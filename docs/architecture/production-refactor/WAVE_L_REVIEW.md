@@ -17,7 +17,7 @@ numeric/string IDs, remains present and unchanged.
 
 The temporal keys permit time partitioning. `record_id` is an additional opaque
 UUID. Imported rows derive it from a stable snapshot UUID, table name, immutable
-chunk SHA-256 and zero-based row occurrence. Identical rows at different offsets
+chunk SHA-256 and zero-based row offset across the entire table. Identical rows at different offsets
 have different identities. An interrupted import reuses the same verified
 snapshot/chunks; changing chunk boundaries or re-exporting is a new import.
 New application events will allocate new record IDs in their owning repository.
@@ -27,8 +27,8 @@ from observed row counts or from auto-increment declarations.
 `core.metadata_import.import_row_id` implements the deterministic identity rule.
 Its input validation does not authenticate an export or prove a writer freeze.
 The export/import orchestrator must verify the manifest, chunk hashes, row counts
-and cutover ownership before using it. Those orchestration and partition/schema
-steps are still pending. The PG fixture proves that two occurrences with the
+and cutover ownership before using it. The packaged importer now verifies those bindings and commits chunk receipts
+with their rows; one full disposable rehearsal matched the source inventory. The PG fixture proves that two occurrences with the
 same legacy ID survive, replaying one identity conflicts, and a rejected value
 rolls its transaction back. It does not prove a complete source import.
 
@@ -58,7 +58,10 @@ text/ciphertext, JSON with exact numeric text and distinct SQL/JSON null, and
 timestamps requiring an explicit proven zone. Unsupported types, duplicate JSON
 keys, invalid strings and lossy coercions are refused with a redacted exception.
 
-All 249 DATETIME columns remain `TIMESTAMP_PROVENANCE_REQUIRED`. Current engine
+All 249 DATETIME columns are classified in the packaged provenance ledger:
+232 have reviewed writer clocks, six have snapshot-bound deployment evidence,
+and 11 reserved columns remain unknown and reject non-null values. See
+[TIMESTAMP_PROVENANCE_REVIEW.md](TIMESTAMP_PROVENANCE_REVIEW.md). Current engine
 timezone alone does not establish the timezone used by every historical writer.
 The helper rejects naive timestamps without a selected provenance zone, DST gaps
 and repeated local times. It does not select a timezone or default fold to make
@@ -66,5 +69,6 @@ an import succeed. Operator/row-specific reconciliation must precede those impor
 
 There are no unresolved target key *definitions* in the ownership CSV after this
 review. Logical uniqueness, FK/orphan resolution, domain checks, grants/RLS,
-timestamp provenance, schema installation and full import rehearsal remain open.
+final deployment binding, second full rehearsal, payload/semantic validation
+and cutover acceptance must still be completed on the delivered revision.
 This review does not complete WP00 or WP03.

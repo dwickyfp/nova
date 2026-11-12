@@ -38,7 +38,6 @@ from psycopg.types.json import Jsonb
 from app.core.metadata_actor import actor_for, current_actor, metadata_transaction
 from app.core.metadata_db import MetadataConflict, MetadataPermissionDenied
 from app.modules.access_control.security_context import SecurityContext
-from app.modules.assistant.skills import contains_credential_shape
 
 SKILL_BODY_PREFIX = "nova-skill-body:v1:"
 _SKILL_PART = 16000
@@ -101,6 +100,8 @@ def frame_sequence(frame: str) -> int:
 
 
 def _screen(*values: Any) -> None:
+    from app.modules.assistant.skills import contains_credential_shape
+
     for value in values:
         if value is None:
             continue
@@ -917,8 +918,46 @@ class AgentMetadataRepository:
             params += (self.actor.session_id, self.actor.security_context_version)
         return await self._one(query, params)
 
+    async def list_missions(
+        self, thread_id: str, *, session_scope: bool = True,
+    ) -> list[dict[str, Any]]:
+        await self._bound()
+        clause = " AND session_id=%s AND security_version=%s" if session_scope else ""
+        params = (
+            (self.actor.session_id, self.actor.security_context_version) if session_scope else ()
+        )
+        return await self._all(
+            "SELECT * FROM nova_meta.config_studio_missions WHERE thread_id=%s "
+            "AND owner_name=%s AND role_name=%s" + clause
+            + " ORDER BY created_at DESC,mission_id LIMIT 51",
+            (thread_id, self.actor.principal, self.actor.active_role, *params))
+
+    async def mission_run_events(self, run_id: str, after: int) -> list[dict[str, Any]]:
+        await self._bound()
+        return await self._all(
+            "SELECT e.sequence,e.frame FROM nova_meta.config_agent_run_events e "
+            "JOIN nova_meta.config_agent_runs r USING(run_id) WHERE e.run_id=%s "
+            "AND r.owner_name=%s AND r.role_name=%s AND e.sequence>%s "
+            "AND e.sequence<=r.last_sequence ORDER BY e.sequence LIMIT 100",
+            (run_id, self.actor.principal, self.actor.active_role, after))
+
+    async def get_deliverable(self, deliverable_id: str) -> dict[str, Any] | None:
+        await self._bound()
+        return await self._one(
+            "SELECT * FROM nova_meta.config_studio_deliverables WHERE deliverable_id=%s "
+            "AND owner_name=%s AND role_name=%s",
+            (deliverable_id, self.actor.principal, self.actor.active_role))
+
+    async def list_deliverables(self, mission_id: str) -> list[dict[str, Any]]:
+        await self._bound()
+        return await self._all(
+            "SELECT * FROM nova_meta.config_studio_deliverables WHERE mission_id=%s "
+            "AND owner_name=%s AND role_name=%s ORDER BY created_at DESC,deliverable_id LIMIT 100",
+            (mission_id, self.actor.principal, self.actor.active_role))
+
     async def save_mission(
         self, mission_id: str, payload: Any, *, expected_revision: int, resume: bool = False,
+        expected_storage_revision: int | None = None, advance_revision: bool = True,
     ) -> dict[str, Any]:
         """Advance a Mission from the revision read.
 
@@ -932,16 +971,23 @@ class AgentMetadataRepository:
         scope = "" if resume else " AND session_id=%s AND security_version=%s"
         params: tuple[Any, ...] = () if resume else (
             self.actor.session_id, self.actor.security_context_version)
+        if not advance_revision and expected_storage_revision is None:
+            raise ValueError("A cursor update requires its storage revision")
+        if expected_storage_revision is not None:
+            scope += " AND storage_revision=%s"
+            params += (_positive(expected_storage_revision),)
         row = await self._one(
-            "UPDATE nova_meta.config_studio_missions SET revision=revision+1,payload=%s "
+            "UPDATE nova_meta.config_studio_missions SET revision=revision+%s,payload=%s,"
+            "storage_revision=storage_revision+1 "
             f"WHERE mission_id=%s AND revision=%s{scope} RETURNING *",
-            (text, mission_id, _positive(expected_revision), *params))
+            (int(advance_revision), text, mission_id, _positive(expected_revision), *params))
         if row is None:
             raise MetadataConflict()
         return row
 
     async def deliver(
-        self, mission_id: str, request_digest: str, payload: Any,
+        self, mission_id: str, request_digest: str, payload: Any, *,
+        deliverable_id: str | None = None,
     ) -> tuple[dict[str, Any], bool]:
         """Record one receipt per Mission request; a retry returns the existing one."""
         await self._bound()
@@ -952,8 +998,8 @@ class AgentMetadataRepository:
             "owner_name,role_name,request_digest,payload) VALUES (%s,%s,%s,%s,%s,%s) "
             "ON CONFLICT (mission_id,request_digest) WHERE provenance='runtime' DO NOTHING "
             "RETURNING *",
-            (str(uuid4()), mission_id, self.actor.principal, self.actor.active_role,
-             request_digest, text))
+            (deliverable_id or str(uuid4()), mission_id, self.actor.principal,
+             self.actor.active_role, request_digest, text))
         if row is not None:
             return row, True
         existing = await self._one(
@@ -965,7 +1011,9 @@ class AgentMetadataRepository:
 
     # ── Automations ───────────────────────────────────────────────────────
 
-    async def create_automation(self, agent_id: str, fields: dict[str, Any]) -> dict[str, Any]:
+    async def create_automation(
+        self, agent_id: str, fields: dict[str, Any], *, automation_id: str | None = None,
+    ) -> dict[str, Any]:
         await self._bound()
         unknown = set(fields) - set(_AUTOMATION_FIELDS)
         if unknown:
@@ -977,10 +1025,22 @@ class AgentMetadataRepository:
         row = await self._one(
             f"INSERT INTO nova_meta.config_agent_automations ({','.join(columns)}) VALUES ("
             + ",".join(["%s"] * len(columns)) + ") RETURNING *",
-            (str(uuid4()), agent_id, self.actor.principal, self.actor.active_role,
+            (automation_id or str(uuid4()), agent_id, self.actor.principal, self.actor.active_role,
              *values.values()))
         assert row is not None
         return row
+
+    async def lock_automations(self, agent_id: str) -> None:
+        await self._bound()
+        await self.connection.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+            (json.dumps(["agent-automations", self.actor.principal, agent_id]),))
+
+    async def get_automation(self, automation_id: str, owner: str) -> dict[str, Any] | None:
+        await self._bound()
+        return await self._one(
+            "SELECT * FROM nova_meta.config_agent_automations WHERE automation_id=%s "
+            "AND owner_name=%s", (automation_id, owner))
 
     async def update_automation(
         self, automation_id: str, changes: dict[str, Any], *, expected_revision: int,
@@ -1007,7 +1067,7 @@ class AgentMetadataRepository:
         await self._bound()
         return await self._all(
             "SELECT * FROM nova_meta.config_agent_automations WHERE agent_id=%s AND owner_name=%s "
-            "ORDER BY created_at,automation_id", (agent_id, self.actor.principal))
+            "ORDER BY created_at DESC,automation_id", (agent_id, self.actor.principal))
 
     async def delete_automation(self, automation_id: str) -> bool:
         await self._bound()
@@ -1020,25 +1080,34 @@ class AgentMetadataRepository:
         await self._bound()
         return await self._all(
             "SELECT * FROM nova_meta.config_agent_automations WHERE enabled AND next_run_at "
-            "IS NOT NULL AND next_run_at<=%s ORDER BY next_run_at,automation_id LIMIT %s",
+            "IS NOT NULL AND next_run_at<=%s "
+            "AND coalesce(last_status,'') NOT IN ('running','VERIFYING','BLOCKED') "
+            "AND agent_id NOT IN ('__smart__','__auto__') "
+            "ORDER BY next_run_at,automation_id LIMIT %s",
             (now, min(max(limit, 1), 100)))
 
     async def claim_automation(
         self, automation_id: str, *, seen_next_run_at: datetime, seen_generation: int,
+        seen_revision: int | None = None,
     ) -> int | None:
         """Claim the due occurrence read by the scan; one worker wins its generation.
 
-        The claim compares the generation the scan saw, so a lost worker's
-        claim can be retaken explicitly while a racing duplicate cannot.
+        A started occurrence is never claimed as new work. Its durable job
+        owns recovery; a lease expiry cannot authorize replay of delivery.
         """
         await self._bound()
         if type(seen_generation) is not int or seen_generation < 0:
             raise ValueError("A generation is required")
+        if seen_revision is not None and (type(seen_revision) is not int or seen_revision < 1):
+            raise ValueError("A positive revision is required")
         row = await self._one(
             "UPDATE nova_meta.config_agent_automations SET run_generation=run_generation+1,"
             "last_status='running' WHERE automation_id=%s AND enabled AND next_run_at=%s "
-            "AND run_generation=%s RETURNING run_generation",
-            (automation_id, seen_next_run_at, seen_generation))
+            "AND run_generation=%s AND coalesce(last_status,'') "
+            "NOT IN ('running','VERIFYING','BLOCKED') "
+            "AND (%s OR metadata_revision=%s) RETURNING run_generation",
+            (automation_id, seen_next_run_at, seen_generation,
+             seen_revision is None, seen_revision))
         return int(row["run_generation"]) if row else None
 
     async def record_automation_run(
@@ -1057,6 +1126,191 @@ class AgentMetadataRepository:
              _positive(generation))) == 1
 
     # ── Memory ────────────────────────────────────────────────────────────
+
+    async def lock_memory(self, memory_id: str) -> None:
+        await self._bound()
+        await self.connection.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("agent-memory:" + memory_id,)
+        )
+
+    async def get_memory(
+        self, memory_id: str, owner: str, agent_id: str, role: str
+    ) -> dict[str, Any] | None:
+        await self._bound()
+        return await self._one(
+            "SELECT * FROM nova_meta.config_agent_memories WHERE memory_id=%s "
+            "AND user_name=%s AND agent_id=%s AND role_name=%s",
+            (memory_id, owner, agent_id, role),
+        )
+
+    async def list_memories(
+        self, owner: str, agent_id: str, role: str, limit: int, offset: int
+    ) -> list[dict[str, Any]]:
+        await self._bound()
+        return await self._all(
+            "SELECT * FROM nova_meta.config_agent_memories WHERE user_name=%s "
+            "AND agent_id=%s AND role_name=%s ORDER BY updated_at DESC,memory_id DESC "
+            "LIMIT %s OFFSET %s",
+            (owner, agent_id, role, limit, offset),
+        )
+
+    async def scoped_memory_revisions(
+        self, memory_id: str, owner: str, agent_id: str, role: str
+    ) -> list[dict[str, Any]]:
+        await self._bound()
+        return await self._all(
+            "SELECT * FROM nova_meta.config_agent_memory_revisions WHERE memory_id=%s "
+            "AND user_name=%s AND agent_id=%s AND role_name=%s "
+            "ORDER BY revision DESC,operation_id LIMIT 100",
+            (memory_id, owner, agent_id, role),
+        )
+
+    async def memory_heads(
+        self, ids: list[str], owner: str, agent_id: str, role: str
+    ) -> list[dict[str, Any]]:
+        await self._bound()
+        return await self._all(
+            "SELECT memory_id,payload,branches FROM (SELECT memory_id,payload,"
+            "row_number() OVER (PARTITION BY memory_id ORDER BY revision DESC) AS rn,"
+            "count(*) OVER (PARTITION BY memory_id,revision) AS branches "
+            "FROM nova_meta.config_agent_memory_revisions WHERE memory_id=ANY(%s) "
+            "AND user_name=%s AND agent_id=%s AND role_name=%s) latest WHERE rn=1",
+            (ids, owner, agent_id, role),
+        )
+
+    async def append_memory_revision(
+        self, memory_id: str, agent_id: str, revision: int, operation_id: str, payload: str
+    ) -> None:
+        await self._bound()
+        _screen(payload)
+        await self.connection.execute(
+            "INSERT INTO nova_meta.config_agent_memory_revisions (memory_id,revision,operation_id,"
+            "user_name,agent_id,role_name,payload) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (
+                memory_id,
+                revision,
+                operation_id,
+                self.actor.principal,
+                agent_id,
+                self.actor.active_role,
+                payload,
+            ),
+        )
+
+    async def project_memory(
+        self, memory_id: str, agent_id: str, fields: dict[str, Any]
+    ) -> dict[str, Any]:
+        await self._bound()
+        if set(fields) != set(_MEMORY_FIELDS):
+            raise ValueError("A complete memory projection is required")
+        _screen(*fields.values())
+        history = await self.scoped_memory_revisions(
+            memory_id, self.actor.principal, agent_id, self.actor.active_role
+        )
+        if not history or (len(history) > 1 and history[0]["revision"] == history[1]["revision"]):
+            raise MetadataConflict()
+        revision = history[0]["revision"]
+        current = await self.get_memory(
+            memory_id, self.actor.principal, agent_id, self.actor.active_role
+        )
+        if current:
+            if current["revision"] == revision:
+                if any(current[key] != value for key, value in fields.items()):
+                    raise MetadataConflict()
+                return current
+            assignments = ",".join(f"{key}=%s" for key in fields)
+            row = await self._one(
+                f"UPDATE nova_meta.config_agent_memories SET {assignments},revision=%s "
+                "WHERE memory_id=%s AND revision IS NOT DISTINCT FROM %s RETURNING *",
+                (*fields.values(), revision, memory_id, current["revision"]),
+            )
+        else:
+            row = await self._one(
+                "INSERT INTO nova_meta.config_agent_memories "
+                "(memory_id,user_name,agent_id,role_name,"
+                "fact_key,fact,source_quote,source_thread_id,revision) VALUES "
+                "(%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",
+                (
+                    memory_id,
+                    self.actor.principal,
+                    agent_id,
+                    self.actor.active_role,
+                    fields["fact_key"],
+                    fields["fact"],
+                    fields["source_quote"],
+                    fields["source_thread_id"],
+                    revision,
+                ),
+            )
+        if row is None:
+            raise MetadataConflict()
+        return row
+
+    async def put_memory_evidence(
+        self, memory_id: str, agent_id: str, evidence_id: str, payload: dict[str, Any]
+    ) -> None:
+        await self._bound()
+        _screen(payload)
+        existing = await self._one(
+            "SELECT payload FROM nova_meta.config_agent_memory_evidence "
+            "WHERE memory_id=%s AND evidence_id=%s",
+            (memory_id, evidence_id),
+        )
+        if existing:
+            prior = json.loads(existing["payload"])
+            # An observation retry retains its first timestamp and provenance.
+            keys = (
+                "integrity_hash",
+                "source_thread_id",
+                "source_message_id",
+                "quote",
+                "fact",
+                "kind",
+            )
+            if any(prior.get(key) != payload.get(key) for key in keys):
+                raise MetadataConflict()
+            return
+        await self.connection.execute(
+            "INSERT INTO nova_meta.config_agent_memory_evidence (memory_id,evidence_id,"
+            "user_name,agent_id,role_name,payload) VALUES (%s,%s,%s,%s,%s,%s)",
+            (
+                memory_id,
+                evidence_id,
+                self.actor.principal,
+                agent_id,
+                self.actor.active_role,
+                _json_text(payload),
+            ),
+        )
+
+    async def memory_evidence(
+        self, memory_id: str, owner: str, agent_id: str, role: str, allowed: list[str]
+    ) -> list[dict[str, Any]]:
+        await self._bound()
+        return await self._all(
+            "SELECT evidence_id,payload FROM nova_meta.config_agent_memory_evidence "
+            "WHERE memory_id=%s AND user_name=%s AND agent_id=%s AND role_name=%s "
+            "AND evidence_id=ANY(%s) ORDER BY created_at DESC,evidence_id LIMIT 100",
+            (memory_id, owner, agent_id, role, allowed),
+        )
+
+    async def delete_memory_projection(self, memory_id: str, agent_id: str) -> bool:
+        await self._bound()
+        return (
+            await self._count(
+                "DELETE FROM nova_meta.config_agent_memories WHERE memory_id=%s AND agent_id=%s",
+                (memory_id, agent_id),
+            )
+            == 1
+        )
+
+    async def shared_memories(self, agent_id: str) -> list[dict[str, Any]]:
+        await self._bound()
+        return await self._all("SELECT * FROM nova_meta.shared_agent_memories(%s)", (agent_id,))
+
+    async def delete_agent_memories(self, agent_id: str) -> None:
+        await self._bound()
+        await self.connection.execute("SELECT nova_meta.delete_agent_memories(%s)", (agent_id,))
 
     async def create_memory(
         self, agent_id: str, fields: dict[str, Any], payload: Any,
@@ -1408,6 +1662,29 @@ class AgentMetadataRepository:
         return await self._count(
             "DELETE FROM nova_meta.config_studio_dashboards WHERE dashboard_id=%s "
             "AND owner_name=%s", (dashboard_id, self.actor.principal)) == 1
+
+    async def delegated_resource(
+        self, resource_id: str, thread_id: str, root_id: str,
+    ) -> dict[str, Any] | None:
+        await self._bound()
+        return await self._one(
+            "SELECT payload FROM nova_meta.config_studio_resources WHERE resource_id=%s "
+            "AND owner_name=%s AND role_name=%s AND session_id=%s AND security_version=%s "
+            "AND thread_id=%s AND root_run_id=%s",
+            (resource_id, self.actor.principal, self.actor.active_role, self.actor.session_id,
+             self.actor.security_context_version, thread_id, root_id))
+
+    async def delegated_grants(
+        self, participant: str, thread_id: str, root_id: str,
+    ) -> list[dict[str, Any]]:
+        await self._bound()
+        return await self._all(
+            "SELECT resource_id FROM nova_meta.config_studio_resource_grants "
+            "WHERE participant_id=%s AND owner_name=%s AND role_name=%s AND session_id=%s "
+            "AND security_version=%s AND thread_id=%s AND root_run_id=%s "
+            "ORDER BY resource_id LIMIT 4",
+            (participant, self.actor.principal, self.actor.active_role, self.actor.session_id,
+             self.actor.security_context_version, thread_id, root_id))
 
     async def delegated_resources(self, thread_id: str) -> list[dict[str, Any]]:
         await self._bound()

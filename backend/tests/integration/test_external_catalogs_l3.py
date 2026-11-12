@@ -35,7 +35,6 @@ import pytest_asyncio
 
 from tests.conftest import root_password, s3_credentials
 from tests.integration._lakehouse import iceberg_catalog_sql
-from tests.integration._nova_system_ddl import ensure_audit_log
 from tests.integration._stack import (
     require_shared_stack,
     shared_stack_host_port,
@@ -128,26 +127,6 @@ def _minio_client():
     )
 
 
-async def _ensure_catalog_schema() -> None:
-    from app.modules.catalog.repository import CATALOG_DDLS
-
-    await ensure_audit_log(SR_HOST, SR_PORT, SR_USER, SR_PASSWORD)
-    for ddl in CATALOG_DDLS:
-        await _admin_execute(ddl)
-
-
-async def _forget_catalog(name: str) -> None:
-    """Remove one test catalog's rows from the Nova Catalog store."""
-    for table, column in (
-        ("CATALOG_CATALOGS", "name"),
-        ("CATALOG_OBJECTS", "catalog_name"),
-        ("CATALOG_COLUMNS", "catalog_name"),
-        ("CATALOG_SYNC_RUNS", "catalog_name"),
-    ):
-        with contextlib.suppress(Exception):
-            await _admin_execute(f"DELETE FROM NOVA_SYSTEM.{table} WHERE {column} = '{name}'")
-
-
 @pytest_asyncio.fixture(scope="session")
 async def l3_admin_user(request):
     """Create a suite-owned admin account with exactly the privileges the
@@ -214,7 +193,6 @@ async def engine(request):
     require_shared_stack(request)
     if not await _reachable():
         pytest.skip("StarRocks not reachable")
-    await _ensure_catalog_schema()
     with contextlib.suppress(Exception):
         _minio_client().create_bucket(Bucket=BUCKET)
 
@@ -253,7 +231,6 @@ async def namespace(engine):
 
     with contextlib.suppress(Exception):
         await _admin_execute(f"DROP CATALOG IF EXISTS {name}")
-    await _forget_catalog(name)
     # Remove the warehouse objects so the namespace cannot shadow a later run.
     with contextlib.suppress(Exception):
         paginator = client.get_paginator("list_objects_v2")

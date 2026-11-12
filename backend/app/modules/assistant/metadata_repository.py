@@ -417,6 +417,18 @@ class AssistantMetadataRepository:
             (thread_id, message_id, user_name),
         )
 
+    async def disliked_agent_messages(self, agent_id: str) -> list[dict[str, Any]]:
+        await self._bound()
+        return await self._all(
+            "SELECT steps FROM nova_meta.config_assistant_messages "
+            "WHERE agent_id=%s AND user_name=%s AND feedback='dislike' "
+            "AND security_context->>'active_role'=%s "
+            "AND security_context->>'security_context_version'=%s "
+            "ORDER BY created_at DESC,message_id DESC LIMIT 200",
+            (agent_id, self.actor.principal, self.actor.active_role,
+             str(self.actor.security_context_version)),
+        )
+
     async def liked_answers(self, *, limit: int = 2000) -> list[dict[str, Any]]:
         """Liked answers on threads that allow learning, newest first.
 

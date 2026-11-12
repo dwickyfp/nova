@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -38,67 +37,23 @@ def test_canonical_empty_binding_overrides_legacy_ids() -> None:
     ))
 
 
-@pytest.mark.asyncio
-async def test_startup_backfill_persists_legacy_bindings_once(monkeypatch) -> None:
-    agents = {
-        "list": ["old-scalar", '["active-view","draft-view","active-view"]', None],
-        "scalar": ["scalar-view", "[]", None],
-        "unbound": [None, "[]", None],
-        "revoked": ["old-view", '["old-view"]', "[]"],
-        "modern": ["old-view", '["old-view"]', '["modern-view"]'],
-    }
-    writes = []
-
-    class FakeDB:
-        async def execute_system(self, sql, params=None):
-            if sql.startswith("SELECT"):
-                return {
-                    "rows": [
-                        [agent_id, *values[:2]]
-                        for agent_id, values in agents.items()
-                        if values[2] is None
-                    ]
-                }
-            assert sql == (
-                "UPDATE NOVA_SYSTEM.CONFIG_AGENTS SET semantic_view_ids = %s "
-                "WHERE agent_id = %s AND semantic_view_ids IS NULL"
-            )
-            writes.append((sql, params))
-            agent_id = params[1]
-            if agents[agent_id][2] is not None:
-                return {"affected": 0}
-            agents[agent_id][2] = params[0]
-            return {"affected": 1}
-
-    monkeypatch.setattr(repository, "db", FakeDB())
-    repo = repository.AgentRepository()
-    assert await repo.backfill_semantic_view_ids() == 3
-    assert json.loads(agents["list"][2]) == ["active-view", "draft-view"]
-    assert json.loads(agents["scalar"][2]) == ["scalar-view"]
-    assert json.loads(agents["unbound"][2]) == []
-    assert agents["revoked"][2] == "[]"
-    assert json.loads(agents["modern"][2]) == ["modern-view"]
-    assert len(writes) == 3
-
-    assert await repo.backfill_semantic_view_ids() == 0
-    assert len(writes) == 3
-    assert agents["list"][:2] == [
-        "old-scalar", '["active-view","draft-view","active-view"]'
-    ]
-
-
-@pytest.mark.asyncio
-async def test_backfill_keeps_concurrent_explicit_unbind(monkeypatch) -> None:
-    class FakeDB:
-        async def execute_system(self, sql, params=None):
-            if sql.startswith("SELECT"):
-                return {"rows": [["agent-1", "legacy-view", None]]}
-            assert "AND semantic_view_ids IS NULL" in sql
-            assert params == ['["legacy-view"]', "agent-1"]
-            return {"affected": 0}
-
-    monkeypatch.setattr(repository, "db", FakeDB())
-    assert await repository.AgentRepository().backfill_semantic_view_ids() == 0
+@pytest.mark.parametrize("canonical,legacy,expected", [
+    (None, ["old-view", "draft-view"], ["old-view", "draft-view"]),
+    ([], ["old-view"], []),
+    (["modern-view"], ["old-view"], ["modern-view"]),
+])
+async def test_imported_binding_is_projected_without_rewriting_history(
+    monkeypatch, canonical, legacy, expected,
+):
+    store = install_agent_store(monkeypatch, AsyncMock(), principal="owner")
+    original = {"agent_id": "old-agent", "owner_name": "owner", "name": "Legacy",
+                "semantic_model_ids": legacy, "semantic_view_ids": canonical}
+    store.get_agent.return_value = dict(original)
+    first = await repository.agent_repository.get_agent("old-agent", owner_name="owner")
+    second = await repository.agent_repository.get_agent("old-agent", owner_name="owner")
+    assert first["semantic_view_ids"] == second["semantic_view_ids"] == expected
+    assert store.get_agent.return_value == original
+    store.update_agent.assert_not_awaited()
 
 
 @pytest.mark.asyncio

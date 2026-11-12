@@ -137,6 +137,8 @@ async def _save_record_locked(
     safe_content(record)
     old_records = await records(kind, None, user, record["id"])
     old = old_records[0] if old_records else None
+    if old is None and expected_revision:
+        raise HTTPException(404, "Quality record unavailable")
     if old and (
         old["agent_id"] != record["agent_id"]
         or old["scope"] != scope.model_dump(mode="json", exclude={"session_id"})

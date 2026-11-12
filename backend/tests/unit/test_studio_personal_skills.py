@@ -44,36 +44,39 @@ def test_upload_accepts_exactly_25_mb_and_rejects_one_extra_byte():
 
 
 async def test_large_skill_storage_roundtrip_is_owner_scoped_and_utf8_safe(monkeypatch):
-    from app.modules.agents import repository
+    from unittest.mock import MagicMock
+
+    from app.modules.access_control.security_context import SecurityContext
+    from app.modules.agents.metadata_repository import AgentMetadataRepository
 
     document = DOCUMENT + "文😀" * ((personal_skills.MAX_SKILL_BYTES - len(DOCUMENT.encode())) // 7)
     document += "x" * (personal_skills.MAX_SKILL_BYTES - len(document.encode()))
     stored = []
 
-    async def execute(sql, params):
-        if sql.startswith("INSERT"):
-            for offset in range(0, len(params), 5):
-                skill_id, owner, revision, index, content = params[offset : offset + 5]
-                assert (skill_id, owner) == ("s1", "alice")
-                assert len(content.encode()) <= 65533
-                stored.append((index, content))
-            return {}
-        assert params[:2] == ["s1", "alice"]
-        assert "revision = %s" in sql
-        return {"rows": stored}
+    async def execute(sql, rows):
+        assert "nova_meta.config_skill_body_chunks" in sql
+        for skill_id, _revision, index, owner, content in rows:
+            assert (skill_id, owner) == ("s1", "alice")
+            assert len(content.encode()) <= 65533
+            stored.append({"part_index": index, "content": content})
 
-    monkeypatch.setattr(repository.db, "execute_system", execute)
-    marker = await agent_repository._store_skill_body("s1", "alice", document)
+    async def read(sql, params):
+        assert params[:2] == ("s1", "alice")
+        assert "revision=%s" in sql
+        return stored
+
+    connection = MagicMock()
+    cursor = connection.cursor.return_value.__aenter__.return_value
+    cursor.executemany = AsyncMock(side_effect=execute)
+    store = AgentMetadataRepository(connection, SecurityContext("alice", "ANALYST"))
+    monkeypatch.setattr(store, "_all", read)
+    marker = await store._store_skill_body("s1", document)
     assert len(marker) < 128
-    loaded = await agent_repository._load_skill_body(
-        {"skill_id": "s1", "owner_name": "alice", "body": marker}
-    )
-    assert loaded["body"] == document
+    skill = {"skill_id": "s1", "owner_name": "alice", "body": marker}
+    assert (await store._load_skill_body(skill))["body"] == document
     stored.pop()
     with pytest.raises(ValueError, match="completely"):
-        await agent_repository._load_skill_body(
-            {"skill_id": "s1", "owner_name": "alice", "body": marker}
-        )
+        await store._load_skill_body(skill)
 
 
 async def test_failed_chunk_write_never_publishes_skill(monkeypatch):
@@ -286,25 +289,19 @@ async def test_embedded_author_thread_resolution_retains_owner_checks(monkeypatc
         await router.get_agent(SKILL_AUTHOR_ID, {"username": "bob"})
 
 
-async def test_legacy_author_migration_preserves_history_and_custom_agents(monkeypatch):
-    from app.common import audit
-    from app.modules.agents import repository
+async def test_legacy_author_keeps_original_id_and_custom_configuration(monkeypatch):
     from app.modules.agents.skill_author import skill_author_config
 
     legacy = {**skill_author_config("alice"), "agent_id": "old", "default_tools": ["load_skill"]}
     custom = {**legacy, "agent_id": "custom", "instructions_response": "User instructions"}
-    monkeypatch.setattr(repository, "_agent_row", lambda row: row)
-    execute = AsyncMock(side_effect=[{"rows": [legacy, custom]}, {"rows": [["audit-id"]]}, {}, {}])
-    monkeypatch.setattr(repository.db, "execute_system", execute)
-    remove = AsyncMock()
-    monkeypatch.setattr(agent_repository, "delete_agent", remove)
-    log = AsyncMock()
-    monkeypatch.setattr(audit, "write_audit_log", log)
-    await agent_repository.migrate_legacy_skill_authors()
-    remove.assert_awaited_once_with("old", owner_name="alice")
-    for call in execute.call_args_list[2:]:
-        assert call.args[1] == ["nova-skill-author", "old", "alice"]
-    log.assert_awaited_once()
+    store = install_agent_store(monkeypatch, AsyncMock(), principal="alice")
+    store.get_agent.side_effect = [legacy, custom]
+    first = await agent_repository.get_agent("old", owner_name="alice")
+    second = await agent_repository.get_agent("custom", owner_name="alice")
+    assert first["agent_id"] == "old" and first["default_tools"] == ["load_skill"]
+    assert second["agent_id"] == "custom" and second["instructions_response"] == "User instructions"
+    store.update_agent.assert_not_awaited()
+    store.delete_agent.assert_not_awaited()
 
 
 async def test_delete_does_not_reveal_or_modify_another_users_skill(monkeypatch):

@@ -48,8 +48,10 @@ from app.core.metadata_import_contract import ImportContract, load_contract
 from app.core.metadata_import_manifest import (
     VALIDATION_FORMAT,
     ValidatedManifestRefused,
+    canonical_json,
     verify_validated_document,
 )
+from app.core.metadata_import_semantics import CHECKS
 from app.core.metadata_schema import (
     SchemaManifestError,
     load_migrations,
@@ -113,19 +115,37 @@ class OperationResult:
 
 
 def _manifest_refusal(
-    document: bytes, state: DeploymentState, expected_sha256: str,
+    document: bytes,
+    state: DeploymentState,
+    expected_sha256: str,
     contract: ImportContract,
 ) -> str | None:
     """Require the whole reviewed import, bound to this freeze and schema ledger."""
     try:
         manifest = verify_validated_document(
-            document, expected_sha256, schema_version=state.schema_version,
+            document,
+            expected_sha256,
+            schema_version=state.schema_version,
             ledger_rows=((m.version, m.name, m.checksum) for m in load_migrations()),
         )
     except ValidatedManifestRefused as error:
         return "manifest_" + error.reason
     if manifest.get("contract_sha256") != contract.sha256:
         return "manifest_contract_mismatch"
+    semantics = manifest.get("semantics")
+    if semantics != {"status": "VERIFIED", "checks": dict.fromkeys(CHECKS, 0)}:
+        return "manifest_semantics_unverified"
+    payloads = manifest.get("managed_payloads")
+    if (
+        not isinstance(payloads, dict)
+        or payloads.get("status") != "VERIFIED"
+        or not isinstance(payloads.get("receipts"), list)
+        or type(payloads.get("count")) is not int
+        or payloads["count"] != len(payloads["receipts"])
+        or payloads.get("receipts_sha256")
+        != hashlib.sha256(canonical_json(payloads["receipts"])).hexdigest()
+    ):
+        return "manifest_payloads_unverified"
     try:
         freeze_id = UUID(str(manifest.get("freeze_operation_id")))
         validated_at = datetime.fromisoformat(str(manifest.get("validated_at")))
@@ -133,8 +153,11 @@ def _manifest_refusal(
         return "manifest_freeze_mismatch"
     if freeze_id != state.active_freeze_id:
         return "manifest_freeze_mismatch"
-    if (validated_at.tzinfo is None or state.active_freeze_at is None
-            or validated_at < state.active_freeze_at):
+    if (
+        validated_at.tzinfo is None
+        or state.active_freeze_at is None
+        or validated_at < state.active_freeze_at
+    ):
         return "manifest_predates_freeze"
     tables = manifest["tables"]
     if set(tables) != set(contract.tables):
@@ -146,14 +169,21 @@ def _manifest_refusal(
         if entry["status"] != ("MATCHED" if table.source_present else "ABSENT"):
             return "manifest_source_presence"
         source_count, target_count = entry.get("source_count"), entry.get("target_count")
-        if (type(source_count) is not int or type(target_count) is not int
-                or source_count < 0 or source_count != target_count
-                or (not table.source_present and source_count != 0)):
+        if (
+            type(source_count) is not int
+            or type(target_count) is not int
+            or source_count < 0
+            or source_count != target_count
+            or (not table.source_present and source_count != 0)
+        ):
             return "manifest_count_mismatch"
         for dimension in ("key_digest", "row_digest"):
             source, target = entry.get("source_" + dimension), entry.get("target_" + dimension)
-            if (not isinstance(source, str) or not re.fullmatch(r"[0-9a-f]{64}", source)
-                    or source != target):
+            if (
+                not isinstance(source, str)
+                or not re.fullmatch(r"[0-9a-f]{64}", source)
+                or source != target
+            ):
                 return "manifest_" + dimension + "_mismatch"
     return None
 
@@ -173,7 +203,10 @@ def decide_unfreeze(state: DeploymentState) -> Decision:
 
 
 def decide_publish(
-    state: DeploymentState, manifest: bytes, expected_sha256: str, *,
+    state: DeploymentState,
+    manifest: bytes,
+    expected_sha256: str,
+    *,
     contract: ImportContract | None = None,
 ) -> Decision:
     unchanged = (state.metadata_epoch, state.maintenance)
@@ -190,13 +223,20 @@ def decide_publish(
     if refusal:
         return Decision(refusal, *unchanged)
     return Decision(
-        None, uuid4(), True, state.active_freeze_id, hashlib.sha256(manifest).hexdigest(),
+        None,
+        uuid4(),
+        True,
+        state.active_freeze_id,
+        hashlib.sha256(manifest).hexdigest(),
     )
 
 
 async def _connect(config: MetadataPoolConfig) -> psycopg.AsyncConnection[dict[str, Any]]:
     return await psycopg.AsyncConnection.connect(
-        config.dsn, autocommit=True, row_factory=dict_row, prepare_threshold=None,
+        config.dsn,
+        autocommit=True,
+        row_factory=dict_row,
+        prepare_threshold=None,
         application_name="nova-metadata-cutover",
         connect_timeout=max(1, int(config.acquire_timeout)),
         options=(
@@ -224,7 +264,9 @@ async def _admit(conn: psycopg.AsyncConnection[dict[str, Any]]) -> None:
 
 
 async def _read_state(
-    conn: psycopg.AsyncConnection[dict[str, Any]], *, lock: bool,
+    conn: psycopg.AsyncConnection[dict[str, Any]],
+    *,
+    lock: bool,
 ) -> DeploymentState:
     cursor = await conn.execute(
         "SELECT version, name, checksum FROM nova_meta.schema_migrations ORDER BY version"
@@ -252,8 +294,11 @@ async def _read_state(
     )
     freeze = await cursor.fetchone()
     return DeploymentState(
-        int(state["schema_version"]), state["metadata_epoch"], bool(state["maintenance"]),
-        freeze["operation_id"] if freeze else None, freeze["recorded_at"] if freeze else None,
+        int(state["schema_version"]),
+        state["metadata_epoch"],
+        bool(state["maintenance"]),
+        freeze["operation_id"] if freeze else None,
+        freeze["recorded_at"] if freeze else None,
     )
 
 
@@ -284,10 +329,24 @@ async def execute(
             await _admit(conn)
             # Waits for admitted application transactions; bounded by lock_timeout.
             await conn.execute(
-                "SELECT pg_advisory_xact_lock(%s)", (METADATA_DEPLOYMENT_LOCK,),
+                "SELECT pg_advisory_xact_lock(%s)",
+                (METADATA_DEPLOYMENT_LOCK,),
             )
             state = await _read_state(conn, lock=True)
             decision = decide(state)
+            if operation == "publish_epoch" and decision.refusal is None:
+                cursor = await conn.execute(
+                    "SELECT count(*) AS n FROM nova_meta.metadata_import_runs "
+                    "WHERE status='VALIDATED' AND validation_sha256=%s "
+                    "AND freeze_operation_id=%s AND schema_version=%s "
+                    "AND encode(sha256(validation_document),'hex')=validation_sha256",
+                    (decision.manifest_sha256, state.active_freeze_id, state.schema_version),
+                )
+                receipt = await cursor.fetchone()
+                if not receipt or receipt["n"] != 1:
+                    decision = Decision(
+                        "import_receipt_missing", state.metadata_epoch, state.maintenance
+                    )
             await conn.execute(
                 "INSERT INTO nova_meta.cutover_operations (operation_id, operation, "
                 "outcome, refusal, operator, reason, app_version, schema_version, "
@@ -295,12 +354,20 @@ async def execute(
                 "freeze_operation_id, manifest_sha256) "
                 "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
-                    operation_id, operation,
-                    "refused" if decision.refusal else "committed", decision.refusal,
-                    request.operator, request.reason, request.app_version,
-                    state.schema_version, state.metadata_epoch, decision.epoch_after,
-                    state.maintenance, decision.maintenance_after,
-                    decision.freeze_operation_id, decision.manifest_sha256,
+                    operation_id,
+                    operation,
+                    "refused" if decision.refusal else "committed",
+                    decision.refusal,
+                    request.operator,
+                    request.reason,
+                    request.app_version,
+                    state.schema_version,
+                    state.metadata_epoch,
+                    decision.epoch_after,
+                    state.maintenance,
+                    decision.maintenance_after,
+                    decision.freeze_operation_id,
+                    decision.manifest_sha256,
                 ),
             )
             if decision.refusal is None:
@@ -311,7 +378,10 @@ async def execute(
                     (decision.epoch_after, decision.maintenance_after),
                 )
         return OperationResult(
-            operation_id, operation, decision.refusal is None, decision.refusal,
+            operation_id,
+            operation,
+            decision.refusal is None,
+            decision.refusal,
             {
                 "schema_version": state.schema_version,
                 "metadata_epoch": str(decision.epoch_after) if decision.epoch_after else None,
@@ -373,7 +443,8 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
-        "command", choices=("status", "freeze", "publish-epoch", "unfreeze"),
+        "command",
+        choices=("status", "freeze", "publish-epoch", "unfreeze"),
     )
     parser.add_argument("--app-version", required=True)
     parser.add_argument("--operator", required=True)
@@ -412,26 +483,41 @@ def main(argv: list[str] | None = None) -> int:
         }[operation]
         # Printed before connecting so an unknown outcome can be verified by ID.
         _print({"status": "INTENT", "operation": operation, "operation_id": str(operation_id)})
-        result = asyncio.run(execute(
-            config, operation, request, decide, operation_id=operation_id,
-        ))
+        result = asyncio.run(
+            execute(
+                config,
+                operation,
+                request,
+                decide,
+                operation_id=operation_id,
+            )
+        )
     except MetadataOutcomeUnknown:
-        _print({
-            "status": "OUTCOME_UNKNOWN", "operation_id": str(operation_id),
-            "next": "run status and look for this operation_id before any retry",
-        })
+        _print(
+            {
+                "status": "OUTCOME_UNKNOWN",
+                "operation_id": str(operation_id),
+                "next": "run status and look for this operation_id before any retry",
+            }
+        )
         return 1
     except (
-        MetadataOperationFailed, MetadataPermissionDenied, MetadataSchemaMismatch,
+        MetadataOperationFailed,
+        MetadataPermissionDenied,
+        MetadataSchemaMismatch,
         MetadataTimeout,
     ) as error:
         _print({"status": "REFUSED", "error": type(error).__name__})
         return 1
-    _print({
-        "status": "COMMITTED" if result.committed else "REFUSED",
-        "operation": result.operation, "operation_id": str(result.operation_id),
-        "refusal": result.refusal, **result.state,
-    })
+    _print(
+        {
+            "status": "COMMITTED" if result.committed else "REFUSED",
+            "operation": result.operation,
+            "operation_id": str(result.operation_id),
+            "refusal": result.refusal,
+            **result.state,
+        }
+    )
     return 0 if result.committed else 1
 
 

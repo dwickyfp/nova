@@ -60,9 +60,6 @@ async def test_typed_provisioning_default_role_and_first_login(client, admin_tok
         await access_control_service.revoke_role(OPERATOR, role=role, username=username)
         await user_service.drop_user(username)
         await access_control_service.drop_role(OPERATOR, role)
-        await db.execute_system(
-            "DELETE FROM NOVA_SYSTEM.CONFIG_USER_PREFERENCES WHERE user_name=%s", [username]
-        )
 
 
 async def test_sql_card_account_batch_redacts_password_and_stops_on_error(client, admin_token):
@@ -104,9 +101,6 @@ async def test_sql_card_account_batch_redacts_password_and_stops_on_error(client
         await access_control_service.revoke_role(OPERATOR, role=role, username=username)
         await user_service.drop_user(username)
         await access_control_service.drop_role(OPERATOR, role)
-        await db.execute_system(
-            "DELETE FROM NOVA_SYSTEM.CONFIG_USER_PREFERENCES WHERE user_name=%s", [username]
-        )
 
 
 async def test_native_sql_families_on_disposable_data(docker_services):

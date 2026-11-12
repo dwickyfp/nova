@@ -61,24 +61,7 @@ def owners(monkeypatch):
 
     io, service, repository = MissionIO(), MissionService(), PinnedRepository()
 
-    async def execute(sql, params=None):
-        if "CONFIG_INTELLIGENCE_INVESTIGATIONS" in sql:
-            matches = [
-                value.model_dump_json()
-                for (ident, revision, _), value in repository.pins.items()
-                if [
-                    ident,
-                    value.scope.principal,
-                    value.scope.active_role,
-                    value.scope.security_context_version,
-                    revision,
-                ]
-                == params
-            ]
-            return {"rows": [[value] for value in matches]}
-        return await io.execute(sql, params)
-
-    monkeypatch.setattr(mission_module.db, "execute_system", execute)
+    monkeypatch.setattr(mission_module, "_store", io.store)
     monkeypatch.setattr(
         mission_module, "require_thread", AsyncMock(return_value={"agent_id": "finance"})
     )

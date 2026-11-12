@@ -7,7 +7,7 @@ from enum import StrEnum
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
-from pydantic import Field, model_validator
+from pydantic import Field, PrivateAttr, model_validator
 
 from app.modules.intelligence.contracts import Contract, Scope, SemanticRef, Window
 from app.modules.intelligence.evidence import EvidenceEnvelope
@@ -188,6 +188,8 @@ class InvestigationRequirements(Contract):
 
 
 class Mission(Contract):
+    _storage_revision: int = PrivateAttr(default=1)
+
     mission_id: str
     thread_id: str
     agent_id: str | None = Field(default=None, min_length=1, max_length=128)

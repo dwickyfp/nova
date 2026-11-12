@@ -24,6 +24,34 @@ class Journal(memory.AgentMemoryRepository):
     def __init__(self):
         self.projection = None
         self.history = []
+        self.observations = {}
+        self.participants = []
+
+    @asynccontextmanager
+    async def _write(self, *_args):
+        objects = [(self, ("projection", "history", "observations")), *self.participants]
+        snapshots = [(obj, {key: deepcopy(getattr(obj, key)) for key in keys})
+                     for obj, keys in objects]
+        try:
+            yield self
+        except BaseException:
+            for obj, values in snapshots:
+                for key, value in values.items():
+                    setattr(obj, key, value)
+            raise
+
+    async def _write_evidence(self, _id, _owner, _agent, _role, evidence_id, evidence):
+        self.observations.setdefault(evidence_id, deepcopy(evidence))
+
+    async def delete_memory_projection(self, *_args):
+        self.projection = None
+        return True
+
+    async def list(self, **_kwargs):
+        if self.projection is None:
+            return []
+        return [{**deepcopy(self.projection),
+                 "knowledge": self.history[-1].model_dump(mode="json")}]
 
     async def get(self, *args, **kwargs):
         return deepcopy(self.projection)
@@ -40,13 +68,7 @@ class Journal(memory.AgentMemoryRepository):
 
 @pytest.fixture
 def journal(monkeypatch):
-    @asynccontextmanager
-    async def lock(_key):
-        yield type("Lease", (), {"renew": AsyncMock(return_value=True)})()
-
-    monkeypatch.setattr(memory, "metadata_lock", lock)
     monkeypatch.setattr(memory, "write_audit_log", AsyncMock())
-    monkeypatch.setattr(memory.db, "execute_system", AsyncMock(return_value={"rows": []}))
     return Journal()
 
 
@@ -65,8 +87,6 @@ async def remember(journal, fact, source):
 
 
 async def test_learning_evidence_retains_exact_source_identity_and_time(journal):
-    import json
-
     from app.modules.intelligence.contracts import Scope
 
     observed = datetime(2026, 9, 20, tzinfo=UTC)
@@ -84,7 +104,7 @@ async def test_learning_evidence_retains_exact_source_identity_and_time(journal)
         source_scope=scope,
         observed_at=observed,
     )
-    payload = json.loads(memory.db.execute_system.await_args.args[1][-1])
+    payload = next(iter(journal.observations.values()))
     reference = payload["reference"]
     assert reference["scope"] == scope.model_dump(mode="json")
     assert reference["source_id"] == "first"
@@ -123,11 +143,11 @@ async def test_public_memory_evidence_keeps_provenance_without_auth_session(monk
         AsyncMock(return_value={"items": [{"evidence_ids": ["source-evidence"]}]}),
     )
     monkeypatch.setattr(
-        memory.db,
-        "execute_system",
-        AsyncMock(return_value={
-            "rows": [["source-evidence", json.dumps(stored) if encoded else stored]],
-        }),
+        knowledge_router.memory_repository,
+        "evidence",
+        AsyncMock(return_value=[{
+            "evidence_id": "source-evidence", "payload": json.dumps(stored) if encoded else stored,
+        }]),
     )
     app = FastAPI()
     app.dependency_overrides[get_current_user] = lambda: USER
@@ -162,7 +182,7 @@ async def test_mismatched_knowledge_source_identity_is_rejected_before_persisten
             source_scope=Scope.from_user({**USER, "username": "bob"}),
         )
     assert error.value.status_code == 403
-    memory.db.execute_system.assert_not_awaited()
+    assert not journal.observations
 
 
 async def test_out_of_order_source_processing_does_not_regress_knowledge_freshness(journal):
@@ -237,13 +257,16 @@ async def test_projection_crash_does_not_duplicate_review(journal, monkeypatch):
         operation="reject",
         note="Insufficient support",
     )
-    execute = AsyncMock(side_effect=[RuntimeError("projection interrupted"), {"rows": []}])
-    monkeypatch.setattr(memory.db, "execute_system", execute)
+    original = journal._write_projection
+    execute = AsyncMock(side_effect=RuntimeError("projection interrupted"))
+    monkeypatch.setattr(journal, "_write_projection", execute)
     with pytest.raises(RuntimeError):
         await journal.review(ident, agent_id="finance", user=USER, request=request)
+    assert len(journal.history) == 1
+    monkeypatch.setattr(journal, "_write_projection", original)
     result = await journal.review(ident, agent_id="finance", user=USER, request=request)
     assert result.state == KnowledgeState.REJECTED and len(journal.history) == 2
-    assert execute.call_args.args[1][0] == result.fact
+    assert journal.projection["fact"] == result.fact
 
 
 async def test_deletion_retires_shared_revision_before_removing_projection(journal, monkeypatch):
@@ -257,7 +280,7 @@ async def test_deletion_retires_shared_revision_before_removing_projection(journ
         journal.projection = None
         return {"rows": []}
 
-    monkeypatch.setattr(memory.db, "execute_system", delete)
+    monkeypatch.setattr(journal, "delete_memory_projection", delete)
     assert await journal.delete(ident, user_name="alice", agent_id="finance", role_name="ANALYST")
     assert not await journal.delete(
         ident, user_name="alice", agent_id="finance", role_name="ANALYST"
@@ -304,13 +327,13 @@ async def test_structurally_unacceptable_memory_never_writes_evidence(journal, v
     with pytest.raises(ValueError):
         await remember(journal, value, "unsafe")
     assert journal.history == []
-    memory.db.execute_system.assert_not_awaited()
+    assert not journal.observations
 
 
 async def test_deletion_retry_after_projection_crash_reuses_tombstone(journal, monkeypatch):
     ident = await remember(journal, "Revenue excludes cancelled orders.", "message")
     remove = AsyncMock(side_effect=[RuntimeError("interrupted"), {"rows": []}])
-    monkeypatch.setattr(memory.db, "execute_system", remove)
+    monkeypatch.setattr(journal, "delete_memory_projection", remove)
     with pytest.raises(RuntimeError):
         await journal.delete(ident, user_name="alice", agent_id="finance", role_name="ANALYST")
     assert await journal.delete(ident, user_name="alice", agent_id="finance", role_name="ANALYST")
@@ -346,7 +369,7 @@ async def test_review_retry_never_returns_revoked_semantic_knowledge(journal, mo
         AsyncMock(side_effect=HTTPException(status_code=404, detail="Denied")),
     )
     execute = AsyncMock()
-    monkeypatch.setattr(memory.db, "execute_system", execute)
+    monkeypatch.setattr(journal, "_write_projection", execute)
     with pytest.raises(HTTPException) as exc:
         await journal.review(ident, agent_id="finance", user=USER, request=request)
     assert exc.value.status_code == 404
@@ -601,12 +624,12 @@ async def test_shared_domain_knowledge_requires_source_agent_and_current_view_ac
         ).model_dump_json()
 
     query = AsyncMock(
-        return_value={
-            "rows": [
-                ["operations-rule", "operations", revision("operations-rule")],
-                ["private-agent-rule", "private-agent", revision("private-agent-rule")],
-            ]
-        }
+        return_value=[
+            {"memory_id": "operations-rule", "agent_id": "operations",
+             "payload": revision("operations-rule")},
+            {"memory_id": "private-agent-rule", "agent_id": "private-agent",
+             "payload": revision("private-agent-rule")},
+        ]
     )
 
     async def agent(ident, user):
@@ -615,7 +638,12 @@ async def test_shared_domain_knowledge_requires_source_agent_and_current_view_ac
         return {"agent_id": ident, "semantic_view_ids": ["sales"]}
 
     monkeypatch.setattr(router, "_require_agent", agent)
-    monkeypatch.setattr(memory.db, "execute_system", query)
+    @asynccontextmanager
+    async def store(**_kwargs):
+        from types import SimpleNamespace
+        yield SimpleNamespace(shared_memories=query)
+
+    monkeypatch.setattr(memory, "agent_metadata", store)
     read = AsyncMock(
         return_value=({"active_version": 1}, {"fingerprint": "v1", "status": "ACTIVE"})
     )
@@ -623,7 +651,7 @@ async def test_shared_domain_knowledge_requires_source_agent_and_current_view_ac
     rows = await memory.shared_memories("executive", USER)
     assert [row["memory_id"] for row in rows] == ["operations-rule"]
     assert rows[0]["source_agent_id"] == "operations"
-    assert query.await_args.args[1] == ["executive", "sales", "alice", "executive"]
+    query.assert_awaited_once_with("executive")
     assert "Semantic View sales, version 1" in memory.memory_prompt(rows)
     read.side_effect = HTTPException(status_code=404, detail="Source access revoked")
     assert await memory.shared_memories("executive", USER) == []

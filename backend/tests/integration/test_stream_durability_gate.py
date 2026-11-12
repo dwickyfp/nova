@@ -326,60 +326,27 @@ asyncio.run(main())
 
 
 async def test_claim_repository_preserves_existing_winner(source):
-    from app.modules.streams.claims import CLAIMS_DDL, Claim, ClaimOutcome, ClaimRepository
+    from app.modules.streams.claims import Claim, ClaimOutcome, ClaimRepository
     from app.modules.streams.schemas import operation_id
 
-    await execute("CREATE DATABASE IF NOT EXISTS NOVA_SYSTEM")
-    await execute(CLAIMS_DDL)
-
-    async def metadata(sql, params):
-        connection = await connect()
-        try:
-            async with connection.cursor() as cursor:
-                await cursor.execute(sql, params)
-                if cursor.description:
-                    return {"rows": await cursor.fetchall()}
-                return {"affected": cursor.rowcount}
-        finally:
-            connection.close()
-
-    repository = ClaimRepository(metadata)
+    repository = ClaimRepository()
     resource = operation_id(source)
     first = Claim(resource, 1, 0, operation_id("first"), operation_id("insert A"))
     other = Claim(resource, 1, 0, operation_id("other"), operation_id("insert B"))
-    try:
-        assert (await repository.acquire(first)).outcome == ClaimOutcome.ACQUIRED
-        for contender in (first, other):
-            result = await repository.acquire(contender)
-            assert result.outcome == ClaimOutcome.EXISTING
-            assert result.winner == first
-    finally:
-        await execute(
-            "DELETE FROM NOVA_SYSTEM.AUDIT_STREAM_CLAIMS WHERE claim_key = %s", (first.key,)
-        )
+    assert (await repository.acquire(first)).outcome == ClaimOutcome.ACQUIRED
+    for contender in (first, other):
+        result = await repository.acquire(contender)
+        assert result.outcome == ClaimOutcome.EXISTING
+        assert result.winner == first
 
 
 async def test_durable_offset_receipt_survives_repeated_and_late_recovery(source):
     from app.modules.streams.consumption import Consumption, ConsumptionState
-    from app.modules.streams.journal import CONSUMPTIONS_DDL, StarRocksConsumptionJournal
+    from app.modules.streams.journal import ConsumptionJournal
     from app.modules.streams.schemas import ChangeCursor, ChangeSnapshot, operation_id
     from app.modules.streams.verification import CommitReceipt
 
-    await execute("CREATE DATABASE IF NOT EXISTS NOVA_SYSTEM")
-    await execute(CONSUMPTIONS_DDL)
-
-    async def metadata(sql, params):
-        connection = await connect()
-        try:
-            async with connection.cursor() as cursor:
-                await cursor.execute(sql, params)
-                if cursor.description:
-                    return {"rows": await cursor.fetchall()}
-                return {"affected": cursor.rowcount}
-        finally:
-            connection.close()
-
-    journal = StarRocksConsumptionJournal(metadata)
+    journal = ConsumptionJournal()
     stream_id = operation_id(source)
     first = Consumption(
         operation_id(source, 1), stream_id, 1,
@@ -394,17 +361,14 @@ async def test_durable_offset_receipt_survives_repeated_and_late_recovery(source
     # These are synthetic receipts exercising real journal persistence, not
     # evidence that target SQL ran. Target verification has separate tests.
     receipt = CommitReceipt(TargetOutcome.VISIBLE, "fixture", 123, 0)
-    try:
-        await journal.record(first, ConsumptionState.PREPARED)
-        await journal.record(first, ConsumptionState.TARGET_COMMITTED, receipt)
-        assert await journal.advance(first, receipt) == ChangeCursor(1, 1)
-        assert await journal.advance(second, receipt) == ChangeCursor(1, 2)
-        assert await journal.advance(first, receipt) == ChangeCursor(1, 2)
-        assert await journal.committed_cursor(stream_id, ChangeCursor(2, 0)) == ChangeCursor(2, 0)
-    finally:
-        await execute(
-            "DELETE FROM NOVA_SYSTEM.AUDIT_STREAM_CONSUMPTIONS WHERE stream_id=%s", (stream_id,)
-        )
+    await journal.prepare(first)
+    await journal.prepare(second)
+    await journal.record(first, ConsumptionState.PREPARED)
+    await journal.record(first, ConsumptionState.TARGET_COMMITTED, receipt)
+    assert await journal.advance(first, receipt) == ChangeCursor(1, 1)
+    assert await journal.advance(second, receipt) == ChangeCursor(1, 2)
+    assert await journal.advance(first, receipt) == ChangeCursor(1, 2)
+    assert await journal.committed_cursor(stream_id, ChangeCursor(2, 0)) == ChangeCursor(2, 0)
 
 
 async def test_strict_failure_does_not_write_target(source):
@@ -472,34 +436,17 @@ async def test_expired_label_cannot_overwrite_durable_claim(source):
 async def test_distinct_consumptions_share_one_durable_stream_generation(source):
     from dataclasses import replace
 
-    from app.modules.streams.claims import CLAIMS_DDL, ClaimRepository
+    from app.modules.streams.claims import ClaimRepository
     from app.modules.streams.consumption import (
         Consumption,
         ConsumptionState,
         StreamConsumptionService,
     )
     from app.modules.streams.journal import (
-        CONSUMPTION_OPERATIONS_DDL,
-        CONSUMPTIONS_DDL,
-        StarRocksConsumptionJournal,
+        ConsumptionJournal,
     )
     from app.modules.streams.schemas import ChangeCursor, ChangeSnapshot, StreamError, operation_id
 
-    async def isolated_metadata(sql, params=()):
-        conn = await connect()
-        try:
-            async with conn.cursor() as cursor:
-                await cursor.execute(sql.replace("NOVA_SYSTEM.", f"`{source}`."), params)
-                return {
-                    "columns": [column[0] for column in cursor.description or ()],
-                    "rows": await cursor.fetchall() if cursor.description else (),
-                    "affected": cursor.rowcount,
-                }
-        finally:
-            conn.close()
-
-    for ddl in (CLAIMS_DDL, CONSUMPTIONS_DDL, CONSUMPTION_OPERATIONS_DDL):
-        await isolated_metadata(ddl)
     stream_id = operation_id(source, "stream")
     first = Consumption(
         operation_id(source, "consume_first"), stream_id, 0,
@@ -511,10 +458,10 @@ async def test_distinct_consumptions_share_one_durable_stream_generation(source)
         target=replace(first.target, label="nova_second"),
         operation_digest=operation_id("second SQL"),
     )
-    journal = StarRocksConsumptionJournal(isolated_metadata)
+    journal = ConsumptionJournal()
     services = [
         StreamConsumptionService(
-            ClaimRepository(isolated_metadata), journal, TargetCommitVerifier(metadata)
+            ClaimRepository(), journal, TargetCommitVerifier(metadata)
         )
         for _ in range(2)
     ]
@@ -537,7 +484,7 @@ async def test_distinct_consumptions_share_one_durable_stream_generation(source)
         raise AssertionError("Persisted terminal evidence must suffice for recovery")
 
     restarted = StreamConsumptionService(
-        ClaimRepository(isolated_metadata), StarRocksConsumptionJournal(isolated_metadata),
+        ClaimRepository(), ConsumptionJournal(),
         TargetCommitVerifier(expired_engine_evidence),
     )
     assert await restarted.recover_claim(

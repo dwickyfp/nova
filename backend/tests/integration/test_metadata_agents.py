@@ -91,6 +91,7 @@ async def create_agent(agents, **fields):
 
 # ── Governed definitions ─────────────────────────────────────────────────
 
+
 async def test_agent_changes_need_the_revision_they_read_and_keep_snapshots_atomic(agents):
     agent = await create_agent(agents)
     assert agent["owner_name"] == "agent-owner" and agent["provenance"] == "runtime"
@@ -276,6 +277,7 @@ async def test_credentials_are_refused_without_being_echoed(agents, caplog):
 
 # ── Run journals ─────────────────────────────────────────────────────────
 
+
 async def test_event_batches_and_their_high_water_commit_together(agents):
     async with agents.transaction("agent") as (repo, _):
         run = await repo.start_run("run-1", "agent-1", "thread-1")
@@ -382,6 +384,7 @@ async def test_interrupting_and_role_changes_close_replay(agents):
 
 # ── Missions and automations ─────────────────────────────────────────────
 
+
 async def test_missions_need_their_revision_and_explicit_resume(agents):
     async with agents.transaction("agent") as (repo, _):
         mission = await repo.create_mission("m-1", "thread-1", {"goal": "Revenue"})
@@ -463,6 +466,7 @@ async def test_one_worker_claims_a_due_automation_and_only_it_records(agents):
 
 
 # ── Knowledge, quality and review ────────────────────────────────────────
+
 
 async def test_memory_projection_commits_with_its_revision(agents):
     async with agents.transaction("agent") as (repo, _):
@@ -572,13 +576,18 @@ async def test_rule_proposals_research_artifacts_and_shares(agents):
 
 # ── Workloads, maintenance and import ────────────────────────────────────
 
+
 @pytest.mark.parametrize("workload", [role.removeprefix("nova_meta_") for role in WORKLOAD_ROLES])
 async def test_workload_privileges(agents, workload):
     agent = await create_agent(agents)
     if workload not in USERS:
-        with pytest.raises(MetadataPermissionDenied):
+        if workload == "task":
             async with agents.transaction(workload, read_only=True) as (repo, _):
-                await repo.get_agent(agent["agent_id"])
+                assert (await repo.get_agent(agent["agent_id"]))["name"] == "Sales analyst"
+        else:
+            with pytest.raises(MetadataPermissionDenied):
+                async with agents.transaction(workload, read_only=True) as (repo, _):
+                    await repo.get_agent(agent["agent_id"])
         with pytest.raises(MetadataPermissionDenied):
             async with agents.transaction(workload) as (repo, _):
                 await repo.start_run(str(uuid4()), agent["agent_id"], "t")
@@ -694,6 +703,191 @@ async def runtime_registry(agents):
     finally:
         uninstall_metadata_db(database)
         await database.close()
+
+
+async def test_memory_facade_deduplicates_deletes_and_restores_retained_history(
+    agents,
+    runtime_registry,
+):
+    from app.core.metadata_actor import acting_as
+    from app.modules.agents.memory import AgentMemoryRepository
+
+    repo = AgentMemoryRepository()
+    actor = SecurityContext.from_session(session("agent-owner", active="ANALYST"))
+    fields = dict(
+        user_name=actor.principal,
+        agent_id="finance",
+        role_name=actor.active_role,
+        fact_key="fiscal",
+        fact="The fiscal year starts in April.",
+        source_quote="The fiscal year starts in April.",
+        source_thread_id="thread",
+        source_message_id="message",
+        existing_id=None,
+    )
+    with acting_as(actor):
+        ids = await asyncio.gather(repo.upsert(**fields), repo.upsert(**fields))
+        assert ids[0] == ids[1]
+        rows = await repo.list(user_name=actor.principal, agent_id="finance", role_name="ANALYST")
+        assert rows[0]["knowledge"]["revision"] == 1
+        assert "provenance" not in rows[0]
+        assert await repo.delete(
+            ids[0], user_name=actor.principal, agent_id="finance", role_name="ANALYST"
+        )
+        assert (
+            await repo.list(user_name=actor.principal, agent_id="finance", role_name="ANALYST")
+            == []
+        )
+        assert await repo.upsert(**fields) == ids[0]
+        rows = await repo.list(user_name=actor.principal, agent_id="finance", role_name="ANALYST")
+        assert rows[0]["knowledge"]["revision"] == 3
+        assert rows[0]["knowledge"]["state"] == "HYPOTHESIS"
+        assert rows[0]["knowledge"]["visibility"] == "PRIVATE"
+        history = await repo.revisions(
+            ids[0], user_name=actor.principal, agent_id="finance", role_name="ANALYST"
+        )
+        assert [r.revision for r in history] == [3, 2, 1]
+        assert history[1].state.value == "SUPERSEDED"
+        evidence = await repo.evidence(
+            ids[0],
+            user_name=actor.principal,
+            agent_id="finance",
+            role_name="ANALYST",
+            allowed=history[0].evidence_ids,
+        )
+        assert len(evidence) == 1
+    with pytest.raises(MetadataPermissionDenied):
+        async with agents.transaction(name="foreign-owner") as (store, _):
+            await store.append_memory_revision(ids[0], "finance", 4, "a" * 32, '{"fact":"foreign"}')
+    with acting_as(SecurityContext.from_session(session("reader", active="ANALYST"))):
+        assert (
+            await repo.list(user_name="agent-owner", agent_id="finance", role_name="ANALYST") == []
+        )
+
+
+@pytest.mark.parametrize("boundary", ["_write_projection", "_write_evidence"])
+async def test_memory_facade_rolls_back_the_complete_change(
+    agents, runtime_registry, monkeypatch, boundary
+):
+    from app.core.metadata_actor import acting_as
+    from app.modules.agents.memory import AgentMemoryRepository
+
+    repo = AgentMemoryRepository()
+    original = getattr(repo, boundary)
+
+    async def fail(*args, **kwargs):
+        await original(*args, **kwargs)
+        raise RuntimeError("interrupted memory write")
+
+    monkeypatch.setattr(repo, boundary, fail)
+    fields = dict(
+        user_name="agent-owner",
+        agent_id="finance",
+        role_name="ANALYST",
+        fact_key="fiscal",
+        fact="The fiscal year starts in April.",
+        source_quote="The fiscal year starts in April.",
+        source_thread_id="thread",
+        source_message_id="message",
+        existing_id=None,
+    )
+    with acting_as(SecurityContext.from_session(session("agent-owner", active="ANALYST"))):
+        with pytest.raises(RuntimeError, match="interrupted memory write"):
+            await repo.upsert(**fields)
+        for table in (
+            "config_agent_memories",
+            "config_agent_memory_revisions",
+            "config_agent_memory_evidence",
+        ):
+            assert (await agents.admin(f"SELECT count(*) AS n FROM nova_meta.{table}"))[0]["n"] == 0
+        monkeypatch.setattr(repo, boundary, original)
+        await repo.upsert(**fields)
+        assert (
+            len(await repo.list(user_name="agent-owner", agent_id="finance", role_name="ANALYST"))
+            == 1
+        )
+
+
+async def test_shared_memory_projection_requires_visible_agents_and_current_role(agents):
+    agent = await create_agent(agents, visibility="shared", semantic_view_ids=["sales"])
+    payload = {
+        "memory_id": "m",
+        "revision": 1,
+        "fact": "Revenue excludes refunds.",
+        "state": "VERIFIED",
+        "visibility": "DOMAIN",
+        "review_note": "private-review",
+        "evidence_ids": ["private-evidence"],
+        "semantic": {"view_id": "sales"},
+        "definition": {"metric_name": "revenue"},
+    }
+    async with agents.transaction() as (repo, _):
+        await repo.replace_agent_roles(agent["agent_id"], {"VIEWER": "USAGE"})
+        memory = await repo.create_memory(
+            agent["agent_id"],
+            {
+                "fact_key": "revenue",
+                "fact": payload["fact"],
+                "source_quote": "private-source",
+                "source_thread_id": "private-thread",
+            },
+            payload,
+        )
+    async with agents.transaction(name="reader", active="VIEWER", read_only=True) as (repo, _):
+        rows = await repo.shared_memories(agent["agent_id"])
+        assert len(rows) == 1 and rows[0]["memory_id"] == memory["memory_id"]
+        assert "private" not in str(rows)
+        assert (
+            await repo.get_memory(memory["memory_id"], "agent-owner", agent["agent_id"], "ANALYST")
+            is None
+        )
+    async with agents.transaction(name="reader", active="ANALYST", read_only=True) as (repo, _):
+        assert await repo.shared_memories(agent["agent_id"]) == []
+    async with agents.transaction() as (repo, _):
+        await repo.replace_agent_roles(agent["agent_id"], {})
+    async with agents.transaction(name="reader", active="VIEWER", read_only=True) as (repo, _):
+        assert await repo.shared_memories(agent["agent_id"]) == []
+
+
+async def test_mission_facade_cursor_cas_preserves_public_revision_and_rolls_back_audit(
+    agents, runtime_registry, monkeypatch,
+):
+    from contextlib import asynccontextmanager
+    from unittest.mock import AsyncMock
+
+    from fastapi import HTTPException
+
+    from app.core.metadata_actor import acting_as
+    from app.modules.agents import mission
+    from app.modules.agents.mission_schema import MissionCreate
+
+    @asynccontextmanager
+    async def admission(*_args):
+        yield AsyncMock()
+
+    monkeypatch.setattr(mission.harness_repository, "admission_lock", admission)
+    monkeypatch.setattr(mission, "require_thread", AsyncMock(return_value={"agent_id": "finance"}))
+    user = session("agent-owner", active="ANALYST")
+    service = mission.MissionService()
+    body = MissionCreate(objective="Inspect revenue", operation_id="create-mission")
+    with acting_as(SecurityContext.from_session(user)):
+        created = await service.create("thread", body, user)
+        again = await service.create("thread", body, user)
+        assert created == again
+        stale = created.model_copy(deep=True)
+        created.projection_cursor["run"] = 0
+        saved = await service._save(created, created.revision, AsyncMock(), advance_revision=False)
+        assert saved.revision == created.revision and saved.updated_at == created.updated_at
+        assert saved._storage_revision == created._storage_revision + 1
+        with pytest.raises(HTTPException) as error:
+            await service._save(stale, stale.revision, AsyncMock(), advance_revision=False)
+        assert error.value.status_code == 409
+        assert (await service.get(created.mission_id, user, project=False)) == saved
+        monkeypatch.setattr(service, "audit", AsyncMock(side_effect=RuntimeError("audit failed")))
+        with pytest.raises(RuntimeError, match="audit failed"):
+            await service.create("another-thread", body, user)
+    rows = await agents.admin("SELECT count(*) AS n FROM nova_meta.config_studio_missions")
+    assert rows[0]["n"] == 1
 
 
 async def test_runtime_registry_crud_versions_and_long_skills_use_the_real_uow(runtime_registry):
@@ -1375,3 +1569,213 @@ async def test_artifact_facade_cas_and_shared_membership_preserve_the_viewer(
     ) as (_, conn):
         cursor = await conn.execute("SELECT * FROM nova_meta.legacy_artifact_owners()")
         assert await cursor.fetchall() == [{"owner_name": "agent-owner"}]
+
+
+@asynccontextmanager
+async def automation_runtime(agents):
+    from app.core.metadata_runtime import install_metadata_db, uninstall_metadata_db
+
+    database = MetadataDatabase(agents.environment.role_config("nova_meta_automation"))
+    try:
+        await database.open(schema_version=len(load_migrations()), metadata_epoch=agents.epoch)
+        install_metadata_db(database)
+        yield
+    finally:
+        uninstall_metadata_db(database)
+        await database.close()
+
+
+async def due_automation(agents, **fields):
+    from app.modules.agents.automations import _row
+
+    async with agents.transaction() as (repo, _):
+        row = await repo.create_automation("finance", {
+            "title": "Revenue", "prompt": "Report revenue.", "schedule_kind": "cron",
+            "schedule_expr": "0 8 * * 1", "timezone": "UTC", "enabled": True,
+            "next_run_at": datetime.now(UTC) - timedelta(minutes=1),
+            **fields,
+        })
+    return _row(row)
+
+
+async def test_automation_occurrence_definition_job_outbox_and_receipt_are_atomic(agents):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from app.modules.agents.automation_jobs import AutomationJobs
+    from app.modules.agents.automations import RunResult
+
+    automation = await due_automation(agents)
+    jobs = AutomationJobs()
+    async with automation_runtime(agents):
+        results = await asyncio.gather(jobs.enqueue(automation), jobs.enqueue(automation))
+        assert sorted(results) == [False, True]
+        claims = await asyncio.gather(jobs.claim(uuid4()), jobs.claim(uuid4()))
+        assert sum(row is not None for row in claims) == 1
+        job = next(row for row in claims if row is not None)
+        runner = SimpleNamespace(run=AsyncMock(return_value=RunResult("delivered:inbox", "thread")))
+        await jobs.run(job, runner, datetime.now(UTC))
+        runner.run.assert_awaited_once()
+        assert await jobs.claim(uuid4()) is None
+    state = await agents.admin("SELECT state FROM nova_meta.job_queue")
+    assert state == [{"state": "COMPLETED"}]
+    for table in ("agent_automation_occurrences", "agent_automation_receipts", "outbox_events",
+                  "external_effect_intents", "external_effect_receipts"):
+        assert (await agents.admin(f"SELECT count(*) AS n FROM nova_meta.{table}"))[0]["n"] == 1
+    rows = await agents.admin(
+        "SELECT last_status,last_thread_id FROM nova_meta.config_agent_automations")
+    assert rows == [{"last_status": "delivered:inbox", "last_thread_id": "thread"}]
+
+
+async def test_automation_recovery_never_repeats_an_armed_occurrence(agents):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from app.modules.agents.automation_jobs import AutomationJobs
+    from app.modules.agents.automations import automation_repository
+
+    automation = await due_automation(agents)
+    jobs = AutomationJobs()
+    async with automation_runtime(agents):
+        assert await jobs.enqueue(automation)
+        job = await jobs.claim(uuid4(), seconds=1)
+        definition = await jobs.definition(job)
+        prepared = await jobs.prepare(job, definition, datetime.now(UTC))
+        await asyncio.sleep(1.05)
+        recovered = await jobs.claim(uuid4())
+        assert recovered["state"] == "VERIFYING"
+        runner = SimpleNamespace(run=AsyncMock())
+        await jobs.run(recovered, runner, datetime.now(UTC))
+        runner.run.assert_not_awaited()
+        with pytest.raises(MetadataConflict):
+            await jobs.heartbeat(prepared)
+        assert await automation_repository.due(datetime.now(UTC)) == []
+        assert await jobs.enqueue(automation) is False
+    assert (await agents.admin("SELECT state FROM nova_meta.job_queue"))[0]["state"] == "BLOCKED"
+    rows = await agents.admin(
+        "SELECT last_status,next_run_at FROM nova_meta.config_agent_automations")
+    assert rows[0]["last_status"] == "VERIFYING"
+    assert rows[0]["next_run_at"] == automation["next_run_at"]
+
+
+async def test_changed_automation_cancels_unprepared_occurrence_without_running(agents):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from app.modules.agents.automation_jobs import AutomationJobs
+
+    automation = await due_automation(agents)
+    jobs = AutomationJobs()
+    async with automation_runtime(agents):
+        assert await jobs.enqueue(automation)
+        job = await jobs.claim(uuid4())
+        async with agents.transaction() as (repo, _):
+            await repo.update_automation(automation["automation_id"], {"enabled": False},
+                                         expected_revision=automation["revision"])
+        runner = SimpleNamespace(run=AsyncMock())
+        await jobs.run(job, runner, datetime.now(UTC))
+        runner.run.assert_not_awaited()
+    assert (await agents.admin("SELECT state FROM nova_meta.job_queue"))[0]["state"] == "CANCELLED"
+    assert await agents.admin("SELECT id FROM nova_meta.agent_automation_receipts") == []
+
+
+async def test_scheduled_quality_and_memory_are_scoped_without_agent_configuration_grants(agents):
+    from app.modules.assistant.metadata_repository import AssistantMetadataRepository
+
+    agent = await create_agent(agents)
+    async with agents.transaction() as (repo, conn):
+        conversations = AssistantMetadataRepository(conn, repo.actor)
+        thread = await conversations.create_thread(agent_id=agent["agent_id"])
+        await conversations.append_message(
+            thread["thread_id"], role="assistant", content="Revenue is 12.",
+            agent_id=agent["agent_id"], security_context={"principal": "agent-owner",
+                "active_role": "ANALYST", "security_context_version": 5},
+        )
+        await repo.save_quality_record("cases", "case", agent["agent_id"], {"name": "Revenue"},
+                                       expected_revision=0)
+    async with agents.transaction("task") as (repo, conn):
+        assert len(await repo.current_quality_records("cases", agent["agent_id"])) == 1
+        assert await repo.save_quality_record(
+            "runs", "run", agent["agent_id"], {"status": "passed"}, expected_revision=0,
+        ) == 1
+        memory = await repo.create_memory(agent["agent_id"], {
+            "fact_key": "revenue", "fact": "Revenue is 12.", "source_quote": "Revenue is 12.",
+            "source_thread_id": thread["thread_id"],
+        }, {"fact": "Revenue is 12."})
+        assert len(await AssistantMetadataRepository(conn, repo.actor).quality_traces(
+            agent["agent_id"], limit=10)) == 1
+    for scope in ({"name": "other-owner"}, {"active": "VIEWER"}):
+        async with agents.transaction("task", **scope) as (repo, conn):
+            assert await repo.current_quality_records("runs", agent["agent_id"]) == []
+            assert await repo.get_memory(memory["memory_id"], "agent-owner",
+                                          agent["agent_id"], "ANALYST") is None
+            assert await AssistantMetadataRepository(conn, repo.actor).quality_traces(
+                agent["agent_id"], limit=10) == []
+    for mutate in (
+        lambda repo: repo.create_agent({"name": "Forbidden"}),
+        lambda repo: repo.save_quality_record("cases", "other", agent["agent_id"], {},
+                                              expected_revision=0),
+        lambda repo: repo.delete_agent(agent["agent_id"]),
+        lambda repo: repo.start_run("forbidden-run", agent["agent_id"], "thread"),
+    ):
+        with pytest.raises(MetadataPermissionDenied):
+            async with agents.transaction("task") as (repo, _):
+                await mutate(repo)
+
+
+@pytest.mark.parametrize("lose_receipt", [False, True])
+async def test_external_delivery_has_exact_durable_intent_before_call_and_receipt(
+    agents, monkeypatch, lose_receipt,
+):
+    from unittest.mock import AsyncMock
+
+    from app.modules.agents import mcp_client
+    from app.modules.agents.automation_jobs import AutomationJobs
+    from app.modules.agents.automations import RunResult, _deliver
+    from app.modules.agents.repository import agent_repository
+
+    automation = await due_automation(agents, delivery_json={"mcp_tool_id": "send"})
+    monkeypatch.setattr(agent_repository, "get_tool", AsyncMock(return_value={
+        "source": "mcp", "server_id": "server", "name": "send_message",
+    }))
+    monkeypatch.setattr(agent_repository, "get_mcp_server", AsyncMock(return_value={
+        "server_id": "server", "endpoint": "https://example.invalid/mcp",
+    }))
+
+    async def effect(_server, tool_name, arguments):
+        rows = await agents.admin("SELECT request FROM nova_meta.agent_automation_deliveries")
+        assert rows[0]["request"]["arguments"] == arguments == {"text": "Revenue: 42"}
+        assert rows[0]["request"]["tool_name"] == tool_name == "send_message"
+        assert len(rows[0]["request"]["server_configuration_digest"]) == 64
+        return {"content": [{"type": "text", "text": "receipt-42"}]}
+
+    call = AsyncMock(side_effect=effect)
+    monkeypatch.setattr(mcp_client, "call_tool", call)
+
+    class Runner:
+        async def run(self, definition, **_kwargs):
+            status = await _deliver(definition, definition["owner_name"], "Revenue: 42")
+            return RunResult(status, "thread")
+
+    jobs = AutomationJobs()
+    if lose_receipt:
+        monkeypatch.setattr(jobs, "delivery_receipt", AsyncMock(side_effect=ConnectionError()))
+    async with automation_runtime(agents):
+        assert await jobs.enqueue(automation)
+        job = await jobs.claim(uuid4())
+        await jobs.run(job, Runner(), datetime.now(UTC))
+        if lose_receipt:
+            assert await jobs.claim(uuid4()) is None
+            assert await jobs.enqueue(automation) is False
+    call.assert_awaited_once()
+    assert await agents.admin("SELECT state FROM nova_meta.job_queue") == [
+        {"state": "BLOCKED" if lose_receipt else "COMPLETED"}]
+    receipt = await agents.admin(
+        "SELECT response_digest,is_error FROM nova_meta.agent_automation_delivery_receipts")
+    if lose_receipt:
+        assert receipt == []
+        current = await agents.admin(
+            "SELECT last_status,next_run_at FROM nova_meta.config_agent_automations")
+        assert current == [{"last_status": "VERIFYING", "next_run_at": automation["next_run_at"]}]
+    else:
+        assert len(receipt[0]["response_digest"]) == 64 and receipt[0]["is_error"] is False

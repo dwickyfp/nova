@@ -2,21 +2,18 @@
 
 Configuration changes and immutable version snapshots share one transaction.
 Shared reads retain the caller's identity; a resource owner's name selects a
-namespace and never supplies execution credentials. Legacy source DDL and
-backfill helpers below are still being reconciled with the one-shot importer;
-normal application startup does not run them.
+namespace and never supplies execution credentials. Historical DDL below is
+inventory evidence only; the one-shot importer preserves legacy identities and
+bindings without rewriting source records.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
-from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from app.core.database import db
 from app.core.metadata_actor import current_actor
 from app.core.metadata_db import MetadataPermissionDenied
 from app.modules.access_control.security_context import SecurityContext
@@ -24,36 +21,7 @@ from app.modules.agents.metadata_repository import agent_metadata
 
 
 class AgentMetadataUnavailable(RuntimeError):
-    """A scoped StarRocks metadata read could not be trusted."""
-
-
-async def _read_rows(
-    sql: str,
-    params: list[Any],
-    valid_row: Callable[[list[Any] | tuple[Any, ...]], bool],
-) -> list[list[Any]]:
-    saw_bad_read = False
-    empty_reads = 0
-    for attempt in range(5):
-        try:
-            result = await db.execute_system(sql, params)
-            rows = result.get("rows")
-        except Exception:  # noqa: BLE001 - a later read may recover from a transient FE error
-            rows = None
-        if isinstance(rows, list) and rows and all(
-            isinstance(row, list | tuple) and valid_row(row) for row in rows
-        ):
-            return rows
-        if rows == []:
-            empty_reads += 1
-            if empty_reads >= 2 and not saw_bad_read:
-                return []
-        else:
-            saw_bad_read = True
-            empty_reads = 0
-        if attempt < 4:
-            await asyncio.sleep(0.05 * (attempt + 1))
-    raise AgentMetadataUnavailable("Agent metadata is temporarily unavailable")
+    """Scoped agent access could not be verified."""
 
 #: One row per agent. Only configuration; the behavioral contract is assembled
 #: by ``service``/``prompt`` from these fields at run time.
@@ -133,7 +101,6 @@ DISTRIBUTED BY HASH(skill_id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 """
 
-SKILL_BODY_PREFIX = "nova-skill-body:v1:"
 SKILL_BODY_CHUNKS_DDL = """
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_SKILL_BODY_CHUNKS (
     skill_id VARCHAR(64) NOT NULL,
@@ -540,71 +507,6 @@ class AgentRepository:
     async def ensure_schema(self) -> None:
         """The one-shot PostgreSQL migrator owns the schema."""
 
-    async def backfill_semantic_view_ids(self) -> int:
-        """Persist legacy agent bindings after Semantic View IDs have been imported.
-
-        Legacy model UUIDs are retained as View UUIDs, including review drafts.
-        An explicit JSON ``[]`` is a revoked binding and must never be replaced.
-        The guarded update also protects a concurrent agent edit after the scan.
-        """
-        legacy = await db.execute_system(
-            "SELECT agent_id, semantic_model_id, semantic_model_ids "
-            "FROM NOVA_SYSTEM.CONFIG_AGENTS "
-            "WHERE semantic_view_ids IS NULL ORDER BY agent_id"
-        )
-        changed = 0
-        for agent_id, scalar_id, stored_ids in legacy["rows"]:
-            ids = _view_ids_from_fields(
-                {"semantic_view_ids": _semantic_ids(scalar_id, stored_ids)}
-            )
-            result = await db.execute_system(
-                "UPDATE NOVA_SYSTEM.CONFIG_AGENTS SET semantic_view_ids = %s "
-                "WHERE agent_id = %s AND semantic_view_ids IS NULL",
-                [_dump(ids), agent_id],
-            )
-            changed += int(result.get("affected", 0))
-        return changed
-
-    # ── Agents ─────────────────────────────────────────────────
-
-    async def migrate_legacy_skill_authors(self) -> None:
-        from app.common.audit import write_audit_log
-        from app.modules.agents.skill_author import SKILL_AUTHOR_ID, is_legacy_skill_author
-
-        result = await db.execute_system(
-            f"SELECT {_AGENT_COLUMNS} FROM NOVA_SYSTEM.CONFIG_AGENTS "
-            "WHERE name = %s AND description = %s",
-            ["Nova Studio", "Helps you write reusable skills."],
-        )
-        for raw in result["rows"]:
-            agent = _agent_row(raw)
-            if not is_legacy_skill_author(agent):
-                continue
-            old_id, owner = agent["agent_id"], agent["owner_name"]
-            provenance = await db.execute_system(
-                "SELECT query_id FROM NOVA_SYSTEM.AUDIT_LOG WHERE event_type = 'AGENT' "
-                "AND action = 'CREATE' AND status = 'SUCCESS' "
-                "AND object_name = %s AND user_name = %s LIMIT 1",
-                [old_id, owner],
-            )
-            if not provenance["rows"]:
-                continue
-            for table in ("CONFIG_ASSISTANT_THREADS", "CONFIG_ASSISTANT_MESSAGES"):
-                await db.execute_system(
-                    f"UPDATE NOVA_SYSTEM.{table} SET agent_id = %s "
-                    "WHERE agent_id = %s AND user_name = %s",
-                    [SKILL_AUTHOR_ID, old_id, owner],
-                )
-            await write_audit_log(
-                event_type="AGENT",
-                user_name=owner,
-                action="MIGRATE",
-                object_type="AGENT",
-                object_name=old_id,
-                status="SUCCESS",
-            )
-            await self.delete_agent(old_id, owner_name=owner)
-
     async def create_agent(self, *, owner_name: str, fields: dict) -> dict:
         values = {
             "description": "", "instructions_response": "", "instructions_orchestration": "",
@@ -753,41 +655,6 @@ class AgentRepository:
             )
 
     # ── User skills ────────────────────────────────────────────
-
-    async def _store_skill_body(self, skill_id: str, owner_name: str, body: str) -> str:
-        if len(body.encode("utf-8")) <= 60000 and not body.startswith(SKILL_BODY_PREFIX):
-            return body
-        revision = str(uuid4())
-        # 16,000 Unicode characters fit in a 65,533-byte column, including emoji.
-        parts = [body[offset : offset + 16000] for offset in range(0, len(body), 16000)]
-        for offset in range(0, len(parts), 8):
-            batch = parts[offset : offset + 8]
-            params = []
-            for index, content in enumerate(batch, start=offset):
-                params.extend([skill_id, owner_name, revision, index, content])
-            await db.execute_system(
-                "INSERT INTO NOVA_SYSTEM.CONFIG_SKILL_BODY_CHUNKS "
-                "(skill_id, owner_name, revision, part_index, content) VALUES "
-                + ", ".join(["(%s, %s, %s, %s, %s)"] * len(batch)),
-                params,
-            )
-        # Publish only after all parts exist, so readers never see a partial revision.
-        return f"{SKILL_BODY_PREFIX}{revision}:{len(parts)}"
-
-    async def _load_skill_body(self, skill: dict) -> dict:
-        body = skill["body"]
-        if not body.startswith(SKILL_BODY_PREFIX):
-            return skill
-        revision, count = body[len(SKILL_BODY_PREFIX) :].split(":")
-        result = await db.execute_system(
-            "SELECT part_index, content FROM NOVA_SYSTEM.CONFIG_SKILL_BODY_CHUNKS "
-            "WHERE skill_id = %s AND owner_name = %s AND revision = %s ORDER BY part_index",
-            [skill["skill_id"], skill["owner_name"], revision],
-        )
-        rows = result["rows"]
-        if len(rows) != int(count) or any(row[0] != index for index, row in enumerate(rows)):
-            raise ValueError("The skill document could not be loaded completely.")
-        return {**skill, "body": "".join(row[1] for row in rows)}
 
     async def create_skill(self, *, owner_name: str, fields: dict) -> dict:
         async with agent_metadata(owner_name) as store:

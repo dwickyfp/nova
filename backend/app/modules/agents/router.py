@@ -1633,7 +1633,7 @@ async def create_agent_automation(
             role_name=session_security(user).active_role, body=body,
         )
     except AutomationError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     await write_audit_log(
         event_type="AGENT_AUTOMATION", user_name=user["username"], action="CREATE",
         object_type="AGENT_AUTOMATION", object_name=created["automation_id"], status="SUCCESS",
@@ -1656,7 +1656,7 @@ async def update_agent_automation(
     try:
         updated = await automation_repository.update(automation, body)
     except AutomationError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     await write_audit_log(
         event_type="AGENT_AUTOMATION", user_name=user["username"], action="ALTER",
         object_type="AGENT_AUTOMATION", object_name=automation_id, status="SUCCESS",
@@ -1761,7 +1761,6 @@ async def agent_improvement_suggestions(
     agent_id: str, user: dict = Depends(get_current_user)
 ) -> dict:
     """Review-only suggestions from disliked answers and the agent's query workload."""
-    from app.core.database import db
     from app.modules.agents.semantic.runtime import (
         SemanticFeedback,
         feedback_suggestions,
@@ -1769,17 +1768,12 @@ async def agent_improvement_suggestions(
     )
 
     agent = await _require_owned_agent(agent_id, user)
-    disliked = await db.execute_system(
-        "SELECT content, steps FROM NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES "
-        "WHERE agent_id = %s AND user_name=%s AND feedback = 'dislike' "
-        "AND get_json_string(CAST(security_context AS VARCHAR),'$.active_role')=%s "
-        "AND get_json_int(CAST(security_context AS VARCHAR),'$.security_context_version')=%s "
-        "ORDER BY created_at DESC LIMIT 200",
-        [agent_id, user["username"], session_security(user).active_role,
-         session_security(user).security_context_version],
+    disliked = await assistant_repository.disliked_agent_messages(
+        agent_id, user_name=user["username"],
     )
     events = []
-    for _content, raw_steps in disliked.get("rows") or []:
+    for row in disliked:
+        raw_steps = row["steps"]
         steps = json.loads(raw_steps) if isinstance(raw_steps, str) else raw_steps or []
         for step in steps:
             trace = step.get("trace_detail") or {} if isinstance(step, dict) else {}

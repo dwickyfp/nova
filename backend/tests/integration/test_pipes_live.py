@@ -14,7 +14,7 @@ pytestmark = pytest.mark.engine
 
 
 async def test_legacy_pipe_metadata_and_governed_execution_refusal(
-    client, admin_token, analyst_token, sr_root, minio_client
+    client, admin_token, analyst_token, sr_root, minio_client, metadata_inspect
 ):
     database = "pipe_api_" + uuid4().hex[:12]
     key = database + ".parquet"
@@ -95,14 +95,12 @@ async def test_legacy_pipe_metadata_and_governed_execution_refusal(
         deleted = await client.delete(url, params={"database": database})
         assert deleted.status_code == 200, deleted.text
         assert (await client.get(url, params={"database": database})).status_code == 404
-        async with sr_root.cursor() as cur:
-            await cur.execute(
-                "SELECT sql_text, rewritten_sql FROM NOVA_SYSTEM.AUDIT_LOG "
-                "WHERE user_name='nova_admin' AND sql_text LIKE %s",
-                (f"%{database}%",),
-            )
-            audits = await cur.fetchall()
-            assert audits and s3_credentials()[1] not in str(audits)
+        audits = await metadata_inspect(
+            "SELECT sql_text, rewritten_sql FROM nova_meta.audit_log "
+            "WHERE user_name='nova_admin' AND sql_text LIKE %s",
+            (f"%{database}%",),
+        )
+        assert audits and s3_credentials()[1] not in str(audits)
     finally:
         async with sr_root.cursor() as cur:
             with suppress(Exception):
@@ -123,8 +121,11 @@ async def test_legacy_pipe_metadata_and_governed_execution_refusal(
 )
 async def test_ranger_pipe_gate_precedes_engine_execution(app, monkeypatch, sql):
     result = await query_service.execute(
-        sql=sql, username="testanalyst", encrypted_password=encrypt_password("testpass"),
-        role="test_analyst", security_context_version=3,
+        sql=sql,
+        username="testanalyst",
+        encrypted_password=encrypt_password("testpass"),
+        role="test_analyst",
+        security_context_version=3,
     )
     assert "Pipe execution is unavailable with Ranger" in result.error
     assert result.engine_query_ids == []

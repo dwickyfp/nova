@@ -53,6 +53,11 @@ The **Agent memory** window lists the facts the selected agent remembers from
 your conversations under your **current role**. Each account and agent has its
 own memories. When there are none it says "No memories yet".
 
+Removing a fact takes it out of active memory. If you teach the same fact again,
+Nova records new evidence while retaining its earlier revision history. A fact
+learned again starts as a private hypothesis and needs a new review before it
+can be shared as verified knowledge.
+
 ## Limits
 
 - Questions you ask the Dataviz assistant do not appear in this **History**

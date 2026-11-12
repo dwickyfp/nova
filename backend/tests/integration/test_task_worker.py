@@ -33,10 +33,7 @@ import pytest
 import pytest_asyncio
 import redis.asyncio as aioredis
 
-from app.common.nova_system import (
-    TASK_ORCHESTRATION_DDL,
-    migrate_task_orchestration_columns,
-)
+from app.common.metadata_actors import metadata_scope
 from app.core.config import settings
 from app.core.database import db
 from app.core.redis import session_store
@@ -57,6 +54,7 @@ from tests.integration._stack import (
     require_shared_stack,
     shared_stack_host_port,
 )
+from tests.integration._task_runs import create_graph_run, create_task_run, latest_node
 
 _EXPLICIT_PORT = os.getenv("NOVA_ORCH_SR_PORT")
 SR_HOST = os.getenv("NOVA_ORCH_SR_HOST", "127.0.0.1")
@@ -67,10 +65,17 @@ _USE_SHARED_STACK = _EXPLICIT_PORT is None
 
 REDIS_URL = os.getenv(
     "NOVA_ORCH_REDIS_URL",
-    redis_url(shared_stack_host_port('NOVA_TEST_REDIS_PORT', 26379)),
+    redis_url(shared_stack_host_port("NOVA_TEST_REDIS_PORT", 26379)),
 )
 
 pytestmark = pytest.mark.engine
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def task_metadata_login(engine_workload):
+    async with engine_workload("task"):
+        yield
+
 
 #: A restricted user and the table it must not read. The owner of the
 #: "forbidden" task is this user; the "allowed" task belongs to root.
@@ -85,9 +90,7 @@ FORBIDDEN_DB = "nova_worker_rbac"
 async def _sr_reachable() -> bool:
     try:
         conn = await asyncio.wait_for(
-            asyncmy.connect(
-                host=SR_HOST, port=SR_PORT, user=SR_USER, password=SR_PASSWORD
-            ),
+            asyncmy.connect(host=SR_HOST, port=SR_PORT, user=SR_USER, password=SR_PASSWORD),
             timeout=5,
         )
     except Exception:
@@ -98,9 +101,7 @@ async def _sr_reachable() -> bool:
 
 async def _has_live_backend() -> bool:
     try:
-        conn = await asyncmy.connect(
-            host=SR_HOST, port=SR_PORT, user=SR_USER, password=SR_PASSWORD
-        )
+        conn = await asyncmy.connect(host=SR_HOST, port=SR_PORT, user=SR_USER, password=SR_PASSWORD)
     except Exception:
         return False
     try:
@@ -143,9 +144,6 @@ async def worker_infra(request):
 
     await db.init_system_pool()
     await db.execute_system("CREATE DATABASE IF NOT EXISTS NOVA_SYSTEM")
-    for ddl in TASK_ORCHESTRATION_DDL:
-        await db.execute_system(ddl)
-    await migrate_task_orchestration_columns()
 
     await _seed_rbac_fixture()
     await session_store.init()
@@ -178,8 +176,7 @@ async def _seed_rbac_fixture() -> None:
         'PROPERTIES("replication_num" = "1")'
     )
     await db.execute_system(
-        f"CREATE USER IF NOT EXISTS '{RESTRICTED_USER}' "
-        f"IDENTIFIED BY '{RESTRICTED_PASSWORD}'"
+        f"CREATE USER IF NOT EXISTS '{RESTRICTED_USER}' IDENTIFIED BY '{RESTRICTED_PASSWORD}'"
     )
     # The restricted user gets INSERT only on ``allowed`` (the RBAC proof) and
     # SELECT so a ``WHEN`` expression can be evaluated against it. StarRocks
@@ -192,8 +189,8 @@ async def _seed_rbac_fixture() -> None:
 
 
 @pytest_asyncio.fixture
-async def cleanup_runs(worker_infra):
-    """Delete graph runs / node runs / tasks / edges created by a test."""
+async def cleanup_runs(worker_infra, task_definitions):
+    """Release sessions and definitions; the disposable PG fixture owns run history."""
     created: dict[str, list[str]] = {"graph": [], "task": [], "edge": []}
     yield created
     for run in created["graph"]:
@@ -201,18 +198,16 @@ async def cleanup_runs(worker_infra):
         if graph and graph.get("execution_session_id"):
             await session_store.delete(graph["execution_session_id"])
         for node in await repo.list_task_runs(run):
-            await repo.delete_task_run(node["id"])
-        await repo.delete_graph_run(run)
+            await repo.get_task_run(node["id"])
+        await repo.get_graph_run(run)
     for edge in created["edge"]:
-        await repo.delete_edge(edge)
+        await task_definitions.delete_edge(edge)
     for task in created["task"]:
-        await repo.delete_task(task)
+        await task_definitions.delete_task(task)
 
 
 def _credentials() -> StaticCredentialProvider:
-    return StaticCredentialProvider(
-        {RESTRICTED_USER: RESTRICTED_PASSWORD, ALLOWED_USER: ""}
-    )
+    return StaticCredentialProvider({RESTRICTED_USER: RESTRICTED_PASSWORD, ALLOWED_USER: ""})
 
 
 def _executor() -> DelegateExecutor:
@@ -232,7 +227,8 @@ async def _create_manual_run(graph_id: str, user: str = RESTRICTED_USER) -> dict
         default_role=RESTRICTED_ROLE,
         active_role=RESTRICTED_ROLE,
     )
-    return await repo.create_graph_run(
+    return await create_graph_run(
+        repo,
         {
             "graph_id": graph_id,
             "trigger_type": "manual",
@@ -240,7 +236,7 @@ async def _create_manual_run(graph_id: str, user: str = RESTRICTED_USER) -> dict
             "execution_user": user,
             "execution_role": RESTRICTED_ROLE,
             "execution_session_id": session_id,
-        }
+        },
     )
 
 
@@ -251,6 +247,7 @@ async def _make_graph(
     bodies: dict[str, str],
     edges: list[tuple[str, str]],
     schedule_root: bool = False,
+    task_definitions,
 ) -> tuple[str, dict[str, str]]:
     """Create tasks + edges and a pending graph run. Returns (run_id, ids).
 
@@ -261,7 +258,7 @@ async def _make_graph(
     graph_id = f"g_{suffix}"
     ids: dict[str, str] = {}
     for name, body in bodies.items():
-        task = await repo.create_task(
+        task = await task_definitions.create_task(
             {
                 "name": name,
                 "timezone": "UTC",
@@ -274,9 +271,7 @@ async def _make_graph(
         )
         ids[name] = task["id"]
     for parent, child in edges:
-        await repo.create_edge(
-            graph_id, {"parent_task": parent, "child_task": child}
-        )
+        await task_definitions.create_edge(graph_id, {"parent_task": parent, "child_task": child})
     if not edges and len(ids) == 1:
         graph_id = next(iter(ids.values()))
     run = await _create_manual_run(graph_id, user=next(iter(owners.values())))
@@ -297,10 +292,13 @@ async def _drive(run_id: str, graph_id: str) -> GraphState | None:
 class TestDelegateFirstRbac:
     """Criterion 2: the engine's RBAC is the enforcement, and Nova does not skip it."""
 
-    async def test_restricted_owner_fails_on_a_forbidden_table(self, worker_infra, cleanup_runs):
+    async def test_restricted_owner_fails_on_a_forbidden_table(
+        self, worker_infra, cleanup_runs, task_definitions
+    ):
         suffix = uuid4().hex[:8]
         name = f"deny_{suffix}"
         run_id, ids = await _make_graph(
+            task_definitions=task_definitions,
             suffix=suffix,
             owners={name: RESTRICTED_USER},
             bodies={name: f"INSERT INTO {FORBIDDEN_DB}.secret SELECT 1"},
@@ -309,13 +307,11 @@ class TestDelegateFirstRbac:
         cleanup_runs["graph"].append(run_id)
         cleanup_runs["task"].append(ids[name])
 
-        state = await GraphRunWorker(repo, _executor()).handle(
-            GraphRunJob(run_id, f"g_{suffix}")
-        )
+        state = await GraphRunWorker(repo, _executor()).handle(GraphRunJob(run_id, f"g_{suffix}"))
         assert state == GraphState.FAILED
         states = await _node_states(run_id)
         assert states[ids[name]] == "failed"
-        node = await repo.get_node_run(run_id, ids[name])
+        node = await latest_node(repo, run_id, ids[name])
         assert node is not None
         # The proof is that the engine itself refused the body at submit time,
         # on the owner's connection: the recorded error is StarRocks' own
@@ -323,15 +319,18 @@ class TestDelegateFirstRbac:
         # privilege(s) on TABLE secret"), not a Nova-side error and not the
         # engine executor's internal failure. Nothing else counts as
         # delegate-first RBAC enforcement.
-        message = (node["error_message"] or "")
+        message = node["error_message"] or ""
         assert "5203" in message, f"expected an engine privilege refusal, got {message!r}"
         assert "denied" in message.lower(), f"not a privilege denial: {message!r}"
         assert "secret" in message, f"denial names the wrong object: {message!r}"
 
-    async def test_owner_with_the_grant_succeeds(self, worker_infra, cleanup_runs):
+    async def test_owner_with_the_grant_succeeds(
+        self, worker_infra, cleanup_runs, task_definitions
+    ):
         suffix = uuid4().hex[:8]
         name = f"allow_{suffix}"
         run_id, ids = await _make_graph(
+            task_definitions=task_definitions,
             suffix=suffix,
             owners={name: RESTRICTED_USER},
             bodies={name: f"INSERT INTO {FORBIDDEN_DB}.allowed SELECT 1"},
@@ -340,17 +339,18 @@ class TestDelegateFirstRbac:
         cleanup_runs["graph"].append(run_id)
         cleanup_runs["task"].append(ids[name])
 
-        state = await GraphRunWorker(repo, _executor()).handle(
-            GraphRunJob(run_id, f"g_{suffix}")
-        )
+        state = await GraphRunWorker(repo, _executor()).handle(GraphRunJob(run_id, f"g_{suffix}"))
         assert state == GraphState.SUCCESS
-        node = await repo.get_node_run(run_id, ids[name])
+        node = await latest_node(repo, run_id, ids[name])
         assert node is not None and node["starrocks_query_id"]
 
-    async def test_privilege_error_is_recorded_on_the_node(self, worker_infra, cleanup_runs):
+    async def test_privilege_error_is_recorded_on_the_node(
+        self, worker_infra, cleanup_runs, task_definitions
+    ):
         suffix = uuid4().hex[:8]
         name = f"err_{suffix}"
         run_id, ids = await _make_graph(
+            task_definitions=task_definitions,
             suffix=suffix,
             owners={name: RESTRICTED_USER},
             bodies={name: f"INSERT INTO {FORBIDDEN_DB}.secret SELECT 2"},
@@ -359,7 +359,7 @@ class TestDelegateFirstRbac:
         cleanup_runs["graph"].append(run_id)
         cleanup_runs["task"].append(ids[name])
         await GraphRunWorker(repo, _executor()).handle(GraphRunJob(run_id, f"g_{suffix}"))
-        node = await repo.get_node_run(run_id, ids[name])
+        node = await latest_node(repo, run_id, ids[name])
         assert node is not None
         assert node["error_message"]
 
@@ -367,7 +367,9 @@ class TestDelegateFirstRbac:
 class TestDagEndToEnd:
     """Criterion 3: A -> B -> [C, D] runs to completion."""
 
-    async def test_chain_with_parallel_siblings_completes(self, worker_infra, cleanup_runs):
+    async def test_chain_with_parallel_siblings_completes(
+        self, worker_infra, cleanup_runs, task_definitions
+    ):
         suffix = uuid4().hex[:8]
         names = {n: f"{n}_{suffix}" for n in ("a", "b", "c", "d")}
         bodies = {
@@ -377,6 +379,7 @@ class TestDagEndToEnd:
             names["d"]: f"INSERT INTO {FORBIDDEN_DB}.allowed SELECT 13",
         }
         run_id, ids = await _make_graph(
+            task_definitions=task_definitions,
             suffix=suffix,
             owners={n: RESTRICTED_USER for n in names.values()},
             bodies=bodies,
@@ -395,7 +398,7 @@ class TestDagEndToEnd:
         assert set(states.values()) == {"success"}
         assert len(states) == 4
 
-    async def test_join_waits_for_all_parents(self, worker_infra, cleanup_runs):
+    async def test_join_waits_for_all_parents(self, worker_infra, cleanup_runs, task_definitions):
         suffix = uuid4().hex[:8]
         names = {n: f"{n}_{suffix}" for n in ("a", "b", "c", "d")}
         bodies = {
@@ -403,6 +406,7 @@ class TestDagEndToEnd:
             for i, n in enumerate(names.values())
         }
         run_id, ids = await _make_graph(
+            task_definitions=task_definitions,
             suffix=suffix,
             owners={n: RESTRICTED_USER for n in names.values()},
             bodies=bodies,
@@ -421,7 +425,7 @@ class TestDagEndToEnd:
         states = await _node_states(run_id)
         assert set(states.values()) == {"success"}
         # D's run row was created after B and C were persisted.
-        d_run = await repo.get_node_run(run_id, ids[names["d"]])
+        d_run = await latest_node(repo, run_id, ids[names["d"]])
         assert d_run is not None and d_run["state"] == "success"
 
 
@@ -429,11 +433,12 @@ class TestFailureAndSkipSemantics:
     """Criterion 4: failure fails the graph; WHEN false skips the subtree."""
 
     async def test_failed_parent_fails_graph_and_descendants_skip(
-        self, worker_infra, cleanup_runs
+        self, worker_infra, cleanup_runs, task_definitions
     ):
         suffix = uuid4().hex[:8]
         root, child, grand = f"root_{suffix}", f"child_{suffix}", f"grand_{suffix}"
         run_id, ids = await _make_graph(
+            task_definitions=task_definitions,
             suffix=suffix,
             owners={root: RESTRICTED_USER, child: RESTRICTED_USER, grand: RESTRICTED_USER},
             bodies={
@@ -454,7 +459,9 @@ class TestFailureAndSkipSemantics:
         assert states[ids[child]] == "failed"
         assert states[ids[grand]] == "skipped"
 
-    async def test_when_false_skips_node_and_descendants(self, worker_infra, cleanup_runs):
+    async def test_when_false_skips_node_and_descendants(
+        self, worker_infra, cleanup_runs, task_definitions
+    ):
         suffix = uuid4().hex[:8]
         root, child, grand = f"wroot_{suffix}", f"wchild_{suffix}", f"wgrand_{suffix}"
         graph_id = f"g_{suffix}"
@@ -467,7 +474,7 @@ class TestFailureAndSkipSemantics:
             when = None
             if name == child:
                 when = f"(SELECT COUNT(*) FROM {FORBIDDEN_DB}.allowed) > 1000000"
-            task = await repo.create_task(
+            task = await task_definitions.create_task(
                 {
                     "name": name,
                     "timezone": "UTC",
@@ -480,8 +487,8 @@ class TestFailureAndSkipSemantics:
                 created_by=owner,
             )
             ids[name] = task["id"]
-        await repo.create_edge(graph_id, {"parent_task": root, "child_task": child})
-        await repo.create_edge(graph_id, {"parent_task": child, "child_task": grand})
+        await task_definitions.create_edge(graph_id, {"parent_task": root, "child_task": child})
+        await task_definitions.create_edge(graph_id, {"parent_task": child, "child_task": grand})
         run = await _create_manual_run(graph_id)
         cleanup_runs["graph"].append(run["id"])
         cleanup_runs["task"].extend(ids.values())
@@ -497,10 +504,13 @@ class TestFailureAndSkipSemantics:
 class TestSuspend:
     """Criterion 5: a suspended child must not hang the graph."""
 
-    async def test_suspended_task_does_not_block_the_graph(self, worker_infra, cleanup_runs):
+    async def test_suspended_task_does_not_block_the_graph(
+        self, worker_infra, cleanup_runs, task_definitions
+    ):
         suffix = uuid4().hex[:8]
         name = f"susp_{suffix}"
         run_id, ids = await _make_graph(
+            task_definitions=task_definitions,
             suffix=suffix,
             owners={name: RESTRICTED_USER},
             bodies={name: f"INSERT INTO {FORBIDDEN_DB}.allowed SELECT 40"},
@@ -511,25 +521,26 @@ class TestSuspend:
 
         # Suspend the native task before the node runs: it is accepted, but the
         # engine reports the run as suspended rather than executing the body.
-        await repo.create_task_run(
-            {"graph_run_id": run_id, "task_id": ids[name], "state": "suspended"}
+        await create_task_run(
+            repo, {"graph_run_id": run_id, "task_id": ids[name], "state": "suspended"}
         )
-        state = await GraphRunWorker(repo, _executor()).handle(
-            GraphRunJob(run_id, f"g_{suffix}")
-        )
+        state = await GraphRunWorker(repo, _executor()).handle(GraphRunJob(run_id, f"g_{suffix}"))
         # A suspend is terminal non-failure: the graph settles as success.
         assert state == GraphState.SUCCESS
-        node = await repo.get_node_run(run_id, ids[name])
+        node = await latest_node(repo, run_id, ids[name])
         assert node is not None and node["state"] == "suspended"
 
 
 class TestIdempotency:
     """Criterion 6: redelivery does not execute a node twice."""
 
-    async def test_redelivery_does_not_re_execute(self, worker_infra, cleanup_runs):
+    async def test_redelivery_does_not_re_execute(
+        self, worker_infra, cleanup_runs, task_definitions
+    ):
         suffix = uuid4().hex[:8]
         name = f"idem_{suffix}"
         run_id, ids = await _make_graph(
+            task_definitions=task_definitions,
             suffix=suffix,
             owners={name: RESTRICTED_USER},
             bodies={name: f"INSERT INTO {FORBIDDEN_DB}.allowed SELECT 50"},
@@ -547,10 +558,13 @@ class TestIdempotency:
         assert len(rows) == 1
         assert rows[0]["state"] == "success"
 
-    async def test_conditional_transition_refuses_a_stale_move(self, worker_infra, cleanup_runs):
+    async def test_conditional_transition_refuses_a_stale_move(
+        self, worker_infra, cleanup_runs, task_definitions
+    ):
         suffix = uuid4().hex[:8]
         name = f"cond_{suffix}"
         run_id, ids = await _make_graph(
+            task_definitions=task_definitions,
             suffix=suffix,
             owners={name: RESTRICTED_USER},
             bodies={name: f"INSERT INTO {FORBIDDEN_DB}.allowed SELECT 51"},
@@ -560,10 +574,10 @@ class TestIdempotency:
         cleanup_runs["task"].append(ids[name])
         await _drive(run_id, f"g_{suffix}")
 
-        node = await repo.get_node_run(run_id, ids[name])
+        node = await latest_node(repo, run_id, ids[name])
         assert node is not None
-        moved = await repo.transition_task_run(
-            node["id"], ["running"], "failed"
+        moved = await repo.finish_task_run(
+            node["id"], "failed", generation=node["lease_generation"]
         )
         assert moved is False
         assert node["state"] == "success"
@@ -573,11 +587,12 @@ class TestRestartSafety:
     """Criterion 7: Redis flush / worker death loses no work permanently."""
 
     async def test_graph_survives_a_redis_flush_and_reconciles(
-        self, worker_infra, cleanup_runs
+        self, worker_infra, cleanup_runs, task_definitions
     ):
         suffix = uuid4().hex[:8]
         name = f"flush_{suffix}"
         run_id, ids = await _make_graph(
+            task_definitions=task_definitions,
             suffix=suffix,
             owners={name: RESTRICTED_USER},
             bodies={name: f"INSERT INTO {FORBIDDEN_DB}.allowed SELECT 60"},
@@ -604,10 +619,13 @@ class TestRestartSafety:
         await service.reconcile_once()
         assert (await repo.get_graph_run(run_id))["state"] == "success"
 
-    async def test_abandoned_running_node_is_not_replayed(self, worker_infra, cleanup_runs):
+    async def test_abandoned_running_node_is_not_replayed(
+        self, worker_infra, cleanup_runs, task_definitions
+    ):
         suffix = uuid4().hex[:8]
         name = f"dead_{suffix}"
         run_id, ids = await _make_graph(
+            task_definitions=task_definitions,
             suffix=suffix,
             owners={name: RESTRICTED_USER},
             bodies={name: f"INSERT INTO {FORBIDDEN_DB}.allowed SELECT 61"},
@@ -618,34 +636,39 @@ class TestRestartSafety:
 
         # A worker died mid-node: a RUNNING row with a heartbeat older than the
         # abandon window. The reconciler must surface it.
-        node = await repo.create_task_run(
+        node = await create_task_run(
+            repo,
             {
                 "graph_run_id": run_id,
                 "task_id": ids[name],
                 "state": "running",
                 "delegated": True,
-            }
+            },
         )
-        await db.execute_system(
-            "UPDATE NOVA_SYSTEM.CONFIG_TASK_RUNS "
-            "SET heartbeat_at = DATE_SUB(NOW(), INTERVAL 600 SECOND) WHERE id = %s",
-            [node["id"]],
-        )
+        async with metadata_scope(repo.actor) as connection:
+            await connection.execute(
+                "UPDATE nova_meta.config_task_runs "
+                "SET heartbeat_at = clock_timestamp() - interval '600 seconds' WHERE id = %s",
+                [node["id"]],
+            )
         report = await Reconciler(repo, heartbeat_timeout_seconds=120).scan()
         assert node["id"] in report.abandoned_task_runs
         assert run_id in report.abandoned_graph_runs
 
-        await repo.transition_task_run(node["id"], ["running"], "abandoned")
+        assert await repo.abandon_task_run(node["id"], generation=node["lease_generation"])
         state = await _drive(run_id, f"g_{suffix}")
         assert state == GraphState.RUNNING
         assert (await repo.get_task_run(node["id"]))["state"] == "abandoned"
 
-    async def test_heartbeat_advances_while_the_node_runs(self, worker_infra, cleanup_runs):
+    async def test_heartbeat_advances_while_the_node_runs(
+        self, worker_infra, cleanup_runs, task_definitions
+    ):
         """A live worker stamps a heartbeat; a dead one stops, and only then
         does the reconciler treat the row as abandoned."""
         suffix = uuid4().hex[:8]
         name = f"beat_{suffix}"
         run_id, ids = await _make_graph(
+            task_definitions=task_definitions,
             suffix=suffix,
             owners={name: RESTRICTED_USER},
             bodies={name: f"INSERT INTO {FORBIDDEN_DB}.allowed SELECT 63"},
@@ -654,27 +677,31 @@ class TestRestartSafety:
         cleanup_runs["graph"].append(run_id)
         cleanup_runs["task"].append(ids[name])
 
-        node = await repo.create_task_run(
-            {"graph_run_id": run_id, "task_id": ids[name], "state": "running"}
+        node = await create_task_run(
+            repo, {"graph_run_id": run_id, "task_id": ids[name], "state": "running"}
         )
-        await repo.mark_task_run_heartbeat(node["id"])
+        assert await repo.heartbeat_task_run(node["id"], generation=node["lease_generation"])
 
         fresh = await repo.list_stale_task_runs(60)
         assert node["id"] not in {row["id"] for row in fresh}
 
         # Move the stamp back and it becomes an abandonment candidate.
-        await db.execute_system(
-            "UPDATE NOVA_SYSTEM.CONFIG_TASK_RUNS "
-            "SET heartbeat_at = DATE_SUB(NOW(), INTERVAL 600 SECOND) WHERE id = %s",
-            [node["id"]],
-        )
+        async with metadata_scope(repo.actor) as connection:
+            await connection.execute(
+                "UPDATE nova_meta.config_task_runs "
+                "SET heartbeat_at = clock_timestamp() - interval '600 seconds' WHERE id = %s",
+                [node["id"]],
+            )
         stale = await repo.list_stale_task_runs(120)
         assert node["id"] in {row["id"] for row in stale}
 
-    async def test_settled_node_is_not_reported_as_stale(self, worker_infra, cleanup_runs):
+    async def test_settled_node_is_not_reported_as_stale(
+        self, worker_infra, cleanup_runs, task_definitions
+    ):
         suffix = uuid4().hex[:8]
         name = f"hb_{suffix}"
         run_id, ids = await _make_graph(
+            task_definitions=task_definitions,
             suffix=suffix,
             owners={name: RESTRICTED_USER},
             bodies={name: f"INSERT INTO {FORBIDDEN_DB}.allowed SELECT 62"},
@@ -693,12 +720,13 @@ class TestStreamRoundTrip:
     """The scheduler's stream is consumed, executed, and acknowledged."""
 
     async def test_consumer_reads_a_published_job_and_acks_it(
-        self, worker_infra, cleanup_runs
+        self, worker_infra, cleanup_runs, task_definitions
     ):
         client: aioredis.Redis = worker_infra
         suffix = uuid4().hex[:8]
         name = f"stream_{suffix}"
         run_id, ids = await _make_graph(
+            task_definitions=task_definitions,
             suffix=suffix,
             owners={name: RESTRICTED_USER},
             bodies={name: f"INSERT INTO {FORBIDDEN_DB}.allowed SELECT 70"},

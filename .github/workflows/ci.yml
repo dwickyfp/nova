@@ -54,6 +54,7 @@ jobs:
           raise SystemExit(pytest.main([
               "tests/integration/test_metadata_pg_foundation.py",
               "tests/integration/test_metadata_bootstrap.py",
+              "tests/integration/test_metadata_importer.py",
               "tests/integration/test_metadata_pgbouncer.py",
               "tests/integration/test_metadata_process.py",
               "tests/integration/test_metadata_preferences.py",
@@ -334,6 +335,25 @@ jobs:
       - name: Install dependencies
         working-directory: backend
         run: uv sync --locked
+
+      - name: Prepare private PG17 metadata fixture
+        working-directory: backend
+        run: uv run python tests/integration/prepare_metadata_fixture.py "$RUNNER_TEMP/nova-engine-pg"
+
+      - name: Start PG17 alongside the governed engine
+        run: |
+          docker compose ls
+          docker ps --format '{{.Names}} {{.Ports}}'
+          docker compose -p backend -f "$RUNNER_TEMP/nova-engine-pg/compose.yaml" up -d --wait
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          dsn = json.loads((Path(os.environ["RUNNER_TEMP"]) / "nova-engine-pg/connection.json").read_text())["admin_dsn"]
+          print("::add-mask::" + dsn)
+          with open(os.environ["GITHUB_ENV"], "a") as handle:
+              handle.write("NOVA_TEST_METADATA_ADMIN_DSN=" + dsn + "\n")
+              handle.write("NOVA_TEST_METADATA_DISPOSABLE=acknowledged\n")
+          PY
 
       # The proxy acceptance suite self-gates on a local `mysql:8.0` image
       # (test_mysql_proxy_cli.py:50-62) because it runs a *real* client against

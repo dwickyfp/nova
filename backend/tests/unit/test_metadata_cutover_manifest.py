@@ -15,6 +15,7 @@ from app.core.metadata_import_manifest import (
     sha256_bytes,
     write_private,
 )
+from app.core.metadata_import_semantics import CHECKS
 from app.core.metadata_schema import load_migrations
 
 
@@ -40,6 +41,9 @@ def manifest():
         "validated_at": timestamp.isoformat(), "conflicts": {"blocking": 0},
         "source_consistency": "FROZEN_STABLE", "snapshot_id": str(uuid4()),
         "import_run_id": str(uuid4()), "export_manifest_sha256": "b" * 64,
+        "semantics": {"status": "VERIFIED", "checks": dict.fromkeys(CHECKS, 0)},
+        "managed_payloads": {"status": "VERIFIED", "count": 0, "receipts": [],
+                             "receipts_sha256": sha256_bytes(canonical_json([]))},
         "tables": {name: {
             "status": "MATCHED", "target_table": table.target_table,
             "source_count": 2, "target_count": 2,
@@ -69,6 +73,9 @@ def test_complete_manifest_publishes_one_epoch_without_opening_writes(manifest):
     ("freeze_operation_id", str(uuid4())), ("source_consistency", "LIVE"),
     ("conflicts", {"blocking": 1}), ("conflicts", {"blocking": False}),
     ("schema_version", True), ("status", "PARTIAL"), ("snapshot_id", "not-a-uuid"),
+    ("managed_payloads", None),
+    ("managed_payloads", {"status": "VERIFIED", "count": 0, "receipts": [],
+                          "receipts_sha256": "f" * 64}),
 ])
 def test_wrong_provenance_never_activates(manifest, field, value):
     document = deepcopy(manifest[2])

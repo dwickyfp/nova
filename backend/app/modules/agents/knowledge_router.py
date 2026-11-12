@@ -46,30 +46,28 @@ async def memory_revisions(agent_id: str, memory_id: str, user: CurrentUser):
 async def memory_evidence(agent_id: str, memory_id: str, user: CurrentUser):
     import json
 
-    from app.core.database import db
-
     revisions = await memory_revisions(agent_id, memory_id, user)
     allowed = {ident for row in revisions["items"] for ident in row["evidence_ids"]}
     if not allowed:
         return {"items": []}
-    rows = await db.execute_system(
-        "SELECT evidence_id,payload FROM NOVA_SYSTEM.CONFIG_AGENT_MEMORY_EVIDENCE "
-        "WHERE memory_id=%s AND user_name=%s AND agent_id=%s AND role_name=%s "
-        "AND evidence_id IN ("
-        + ",".join("%s" for _ in allowed)
-        + ") ORDER BY created_at DESC LIMIT 100",
-        [
-            memory_id,
-            user["username"],
-            agent_id,
-            session_security(user).active_role,
-            *sorted(allowed),
-        ],
+    rows = await memory_repository.evidence(
+        memory_id,
+        user_name=user["username"],
+        agent_id=agent_id,
+        role_name=session_security(user).active_role,
+        allowed=allowed,
     )
     return {
         "items": [
-            {"id": row[0], **(json.loads(row[1]) if isinstance(row[1], str) else row[1])}
-            for row in rows["rows"]
+            {
+                "id": row["evidence_id"],
+                **(
+                    json.loads(row["payload"])
+                    if isinstance(row["payload"], str)
+                    else row["payload"]
+                ),
+            }
+            for row in rows
         ]
     }
 

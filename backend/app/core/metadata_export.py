@@ -153,9 +153,12 @@ async def _export_table(
         payload = encode_chunk(pending)
         entry = write_chunk(directory, chunk_name(table.source_table, len(chunks)), payload)
         entry["rows"] = len(pending)
+        row_offset = digest.rows
         for index, row in enumerate(pending):
             if table.record_id:
-                key = [str(import_row_id(snapshot_id, table.source_table, entry["sha256"], index))]
+                key = [str(import_row_id(
+                    snapshot_id, table.source_table, entry["sha256"], row_offset + index,
+                ))]
             else:
                 key = [row[position] for position in key_indexes]
             digest.add(key_fingerprint(key), row_fingerprint(types, row))
@@ -272,6 +275,7 @@ async def export_snapshot(
         "timestamp_provenance_sha256": provenance.sha256,
         "clock_binding": dict(sorted(binding.items())),
         "chunk_rows": chunk_rows,
+        "row_identity": "table-offset/v1",
         "consistency": consistency,
         "unstable_tables": unstable,
         "uncontracted_tables": uncontracted,

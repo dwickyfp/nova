@@ -194,73 +194,52 @@ async def test_memory_isolation_and_untrusted_extraction(monkeypatch):
     assert "Omzet" not in memory_prompt([])
 
 
-class RecordingDB:
-    def __init__(self):
-        self.calls = []
-
-    async def execute_system(self, sql, params=None):
-        self.calls.append((" ".join(sql.split()), params))
-        if "SELECT memory_id, user_name" in sql and "WHERE memory_id" in sql:
-            return {
-                "rows": [
-                    [
-                        "memory-1",
-                        "alice",
-                        "sales",
-                        "analyst",
-                        "omzet",
-                        "Omzet adalah pembayaran lunas.",
-                        "Omzet adalah pembayaran lunas",
-                        "t1",
-                        None,
-                        None,
-                    ]
-                ]
-            }
-        return {"rows": [], "affected": 1}
-
-
 @pytest.mark.asyncio
-async def test_repository_enforces_all_scope_fields_in_sql(monkeypatch):
-    @asynccontextmanager
-    async def coordinated(_key):
-        yield
+async def test_repository_binds_memory_reads_and_writes_to_the_actor(monkeypatch):
+    from app.core.metadata_db import MetadataPermissionDenied
+    from app.modules.access_control.security_context import SecurityContext
 
-    db = RecordingDB()
-    monkeypatch.setattr(memory_module, "db", db)
-    monkeypatch.setattr(memory_module, "metadata_lock", coordinated)
+    store = AsyncMock()
+    store.actor = SecurityContext("alice", "analyst")
+    store.list_memories.return_value = []
+    store.memory_heads.return_value = []
+    store.scoped_memory_revisions.return_value = []
+    store.get_memory.return_value = {
+        "memory_id": "memory-1", "user_name": "alice", "agent_id": "sales",
+        "role_name": "analyst", "fact_key": "omzet", "fact": "Omzet adalah pembayaran lunas.",
+        "source_quote": "Omzet adalah pembayaran lunas", "source_thread_id": "t1",
+        "created_at": None, "updated_at": None,
+    }
+
+    @asynccontextmanager
+    async def transaction(owner=None, *, read_only=False):
+        if owner is not None and owner != store.actor.principal:
+            raise MetadataPermissionDenied()
+        yield store
+
+    monkeypatch.setattr(memory_module, "agent_metadata", transaction)
     repo = AgentMemoryRepository()
     await repo.list(user_name="alice", agent_id="sales", role_name="analyst")
+    store.list_memories.assert_awaited_once_with("alice", "sales", "analyst", 200, 0)
     await repo.delete("memory-1", user_name="alice", agent_id="sales", role_name="analyst")
+    store.delete_memory_projection.assert_awaited_once_with("memory-1", "sales")
+    store.reset_mock()
     await repo.upsert(
-        user_name="alice",
-        agent_id="sales",
-        role_name="analyst",
-        fact_key="omzet",
-        fact="Omzet adalah pembayaran lunas.",
-        source_quote="Omzet adalah pembayaran lunas",
-        source_thread_id="t1",
-        existing_id="memory-1",
+        user_name="alice", agent_id="sales", role_name="analyst", fact_key="omzet",
+        fact="Omzet adalah pembayaran lunas.", source_quote="Omzet adalah pembayaran lunas",
+        source_thread_id="t1", existing_id="memory-1",
     )
-    for sql, params in db.calls:
-        if sql.startswith("INSERT"):
-            columns = sql.partition("(")[2].partition(")")[0].replace(" ", "").split(",")
-            assert {"user_name", "agent_id", "role_name"}.issubset(columns)
-            bound = dict(zip(columns[:-1], params, strict=True))
-            assert bound["user_name"] == "alice"
-            assert bound["agent_id"] == "sales"
-            assert bound["role_name"] == "analyst"
-        else:
-            compact = sql.replace(" ", "")
-            assert "user_name=%sANDagent_id=%sANDrole_name=%s" in compact
-        assert "alice" in params and "sales" in params and "analyst" in params
-    revision_insert = next(
-        i
-        for i, (sql, _) in enumerate(db.calls)
-        if sql.startswith("INSERT INTO NOVA_SYSTEM.CONFIG_AGENT_MEMORY_REVISIONS")
+    store.get_memory.assert_awaited_once_with("memory-1", "alice", "sales", "analyst")
+    store.scoped_memory_revisions.assert_awaited_once_with(
+        "memory-1", "alice", "sales", "analyst",
     )
-    projection_update = next(i for i, (sql, _) in enumerate(db.calls) if sql.startswith("UPDATE"))
-    assert revision_insert < projection_update
+    names = [call[0] for call in store.mock_calls]
+    assert names.index("append_memory_revision") < names.index("project_memory")
+    with pytest.raises(MetadataPermissionDenied):
+        await repo.delete("memory-1", user_name="bob", agent_id="sales", role_name="analyst")
+    with pytest.raises(MetadataPermissionDenied):
+        await repo.delete("memory-1", user_name="alice", agent_id="sales", role_name="viewer")
+    assert store.delete_memory_projection.await_count == 0
 
 
 @pytest.mark.asyncio

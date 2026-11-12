@@ -7,6 +7,7 @@ import json
 import os
 import secrets
 import sys
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from uuid import UUID, uuid4
 
@@ -56,9 +57,23 @@ class Environment:
             password=self.credentials.passwords[role].get_secret_value(),
         ))
 
+    @asynccontextmanager
+    async def importer(self):
+        """Load a legacy fixture through the migrator's guarded maintenance path."""
+        await self.admin.execute("UPDATE nova_meta.deployment_state SET maintenance=true")
+        try:
+            async with await psycopg.AsyncConnection.connect(
+                self.role_config("nova_meta_migrator").dsn,
+                autocommit=True, row_factory=dict_row,
+            ) as connection, connection.transaction():
+                await connection.execute("SET LOCAL ROLE nova_meta_owner")
+                yield connection
+        finally:
+            await self.admin.execute("UPDATE nova_meta.deployment_state SET maintenance=false")
 
-@pytest_asyncio.fixture
-async def environment():
+
+@asynccontextmanager
+async def disposable_environment():
     dsn = os.environ.get("NOVA_TEST_METADATA_ADMIN_DSN")
     if not dsn:
         pytest.skip("Existing dedicated PG17 TLS fixture requires NOVA_TEST_METADATA_ADMIN_DSN")
@@ -136,6 +151,12 @@ async def environment():
             await admin.execute(sql.SQL("COMMENT ON DATABASE nova_control IS {}").format(
                 sql.Literal(original_comment),
             ))
+
+
+@pytest_asyncio.fixture
+async def environment():
+    async with disposable_environment() as fixture:
+        yield fixture
 
 
 async def test_fresh_roles_reapply_without_password_rotation_and_install_schema(environment):

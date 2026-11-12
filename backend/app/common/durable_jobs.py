@@ -260,6 +260,11 @@ class JobRepository:
             assert row is not None
             return row
 
+    async def lock_prepared(self, lease: JobLease) -> dict[str, Any]:
+        """Fence participant intent/receipt writes inside their owning transaction."""
+        self._require_transaction()
+        return await self._locked(lease, ("PREPARED",))
+
     async def prepare(
         self,
         lease: JobLease,

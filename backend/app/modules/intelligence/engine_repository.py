@@ -251,6 +251,8 @@ class IntelligenceRepository:
             async with self._session(actor) as repo:
                 current = await repo.get_record(kind, record.id)
                 if current is not None:
+                    if not _owned_by(current, record.scope):
+                        raise HTTPException(status_code=404, detail="Record unavailable")
                     old = type(record).model_validate(current["payload"])
                     ignored = {"revision", "created_at", "updated_at"}
                     if old.model_dump(exclude=ignored) == record.model_dump(exclude=ignored):

@@ -4,18 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import os
+from contextlib import asynccontextmanager
 from uuid import UUID, uuid4
 
 import pytest
 
 from app.core.database import db
 from app.core.security import encrypt_password
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.query.service import QueryService
 from app.modules.query_autopilot.evidence import EvidenceCollector
 from app.modules.query_autopilot.models import Observation, Scope, utcnow
-from app.modules.query_autopilot.repository import repository
+from app.modules.query_autopilot.repository import acting, repository
 from app.modules.query_autopilot.runtime import AuthorizedSQL, current_policy_revision
-from app.modules.query_autopilot.schema import DDL, TABLES, ensure_schema
 from app.modules.query_autopilot.telemetry import collector, purpose
 from app.sql_frontend.session_functions import CORRELATION_SESSION, QueryCorrelationSession
 
@@ -37,14 +38,43 @@ async def autopilot_engine(app):
     )
     await db.execute_system(f"INSERT INTO {name}.facts VALUES (1,1,10),(2,1,20),(3,2,30)")
     scope = Scope(
-        principal="nova_admin", active_role=role, security_context_version=1, database=name,
+        principal="nova_admin",
+        active_role=role,
+        security_context_version=1,
+        database=name,
         policy_revision=await current_policy_revision(),
     )
     try:
-        yield scope
+        with acting(
+            SecurityContext(scope.principal, scope.active_role, security_context_version=1)
+        ):
+            yield scope
     finally:
         await db.execute_system(f"DROP DATABASE IF EXISTS {name}")
         await db.execute_system(f"DROP ROLE IF EXISTS {role}")
+
+
+@asynccontextmanager
+async def claimed_operation(engine_workload, scope, identifier):
+    from app.modules.query_autopilot.jobs import leased
+    from app.modules.query_autopilot.repository import WORKER_ACTOR
+
+    job = {
+        "id": identifier,
+        "kind": "experiment",
+        "state": "QUEUED",
+        "version": 1,
+        "actor": scope.principal,
+        "actor_role": scope.active_role,
+        "request_hash": identifier,
+    }
+    assert await repository.put("jobs", identifier, job, insert_only=True)
+    async with engine_workload("automation"):
+        with acting(WORKER_ACTOR):
+            generation = await repository.claim_job(identifier, expected_version=1)
+        assert generation is not None
+        async with leased(repository, identifier, generation):
+            yield
 
 
 async def query(scope, statement, **kwargs):
@@ -145,7 +175,8 @@ async def test_disposable_resource_trial_preserves_enrolled_group(app):
             bound = validate_resource_baseline(after, source, after, source)
             assert bound.exists and bound.identity
             with pytest.raises(
-                ValueError, match="sandbox_resource_baseline_differs_from_production",
+                ValueError,
+                match="sandbox_resource_baseline_differs_from_production",
             ):
                 validate_resource_baseline(after, source, after, name)
             assert [row for row in before.rows if row[0] == source] == [
@@ -164,7 +195,9 @@ async def test_disposable_resource_trial_preserves_enrolled_group(app):
             await execute(f"DROP RESOURCE GROUP `{source}`", confirm=True)
 
 
-async def test_refresh_policy_clones_owned_mv_and_requires_ranger_proof(autopilot_engine):
+async def test_refresh_policy_clones_owned_mv_and_requires_ranger_proof(
+    autopilot_engine, engine_workload
+):
     from dataclasses import asdict
     from datetime import timedelta
 
@@ -242,6 +275,7 @@ async def test_refresh_policy_clones_owned_mv_and_requires_ranger_proof(autopilo
     )
     await db.execute_system(f"GRANT {replay_role} TO USER {replay_user}")
     try:
+        assert await repository.get("enrollments", prefix) is None
         await repository.put("enrollments", prefix, enrollment.model_dump(mode="json"))
         for index, sql in enumerate((statement, control)):
             identifier = prefix + f"-sample-{index}"
@@ -274,19 +308,30 @@ async def test_refresh_policy_clones_owned_mv_and_requires_ranger_proof(autopilo
                 family_id=item.family_id,
                 cohort_id=source.cohort_id,
             )
-        async with runtime.connection(source) as connection:
+        async with (
+            claimed_operation(engine_workload, autopilot_engine, prefix),
+            runtime.connection(source) as connection,
+        ):
             original = candidate.model_copy(
                 update={"kind": ActionKind.MATERIALIZED_VIEW, "parameters": {"name": name}}
             )
             action_id = prefix + "-original"
+            from app.modules.query_autopilot.models import digest
+
+            intent = {
+                "id": action_id,
+                "kind": "MATERIALIZED_VIEW",
+                "state": "APPLYING",
+                "candidate_id": prefix,
+                "binding": original.proposal_binding,
+                "statement_digests": [digest(statement)],
+                "actor": source.principal,
+                "actor_role": source.active_role,
+            }
             await repository.put(
                 "actions",
                 action_id,
-                {
-                    "id": action_id,
-                    "kind": "MATERIALIZED_VIEW",
-                    "state": "APPLYING",
-                },
+                intent,
                 family_id=family,
                 cohort_id=source.cohort_id,
                 state="APPLYING",
@@ -309,8 +354,7 @@ async def test_refresh_policy_clones_owned_mv_and_requires_ranger_proof(autopilo
                 "actions",
                 action_id,
                 {
-                    "id": action_id,
-                    "kind": "MATERIALIZED_VIEW",
+                    **intent,
                     "state": "APPLIED",
                     "owned_object_binding": owned.binding,
                     "owned_object": asdict(owned),
@@ -322,6 +366,7 @@ async def test_refresh_policy_clones_owned_mv_and_requires_ranger_proof(autopilo
             candidate = candidate.model_copy(
                 update={"evidence_digest": await service.evidence_digest(candidate)}
             )
+            assert await repository.get("opportunities", candidate.id) is None
             await service._candidate(candidate)
             operation = await service.run_experiment(candidate, enrollment, policy, {"id": prefix})
             assert operation["state"] == "COMPLETED", operation
@@ -343,76 +388,58 @@ async def test_refresh_policy_clones_owned_mv_and_requires_ranger_proof(autopilo
                 confirm=True,
             )
     finally:
-        for kind in ("opportunities", "experiments", "actions", "evidence", "enrollments"):
-            for cohort in (
-                source.cohort_id,
-                Scope(
-                    principal=replay_user,
-                    active_role=replay_role,
-                    security_context_version=1,
-                    database=sandbox,
-                    policy_revision=source.policy_revision,
-                ).cohort_id,
-            ):
-                cursor = ""
-                while True:
-                    records = await repository.page(
-                        kind, cohort_id=cohort, after=cursor, limit=1000
-                    )
-                    if not records:
-                        break
-                    cursor = records[-1]["id"]
-                    for record in records:
-                        if record.get("payload_ref"):
-                            await service.payloads.delete(record["payload_ref"])
-                        await repository.delete(kind, record["id"])
-            await repository.delete(kind, prefix)
+        for index in range(2):
+            await service.payloads.delete(service.payloads.reference(prefix + f"-sample-{index}"))
         await db.execute_system(f"DROP DATABASE IF EXISTS {sandbox}")
         await db.execute_system(f"DROP USER IF EXISTS {replay_user}")
         await db.execute_system(f"DROP ROLE IF EXISTS {replay_role}")
 
 
-async def test_schema_fresh_upgrade_batch_and_compare_swap(autopilot_engine):
+async def test_schema_fresh_upgrade_batch_and_compare_swap(autopilot_engine, engine_metadata):
     scope = autopilot_engine
-    # Every DDL also creates successfully in a fresh database, then remains idempotent.
-    for _ in range(2):
-        for ddl in DDL:
-            await db.execute_system(ddl.replace("NOVA_SYSTEM.", scope.database + "."))
-    await ensure_schema()
-    await ensure_schema()
     identifier = str(uuid4())
-    try:
-        assert await repository.put("jobs", identifier, {"id": identifier, "version": 1}, version=1)
-        assert await repository.put(
-            "jobs", identifier, {"id": identifier, "version": 2}, version=2, expected_version=1
-        )
-        assert not await repository.put(
-            "jobs", identifier, {"id": identifier, "version": 3}, version=3, expected_version=1
-        )
-        assert (await repository.get("jobs", identifier))["version"] == 2
-        observation = Observation(
-            id=identifier,
-            family_id="f",
-            scope=scope,
-            source="integration",
-            status="success",
-            total_ms=12,
-        )
-        await repository.observations([observation])
-        await repository.observations([observation])
-        rows = await repository.page("observations", family_id="f", cohort_id=scope.cohort_id)
-        assert len(rows) == 1
-        expires = await db.execute_system(
-            f"SELECT expires_at>created_at FROM NOVA_SYSTEM.{TABLES['observations']} WHERE id=%s",
-            (identifier,),
-        )
-        assert expires["rows"] == [[1]]
-    finally:
+    from app.core.metadata_db import MetadataConflict
+
+    job = {
+        "id": identifier,
+        "version": 1,
+        "kind": "approve",
+        "state": "RUNNING",
+        "actor": scope.principal,
+        "actor_role": scope.active_role,
+        "request_hash": identifier,
+    }
+    assert await repository.put("jobs", identifier, job, insert_only=True)
+    done = {**job, "version": 2, "state": "COMPLETED"}
+    assert await repository.put("jobs", identifier, done, expected_version=1)
+    with pytest.raises(MetadataConflict):
+        await repository.put("jobs", identifier, {**done, "version": 3}, expected_version=1)
+    assert (await repository.get("jobs", identifier))["version"] == 2
+    observation = Observation(
+        id=identifier,
+        family_id="f",
+        scope=scope,
+        source="integration",
+        status="success",
+        total_ms=12,
+    )
+    await repository.observations([observation])
+    await repository.observations([observation])
+    rows = await repository.page("observations", family_id="f", cohort_id=scope.cohort_id)
+    assert len(rows) == 1
+    cursor = await engine_metadata.admin.execute(
+        "SELECT expires_at>created_at AS retained FROM nova_meta.query_autopilot_observations "
+        "WHERE id=%s",
+        (identifier,),
+    )
+    assert (await cursor.fetchone())["retained"] is True
+    with pytest.raises(ValueError, match="Only expired evidence"):
         await repository.delete("jobs", identifier)
-        await repository.delete("observations", identifier)
 
 
-async def test_authenticated_id_stream_limit_audit_and_proxy_session(autopilot_engine, monkeypatch):
+async def test_authenticated_id_stream_limit_audit_and_proxy_session(
+    autopilot_engine, monkeypatch, engine_metadata
+):
     scope = autopilot_engine
     observed_scopes = []
     observe = collector.observe
@@ -438,16 +465,15 @@ async def test_authenticated_id_stream_limit_audit_and_proxy_session(autopilot_e
             assert observed_scopes[-1] == (True, "default_catalog", scope.database)
             previous = await query(scope, "SELECT LAST_QUERY_ID() AS prior", connection=connection)
             assert previous.rows == [[result.engine_query_ids[0]]]
-            audit = await db.execute_system(
-                (
-                    "SELECT query_id,nova_execution_id,engine_query_ids FROM "
-                    "NOVA_SYSTEM.AUDIT_LOG WHERE nova_execution_id=%s"
-                ),
+            cursor = await engine_metadata.admin.execute(
+                "SELECT query_id,nova_execution_id,engine_query_ids FROM "
+                "nova_meta.audit_log WHERE nova_execution_id=%s",
                 (result.nova_execution_id,),
             )
-            assert audit["rows"]
-            assert audit["rows"][0][0] != result.nova_execution_id
-            assert result.engine_query_ids[0] in str(audit["rows"][0][2])
+            audit = await cursor.fetchall()
+            assert audit
+            assert audit[0]["query_id"] != result.nova_execution_id
+            assert result.engine_query_ids[0] in audit[0]["engine_query_ids"]
             with purpose("diagnostic"):
                 count = collector.accepted
                 assert (await query(scope, "SELECT 7", connection=connection)).success
@@ -511,11 +537,10 @@ async def test_profile_plan_and_statistics_use_authenticated_connection(autopilo
             for record in records:
                 if record.payload_ref:
                     await evidence.payloads.delete(record.payload_ref)
-                await repository.delete("evidence", record.id)
 
 
 async def test_api_monitoring_and_admin_mutations_require_active_roles(
-    client, admin_token, analyst_token
+    client, admin_token, analyst_token, engine_metadata
 ):
     client.headers["Authorization"] = f"Bearer {analyst_token}"
     read = await client.get("/api/v1/query-autopilot/overview")
@@ -542,11 +567,11 @@ async def test_api_monitoring_and_admin_mutations_require_active_roles(
         },
     )
     assert refusal.status_code in {400, 409}
-    entries = await db.execute_system(
-        "SELECT status FROM NOVA_SYSTEM.AUDIT_LOG "
+    cursor = await engine_metadata.admin.execute(
+        "SELECT status FROM nova_meta.audit_log "
         "WHERE event_type='QUERY_AUTOPILOT' AND action='AUTHORIZE' AND status='DENIED'"
     )
-    assert entries["rows"]
+    assert await cursor.fetchall()
 
 
 async def test_baseline_engine_identity_and_exact_owned_cleanup(autopilot_engine):

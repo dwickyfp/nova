@@ -9,6 +9,7 @@ from app.core.database import db
 from app.modules.task_orchestration.dag import GraphState
 from app.modules.task_orchestration.execution import NodeOutcomeUnknown, native_attempt_name
 from app.modules.task_orchestration.worker import GraphRunJob, GraphRunWorker
+from tests.integration._task_runs import latest_node
 from tests.integration.test_task_worker import (
     FORBIDDEN_DB,
     RESTRICTED_ROLE,
@@ -18,13 +19,14 @@ from tests.integration.test_task_worker import (
     repo,
 )
 from tests.integration.test_task_worker import cleanup_runs as cleanup_runs
+from tests.integration.test_task_worker import task_metadata_login as task_metadata_login
 from tests.integration.test_task_worker import worker_infra as worker_infra
 
 pytestmark = pytest.mark.engine
 
 
 async def test_lost_completion_after_commit_never_repeats_the_insert(
-    worker_infra, cleanup_runs, monkeypatch,
+    worker_infra, cleanup_runs, monkeypatch, task_definitions
 ):
     suffix = uuid4().hex[:12]
     table = f"{FORBIDDEN_DB}.receipt_{suffix}"
@@ -37,6 +39,7 @@ async def test_lost_completion_after_commit_never_repeats_the_insert(
     try:
         await db.execute_system(f"GRANT INSERT, SELECT ON {table} TO ROLE {RESTRICTED_ROLE}")
         run_id, ids = await _make_graph(
+            task_definitions=task_definitions,
             suffix=suffix,
             owners={name: RESTRICTED_USER},
             bodies={name: f"INSERT INTO {table} SELECT 1"},
@@ -61,7 +64,7 @@ async def test_lost_completion_after_commit_never_repeats_the_insert(
         job = GraphRunJob(run_id, ids[name])
         for _ in range(3):
             assert await worker.handle(job) == GraphState.RUNNING
-        node = await repo.get_node_run(run_id, ids[name])
+        node = await latest_node(repo, run_id, ids[name])
         assert node is not None and node["state"] == "abandoned"
         assert node["starrocks_query_id"] == actual_query_ids[0]
         assert actual_query_ids[0]

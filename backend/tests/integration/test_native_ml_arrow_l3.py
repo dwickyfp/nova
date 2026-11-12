@@ -14,7 +14,7 @@ from sklearn.linear_model import LinearRegression
 from app.core.config import settings
 from app.modules.ml_engine.artifacts.store import ObjectArtifactStore
 from app.modules.ml_engine.engines.base import TrainingOutput
-from app.modules.ml_engine.registry.repository import ModelRegistryRepository
+from app.modules.ml_engine.registry.repository import ModelRegistryRepository, security_actor
 from app.modules.ml_engine.service import MLEngineService
 from app.modules.ml_engine.spec import (
     ExecutionBudget,
@@ -24,7 +24,6 @@ from app.modules.ml_engine.spec import (
 )
 from tests.conftest import (
     engine_host_ports,
-    redis_url,
     require_stack,
     root_password,
     s3_credentials,
@@ -33,64 +32,23 @@ from tests.conftest import (
 pytestmark = pytest.mark.engine
 
 
+@pytest.fixture(autouse=True)
+async def ml_workload(engine_workload):
+    async with engine_workload("ml"):
+        yield
+
+
 @pytest.mark.asyncio
-async def test_concurrent_version_reservation_promotes_only_ready(docker_services, monkeypatch):
+async def test_concurrent_version_reservation_promotes_only_ready(
+    docker_services, metadata_inspect
+):
     require_stack(docker_services)
-    ports = engine_host_ports()
-    monkeypatch.setattr(settings, "STARROCKS_HOST", "127.0.0.1")
-    monkeypatch.setattr(settings, "STARROCKS_FE_MYSQL_PORT", ports["starrocks-fe"])
-    monkeypatch.setattr(settings, "REDIS_URL", redis_url())
-    bootstrap = await asyncmy.connect(
-        host="127.0.0.1",
-        port=ports["starrocks-fe"],
-        user="root",
-        password=root_password(),
-        autocommit=True,
-    )
-    async with bootstrap.cursor() as cursor:
-        await cursor.execute("CREATE DATABASE IF NOT EXISTS NOVA_SYSTEM")
-        await cursor.execute(
-            "CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.ML_MODELS ("
-            "model_id VARCHAR(64) NOT NULL, model_type VARCHAR(64) NOT NULL, "
-            "model_name VARCHAR(256) NOT NULL, target_column VARCHAR(128), "
-            "feature_columns TEXT, hyperparameters TEXT, training_sql TEXT, "
-            "database_name VARCHAR(128), schema_name VARCHAR(128), created_at DATETIME, "
-            "created_by VARCHAR(128), current_version INT DEFAULT '0', updated_at DATETIME"
-            ") PRIMARY KEY(model_id) DISTRIBUTED BY HASH(model_id) BUCKETS 1 "
-            'PROPERTIES("replication_num"="1", "enable_persistent_index"="true")'
-        )
-        await cursor.execute(
-            "SELECT COLUMN_NAME FROM information_schema.columns WHERE TABLE_SCHEMA='NOVA_SYSTEM' "
-            "AND TABLE_NAME='ML_MODELS' AND COLUMN_NAME='tenant_name'"
-        )
-        if not await cursor.fetchone():
-            from pathlib import Path
-
-            from app.common.sql_guard import split_sql_statements
-
-            migration = (
-                Path(__file__).parents[2] / "migrations/20260922_ml_ephemeral_runs.sql"
-            ).read_text()
-            await cursor.execute(split_sql_statements(migration)[0])
-        await cursor.execute(
-            "CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.ML_MODEL_VERSIONS ("
-            "model_id VARCHAR(64) NOT NULL, version INT NOT NULL, status VARCHAR(32), "
-            "training_rows BIGINT, metrics TEXT, artifact_uri VARCHAR(2048), "
-            "artifact_sha256 VARCHAR(64), artifact_size BIGINT, task VARCHAR(64), "
-            "framework VARCHAR(128), framework_version VARCHAR(64), algorithm VARCHAR(128), "
-            "feature_schema TEXT, training_duration_ms BIGINT, reservation_token VARCHAR(64), "
-            "ready_at DATETIME, failed_at DATETIME, failure_reason TEXT, model_binary TEXT, "
-            "created_at DATETIME, created_by VARCHAR(128)"
-            ") PRIMARY KEY(model_id,version) DISTRIBUTED BY HASH(model_id) BUCKETS 1 "
-            'PROPERTIES("replication_num"="1", "enable_persistent_index"="true")'
-        )
-    bootstrap.close()
     repository = ModelRegistryRepository()
     model_name = f"concurrent_{uuid4().hex[:12]}"
     spec = MLExecutionSpec(
         task=MLTask.REGRESSION,
         input_sql="SELECT x, target FROM features",
-        security=MLSecurityContext("root", "", database="NOVA_EXAMPLE"),
+        security=MLSecurityContext("ml-fixture", "", database="NOVA_EXAMPLE", role="ANALYST"),
         persist=True,
         model_name=model_name,
         target_column="target",
@@ -99,8 +57,8 @@ async def test_concurrent_version_reservation_promotes_only_ready(docker_service
     reservations = await asyncio.gather(
         *(repository.reserve_version(spec, feature_columns=["x"]) for _ in range(10))
     )
-    model_ids = {model_id for model_id, _ in reservations}
-    versions = sorted(version for _, version in reservations)
+    model_ids = {model_id for model_id, _, _ in reservations}
+    versions = sorted(version for _, version, _ in reservations)
     assert len(model_ids) == 1
     assert versions == list(range(1, 11))
     model_id = next(iter(model_ids))
@@ -117,6 +75,7 @@ async def test_concurrent_version_reservation_promotes_only_ready(docker_service
             repository.register_version(
                 model_id=model_id,
                 version=version,
+                reservation_token=token,
                 spec=spec,
                 output=output,
                 artifact_uri=f"nova-artifact://test/model/v{version}",
@@ -124,36 +83,30 @@ async def test_concurrent_version_reservation_promotes_only_ready(docker_service
                 artifact_size=1,
                 training_duration_ms=1,
             )
-            for version in reversed(versions)
+            for _, version, token in reversed(reservations)
         )
     )
-    _, failed_version = await repository.reserve_version(spec, feature_columns=["x"])
+    _, failed_version, _ = await repository.reserve_version(spec, feature_columns=["x"])
     assert failed_version == 11
-    assert await repository.abort_version(model_id, failed_version) is True
+    assert (
+        await repository.abort_version(
+            model_id, failed_version, actor=security_actor(spec.security)
+        )
+        is True
+    )
 
-    connection = await repository._connect()
-    try:
-        async with connection.cursor(asyncmy.cursors.DictCursor) as cursor:
-            await cursor.execute(
-                "SELECT current_version FROM NOVA_SYSTEM.ML_MODELS WHERE model_id=%s",
-                (model_id,),
-            )
-            assert int((await cursor.fetchone())["current_version"]) == 10
-            await cursor.execute(
-                "SELECT version,status FROM NOVA_SYSTEM.ML_MODEL_VERSIONS "
-                "WHERE model_id=%s ORDER BY version",
-                (model_id,),
-            )
-            rows = await cursor.fetchall()
-            assert [int(row["version"]) for row in rows] == list(range(1, 12))
-            assert [row["status"] for row in rows[:10]] == ["READY"] * 10
-            assert rows[-1]["status"] == "FAILED"
-            await cursor.execute(
-                "DELETE FROM NOVA_SYSTEM.ML_MODEL_VERSIONS WHERE model_id=%s", (model_id,)
-            )
-            await cursor.execute("DELETE FROM NOVA_SYSTEM.ML_MODELS WHERE model_id=%s", (model_id,))
-    finally:
-        connection.close()
+    rows = await metadata_inspect(
+        "SELECT current_version FROM nova_meta.ml_models WHERE model_id=%s",
+        (model_id,),
+    )
+    assert rows == [(10,)]
+    rows = await metadata_inspect(
+        "SELECT version,status FROM nova_meta.ml_model_versions WHERE model_id=%s ORDER BY version",
+        (model_id,),
+    )
+    assert [row[0] for row in rows] == list(range(1, 12))
+    assert [row[1] for row in rows[:10]] == ["READY"] * 10
+    assert rows[-1][1] == "FAILED"
 
 
 @pytest.mark.asyncio
@@ -224,7 +177,6 @@ async def test_real_worker_fetches_arrow_without_api_table(
             return sql
 
     service = Service(artifact_store=ObjectArtifactStore(), repository=Repository())
-    await service.ephemeral_repository.ensure_schema()
     result = None
     try:
         result = await service.execute(
@@ -249,7 +201,9 @@ async def test_real_worker_fetches_arrow_without_api_table(
         service.job_runner.close()
         if result:
             service.artifact_store.cleanup_upload(result.artifact_uri)
-            await service.ephemeral_repository.remove(result.run_id, security.scope_key)
+            await service.ephemeral_repository.remove(
+                result.run_id, security.scope_key, actor=security_actor(security)
+            )
         load_nova_app_config.cache_clear()
         async with root.cursor() as cursor:
             await cursor.execute(f"DROP USER IF EXISTS '{username}'")

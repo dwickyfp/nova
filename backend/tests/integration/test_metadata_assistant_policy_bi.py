@@ -145,6 +145,28 @@ async def test_people_see_and_change_only_their_own_conversations(meta):
         assert await repo.set_feedback("t-alice", "q-alice", "like") is False
 
 
+async def test_disliked_agent_messages_preserve_person_role_and_agent_scope(meta):
+    for name, role, agent in (
+        ("alice", "ANALYST", "sales"), ("alice", "OTHER", "sales"),
+        ("bob", "ANALYST", "sales"), ("alice", "ANALYST", "inventory"),
+    ):
+        identifier = "-".join((name, role, agent))
+        async with meta.transaction(name=name, role=role) as (repo, _):
+            await repo.create_thread(thread_id=identifier, agent_id=agent)
+            await repo.append_message(
+                identifier, role="assistant", content=identifier, message_id=identifier,
+                agent_id=agent, steps=[{"candidate": identifier}],
+                security_context=stamp(name, role),
+            )
+            assert await repo.set_feedback(identifier, identifier, "dislike")
+    async with meta.transaction(read_only=True) as (repo, _):
+        rows = await repo.disliked_agent_messages("sales")
+        assert rows == [{"steps": [{"candidate": "alice-ANALYST-sales"}]}]
+    async with meta.transaction() as (repo, _):
+        assert await repo.set_feedback("alice-ANALYST-sales", "alice-ANALYST-sales", "like")
+        assert await repo.disliked_agent_messages("sales") == []
+
+
 async def test_administrators_read_usage_across_people_but_change_nothing(meta):
     await thread_with_answer(meta)
     async with meta.transaction(name="root-admin", role="ACCOUNTADMIN") as (repo, conn):

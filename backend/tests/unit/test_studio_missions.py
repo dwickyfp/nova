@@ -15,7 +15,6 @@ from app.modules.agents import mission as module
 from app.modules.agents.mission import MissionService, project_event, project_object
 from app.modules.agents.mission_router import router
 from app.modules.agents.mission_schema import (
-    MISSION_DDLS,
     DeliverableCreate,
     MissionCreate,
     MissionResume,
@@ -49,79 +48,88 @@ class MissionIO:
             return [mission.scope.principal, mission.scope.active_role] == params
         return module.scope_params(mission.scope) == params
 
-    async def execute(self, sql, params=None):
-        self.statements.append((sql, params))
-        if sql.lstrip().startswith("CREATE TABLE"):
-            return {"affected": 0}
-        if "CONFIG_STUDIO_RESOURCES" in sql:
-            return {"rows": [[resource] for resource in self.resources]}
-        if "CONFIG_STUDIO_MISSIONS" in sql:
-            if sql.startswith("INSERT"):
-                item = module.Mission.model_validate_json(params[7])
-                self.missions[item.mission_id] = item
-                return {"affected": 1}
-            if sql.startswith("UPDATE"):
-                if "session_id=%s,security_version=%s" in sql:
-                    item = self.missions[params[5]]
-                    if item.revision != params[6] or not self.scoped(item, params[7:]):
-                        return {"affected": 0}
-                    self.missions[params[5]] = module.Mission.model_validate_json(params[1])
-                    return {"affected": 1}
-                item = self.missions[params[3]]
-                if item.revision != params[4] or not self.scoped(item, params[5:]):
-                    return {"affected": 0}
-                self.missions[params[3]] = module.Mission.model_validate_json(params[1])
-                return {"affected": 1}
-            items = list(self.missions.values())
-            if "mission_id=%s" in sql:
-                items = [m for m in items if m.mission_id == params[0]]
-            else:
-                items = [m for m in items if m.thread_id == params[0]]
-                items.sort(key=lambda m: m.created_at, reverse=True)
-            items = [m for m in items if self.scoped(m, params[1:])]
-            return {"rows": [[m.model_dump_json()] for m in items]}
-        if "CONFIG_STUDIO_DELIVERABLES" in sql:
-            if sql.startswith("INSERT"):
-                self.deliverables[params[0]] = (params[7], params[6], params[2:6])
-                return {"affected": 1}
-            if "deliverable_id=%s" in sql:
-                row = self.deliverables.get(params[0])
-                return {
-                    "rows": [[row[0], row[1]]]
-                    if row and row[2][: len(params[1:])] == params[1:]
-                    else []
-                }
-            return {
-                "rows": [
-                    [row[0]]
-                    for row in self.deliverables.values()
-                    if row[2][: len(params[1:])] == params[1:]
-                ]
-            }
-        if "CONFIG_AGENT_RUNS" in sql:
-            row = self.runs.get(params[0])
-            if sql.startswith("SELECT thread_id"):
-                return {"rows": [[row["thread_id"]]] if row and row["scope"] == params[1:] else []}
-            if (
-                not row
-                or row["scope"][:2] != [params[1], params[3]]
-                or row["thread_id"] != params[2]
-            ):
-                return {"rows": []}
-            return {"rows": [[row["status"], row["sequence"], *row["scope"][2:], row["agent_id"]]]}
-        if "CONFIG_AGENT_RUN_EVENTS" in sql:
-            return {
-                "rows": [
-                    [seq, frame] for seq, frame in self.events.get(params[0], []) if seq > params[1]
-                ][:100]
-            }
-        raise AssertionError(sql)
+    @asynccontextmanager
+    async def store(self, scope, *, read_only=False):
+        snapshot = copy.deepcopy((self.missions, self.deliverables))
+        try:
+            yield MissionStore(self, scope)
+        except BaseException:
+            self.missions, self.deliverables = snapshot
+            raise
+
+
+class MissionStore:
+    def __init__(self, io, scope):
+        self.io, self.scope = io, scope
+
+    def matches(self, mission, session_scope):
+        keys = module.scope_params(self.scope)
+        return self.io.scoped(mission, keys if session_scope else keys[:2])
+
+    @staticmethod
+    def row(mission):
+        return {"payload": mission.model_dump_json(),
+                "storage_revision": mission._storage_revision}
+
+    async def get_mission(self, ident, *, session_scope=True):
+        mission = self.io.missions.get(ident)
+        return self.row(mission) if mission and self.matches(mission, session_scope) else None
+
+    async def list_missions(self, thread_id, *, session_scope=True):
+        return [self.row(m) for m in sorted(self.io.missions.values(),
+                                           key=lambda m: m.created_at, reverse=True)
+                if m.thread_id == thread_id and self.matches(m, session_scope)][:51]
+
+    async def create_mission(self, ident, thread, payload):
+        self.io.statements.append(("INSERT mission", ident))
+        if ident in self.io.missions:
+            raise HTTPException(status_code=409, detail="Mission already exists")
+        self.io.missions[ident] = module.Mission.model_validate_json(payload)
+        return self.row(self.io.missions[ident])
+
+    async def save_mission(self, ident, payload, *, expected_revision, resume=False,
+                           expected_storage_revision=None, advance_revision=True):
+        self.io.statements.append(("UPDATE mission", ident))
+        old = self.io.missions.get(ident)
+        if (old is None or not self.matches(old, not resume) or old.revision != expected_revision
+                or old._storage_revision != expected_storage_revision):
+            raise HTTPException(status_code=409, detail="Mission revision changed; reload")
+        item = module.Mission.model_validate_json(payload)
+        item._storage_revision = old._storage_revision + 1
+        self.io.missions[ident] = item
+        return self.row(item)
+
+    async def get_run(self, ident):
+        row = self.io.runs.get(ident)
+        if row is None or row["scope"][:2] != module.scope_params(self.scope)[:2]:
+            return None
+        return {**row, "last_sequence": row["sequence"], "session_id": row["scope"][2],
+                "security_version": row["scope"][3]}
+
+    async def mission_run_events(self, ident, after):
+        return [{"sequence": seq, "frame": frame} for seq, frame in self.io.events.get(ident, [])
+                if seq > after][:100]
+
+    async def get_deliverable(self, ident):
+        row = self.io.deliverables.get(ident)
+        return ({"payload": row[0], "request_digest": row[1]}
+                if row and row[2][:2] == module.scope_params(self.scope)[:2] else None)
+
+    async def deliver(self, mission, digest, payload, *, deliverable_id):
+        self.io.statements.append(("INSERT deliverable", deliverable_id))
+        self.io.deliverables[deliverable_id] = (payload, digest, module.scope_params(self.scope))
+        return {"payload": payload}, True
+
+    async def list_deliverables(self, mission):
+        return [{"payload": row[0]} for row in self.io.deliverables.values()
+                if row[2][:2] == module.scope_params(self.scope)[:2]
+                and json.loads(row[0])["mission_id"] == mission]
 
 
 @pytest.fixture
 def mission_io(monkeypatch):
     io = MissionIO()
-    monkeypatch.setattr(module.db, "execute_system", io.execute)
+    monkeypatch.setattr(module, "_store", io.store)
     monkeypatch.setattr(module, "require_thread", AsyncMock(return_value={"thread_id": "thread"}))
     monkeypatch.setattr(module, "write_audit_log", AsyncMock())
 
@@ -643,7 +651,7 @@ async def test_deliverable_uses_recorded_evidence_and_rejects_key_reuse(mission_
 async def test_schema_and_routes_are_mountable(mission_io, monkeypatch):
     io, service = mission_io
     await service.ensure_schema()
-    assert [sql for sql, _ in io.statements] == list(MISSION_DDLS)
+    assert io.statements == []
     monkeypatch.setattr("app.modules.agents.mission_router.mission_service", service)
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")

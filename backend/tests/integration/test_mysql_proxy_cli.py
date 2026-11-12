@@ -178,41 +178,24 @@ def _run_async(coro):
 
 
 async def _latest_rewritten_sql(user_name: str) -> list[str]:
-    """The most recent rewritten statements recorded for ``user_name``.
+    """Read only the redacted audit projection from the owned PG fixture."""
+    import psycopg
 
-    Read straight from ``NOVA_SYSTEM.AUDIT_LOG`` over the host-reachable engine
-    port. Only the **redacted** column is selected: the credential-bearing
-    statement is never in this table by design (AGENTS.md credential rule), so
-    this cannot leak a secret even if the redaction regressed.
-    """
-    import asyncmy
-
-    from app.core.config import settings
-
-    conn = await asyncmy.connect(
-        host=settings.STARROCKS_HOST,
-        port=settings.STARROCKS_FE_MYSQL_PORT,
-        user=settings.STARROCKS_ROOT_USER,
-        password=settings.STARROCKS_ROOT_PASSWORD,
-    )
-    try:
-        async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-            await cur.execute(
-                """
-                SELECT rewritten_sql
-                FROM NOVA_SYSTEM.AUDIT_LOG
-                WHERE user_name = %s AND rewritten_sql IS NOT NULL
-                ORDER BY event_time DESC LIMIT 10
-                """,
-                (user_name,),
-            )
-            return [row["rewritten_sql"] for row in await cur.fetchall()]
-    finally:
-        conn.close()
+    async with await psycopg.AsyncConnection.connect(
+        os.environ["NOVA_TEST_METADATA_ADMIN_DSN"],
+        autocommit=True,
+    ) as connection:
+        cursor = await connection.execute(
+            "SELECT rewritten_sql FROM nova_meta.audit_log "
+            "WHERE user_name=%s AND rewritten_sql IS NOT NULL "
+            "ORDER BY event_time DESC LIMIT 10",
+            (user_name,),
+        )
+        return [row[0] for row in await cursor.fetchall()]
 
 
-@pytest.fixture(scope="module")
-def proxy_server():
+@pytest.fixture
+def proxy_server(engine_metadata):
     """A real proxy on an ephemeral port, backed by the real engine.
 
     The server runs on a **dedicated background thread** with its own event
@@ -242,13 +225,28 @@ def proxy_server():
             # ``python -m app.proxy`` does this too; a test that skipped it would
             # fail every query with "System pool not initialized".
             from app.core.database import db
+            from app.core.metadata_db import MetadataDatabase
+            from app.core.metadata_runtime import install_metadata_db, uninstall_metadata_db
+            from app.core.metadata_schema import load_migrations
 
+            metadata = MetadataDatabase(engine_metadata.role_config("nova_meta_proxy"))
+            loop.run_until_complete(
+                metadata.open(
+                    schema_version=len(load_migrations()),
+                    metadata_epoch=os.environ["NOVA_METADATA_EPOCH"],
+                )
+            )
+            install_metadata_db(metadata)
+            state["metadata"] = metadata
             loop.run_until_complete(db.init_system_pool())
             loop.run_until_complete(server.start())
             state["server"] = server
             state["port"] = server.bound_port
         except Exception as exc:  # pragma: no cover - environment dependent
-            state["error"] = exc
+            state["error"] = type(exc).__name__
+            if state.get("metadata") is not None:
+                uninstall_metadata_db(metadata)
+                loop.run_until_complete(metadata.close())
             ready.set()
             loop.close()
             return
@@ -257,27 +255,26 @@ def proxy_server():
         # Teardown: stop accepting, drain in-flight work, close the loop.
         loop.run_until_complete(server.stop())
         loop.run_until_complete(db.close_system_pool())
+        uninstall_metadata_db(metadata)
+        loop.run_until_complete(metadata.close())
         loop.close()
 
     thread = threading.Thread(target=_serve, name="nova-proxy-e2e", daemon=True)
     thread.start()
-    ready.wait(timeout=30)
-
-    if "error" in state:  # pragma: no cover - environment dependent
-        pytest.skip(f"could not start the proxy: {state['error']}")
-    if "port" not in state:  # pragma: no cover - defensive
-        pytest.skip("proxy did not become reachable")
-
-    port = int(state["port"])  # type: ignore[arg-type]
-    if not _reachable("127.0.0.1", port):  # pragma: no cover - defensive
-        pytest.skip("proxy did not become reachable")
-
-    yield state["server"], port
-
-    loop = state["loop"]
-    if loop is not None:  # type: ignore[truthy-bool]
-        loop.call_soon_threadsafe(loop.stop)  # type: ignore[union-attr]
-    thread.join(timeout=30)
+    try:
+        assert ready.wait(timeout=30), "Proxy startup deadline exceeded"
+        if "error" in state:  # pragma: no cover - environment dependent
+            pytest.fail(f"could not start the proxy: {state['error']}")
+        assert "port" in state, "Proxy did not bind its listener"
+        port = int(state["port"])  # type: ignore[arg-type]
+        assert _reachable("127.0.0.1", port), "Proxy listener is unreachable"
+        yield state["server"], port
+    finally:
+        loop = state.get("loop")
+        if loop is not None and not loop.is_closed():
+            loop.call_soon_threadsafe(loop.stop)
+        thread.join(timeout=30)
+        assert not thread.is_alive(), "Proxy did not stop within its shutdown deadline"
 
 
 @pytest.fixture(scope="module")
@@ -363,7 +360,7 @@ class TestAcceptanceCriteria:
         tuning.
 
         The audit log is the evidence surface. ``QueryService`` records the
-        **redacted** rewritten statement in ``NOVA_SYSTEM.AUDIT_LOG``, so this
+        **redacted** rewritten statement in ``nova_meta.audit_log``, so this
         reads what was sent without ever handling a credential value — the
         engine form carries real ones, the stored form does not.
 
@@ -412,7 +409,6 @@ class TestAcceptanceCriteria:
 
         for sql in _run_async(_latest_rewritten_sql(E2E_USER)):
             assert s3_credentials()[1] not in sql, "a credential value reached the audit row"
-
 
     def test_ac4_wrong_password_is_rejected_with_1045(self, proxy_server, engine_reachable):
         """AC 4 — a bad password gives error 1045, not a hang or a traceback."""
@@ -620,9 +616,7 @@ class TestUserVariablesEndToEnd:
         assert "Stage" not in result.output
         assert "not found" not in result.output
 
-    def test_literal_that_looks_like_a_variable_is_untouched(
-        self, proxy_server, engine_reachable
-    ):
+    def test_literal_that_looks_like_a_variable_is_untouched(self, proxy_server, engine_reachable):
         """``'@x'`` is data and must not be substituted."""
         _, port = proxy_server
         result = _run_mysql(
@@ -792,9 +786,7 @@ class TestColumnTypeCodes:
             "CAST('2026-01-15' AS DATE) AS dt, 'x' AS s"
         )
         _, port = proxy_server
-        engine_description, engine_row = self._query(
-            settings.STARROCKS_FE_MYSQL_PORT, query
-        )
+        engine_description, engine_row = self._query(settings.STARROCKS_FE_MYSQL_PORT, query)
         proxy_description, proxy_row = self._query(port, query)
 
         # Non-integer columns must match on the exact type code.
@@ -804,9 +796,7 @@ class TestColumnTypeCodes:
         assert proxy_description[4][1] == engine_description[4][1]  # STRING
 
         # Every column must decode to the same Python class.
-        assert [type(v).__name__ for v in proxy_row] == [
-            type(v).__name__ for v in engine_row
-        ]
+        assert [type(v).__name__ for v in proxy_row] == [type(v).__name__ for v in engine_row]
         import datetime
         from decimal import Decimal
 

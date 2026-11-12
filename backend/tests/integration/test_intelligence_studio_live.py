@@ -8,7 +8,6 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from app.common.news_entitlement import NEWS_ENABLED
 from app.core.database import db
 from app.main import create_app
 from app.modules.agents.memory import memory_repository
@@ -30,7 +29,7 @@ pytestmark = pytest.mark.engine
 
 
 @pytest.fixture
-async def studio_engine(intelligence_db, tmp_path):
+async def studio_engine(intelligence_db, tmp_path, enable_news):
     from app.common.nova_system import init_task_orchestration
 
     await init_task_orchestration()
@@ -62,9 +61,7 @@ async def studio_engine(intelligence_db, tmp_path):
     # run's identical one with HTTP 400.
     cleanup: list = []
     try:
-        await ranger_client.put_role(
-            RangerRole(name=role, users=[RangerRoleMember(name=username)])
-        )
+        await ranger_client.put_role(RangerRole(name=role, users=[RangerRoleMember(name=username)]))
         cleanup.append(lambda: ranger_client.delete_role(role))
         policy = await ranger_client.put_policy(
             RangerPolicy.model_validate(
@@ -106,19 +103,7 @@ async def studio_engine(intelligence_db, tmp_path):
         )
         await db.execute_system(f"GRANT `{role}` TO USER '{username}'")
         await db.execute_system(f"SET DEFAULT ROLE `{role}` TO '{username}'")
-        # News is off for every account until an administrator enables it.
-        cleanup.append(
-            lambda: db.execute_system(
-                "DELETE FROM NOVA_SYSTEM.CONFIG_USER_PREFERENCES "
-                "WHERE user_name=%s AND pref_key=%s",
-                [username, NEWS_ENABLED],
-            )
-        )
-        await db.execute_system(
-            "INSERT INTO NOVA_SYSTEM.CONFIG_USER_PREFERENCES "
-            "(user_name, pref_key, pref_value, updated_at) VALUES (%s, %s, 'true', NOW())",
-            [username, NEWS_ENABLED],
-        )
+        await enable_news(username)
         app = create_app()
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://nova.test", timeout=180

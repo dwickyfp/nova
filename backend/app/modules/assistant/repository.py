@@ -336,6 +336,10 @@ class AssistantRepository:
             return None
         return {"message_id": message_id, "attachments": _steps_or_empty(row["attachments"])}
 
+    async def disliked_agent_messages(self, agent_id: str, *, user_name: str) -> list[dict]:
+        async with _store(user_name, read_only=True) as store:
+            return await store.disliked_agent_messages(agent_id)
+
     async def set_feedback(
         self, thread_id: str, message_id: str, feedback: str | None, *, user_name: str
     ) -> bool:

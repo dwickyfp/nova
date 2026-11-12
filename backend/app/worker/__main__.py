@@ -158,10 +158,8 @@ async def build_workload(role: str, client: aioredis.Redis) -> Workload:
         return NotebookRuntimeWorker(OpenSandboxProvider())
     if role == "autopilot":
         from app.modules.query_autopilot.jobs import AutopilotWorker
-        from app.modules.query_autopilot.schema import ensure_schema
         from app.modules.query_autopilot.service import AutopilotService
 
-        await ensure_schema()
         return AutopilotWorker(client, AutopilotService(client=client))
     raise ValueError("Unknown worker role")
 

@@ -134,26 +134,11 @@ async def test_agent_lookup_propagates_unavailable_metadata_without_replay(monke
 
 
 @pytest.mark.asyncio
-async def test_metadata_read_rejects_malformed_then_empty_rows(monkeypatch) -> None:
-    execute = AsyncMock(
-        side_effect=[
-            {"rows": [["wrong-agent", "alice"]]},
-            {"rows": []},
-            {"rows": []},
-            {"rows": []},
-            {"rows": []},
-        ]
-    )
-    monkeypatch.setattr(repository.db, "execute_system", execute)
-
-    with pytest.raises(repository.AgentMetadataUnavailable):
-        await repository._read_rows(
-            "SELECT agent_id, owner_name FROM NOVA_SYSTEM.CONFIG_AGENTS WHERE owner_name = %s",
-            ["alice"],
-            lambda row: len(row) == 2 and row[1] == "alice" and row[0] == "agent-1",
-        )
-
-    assert execute.await_count == 5
+async def test_metadata_read_cannot_return_foreign_owner(monkeypatch) -> None:
+    store = install_agent_store(monkeypatch, AsyncMock())
+    store.get_agent.return_value = {"agent_id": "agent-1", "owner_name": "bob"}
+    assert await repository.AgentRepository().get_agent("agent-1", owner_name="alice") is None
+    store.get_agent.assert_awaited_once_with("agent-1")
 
 
 @pytest.mark.asyncio

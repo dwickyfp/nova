@@ -189,10 +189,11 @@ class ImportColumn:
 def import_row_id(
     snapshot_id: UUID, source_table: str, chunk_sha256: str, row_index: int,
 ) -> UUID:
-    """Identify an occurrence in a verified immutable export, including duplicates.
+    """Identify an occurrence by its absolute row offset within the exported table.
 
     Reuse the same snapshot/chunks when resuming an import. Re-exporting or
-    changing chunk boundaries describes a different import, not a retry.
+    changing chunk boundaries describes a different import, not a retry. The
+    offset is table-wide: two identical chunks must still have distinct IDs.
     """
     if (
         not isinstance(snapshot_id, UUID) or snapshot_id.int == 0

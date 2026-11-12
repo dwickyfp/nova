@@ -451,43 +451,39 @@ class AutomationDatabase:
     def __init__(self):
         self.rows = {}
         self.inserts = 0
+        self.actor = SimpleNamespace(principal="alice", active_role="ANALYST")
 
-    async def execute_system(self, sql, params=None):
-        params = params or []
-        if sql.startswith("INSERT"):
-            self.rows[params[0]] = list(params)
-            self.inserts += 1
-        if sql.startswith("SELECT"):
-            return {
-                "rows": [
-                    row
-                    for row in self.rows.values()
-                    if (
-                        (row[0] == params[0] and row[2] == params[1])
-                        if "automation_id =" in sql
-                        else (row[1] == params[0] and row[2] == params[1])
-                    )
-                ]
-            }
-        return {"rows": []}
+    async def get_automation(self, ident, owner):
+        row = self.rows.get(ident)
+        return dict(row) if row and row["owner_name"] == owner else None
+
+    async def list_automations(self, agent):
+        return [dict(row) for row in self.rows.values() if row["agent_id"] == agent]
+
+    async def create_automation(self, agent, fields, *, automation_id):
+        row = {key: None for key in automations._COLUMNS.split(", ")}
+        row.update(fields, automation_id=automation_id, agent_id=agent, owner_name="alice",
+                   role_name="ANALYST", metadata_revision=1, run_generation=0)
+        self.rows[automation_id] = row
+        self.inserts += 1
+        return dict(row)
 
 
 @pytest.fixture
 def automation_metadata(monkeypatch):
     database = AutomationDatabase()
-    lease = SimpleNamespace(renew=AsyncMock(return_value=True))
+    repository = automations.AutomationRepository()
 
     @asynccontextmanager
-    async def lock(_key):
-        yield lease
+    async def write(_owner, _agent):
+        yield database
 
-    monkeypatch.setattr(automations, "db", database)
-    monkeypatch.setattr(automations, "metadata_lock", lock)
-    return automations.AutomationRepository(), database, lease
+    monkeypatch.setattr(repository, "_write", write)
+    return repository, database
 
 
 async def test_owner_repository_recovers_same_creation_and_rejects_collision(automation_metadata):
-    repository, database, _lease = automation_metadata
+    repository, database = automation_metadata
     body = automations.AutomationCreate(
         title="Revenue", prompt="Report revenue.", schedule_kind="cron", schedule_expr="0 8 * * 1"
     )
@@ -506,7 +502,7 @@ async def test_owner_repository_recovers_same_creation_and_rejects_collision(aut
 
 
 async def test_owner_repository_refuses_stale_disable_snapshot(automation_metadata):
-    repository, database, lease = automation_metadata
+    repository, database = automation_metadata
     body = automations.AutomationCreate(
         title="Revenue", prompt="Report revenue.", schedule_kind="cron", schedule_expr="0 8 * * 1"
     )
@@ -514,17 +510,16 @@ async def test_owner_repository_refuses_stale_disable_snapshot(automation_metada
         agent_id="finance", owner_name="alice", role_name="ANALYST", body=body
     )
     digest = fingerprint(automations.automation_configuration(saved))
-    database.rows[saved["automation_id"]][5] = "Updated prompt by owner."
+    database.rows[saved["automation_id"]]["prompt"] = "Updated prompt by owner."
     with pytest.raises(automations.AutomationError, match="configuration changed"):
         await repository.update(
             saved, automations.AutomationUpdate(enabled=False), expected_configuration_digest=digest
         )
-    assert database.rows[saved["automation_id"]][11] is True
-    lease.renew.return_value = False
-    with pytest.raises(automations.AutomationError, match="lease expired"):
-        await repository.create(
-            agent_id="finance", owner_name="alice", role_name="ANALYST", body=body
-        )
+    assert database.rows[saved["automation_id"]]["enabled"] is True
+    database.rows[saved["automation_id"]]["metadata_revision"] += 1
+    with pytest.raises(automations.AutomationError, match="revision changed"):
+        await repository.update(saved, automations.AutomationUpdate(enabled=False))
+    assert database.rows[saved["automation_id"]]["enabled"] is True
 
 
 def test_legacy_monitor_contract_dumps_do_not_gain_automation_defaults():
