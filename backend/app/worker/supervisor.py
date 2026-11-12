@@ -9,6 +9,8 @@ import signal
 import sys
 
 ROLES = ("task", "ingestion", "ml", "notebook", "automation", "autopilot", "maintenance")
+#: Tells a supervised role which launcher to outlive no longer than.
+PARENT_PID_ENV = "NOVA_WORKER_PARENT_PID"
 
 
 async def supervise_processes(
@@ -25,6 +27,7 @@ async def supervise_processes(
                 sys.executable, "-m", "app.worker", "--role", role,
                 # The supervisor forwards signals after every child is tracked.
                 start_new_session=True,
+                env={**os.environ, PARENT_PID_ENV: str(os.getpid())},
             )
             processes.append(process)
             waits[asyncio.create_task(process.wait())] = role

@@ -11,6 +11,7 @@ import argparse
 import asyncio
 import contextlib
 import logging
+import os
 import signal
 import time
 from collections.abc import Awaitable, Callable
@@ -27,7 +28,7 @@ from app.core.database import db
 from app.core.redis import session_store
 from app.modules.task_orchestration.process_health import WorkerProcessHeartbeat
 from app.observability.metrics import SERVICE_UP, start_metrics_server
-from app.worker.supervisor import ROLES, supervise_processes
+from app.worker.supervisor import PARENT_PID_ENV, ROLES, supervise_processes
 
 if TYPE_CHECKING:
     from app.modules.agents.automations import AutomationWorker
@@ -235,24 +236,49 @@ async def run_workload(
                 task.exception()
 
 
+async def watch_parent(stop: asyncio.Event, parent_pid: int, *, interval: float = 1.0) -> None:
+    """Stop a supervised role when its launcher dies.
+
+    Roles run in their own sessions so the launcher can signal each group. A
+    launcher killed without cleanup (for example by a file-watching restart)
+    would otherwise leave the old roles running beside their replacements.
+    """
+    while not stop.is_set():
+        if os.getppid() != parent_pid:
+            logger.warning("Worker launcher exited; stopping this role")
+            stop.set()
+            return
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(stop.wait(), interval)
+
+
+async def _stop_task(task: asyncio.Task[None]) -> None:
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+
 async def _run(role: str = "task") -> None:
     require_configured_secrets()
     validate_role(role)
+    stop = asyncio.Event()
     async with AsyncExitStack() as cleanup:
+        parent = os.environ.get(PARENT_PID_ENV, "")
+        if parent.isdigit():
+            watcher = asyncio.create_task(watch_parent(stop, int(parent)))
+            cleanup.push_async_callback(_stop_task, watcher)
+        cleanup.enter_context(stop_signals(stop))
         cleanup.push_async_callback(db.close_system_pool)
         await db.init_system_pool()
         client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
         cleanup.push_async_callback(client.aclose)
         cleanup.push_async_callback(session_store.close)
         await session_store.init()
-        stop = asyncio.Event()
 
         async def prepare() -> Workload:
             await client.ping()
             return await build_workload(role, client)
 
-        with stop_signals(stop):
-            ready = await await_dependencies(prepare, stop, role=role)
+        ready = await await_dependencies(prepare, stop, role=role)
         if ready is None:
             return
         workload = ready
@@ -264,11 +290,17 @@ async def _run(role: str = "task") -> None:
         heartbeat = WorkerProcessHeartbeat(client, registry_key=registry, service=service)
         cleanup.push_async_callback(heartbeat.close)
         await heartbeat.publish()
-        start_metrics_server(service)
+
+        async def serve_metrics() -> bool:
+            # A replaced role may still hold the port while it drains.
+            start_metrics_server(service)
+            return True
+
+        if await await_dependencies(serve_metrics, stop, role=role) is None:
+            return
         try:
-            with stop_signals(stop):
-                logger.info("Worker role %s started", role)
-                await run_workload(workload, heartbeat, stop)
+            logger.info("Worker role %s started", role)
+            await run_workload(workload, heartbeat, stop)
         finally:
             SERVICE_UP.labels(service=service).set(0)
 

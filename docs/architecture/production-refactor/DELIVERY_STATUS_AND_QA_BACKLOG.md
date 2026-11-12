@@ -19,7 +19,7 @@ checks do not establish a migrated or scalable production deployment.
 | PG schema | Revisions 0001–0014 prepare deployment state, preferences, password flags, AI registry/aliases/definitions, jobs/outbox, scheduler fencing, audit, retained history, Stages, Workspace ownership/shares and Workspace file entries/version receipts | Remaining domain DDL, constraints, executable grants/RLS, caller transactions and whole-import validation |
 | Durable jobs | Queue, outbox, leases/fencing and receipts pass real-PG fixture tests | Actual producers/consumers, outbox publisher, participant verification and recovery; Redis must cease being authoritative for work |
 | Agent runtime | Replay and approval defects have been repaired in the existing runtime | Transactional PG conversations/runs/events, actor-bound durable consent, exact effect intents, reconnect and restart recovery |
-| Workload processes | API supports `all`, `web`, `query`; seven workload roles now have separate processes and supervised default startup; maintenance owns Search builds, Catalog/News refresh and ML retention; a starting role now waits up to 180 s for an unavailable engine or Redis instead of exiting and taking every sibling down with it | Remaining agent/outbox separation; per-role admission, dependency readiness, fenced claims, isolation and validated limits across the full deployment |
+| Workload processes | API supports `all`, `web`, `query`; seven workload roles now have separate processes and supervised default startup; maintenance owns Search builds, Catalog/News refresh and ML retention; a starting role now waits up to 180 s for an unavailable engine, Redis or held metrics port instead of exiting and taking every sibling down with it, and supervised roles stop when their launcher exits | Remaining agent/outbox separation; per-role admission, dependency readiness, fenced claims, isolation and validated limits across the full deployment |
 | Execution security | Existing delegated SQL and Ranger path retained | Isolated ML execution/provenance, notebook/Python/MCP credential and network isolation, atomic role changes and revocation boundaries |
 | Production deployment | Existing engine/development/split Compose files remain | One production Compose with all required services active, scoped inline environment anchors, stable private secrets, pinned images, TLS/private management ports and adjustable resources |
 | Recovery | No production recovery acceptance established | PG base backup/WAL, off-host copy, coordinated recovery manifest, restore/PITR and dependency recovery tests |
@@ -94,12 +94,12 @@ findings. In particular:
 - `AI_EMBED` has an unresolved registration-template contract gap. The live
   embedding waiver does not establish implementation correctness.
 - UI QA on 2026-11-12 (see [the checkpoint](../../reports/production-refactor/workspace-caller-port/README.md)):
-  Notebook runtimes cannot start locally because the pinned OpenSandbox egress
-  image is missing; `GET /backup/recycle-bin` is refused by the SQL frontend;
+  `GET /backup/recycle-bin` is refused by the SQL frontend;
   the SQL editor depends on a public CDN; `monitoring/loads/stats` (65.7 s) and
   `ontology/metrics` (29.1 s) exceed 40 s under six parallel calls; one
-  unexplained page reload did not recur. The UDF listing and worker startup
-  defects found in the same pass are fixed.
+  unexplained page reload did not recur. The UDF listing, worker startup,
+  orphaned-role restart and notebook-docs defects found in the same pass are
+  fixed; Notebook SQL/Python/novaduck flows pass after the sandbox image check.
 - Historical Agent runs with missing events remain preserved; their provenance
   is unresolved. Do not fabricate events or silently discard history.
 

@@ -29,7 +29,7 @@ All local results are recorded in [the command record](commands.json).
 - Real PG: 582 tests pass with zero skips, including 11 caller-port cases with
   a fault-injecting object store. Removing the object cleanup made 6 of them
   fail (mutation check), so the orphan assertions are effective.
-- Unit/coverage passes 10,913 tests with zero skips; 358 evals, the 54/189 scorecard, mypy, Ruff on the eight changed
+- Unit/coverage passes 10,916 tests with zero skips (final run after the launcher fix); 358 evals, the 54/189 scorecard, mypy, Ruff on the eight changed
   Python paths and the user-data boundary check pass.
 
 ## UI QA on the running stack (nova_admin, ACCOUNTADMIN)
@@ -46,12 +46,31 @@ reports the News prerequisite. Ten endpoints exceeded 40 s under six parallel
 calls and all returned 200 sequentially; `monitoring/loads/stats` took 65.7 s
 and `ontology/metrics` 29.1 s.
 
+## Follow-up: Notebook QA and launcher restart (same day)
+
+With the owner's approval the pinned OpenSandbox egress image was pulled by
+digest (Docker reported it already present, so the sandbox server had finished
+its own pull after the earlier 60-second timeout). Notebook QA then passed in
+the browser: runtime start, a DuckDB SQL cell (`42`), a Python cell reading its
+result (`42`), a SQL cell reading a Nova table through the `nova` catalog
+(`SELECT * FROM nova.notebook_examples.orders` → `1, 100`) and the documented
+`con.nova(...)` call (`[(1, 100)]`). The temporary example database and the QA
+notebook were removed afterwards and the session signed out.
+
+Two more defects were found and fixed:
+
+- The notebook docs told readers to switch a SQL cell's engine to Nova, but no
+  such control exists; the notebook tests deliberately keep new SQL cells on
+  DuckDB. The page now shows the verified `nova.<database>.<table>` form.
+- A file-watching restart killed the worker launcher after 5 seconds. Its roles
+  run in their own sessions, so they kept running and held their metrics ports;
+  the replacements failed to bind and the launcher stopped every role again.
+  Roles now stop when their launcher exits, and a held metrics port is retried
+  within the readiness deadline. A live SIGKILL of the launcher left no role
+  running, and the next start brought all seven up while one waited for its port.
+
 ## Open findings
 
-- Notebook runtime cannot start: the pinned OpenSandbox egress image is missing
-  from local Docker, and the sandbox create request times out after 60 s. The
-  notebook reports "The notebook runtime service did not answer in time" and
-  marks queued cells as not run. Restoring the image needs a registry pull.
 - `GET /backup/recycle-bin` is refused by the Nova SQL frontend
   (`SHOW CATALOG RECYCLE BIN`). No active UI calls it; the grammar change is open.
 - `GET /pipes` without a database returns a raw engine message; the active UI
@@ -62,3 +81,5 @@ and `ontology/metrics` 29.1 s.
   The cause was not identified and it did not recur.
 - The User-Defined Functions tab has no user-docs page (existing debt).
 - Slow endpoints listed above need profiling before capacity claims.
+- A notebook runtime start can exceed the sandbox client's 60-second create
+  timeout when the egress image must be pulled first.

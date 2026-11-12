@@ -15,13 +15,13 @@
     "result": "6 of 11 caller-port tests failed; code restored"
   },
   "unit": {
-    "tests": 10913,
+    "tests": 10916,
     "failures": 0,
     "errors": 0,
     "skipped": 0,
-    "time_seconds": 568.515,
-    "artifact_sha256": "2c82153ba07d2abdf19df4b579b5ffe0c45a248bdb8841bdc06694dc31c19766",
-    "note": "two earlier runs were superseded by later edits and are not counted"
+    "time_seconds": 660.458,
+    "artifact_sha256": "7fbab86595a29d4c894bb0acd1fccc18e6789fe59d1e3cbacb7ccf1ca0b272b4",
+    "note": "final run after the launcher fix; earlier runs superseded"
   },
   "eval": {
     "tests": 358,
@@ -55,11 +55,15 @@
       "rename to existing name refused 409",
       "valid rename",
       "delete with confirmation",
-      "User-Defined Functions tab after fix (8 global functions)"
+      "User-Defined Functions tab after fix (8 global functions)",
+      "notebook runtime start",
+      "DuckDB SQL cell (42)",
+      "Python cell reading SQL result (42)",
+      "SQL cell reading nova.notebook_examples.orders (1, 100)",
+      "con.nova(...) fetchall [(1, 100)]",
+      "docs page /docs/notebooks/sql-and-python viewed"
     ],
-    "blocked": [
-      "notebook run: OpenSandbox egress image missing locally; runtime create timed out after 60 s"
-    ],
+    "blocked": [],
     "cleanup": "QA file and notebook deleted; session logged out (token then 401)"
   },
   "api_smoke": {
@@ -78,5 +82,19 @@
     "cause": "StarRocks planner 12988 ms during role startup schema check",
     "effect": "role exited; supervisor stopped all seven roles",
     "fix": "bounded dependency readiness (180 s) for engine/Redis/OS errors"
+  },
+  "egress_image": {
+    "action": "docker pull by pinned digest with owner approval",
+    "result": "already present; digest a3d30246\u2026f54d verified"
+  },
+  "launcher_restart_incident": {
+    "cause": "watchfiles SIGKILL of launcher left session-isolated roles holding metrics ports",
+    "fix": "roles stop when launcher exits; metrics bind retried within readiness",
+    "live_check": "SIGKILL launcher -> 0 roles left; restart -> 7 roles, autopilot waited for its port"
+  },
+  "docs_tests": {
+    "command": "pnpm exec vitest run --browser.headless src/features/docs",
+    "tests": 15,
+    "failures": 0
   }
 }

@@ -201,6 +201,7 @@ async def test_supervisor_reaps_children_on_every_exit(reason, monkeypatch):
         children.append(child)
         commands.append(command)
         assert kwargs["start_new_session"] is True
+        assert kwargs["env"][supervisor.PARENT_PID_ENV] == str(supervisor.os.getpid())
         if len(children) == len(supervisor.ROLES):
             if reason == "crash":
                 children[2].exit(1)
@@ -343,3 +344,48 @@ async def test_role_waits_for_engine_instead_of_exiting(monkeypatch):
     assert build.await_count == 2
     assert run.await_count == 1 and run.call_args.args[0] is workload
     health.publish.assert_awaited_once()
+
+
+async def test_role_stops_when_its_launcher_dies(monkeypatch):
+    stop = asyncio.Event()
+    parents = iter([100, 100, 1])
+    monkeypatch.setattr(entry.os, "getppid", lambda: next(parents))
+    await asyncio.wait_for(entry.watch_parent(stop, 100, interval=0.01), 1)
+    assert stop.is_set()
+
+
+async def test_parent_watch_ends_with_normal_shutdown():
+    stop = asyncio.Event()
+    task = asyncio.create_task(entry.watch_parent(stop, entry.os.getppid(), interval=0.01))
+    await asyncio.sleep(0.03)
+    assert not task.done()
+    stop.set()
+    await asyncio.wait_for(task, 1)
+
+
+async def test_metrics_port_held_by_draining_role_is_retried(monkeypatch):
+    monkeypatch.setattr(entry, "require_configured_secrets", Mock())
+    monkeypatch.setattr(entry, "validate_role", Mock())
+    monkeypatch.delenv(supervisor.PARENT_PID_ENV, raising=False)
+    monkeypatch.setattr(entry, "db", SimpleNamespace(
+        init_system_pool=AsyncMock(), close_system_pool=AsyncMock()))
+    session = SimpleNamespace(init=AsyncMock(), close=AsyncMock())
+    monkeypatch.setattr(entry, "session_store", session)
+    client = SimpleNamespace(ping=AsyncMock(), aclose=AsyncMock())
+    monkeypatch.setattr(entry.aioredis, "from_url", Mock(return_value=client))
+    monkeypatch.setattr(entry, "WorkerProcessHeartbeat", Mock(return_value=SimpleNamespace(
+        publish=AsyncMock(), close=AsyncMock())))
+    monkeypatch.setattr(entry, "build_workload", AsyncMock(return_value=object()))
+    metrics = Mock(side_effect=[OSError(48, "Address already in use"), None])
+    monkeypatch.setattr(entry, "start_metrics_server", metrics)
+    run = AsyncMock()
+    monkeypatch.setattr(entry, "run_workload", run)
+
+    async def instant_wait(awaitable, timeout):
+        awaitable.close()
+        raise TimeoutError
+
+    monkeypatch.setattr(entry.asyncio, "wait_for", instant_wait)
+    await entry._run("ml")
+    assert metrics.call_count == 2
+    run.assert_awaited_once()

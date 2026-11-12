@@ -33,19 +33,21 @@ name refers to live runtime state, so rerun the SQL cell after a restart.
 
 ## Query Nova data
 
-A SQL cell can run in Nova when it needs Nova's SQL syntax and governed
-catalogs. Use the cell's engine action to select Nova; the cell then says
-**Runs in Nova**. **Run in DuckDB** switches it back.
+SQL cells run in DuckDB inside the notebook. They can also read Nova tables:
+your Nova databases appear under the catalog name `nova`, so write
+`nova.<database>.<table>`. You see only data your active role can read.
 
-This Nova-engine query shows the active role and the value `2`:
+After you create the example table from
+[Read and write with novaduck](/docs/notebooks/novaduck) and add one row, this
+SQL cell returns that row, with `id` 1 and `amount` 100:
 
 ```sql
-SELECT CURRENT_ROLE() AS role, 1 + 1 AS two
+SELECT * FROM nova.notebook_examples.orders
 ```
 
-The result depends on your signed-in role. Choosing an engine does not grant
-access to additional data. A Nova-engine SQL cell is for reads; use the
-worksheet for database creation and administration.
+The output says **Computed in DuckDB**. To run a query with Nova's own SQL
+syntax, use `con.nova(...)` from a Python cell, as described on that page.
+Use the SQL worksheet for database creation and administration.
 
 ## Display a chart
 
