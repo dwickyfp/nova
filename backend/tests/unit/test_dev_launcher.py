@@ -30,7 +30,7 @@ import os, signal, sys, time
 args = sys.argv[1:]
 if args[-1:] == ['-']:
     sys.stdin.read()
-    raise SystemExit(0)
+    raise SystemExit(int(os.environ.get('FAKE_CONFIG_FAILURE', '0')))
 if any('dev_readiness.py' in arg for arg in args):
     raise SystemExit(int(os.environ.get('FAKE_NOT_READY', '0')))
 with open(os.environ['CHILD_RECORD'], 'a') as handle:
@@ -76,7 +76,7 @@ while True:
 def start(launcher, **environment):
     root, base = launcher
     return subprocess.Popen(
-        ["bash", str(root / "dev.sh"), "--no-frontend", "--no-infra-check"],
+        ["/bin/bash", str(root / "dev.sh"), "--no-frontend", "--no-infra-check"],
         env={**base, **environment}, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, start_new_session=True,
     )
@@ -127,11 +127,26 @@ def test_shutdown_allows_worker_drain_beyond_five_seconds(launcher):
             process.wait()
 
 
+def test_configuration_refusal_exits_cleanly_before_spawning_children(launcher):
+    process = start(launcher, FAKE_CONFIG_FAILURE="1")
+    try:
+        output, _ = process.communicate(timeout=10)
+        assert process.returncode == 1, output
+        assert "runtime configuration is incomplete" in output
+        assert "no application processes were started" in output
+        assert "unbound variable" not in output
+        assert not Path(launcher[1]["CHILD_RECORD"]).exists()
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+
+
 def test_duplicate_ports_refused_before_any_child_starts(launcher):
     root, environment = launcher
     environment["QUERY_PORT"] = environment["BACKEND_PORT"]
     result = subprocess.run(
-        ["bash", str(root / "dev.sh"), "--no-frontend", "--no-infra-check"],
+        ["/bin/bash", str(root / "dev.sh"), "--no-frontend", "--no-infra-check"],
         env=environment, capture_output=True, text=True, timeout=10,
     )
     assert result.returncode != 0

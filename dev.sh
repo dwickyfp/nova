@@ -285,6 +285,10 @@ cleanup() {
   SHUTTING_DOWN=1
   printf '\n'
   log "stopping ${#CHILD_PIDS[@]} process(es)..."
+  if [[ "${#CHILD_PIDS[@]}" -eq 0 ]]; then
+    ok "no application processes were started. logs in $LOG_DIR"
+    exit "$exit_status"
+  fi
   local pid child tracked
   local tracked_pids=()
   for pid in "${CHILD_PIDS[@]}"; do

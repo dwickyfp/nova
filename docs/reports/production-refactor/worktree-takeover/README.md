@@ -377,8 +377,9 @@ Final local results for this checkpoint are in the
 [machine-readable QA summary](qa-summary.json). The PG fixture cleanup check
 confirmed no test schema, test roles or deployment marker remained. All 15
 existing Docker project containers were still running. The original source
-worktrees remain preserved. There is no delivered commit, push, CI result,
-production epoch or full live application startup to report.
+worktrees remain preserved. At that local-validation checkpoint there was no
+delivered commit, push, CI result, production epoch or full live application
+startup. The subsequent publication and startup attempts are recorded below.
 
 
 ## Checkpoint publication requested on November 13
@@ -397,3 +398,31 @@ Before publication, remote `main` was fetched and was already an ancestor of
 the active branch. The generated, tracked `backend/coverage.xml` remains local;
 it is excluded from the implementation commit. Test evidence above is the
 completed local validation of this source; CI outcome is recorded separately.
+
+Checkpoint `01209dbbd58bf6690fb865169aa85244a6a9647b` was committed and pushed to
+`feat/production-control-plane`, with upstream configured. Existing draft
+[PR #225](https://github.com/dwickyfp/nova/pull/225) started
+[CI attempt 43271556288](https://github.com/dwickyfp/nova/actions/runs/43271556288).
+Its PostgreSQL job failed collection with two errors because the test image did
+not package `docs/sql_docs/`, which the assistant skill imports. The follow-up
+includes that runtime input; it does not suppress collection or skip guards.
+This failed attempt remains evidence and is not a pass. Final CI status must
+be checked on the PR's current commit before release.
+
+The first real `./dev.sh` attempt reached the existing StarRocks, Redis and
+Ranger endpoints, then refused the missing/invalid metadata runtime configuration.
+The EXIT handler also exposed Bash 3.2's nounset behavior for an empty child-PID
+array. The launcher now exits cleanly when no child was started; regression
+tests invoke `/bin/bash`, matching its shebang. Focused launcher/readiness run 02
+passed all 13 cases, including configuration refusal, failed readiness, child
+exit, duplicate ports and delayed drain. Changed-file Ruff and shell syntax
+checks passed. A second actual startup still refused the incomplete metadata
+configuration, preserved exit code 1 and completed cleanup without the empty-array
+error. Neither attempt started application children or changed the metadata epoch.
+
+Cutover is blocked by missing import contract/provenance and unfinished writers,
+not by a request for permission. There is no `backend/metadata_import/` package
+to validate or rehearse, and runtime PG credentials/epoch configuration is not
+ready. No schema-only activation, reset, reseed, fallback or shared-dependency
+restart was used. Full development startup remains unverified until these
+prerequisites are implemented and the one-way cutover passes its checks.

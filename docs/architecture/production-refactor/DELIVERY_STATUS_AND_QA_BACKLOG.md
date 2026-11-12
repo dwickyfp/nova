@@ -6,10 +6,13 @@ The owner requested this checkpoint before further work: finish migration and
 application scaling first, then resume the remaining whole-feature QA. Tests
 needed to validate an architecture change still run with that change.
 
-The stopped worktree ports are now being integrated in the active checkout.
+The stopped worktree ports were integrated and published in checkpoint
+`01209dbbd58bf6690fb865169aa85244a6a9647b` on `feat/production-control-plane`.
 See the [takeover checkpoint](../../reports/production-refactor/worktree-takeover/README.md)
 for baseline results, failed integration attempts and remaining work. The source
-under integration is not yet a deployable cutover.
+is not yet a deployable cutover. The attempted development startup refused
+incomplete metadata configuration before starting any application process;
+the existing infrastructure and source data remain in place.
 
 ## Completion decision
 
@@ -34,7 +37,7 @@ Source evidence: [ownership](METADATA_OWNERSHIP.csv),
 [dependencies](DEPENDENCIES.md), [traceability](TRACEABILITY.md).
 `backend/app/core/config.py` still restricts API roles to `all/web/query`;
 `backend/app/worker/__main__.py` now owns one selected workload, while its default
-launcher supervises seven child processes. Prepared PG
+launcher supervises eight child processes. Prepared PG
 repositories are not proof that their runtime callers use PostgreSQL.
 
 ## Implementation order from this checkpoint

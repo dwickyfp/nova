@@ -14,6 +14,7 @@ RUN python /tmp/build_metadata_pooler.py /opt/nova-pgbouncer \
 COPY backend/app ./app
 COPY backend/tests ./tests
 COPY backend/metadata_migrations ./metadata_migrations
+COPY docs/sql_docs/ /nova/docs/sql_docs/
 COPY docs/architecture/production-refactor/inventory.json /nova/docs/architecture/production-refactor/inventory.json
 ENV PATH="/nova/backend/.venv/bin:${PATH}" \
     HOME=/tmp \
