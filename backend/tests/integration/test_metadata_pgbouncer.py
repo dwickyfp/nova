@@ -136,8 +136,12 @@ async def test_transaction_pooling_reuses_one_backend_without_actor_leakage(pool
     try:
         await first.open(schema_version=len(load_migrations()), metadata_epoch=pooler.epoch)
         await second.open(schema_version=len(load_migrations()), metadata_epoch=pooler.epoch)
-        alice = SecurityContext("alice", "analyst", security_context_version=7)
-        bob = SecurityContext("bob", "finance", security_context_version=42)
+        alice = SecurityContext(
+            "alice", "analyst", session_id="synthetic-pooler-alice", security_context_version=7,
+        )
+        bob = SecurityContext(
+            "bob", "finance", session_id="synthetic-pooler-bob", security_context_version=42,
+        )
         async with first.transaction(alice) as conn:
             await conn.execute(
                 "INSERT INTO nova_meta.test_owned_rows VALUES (1,'alice','analyst',1,0)"
@@ -152,12 +156,14 @@ async def test_transaction_pooling_reuses_one_backend_without_actor_leakage(pool
                     "current_setting('nova.principal') AS principal, "
                     "current_setting('nova.active_role') AS role, "
                     "current_setting('nova.security_context_version') AS version, "
+                    "current_setting('nova.session_id') AS session_id, "
                     "(SELECT count(*) FROM nova_meta.test_owned_rows) AS visible"
                 )
                 row = await cursor.fetchone()
                 assert row["principal"] == actor.principal
                 assert row["role"] == actor.active_role
                 assert row["version"] == str(actor.security_context_version)
+                assert row["session_id"] == actor.session_id
                 assert row["visible"] == (1 if actor == alice else 0)
                 return row["pid"]
 
@@ -165,10 +171,11 @@ async def test_transaction_pooling_reuses_one_backend_without_actor_leakage(pool
         async with await psycopg.AsyncConnection.connect(pooler.dsn, autocommit=True) as unscoped:
             cursor = await unscoped.execute(
                 "SELECT current_setting('nova.principal',true), "
+                "current_setting('nova.session_id',true), "
                 "(SELECT count(*) FROM nova_meta.test_owned_rows)"
             )
-            principal, visible = await cursor.fetchone()
-            assert not principal and visible == 0
+            principal, session_id, visible = await cursor.fetchone()
+            assert not principal and not session_id and visible == 0
     finally:
         await first.close()
         await second.close()
@@ -224,7 +231,9 @@ async def test_cancel_rolls_back_before_a_different_actor_reuses_the_backend(poo
     started = asyncio.Event()
 
     async def pending_write():
-        async with database.transaction(SecurityContext("alice", "analyst")) as conn:
+        async with database.transaction(
+            SecurityContext("alice", "analyst", session_id="synthetic-cancelled-login")
+        ) as conn:
             await conn.execute(
                 "INSERT INTO nova_meta.test_owned_rows VALUES (1,'alice','analyst',1,0)"
             )
@@ -244,9 +253,12 @@ async def test_cancel_rolls_back_before_a_different_actor_reuses_the_backend(poo
         async with database.transaction(SecurityContext("bob", "finance")) as conn:
             cursor = await conn.execute(
                 "SELECT current_setting('nova.principal') AS principal, "
-                "current_setting('nova.active_role') AS role"
+                "current_setting('nova.active_role') AS role, "
+                "current_setting('nova.session_id') AS session_id"
             )
-            assert await cursor.fetchone() == {"principal": "bob", "role": "finance"}
+            assert await cursor.fetchone() == {
+                "principal": "bob", "role": "finance", "session_id": "",
+            }
     finally:
         pending.cancel()
         await asyncio.gather(pending, return_exceptions=True)

@@ -60,3 +60,15 @@ async def test_unopened_database_and_missing_actor_fail_before_connection():
                 pytest.fail("Uninitialized schema was admitted")
     finally:
         await db.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("session_id", ["", " ", "x" * 65, "synthetic\0login", 3, []])
+async def test_invalid_login_context_fails_before_connection_without_readback(session_id):
+    db = MetadataDatabase(MetadataPoolConfig(DSN))
+    try:
+        with pytest.raises(ValueError, match="^Invalid metadata login context$"):
+            async with db.transaction(SecurityContext("alice", "analyst", session_id=session_id)):
+                pytest.fail("An invalid login reached a metadata transaction")
+    finally:
+        await db.close()

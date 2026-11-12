@@ -264,6 +264,14 @@ class MetadataDatabase:
     ) -> AsyncIterator[psycopg.AsyncConnection[dict[str, Any]]]:
         if not isinstance(actor, SecurityContext):
             raise ValueError("An explicit metadata actor is required")
+        session_id = actor.session_id
+        if session_id is not None and (
+            not isinstance(session_id, str)
+            or not session_id.strip()
+            or len(session_id) > 64
+            or "\0" in session_id
+        ):
+            raise ValueError("Invalid metadata login context")
         if not self._ready:
             raise MetadataUnavailable()
         try:
@@ -279,6 +287,7 @@ class MetadataDatabase:
                     "set_config('nova.active_role', %s, true), "
                     "set_config('nova.security_context_version', %s, true), "
                     "set_config('nova.principal_type', %s, true), "
+                    "set_config('nova.session_id', %s, true), "
                     "set_config('nova.request_id', %s, true), "
                     "set_config('nova.service_identity', current_user, true), "
                     "set_config('synchronous_commit', 'on', true), "
@@ -291,6 +300,7 @@ class MetadataDatabase:
                         actor.active_role,
                         str(actor.security_context_version),
                         actor.principal_type,
+                        session_id or "",
                         request_id,
                         str(self._config.statement_timeout_ms),
                         str(self._config.lock_timeout_ms),

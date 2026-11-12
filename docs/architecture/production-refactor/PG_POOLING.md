@@ -50,7 +50,7 @@ pool timeout. This does not silently retry a failed or uncertain write.
 The regression prewarms transport, locks the ledger and verifies the validation
 timeout, failed readiness and a fresh successful startup after releasing the
 lock. Other cases verify two application pools sharing one backend, concurrent
-principal/role/version isolation, missing-context denial, statement/lock expiry,
+principal/role/version/login isolation, missing-context denial, statement/lock expiry,
 cancellation rollback, and refusal of plaintext, incorrect-hostname and
 incorrect-password connections. Logs are scanned for fixture password/verifier
 canaries. No development metadata writer or data service is restarted.
@@ -58,3 +58,29 @@ canaries. No development metadata writer or data service is restarted.
 This evidence does not prove production grants for every domain, provider QA,
 pool exhaustion under production load, backup/PITR or cross-host HA. Those gates
 remain separate. No application domain has switched its metadata authority.
+
+## Login context at the transaction boundary
+
+`MetadataDatabase.transaction` now sets `nova.session_id` from the supplied
+`SecurityContext` inside every transaction. An absent login is explicitly set to
+an empty value, so a service or context without a login cannot inherit one from
+a reused connection. The boundary rejects non-string, blank, over-64-character
+and NUL-containing login IDs before acquiring a connection, with no value readback.
+This carries existing authentication context; PostgreSQL does not authenticate
+Nova users or create a new password store.
+
+The direct-pool regression uses the same physical backend for two logins of the
+same principal/role, a service actor and a context without a login. It checks the
+exact binding inside the transaction and its removal afterward. The transaction
+pooler cases also check concurrent session isolation and cancellation before a
+context without a login reuses the backend. Stage commands compare the session
+alongside the other actor fields before and after Ranger's policy call.
+
+Before the change, six invalid-context unit cases, three real-PG context cases
+and the Stage mismatched-session case failed. The focused corrected suites pass
+24 unit cases and 111 real-PG cases. The complete suites and retained evidence are
+recorded in [the login-context packet](../../reports/production-refactor/metadata-session/README.md).
+All existing migration checksums and the schema epoch contract are unchanged.
+Durable consent, run/step binding, worker execution identities and runtime ports
+still require their domain implementations; this boundary alone does not provide
+those guarantees.

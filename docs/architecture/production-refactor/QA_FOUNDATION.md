@@ -923,3 +923,29 @@ four pass with the expected constant query, result and history; one creation
 request fails before provider invocation, and one running tool ends in a turn
 timeout. The evidence packet retains both failures and fixture reconciliation.
 These results do not turn the provider/reliability gate green.
+
+## PostgreSQL login-context checkpoint
+
+Actor-bound metadata transactions previously omitted the login ID. Three real-PG
+regressions fail on the parent, and a Stage service carrying a different login
+was accepted against the original actor. Six malformed-login unit cases also
+lack the required early validation. The transaction now binds or explicitly
+clears its login with transaction-local settings and rejects invalid values
+before acquiring a connection. Stage commands compare the login before and after
+Ranger policy I/O. The [evidence packet](../../reports/production-refactor/metadata-session/README.md)
+retains those failures and the corrected direct-pool, PgBouncer and Stage cases.
+
+Final local checks pass 10,842 unit/coverage cases, 489 real-PG cases and 354 agent
+trajectories without skips, plus full mypy, changed-file Ruff (109 files), the
+54-scenario/189-check scorecard and user-data boundary scan. Logs contain no
+credential, envelope or login canary; fixture cleanup leaves no metadata schema
+or workload role. Frontend code and dependencies are unchanged from c71ba4b1,
+so its passing lint/build/1,609-test result remains applicable.
+
+The application digest is
+`de0c43da679951af7232872ce3ccecca11189e8ef3571df8b5e37dd36c245677`.
+All 875 source calls and their reviews remain unchanged. Inventory refresh keeps
+the earlier live schema observation and its timestamps; no live acceptance row
+is promoted. Migration checksums and epoch remain unchanged. Durable PG consent,
+audit-session projection, job execution binding, runtime ports, production Compose,
+rehearsals/cutover and whole-feature/live-AI acceptance are still open.

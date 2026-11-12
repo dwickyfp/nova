@@ -585,3 +585,35 @@ async def test_import_keeps_duplicate_occurrences_and_invalid_chunk_rolls_back(m
             "count(DISTINCT legacy_id) AS legacy_ids FROM nova_meta.test_owned_rows"
         )
         assert await cursor.fetchone() == {"rows": 2, "identities": 2, "legacy_ids": 1}
+
+
+async def test_login_context_is_replaced_and_cleared_on_one_reused_backend(metadata):
+    database = MetadataDatabase(MetadataPoolConfig(metadata.dsn, max_size=1))
+    await database.open(schema_version=len(load_migrations()), metadata_epoch=metadata.epoch)
+    actors = (
+        SecurityContext("alice", "analyst", session_id="synthetic-login-one"),
+        SecurityContext("alice", "analyst", session_id="synthetic-login-two"),
+        SecurityContext("scheduler", "ACCOUNTADMIN", principal_type="SERVICE"),
+        SecurityContext("bob", "finance"),
+    )
+    pids = set()
+    try:
+        for identity in actors:
+            async with database.transaction(identity, read_only=True) as conn:
+                cursor = await conn.execute(
+                    "SELECT pg_backend_pid() AS pid, "
+                    "current_setting('nova.session_id') AS session_id, "
+                    "current_setting('nova.principal_type') AS principal_type"
+                )
+                row = await cursor.fetchone()
+                pids.add(row["pid"])
+                assert row["session_id"] == (identity.session_id or "")
+                assert row["principal_type"] == identity.principal_type
+            async with database._pool.connection() as unscoped:
+                cursor = await unscoped.execute(
+                    "SELECT current_setting('nova.session_id',true) AS session_id"
+                )
+                assert not (await cursor.fetchone())["session_id"]
+        assert len(pids) == 1
+    finally:
+        await database.close()

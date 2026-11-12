@@ -228,6 +228,7 @@ async def test_scope_is_not_owner_authority_and_denials_do_not_resolve_connectio
 @pytest.mark.parametrize("field,value", [
     ("principal", "another-user"), ("active_role", "ACCOUNTADMIN"),
     ("security_context_version", 8), ("principal_type", "SERVICE"),
+    ("session_id", "synthetic-other-login"),
 ])
 async def test_supplied_actor_must_match_the_active_uow(stages, field, value):
     async with stages.transaction() as (_, connection):
@@ -522,11 +523,17 @@ async def test_rls_requires_every_actor_and_scope_field(stages, setting):
         assert await StageRepository(connection).in_scope() == []
 
 
-async def test_actor_change_during_policy_call_cannot_use_an_old_decision(stages, monkeypatch):
+@pytest.mark.parametrize("setting,value", [
+    ("nova.security_context_version", "8"),
+    ("nova.session_id", "synthetic-changed-login"),
+])
+async def test_actor_change_during_policy_call_cannot_use_an_old_decision(
+    stages, monkeypatch, setting, value,
+):
     row = await create(stages)
     async with stages.transaction() as (service, connection):
         async def changed(**kwargs):
-            await connection.execute("SELECT set_config('nova.security_context_version','8',true)")
+            await connection.execute("SELECT set_config(%s,%s,true)", (setting, value))
             return {"object_access": ["ALL"]}
 
         monkeypatch.setattr(access_control_service, "effective_access", changed)

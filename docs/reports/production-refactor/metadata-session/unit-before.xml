@@ -1,0 +1,41 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="6" skipped="0" tests="24" time="2.496">
+    <testcase classname="tests.unit.test_metadata_db_config" name="test_pool_and_transaction_limits_cannot_be_disabled[change0]" time="1.650" />
+    <testcase classname="tests.unit.test_metadata_db_config" name="test_pool_and_transaction_limits_cannot_be_disabled[change1]" time="0.001" />
+    <testcase classname="tests.unit.test_metadata_db_config" name="test_pool_and_transaction_limits_cannot_be_disabled[change2]" time="0.001" />
+    <testcase classname="tests.unit.test_metadata_db_config" name="test_pool_and_transaction_limits_cannot_be_disabled[change3]" time="0.000" />
+    <testcase classname="tests.unit.test_metadata_db_config" name="test_pool_and_transaction_limits_cannot_be_disabled[change4]" time="0.000" />
+    <testcase classname="tests.unit.test_metadata_db_config" name="test_pool_and_transaction_limits_cannot_be_disabled[change5]" time="0.000" />
+    <testcase classname="tests.unit.test_metadata_db_config" name="test_pool_and_transaction_limits_cannot_be_disabled[change6]" time="0.000" />
+    <testcase classname="tests.unit.test_metadata_db_config" name="test_pool_and_transaction_limits_cannot_be_disabled[change7]" time="0.000" />
+    <testcase classname="tests.unit.test_metadata_db_config" name="test_insecure_or_wrong_database_configuration_fails_without_secret_readback[host=localhost dbname=nova_control sslmode=disable]" time="0.001" />
+    <testcase classname="tests.unit.test_metadata_db_config" name="test_insecure_or_wrong_database_configuration_fails_without_secret_readback[host=localhost dbname=nova_control sslmode=require]" time="0.001" />
+    <testcase classname="tests.unit.test_metadata_db_config" name="test_insecure_or_wrong_database_configuration_fails_without_secret_readback[host=localhost dbname=superset sslmode=verify-full]" time="0.000" />
+    <testcase classname="tests.unit.test_metadata_db_config" name="test_insecure_or_wrong_database_configuration_fails_without_secret_readback[synthetic-invalid-canary]" time="0.002" />
+    <testcase classname="tests.unit.test_metadata_db_config" name="test_insecure_or_wrong_database_configuration_fails_without_secret_readback[dbname=nova_control sslmode=verify-full]" time="0.000" />
+    <testcase classname="tests.unit.test_metadata_db_config" name="test_insecure_or_wrong_database_configuration_fails_without_secret_readback[host=/tmp dbname=nova_control sslmode=verify-full]" time="0.000" />
+    <testcase classname="tests.unit.test_metadata_db_config" name="test_insecure_or_wrong_database_configuration_fails_without_secret_readback[host=@local-socket dbname=nova_control sslmode=verify-full]" time="0.000" />
+    <testcase classname="tests.unit.test_metadata_db_config" name="test_insecure_or_wrong_database_configuration_fails_without_secret_readback[host=localhost, dbname=nova_control sslmode=verify-full]" time="0.001" />
+    <testcase classname="tests.unit.test_metadata_db_config" name="test_config_repr_does_not_include_connection_credentials" time="0.000" />
+    <testcase classname="tests.unit.test_metadata_db_config" name="test_unopened_database_and_missing_actor_fail_before_connection" time="0.002" />
+    <testcase classname="tests.unit.test_metadata_db_config" name="test_invalid_login_context_fails_before_connection_without_readback[]" time="0.003">
+      <failure type="failure">Diagnostic body omitted; see verification narrative.</failure>
+    </testcase>
+    <testcase classname="tests.unit.test_metadata_db_config" name="test_invalid_login_context_fails_before_connection_without_readback[ ]" time="0.006">
+      <failure type="failure">Diagnostic body omitted; see verification narrative.</failure>
+    </testcase>
+    <testcase classname="tests.unit.test_metadata_db_config" name="test_invalid_login_context_fails_before_connection_without_readback[xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]" time="0.007">
+      <failure type="failure">Diagnostic body omitted; see verification narrative.</failure>
+    </testcase>
+    <testcase classname="tests.unit.test_metadata_db_config" name="test_invalid_login_context_fails_before_connection_without_readback[synthetic\x00login]" time="0.007">
+      <failure type="failure">Diagnostic body omitted; see verification narrative.</failure>
+    </testcase>
+    <testcase classname="tests.unit.test_metadata_db_config" name="test_invalid_login_context_fails_before_connection_without_readback[3]" time="0.007">
+      <failure type="failure">Diagnostic body omitted; see verification narrative.</failure>
+    </testcase>
+    <testcase classname="tests.unit.test_metadata_db_config" name="test_invalid_login_context_fails_before_connection_without_readback[session_id5]" time="0.007">
+      <failure type="failure">Diagnostic body omitted; see verification narrative.</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

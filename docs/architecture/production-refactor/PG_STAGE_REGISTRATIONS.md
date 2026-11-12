@@ -33,7 +33,7 @@ transaction. An audit failure rolls back the registration.
 
 Stage permissions remain schema-governed by the existing Ranger service, not
 owner ACLs. `StageMetadataService` checks that its immutable `SecurityContext`
-matches the UoW principal, active role, context version and principal type before
+matches the UoW principal, active role, context version, principal type and login before
 and after the policy call. The registration create/delete path retains the
 current schema DELETE requirement. File consumers request the applicable read,
 write or delete action before obtaining the payload.

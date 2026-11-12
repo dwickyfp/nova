@@ -41,9 +41,11 @@ class StageMetadataService:
             "AND current_setting('nova.active_role',true)=%s "
             "AND current_setting('nova.security_context_version',true)=%s "
             "AND current_setting('nova.principal_type',true)=%s "
+            "AND current_setting('nova.session_id',true)=%s "
             "AND current_setting('nova.service_identity',true)=current_user AS valid",
             (self.actor.principal, self.actor.active_role,
-             str(self.actor.security_context_version), self.actor.principal_type),
+             str(self.actor.security_context_version), self.actor.principal_type,
+             self.actor.session_id or ""),
         )
         row = await cursor.fetchone()
         if not row or row["valid"] is not True:

@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="5.706">
+    <testcase classname="tests.integration.test_metadata_stages" name="test_supplied_actor_must_match_the_active_uow[session_id-synthetic-other-login]" time="4.631">
+      <failure type="failure">Diagnostic body omitted; see verification narrative.</failure>
+    </testcase>
+  </testsuite>
+</testsuites>
