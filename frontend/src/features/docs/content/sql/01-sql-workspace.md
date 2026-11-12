@@ -118,6 +118,7 @@ new turn; a revoked or expired approval asks again. The approval lasts at most
 For an action that still needs approval, **Allow** or **Deny** applies to that
 action. Either choice keeps your existing **Always allow read-only** selection.
 Choose **Need approval** when you want read-only queries to ask again.
+An earlier action's approval cannot be reused for a later action.
 
 ## See a query plan
 

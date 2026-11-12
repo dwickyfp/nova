@@ -214,7 +214,7 @@ async def test_prefetched_resource_cannot_bypass_release_recheck(boundary, monke
         return entry
 
     async def dispatch(self, tool, invocation, context):
-        dispatched.append(invocation.tool_call_id)
+        dispatched.append((invocation.tool_call_id, invocation.provider_call_id))
         return await original_dispatch(self, tool, invocation, context)
 
     monkeypatch.setattr(AssistantLoop, "_prefetch", prefetch)
@@ -233,10 +233,12 @@ async def test_prefetched_resource_cannot_bypass_release_recheck(boundary, monke
     assert_blocked(boundary, provider, result)
     assert len(entries) == 1
     call_id, task, _ = entries[0]
-    assert call_id == "prefetched"
+    assert call_id != "prefetched"
+    assert (call_id, "prefetched") in dispatched
     assert task.done() and not task.cancelled()
     assert task.result().error_class == "RELEASE_DRIFT"
-    assert set(dispatched) == {"first", "prefetched"}
+    assert len(dispatched) == len({public for public, _ in dispatched}) == 2
+    assert {wire for _, wire in dispatched} == {"first", "prefetched"}
 
 
 async def test_definition_change_without_version_bump_is_terminal(boundary):

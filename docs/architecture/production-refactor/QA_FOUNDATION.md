@@ -976,3 +976,38 @@ code/dependencies are unchanged, so the prior 489-case PG and 1,609-case fronten
 results remain applicable. The application digest is
 `9794df15dec3412e8836e9af8d1b1f7bf79da27ac69039b31e072475f30ee490`.
 No metadata epoch, migration checksum or whole-feature acceptance row changes.
+
+## Server-owned tool proposal identity
+
+Provider IDs previously keyed public approval and prefetch state. Three
+controlled trajectories reproduce stale-decision replay, concurrent collision
+and a prefetched result being consumed by the wrong query. Each proposal now
+has its own Nova UUID while provider messages retain the original wire ID.
+Deferred calls, public events, tool dispatch and artifact provenance share the
+same Nova identity. Repeated identical calls still deduplicate their effect.
+
+The [verification packet](../../reports/production-refactor/proposal-identity/README.md)
+retains parent failures and the subsequent fixture updates. Final local results
+are 10,859 unit/coverage cases, 358 trajectories, 11 offline benchmarks and
+15 docs browser cases passed. The engine benchmark's disposable-stack label
+requirement caused one recorded skip. Full mypy, Ruff on 115 changed Python
+files, the 54-scenario/189-check scorecard and boundary scan pass.
+
+Four controlled running-API flows reject provider and stale approval IDs with
+404 while keeping the correct pending decision usable. Both configured models
+also pass three live constant-SQL turns each, including explicit per-action
+consent, output schema and persisted history. Every owned fixture and login is
+cleaned. Earlier real-provider failures remain recorded and unresolved.
+
+A separate two-login probe confirms an open pending-consent context defect:
+the second login can consume the first login's approval (two failed decision
+cases, two passing follow-up reads). That baseline is retained for the next
+fix. Durable PG consent and pending actor binding remain incomplete.
+
+The application digest is
+`61a077e69db6f24ceb4c2a6244abdbddd7ceea6a5f6ee9adbed88d73faf043f8`.
+All 875 source-call reviews remain unchanged; the prior live schema timestamp
+is retained. Metadata code/schema and frontend application code/dependencies
+are unchanged, so the preceding 489-case PG and 1,609-case frontend results
+remain applicable. No authority, migration checksum or feature acceptance
+status changes.

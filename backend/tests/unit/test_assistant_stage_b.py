@@ -170,11 +170,13 @@ async def test_pending_card_accepts_an_immediate_decision(decision):
         frames.append(frame)
         if _frame_event(frame) == "tool_call" and _frame_data(frame)["status"] == "pending":
             # Do not advance the generator before acting on the visible card.
-            assert broker.owner_of("immediate") == ("t1", "alice")
+            call_id = _frame_data(frame)["tool_call_id"]
+            assert call_id != "immediate"
+            assert broker.owner_of(call_id) == ("t1", "alice")
             assert tool.invocations == []
-            assert broker.resolve("immediate", decision, user_name="alice")
+            assert broker.resolve(call_id, decision, user_name="alice")
     assert len(tool.invocations) == (1 if decision is True else 0)
-    assert broker.owner_of("immediate") is None
+    assert broker.owner_of(call_id) is None
     assert any(_frame_event(frame) == "done" for frame in frames)
 
 

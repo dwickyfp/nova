@@ -146,9 +146,10 @@ async def test_agent_rule_blocks_a_call_before_consent_and_the_model_recovers(_a
     assert asked == ["query_execute"]  # the blocked call never reached consent
     guard = _events(frames, "guard")
     assert [item["rule_id"] for item in guard] == ["no-select-star"]
-    assert guard[0]["action"] == "blocked" and guard[0]["tool_call_id"] == "c1"
+    assert guard[0]["action"] == "blocked" and guard[0]["tool_call_id"] != "c1"
     blocked_view = next(
-        item for item in _events(frames, "tool_call") if item["tool_call_id"] == "c1"
+        item for item in _events(frames, "tool_call")
+        if item["tool_call_id"] == guard[0]["tool_call_id"]
     )
     assert blocked_view["status"] == "denied"
     envelope = next(

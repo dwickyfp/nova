@@ -58,29 +58,31 @@ async def test_immediate_mcp_decision_is_scoped_and_precedes_external_effect(mon
             if not frame.startswith("event: tool_call\n"):
                 continue
             payload = json.loads(frame.split("data: ", 1)[1])
+            call_id = payload["tool_call_id"]
+            assert call_id != "call-1"
             assert payload["status"] == "pending"
             assert payload["classification"] == "destructive"
             external.assert_not_awaited()
             with pytest.raises(HTTPException) as foreign:
                 await router.resolve_agent_tool_call(
-                    "agent", "call-1", ConsentDecisionRequest(decision="allow_once"),
+                    "agent", call_id, ConsentDecisionRequest(decision="allow_once"),
                     {"username": "fixture-bob"},
                 )
             assert foreign.value.status_code == 404
             with pytest.raises(HTTPException) as session:
                 await router.resolve_agent_tool_call(
-                    "agent", "call-1", ConsentDecisionRequest(decision="allow_session"), user,
+                    "agent", call_id, ConsentDecisionRequest(decision="allow_session"), user,
                 )
             assert session.value.status_code == 400
             result = await router.resolve_agent_tool_call(
-                "agent", "call-1", ConsentDecisionRequest(decision=decision), user,
+                "agent", call_id, ConsentDecisionRequest(decision=decision), user,
             )
             assert result.status == ("approved" if decision == "allow_once" else "denied")
             assert not result.grant_active
         result = TurnResult(frames=frames)
         assert result.finish_reason == ("stop" if decision == "allow_once" else "denied")
         assert external.await_count == (1 if decision == "allow_once" else 0)
-        assert broker.owner_of("call-1") is None
+        assert broker.owner_of(call_id) is None
         if decision == "allow_once":
             external.assert_awaited_once_with(tool.server, "total", {"a": 42})
     finally:

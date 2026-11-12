@@ -934,6 +934,14 @@ class AssistantLoop:
         governed_attempted = False
         #: Read-only calls started ahead of their turn: call id -> (task, context copy).
         prefetched: dict[str, tuple[asyncio.Task, LoopContext]] = {}
+        proposals: dict[int, tuple[dict[str, Any], ToolInvocation | None]] = {}
+
+        def parse_proposal(call: dict[str, Any]) -> ToolInvocation | None:
+            # Keep the proposal alive so object IDs cannot be recycled during the turn.
+            if id(call) not in proposals:
+                proposals[id(call)] = (call, self._parse_tool_call(call))
+            return proposals[id(call)][1]
+
         _transition(context, TurnState.ROUTING)
         #: Fingerprint of a completed tool call → its result summary. A model
         #: sometimes proposes the identical call twice in one turn. Re-running it
@@ -1425,7 +1433,8 @@ class AssistantLoop:
             message: dict[str, Any] | None = None
             buffered_text: list[str] = []
             provider_step: dict[str, Any] | None = None
-            if deferred_calls:
+            from_deferred = bool(deferred_calls)
+            if from_deferred:
                 message = {
                     "role": "assistant",
                     "content": "",
@@ -1556,7 +1565,10 @@ class AssistantLoop:
                 usage=message.get("usage") if isinstance(message.get("usage"), dict) else None,
                 finish_reason=message.get("finish_reason"),
             )
-            tool_calls = list(decision.tool_calls)
+            # A provider can reuse both its wire ID and a response object. Each
+            # new proposal gets a fresh Nova identity; deferred calls retain theirs.
+            tool_calls = (list(decision.tool_calls) if from_deferred
+                          else [dict(call) for call in decision.tool_calls])
             if not tool_calls and _TOOL_MARKUP.search("".join(buffered_text)):
                 # The model wrote a tool call as text. It is never an answer. Outside
                 # final composition a well-formed call to an offered tool is the call
@@ -1612,11 +1624,12 @@ class AssistantLoop:
                 deferred_calls.extend(tool_calls[1:])
                 tool_calls = tool_calls[:1]
                 if self._iterative:
-                    first = self._parse_tool_call(tool_calls[0])
+                    first = parse_proposal(tool_calls[0])
                     started = {self._call_fingerprint(first)} if first else set()
                     for extra in deferred_calls[: MAX_PARALLEL_TOOLS - 1]:
                         entry = self._prefetch(
-                            extra, context, thread, selected_tools, seen_calls, started
+                            extra, context, thread, selected_tools, seen_calls, started,
+                            parse_proposal(extra),
                         )
                         if entry is not None:
                             prefetched[entry[0]] = entry[1:]
@@ -2086,7 +2099,7 @@ class AssistantLoop:
             # requires per-turn serialization; the loop shape makes that true
             # by construction rather than by a lock.
             call = tool_calls[0]
-            parsed_invocation = self._parse_tool_call(call)
+            parsed_invocation = parse_proposal(call)
             if parsed_invocation is None:
                 yield events.error("bad_tool_call", "The assistant proposed an unusable tool call.")
                 yield events.done(str(uuid4()), finish_reason="error")
@@ -2100,7 +2113,8 @@ class AssistantLoop:
                 {
                     "role": "assistant",
                     "content": narration,
-                    **({"tool_calls": [call]} if provider_capabilities.supports_tools else {}),
+                    **({"tool_calls": [{**call, "id": invocation.provider_call_id}]}
+                       if provider_capabilities.supports_tools else {}),
                 }
             )
 
@@ -3124,6 +3138,7 @@ class AssistantLoop:
         selected_tools: tuple[str, ...],
         seen_calls: dict[str, str],
         started: set[str],
+        invocation: ToolInvocation | None = None,
     ) -> tuple[str, asyncio.Task, LoopContext] | None:
         """Start an independent read-only call early, in its own context copy.
 
@@ -3133,7 +3148,7 @@ class AssistantLoop:
         """
         if context.mission_id or callable(context.business_result_hook):
             return None
-        invocation = self._parse_tool_call(call)
+        invocation = invocation or self._parse_tool_call(call)
         if invocation is None or invocation.tool_name not in PARALLEL_SAFE_TOOLS:
             return None
         tool = self._registry.get(invocation.tool_name)
@@ -3218,7 +3233,10 @@ class AssistantLoop:
         """Parse one provider tool-call object into an invocation."""
         function = call.get("function") or {}
         name = function.get("name")
-        if not name:
+        provider_id = call.get("id")
+        if not isinstance(name, str) or not name or (
+            provider_id is not None and (not isinstance(provider_id, str) or not provider_id)
+        ):
             return None
         import json
 
@@ -3233,9 +3251,10 @@ class AssistantLoop:
         if not isinstance(arguments, dict):
             arguments = {}
         return ToolInvocation(
-            tool_call_id=call.get("id") or str(uuid4()),
+            tool_call_id=str(uuid4()),
             tool_name=name,
             arguments=arguments,
+            provider_call_id=provider_id or str(uuid4()),
         )
 
 
@@ -3255,7 +3274,7 @@ def _tool_message(
     if native_tool_role:
         return {
             "role": "tool",
-            "tool_call_id": invocation.tool_call_id,
+            "tool_call_id": invocation.provider_call_id or invocation.tool_call_id,
             "name": invocation.tool_name,
             "content": content,
         }

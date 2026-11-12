@@ -1,0 +1,294 @@
+{
+  "scope": "Controlled local provider through running Nova APIs; constant SQL only; no live-model acceptance claim",
+  "started_at": "2026-11-12T01:31:33.282471+00:00",
+  "fixture_prefix": "Synthetic proposal identity fd7158895e",
+  "cases": [
+    {
+      "mode": "CONTROLLED_WRITE",
+      "decision": "allow_once",
+      "tool_calls": [
+        {
+          "tool": "query_mutate",
+          "classification": "destructive",
+          "status": "pending",
+          "expected_sql": true
+        }
+      ],
+      "tool_statuses": [
+        "running",
+        "done"
+      ],
+      "decisions": [
+        {
+          "http_status": 200,
+          "grant_active": true,
+          "status": "approved"
+        }
+      ],
+      "error_events": 0,
+      "status": "PASS",
+      "public_ids_distinct_from_wire": [
+        true
+      ],
+      "stale_decisions_rejected": [
+        404
+      ],
+      "finish_reason": "stop",
+      "duration_seconds": 5.577
+    },
+    {
+      "mode": "CONTROLLED_READ",
+      "decision": null,
+      "tool_calls": [
+        {
+          "tool": "query_execute",
+          "classification": "read_only",
+          "status": "running",
+          "expected_sql": true
+        }
+      ],
+      "tool_statuses": [
+        "running",
+        "done"
+      ],
+      "decisions": [],
+      "error_events": 0,
+      "status": "PASS",
+      "public_ids_distinct_from_wire": [
+        true
+      ],
+      "finish_reason": "stop",
+      "duration_seconds": 7.1
+    },
+    {
+      "mode": "CONTROLLED_WRITE",
+      "decision": "deny",
+      "tool_calls": [
+        {
+          "tool": "query_mutate",
+          "classification": "destructive",
+          "status": "pending",
+          "expected_sql": true
+        }
+      ],
+      "tool_statuses": [
+        "denied"
+      ],
+      "decisions": [
+        {
+          "http_status": 200,
+          "grant_active": true,
+          "status": "denied"
+        }
+      ],
+      "error_events": 0,
+      "status": "PASS",
+      "public_ids_distinct_from_wire": [
+        true
+      ],
+      "stale_decisions_rejected": [
+        404,
+        404
+      ],
+      "finish_reason": "stop",
+      "duration_seconds": 6.137
+    },
+    {
+      "mode": "CONTROLLED_READ",
+      "decision": null,
+      "tool_calls": [
+        {
+          "tool": "query_execute",
+          "classification": "read_only",
+          "status": "running",
+          "expected_sql": true
+        }
+      ],
+      "tool_statuses": [
+        "running",
+        "done"
+      ],
+      "decisions": [],
+      "error_events": 0,
+      "status": "PASS",
+      "public_ids_distinct_from_wire": [
+        true
+      ],
+      "finish_reason": "stop",
+      "duration_seconds": 5.302
+    }
+  ],
+  "cleanup": [
+    {
+      "resource": "owned_grant",
+      "http_status": 204
+    },
+    {
+      "resource": "owned_thread",
+      "http_status": 204
+    },
+    {
+      "resource": "owned_grant",
+      "http_status": 204
+    },
+    {
+      "resource": "owned_thread",
+      "http_status": 204
+    },
+    {
+      "resource": "owned_provider_and_models",
+      "http_status": 204
+    },
+    {
+      "resource": "owned_login",
+      "http_status": 200
+    }
+  ],
+  "provider_requests": 16,
+  "application_tree_sha256": "61a077e69db6f24ceb4c2a6244abdbddd7ceea6a5f6ee9adbed88d73faf043f8",
+  "request_shapes": [
+    {
+      "stream": false,
+      "schema_name": "nova_turn_plan",
+      "tool_names": []
+    },
+    {
+      "stream": true,
+      "schema_name": null,
+      "tool_names": [
+        "query_mutate",
+        "catalog_search",
+        "search_knowledge",
+        "list_semantic_views"
+      ]
+    },
+    {
+      "stream": true,
+      "schema_name": null,
+      "tool_names": [
+        "query_mutate",
+        "catalog_search",
+        "search_knowledge",
+        "list_semantic_views"
+      ]
+    },
+    {
+      "stream": false,
+      "schema_name": null,
+      "tool_names": []
+    },
+    {
+      "stream": false,
+      "schema_name": "nova_turn_plan",
+      "tool_names": []
+    },
+    {
+      "stream": true,
+      "schema_name": null,
+      "tool_names": [
+        "query_execute",
+        "catalog_search",
+        "search_knowledge",
+        "list_semantic_views"
+      ]
+    },
+    {
+      "stream": true,
+      "schema_name": null,
+      "tool_names": [
+        "query_execute",
+        "catalog_search",
+        "search_knowledge",
+        "list_semantic_views"
+      ]
+    },
+    {
+      "stream": false,
+      "schema_name": null,
+      "tool_names": []
+    },
+    {
+      "stream": false,
+      "schema_name": "nova_turn_plan",
+      "tool_names": []
+    },
+    {
+      "stream": true,
+      "schema_name": null,
+      "tool_names": [
+        "query_mutate",
+        "catalog_search",
+        "search_knowledge",
+        "list_semantic_views"
+      ]
+    },
+    {
+      "stream": true,
+      "schema_name": null,
+      "tool_names": [
+        "query_mutate",
+        "catalog_search",
+        "search_knowledge",
+        "list_semantic_views"
+      ]
+    },
+    {
+      "stream": false,
+      "schema_name": null,
+      "tool_names": []
+    },
+    {
+      "stream": false,
+      "schema_name": "nova_turn_plan",
+      "tool_names": []
+    },
+    {
+      "stream": true,
+      "schema_name": null,
+      "tool_names": [
+        "query_execute",
+        "catalog_search",
+        "search_knowledge",
+        "list_semantic_views"
+      ]
+    },
+    {
+      "stream": true,
+      "schema_name": null,
+      "tool_names": [
+        "query_execute",
+        "catalog_search",
+        "search_knowledge",
+        "list_semantic_views"
+      ]
+    },
+    {
+      "stream": false,
+      "schema_name": null,
+      "tool_names": []
+    }
+  ],
+  "wire_protocol_checks": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+  ],
+  "completed_approval_ids": [
+    "d5d527c4-58cd-4035-8ff8-59b9e887c4a3",
+    "1e1db9fa-1111-46de-a4a7-63a72a72f16c"
+  ],
+  "finished_at": "2026-11-12T01:32:00.529978+00:00"
+}

