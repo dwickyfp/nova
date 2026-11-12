@@ -172,6 +172,12 @@ export function useAssistantTurn({
                });
              }
             if (event.type === "tool_call") {
+              if (
+                event.payload.classification === "read_only" &&
+                event.payload.status === "pending"
+              ) {
+                setGrantActive(false);
+              }
               const action = uiActionFromPreview(
                 event.payload.tool_name,
                 event.payload.sql_preview,

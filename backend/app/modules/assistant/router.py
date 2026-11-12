@@ -19,9 +19,9 @@ The scoping is enforced in SQL (``repository.py``), so one user's history can
 never be returned to another.
 
 Threads and messages are persisted in ``NOVA_SYSTEM`` and survive a reload.
-The read-only always-allow grant is kept in Redis per user and thread
+The read-only always-allow grant is kept in Redis per user, login and thread
 (``read_grants.py``), stamped with the active role and security-context
-version it was given under; any other context starts without it.
+version. Each turn reloads the grant, including expiry and revocation.
 """
 
 # ruff: noqa: B008 — `Depends(...)` in a default is FastAPI's dependency
@@ -573,7 +573,7 @@ async def set_grant(
         workspace_file_id=thread_row.get("workspace_file_id"),
     )
     await read_grants.grant(runtime, user, thread_id, body.always_allow_read_only)
-    return {"grant_active": runtime.consent.always_allow_read_only}
+    return {"grant_active": runtime.consent.covers("read_only", user=user)}
 
 
 @router.post("/threads/{thread_id}/messages")
@@ -917,7 +917,7 @@ async def resolve_tool_call(
                 detail="allow_session is only valid for a read-only tool call",
             )
         await read_grants.grant(thread, user, thread_id, True)
-        grant_active = True
+        grant_active = thread.consent.covers("read_only", user=user)
 
     resolved = consent_broker.resolve(
         tool_call_id,

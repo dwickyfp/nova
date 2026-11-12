@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="1" skipped="0" tests="3" time="3.151">
+    <testcase classname="tests.unit.test_agent_read_grant_policy" name="test_agent_policy_and_login_changes_recheck_the_current_approval[False]" time="1.145" />
+    <testcase classname="tests.unit.test_agent_read_grant_policy" name="test_agent_policy_and_login_changes_recheck_the_current_approval[True]" time="0.033" />
+    <testcase classname="tests.unit.test_agent_read_grant_policy" name="test_overlapping_logins_do_not_share_live_consent" time="0.024">
+      <failure type="failure">Diagnostic content omitted; see the verification narrative.</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

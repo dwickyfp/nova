@@ -39,7 +39,7 @@ monitoring/06-production-health.md,Production Health,frontend/src/features/docs/
 notebooks/01-create-and-run.md,Create and run a notebook,frontend/src/features/docs/content/notebooks/01-create-and-run.md,NOT_RUN,NOT_RUN,NOT_RUN,NOT_RUN,
 notebooks/02-sql-and-python.md,Use SQL results in Python,frontend/src/features/docs/content/notebooks/02-sql-and-python.md,NOT_RUN,NOT_RUN,NOT_RUN,NOT_RUN,
 notebooks/03-novaduck.md,Read and write with novaduck,frontend/src/features/docs/content/notebooks/03-novaduck.md,NOT_RUN,NOT_RUN,NOT_RUN,NOT_RUN,
-sql/01-sql-workspace.md,Use the SQL worksheet,frontend/src/features/docs/content/sql/01-sql-workspace.md,NOT_RUN,NOT_RUN,NOT_RUN,NOT_RUN,
+sql/01-sql-workspace.md,Use the SQL worksheet,frontend/src/features/docs/content/sql/01-sql-workspace.md,NOT_RUN,NOT_RUN,NOT_RUN,NOT_RUN,Partial pre-cutover read-grant verification: docs/reports/production-refactor/read-grants/README.md. Approval labels and new guidance viewed; live API/helper scope and controlled loop cases tested. Full worksheet release acceptance remains open.
 sql/02-databases-and-tables.md,Create databases and tables,frontend/src/features/docs/content/sql/02-databases-and-tables.md,NOT_RUN,NOT_RUN,NOT_RUN,NOT_RUN,
 sql/03-querying-data.md,Query data with SELECT,frontend/src/features/docs/content/sql/03-querying-data.md,NOT_RUN,NOT_RUN,NOT_RUN,NOT_RUN,
 sql/04-changing-data.md,"Add, change, and delete rows",frontend/src/features/docs/content/sql/04-changing-data.md,NOT_RUN,NOT_RUN,NOT_RUN,NOT_RUN,

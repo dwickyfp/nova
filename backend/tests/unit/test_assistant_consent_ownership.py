@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.core import deps as deps_module
+from app.core.exceptions import register_exception_handlers
 from app.modules.assistant.consent import ConsentBroker
 from app.modules.assistant.router import resolve_tool_call
 from app.modules.assistant.router import router as assistant_router
@@ -23,6 +24,14 @@ from app.modules.assistant.schemas import ConsentDecisionRequest
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import thread_store
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome, ToolRegistry
+
+
+def _signed_in(username):
+    return {
+        "username": username, "session_id": "session-" + username,
+        "active_role": "analyst", "roles": ["analyst"],
+        "assigned_roles": ["analyst"], "security_context_version": 1,
+    }
 
 
 class _FakeRepo:
@@ -112,16 +121,15 @@ class _FakeRepo:
 @pytest.fixture
 def app_and_broker(monkeypatch):
     app = FastAPI()
+    register_exception_handlers(app)
     app.include_router(assistant_router, prefix="/api/v1/assistant")
 
     current = {"username": "alice"}
 
     async def fake_current_user():
         return {
-            "username": current["username"],
-            "session_id": "sess-1",
-            "roles": [],
-            "active_role": None,
+            **_signed_in(current["username"]),
+            **current,
             "encrypted_password": "",
         }
 
@@ -216,7 +224,7 @@ async def test_owner_can_resolve_their_own_pending_call(monkeypatch):
     response = await resolve_tool_call(
         "victim-call",
         ConsentDecisionRequest(decision="allow_once"),
-        user={"username": "alice"},
+        user=_signed_in("alice"),
     )
 
     assert response.status == "approved"
@@ -236,7 +244,7 @@ async def test_foreign_user_gets_404_and_cannot_resolve_same_loop(monkeypatch):
         await resolve_tool_call(
             "victim-call",
             ConsentDecisionRequest(decision="allow_once"),
-            user={"username": "bob"},
+            user=_signed_in("bob"),
         )
     assert exc.value.status_code == 404
     assert future.done() is False
@@ -289,7 +297,7 @@ async def test_owner_sets_the_grant_on_their_own_conversation_only(monkeypatch):
     response = await resolve_tool_call(
         "victim-call",
         ConsentDecisionRequest(decision="allow_session"),
-        user={"username": "alice"},
+        user=_signed_in("alice"),
     )
 
     assert response.grant_active is True
@@ -319,7 +327,7 @@ async def test_allow_session_on_a_read_only_call_sets_the_grant(monkeypatch):
     response = await resolve_tool_call(
         "call-1",
         ConsentDecisionRequest(decision="allow_session"),
-        user={"username": "alice"},
+        user=_signed_in("alice"),
     )
 
     assert response.grant_active is True
@@ -350,7 +358,7 @@ async def test_agent_studio_allow_session_sets_the_same_read_only_grant(monkeypa
         "agent-1",
         "agent-call-1",
         ConsentDecisionRequest(decision="allow_session"),
-        user={"username": "alice"},
+        user=_signed_in("alice"),
     )
 
     assert response.grant_active is True
@@ -377,7 +385,7 @@ async def test_allow_session_on_a_non_read_only_call_is_rejected(monkeypatch, cl
         await resolve_tool_call(
             "call-1",
             ConsentDecisionRequest(decision="allow_session"),
-            user={"username": "alice"},
+            user=_signed_in("alice"),
         )
 
     assert exc.value.status_code == 400
@@ -388,7 +396,7 @@ async def test_allow_session_on_a_non_read_only_call_is_rejected(monkeypatch, cl
     response = await resolve_tool_call(
         "call-1",
         ConsentDecisionRequest(decision="allow_once"),
-        user={"username": "alice"},
+        user=_signed_in("alice"),
     )
     assert response.status == "approved"
     assert response.grant_active is False
@@ -471,6 +479,29 @@ def test_owner_sets_the_grant_on_a_fresh_thread(app_and_broker):
     assert resp.json() == {"grant_active": True}
     runtime = thread_store.get(thread.thread_id, user_name="alice")
     assert runtime.consent.always_allow_read_only is True
+
+
+@pytest.mark.parametrize("pending_call", [False, True])
+def test_read_only_approval_without_a_login_is_refused(app_and_broker, pending_call):
+    client, broker, current, repo = app_and_broker
+    thread = _seed_thread(repo, user_name="alice")
+    current["session_id"] = None
+    if pending_call:
+        _open_pending_classification_sync(
+            broker, "call-1", thread.thread_id, "alice", "read_only",
+        )
+        response = client.post(
+            "/api/v1/assistant/tool-calls/call-1/decision",
+            json={"decision": "allow_session"},
+        )
+        assert broker.owner_of("call-1") == (thread.thread_id, "alice")
+    else:
+        response = client.put(
+            f"/api/v1/assistant/threads/{thread.thread_id}/grant",
+            json={"always_allow_read_only": True},
+        )
+    assert response.status_code == 401
+    assert not thread_store.get(thread.thread_id, user_name="alice").consent.always_allow_read_only
 
 
 def test_owner_clears_the_grant_with_false(app_and_broker):

@@ -1,6 +1,6 @@
 {
   "python_files": 697,
-  "application_tree_sha256": "5442781494ba008256bcd7ab0f531aa922772f2ce48ec4538d079b95fc9d1ef8",
+  "application_tree_sha256": "4b21917a5ab23c7d68b9a9e9010c9a24d27bdafa0d37a60652d36b4c5df0b159",
   "references": {
     "AI_SEARCH_EVAL_RUNS": [
       "backend/app/modules/intelligence/search.py:1017",
@@ -6896,10 +6896,10 @@
         "AUDIT_SEMANTIC_QUERY_USAGE",
         "CONFIG_ASSISTANT_MESSAGES"
       ],
-      "source_file_sha256": "61bc48dec79f07cde9712f8b1757d02648bee276b302c75fa763ae25e5eb397f",
+      "source_file_sha256": "d3db8c4f96d2914c7e7eeb62a91fbea9abbc24c26cd8602a70edb2207bf36869",
       "callsite_sha256": "59440602e40eb13f1a5233362429ef091cc836a37c4c602babc297960280261e",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "Rechecked after replay repair: unchanged owner/active-role/security-version scoped control-history SELECT; fixed table destinations; see WAVE_F_REVIEW.md and agent-replay verification."
+      "review_notes": "Rechecked after read-grant isolation: unchanged owner/active-role/security-version scoped control-history SELECT; fixed table destinations; see WAVE_F_REVIEW.md and read-grants verification."
     },
     {
       "path": "backend/app/modules/agents/router.py",
@@ -6919,10 +6919,10 @@
         "AUDIT_SEMANTIC_QUERY_USAGE",
         "CONFIG_ASSISTANT_MESSAGES"
       ],
-      "source_file_sha256": "61bc48dec79f07cde9712f8b1757d02648bee276b302c75fa763ae25e5eb397f",
+      "source_file_sha256": "d3db8c4f96d2914c7e7eeb62a91fbea9abbc24c26cd8602a70edb2207bf36869",
       "callsite_sha256": "cd2be2c9d7c1e8ea94141b14323add7c94da12ad0704c19c5e0d856fd9a5e873",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "Rechecked after replay repair: unchanged owner/active-role/security-version scoped control-history SELECT; fixed table destinations; see WAVE_F_REVIEW.md and agent-replay verification."
+      "review_notes": "Rechecked after read-grant isolation: unchanged owner/active-role/security-version scoped control-history SELECT; fixed table destinations; see WAVE_F_REVIEW.md and read-grants verification."
     },
     {
       "path": "backend/app/modules/agents/rule_proposals.py",
@@ -22186,15 +22186,15 @@
           "backend/scripts/profile_metadata_constraints.py:47",
           "backend/scripts/profile_metadata_constraints.py:71"
         ],
+        "CONFIG_WORKSPACE_SHARES": [
+          "backend/scripts/profile_metadata_constraints.py:50",
+          "backend/scripts/profile_metadata_constraints.py:55"
+        ],
         "CONFIG_WORKSPACES": [
           "backend/scripts/profile_metadata_constraints.py:50",
           "backend/scripts/profile_metadata_constraints.py:59",
           "backend/scripts/profile_metadata_constraints.py:74",
           "backend/scripts/profile_metadata_constraints.py:80"
-        ],
-        "CONFIG_WORKSPACE_SHARES": [
-          "backend/scripts/profile_metadata_constraints.py:50",
-          "backend/scripts/profile_metadata_constraints.py:55"
         ],
         "CONFIG_USER_PREFERENCES": [
           "backend/scripts/profile_metadata_constraints.py:83",
@@ -22207,14 +22207,14 @@
           "backend/scripts/profile_metadata_constraints.py:101",
           "backend/scripts/profile_metadata_constraints.py:96"
         ],
+        "CONFIG_AI_PROVIDERS": [
+          "backend/scripts/profile_metadata_constraints.py:104",
+          "backend/scripts/profile_metadata_constraints.py:109"
+        ],
         "CONFIG_AI_MODELS": [
           "backend/scripts/profile_metadata_constraints.py:104",
           "backend/scripts/profile_metadata_constraints.py:114",
           "backend/scripts/profile_metadata_constraints.py:119"
-        ],
-        "CONFIG_AI_PROVIDERS": [
-          "backend/scripts/profile_metadata_constraints.py:104",
-          "backend/scripts/profile_metadata_constraints.py:109"
         ],
         "CONFIG_MODEL_ALIASES": [
           "backend/scripts/profile_metadata_constraints.py:109",
@@ -22453,10 +22453,10 @@
     },
     "backend/scripts/seed_city_rbac_demo.py": {
       "references": {
-        "CONFIG_AI_MODELS": [
+        "CONFIG_AI_PROVIDERS": [
           "backend/scripts/seed_city_rbac_demo.py:141"
         ],
-        "CONFIG_AI_PROVIDERS": [
+        "CONFIG_AI_MODELS": [
           "backend/scripts/seed_city_rbac_demo.py:141"
         ]
       },
@@ -22742,10 +22742,10 @@
     },
     "backend/scripts/smoke_auto_two_agents.py": {
       "references": {
-        "CONFIG_AI_MODELS": [
+        "CONFIG_AI_PROVIDERS": [
           "backend/scripts/smoke_auto_two_agents.py:44"
         ],
-        "CONFIG_AI_PROVIDERS": [
+        "CONFIG_AI_MODELS": [
           "backend/scripts/smoke_auto_two_agents.py:44"
         ],
         "CONFIG_AGENT_RUNS": [
@@ -32458,16 +32458,16 @@
         "CONFIG_DATAVIZ_PUBLICATIONS": [
           "backend/tests/unit/test_control_plane_inventory.py:99"
         ],
-        "NOT_A_TABLE": [
-          "backend/tests/unit/test_control_plane_inventory.py:84"
-        ],
         "EVERY": [
           "backend/tests/unit/test_control_plane_inventory.py:84"
         ],
-        "CONFIG_STREAM_SOURCES": [
-          "backend/tests/unit/test_control_plane_inventory.py:172"
+        "NOT_A_TABLE": [
+          "backend/tests/unit/test_control_plane_inventory.py:84"
         ],
         "AUDIT_STREAM_CLAIMS": [
+          "backend/tests/unit/test_control_plane_inventory.py:172"
+        ],
+        "CONFIG_STREAM_SOURCES": [
           "backend/tests/unit/test_control_plane_inventory.py:172"
         ],
         "AUDIT_LOG": [
@@ -33035,10 +33035,10 @@
       "system_calls": []
     }
   },
-  "source_commit": "08a91e0e2e6f461de4a1be03c16f986117952a7f",
+  "source_commit": "02195d1903c2af515a0dba2c5b0f7f202908bc21",
   "live": {
-    "started_at": "2026-11-11T23:26:48.346527+00:00",
-    "finished_at": "2026-11-11T23:26:53.608770+00:00",
+    "started_at": "2026-11-12T00:06:30.186499+00:00",
+    "finished_at": "2026-11-12T00:06:37.302279+00:00",
     "engine_version": "8.0.33",
     "session_timezone": "Asia/Jakarta",
     "global_timezone": "Asia/Jakarta",
@@ -33179,7 +33179,7 @@
         "ddl_sha256": "0022afcdc33d6ef7834ab8d2c495f37cc245647eb733fa1303c3692483216714"
       },
       "AUDIT_LOG": {
-        "rows": 381475,
+        "rows": 381487,
         "columns": [
           {
             "name": "log_id",
@@ -34583,7 +34583,7 @@
         "ddl_sha256": "da015235a325dbccbb5d49bc33a74a569bd5bf555873bf637d717174c45fc75d"
       },
       "CATALOG_SYNC_RUNS": {
-        "rows": 10512,
+        "rows": 10556,
         "columns": [
           {
             "name": "id",
@@ -41914,7 +41914,7 @@
         "ddl_sha256": "c8e70a423487225518aa1b789e2017d21abefb7e6b30d8de7dabded9ea32517a"
       },
       "CONFIG_TASK_GRAPH_RUNS": {
-        "rows": 541,
+        "rows": 543,
         "columns": [
           {
             "name": "id",
@@ -42030,7 +42030,7 @@
         "ddl_sha256": "bf781fd57a1ee96b51a2478ce9cafd8b7e5fcad26a1b20dd9b3b47572126588c"
       },
       "CONFIG_TASK_RUNS": {
-        "rows": 690,
+        "rows": 692,
         "columns": [
           {
             "name": "id",
@@ -43572,7 +43572,7 @@
         "ddl_sha256": "ca81df06e6007a490f7c03a738669e365572c694351c51909354846e96be34ad"
       },
       "QUERY_AUTOPILOT_JOBS": {
-        "rows": 7008,
+        "rows": 7045,
         "columns": [
           {
             "name": "id",

@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from app.modules.agents import releases
 from app.modules.agents.tools.ai_search import AISearchTool
 from app.modules.agents.tools.intelligence_views import FeatureLookupTool
+from app.modules.assistant.read_grants import stamp
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import AssistantThread
 from app.modules.assistant.tools import ToolInvocation, ToolRegistry
@@ -141,6 +142,7 @@ async def run_turn(boundary, provider, *, consent=None, grant=True, tools=None, 
         "reader", user=deepcopy(USER), agent_id="agent",
         release_manifest=deepcopy(boundary.manifest), steps=[],
     )
+    thread.consent.granted_under = stamp(context.user) if grant else None
     return TurnResult(frames=[frame async for frame in AssistantLoop(
         provider=provider, registry=registry, system_prompt="test", iterative=True,
         max_iterations=3,

@@ -1,0 +1,11 @@
+{
+  "observed_at": "2026-11-12T00:31:24.287587+00:00",
+  "http_status": 200,
+  "aggregate_thread_creation_counters": [
+    "nova_http_requests_total{method=\"POST\",route=\"/api/v1/assistant/threads\",status=\"201\"} 7.0",
+    "nova_http_requests_total{method=\"GET\",route=\"/api/v1/assistant/threads\",status=\"200\"} 1.0",
+    "nova_http_requests_total{method=\"GET\",route=\"/api/v1/assistant/threads\",status=\"401\"} 2.0",
+    "nova_http_requests_total{method=\"POST\",route=\"/api/v1/assistant/threads\",status=\"500\"} 1.0"
+  ],
+  "limitation": "Aggregate process counters cannot attribute one request failure."
+}

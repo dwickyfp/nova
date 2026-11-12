@@ -939,6 +939,7 @@ async def supervised_action(
             thread,
             resolve_consent,
             timeout_seconds=90,
+            user=user,
         )
         if allowed is True or isinstance(allowed, ConsentApproval):
             outcome = await business_action_tool.run(invocation, context)

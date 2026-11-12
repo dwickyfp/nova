@@ -1,45 +1,55 @@
-"""The "always allow read-only" grant of one Neva conversation, kept in Redis.
+"""Read-only conversation grants bound to one login and security context.
 
-The grant used to live only in the process, so a restart or a second worker
-asked again. It is now kept per user and thread, and stamped with the active
-role and security-context version it was given under: after a role switch, or
-when the session changes, it no longer applies and is removed. Redis owns this
-runtime state (root contract); without Redis the grant simply is not restored,
-so Neva asks again (fail closed).
+Redis retains the grant across process restarts until expiry or revocation.
+Every new turn reloads it; unavailable storage cannot restore approval. The
+approved control-plane migration will replace this runtime persistence with
+durable consent, without changing the shared inference loop.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from typing import Any
+
+from app.core.exceptions import InvalidCredentialsError
 
 logger = logging.getLogger(__name__)
 
 #: A grant lasts as long as a working day at most; the user can revoke it.
 GRANT_SECONDS = 12 * 3600
 
+_DELETE_MATCHING_GRANT = """
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+    return redis.call('DEL', KEYS[1])
+end
+return 0
+"""
 
-def _key(user_name: str, thread_id: str) -> str:
-    return f"nova:assistant:read-grant:{user_name}:{thread_id}"
+
+def _key(user_name: str, thread_id: str, session_id: str) -> str:
+    identity = json.dumps([user_name, thread_id, session_id], separators=(",", ":"))
+    return "nova:assistant:read-grant:v2:" + hashlib.sha256(identity.encode()).hexdigest()
 
 
-def stamp(user: dict[str, Any]) -> dict[str, Any]:
-    """The role and session version a grant belongs to.
-
-    A session without a valid active role gets an empty stamp; its turns are
-    refused by the loop anyway, and the stamp never matches a real role.
-    """
-    from app.modules.access_control.security_context import (
-        SecurityContext,
-        SecurityContextError,
-    )
+def stamp(user: dict[str, Any]) -> dict[str, Any] | None:
+    """An approval cannot outlive its login or active-role boundary."""
+    from app.modules.access_control.security_context import SecurityContext
 
     try:
         security = SecurityContext.from_session(user)
-    except SecurityContextError:
-        return {"role": None, "version": None}
-    return {"role": security.active_role, "version": security.security_context_version}
+    except (TypeError, ValueError):
+        return None
+    session_id = security.session_id
+    if not isinstance(session_id, str) or not session_id.strip() or len(session_id) > 64:
+        return None
+    return {
+        "principal": security.principal,
+        "role": security.active_role,
+        "version": security.security_context_version,
+        "session_id": session_id,
+    }
 
 
 def _redis() -> Any:
@@ -51,12 +61,13 @@ def _redis() -> Any:
 async def remember(user: dict[str, Any], thread_id: str, granted: bool) -> None:
     """Keep or drop the grant for this user, thread and security context."""
     redis = _redis()
-    if redis is None:
+    current = stamp(user)
+    if redis is None or current is None:
         return
-    key = _key(user["username"], thread_id)
+    key = _key(current["principal"], thread_id, current["session_id"])
     try:
         if granted:
-            await redis.set(key, json.dumps(stamp(user)), ex=GRANT_SECONDS)
+            await redis.set(key, json.dumps(current), ex=GRANT_SECONDS)
         else:
             await redis.delete(key)
     except Exception as exc:  # noqa: BLE001 - the in-process grant still applies
@@ -66,17 +77,18 @@ async def remember(user: dict[str, Any], thread_id: str, granted: bool) -> None:
 async def restore(user: dict[str, Any], thread_id: str) -> bool:
     """Whether a stored grant applies to the caller's current security context."""
     redis = _redis()
-    if redis is None:
+    current = stamp(user)
+    if redis is None or current is None:
         return False
-    key = _key(user["username"], thread_id)
+    key = _key(current["principal"], thread_id, current["session_id"])
     try:
         raw = await redis.get(key)
         if not raw:
             return False
-        if json.loads(raw) == stamp(user):
+        if json.loads(raw) == current:
             return True
-        # Given under another role or session version: never carried over.
-        await redis.delete(key)
+        # Do not erase a newer grant written while this stale value was read.
+        await redis.eval(_DELETE_MATCHING_GRANT, 1, key, raw)
     except Exception as exc:  # noqa: BLE001 - no grant is the safe answer
         logger.info("Read-only grant not restored: %s", type(exc).__name__)
     return False
@@ -85,22 +97,21 @@ async def restore(user: dict[str, Any], thread_id: str) -> bool:
 async def apply(runtime: Any, user: dict[str, Any], thread_id: str) -> None:
     """Start a turn with the grant that belongs to the caller's current context.
 
-    A grant given under another role or session version is dropped, in memory
-    and in Redis; a stored grant for this context is restored after a restart.
+    Reload even when this process remembers approval, so expiry and revocation
+    by another process take effect before the next turn.
     """
     current = stamp(user)
     consent = runtime.consent
-    if consent.always_allow_read_only and consent.granted_under != current:
-        consent.always_allow_read_only = False
-        consent.granted_under = None
-        await remember(user, thread_id, False)
-    if not consent.always_allow_read_only and await restore(user, thread_id):
-        consent.always_allow_read_only = True
-        consent.granted_under = current
+    granted = current is not None and await restore(user, thread_id) and stamp(user) == current
+    consent.always_allow_read_only = granted
+    consent.granted_under = current if granted else None
 
 
 async def grant(runtime: Any, user: dict[str, Any], thread_id: str, granted: bool) -> None:
     """Give or take back the grant for the caller's current context."""
+    current = stamp(user)
+    if granted and current is None:
+        raise InvalidCredentialsError("Sign in again before approving read-only tools")
     runtime.consent.always_allow_read_only = granted
-    runtime.consent.granted_under = stamp(user) if granted else None
+    runtime.consent.granted_under = current if granted else None
     await remember(user, thread_id, granted)

@@ -13,6 +13,7 @@ from app.modules.assistant.consent import ConsentApproval, ConsentBroker
 from app.modules.assistant.router import resolve_tool_call, resolve_upload_tool_call
 from app.modules.assistant.schemas import ConsentDecisionRequest
 from app.modules.assistant.state import thread_store
+from tests.unit.test_assistant_consent_ownership import _signed_in
 
 
 @pytest.mark.asyncio
@@ -29,14 +30,14 @@ async def test_secure_approval_requires_the_owner_and_exact_password_field(monke
         with pytest.raises(HTTPException) as missing:
             await resolve_tool_call(
                 "create-user", ConsentDecisionRequest(decision="allow_once"),
-                user={"username": "alice"},
+                user=_signed_in("alice"),
             )
         assert missing.value.status_code == 400
         with pytest.raises(HTTPException) as foreign:
             await resolve_tool_call(
                 "create-user", ConsentDecisionRequest(
                     decision="allow_once", secure_input={"password": "private-marker"}
-                ), user={"username": "bob"},
+                ), user=_signed_in("bob"),
             )
         assert foreign.value.status_code == 404
         with pytest.raises(HTTPException) as extra:
@@ -44,13 +45,13 @@ async def test_secure_approval_requires_the_owner_and_exact_password_field(monke
                 "create-user", ConsentDecisionRequest(
                     decision="allow_once",
                     secure_input={"password": "private-marker", "role": "admin"},
-                ), user={"username": "alice"},
+                ), user=_signed_in("alice"),
             )
         assert extra.value.status_code == 400
         response = await resolve_tool_call(
             "create-user", ConsentDecisionRequest(
                 decision="allow_once", secure_input={"password": "private-marker"}
-            ), user={"username": "alice"},
+            ), user=_signed_in("alice"),
         )
         approval = await future
         assert response.status == "approved"
@@ -109,24 +110,24 @@ async def test_stage_upload_approval_requires_owned_pending_call(monkeypatch) ->
         with pytest.raises(HTTPException) as foreign:
             await resolve_upload_tool_call(
                 "stage-upload", UploadFile(file=BytesIO(b"data"), filename="data.csv"),
-                user={"username": "bob"},
+                user=_signed_in("bob"),
             )
         assert foreign.value.status_code == 404
         with pytest.raises(HTTPException) as json_approval:
             await resolve_tool_call(
                 "stage-upload", ConsentDecisionRequest(decision="allow_once"),
-                user={"username": "alice"},
+                user=_signed_in("alice"),
             )
         assert json_approval.value.status_code == 400
         with pytest.raises(HTTPException) as traversal:
             await resolve_upload_tool_call(
                 "stage-upload", UploadFile(file=BytesIO(b"data"), filename="../data.csv"),
-                user={"username": "alice"},
+                user=_signed_in("alice"),
             )
         assert traversal.value.status_code == 400
         result = await resolve_upload_tool_call(
             "stage-upload", UploadFile(file=BytesIO(b"private-file-data"), filename="data.csv"),
-            user={"username": "alice"},
+            user=_signed_in("alice"),
         )
         approval = await future
         assert result.status == "approved"

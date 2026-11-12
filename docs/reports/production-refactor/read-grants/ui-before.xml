@@ -1,0 +1,56 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="vitest tests" tests="25" failures="1" errors="0" time="3.9017">
+  <testsuite name="src/features/assistant/use-assistant-turn.test.tsx" tests="25" failures="1" errors="0" skipped="0" time="3.9017">
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="prepends older messages and retains the pagination cursor in a snapshot" time="0.1345">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn &gt; parses only Neva UI action previews" time="0.0013">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn &gt; reports a completed UI action" time="0.009">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn &gt; blocks approval of a UI action while the workspace has local edits" time="0.0044000001">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn &gt; creates a thread lazily and streams deltas into the transcript" time="0.0553">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn &gt; sends the active worksheet context with the turn" time="0.0021000001">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn &gt; pins the selected model and provider on the turn" time="0.0010999999">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn &gt; does not open a stream when no thread can be resolved" time="0.0007">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn &gt; stops a running turn, keeps the partial answer and marks it cancelled" time="0.1085">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn &gt; records a transport error without throwing" time="0.0587">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn grant reset &gt; tracks the grant from an allow_session decision in the panel" time="0.2336000001">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn grant reset &gt; revokes the grant and clears its active state" time="0.1408">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn grant reset &gt; surfaces a failed reset instead of swallowing it" time="0.1333">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn grant reset &gt; switches to an existing thread and replays its stored messages" time="0.056">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn grant reset &gt; surfaces a failed thread load instead of leaving a blank panel" time="0.0015999999">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn grant reset &gt; clears the conversation and forgets the thread for a new chat" time="0.1055">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn grant reset &gt; revokes an active grant when starting a new chat" time="0.0548000002">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn approval mode &gt; reflects 'read_only' 'pending' approval from the server" time="2.4805999999">
+      <failure type="AssertionError">Diagnostic content omitted; see the verification narrative.</failure>
+    </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn approval mode &gt; reflects 'read_only' 'running' approval from the server" time="0.0546000001">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn approval mode &gt; reflects 'destructive' 'pending' approval from the server" time="0.0527">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn approval mode &gt; reflects 'session_change' 'pending' approval from the server" time="0.0538999999">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn approval mode &gt; presets the conversation grant and reflects it in the mode" time="0.0526000001">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn approval mode &gt; clears the grant when switching back to ask" time="0.1028999999">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn approval mode &gt; leaves the mode unchanged and surfaces the error when persisting fails" time="0.0012">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn approval mode &gt; aborts the mode change when no thread can be resolved" time="0.0004000001">
+        </testcase>
+  </testsuite>
+</testsuites>

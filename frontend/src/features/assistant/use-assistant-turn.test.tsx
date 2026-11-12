@@ -513,6 +513,33 @@ describe("useAssistantTurn grant reset", () => {
 });
 
 describe("useAssistantTurn approval mode", () => {
+  it.each([
+    { classification: "read_only", status: "pending", expected: "ask" },
+    { classification: "read_only", status: "running", expected: "allow_read_only" },
+    { classification: "destructive", status: "pending", expected: "allow_read_only" },
+    { classification: "session_change", status: "pending", expected: "allow_read_only" },
+  ])("reflects $classification $status approval from the server", async ({ classification, status, expected }) => {
+    setGrant.mockResolvedValue(true);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(sseResponse([
+      `event: tool_call\ndata: ${JSON.stringify({
+        tool_call_id: "call-1",
+        tool_name: "query_execute",
+        sql_preview: "SELECT 1",
+        classification,
+        status,
+      })}\n\n`,
+      'event: done\ndata: {"message_id":"m","finish_reason":"stop"}\n\n',
+    ]));
+    const holder: { current: Turn | null } = { current: null };
+    await render(<Harness holder={holder} />);
+    await holder.current!.setApprovalMode("allow_read_only");
+    await expect.poll(() => holder.current!.approvalMode).toBe("allow_read_only");
+
+    await holder.current!.sendMessage("Check the query");
+
+    await expect.poll(() => holder.current!.approvalMode).toBe(expected);
+  });
+
   it("presets the conversation grant and reflects it in the mode", async () => {
     setGrant.mockResolvedValue(true);
     const holder: { current: Turn | null } = { current: null };

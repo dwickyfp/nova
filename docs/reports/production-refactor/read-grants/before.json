@@ -1,0 +1,7 @@
+{
+  "scope": "Controlled helper calls against existing Redis; synthetic identities, no provider or tool execution",
+  "different_session_restored_grant": true,
+  "different_session_in_memory_grant": true,
+  "expected": false,
+  "owned_keys_after_cleanup": 0
+}

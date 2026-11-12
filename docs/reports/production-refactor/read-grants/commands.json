@@ -1,0 +1,435 @@
+{
+  "source_parent_commit": "02195d1903c2af515a0dba2c5b0f7f202908bc21",
+  "attempts": [
+    {
+      "attempt": "initial-regressions",
+      "result": {
+        "tests": 17,
+        "failures": 11,
+        "errors": 0,
+        "skipped": 0,
+        "time_seconds": 1.247
+      },
+      "note": "Eleven session, expiry, malformed-context and remote-revocation regressions failed before the storage fix."
+    },
+    {
+      "attempt": "focused-initial",
+      "result": {
+        "tests": 53,
+        "failures": 5,
+        "errors": 0,
+        "skipped": 0,
+        "time_seconds": 4.227
+      },
+      "note": "Five happy-path consent fixtures lacked a valid login/role. They were corrected without weakening their assertions."
+    },
+    {
+      "attempt": "focused-corrected",
+      "result": {
+        "tests": 55,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "time_seconds": 4.441
+      },
+      "note": "Corrected fixtures pass before the additional policy and overlap cases."
+    },
+    {
+      "attempt": "policy-fixtures",
+      "result": {
+        "tests": 59,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "time_seconds": 3.511
+      },
+      "note": "Includes explicit policy changes and invalid-context HTTP refusal."
+    },
+    {
+      "attempt": "overlap-before",
+      "result": {
+        "tests": 3,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0,
+        "time_seconds": 3.151
+      },
+      "note": "A second login changes the shared in-memory holder while the first turn is paused; the first turn incorrectly inherits approval."
+    },
+    {
+      "attempt": "runtime-scope-attempt",
+      "result": {
+        "tests": 63,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0,
+        "time_seconds": 5.168
+      },
+      "note": "A temporary per-context ThreadStore approach changed a missing-login response to 404. This approach was discarded; the final implementation validates context at every tool gate and prefetch boundary."
+    },
+    {
+      "attempt": "dispatch-focused",
+      "result": {
+        "tests": 63,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "time_seconds": 8.357
+      },
+      "note": "Final route, grant, replay, Mission and secure-approval focused cases."
+    },
+    {
+      "attempt": "trajectory-fixtures",
+      "result": {
+        "tests": 349,
+        "failures": 3,
+        "errors": 0,
+        "skipped": 0,
+        "time_seconds": 25.171
+      },
+      "note": "Three existing trajectories used unstamped grants; fixtures now supply a valid login and explicit approval stamp while preserving their expected tool and approval assertions."
+    },
+    {
+      "attempt": "parent-dispatch",
+      "result": {
+        "tests": 5,
+        "failures": 4,
+        "errors": 0,
+        "skipped": 0,
+        "time_seconds": 1.695
+      },
+      "note": "The final five shared-loop trajectories ran against parent 02195 code in an isolated process: four context-transfer regressions fail, matching context passes. Server/source untouched."
+    },
+    {
+      "attempt": "dispatch-trajectories",
+      "result": {
+        "tests": 57,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "time_seconds": 3.754
+      },
+      "note": "Final shared-loop dispatch/prefetch scope, role switching and custom SQL trajectories."
+    },
+    {
+      "attempt": "corrected-unit-fixtures",
+      "result": {
+        "tests": 221,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "time_seconds": 2.922
+      },
+      "note": "Four cases from the full run depended on unstamped approval fixtures. Two fixture files now bind explicit approval to their signed-in actor; all 221 affected cases pass without changing assertions."
+    },
+    {
+      "attempt": "ui-before",
+      "result": {
+        "tests": 25,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0,
+        "time_seconds": 3.902
+      },
+      "note": "A pending read-only approval left the picker showing the obsolete active grant; one regression fails and 24 cases pass."
+    },
+    {
+      "attempt": "ui-fixtures",
+      "result": {
+        "tests": 31,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "time_seconds": 3.945
+      },
+      "note": "The full frontend run exposed an order-dependent table-hover mock. The fixture now responds by table URL; all 31 affected browser cases pass with original assertions."
+    },
+    {
+      "attempt": "ui-final",
+      "result": {
+        "tests": 25,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "time_seconds": 1.395
+      },
+      "note": "A pending read-only approval resets the picker. Running reads and pending writes/session changes preserve the read grant; all 25 cases pass."
+    }
+  ],
+  "application_tree_sha256": "4b21917a5ab23c7d68b9a9e9010c9a24d27bdafa0d37a60652d36b4c5df0b159",
+  "source_files_sha256": {
+    "backend/app/modules/agents/router.py": "d3db8c4f96d2914c7e7eeb62a91fbea9abbc24c26cd8602a70edb2207bf36869",
+    "backend/app/modules/assistant/read_grants.py": "241784b21e7d495a1ab984b4385d725dac4b181115ebf5d227edd9f700ff41e9",
+    "backend/app/modules/assistant/router.py": "fa0b531a9d747af8f388c01e9140eb2f881a0104be51377090f2981400cab3ea",
+    "backend/app/modules/assistant/service.py": "898c0f28dcf5cedfef1946f302b4650a7293705c1e9c88a0b4f4ddce9611cd05",
+    "backend/app/modules/assistant/state.py": "bca7b2f8563407403b7f1f442d8cf9dc3d2033812418fc00e51a9bd621bd1f8e",
+    "backend/app/modules/assistant/tool_gate.py": "a9de838af6caabe038a23884e3e20837abf39d050f5ac4e0f7374de11c1fdc97",
+    "backend/app/modules/intelligence/actions.py": "b3e2b2dc2c734253c3ea5f29bae84e0ce81ceffb77b075cf2118fd2b689f62d4",
+    "backend/tests/eval/test_assistant_role_switch.py": "a241707ff6064d93f66b66117b46e1b28bce0d98f6163eb7640aef6b66a15b02",
+    "backend/tests/eval/test_custom_sql_tools_trajectory.py": "0e0739cd8166fe11c75993066824397c5a29094b1410844cc79af2e9ad1d1558",
+    "backend/tests/eval/test_read_grant_context.py": "758fbea8294b49a68cba2984e08cb329f5d854ca9a12e18e97d10d8bc198d1a4",
+    "backend/tests/unit/test_agent_read_grant_policy.py": "ad6b49f0e599afb7880759cc99b2b188964f4182be1f78052c56044afabe7808",
+    "backend/tests/unit/test_assistant_consent_ownership.py": "3a2046a09e04d969e21f2e2e126a80d44ff56a28eaa1b471a2914462a186c9ba",
+    "backend/tests/unit/test_assistant_secure_approval.py": "639e2ee17556d8c623d7c97fb70a510f6f0cb107462e347e565747d53e81e3b0",
+    "backend/tests/unit/test_assistant_stage_c.py": "6b1625c77420ec2100a8c7d6d97c47e50fd31043e05a9886ec061efa921c4059",
+    "backend/tests/unit/test_neva_read_grants.py": "28c79a8d989f141eb285922a3eaba87c49aef272c4e91f99f9120c53c43d0f97",
+    "backend/tests/unit/test_release_runtime_resource_boundary.py": "484c9964cc308a9e6a1d65e837641d5eca85a8d53035b91f77753b8067c6885d",
+    "frontend/src/features/assistant/use-assistant-turn.test.tsx": "a73cd2dd999082a39f9f2ebf4bbb57bff8a451b62cbf6c48a21e15e7108dd96f",
+    "frontend/src/features/assistant/use-assistant-turn.ts": "a4ad0738605da544dd479ba777edd6c40a9d5cbca06ee7f04645cfe758f56a24",
+    "frontend/src/features/docs/content/sql/01-sql-workspace.md": "2723cf62af375a34ce7b877ceedbfeaf306c98a050bb0662ce0c0aff9f78b18e",
+    "frontend/src/features/workspaces/table-item-with-popover.test.tsx": "614f0040555f0199e39837cc2101f51c0051425e55f0f889593d179d80d74f87"
+  },
+  "gates": {
+    "evals": {
+      "command": [
+        "uv",
+        "run",
+        "pytest",
+        "tests/eval",
+        "-q",
+        "--junit-xml=/tmp/nova-read-grants-eval-final.xml"
+      ],
+      "working_directory": "backend",
+      "started_at": "2026-11-11T23:57:46.209214+00:00",
+      "exit_code": 0,
+      "ended_at": "2026-11-11T23:58:14.456367+00:00"
+    },
+    "scorecard": {
+      "command": [
+        "uv",
+        "run",
+        "python",
+        "-m",
+        "tests.eval.report"
+      ],
+      "working_directory": "backend",
+      "started_at": "2026-11-11T23:58:14.459374+00:00",
+      "exit_code": 0,
+      "ended_at": "2026-11-11T23:58:16.914456+00:00"
+    },
+    "benchmarks": {
+      "command": [
+        "uv",
+        "run",
+        "pytest",
+        "tests/benchmark/test_assistant_loop.py",
+        "tests/benchmark/test_assistant_engine.py",
+        "-q",
+        "--junit-xml=/tmp/nova-read-grants-benchmark.xml"
+      ],
+      "working_directory": "backend",
+      "started_at": "2026-11-11T23:58:16.914874+00:00",
+      "exit_code": 0,
+      "ended_at": "2026-11-11T23:58:28.181031+00:00"
+    },
+    "boundary": {
+      "command": [
+        "uv",
+        "run",
+        "python",
+        "scripts/check_user_data_system_access.py"
+      ],
+      "working_directory": "backend",
+      "started_at": "2026-11-11T23:58:28.181817+00:00",
+      "exit_code": 0,
+      "ended_at": "2026-11-11T23:58:28.335433+00:00"
+    },
+    "frontend-lint": {
+      "command": [
+        "pnpm",
+        "lint"
+      ],
+      "working_directory": "frontend",
+      "started_at": "2026-11-12T00:27:10.398103+00:00",
+      "previous_attempt": {
+        "command": [
+          "pnpm",
+          "lint"
+        ],
+        "working_directory": "frontend",
+        "started_at": "2026-11-12T00:20:44.550135+00:00",
+        "previous_passing_attempt": {
+          "command": [
+            "pnpm",
+            "lint"
+          ],
+          "working_directory": "frontend",
+          "started_at": "2026-11-11T23:58:28.336367+00:00",
+          "exit_code": 0,
+          "ended_at": "2026-11-11T23:58:55.281655+00:00"
+        },
+        "exit_code": 0,
+        "ended_at": "2026-11-12T00:21:02.511498+00:00"
+      },
+      "exit_code": 0,
+      "ended_at": "2026-11-12T00:27:40.278534+00:00"
+    },
+    "frontend-build": {
+      "command": [
+        "pnpm",
+        "build"
+      ],
+      "working_directory": "frontend",
+      "started_at": "2026-11-12T00:27:40.303328+00:00",
+      "previous_attempt": {
+        "command": [
+          "pnpm",
+          "build"
+        ],
+        "working_directory": "frontend",
+        "started_at": "2026-11-12T00:21:02.512535+00:00",
+        "previous_passing_attempt": {
+          "command": [
+            "pnpm",
+            "build"
+          ],
+          "working_directory": "frontend",
+          "started_at": "2026-11-11T23:58:55.285497+00:00",
+          "exit_code": 0,
+          "ended_at": "2026-11-11T23:59:52.185859+00:00"
+        },
+        "exit_code": 0,
+        "ended_at": "2026-11-12T00:21:59.659271+00:00"
+      },
+      "exit_code": 0,
+      "ended_at": "2026-11-12T00:28:54.184260+00:00"
+    },
+    "frontend-coverage": {
+      "command": [
+        "pnpm",
+        "test:coverage"
+      ],
+      "working_directory": "frontend",
+      "started_at": "2026-11-12T00:28:54.197143+00:00",
+      "previous_attempt": {
+        "command": [
+          "pnpm",
+          "test:coverage"
+        ],
+        "working_directory": "frontend",
+        "started_at": "2026-11-12T00:21:59.669664+00:00",
+        "previous_passing_attempt": {
+          "command": [
+            "pnpm",
+            "test:coverage"
+          ],
+          "working_directory": "frontend",
+          "started_at": "2026-11-11T23:59:52.208331+00:00",
+          "exit_code": 0,
+          "ended_at": "2026-11-12T00:02:52.243559+00:00"
+        },
+        "exit_code": 1,
+        "ended_at": "2026-11-12T00:25:13.484689+00:00"
+      },
+      "exit_code": 0,
+      "ended_at": "2026-11-12T00:32:04.816691+00:00"
+    }
+  },
+  "interrupted_unit_attempt": {
+    "passed_before_interrupt": 7273,
+    "complete": false,
+    "reason": "Interrupted after the overlapping-login regression was reproduced; a new full run follows the dispatch fix."
+  },
+  "failed_full_unit_attempt": {
+    "tests": 10836,
+    "failures": 4,
+    "errors": 0,
+    "skipped": 0,
+    "time_seconds": 965.594,
+    "failures_reconciled_by_fixture_changes": [
+      "tests.unit.test_assistant_stage_c::test_read_only_call_is_covered_by_an_allow_session_grant",
+      "tests.unit.test_assistant_stage_c::test_result_error_never_reaches_the_sse_frame",
+      "tests.unit.test_release_runtime_resource_boundary::test_prefetched_resource_cannot_bypass_release_recheck[search]",
+      "tests.unit.test_release_runtime_resource_boundary::test_prefetched_resource_cannot_bypass_release_recheck[feature]"
+    ]
+  },
+  "unit": {
+    "tests": 10836,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "time_seconds": 1224.033,
+    "command": "uv run pytest tests/unit --cov=app --cov-branch --cov-report=term-missing --cov-report=xml:/tmp/nova-read-grants-coverage-verified.xml --junit-xml=/tmp/nova-read-grants-unit-verified.xml"
+  },
+  "coverage": {
+    "version": "7.14.1",
+    "timestamp": "1794443736890",
+    "lines-valid": "131509",
+    "lines-covered": "87599",
+    "line-rate": "0.6661",
+    "branches-valid": "32986",
+    "branches-covered": "19806",
+    "branch-rate": "0.6004",
+    "complexity": "0"
+  },
+  "trajectories": {
+    "tests": 354,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "time_seconds": 20.229
+  },
+  "benchmarks": {
+    "tests": 12,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 1,
+    "time_seconds": 8.272,
+    "skip_reason": "The optional engine benchmark requires a container labelled with this checkout/backend as Compose working directory. Existing dev project has a different working directory; no stack was created or reset."
+  },
+  "mypy": {
+    "passed": true,
+    "existing_notes": 3,
+    "command": "uv run mypy app --no-error-summary"
+  },
+  "ruff": {
+    "passed": true,
+    "changed_python_files": 109
+  },
+  "scorecard": {
+    "scenarios_passed": 54,
+    "scenarios_total": 54,
+    "checks_passed": 189,
+    "checks_total": 189
+  },
+  "frontend": {
+    "tests_passed": 1609,
+    "files_passed": 194,
+    "lint_errors": 0,
+    "existing_lint_warnings": 32
+  },
+  "failed_frontend_attempt": {
+    "tests_passed": 1608,
+    "tests_failed": 1,
+    "files_passed": 193,
+    "files_failed": 1,
+    "duration_seconds": 181.96,
+    "failure": "table-item-with-popover: first table remained on Loading columns because the order-based fixture handed it the pending second-table response",
+    "fixture_change": "Route mock responses by table URL without changing assertions or application behavior."
+  },
+  "docs": {
+    "browser_tests_passed": 15,
+    "viewed": "/docs/sql/sql-workspace#choose-when-neva-asks-for-approval",
+    "examples_added_or_changed": false
+  },
+  "inventory": {
+    "system_calls_reviewed": 875,
+    "feature_rows_preserved": 759,
+    "source_bindings_rechecked": 2,
+    "release_acceptance_status_changed": false,
+    "first_live_attempt": "FAIL: engine query lost connection before inventory publication",
+    "repeat": "PASS: 157 existing metadata tables inspected after fixture cleanup; not a consistent migration snapshot"
+  },
+  "live_provider": {
+    "artifact": "live-provider.json",
+    "passed": 4,
+    "failed": 2,
+    "complete": true
+  },
+  "live_attempts": [
+    "live.json",
+    "live-final.json",
+    "live-repeat.json"
+  ],
+  "cleanup_helper_correction": "First reconciliation helper used a nonexistent Client.request method. Corrected to Client.call; recovered its one login from the exact audit time interval and logged it out. No user-owned session or conversation was removed."
+}

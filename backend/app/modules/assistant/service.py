@@ -2305,7 +2305,7 @@ class AssistantLoop:
 
             from app.modules.assistant.tool_gate import needs_tool_consent, resolve_tool_consent
 
-            needs_prompt = needs_tool_consent(tool, classification, thread)
+            needs_prompt = needs_tool_consent(tool, classification, thread, user=context.user)
 
             # Register consent before publishing the card: a stream consumer can
             # await journal I/O before advancing this generator again.
@@ -2327,6 +2327,7 @@ class AssistantLoop:
                             thread,
                             lambda *_, pending=pending_consent: pending,
                             timeout_seconds=CONSENT_TIMEOUT_SECONDS,
+                            user=context.user,
                         ),
                         timeout=CONSENT_TIMEOUT_SECONDS,
                     )
@@ -3142,7 +3143,7 @@ class AssistantLoop:
 
         if invocation_classification(tool, invocation) != "read_only":
             return None
-        if requires_consent(tool) and not thread.consent.covers("read_only"):
+        if requires_consent(tool) and not thread.consent.covers("read_only", user=context.user):
             return None
         schema = getattr(tool, "parameters", None) or {}
         if validate_json_arguments(schema, invocation.arguments):

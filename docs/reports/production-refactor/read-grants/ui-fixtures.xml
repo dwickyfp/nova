@@ -1,0 +1,69 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="vitest tests" tests="31" failures="0" errors="0" time="3.9452">
+  <testsuite name="src/features/assistant/use-assistant-turn.test.tsx" tests="25" failures="0" errors="0" skipped="0" time="1.5872">
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="prepends older messages and retains the pagination cursor in a snapshot" time="0.1716999998">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn &gt; parses only Neva UI action previews" time="0.0020999999">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn &gt; reports a completed UI action" time="0.0218">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn &gt; blocks approval of a UI action while the workspace has local edits" time="0.004">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn &gt; creates a thread lazily and streams deltas into the transcript" time="0.0572">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn &gt; sends the active worksheet context with the turn" time="0.0030999999">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn &gt; pins the selected model and provider on the turn" time="0.0016000001">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn &gt; does not open a stream when no thread can be resolved" time="0.0008">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn &gt; stops a running turn, keeps the partial answer and marks it cancelled" time="0.1088">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn &gt; records a transport error without throwing" time="0.0666999998">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn grant reset &gt; tracks the grant from an allow_session decision in the panel" time="0.2768">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn grant reset &gt; revokes the grant and clears its active state" time="0.1203">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn grant reset &gt; surfaces a failed reset instead of swallowing it" time="0.1195">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn grant reset &gt; switches to an existing thread and replays its stored messages" time="0.055">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn grant reset &gt; surfaces a failed thread load instead of leaving a blank panel" time="0.0012">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn grant reset &gt; clears the conversation and forgets the thread for a new chat" time="0.1040999999">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn grant reset &gt; revokes an active grant when starting a new chat" time="0.0524000001">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn approval mode &gt; reflects 'read_only' 'pending' approval from the server" time="0.1043999999">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn approval mode &gt; reflects 'read_only' 'running' approval from the server" time="0.0526000001">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn approval mode &gt; reflects 'destructive' 'pending' approval from the server" time="0.0522">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn approval mode &gt; reflects 'session_change' 'pending' approval from the server" time="0.0530999999">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn approval mode &gt; presets the conversation grant and reflects it in the mode" time="0.0515">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn approval mode &gt; clears the grant when switching back to ask" time="0.1035">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn approval mode &gt; leaves the mode unchanged and surfaces the error when persisting fails" time="0.0010999999">
+        </testcase>
+    <testcase classname="src/features/assistant/use-assistant-turn.test.tsx" name="useAssistantTurn approval mode &gt; aborts the mode change when no thread can be resolved" time="0.0004000001">
+        </testcase>
+  </testsuite>
+  <testsuite name="src/features/workspaces/table-item-with-popover.test.tsx" tests="6" failures="0" errors="0" skipped="0" time="2.358">
+    <testcase classname="src/features/workspaces/table-item-with-popover.test.tsx" name="workspace table hover card &gt; replaces the active card immediately and keeps one height across tables and loading states" time="1.3695999999">
+        </testcase>
+    <testcase classname="src/features/workspaces/table-item-with-popover.test.tsx" name="workspace table hover card &gt; keeps both scroll axes inside the same card size at 320 px, loading preview only on demand" time="0.2718000002">
+        </testcase>
+    <testcase classname="src/features/workspaces/table-item-with-popover.test.tsx" name="workspace table hover card &gt; keeps both scroll axes inside the same card size at 1280 px, loading preview only on demand" time="0.2655999999">
+        </testcase>
+    <testcase classname="src/features/workspaces/table-item-with-popover.test.tsx" name="workspace table hover card &gt; quotes identifiers, handles null values and caps the rendered preview at 10 rows" time="0.1237">
+        </testcase>
+    <testcase classname="src/features/workspaces/table-item-with-popover.test.tsx" name="workspace table hover card &gt; shows loading, engine failure and an empty result after retry without resizing" time="0.2149000001">
+        </testcase>
+    <testcase classname="src/features/workspaces/table-item-with-popover.test.tsx" name="workspace table hover card &gt; opens by keyboard and switches tabs with arrow keys" time="0.1113">
+        </testcase>
+  </testsuite>
+</testsuites>

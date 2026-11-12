@@ -95,7 +95,7 @@ from app.modules.agents.versions import (
     revision_id,
     validate_publication_dependencies,
 )
-from app.modules.assistant import events
+from app.modules.assistant import events, read_grants
 from app.modules.assistant.attachments import attachment_prompt
 from app.modules.assistant.consent import ConsentApproval, consent_broker
 from app.modules.assistant.context import ContextManager
@@ -2159,16 +2159,17 @@ async def send_agent_message(
         title=thread_row["title"],
         workspace_file_id=thread_row.get("workspace_file_id"),
     )
+    await read_grants.apply(runtime, user, thread_id)
     # Apply the agent's HITL policy to this conversation's consent holder. An
     # ``auto_read_only`` agent pre-grants read-only tools so a business question
     # does not stall waiting for an approval no client will send; a destructive
     # call is still never covered (the grant is read-only-only), and
     # ``ask_every_tool`` leaves the grant off so every call prompts.
-    # ``auto_read_only`` establishes a grant. ``ask_every_tool`` does not clear
-    # an existing user-issued ``allow_session`` grant; it merely starts without
-    # one. Clearing that grant is an explicit conversation action.
+    # User-issued approval is restored only for this login and security context;
+    # the policy grant is recomputed each turn and is never stored as approval.
     if agent.get("policy") == "auto_read_only":
         runtime.consent.always_allow_read_only = True
+        runtime.consent.granted_under = read_grants.stamp(user)
     history = await assistant_repository.list_messages(thread_id, user_name=user_name)
     from app.modules.agents.personal_skills import SKILL_AUTHORING_PROMPT, is_skill_authoring
     from app.modules.assistant.tools import ToolRegistry
@@ -2778,8 +2779,8 @@ async def resolve_agent_tool_call(
                 status_code=400,
                 detail="allow_session is only valid for a read-only tool call",
             )
-        runtime.consent.always_allow_read_only = True
-        grant_active = True
+        await read_grants.grant(runtime, user, thread_id, True)
+        grant_active = runtime.consent.covers("read_only", user=user)
 
     resolved = consent_broker.resolve(tool_call_id, True, user_name=user["username"])
     return ConsentDecisionResponse(

@@ -1,0 +1,44 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="11" skipped="0" tests="17" time="1.247">
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_grant_comes_back_after_a_restart" time="0.876" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_another_role_or_session_never_inherits_it[changed0]" time="0.001" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_another_role_or_session_never_inherits_it[changed1]" time="0.001" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_revoking_removes_it_everywhere" time="0.002" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_without_redis_nothing_is_restored" time="0.001" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_grants_are_per_user_and_thread" time="0.002" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_new_login_does_not_inherit_or_erase_another_sessions_grant[False]" time="0.001">
+      <failure type="failure">Diagnostic content omitted; see the verification narrative.</failure>
+    </testcase>
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_new_login_does_not_inherit_or_erase_another_sessions_grant[True]" time="0.001">
+      <failure type="failure">Diagnostic content omitted; see the verification narrative.</failure>
+    </testcase>
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_expired_or_remotely_revoked_grant_is_not_retained_in_memory[False]" time="0.001">
+      <failure type="failure">Diagnostic content omitted; see the verification narrative.</failure>
+    </testcase>
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_expired_or_remotely_revoked_grant_is_not_retained_in_memory[True]" time="0.001">
+      <failure type="failure">Diagnostic content omitted; see the verification narrative.</failure>
+    </testcase>
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_legacy_grant_without_session_binding_is_not_restored" time="0.001">
+      <failure type="failure">Diagnostic content omitted; see the verification narrative.</failure>
+    </testcase>
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_grant_requires_a_valid_session_security_context[changed0]" time="0.000">
+      <failure type="failure">Diagnostic content omitted; see the verification narrative.</failure>
+    </testcase>
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_grant_requires_a_valid_session_security_context[changed1]" time="0.000">
+      <failure type="failure">Diagnostic content omitted; see the verification narrative.</failure>
+    </testcase>
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_grant_requires_a_valid_session_security_context[changed2]" time="0.000">
+      <failure type="failure">Diagnostic content omitted; see the verification narrative.</failure>
+    </testcase>
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_grant_requires_a_valid_session_security_context[changed3]" time="0.000">
+      <failure type="failure">Diagnostic content omitted; see the verification narrative.</failure>
+    </testcase>
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_grant_requires_a_valid_session_security_context[changed4]" time="0.001">
+      <failure type="failure">Diagnostic content omitted; see the verification narrative.</failure>
+    </testcase>
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_grant_requires_a_valid_session_security_context[changed5]" time="0.001">
+      <failure type="failure">Diagnostic content omitted; see the verification narrative.</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

@@ -867,3 +867,59 @@ its full-release acceptance status. No provider request was made in this phase.
 PG journals, durable consent, runtime separation, remaining domain migrations,
 production Compose, recovery, cutover and complete feature acceptance remain
 open. Live-embedding and original large-load/soak waivers are unchanged.
+
+## Read-only approval boundary checkpoint
+
+Approval previously matched only role and a version that resets at login. The
+initial live Redis probe reproduced transfer to another login, and new unit
+cases also exposed retained approval after expiry/revocation. A subsequent
+concurrent-turn test showed that storage isolation alone did not protect the
+shared runtime consent holder. The final change validates principal, login,
+role and version at tool dispatch, supervised execution and speculative reads,
+and reloads persisted approval before each new turn. Agent policy approval is
+recomputed each turn without turning it into persisted user consent.
+
+The [evidence packet](../../reports/production-refactor/read-grants/README.md)
+retains the failures and fixture corrections. Four final shared-loop trajectories
+fail against isolated parent code; the final controlled suite passes all 354
+trajectories. Final live API/helper verification passes 16 assertions without
+model/tool calls. One earlier creation request timed out after committing its
+synthetic conversation; reconciliation found and deleted it before repetition.
+The failure remains open as dependency-reliability evidence, with cause
+unverified. All fixture grants/conversations and owned test logins were cleaned.
+
+The final full backend unit/coverage run passes 10,836 cases without skips.
+Full mypy, Ruff on 109 changed Python files, the 54-scenario/189-check scorecard,
+the data-access boundary scan and frontend lint/build pass. Frontend coverage
+passes 1,609 tests and the docs browser suite passes 15. The first frontend run
+retains one order-dependent table-hover fixture failure; URL-bound fixture
+responses preserve all existing assertions and pass the full rerun. Eleven offline benchmark
+cases pass; the optional engine round-trip case skips because its working-dir
+guard does not accept the existing dev Compose project. No alternate stack was
+created. The packet records final unit/coverage results and exact source hashes.
+
+The inventory's first live query lost its engine connection; a later read-only
+scan completed after fixture cleanup. The inventory keeps 875 reviewed calls
+and 759 features. Two unchanged metadata SELECT call sites were rechecked
+against the complete unchanged function AST. No release acceptance row changed.
+The application digest is
+`4b21917a5ab23c7d68b9a9e9010c9a24d27bdafa0d37a60652d36b4c5df0b159`.
+
+Durable PG consent, pending-call/run binding, mid-turn cross-process revocation,
+remaining domain ports, runtime separation and cutover are still open. This
+checkpoint does not complete the production refactor or live-AI matrix.
+
+Parent replay commit `02195d19` has now completed all eight CI jobs successfully
+in [run 43120815742](https://github.com/dwickyfp/nova/actions/runs/43120815742).
+Downloaded artifacts contain 486 PG passes without skips, 217 engine passes and
+24 engine skips. The skip IDs/reasons match the previous run. The PG log scan
+contains 77 lines and no credential canary or encrypted envelope. The
+[retained CI record](../../reports/production-refactor/ci-02195d19.json) records
+artifact hashes and limits; this result is for the parent replay code, not the
+new read-grant changes.
+
+Six additional live SQL-tool attempts exercised persisted read-only approval:
+four pass with the expected constant query, result and history; one creation
+request fails before provider invocation, and one running tool ends in a turn
+timeout. The evidence packet retains both failures and fixture reconciliation.
+These results do not turn the provider/reliability gate green.

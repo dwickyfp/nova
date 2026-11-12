@@ -1,0 +1,8 @@
+{
+  "scope": "Reconcile only the exact unique prefix of this six-attempt provider run",
+  "matched": 1,
+  "deleted": 1,
+  "list_http_status": 200,
+  "remaining_fixtures": 0,
+  "owned_login_logout_status": 200
+}

@@ -1,0 +1,60 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="0" skipped="0" tests="55" time="4.441">
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_grant_comes_back_after_a_restart" time="0.478" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_another_role_or_session_never_inherits_it[changed0]" time="0.001" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_another_role_or_session_never_inherits_it[changed1]" time="0.001" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_revoking_removes_it_everywhere" time="0.001" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_without_redis_nothing_is_restored" time="0.001" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_grants_are_per_user_and_thread" time="0.001" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_new_login_does_not_inherit_or_erase_another_sessions_grant[False]" time="0.001" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_new_login_does_not_inherit_or_erase_another_sessions_grant[True]" time="0.001" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_expired_or_remotely_revoked_grant_is_not_retained_in_memory[False]" time="0.001" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_expired_or_remotely_revoked_grant_is_not_retained_in_memory[True]" time="0.000" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_legacy_grant_without_session_binding_is_not_restored" time="0.000" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_grant_requires_a_valid_session_security_context[changed0]" time="0.001" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_grant_requires_a_valid_session_security_context[changed1]" time="0.000" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_grant_requires_a_valid_session_security_context[changed2]" time="0.000" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_grant_requires_a_valid_session_security_context[changed3]" time="0.001" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_grant_requires_a_valid_session_security_context[changed4]" time="0.001" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_grant_requires_a_valid_session_security_context[changed5]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_owner_can_resolve_their_own_pending_call" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_foreign_user_gets_404_and_cannot_resolve_same_loop" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_foreign_user_gets_404_and_cannot_resolve" time="0.021" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_foreign_user_cannot_deny_either" time="0.021" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_unknown_tool_call_id_is_404" time="0.016" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_owner_sets_the_grant_on_their_own_conversation_only" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_allow_session_on_a_read_only_call_sets_the_grant" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_agent_studio_allow_session_sets_the_same_read_only_grant" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_allow_session_on_a_non_read_only_call_is_rejected[destructive]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_allow_session_on_a_non_read_only_call_is_rejected[denied]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_allow_session_on_a_non_read_only_call_is_400_over_http" time="0.018" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_owner_revoke_clears_the_grant" time="0.017" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_foreign_revoke_is_404_and_leaves_the_owner_grant_intact" time="0.012" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_owner_sets_the_grant_on_a_fresh_thread" time="0.015" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_read_only_approval_without_a_login_is_refused[False]" time="0.109" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_read_only_approval_without_a_login_is_refused[True]" time="0.014" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_owner_clears_the_grant_with_false" time="0.012" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_foreign_set_is_404_and_leaves_the_owner_grant_untouched" time="0.015" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_set_grant_does_not_reset_a_grant_on_another_thread" time="0.018" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_revoked_grant_prompts_again_on_the_next_read_only_call" time="0.023" />
+    <testcase classname="tests.unit.test_agent_run_journal" name="test_stale_run_is_interrupted_only_inside_its_scope" time="0.003" />
+    <testcase classname="tests.unit.test_agent_run_journal" name="test_recent_run_is_not_interrupted" time="0.002" />
+    <testcase classname="tests.unit.test_agent_run_journal" name="test_replay_reports_interrupted_run_without_resending_a_tool" time="0.003" />
+    <testcase classname="tests.unit.test_agent_run_journal" name="test_slow_subscriber_replays_bounded_queue_while_run_completes[False-False]" time="0.060" />
+    <testcase classname="tests.unit.test_agent_run_journal" name="test_slow_subscriber_replays_bounded_queue_while_run_completes[False-provider]" time="0.515" />
+    <testcase classname="tests.unit.test_agent_run_journal" name="test_slow_subscriber_replays_bounded_queue_while_run_completes[False-journal]" time="0.514" />
+    <testcase classname="tests.unit.test_agent_run_journal" name="test_slow_subscriber_replays_bounded_queue_while_run_completes[True-False]" time="0.022" />
+    <testcase classname="tests.unit.test_agent_run_journal" name="test_slow_subscriber_replays_bounded_queue_while_run_completes[True-provider]" time="0.514" />
+    <testcase classname="tests.unit.test_agent_run_journal" name="test_slow_subscriber_replays_bounded_queue_while_run_completes[True-journal]" time="0.514" />
+    <testcase classname="tests.unit.test_agent_run_journal" name="test_direct_cancel_requires_current_security_context[False]" time="0.009" />
+    <testcase classname="tests.unit.test_agent_run_journal" name="test_direct_cancel_requires_current_security_context[True]" time="0.006" />
+    <testcase classname="tests.unit.test_agent_run_journal" name="test_current_run_query_is_bound_to_role_and_security_version" time="0.004" />
+    <testcase classname="tests.unit.test_agent_mission_journal" name="test_mission_update_is_saved_before_delivery_and_terminal_completion[None-False]" time="0.016" />
+    <testcase classname="tests.unit.test_agent_mission_journal" name="test_mission_update_is_saved_before_delivery_and_terminal_completion[None-True]" time="0.012" />
+    <testcase classname="tests.unit.test_agent_mission_journal" name="test_mission_update_is_saved_before_delivery_and_terminal_completion[error-False]" time="0.014" />
+    <testcase classname="tests.unit.test_agent_mission_journal" name="test_mission_update_is_saved_before_delivery_and_terminal_completion[error-True]" time="0.014" />
+    <testcase classname="tests.unit.test_agent_mission_journal" name="test_mission_update_is_saved_before_delivery_and_terminal_completion[timeout-False]" time="0.066" />
+    <testcase classname="tests.unit.test_agent_mission_journal" name="test_mission_update_is_saved_before_delivery_and_terminal_completion[timeout-True]" time="0.059" />
+  </testsuite>
+</testsuites>
