@@ -7,8 +7,11 @@ was pushed; [CI 43303791124](https://github.com/dwickyfp/nova/actions/runs/43303
 passed seven jobs but failed the engine job. Follow-up caller and fixture fixes
 were pushed in `6c4ae0e7`; [CI 43312594237](https://github.com/dwickyfp/nova/actions/runs/43312594237)
 passed seven jobs but failed the engine job: 203 passed, 24 skipped, 12 failed
-and two setup errors. The earlier 91 setup errors are gone. Follow-up validation
-is in progress, including schema revision 0039 for maintenance lineage reads.
+and two setup errors. The earlier 91 setup errors are gone. Commit `5d2091e8`
+then passed seven jobs in [CI 43319470127](https://github.com/dwickyfp/nova/actions/runs/43319470127),
+including all 969 PG17 cases without skips. Engine integration reached 214
+passes, 24 skips, three failures and zero setup errors. The remaining fixes
+are under validation; schema 0039 and the importer remain unchanged.
 No development cutover or backend/workload startup has occurred. A frontend-only
 preview reached the login screen; authenticated docs inspection awaits cutover. Existing StarRocks
 metadata and payloads have not been modified by import rehearsal.
@@ -105,9 +108,13 @@ remain refusals, not implicit Jakarta defaults.
    committed validation receipts. Their validation digests are
    `b018da3153126e1bce5e9f6a9c0188786ecefbd53c6593252c0054f4c4426180` and
    `79a8ee7f066d0df641bca6f79abb8a352a14ff5034c156b0e36dfd8ee9a67ca0`.
-   These receipts cover schema 0038. Revision 0039 now adds the restricted
-   Catalog lineage audit projection, so two new rehearsals are required before
-   publishing an epoch on the final schema.
+   These receipts cover schema 0038 and are superseded by rehearsals 07/08 on
+   schema 0039. Both completed with `VALIDATED`, zero blocking conflicts,
+   verified payloads/semantics, and committed-chunk interruption/resume. Their
+   validation digests are
+   `02ba61a02f5cfce5e68a814398aee46ed3a1b58ca31abe6539f418d805f0e09d` and
+   `57e22b78639e758c86216abffdbc3297f2f6909051f6a710e83a0927d1807ae3`.
+   Both use source export 03; actual cutover still requires a fresh frozen export.
 3. Fetch/integrate remote main; commit and push owned changes. Follow CI to a
    passing conclusion. The owner authorizes destructive seeded integration in
    CI; it must not reseed this development stack.
@@ -198,5 +205,32 @@ Four historical Agent runs still record `running`; no producer process remains.
 Startup does not resume these turns or replay tools. Their source status and
 events remain intact through import; scoped replay can interrupt a stale turn
 without inventing missing history. There are no Agent automation definitions.
+
+## Final access repair
+
+CI 43319470127 retained two failures in the migration denial fixture: its
+temporary policy edit used the JSON alias `policyItems` as a Python attribute.
+The fixture now uses the typed model's `policy_items`; two unit cases verify
+the requested restriction and complete restoration after an assertion fails.
+
+The remaining Studio failure exposed a runtime caller defect. Agent access
+verification rebuilt the Semantic View caller without its assigned roles, so
+the PG reader refused the incomplete identity. Both the Verify Access route
+and runtime recheck now pass the actual session assignments; neither invents
+an assignment from the requested role. A real-PG regression verifies published
+View access, preserved principal/login/role/version, and refusal for an
+unassigned role. The controlled test mocks only governed source execution;
+CI engine execution remains a separate gate.
+
+Focused access run 01 retained one obsolete unit session expectation; run 02
+passed all 153 cases after the fixture included its real assignment. PG access
+run 01 passed the new regression. The schema/import contract did not change,
+so rehearsal receipts 07/08 remain applicable. The expanded PG domain run 02
+passed all 62 Agent/Semantic View cases. Full unit run 10 passed 11,141 cases
+with 64% coverage in 414.49 seconds; mypy 13, Agent eval 09 (358 cases),
+scorecard 07 (54 scenarios/189 checks), metadata image build 08 and docs run 07
+(15 cases) passed. Changed-file Ruff, the user-data boundary scan, local links,
+diff and credential checks passed. Seeded integration remains delegated to CI
+under the owner's authorization; cutover awaits its final result.
 These observations must be confirmed against the final frozen export; they do
 not authorize replay of an uncertain external effect.

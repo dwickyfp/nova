@@ -51,6 +51,10 @@ Use **Access** to review sharing, **Observability** to inspect runs, and
 **Improve** to review quality. Sharing the agent does not replace the active
 role's permissions on its underlying data.
 
+To verify a published Semantic View, use a role assigned to your account that
+can read its sources. Assigning a role to an agent does not assign that role
+to you; missing role or source permissions keep the access check from succeeding.
+
 Agent usage groups activity by UTC calendar day, including today. The totals
 and daily chart cover the same selected period. Session traces show your own
 conversations with that agent.

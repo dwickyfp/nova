@@ -740,6 +740,79 @@ async def runtime_registry(agents):
         await database.close()
 
 
+async def test_access_verification_preserves_session_assignments_for_real_semantic_metadata(
+    agents, runtime_registry, monkeypatch,
+):
+    from unittest.mock import AsyncMock
+
+    from app.core.metadata_actor import acting_as
+    from app.modules.access_control.service import access_control_service
+    from app.modules.agents import access, studio_router
+    from app.modules.agents.semantic.ir import SemanticModelIR
+    from app.modules.agents.semantic.ossie import parse_ossie
+    from app.modules.agents.studio_schemas import AccessCheckRequest
+    from app.modules.intelligence.metadata_repository import IntelligenceMetadataRepository
+    from app.modules.intelligence.semantic_views import semantic_view_service
+
+    user = session("agent-owner", active="ANALYST")
+    actor = SecurityContext.from_session(user)
+    definition = parse_ossie("""
+version: 0.1.1
+name: sales
+datasets:
+  - name: orders
+    source: sales.orders
+    primary_key: [id]
+    fields:
+      - name: id
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: id
+""").as_dict()
+    fingerprint = SemanticModelIR.from_ossie(definition).fingerprint
+    async with agents.transaction(actor=actor) as (_, conn):
+        views = IntelligenceMetadataRepository(conn, actor)
+        view = await views.create_view(
+            catalog="default_catalog", database="sales", schema="sales", name="orders",
+            view_id=str(uuid4()), definition=definition, fingerprint=fingerprint,
+        )
+        await views.record_validation(view["id"], 1,
+                                      {"valid": True, "errors": [], "baseline_version": None})
+        await views.publish(view["id"], 1, expected_revision=1, expected_active=None)
+
+    # This case exercises PG metadata; governed source execution has its own engine gate.
+    source_access = AsyncMock(return_value=True)
+    monkeypatch.setattr(semantic_view_service, "_source_access", source_access)
+    monkeypatch.setattr(access_control_service, "effective_access", AsyncMock(
+        return_value={"object_access": ["SELECT", "USAGE"]},
+    ))
+    monkeypatch.setattr(studio_router, "write_audit_log", AsyncMock())
+    with acting_as(actor):
+        agent = await runtime_registry.create_agent(
+            owner_name=actor.principal,
+            fields={"name": "Sales", "database_name": "sales", "semantic_view_ids": [view["id"]]},
+        )
+        await runtime_registry.add_agent_role(
+            agent["agent_id"], owner_name=actor.principal, role_name="ANALYST", grant_type="USAGE",
+        )
+        checked = await studio_router.verify_agent_access(
+            agent["agent_id"], AccessCheckRequest(role_name="ANALYST"), user,
+        )
+        assert checked.all_granted and any(item.kind == "semantic_view" for item in checked.items)
+        observed = SecurityContext.from_session(source_access.await_args.args[1])
+        assert observed == actor
+        assert await access.has_verified_access(agent, role_name="ANALYST", user=user)
+        source_access.reset_mock()
+        refused = await access.verify_access(
+            agent=agent, role_name="ANALYST", username=actor.principal,
+            encrypted_password="sealed", session_id=actor.session_id,
+            security_context_version=actor.security_context_version, assigned_roles=("VIEWER",),
+        )
+        assert not next(item.granted for item in refused if item.kind == "semantic_view")
+        source_access.assert_not_awaited()
+
+
 async def test_memory_facade_deduplicates_deletes_and_restores_retained_history(
     agents,
     runtime_registry,

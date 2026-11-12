@@ -160,6 +160,7 @@ async def verify_access(
     encrypted_password: str,
     session_id: str | None,
     security_context_version: int = 1,
+    assigned_roles: tuple[str, ...] = (),
 ) -> list[AccessItem]:
     """Check every agent dependency against Ranger policy state."""
     from app.integrations.ranger.client import read_snapshot
@@ -173,6 +174,7 @@ async def verify_access(
             encrypted_password=encrypted_password,
             session_id=session_id,
             security_context_version=security_context_version,
+            assigned_roles=assigned_roles,
         )
 
 
@@ -184,6 +186,7 @@ async def _verify_access(
     encrypted_password: str,
     session_id: str | None,
     security_context_version: int,
+    assigned_roles: tuple[str, ...],
 ) -> list[AccessItem]:
     from app.modules.access_control.service import access_control_service
 
@@ -200,6 +203,7 @@ async def _verify_access(
                     "username": username,
                     "encrypted_password": encrypted_password,
                     "active_role": role_name,
+                    "assigned_roles": list(assigned_roles),
                     "session_id": session_id,
                     "security_context_version": security_context_version,
                 },
@@ -224,6 +228,7 @@ async def _verify_access(
                 "username": username,
                 "encrypted_password": encrypted_password,
                 "active_role": role_name,
+                "assigned_roles": list(assigned_roles),
                 "session_id": session_id,
                 "security_context_version": security_context_version,
             }
@@ -371,6 +376,7 @@ async def has_verified_access(agent: dict, *, role_name: str, user: dict) -> boo
                     encrypted_password=user.get("encrypted_password", ""),
                     session_id=user.get("session_id"),
                     security_context_version=int(user.get("security_context_version") or 1),
+                    assigned_roles=tuple(user.get("assigned_roles") or user.get("roles") or ()),
                 )
                 return all(item.granted for item in items)
 

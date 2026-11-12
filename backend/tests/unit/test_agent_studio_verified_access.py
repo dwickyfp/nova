@@ -111,6 +111,7 @@ async def test_verify_only_marks_assigned_role_after_success(monkeypatch) -> Non
     )
     assert result.all_granted
     assert save.await_args.kwargs["fingerprint"] == "current"
+    assert verify.await_args.kwargs["assigned_roles"] == ("ACCOUNTADMIN", "analyst")
 
     verify.return_value = [AccessItem("table", "sales.orders", False)]
     result = await studio_router.verify_agent_access(

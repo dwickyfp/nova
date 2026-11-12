@@ -1023,6 +1023,7 @@ async def verify_agent_access(
             encrypted_password=user.get("encrypted_password", ""),
             session_id=user.get("session_id"),
             security_context_version=int(user.get("security_context_version") or 1),
+            assigned_roles=tuple(user.get("assigned_roles") or user.get("roles") or ()),
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

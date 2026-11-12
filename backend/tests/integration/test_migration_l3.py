@@ -231,10 +231,10 @@ async def _limited_migration_access(allowed: set[str]):
         for policy in policies:
             await remove(policy)
             limited = policy.model_copy(deep=True)
-            for item in limited.policyItems:
+            for item in limited.policy_items:
                 item.accesses = [access for access in item.accesses if access.type in allowed]
-            limited.policyItems = [item for item in limited.policyItems if item.accesses]
-            if limited.policyItems:
+            limited.policy_items = [item for item in limited.policy_items if item.accesses]
+            if limited.policy_items:
                 await ranger_client.put_policy(limited)
         yield
     finally:

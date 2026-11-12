@@ -20,6 +20,7 @@ USER = {
     "username": "reader",
     "encrypted_password": "sealed",
     "active_role": "analyst",
+    "assigned_roles": ["analyst"],
     "session_id": "session",
     "security_context_version": 7,
 }
@@ -33,6 +34,7 @@ async def _verify(agent):
         encrypted_password=USER["encrypted_password"],
         session_id=USER["session_id"],
         security_context_version=USER["security_context_version"],
+        assigned_roles=tuple(USER["assigned_roles"]),
     )
 
 
