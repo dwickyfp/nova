@@ -10,8 +10,18 @@ Revision 0024 prepares the 14 remaining small control tables in `nova_meta`:
 | Migration | `CONFIG_MIGRATION_SOURCES`, `CONFIG_MIGRATION_JOBS` | `migration/metadata_repository.py` |
 | AI functions | `USAGE_LLM_FUNCTIONS` | `llm_functions/metadata_repository.py` |
 
-These are prepared stores. Running code still uses `NOVA_SYSTEM`; nothing in the
-application imports the repositories. Callers move at the all-domain cutover.
+The application callers now use these PG repositories. The latest audit also
+ported BI author-role reads/writes, Dataviz publication and context, Semantic
+View dataset mappings, and preview provenance from Assistant messages. Query
+history and user last-login readers use the actor-bound audit store. Startup
+hooks only probe the installed schema and epoch. Development cutover is still
+pending; see the [current delivery report](../../reports/production-refactor/importer-agent-cutover/README.md).
+
+Publication updates compare both the previous status and update timestamp.
+An advisory transaction lock prevents two operation IDs from claiming the same
+owner/idempotency scope. Terminal outcomes remain immutable, and role/version
+changes refuse continuation. Reads of author roles have no process-local cache,
+so revocation is reflected on the next identity check.
 
 PG holds Nova's own configuration and journals. Ranger and the patched
 StarRocks FE remain the authority for user data: a projection, policy state or
@@ -114,8 +124,15 @@ audited, as in the source.
    Callers must pass only charts Superset authorized for the viewer.
 10. `CONFIG_I18N_MESSAGES` is absent from the inspected live schema; fresh-install
     behavior is verified, import is not needed unless it appears.
-11. Timestamp provenance, typed import of every column and rehearsed import
-    remain open for all 14 tables.
+11. Timestamp provenance and typed import are packaged and passed two complete
+    interrupted/resumed rehearsals. Final export/import and epoch activation
+    remain pending; see the current delivery report.
 
 Validation is recorded in
 [the checkpoint](../../reports/production-refactor/assistant-policy-bi-metadata/README.md).
+
+
+The caller tests establish PG storage and authorization behavior. Superset
+external effects still need crash/reconciliation acceptance, including uncertain
+dataset creation and reconciliation between the Ranger author policy and the
+PG author set. A PG transaction does not make those two systems atomic.

@@ -151,19 +151,31 @@ def superset(monkeypatch):
         state["author"] = author
         yield FakeBi()
 
-    async def execute(sql, params=None):
-        if sql.startswith("SELECT"):
-            rows = [r for (view, _), r in sorted(state["rows"].items()) if view == params[0]]
-            return {"rows": rows}
-        if sql.startswith("INSERT"):
-            view, name, bi_id, _owner, version, status, message = params
-            state["rows"][(view, name)] = [name, bi_id, version, status, message, "now"]
-        if sql.startswith("DELETE"):
-            state["rows"].pop((params[0], params[1]), None)
-        return {"affected": 1}
+    from app.core.metadata_actor import current_actor
+
+    class Mapping:
+        @property
+        def actor(self):
+            return current_actor()
+
+        async def synced_datasets(self, view_id):
+            return [r for (view, _), r in sorted(state["rows"].items()) if view == view_id]
+
+        async def record_semantic_dataset(self, view, name, **values):
+            state["rows"][(view, name)] = {
+                "dataset_name": name, "synced_at": "now", "message": None,
+                "owner_name": self.actor.principal, **values,
+            }
+
+        async def forget_semantic_dataset(self, view, name):
+            state["rows"].pop((view, name), None)
+
+    @asynccontextmanager
+    async def metadata(*, read_only=False):
+        yield Mapping()
 
     monkeypatch.setattr(semantic.SupersetClient, "for_user", for_user)
-    monkeypatch.setattr(semantic.db, "execute_system", execute)
+    monkeypatch.setattr(semantic, "superset_metadata", metadata)
     monkeypatch.setattr(semantic, "write_audit_log", AsyncMock())
     monkeypatch.setattr(semantic.settings, "SUPERSET_SERVICE_TOKEN", "service-secret")
     return state
@@ -177,12 +189,18 @@ VIEW = {
     "database_name": "sales",
     "active_version": 3,
 }
-USER = {"username": "alice", "session_id": "s1", "active_role": "analyst"}
+USER = {"username": "alice", "session_id": "s1", "active_role": "analyst",
+        "assigned_roles": ["analyst"], "security_context_version": 1}
 
 
 @pytest.mark.asyncio
-async def test_publishing_creates_marked_datasets_and_a_new_version_updates_them(superset):
-    synced = await semantic.sync_semantic_view(USER, VIEW, _model())
+@pytest.mark.parametrize("publisher", [USER, {**USER, "username": "admin",
+                                            "active_role": "ACCOUNTADMIN",
+                                            "assigned_roles": ["ACCOUNTADMIN"]}])
+async def test_publishing_creates_marked_datasets_and_a_new_version_updates_them(
+    superset, publisher,
+):
+    synced = await semantic.sync_semantic_view(publisher, VIEW, _model())
 
     by_name = {item["dataset"]: item for item in synced}
     assert by_name["orders"]["status"] == "SYNCED"
@@ -214,12 +232,14 @@ async def test_publishing_creates_marked_datasets_and_a_new_version_updates_them
     superset["calls"].clear()
     metrics = (SemanticMetricIR("revenue", "SUM(amount)", "orders"),)
     resynced = await semantic.sync_semantic_view(
-        USER, {**VIEW, "active_version": 4}, _model(metrics)
+        publisher, {**VIEW, "active_version": 4}, _model(metrics)
     )
     assert [item["dataset"] for item in resynced] == ["orders"]
     assert resynced[0]["bi_dataset_id"] == orders_id and resynced[0]["version"] == 4
     assert not [c for c in superset["calls"] if c[0] == "POST"]
     assert by_name["customers"]["bi_dataset_id"] not in superset["datasets"]
+
+    assert {row["owner_name"] for row in superset["rows"].values()} == {publisher["username"]}
 
 
 @pytest.mark.asyncio

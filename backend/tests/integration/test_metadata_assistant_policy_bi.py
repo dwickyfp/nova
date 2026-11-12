@@ -495,7 +495,8 @@ async def test_publications_belong_to_their_owner_and_role(meta):
             await repo.advance_publication("op-1", "SUCCEEDED", {"status": "COMPENSATING"})
     with pytest.raises(MetadataIntegrityViolation):  # continued only in its own role
         async with meta.transaction("superset", role="ACCOUNTADMIN") as (repo, _):
-            await repo.start_publication({**start, "operation_id": "op-2"})
+            await repo.start_publication({**start, "operation_id": "op-2",
+                                          "idempotency_scope": "scope-2"})
             await repo.connection.execute(
                 "UPDATE nova_meta.config_dataviz_publications SET error='x' "
                 "WHERE operation_id='op-1'")
@@ -755,3 +756,211 @@ async def test_import_keeps_legacy_rows_only_under_maintenance(meta):
     audit = await meta.admin("SELECT count(*) AS n FROM nova_meta.audit_log "
                              "WHERE metadata_table LIKE 'config_%%'")
     assert audit[0]["n"] == 0
+
+
+@asynccontextmanager
+async def caller_runtime(meta, *, name="alice", role="ANALYST"):
+    from app.core.metadata_runtime import install_metadata_db, uninstall_metadata_db
+    from app.core.metadata_scope import acting_as
+
+    database = MetadataDatabase(meta.environment.role_config("nova_meta_web"))
+    await database.open(schema_version=len(load_migrations()), metadata_epoch=meta.epoch)
+    install_metadata_db(database)
+    user = session(name, active=role)
+    try:
+        async with acting_as(SecurityContext.from_session(user)):
+            yield user
+    finally:
+        uninstall_metadata_db(database)
+        await database.close()
+
+
+async def test_preview_caller_reads_pg_and_refuses_another_conversation(meta):
+    from app.modules.superset.previews import Locator, PreviewError, _message
+
+    thread, answer = await thread_with_answer(meta)
+    async with caller_runtime(meta) as user:
+        steps, context, agent_id = await _message(
+            Locator(thread["thread_id"], answer["message_id"], "c1"), user,
+        )
+        assert steps == [{"kind": "ui", "content_id": "c1"}]
+        assert context["principal"] == "alice" and agent_id is None
+    async with caller_runtime(meta, name="bob") as user:
+        with pytest.raises(PreviewError):
+            await _message(Locator(thread["thread_id"], answer["message_id"], "c1"), user)
+
+
+async def test_publication_caller_cas_refuses_lost_progress_and_duplicate_scope(meta):
+    from app.modules.superset import publication
+
+    async with caller_runtime(meta):
+        op = publication.Operation(
+            "caller-op", "alice", "caller-scope", "fp", active_role="ANALYST",
+            security_context_version=5,
+        )
+        await publication._save(op)
+        first = await publication.get_operation(op.operation_id, "alice")
+        stale = await publication.get_operation(op.operation_id, "alice")
+        first.dataset_id = 12
+        await publication._save(first)
+        stale.dataset_id = 13
+        with pytest.raises(MetadataConflict):
+            await publication._save(stale)
+        assert (await publication.get_operation(op.operation_id, "alice")).dataset_id == 12
+        duplicate = publication.Operation(
+            "other-op", "alice", "caller-scope", "fp", active_role="ANALYST",
+            security_context_version=5,
+        )
+        with pytest.raises(MetadataConflict):
+            await publication._save(duplicate)
+        first.status = "SUCCEEDED"
+        await publication._save(first)
+        with pytest.raises(MetadataIntegrityViolation):
+            await publication._save(first)
+    async with caller_runtime(meta, name="bob"):
+        assert await publication.get_operation(op.operation_id, "bob") is None
+    async with caller_runtime(meta, role="FINANCE"):
+        with pytest.raises(MetadataPermissionDenied):
+            await publication._save(op)
+
+
+async def test_author_roles_caller_revocation_and_audit_rollback(meta):
+    from app.core.metadata_scope import actor_for, metadata_transaction
+    from app.modules.superset import access
+
+    async with caller_runtime(meta, name="admin", role="ACCOUNTADMIN") as user:
+        assert await access.replace_author_roles(["ANALYST"], changed_by="admin") == ["ANALYST"]
+        with pytest.raises(RuntimeError, match="audit failed"):
+            async with metadata_transaction(actor_for(user)):
+                await access.replace_author_roles([], changed_by="admin", expected_revision=1)
+                raise RuntimeError("audit failed")
+        assert await access.author_role_set() == (frozenset({"ANALYST"}), 1)
+    async with caller_runtime(meta):
+        assert await access.superset_role_for("ANALYST") == access.SUPERSET_AUTHOR
+    async with caller_runtime(meta, name="admin", role="ACCOUNTADMIN"):
+        await access.replace_author_roles([], changed_by="admin", expected_revision=1)
+        with pytest.raises(MetadataConflict):
+            await access.replace_author_roles(["ANALYST"], changed_by="admin", expected_revision=1)
+    async with caller_runtime(meta):
+        assert await access.superset_role_for("ANALYST") == access.SUPERSET_VIEWER
+
+
+async def test_semantic_mapping_and_context_callers_use_pg(meta):
+    from app.core.metadata_scope import actor_for
+    from app.modules.superset import dashboard_context, semantic
+
+    async with caller_runtime(meta) as user:
+        await semantic._record("view-one", "alice", "orders", status="SYNCED",
+                               bi_dataset_id=31, version=4)
+        datasets = await semantic.synced_datasets("view-one")
+        assert datasets[0]["dataset"] == "orders" and datasets[0]["bi_dataset_id"] == 31
+        mapping = await dashboard_context._semantic_views([31], actor=actor_for(user))
+        assert mapping[31]["view_id"] == "view-one" and mapping[31]["version"] == 4
+        assert await dashboard_context._published_contexts([99], actor=actor_for(user)) == {}
+        await semantic._forget("view-one", "orders")
+        assert await semantic.synced_datasets("view-one") == []
+
+
+async def test_query_history_caller_preserves_filters_stats_and_principal(meta):
+    from app.modules.query.service import QueryService
+
+    for name in ("alice", "bob"):
+        async with meta.transaction(name=name) as (_, conn):
+            await conn.execute(
+                "INSERT INTO nova_meta.audit_log (event_type,status,sql_text,duration_ms,"
+                "file_id,database_name) VALUES "
+                "('query','SUCCESS','SELECT known',10,'file','sales'),"
+                "('query','ERROR','SELECT broken',30,'file','sales')",
+            )
+    query = QueryService()
+    async with caller_runtime(meta):
+        result = await query.get_history(username="alice", file_id="file", limit=1)
+        assert result["total"] == 2 and len(result["items"]) == 1
+        assert result["items"][0]["user_name"] == "alice"
+        assert (await query.get_history(username="bob"))["total"] == 0
+        selected = await query.get_history(username="alice", status="success", search="known",
+                                           database_name="sales", min_duration_ms=5)
+        assert selected["total"] == 1
+        stats = await query.get_history_stats(username="alice")
+        assert stats == {"total": 2, "avg_duration_ms": 20.0, "error_count": 1,
+                         "success_count": 1, "error_rate": 0.5}
+        await meta.admin("UPDATE nova_meta.deployment_state SET maintenance=true")
+        assert (await query.get_history(username="alice"))["total"] == 2
+        await meta.admin("UPDATE nova_meta.deployment_state SET maintenance=false")
+    async with caller_runtime(meta, name="admin", role="ACCOUNTADMIN"):
+        assert (await query.get_history(username="bob"))["total"] == 2
+
+
+async def test_task_browser_callers_read_pg_and_keep_bodies_private(meta, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from app.modules.explorer.repository import ExplorerRepository
+    from app.modules.objects.service import ObjectService
+    from app.modules.task_orchestration.metadata_repository import TaskMetadataRepository
+    from tests.integration.test_metadata_tasks import task
+
+    async with meta.transaction() as (repository, connection):
+        store = TaskMetadataRepository(connection, repository.actor)
+        await store.create_task(task(name="visible", schema_name="public"))
+        await store.create_task(task(name="another_schema", schema_name="private"))
+        await store.create_task(task(name="another_database", database_name="other"))
+    objects = ObjectService()
+    monkeypatch.setattr(objects._repo, "list_databases",
+                        AsyncMock(return_value=[{"name": "sales"}]))
+    async with caller_runtime(meta):
+        explorer = await ExplorerRepository().list_tasks("sales")
+        assert {row["name"] for row in explorer} == {"visible", "another_schema"}
+        rows = await objects._schema_tasks("sales", "public", username="alice",
+                                           encrypted_password="unused", role="ANALYST")
+        assert [row["name"] for row in rows] == ["visible"]
+        assert all("definition" not in row and "handler_config" not in row for row in rows)
+        with pytest.raises(MetadataPermissionDenied):
+            await objects._schema_tasks("sales", "public", username="bob",
+                                         encrypted_password="unused", role="ANALYST")
+        assert await objects._schema_tasks("hidden", "public", username="alice",
+                                           encrypted_password="unused", role="ANALYST") == []
+
+
+async def test_user_inventory_reads_last_login_from_pg(meta, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from app.modules.users.service import UserService
+
+    async with meta.transaction(name="alice") as (_, connection):
+        await connection.execute("INSERT INTO nova_meta.audit_log (event_type,status) "
+                                 "VALUES ('login','SUCCESS')")
+
+    class EngineObservation:
+        statements = []
+
+        def cursor(self, *args):
+            return self
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def execute(self, sql):
+            self.statements.append(sql)
+
+        async def fetchall(self):
+            if self.statements[-1] == "SHOW USERS":
+                return [{"User": "'alice'@'%'"}]
+            return []
+
+        def close(self):
+            pass
+
+    engine = EngineObservation()
+    users = UserService()
+    monkeypatch.setattr(users, "_root_connect", AsyncMock(return_value=engine))
+    monkeypatch.setattr(users, "get_user_properties", AsyncMock(return_value={}))
+    monkeypatch.setattr(users, "get_user_default_roles",
+                        AsyncMock(return_value={"roles": ["ANALYST"], "mode": "explicit"}))
+    async with caller_runtime(meta, name="admin", role="ACCOUNTADMIN"):
+        rows = await users.list_users()
+    assert len(rows) == 1 and rows[0]["username"] == "alice"
+    assert rows[0]["last_login"] is not None
+    assert not any("AUDIT_LOG" in sql for sql in engine.statements)

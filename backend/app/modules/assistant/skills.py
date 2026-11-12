@@ -250,9 +250,8 @@ _PRIMER_SPECS: tuple[_SectionSpec, ...] = (
             "clustering only when that capability is supplied for the turn. "
             "The runtime capability registry is authoritative for SQL "
             "`ML_PREDICT` availability.\n"
-            "- `NOVA_SYSTEM.*`: ordinary StarRocks tables such as `AUDIT_LOG`. "
-            "Verify exact names with authorized SHOW TABLES; "
-            "design-document names are not proof that a table exists.\n"
+            "- Nova control metadata is private. Use the supported tools and UI for "
+            "history, settings and managed objects; do not query internal metadata tables.\n"
             "- `LIST @stage/` lists files; `COPY INTO table FROM @stage.file` loads. Also use "
             "`INSERT INTO table SELECT ... FROM @stage.file.csv`."
         ),
@@ -262,7 +261,7 @@ _PRIMER_SPECS: tuple[_SectionSpec, ...] = (
         source="seed",
         text=(
             "Serve one domain: the Nova data and AI platform. That "
-            "covers SQL, the `@stage` dialect, `NOVA_SYSTEM` tables, stages, "
+            "covers SQL, the `@stage` dialect, managed objects, stages, "
             "users/roles/grants, ML models, tasks, `AI_*`/`ML_PREDICT` "
             "functions, the Nova UI, and Nova Studio configuration.\n"
             "Decline anything else — trivia, world knowledge, current events, "

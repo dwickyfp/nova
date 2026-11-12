@@ -28,9 +28,10 @@ from observed row counts or from auto-increment declarations.
 Its input validation does not authenticate an export or prove a writer freeze.
 The export/import orchestrator must verify the manifest, chunk hashes, row counts
 and cutover ownership before using it. The packaged importer now verifies those bindings and commits chunk receipts
-with their rows; one full disposable rehearsal matched the source inventory. The PG fixture proves that two occurrences with the
+with their rows; final disposable rehearsals 05 and 06 matched the source inventory,
+managed payload receipts and semantic checks after interruption/resume. The PG fixture proves that two occurrences with the
 same legacy ID survive, replaying one identity conflicts, and a rejected value
-rolls its transaction back. It does not prove a complete source import.
+rolls its transaction back. Final development cutover is still pending.
 
 ## Historical dashboard definition
 
@@ -69,6 +70,7 @@ an import succeed. Operator/row-specific reconciliation must precede those impor
 
 There are no unresolved target key *definitions* in the ownership CSV after this
 review. Logical uniqueness, FK/orphan resolution, domain checks, grants/RLS,
-final deployment binding, second full rehearsal, payload/semantic validation
-and cutover acceptance must still be completed on the delivered revision.
+final deployment binding and cutover acceptance must still be completed on the
+delivered revision. Two final rehearsals include payload and semantic validation;
+see the [current evidence](../../reports/production-refactor/importer-agent-cutover/README.md).
 This review does not complete WP00 or WP03.

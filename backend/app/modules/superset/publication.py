@@ -3,7 +3,7 @@
 The Agent card's **Add to Dataviz**, the Dataviz assistant's apply step and
 ``dashboard_build`` all publish through :func:`publish`
 (docs/arch-19-studio-dataviz.md, D3). It is a saga, not a fake transaction:
-Superset and ``NOVA_SYSTEM`` are separate systems, so every step is journaled
+Superset and PostgreSQL are separate systems, so every step is journaled
 in ``CONFIG_DATAVIZ_PUBLICATIONS``, a failure removes exactly what this
 operation created and nothing else uses, and an outcome that cannot be proven
 either way is left ``NEEDS_RECONCILIATION`` for its owner.
@@ -26,48 +26,17 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from app.common.audit import write_audit_log
-from app.core.database import db
+from app.core.metadata_db import MetadataConflict, MetadataPermissionDenied
+from app.core.metadata_scope import acting_as, actor_for
 from app.modules.agents.artifact_repository import artifact_repository, validate_artifact_sql
 
 from . import capability as capabilities
 from .charts import ChartPlan, to_superset
 from .client import BiError, SupersetClient
+from .metadata_repository import superset_metadata
 from .previews import Locator, PreviewError, ResolvedPreview, fingerprint, resolve, verify
 
 logger = logging.getLogger(__name__)
-
-TABLE = "NOVA_SYSTEM.CONFIG_DATAVIZ_PUBLICATIONS"
-DDL = f"""
-CREATE TABLE IF NOT EXISTS {TABLE} (
-    operation_id VARCHAR(64) NOT NULL,
-    owner_name VARCHAR(128) NOT NULL,
-    idempotency_scope VARCHAR(80) NOT NULL,
-    request_fingerprint VARCHAR(80) NOT NULL,
-    status VARCHAR(32) NOT NULL,
-    target_mode VARCHAR(16),
-    dashboard_id BIGINT,
-    chart_id BIGINT,
-    dataset_id BIGINT,
-    artifact_id VARCHAR(64),
-    created_objects VARCHAR(256),
-    query_fingerprint VARCHAR(80),
-    visualization_fingerprint VARCHAR(80),
-    source_thread_id VARCHAR(64),
-    source_message_id VARCHAR(64),
-    source_content_id VARCHAR(64),
-    strategy_id VARCHAR(64),
-    revision_before VARCHAR(80),
-    revision_after VARCHAR(80),
-    business_context JSON,
-    active_role VARCHAR(128),
-    security_context_version BIGINT,
-    error VARCHAR(1024),
-    created_at DATETIME NOT NULL,
-    updated_at DATETIME NOT NULL
-) PRIMARY KEY(operation_id)
-DISTRIBUTED BY HASH(operation_id) BUCKETS 1
-PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
-"""
 
 Status = Literal[
     "VALIDATING",
@@ -80,33 +49,6 @@ Status = Literal[
     "COMPENSATING",
     "NEEDS_RECONCILIATION",
 ]
-_COLUMNS = (
-    "operation_id",
-    "owner_name",
-    "idempotency_scope",
-    "request_fingerprint",
-    "status",
-    "target_mode",
-    "dashboard_id",
-    "chart_id",
-    "dataset_id",
-    "artifact_id",
-    "created_objects",
-    "query_fingerprint",
-    "visualization_fingerprint",
-    "source_thread_id",
-    "source_message_id",
-    "source_content_id",
-    "strategy_id",
-    "revision_before",
-    "revision_after",
-    "business_context",
-    "active_role",
-    "security_context_version",
-    "error",
-    "created_at",
-    "updated_at",
-)
 _LOCK_MS = 60_000
 _CHART_WIDTH = 6
 _CHART_HEIGHT = 50
@@ -167,6 +109,9 @@ class Operation:
     error: str | None = None
     created_at: datetime = field(default_factory=lambda: _now())
 
+    _storage_status: str | None = field(default=None, repr=False)
+    _storage_updated_at: datetime | None = field(default=None, repr=False)
+
     def public(self) -> dict[str, Any]:
         return {
             "operation_id": self.operation_id,
@@ -198,46 +143,64 @@ def dashboard_path(dashboard_id: int | None) -> str:
 
 
 async def ensure_schema() -> None:
-    await db.execute_system(DDL)
+    from app.core.metadata_runtime import metadata_db
+
+    await metadata_db().probe()
 
 
 async def _save(op: Operation) -> None:
     source = op.source
-    values = [
-        op.operation_id,
-        op.owner_name,
-        op.idempotency_scope,
-        op.request_fingerprint,
-        op.status,
-        op.target_mode,
-        op.dashboard_id,
-        op.chart_id,
-        op.dataset_id,
-        op.artifact_id,
-        ",".join(op.created) or None,
-        op.query_fingerprint,
-        op.visualization_fingerprint,
-        source.thread_id if source else None,
-        source.message_id if source else None,
-        source.content_id if source else None,
-        op.strategy_id,
-        op.revision_before,
-        op.revision_after,
-        json.dumps(op.business_context) if op.business_context else None,
-        op.active_role,
-        op.security_context_version,
-        (op.error or "")[:1000] or None,
-        op.created_at,
-        _now(),
-    ]
-    await db.execute_system(
-        f"INSERT INTO {TABLE} ({', '.join(_COLUMNS)}) VALUES ({', '.join(['%s'] * len(_COLUMNS))})",
-        values,
-    )
+    async with superset_metadata() as repository:
+        actor = repository.actor
+        if (op.owner_name, op.active_role, op.security_context_version) != (
+            actor.principal,
+            actor.active_role,
+            actor.security_context_version,
+        ):
+            raise MetadataPermissionDenied()
+        previous = op._storage_status
+        updated_at = op._storage_updated_at
+        if previous is None:
+            row, created = await repository.start_publication(
+                {
+                    "operation_id": op.operation_id,
+                    "idempotency_scope": op.idempotency_scope,
+                    "request_fingerprint": op.request_fingerprint,
+                    "target_mode": op.target_mode,
+                    "source_thread_id": source.thread_id if source else None,
+                    "source_message_id": source.message_id if source else None,
+                    "source_content_id": source.content_id if source else None,
+                }
+            )
+            if not created:
+                raise MetadataConflict()
+            previous, updated_at = row["status"], row["updated_at"]
+        row = await repository.advance_publication(
+            op.operation_id,
+            previous,
+            {
+                "status": op.status,
+                "target_mode": op.target_mode,
+                "dashboard_id": op.dashboard_id,
+                "chart_id": op.chart_id,
+                "dataset_id": op.dataset_id,
+                "artifact_id": op.artifact_id,
+                "created_objects": ",".join(op.created) or None,
+                "query_fingerprint": op.query_fingerprint,
+                "visualization_fingerprint": op.visualization_fingerprint,
+                "strategy_id": op.strategy_id,
+                "revision_before": op.revision_before,
+                "revision_after": op.revision_after,
+                "business_context": op.business_context,
+                "error": (op.error or "")[:1000] or None,
+            },
+            expected_updated_at=updated_at,
+        )
+    op._storage_status, op._storage_updated_at = row["status"], row["updated_at"]
+    op.created_at = row["created_at"]
 
 
-def _from_row(row: list | tuple) -> Operation:
-    data = dict(zip(_COLUMNS, row, strict=False))
+def _from_row(data: dict[str, Any]) -> Operation:
     business = data.get("business_context")
     if isinstance(business, str):
         try:
@@ -272,55 +235,46 @@ def _from_row(row: list | tuple) -> Operation:
         security_context_version=data.get("security_context_version"),
         error=data.get("error"),
         created_at=data.get("created_at") or _now(),
+        _storage_status=data["status"],
+        _storage_updated_at=data["updated_at"],
     )
 
 
 async def _by_scope(scope: str, owner: str) -> Operation | None:
-    result = await db.execute_system(
-        f"SELECT {', '.join(_COLUMNS)} FROM {TABLE} "
-        "WHERE idempotency_scope = %s AND owner_name = %s "
-        "ORDER BY created_at DESC LIMIT 1",
-        [scope, owner],
-    )
-    rows = result.get("rows") or []
-    return _from_row(rows[0]) if rows else None
+    async with superset_metadata(read_only=True) as repository:
+        if owner != repository.actor.principal:
+            raise MetadataPermissionDenied()
+        row = await repository.publication_by_scope(scope)
+    return _from_row(row) if row else None
 
 
 async def get_operation(operation_id: str, owner: str) -> Operation | None:
-    result = await db.execute_system(
-        f"SELECT {', '.join(_COLUMNS)} FROM {TABLE} WHERE operation_id = %s AND owner_name = %s",
-        [operation_id, owner],
-    )
-    rows = result.get("rows") or []
-    return _from_row(rows[0]) if rows else None
+    async with superset_metadata(read_only=True) as repository:
+        if owner != repository.actor.principal:
+            raise MetadataPermissionDenied()
+        row = await repository.get_publication(operation_id)
+    return _from_row(row) if row else None
 
 
 async def list_operations(
-    owner: str, *, unresolved: bool = False, limit: int = 50
+    owner: str,
+    *,
+    unresolved: bool = False,
+    limit: int = 50,
 ) -> list[Operation]:
-    where = "WHERE owner_name = %s"
-    if unresolved:
-        where += (
-            " AND status IN ('NEEDS_RECONCILIATION', 'FAILED_RETRYABLE', 'ATTACHING',"
-            " 'COMPENSATING')"
-        )
-    result = await db.execute_system(
-        f"SELECT {', '.join(_COLUMNS)} FROM {TABLE} {where} ORDER BY created_at DESC LIMIT %s",
-        [owner, max(1, min(limit, 200))],
-    )
-    return [_from_row(row) for row in result.get("rows") or []]
+    async with superset_metadata(read_only=True) as repository:
+        if owner != repository.actor.principal:
+            raise MetadataPermissionDenied()
+        rows = await repository.list_publications(unresolved=unresolved, limit=limit)
+    return [_from_row(row) for row in rows]
 
 
 async def _reusable_chart(owner: str, query_fp: str, viz_fp: str) -> Operation | None:
-    """The owner's last successful publication of the same query and chart."""
-    result = await db.execute_system(
-        f"SELECT {', '.join(_COLUMNS)} FROM {TABLE} WHERE owner_name = %s AND status = 'SUCCEEDED' "
-        "AND query_fingerprint = %s AND visualization_fingerprint = %s "
-        "ORDER BY created_at DESC LIMIT 1",
-        [owner, query_fp, viz_fp],
-    )
-    rows = result.get("rows") or []
-    return _from_row(rows[0]) if rows else None
+    async with superset_metadata(read_only=True) as repository:
+        if owner != repository.actor.principal:
+            raise MetadataPermissionDenied()
+        row = await repository.reusable_chart(query_fp, viz_fp)
+    return _from_row(row) if row else None
 
 
 # ── Coordination ────────────────────────────────────────────────────────────
@@ -408,7 +362,9 @@ async def editable_dashboards(
     """
     from .access import superset_role_for
 
-    superset_role = await superset_role_for(str(user.get("active_role") or ""))
+    superset_role = await superset_role_for(
+        str(user.get("active_role") or ""), actor=actor_for(user)
+    )
     text = re.sub(r"[^\w \-]", " ", search)[:80].strip()
     query = (
         (f"(filters:!((col:dashboard_title,opr:ct,value:'{text}'))," if text else "(")
@@ -759,108 +715,115 @@ async def publish(
     agent_id: str | None = None,
 ) -> Operation:
     """Publish one verified preview onto one dashboard. See the module docs."""
-    if not re.fullmatch(r"[A-Za-z0-9_\-:.]{8,128}", idempotency_key or ""):
-        raise PublishError(
-            "A publish request needs an idempotency key.", status=422, code="BAD_REQUEST"
-        )
-    if target.mode == "new" and not (target.title and _TITLE.match(target.title.strip())):
-        raise PublishError("Name the new dashboard.", status=422, code="BAD_REQUEST")
-    if target.mode == "existing" and not target.dashboard_id:
-        raise PublishError("Choose a dashboard.", status=422, code="BAD_REQUEST")
-    if (
-        target.mode == "existing"
-        and editor_state == "dirty"
-        and open_dashboard_id == target.dashboard_id
-    ):
-        raise PublishError(
-            "This dashboard has unsaved changes in Dataviz. Save or discard them first, so "
-            "nothing you changed is overwritten.",
-            status=409,
-            code="EDITOR_HAS_UNSAVED_CHANGES",
-        )
-    if not await capabilities.may_publish(user):
-        await write_audit_log(
-            event_type="DATAVIZ",
-            user_name=user["username"],
-            action="PUBLISH_CHART",
-            object_type="DATAVIZ_PUBLICATION",
-            object_name=str(target.dashboard_id or "new"),
-            status="DENIED",
-            error_message="active role is not a BI author",
-            session_id=user.get("session_id"),
-            active_role=user.get("active_role"),
-            security_context_version=user.get("security_context_version"),
-        )
-        raise PublishError(
-            "Your active role can view dashboards but cannot add charts. Nothing was changed.",
-            status=403,
-            code="NOT_AUTHOR",
-        )
-
-    request_fp = fingerprint(
-        ref,
-        target.mode,
-        target.dashboard_id,
-        (target.title or "").strip(),
-        approved_transform_id,
-        (title or "").strip(),
-    )
-    scope = fingerprint(
-        user["username"],
-        user.get("active_role"),
-        user.get("security_context_version"),
-        idempotency_key,
-    )
-    redis_key = f"nova:dataviz:publish:{scope[7:39]}"
-    async with _Lock(redis_key, uuid4().hex):
-        previous = await _by_scope(scope, user["username"])
-        if previous is not None:
-            if previous.request_fingerprint != request_fp:
-                raise PublishError(
-                    "This request id was already used for a different change.",
-                    status=409,
-                    code="IDEMPOTENCY_CONFLICT",
-                )
-            if previous.status in ("SUCCEEDED", "NEEDS_RECONCILIATION", "FAILED_FINAL"):
-                return previous
-        plan = await plan_for(ref, user, approved_transform_id=approved_transform_id, title=title)
-        preview = plan.preview
-        # A dashboard-dataset answer is drawn on that dataset: it has no SQL.
-        sql = "" if preview.dataset_source else validate_artifact_sql(preview.sql or "")
-        op = previous or Operation(
-            operation_id=f"pub_{uuid4().hex[:20]}",
-            owner_name=user["username"],
-            idempotency_scope=scope,
-            request_fingerprint=request_fp,
-        )
-        op.status, op.error = "VALIDATING", None
-        op.target_mode = target.mode
-        op.dashboard_id = target.dashboard_id
-        op.source = preview.locator
-        op.strategy_id = plan.strategy_id
-        op.query_fingerprint = preview.query_fingerprint()
-        op.visualization_fingerprint = fingerprint(plan.plan.model_dump(mode="json"), plan.title)
-        op.business_context = preview.business_context
-        op.active_role = user.get("active_role")
-        op.security_context_version = user.get("security_context_version")
-        await _save(op)
-        try:
-            return await _run(user, op, plan, sql, target, agent_id=agent_id)
-        except PublishError:
-            raise
-        except BiError as exc:
-            op.status = "FAILED_FINAL" if exc.status in (401, 403, 404, 422) else "FAILED_RETRYABLE"
-            op.error = exc.message
-            await _save(op)
-            await _audit(user, "PUBLISH_CHART", op, "FAILED", exc.message)
-            status = (
-                exc.status
-                if exc.status in (401, 403, 404)
-                else (503 if exc.status == 0 or exc.status >= 500 else 422)
+    async with acting_as(actor_for(user)):
+        if not re.fullmatch(r"[A-Za-z0-9_\-:.]{8,128}", idempotency_key or ""):
+            raise PublishError(
+                "A publish request needs an idempotency key.", status=422, code="BAD_REQUEST"
+            )
+        if target.mode == "new" and not (target.title and _TITLE.match(target.title.strip())):
+            raise PublishError("Name the new dashboard.", status=422, code="BAD_REQUEST")
+        if target.mode == "existing" and not target.dashboard_id:
+            raise PublishError("Choose a dashboard.", status=422, code="BAD_REQUEST")
+        if (
+            target.mode == "existing"
+            and editor_state == "dirty"
+            and open_dashboard_id == target.dashboard_id
+        ):
+            raise PublishError(
+                "This dashboard has unsaved changes in Dataviz. Save or discard them first, so "
+                "nothing you changed is overwritten.",
+                status=409,
+                code="EDITOR_HAS_UNSAVED_CHANGES",
+            )
+        if not await capabilities.may_publish(user):
+            await write_audit_log(
+                event_type="DATAVIZ",
+                user_name=user["username"],
+                action="PUBLISH_CHART",
+                object_type="DATAVIZ_PUBLICATION",
+                object_name=str(target.dashboard_id or "new"),
+                status="DENIED",
+                error_message="active role is not a BI author",
+                session_id=user.get("session_id"),
+                active_role=user.get("active_role"),
+                security_context_version=user.get("security_context_version"),
             )
             raise PublishError(
-                exc.message, status=status, code="PROVIDER_ERROR", operation=op.public()
-            ) from exc
+                "Your active role can view dashboards but cannot add charts. Nothing was changed.",
+                status=403,
+                code="NOT_AUTHOR",
+            )
+
+        request_fp = fingerprint(
+            ref,
+            target.mode,
+            target.dashboard_id,
+            (target.title or "").strip(),
+            approved_transform_id,
+            (title or "").strip(),
+        )
+        scope = fingerprint(
+            user["username"],
+            user.get("active_role"),
+            user.get("security_context_version"),
+            idempotency_key,
+        )
+        redis_key = f"nova:dataviz:publish:{scope[7:39]}"
+        async with _Lock(redis_key, uuid4().hex):
+            previous = await _by_scope(scope, user["username"])
+            if previous is not None:
+                if previous.request_fingerprint != request_fp:
+                    raise PublishError(
+                        "This request id was already used for a different change.",
+                        status=409,
+                        code="IDEMPOTENCY_CONFLICT",
+                    )
+                if previous.status in ("SUCCEEDED", "NEEDS_RECONCILIATION", "FAILED_FINAL"):
+                    return previous
+            plan = await plan_for(
+                ref, user, approved_transform_id=approved_transform_id, title=title
+            )
+            preview = plan.preview
+            # A dashboard-dataset answer is drawn on that dataset: it has no SQL.
+            sql = "" if preview.dataset_source else validate_artifact_sql(preview.sql or "")
+            op = previous or Operation(
+                operation_id=f"pub_{uuid4().hex[:20]}",
+                owner_name=user["username"],
+                idempotency_scope=scope,
+                request_fingerprint=request_fp,
+            )
+            op.status, op.error = "VALIDATING", None
+            op.target_mode = target.mode
+            op.dashboard_id = target.dashboard_id
+            op.source = preview.locator
+            op.strategy_id = plan.strategy_id
+            op.query_fingerprint = preview.query_fingerprint()
+            op.visualization_fingerprint = fingerprint(
+                plan.plan.model_dump(mode="json"), plan.title
+            )
+            op.business_context = preview.business_context
+            op.active_role = user.get("active_role")
+            op.security_context_version = user.get("security_context_version")
+            await _save(op)
+            try:
+                return await _run(user, op, plan, sql, target, agent_id=agent_id)
+            except PublishError:
+                raise
+            except BiError as exc:
+                op.status = (
+                    "FAILED_FINAL" if exc.status in (401, 403, 404, 422) else "FAILED_RETRYABLE"
+                )
+                op.error = exc.message
+                await _save(op)
+                await _audit(user, "PUBLISH_CHART", op, "FAILED", exc.message)
+                status = (
+                    exc.status
+                    if exc.status in (401, 403, 404)
+                    else (503 if exc.status == 0 or exc.status >= 500 else 422)
+                )
+                raise PublishError(
+                    exc.message, status=status, code="PROVIDER_ERROR", operation=op.public()
+                ) from exc
 
 
 async def _run(
@@ -876,7 +839,9 @@ async def _run(
     async with SupersetClient.for_user(user) as bi:
         from .access import superset_role_for
 
-        superset_role = await superset_role_for(str(user.get("active_role") or ""))
+        superset_role = await superset_role_for(
+            str(user.get("active_role") or ""), actor=actor_for(user)
+        )
         current = await me(bi)
         dashboard: dict[str, Any] = {}
         if target.mode == "existing":

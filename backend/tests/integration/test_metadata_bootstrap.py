@@ -60,6 +60,8 @@ class Environment:
     @asynccontextmanager
     async def importer(self):
         """Load a legacy fixture through the migrator's guarded maintenance path."""
+        cursor = await self.admin.execute("SELECT maintenance FROM nova_meta.deployment_state")
+        previous = (await cursor.fetchone())["maintenance"]
         await self.admin.execute("UPDATE nova_meta.deployment_state SET maintenance=true")
         try:
             async with await psycopg.AsyncConnection.connect(
@@ -69,7 +71,9 @@ class Environment:
                 await connection.execute("SET LOCAL ROLE nova_meta_owner")
                 yield connection
         finally:
-            await self.admin.execute("UPDATE nova_meta.deployment_state SET maintenance=false")
+            await self.admin.execute(
+                "UPDATE nova_meta.deployment_state SET maintenance=%s", (previous,),
+            )
 
 
 @asynccontextmanager
@@ -388,3 +392,18 @@ async def test_terminated_provisioning_rolls_back_and_can_be_verified(environmen
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_legacy_fixture_preserves_unpublished_epoch_maintenance(environment):
+    from app.core.metadata_migrations import migrate
+
+    await environment.bootstrap()
+    await migrate(environment.role_config("nova_meta_migrator"), app_version="e" * 40)
+    async with environment.importer() as connection:
+        cursor = await connection.execute("SELECT current_user")
+        assert (await cursor.fetchone())["current_user"] == "nova_meta_owner"
+    cursor = await environment.admin.execute(
+        "SELECT metadata_epoch,maintenance FROM nova_meta.deployment_state"
+    )
+    state = await cursor.fetchone()
+    assert state["metadata_epoch"] is None and state["maintenance"] is True

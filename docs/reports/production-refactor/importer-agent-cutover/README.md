@@ -2,7 +2,10 @@
 
 Updated 2026-11-13, Asia/Jakarta. Branch `feat/production-control-plane`, based on
 `e0b5599448b26065bf84815ca07e0ead724d2d48`. The repository commit containing
-this checkpoint identifies the delivered repair source; CI is pending.
+this checkpoint identifies the delivered repair source. Commit `e83aa09a`
+was pushed; [CI 43303791124](https://github.com/dwickyfp/nova/actions/runs/43303791124)
+passed seven jobs but failed the engine job. Follow-up caller and fixture fixes
+are under validation.
 No development cutover or backend/workload startup has occurred. A frontend-only
 preview reached the login screen; authenticated docs inspection awaits cutover. Existing StarRocks
 metadata and payloads have not been modified by import rehearsal.
@@ -31,6 +34,12 @@ metadata and payloads have not been modified by import rehearsal.
   real workload logins. Ingestion runs in a separate process; proxy pools belong
   to the proxy thread. Task fixtures use claims/generations and retain run history;
   ML fixtures retain reservation tokens. Seed/restart/fault cases remain CI-only.
+
+The follow-up writer audit found Superset author-role and publication writes,
+Semantic View dataset mappings, preview/context reads, query history, user
+last-login history and Object Browser/Explorer Task reads still using the source.
+They now use the existing actor-bound PG owners. Intelligence startup hooks no
+longer create retired source tables. These changes do not alter the import schema.
 
 ## Evidence and retained failures
 
@@ -88,8 +97,12 @@ remain refusals, not implicit Jakarta defaults.
 1. Local code gates, full PG17, selected safe engine cases and the metadata image
    have passed as recorded above. Authenticated `/docs` browser inspection waits
    for the cutover runtime; the preview currently redirects to sign-in.
-2. Complete two final rehearsals with committed-chunk interruption/resume on
-   the final importer, including payload/semantic checks and immutable receipts.
+2. Final rehearsals 05 and 06 passed with committed-chunk interruption/resume,
+   1,009,174 rows, 163 entries, 453 payload references, semantic verification and
+   committed validation receipts. Their validation digests are
+   `b018da3153126e1bce5e9f6a9c0188786ecefbd53c6593252c0054f4c4426180` and
+   `79a8ee7f066d0df641bca6f79abb8a352a14ff5034c156b0e36dfd8ee9a67ca0`.
+   Importer and schema remain unchanged by the follow-up caller ports.
 3. Fetch/integrate remote main; commit and push owned changes. Follow CI to a
    passing conclusion. The owner authorizes destructive seeded integration in
    CI; it must not reseed this development stack.
@@ -101,3 +114,47 @@ remain refusals, not implicit Jakarta defaults.
    waivers. Durable interactive consent/agent separation, production Compose,
    ML/sandbox isolation and off-host recovery remain broader architecture work;
    this checkpoint does not claim those are complete.
+
+## Follow-up validation (2026-11-13)
+
+- CI 43303791124 engine: 126 passed, 22 skipped, two failures and 91 setup errors.
+  All 91 setup errors came from restoring `maintenance=false` before publishing
+  a fixture epoch. The fixture now restores its prior maintenance state. Both
+  Stream failures used synthetic consumption without a published generation;
+  fixtures now import that legacy generation into their owned PG target.
+- BI caller unit attempt 01: 101 passed, 26 failed, three errors from obsolete
+  StarRocks mocks and incomplete session fixtures. Attempt 02: 137 passed.
+- Real PG caller/bootstrap suite 01: 94 passed. Covers publication CAS and
+  duplicate scope, cross-user preview refusal, author-role revocation/rollback,
+  semantic mapping/context and query history filters/RLS/maintenance reads.
+- Agent eval 06: 358 passed; scorecard 05: 54 scenarios, 189 checks passed.
+- Full application mypy 10 and user-data system-access boundary scan passed.
+- Full unit/coverage 06: 11,137 passed, one obsolete Stage test patched the
+  removed query-service system connection. The replacement uses the Stage
+  metadata owner and verifies authorization before secret resolution with a
+  valid caller role. All 15 Stage cases passed. Run 07 passed 11,138 cases before the final Semantic View
+  publisher-identity fix. Final run 08 passed 11,139 cases, 64% coverage,
+  in 482.47 seconds.
+- Semantic View synchronization retains the authorized admin/steward publishing
+  another owner's view. Dataset mapping records the actual publisher; source
+  ownership is unchanged. Owner/admin unit regressions passed (five cases).
+  Full application mypy 11 and Agent eval 07 (358 cases) also passed.
+- Metadata test image builds 04 and 05 passed; 05 includes the final publisher
+  fix. User-doc content checks 02 passed all 15 cases.
+- Full PG17 suite 02 passed 964 cases in 1,234.92 seconds. Additional PG run 01
+  passed three cases: Task browser scope/body privacy, last-login history and
+  the fixture's unpublished-epoch maintenance regression. There were no skips.
+- Changed-file Ruff, documentation links/diff checks and runtime secret-canary
+  scan passed. User-doc content checks 03 passed all 15 cases after the final
+  author-role conflict guidance. `bash -n dev.sh` passed.
+- Seeded/destructive engine integration remains delegated to CI under the
+  owner's existing authorization. Final local checks above are complete; the
+  follow-up commit still requires green CI before cutover.
+
+
+The retained source snapshot was also inspected for interrupted work before
+starting the cutover operator. Task graph/node runs, migration jobs, ML runs and
+Notebook executions are terminal; Notebook runtimes are STOPPED/LOST/FAILED.
+All six Dataviz publications are terminal (five SUCCEEDED, one FAILED_FINAL).
+These observations must be confirmed against the final frozen export; they do
+not authorize replay of an uncertain external effect.

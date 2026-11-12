@@ -209,15 +209,16 @@ three Superset roles from the *active* Nova role:
 | `NovaAuthor` | Alpha, minus database admin | Explore; create and edit charts, dashboards, datasets; SQL Lab | A role listed in Nova's BI author mapping |
 | `NovaAdmin` | Admin, minus security and database admin | Manage Superset objects across owners | `ACCOUNTADMIN` |
 
-The author mapping is Nova control-plane metadata in `NOVA_SYSTEM`
-(`CONFIG_BI_AUTHOR_ROLES`), edited by `ACCOUNTADMIN` through
+The author mapping is Nova control metadata in PostgreSQL
+(`nova_meta.config_bi_author_roles` and its revision head), edited by `ACCOUNTADMIN` through
 `PUT /api/v1/superset/author-roles`, never inside Superset. Superset builds
 datasets by reflecting tables as the principal, so the same request writes the
 managed Ranger policy `nova-managed/bi/metadata/default_catalog`: `select` on
 the `information_schema` reflection views (`tables`, `tables_config`,
 `columns`, `views`, `materialized_views`) for exactly the author roles plus
 `ACCOUNTADMIN`. The policy is written first; if Ranger refuses it, the author
-list is left unchanged. Rows in those views remain limited to objects the
+list is left unchanged. The author-set write uses revision CAS with its audit;
+a conflicting update returns 409. Reads use the current PG set. Rows in those views remain limited to objects the
 principal can already see. An unmapped or missing role
 gets `NovaViewer`; an ambiguous security context gets no Superset session.
 Dataset-level access is granted broadly to authors (`all_datasource_access` on

@@ -49,6 +49,9 @@ Creating BI content needs an **author** role. `ACCOUNTADMIN` is always one;
 an administrator decides which other roles may author. Roles that are not
 authors can view dashboards of their role, and do not see **Add to Dataviz**.
 
+If two administrators update author roles at the same time, one update may
+report a conflict. Reload the current author list before submitting another change.
+
 ## Limits
 
 - There is no "share with a person" for Dataviz dashboards. To give someone a

@@ -115,7 +115,9 @@ async def _views_for_dashboard(user: dict[str, Any], dashboard_id: int | None) -
     except BiError:
         return []
     ids = [int(row["id"]) for row in body.get("result") or [] if row.get("id") is not None]
-    mapped = await _semantic_views(ids)
+    from app.core.metadata_scope import actor_for
+
+    mapped = await _semantic_views(ids, actor=actor_for(user))
     return list(dict.fromkeys(str(item["view_id"]) for item in mapped.values()))
 
 

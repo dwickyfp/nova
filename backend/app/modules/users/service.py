@@ -8,9 +8,11 @@ from collections import defaultdict
 import asyncmy
 import asyncmy.cursors
 
+from app.common.metadata_audit import AuditReader, audit_filter
 from app.common.sql_guard import normalize_role_name
 from app.core.config import settings
 from app.core.database import db
+from app.core.metadata_scope import scoped_transaction
 from app.modules.access_control.role_activation import parse_assigned_roles
 
 logger = logging.getLogger(__name__)
@@ -135,15 +137,7 @@ class UserService:
                 )
                 role_edges = await cur.fetchall()
 
-                await cur.execute(
-                    """
-                    SELECT user_name, MAX(event_time) AS last_login
-                    FROM NOVA_SYSTEM.AUDIT_LOG
-                    WHERE event_type = 'login' AND status = 'SUCCESS'
-                    GROUP BY user_name
-                    """
-                )
-                login_rows = await cur.fetchall()
+
         finally:
             conn.close()
 
@@ -170,12 +164,11 @@ class UserService:
                 continue
             roles_by_identity[identity_raw].append(self._normalize_role_name(str(role_raw)))
 
-        last_login_by_user: dict[str, str] = {}
-        for row in login_rows:
-            user_name = row.get("user_name")
-            last_login = row.get("last_login")
-            if user_name and last_login:
-                last_login_by_user[str(user_name)] = str(last_login)
+        async with scoped_transaction(read_only=True) as scope:
+            last_logins = await AuditReader(scope.connection).latest_by_user(
+                audit_filter(event_type="login", status="SUCCESS")
+            )
+        last_login_by_user = {name: str(stamp) for name, stamp in last_logins.items()}
 
         users: list[dict] = []
         for row in user_rows:

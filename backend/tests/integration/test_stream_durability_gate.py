@@ -340,7 +340,25 @@ async def test_claim_repository_preserves_existing_winner(source):
         assert result.winner == first
 
 
-async def test_durable_offset_receipt_survives_repeated_and_late_recovery(source):
+async def _import_generation(environment, *consumptions):
+    """Legacy published generations on the owned PG fixture, never the data engine."""
+    async with environment.importer() as connection:
+        for consume in consumptions:
+            await connection.execute(
+                "INSERT INTO nova_meta.config_streams "
+                "(catalog_name,database_name,schema_name,name,generation,stream_id,"
+                "source_database,source_name,source_id,owner_role,cursor_epoch,cursor_sequence,"
+                "status) VALUES ('default_catalog',%s,'default','changes',%s,%s,%s,'target',"
+                "%s,'ACCOUNTADMIN',%s,%s,'READY')",
+                (consume.target.database, consume.generation, consume.stream_id,
+                 consume.target.database, consume.snapshot.source_id,
+                 consume.snapshot.after.epoch, consume.snapshot.after.sequence),
+            )
+
+
+async def test_durable_offset_receipt_survives_repeated_and_late_recovery(
+    source, engine_metadata,
+):
     from app.modules.streams.consumption import Consumption, ConsumptionState
     from app.modules.streams.journal import ConsumptionJournal
     from app.modules.streams.schemas import ChangeCursor, ChangeSnapshot, operation_id
@@ -352,15 +370,18 @@ async def test_durable_offset_receipt_survives_repeated_and_late_recovery(source
         operation_id(source, 1), stream_id, 1,
         ChangeSnapshot(source, ChangeCursor(1, 0), ChangeCursor(1, 1), 1),
         TargetIdentity(source, "target", "nova_receipt_first", "root"), operation_id("first"),
+        active_role="ACCOUNTADMIN", security_context_version=1,
     )
     second = Consumption(
         operation_id(source, 2), stream_id, 2,
         ChangeSnapshot(source, ChangeCursor(1, 1), ChangeCursor(1, 2), 1),
         TargetIdentity(source, "target", "nova_receipt_second", "root"), operation_id("second"),
+        active_role="ACCOUNTADMIN", security_context_version=1,
     )
     # These are synthetic receipts exercising real journal persistence, not
     # evidence that target SQL ran. Target verification has separate tests.
     receipt = CommitReceipt(TargetOutcome.VISIBLE, "fixture", 123, 0)
+    await _import_generation(engine_metadata, first, second)
     await journal.prepare(first)
     await journal.prepare(second)
     await journal.record(first, ConsumptionState.PREPARED)
@@ -433,7 +454,7 @@ async def test_expired_label_cannot_overwrite_durable_claim(source):
         await execute(f'ADMIN SET FRONTEND CONFIG ("label_keep_max_second" = "{original}")')
 
 
-async def test_distinct_consumptions_share_one_durable_stream_generation(source):
+async def test_distinct_consumptions_share_one_durable_stream_generation(source, engine_metadata):
     from dataclasses import replace
 
     from app.modules.streams.claims import ClaimRepository
@@ -452,12 +473,14 @@ async def test_distinct_consumptions_share_one_durable_stream_generation(source)
         operation_id(source, "consume_first"), stream_id, 0,
         ChangeSnapshot(source, ChangeCursor(1, 0), ChangeCursor(1, 1), 1),
         TargetIdentity(source, "target", "nova_first", "root"), operation_id("first SQL"),
+        active_role="ACCOUNTADMIN", security_context_version=1,
     )
     second = replace(
         first, consume_id=operation_id(source, "consume_second"),
         target=replace(first.target, label="nova_second"),
         operation_digest=operation_id("second SQL"),
     )
+    await _import_generation(engine_metadata, first)
     journal = ConsumptionJournal()
     services = [
         StreamConsumptionService(

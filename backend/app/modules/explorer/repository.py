@@ -264,26 +264,15 @@ class ExplorerRepository:
         the task body (which can name a stage whose credentials Nova injects at
         execution time).
         """
-        sql = (
-            "SELECT name, schedule_kind, schedule_expr, timezone, overlap_policy "
-            "FROM NOVA_SYSTEM.CONFIG_TASKS "
-            "WHERE database_name = %s"
-        )
-        try:
-            result = await db.execute_system(sql, [database])
-            return [
-                {
-                    "name": row[0],
-                    "schedule_kind": row[1],
-                    "schedule_expr": row[2],
-                    "timezone": row[3],
-                    "overlap_policy": row[4],
-                }
-                for row in result["rows"]
-            ]
-        except Exception:
-            log.debug("No tasks found for database %s", database)
-            return []
+        from app.core.metadata_actor import current_actor
+        from app.modules.task_orchestration.repository import TaskOrchestrationRepository
+
+        tasks = await TaskOrchestrationRepository(current_actor()).list_tasks()
+        columns = ("name", "schedule_kind", "schedule_expr", "timezone", "overlap_policy")
+        return [
+            {column: task.get(column) for column in columns}
+            for task in tasks if task["database_name"] == database
+        ]
 
     # ── Detail views ───────────────────────────────────────────
 

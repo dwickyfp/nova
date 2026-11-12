@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from app.common.audit import write_audit_log
 from app.core.deps import get_current_user
+from app.core.metadata_scope import actor_for, metadata_transaction
 from app.core.role_gates import require_active_role
 from app.modules.access_control.security_context import SecurityContext, SecurityContextError
 from app.modules.access_control.service import AccessControlError, access_control_service
@@ -23,6 +24,7 @@ from app.modules.access_control.service import AccessControlError, access_contro
 from . import tokens
 from .access import (
     ADMIN_ROLE,
+    author_role_set,
     author_roles,
     replace_author_roles,
     require_superset_service,
@@ -100,7 +102,7 @@ async def open_bi_session(request: Request, response: Response, user: CurrentUse
     except tokens.BiCredentialError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
     active_role = user.get("active_role") or ""
-    superset_role = await superset_role_for(active_role)
+    superset_role = await superset_role_for(active_role, actor=actor_for(user))
     response.set_cookie(
         BI_COOKIE,
         handle,
@@ -137,8 +139,7 @@ async def close_bi_session(
 
 @router.get("/author-roles", response_model=AuthorRoles)
 async def get_author_roles(user: AccountAdmin):
-    del user
-    return AuthorRoles(roles=sorted(await author_roles(fresh=True)))
+    return AuthorRoles(roles=sorted(await author_roles(fresh=True, actor=actor_for(user))))
 
 
 @router.put("/author-roles", response_model=AuthorRoles)
@@ -152,12 +153,21 @@ async def put_author_roles(body: AuthorRoles, user: AccountAdmin):
         roles = sorted({validate_role_name(role) for role in body.roles})
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    security = actor_for(user)
+    _, revision = await author_role_set(actor=security)
     try:
-        security = SecurityContext.from_session(user)
         await access_control_service.put_bi_metadata_access(security, roles)
     except (SecurityContextError, AccessControlError) as exc:
         raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
-    roles = await replace_author_roles(roles, changed_by=user["username"])
+    async with metadata_transaction(security):
+        roles = await replace_author_roles(
+            roles, changed_by=user["username"], expected_revision=revision
+        )
+        await _audit_author_roles(user, roles)
+    return AuthorRoles(roles=roles)
+
+
+async def _audit_author_roles(user: dict, roles: list[str]) -> None:
     await write_audit_log(
         event_type="bi_author_roles",
         user_name=user["username"],
@@ -169,7 +179,6 @@ async def put_author_roles(body: AuthorRoles, user: AccountAdmin):
         active_role=user.get("active_role"),
         security_context_version=user.get("security_context_version"),
     )
-    return AuthorRoles(roles=roles)
 
 
 async def _session_or_401(handle: str) -> tokens.BiSession:
@@ -186,7 +195,15 @@ async def identity(body: HandleRequest):
     return IdentityResponse(
         username=bi_session.username,
         active_role=bi_session.active_role,
-        superset_role=await superset_role_for(bi_session.active_role),
+        superset_role=await superset_role_for(
+            bi_session.active_role,
+            actor=SecurityContext(
+                principal=bi_session.username,
+                active_role=bi_session.active_role,
+                session_id=bi_session.session_id,
+                security_context_version=bi_session.security_context_version,
+            ),
+        ),
         security_context_version=bi_session.security_context_version,
         delegated=bi_session.delegated,
     )
@@ -251,6 +268,7 @@ async def delegate(body: DelegateRequest):
         )
         raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
     handle = await tokens.issue_delegated_handle(body.username, role)
+    bi_session = await _session_or_401(handle)
     await write_audit_log(
         event_type="bi_delegation",
         user_name=body.username,
@@ -264,6 +282,14 @@ async def delegate(body: DelegateRequest):
         handle=handle,
         username=body.username,
         active_role=role,
-        superset_role=await superset_role_for(role),
+        superset_role=await superset_role_for(
+            role,
+            actor=SecurityContext(
+                principal=bi_session.username,
+                active_role=bi_session.active_role,
+                session_id=bi_session.session_id,
+                security_context_version=bi_session.security_context_version,
+            ),
+        ),
         expires_in=settings.SUPERSET_DELEGATION_TTL_SECONDS,
     )

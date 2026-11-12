@@ -96,11 +96,14 @@ class _Connection:
     region: str = "us-east-1"
 
 
-async def test_authorization_precedes_secret_resolution(monkeypatch) -> None:
+async def test_authorization_precedes_secret_resolution(monkeypatch, fake_metadata_db) -> None:
     import app.modules.query.service as module
+    from tests.unit.stage_metadata_fakes import install_stages
 
-    async def rows(sql, params=None):
-        return {"rows": [("stage", "db", "bronze", "storage", "db/bronze/stage")]}
+    install_stages(monkeypatch, [{
+        "id": "stage-id", "name": "stage", "database_name": "db", "schema_name": "bronze",
+        "storage_connection": "storage", "base_prefix": "db/bronze/stage",
+    }])
 
     async def deny(*args, **kwargs):
         raise StageAccessDenied("Stage access denied")
@@ -108,7 +111,6 @@ async def test_authorization_precedes_secret_resolution(monkeypatch) -> None:
     def secret(name):
         raise AssertionError("secret was resolved before authorization")
 
-    monkeypatch.setattr(module.db, "execute_system", rows)
     monkeypatch.setattr(module, "check_stage_access", deny)
     monkeypatch.setattr(module, "resolve_storage_credentials", secret)
     with pytest.raises(StageAccessDenied):
@@ -118,7 +120,7 @@ async def test_authorization_precedes_secret_resolution(monkeypatch) -> None:
             schema="bronze",
             username="analyst",
             password="pw",
-            role=None,
+            role="analyst",
         )
 
 

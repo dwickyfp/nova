@@ -6,13 +6,14 @@ import ipaddress
 import logging
 import re
 import secrets
-import time
 from functools import lru_cache
 
 from fastapi import HTTPException, Request, status
 
 from app.core.config import settings
-from app.core.database import db
+from app.core.metadata_db import MetadataPermissionDenied
+from app.modules.access_control.security_context import SecurityContext
+from app.modules.superset.metadata_repository import superset_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -36,11 +37,6 @@ PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 """
 
 _ROLE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
-#: Seconds an author-role lookup is reused inside one process. Superset makes
-#: many requests per page; a change made in Nova reaches every process within
-#: this window.
-_AUTHOR_CACHE_SECONDS = 15.0
-_author_cache: tuple[float, frozenset[str]] | None = None
 
 
 @lru_cache(maxsize=8)
@@ -107,43 +103,53 @@ def validate_role_name(role: str) -> str:
     return role
 
 
-async def author_roles(*, fresh: bool = False) -> frozenset[str]:
-    """Nova roles whose holders author in Superset."""
-    global _author_cache
-    now = time.monotonic()
-    if not fresh and _author_cache and now - _author_cache[0] < _AUTHOR_CACHE_SECONDS:
-        return _author_cache[1]
-    result = await db.execute_system(
-        "SELECT role_name FROM NOVA_SYSTEM.CONFIG_BI_AUTHOR_ROLES ORDER BY role_name"
-    )
-    roles = frozenset(str(row[0]) for row in result["rows"])
-    _author_cache = (now, roles)
+async def author_role_set(
+    *,
+    actor: SecurityContext | None = None,
+) -> tuple[frozenset[str], int]:
+    async with superset_metadata(actor, read_only=True) as repository:
+        return await repository.author_roles()
+
+
+async def author_roles(
+    *,
+    fresh: bool = False,
+    actor: SecurityContext | None = None,
+) -> frozenset[str]:
+    """Read the current set in the caller's transaction; revocation is immediate."""
+    del fresh
+    roles, _ = await author_role_set(actor=actor)
     return roles
 
 
-async def replace_author_roles(roles: list[str], *, changed_by: str) -> list[str]:
-    """Replace the author role set. Names are validated before any write."""
-    global _author_cache
+async def replace_author_roles(
+    roles: list[str],
+    *,
+    changed_by: str,
+    expected_revision: int | None = None,
+) -> list[str]:
     wanted = sorted({validate_role_name(role) for role in roles})
-    current = await author_roles(fresh=True)
-    for role in current - set(wanted):
-        await db.execute_system(
-            "DELETE FROM NOVA_SYSTEM.CONFIG_BI_AUTHOR_ROLES WHERE role_name = %s", (role,)
+    if expected_revision is None:
+        _, expected_revision = await author_role_set()
+    async with superset_metadata() as repository:
+        if repository.actor.principal != changed_by:
+            raise MetadataPermissionDenied()
+        result, _ = await repository.replace_author_roles(
+            wanted, expected_revision=expected_revision
         )
-    for role in set(wanted) - current:
-        await db.execute_system(
-            "INSERT INTO NOVA_SYSTEM.CONFIG_BI_AUTHOR_ROLES "
-            "(role_name, created_by, created_at) VALUES (%s, %s, NOW())",
-            (role, changed_by),
-        )
-    _author_cache = None
-    return wanted
+        return result
 
 
-async def superset_role_for(active_role: str) -> str:
+async def superset_role_for(
+    active_role: str,
+    *,
+    actor: SecurityContext | None = None,
+) -> str:
     """Map the session's active Nova role to exactly one Superset role."""
+    if actor is not None and actor.active_role != active_role:
+        raise MetadataPermissionDenied()
     if active_role == ADMIN_ROLE:
         return SUPERSET_ADMIN
-    if active_role in await author_roles():
+    if active_role in await author_roles(actor=actor):
         return SUPERSET_AUTHOR
     return SUPERSET_VIEWER

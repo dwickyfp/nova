@@ -17,14 +17,15 @@ from typing import Any, ParamSpec
 import asyncmy
 
 from app.common.audit import write_audit_log
+from app.common.metadata_audit import AuditReader, audit_filter
 from app.common.sql_guard import (
     CredentialsRedactionError,
     split_sql_statements,
 )
 from app.common.user_flags import set_must_change_password
 from app.core.config import require_storage_connection
-from app.core.database import db
 from app.core.exceptions import ForbiddenSQLError
+from app.core.metadata_scope import scoped_transaction
 from app.core.security import decrypt_password
 from app.modules.access_control.security_context import (
     SecurityContextError,
@@ -914,58 +915,26 @@ class QueryService:
         min_duration_ms: int | None = None,
     ) -> dict:
         """Retrieve query execution history from AUDIT_LOG."""
-        where, params = self._build_history_filters(
-            username=username,
-            file_id=file_id,
-            status=status,
-            search=search,
-            database_name=database_name,
-            date_from=date_from,
-            date_to=date_to,
-            min_duration_ms=min_duration_ms,
+        selection = audit_filter(
+            event_type="query", user_name=username, file_id=file_id or None,
+            status=status.upper() if status else None, sql_contains=search or None,
+            database_name=database_name or None, since=date_from or None,
+            through=date_to or None, min_duration_ms=min_duration_ms,
         )
-
-        count_result = await db.execute_system(
-            f"SELECT COUNT(*) FROM NOVA_SYSTEM.AUDIT_LOG WHERE {where}",
-            params,
+        columns = (
+            "log_id", "query_id", "event_time", "user_name", "object_name", "action",
+            "sql_text", "status", "duration_ms", "rows_affected", "error_message",
+            "file_id", "database_name", "schema_name", "session_id",
         )
-        total = count_result["rows"][0][0] if count_result["rows"] else 0
-
-        result = await db.execute_system(
-            f"""
-            SELECT log_id, query_id, event_time, user_name, object_name, action,
-                   sql_text, status, duration_ms, rows_affected, error_message,
-                   file_id, database_name, schema_name, session_id
-            FROM NOVA_SYSTEM.AUDIT_LOG
-            WHERE {where}
-            ORDER BY event_time DESC
-            LIMIT %s OFFSET %s
-            """,
-            params + [limit, offset],
-        )
-
-        items = []
-        for row in result["rows"]:
-            items.append(
-                {
-                    "log_id": str(row[0]) if row[0] is not None else "",
-                    "query_id": row[1] or "",
-                    "event_time": str(row[2]) if row[2] else "",
-                    "user_name": row[3] or "",
-                    "object_name": row[4] or "",
-                    "action": row[5] or "",
-                    "sql_text": row[6] or "",
-                    "status": row[7] or "",
-                    "duration_ms": row[8],
-                    "rows_affected": row[9],
-                    "error_message": row[10],
-                    "file_id": row[11],
-                    "database_name": row[12],
-                    "schema_name": row[13],
-                    "session_id": row[14],
-                }
-            )
-
+        async with scoped_transaction(read_only=True) as scope:
+            reader = AuditReader(scope.connection)
+            total = await reader.count(selection)
+            items = await reader.events(selection, columns, limit=limit, offset=offset)
+        for item in items:
+            for field in ("log_id", "event_time"):
+                item[field] = str(item[field]) if item[field] is not None else ""
+            for field in ("query_id", "user_name", "object_name", "action", "sql_text", "status"):
+                item[field] = item[field] or ""
         return {"items": items, "total": total}
 
     async def get_history_stats(
@@ -981,83 +950,23 @@ class QueryService:
         min_duration_ms: int | None = None,
     ) -> dict:
         """Return aggregate statistics for query execution history."""
-        where, params = self._build_history_filters(
-            username=username,
-            file_id=file_id,
-            status=status,
-            search=search,
-            database_name=database_name,
-            date_from=date_from,
-            date_to=date_to,
-            min_duration_ms=min_duration_ms,
+        selection = audit_filter(
+            event_type="query", user_name=username, file_id=file_id or None,
+            status=status.upper() if status else None, sql_contains=search or None,
+            database_name=database_name or None, since=date_from or None,
+            through=date_to or None, min_duration_ms=min_duration_ms,
         )
-
-        result = await db.execute_system(
-            f"""
-            SELECT COUNT(*) AS total,
-                   AVG(duration_ms) AS avg_duration_ms,
-                   SUM(CASE WHEN status = 'ERROR' THEN 1 ELSE 0 END) AS error_count,
-                   SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) AS success_count
-            FROM NOVA_SYSTEM.AUDIT_LOG
-            WHERE {where}
-            """,
-            params,
-        )
-
-        row = result["rows"][0] if result["rows"] else (0, None, 0, 0)
-        total = row[0] or 0
-        avg_duration_ms = float(row[1]) if row[1] is not None else None
-        error_count = row[2] or 0
-        success_count = row[3] or 0
-        error_rate = (error_count / total) if total > 0 else 0.0
-
+        async with scoped_transaction(read_only=True) as scope:
+            summary = await AuditReader(scope.connection).summary(selection)
+        total = int(summary["total"])
+        errors = int(summary["error_count"])
         return {
             "total": total,
-            "avg_duration_ms": avg_duration_ms,
-            "error_count": error_count,
-            "success_count": success_count,
-            "error_rate": error_rate,
+            "avg_duration_ms": summary["avg_duration_ms"],
+            "error_count": errors,
+            "success_count": int(summary["success_count"]),
+            "error_rate": errors / total if total else 0.0,
         }
-
-    @staticmethod
-    def _build_history_filters(
-        *,
-        username: str,
-        file_id: str | None = None,
-        status: str | None = None,
-        search: str | None = None,
-        database_name: str | None = None,
-        date_from: str | None = None,
-        date_to: str | None = None,
-        min_duration_ms: int | None = None,
-    ) -> tuple[str, list]:
-        """Build shared WHERE clause and params for history queries."""
-        conditions = ["event_type = 'query'", "user_name = %s"]
-        params: list = [username]
-
-        if file_id:
-            conditions.append("file_id = %s")
-            params.append(file_id)
-        if status:
-            conditions.append("status = %s")
-            params.append(status.upper())
-        if search:
-            conditions.append("sql_text LIKE %s")
-            params.append(f"%{search}%")
-        if database_name:
-            conditions.append("database_name = %s")
-            params.append(database_name)
-        if date_from:
-            conditions.append("event_time >= %s")
-            params.append(date_from)
-        if date_to:
-            conditions.append("event_time <= %s")
-            params.append(date_to)
-        if min_duration_ms is not None:
-            conditions.append("duration_ms >= %s")
-            params.append(min_duration_ms)
-
-        return " AND ".join(conditions), params
 
     async def explain(
         self,

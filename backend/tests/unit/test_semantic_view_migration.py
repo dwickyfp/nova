@@ -6,6 +6,7 @@ import json
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -144,13 +145,11 @@ def _install(monkeypatch, store):
 async def test_visibility_column_upgrade_is_idempotent(monkeypatch):
     import app.modules.intelligence.semantic_view_schema as module
 
-    async def execute(sql: str):
-        if sql.startswith("ALTER TABLE"):
-            raise RuntimeError("Duplicate column visibility already exists")
-        return {"rows": []}
-
-    monkeypatch.setattr(module.db, "execute_system", execute)
+    probe = AsyncMock()
+    monkeypatch.setattr(module, "metadata_db", lambda: SimpleNamespace(probe=probe))
     await ensure_semantic_view_schema()
+    probe.assert_awaited_once()
+
 
 
 @pytest.mark.asyncio

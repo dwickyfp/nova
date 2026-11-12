@@ -4,11 +4,13 @@ Orchestrates metadata queries for the Snowsight-style sidebar:
   Catalog → Database → Schema → Tables/Views/MVs
 """
 
-from app.core.database import db
+from app.core.metadata_actor import actor_for
+from app.core.metadata_db import MetadataPermissionDenied
 from app.core.security import decrypt_password
 from app.modules.objects.repository import ObjectRepository
 from app.modules.stages.access import StageAccessDenied, check_stage_access
 from app.modules.stages.service import caller_actor, discover_stages
+from app.modules.task_orchestration.repository import TaskOrchestrationRepository
 
 
 async def _stage_identities(
@@ -341,26 +343,15 @@ class ObjectService:
         )
         if database not in {row["name"] for row in visible}:
             return []
-        result = await db.execute_system(
-            """
-            SELECT id, name, schedule_kind, schedule_expr, timezone, overlap_policy
-            FROM NOVA_SYSTEM.CONFIG_TASKS
-            WHERE database_name = %s AND schema_name = %s
-            ORDER BY name
-            """,
-            [database, schema],
-        )
-        columns = (
-            "id",
-            "name",
-            "schedule_kind",
-            "schedule_expr",
-            "timezone",
-            "overlap_policy",
-        )
+        actor = actor_for(username)
+        if actor.active_role != role:
+            raise MetadataPermissionDenied()
+        tasks = await TaskOrchestrationRepository(actor).list_tasks()
+        columns = ("id", "name", "schedule_kind", "schedule_expr", "timezone", "overlap_policy")
         return [
-            {**dict(zip(columns, row, strict=True)), "type": "TASK"}
-            for row in result["rows"]
+            {**{column: task.get(column) for column in columns}, "type": "TASK"}
+            for task in sorted(tasks, key=lambda task: task["name"])
+            if task["database_name"] == database and task["schema_name"] == schema
         ]
 
 

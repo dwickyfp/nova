@@ -205,7 +205,7 @@ async def test_superset_role_follows_the_active_role(monkeypatch):
 
 async def test_author_roles_are_validated_before_any_write(monkeypatch):
     execute = AsyncMock(return_value={"rows": []})
-    monkeypatch.setattr(access.db, "execute_system", execute)
+    monkeypatch.setattr(access, "superset_metadata", execute)
     with pytest.raises(ValueError):
         await access.replace_author_roles(["finance", "x; DROP TABLE t"], changed_by="admin")
     execute.assert_not_called()
@@ -377,7 +377,10 @@ def bridge_app(redis, monkeypatch):
     state: dict = {}
 
     async def current_user():
-        return state["user"]
+        from app.core.metadata_scope import declare_actor
+        user = {"assigned_roles": [state["user"]["active_role"]], **state["user"]}
+        declare_actor(user)
+        return user
 
     application.dependency_overrides[get_current_user] = current_user
     return application, state
@@ -455,6 +458,15 @@ async def test_author_roles_need_an_active_accountadmin(bridge_app, monkeypatch)
     from app.modules.superset import router as bridge
 
     monkeypatch.setattr(bridge, "replace_author_roles", replace)
+    monkeypatch.setattr(bridge, "author_role_set", AsyncMock(return_value=(frozenset(), 3)))
+
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def transaction(actor):
+        yield
+
+    monkeypatch.setattr(bridge, "metadata_transaction", transaction)
     put_metadata = AsyncMock(return_value={"id": 1})
     monkeypatch.setattr(bridge.access_control_service, "put_bi_metadata_access", put_metadata)
     async with await _client(application) as http:
