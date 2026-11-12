@@ -1,5 +1,39 @@
 # Intelligence metadata storage checkpoint
 
+## Revision 0025 (remaining 11 tables)
+
+Source parent: `852a14e1`. Revision 0025 prepares `CONFIG_ENTITIES`, the six
+feature-store tables, the three legacy agent semantic-model tables and
+`AUDIT_SEMANTIC_QUERY_USAGE`, completing all 36 Intelligence tables in storage.
+Callers are not cut over.
+
+Local chain: real `0017`/`0018` from `feat/production-control-plane`
+(`0e257fb0`), this branch's `0022`, and temporary `PERFORM 1;` placeholders for
+`0019`–`0021`, `0023` and `0024`; none of those are part of the commit. Function
+bodies were first compiled in a rolled-back transaction on a scratch PG container.
+Every PG run held `/tmp/nova-metadata-pg.lock` with no other metadata PG pytest
+running.
+
+- Real PG: `test_metadata_intelligence.py` 50 passed, 0 skipped on the first
+  run (19 new cases: entity registration once, revision-CAS retirement with one
+  winner, immutable keys; Feature View versions allocated once under
+  concurrency, failed versions never served, finished once; group members must
+  pin built versions of the group entity's views; a pinned view cannot be
+  dropped; a concurrent drop and pin never both succeed; training sets owned and
+  model links only to the caller's own set; legacy semantic models read-only
+  with concurrent counter increments (3+4 uses), forward-only counters and
+  owner-scoped usage; per-workload privileges for every role in
+  `WORKLOAD_ROLES`; maintenance-only import of an interrupted legacy build).
+  Full CI metadata list (20 modules): 692 passed, 0 skipped.
+- Mutation check: removing the pin check from the Feature View delete guard made
+  the pinned-view test fail ("DID NOT RAISE"); restored. The concurrent
+  drop-versus-pin case still passed under that mutation because the drop won the
+  race in that run, so it is a race check, not the mutation's detector.
+- Unit/coverage 10,946 passed (0 skipped); trajectories 358; scorecard 54/54
+  scenarios, 189/189 checks; `mypy app` clean; Ruff clean on changed Python files.
+
+## Revision 0022
+
 Source parent: `c6a45bac`. Revision 0022 and `IntelligenceMetadataRepository`
 prepare 25 of the 36 Intelligence tables in PostgreSQL (Semantic Views and
 versions, 17 revision stores, News feedback, five AI Search tables). Runtime

@@ -575,3 +575,338 @@ async def test_import_is_maintenance_only_and_keeps_legacy_rows(iq):
         assert retired["status"] == "DEPRECATED"
     rows = await iq.admin("SELECT count(*) AS n FROM nova_meta.config_intelligence_news")
     assert rows[0]["n"] == 2
+
+
+# ── Revision 0025: entities, feature store, legacy semantic models, usage ───
+
+ENTITY = {"catalog": "default_catalog", "database": "shop", "schema": "shop",
+          "name": "customer", "id": "entity-1", "relation": "shop.customers",
+          "key_columns": ["customer_id"], "tags": ["core"]}
+
+
+def feature_view(name="spend", entity_id="entity-1"):
+    return {"name": name, "id": "fv-" + name, "entity_id": entity_id,
+            "source_relation": "shop.orders", "entity_keys": ["customer_id"],
+            "event_timestamp": "ordered_at", "feature_columns": [name + "_total"],
+            "freshness_seconds": 3600, "ttl_seconds": 86400}
+
+
+async def built_view(iq, name="spend", entity_id="entity-1"):
+    async with iq.transaction() as (repo, _):
+        await repo.create_feature_view(feature_view(name, entity_id),
+                                       relation_name=f"_NOVA_FEATURES.fv_{name}_1")
+        assert await repo.finish_feature_view_version(name, 1, row_count=12) is True
+        return await repo.activate_feature_view(name, 1, expected_revision=1)
+
+
+async def test_entities_are_owned_registered_once_and_only_retired(iq):
+    async with iq.transaction() as (repo, _):
+        entity = await repo.create_entity(ENTITY)
+    assert (entity["owner_name"], entity["status"], entity["metadata_revision"]) == (
+        "iq-alice", "ACTIVE", 1)
+    with pytest.raises(MetadataConflict):
+        async with iq.transaction() as (repo, _):
+            await repo.create_entity({**ENTITY, "id": "entity-2"})
+    with pytest.raises(MetadataIntegrityViolation):
+        async with iq.transaction() as (_, conn):
+            await conn.execute("UPDATE nova_meta.config_entities SET status='ACTIVE',"
+                               "metadata_revision=metadata_revision+1 WHERE id='entity-1'")
+    with pytest.raises(MetadataPermissionDenied):
+        async with iq.transaction() as (_, conn):
+            await conn.execute("UPDATE nova_meta.config_entities SET key_columns='[]' "
+                               "WHERE id='entity-1'")
+    ready = asyncio.Barrier(2)
+
+    async def retire():
+        async with iq.transaction() as (repo, _):
+            await ready.wait()
+            return await repo.deprecate_entity("entity-1", expected_revision=1)
+
+    results = await asyncio.gather(retire(), retire(), return_exceptions=True)
+    assert sum(isinstance(r, dict) for r in results) == 1
+    assert sum(isinstance(r, MetadataConflict) for r in results) == 1
+    async with iq.transaction(read_only=True) as (repo, _):
+        assert await repo.get_entity("entity-1") is None
+    actions = await iq.admin("SELECT action FROM nova_meta.audit_log WHERE metadata_table="
+                             "'config_entities' ORDER BY log_id")
+    assert [a["action"] for a in actions] == ["CREATE", "UPDATE"]
+
+
+async def test_feature_view_versions_are_allocated_once_and_built_before_serving(iq):
+    view = await built_view(iq)
+    assert (view["status"], view["active_version"], view["metadata_revision"]) == (
+        "ACTIVE", 1, 2)
+    ready = asyncio.Barrier(2)
+
+    async def refresh():
+        async with iq.transaction() as (repo, _):
+            await ready.wait()
+            return await repo.add_feature_view_version(
+                "spend", "_NOVA_FEATURES.fv_spend_2", feature_view(), expected_latest=1)
+
+    results = await asyncio.gather(refresh(), refresh(), return_exceptions=True)
+    assert sum(isinstance(r, dict) for r in results) == 1
+    assert sum(isinstance(r, MetadataConflict) for r in results) == 1
+    # A building or failed version can never be served.
+    with pytest.raises(MetadataConflict):
+        async with iq.transaction() as (repo, _):
+            await repo.activate_feature_view("spend", 2, expected_revision=2)
+    async with iq.transaction() as (repo, _):
+        assert await repo.finish_feature_view_version("spend", 2, row_count=None) is True
+        assert await repo.finish_feature_view_version("spend", 2, row_count=5) is False
+    with pytest.raises(MetadataConflict):
+        async with iq.transaction() as (repo, _):
+            await repo.activate_feature_view("spend", 2, expected_revision=2)
+    with pytest.raises(MetadataPermissionDenied):
+        async with iq.transaction() as (_, conn):
+            await conn.execute("UPDATE nova_meta.config_feature_view_versions SET "
+                               "definition='{}' WHERE view_name='spend'")
+    with pytest.raises(MetadataIntegrityViolation):
+        async with iq.transaction() as (_, conn):
+            await conn.execute("UPDATE nova_meta.config_feature_view_versions SET "
+                               "status='READY' WHERE view_name='spend' AND version=1")
+
+
+async def test_a_pinned_feature_view_cannot_be_dropped(iq):
+    await built_view(iq)
+    await built_view(iq, "other_entity", entity_id="entity-9")
+    async with iq.transaction() as (repo, _):
+        await repo.create_feature_view(feature_view("pending"),
+                                       relation_name="_NOVA_FEATURES.fv_pending_1")
+    for members in ([{"view_name": "pending", "version": 1}],
+                    [{"view_name": "other_entity", "version": 1}],
+                    [{"view_name": "spend", "version": 7}]):
+        with pytest.raises(MetadataIntegrityViolation):
+            async with iq.transaction() as (repo, _):
+                await repo.create_feature_group(name="g-bad", group_id="g-bad",
+                                                entity_id="entity-1", members=members)
+    async with iq.transaction() as (repo, _):
+        group = await repo.create_feature_group(
+            name="churn", group_id="group-1", entity_id="entity-1",
+            members=[{"view_name": "spend", "version": 1}])
+        assert (group["active_version"], group["status"]) == (1, "ACTIVE")
+    with pytest.raises(MetadataIntegrityViolation):
+        async with iq.transaction() as (repo, _):
+            await repo.drop_feature_view("spend", expected_revision=2)
+    with pytest.raises(MetadataIntegrityViolation):
+        async with iq.transaction() as (_, conn):
+            await conn.execute("UPDATE nova_meta.config_feature_group_versions SET "
+                               "status='DEPRECATED' WHERE group_name='churn'")
+            await conn.execute("UPDATE nova_meta.config_feature_group_versions SET "
+                               "status='DRAFT' WHERE group_name='churn'")
+    async with iq.transaction() as (repo, _):
+        assert await repo.drop_feature_group("churn", expected_revision=2) is True
+        assert await repo.drop_feature_view("spend", expected_revision=2) is True
+        assert await repo.get_feature_view_version("spend", 1) is None
+
+
+async def test_dropping_a_view_and_pinning_it_never_both_succeed(iq):
+    await built_view(iq)
+    await built_view(iq, "visits")
+    async with iq.transaction() as (repo, _):
+        await repo.create_feature_group(name="churn", group_id="group-1",
+                                        entity_id="entity-1",
+                                        members=[{"view_name": "visits", "version": 1}])
+    ready = asyncio.Barrier(2)
+
+    async def drop():
+        async with iq.transaction() as (repo, _):
+            await ready.wait()
+            return await repo.drop_feature_view("spend", expected_revision=2)
+
+    async def pin():
+        async with iq.transaction() as (repo, _):
+            await ready.wait()
+            return await repo.add_feature_group_version(
+                "churn", [{"view_name": "spend", "version": 1}], expected_latest=1)
+
+    results = await asyncio.gather(drop(), pin(), return_exceptions=True)
+    assert sum(not isinstance(r, BaseException) for r in results) == 1, results
+    assert all(isinstance(r, MetadataIntegrityViolation)
+               for r in results if isinstance(r, BaseException))
+
+
+async def test_training_lineage_belongs_to_its_owner(iq):
+    await built_view(iq)
+    async with iq.transaction() as (repo, _):
+        await repo.create_feature_group(name="churn", group_id="group-1", entity_id="entity-1",
+                                        members=[{"view_name": "spend", "version": 1}])
+        training = {"id": "ts-1", "group_name": "churn", "group_version": 1,
+                    "label_relation": "shop.labels", "generated_sql": "SELECT 1",
+                    "lineage": {"group_version": 1}}
+        await repo.record_training_set(training)
+        await repo.link_model({"id": "link-1", "model_id": "m-1", "model_version": 1,
+                               "training_set_id": "ts-1", "group_name": "churn",
+                               "group_version": 1, "lineage": {"group_version": 1}})
+        assert [link["created_by"] for link in await repo.model_links("ts-1")] == ["iq-alice"]
+    with pytest.raises(MetadataIntegrityViolation):
+        async with iq.transaction() as (repo, _):
+            await repo.record_training_set({**training, "id": "ts-2", "group_version": 9})
+    async with iq.transaction(name="iq-bob") as (repo, _):
+        assert await repo.get_training_set("ts-1") is None
+    with pytest.raises(MetadataIntegrityViolation):
+        async with iq.transaction(name="iq-bob") as (repo, _):
+            await repo.link_model({"id": "link-2", "model_id": "m-2", "model_version": 1,
+                                   "training_set_id": "ts-1", "group_name": "churn",
+                                   "group_version": 1, "lineage": {}})
+    with pytest.raises(MetadataPermissionDenied):
+        async with iq.transaction() as (_, conn):
+            await conn.execute("DELETE FROM nova_meta.config_feature_training_sets")
+    actions = await iq.admin(
+        "SELECT metadata_table FROM nova_meta.audit_log WHERE metadata_table IN "
+        "('config_feature_training_sets','config_feature_ml_links') ORDER BY log_id")
+    assert [a["metadata_table"] for a in actions] == [
+        "config_feature_training_sets", "config_feature_ml_links"]
+
+
+async def import_legacy_semantics(iq):
+    env = iq.environment
+    async with await psycopg.AsyncConnection.connect(
+        env.role_config("nova_meta_migrator").dsn, autocommit=True,
+    ) as conn:
+        await iq.admin("UPDATE nova_meta.deployment_state SET maintenance=true")
+        async with conn.transaction():
+            await conn.execute("SET LOCAL ROLE nova_meta_owner")
+            await conn.execute(
+                "INSERT INTO nova_meta.config_semantic_models (semantic_model_id,owner_name,name,"
+                "ossie_version,definition,created_at,updated_at) VALUES ('sm-1','iq-alice',"
+                "'sales','0.1.0','{}','2026-01-01','2026-01-01')")
+            await conn.execute(
+                "INSERT INTO nova_meta.config_semantic_verified_queries (verified_query_id,"
+                "owner_name,semantic_model_id,model_fingerprint,question,semantic_plan,"
+                "verified_sql,verified_by,verified_at,usage_count,success_count) VALUES "
+                "('vq-1','iq-alice','sm-1','fp','Revenue?','{}','SELECT 1','iq-alice',"
+                "'2026-01-01',3,2)")
+            await conn.execute(
+                "INSERT INTO nova_meta.audit_semantic_query_usage (usage_id,owner_name,"
+                "semantic_model_id,model_fingerprint,succeeded,created_at) VALUES "
+                "('u-legacy','iq-alice','sm-1','fp',true,'2026-01-01')")
+        await iq.admin("UPDATE nova_meta.deployment_state SET maintenance=false")
+
+
+async def test_legacy_semantic_models_are_read_only_but_count_usage(iq):
+    await import_legacy_semantics(iq)
+    async with iq.transaction("maintenance", read_only=True) as (repo, _):
+        assert [m["provenance"] for m in await repo.legacy_semantic_models()] == ["imported"]
+        assert [q["usage_count"] for q in await repo.legacy_verified_queries()] == [3]
+    usage = {"usage_id": "u-1", "semantic_model_id": "sm-1", "model_fingerprint": "fp",
+             "metrics": ["revenue"], "succeeded": True, "semantic_version": 1}
+
+    async def use(index):
+        async with iq.transaction("agent") as (repo, _):
+            await repo.record_semantic_usage({**usage, "usage_id": f"u-{index}"},
+                                             verified_query_id="vq-1")
+
+    await asyncio.gather(*(use(index) for index in range(4)))
+    async with iq.transaction() as (repo, _):
+        counted = (await repo.legacy_verified_queries())[0]
+        assert (counted["usage_count"], counted["success_count"]) == (7, 6)
+    async with iq.transaction("agent") as (repo, _):
+        rows = await repo.semantic_usage("sm-1", "fp", 1)
+        assert len(rows) == 4 and {r["active_role"] for r in rows} == {"ANALYST"}
+    async with iq.transaction("agent", name="iq-bob") as (repo, conn):
+        assert await repo.semantic_usage("sm-1", "fp", 1) == []
+        # Another owner's counter is not visible, so nothing moves.
+        await repo.record_semantic_usage({**usage, "usage_id": "u-bob"},
+                                         verified_query_id="vq-1")
+    for statement in ("UPDATE nova_meta.config_semantic_verified_queries SET usage_count=0",
+                      "UPDATE nova_meta.config_semantic_verified_queries SET "
+                      "success_count=success_count+5,usage_count=usage_count+1"):
+        with pytest.raises(MetadataIntegrityViolation):
+            async with iq.transaction("agent") as (_, conn):
+                await conn.execute(statement)
+    with pytest.raises(MetadataPermissionDenied):
+        async with iq.transaction() as (_, conn):
+            await conn.execute("UPDATE nova_meta.config_semantic_models SET name='x'")
+    with pytest.raises(MetadataIntegrityViolation):
+        async with iq.transaction("agent") as (_, conn):
+            await conn.execute(
+                "INSERT INTO nova_meta.audit_semantic_query_usage (usage_id,owner_name,"
+                "semantic_model_id,model_fingerprint,succeeded,active_role,"
+                "security_context_version) VALUES ('u-x','iq-bob','sm-1','fp',true,'ANALYST',5)")
+
+
+FEATURE_READERS = {"web"}
+ENTITY_READERS = {"web", "agent", "maintenance"}
+
+
+@pytest.mark.parametrize("workload", [role.removeprefix("nova_meta_") for role in WORKLOAD_ROLES])
+async def test_feature_workload_privileges(iq, workload):
+    async with iq.transaction() as (repo, _):
+        await repo.create_entity(ENTITY)
+    await built_view(iq)
+    await import_legacy_semantics(iq)
+    if workload in ENTITY_READERS:
+        async with iq.transaction(workload, read_only=True) as (repo, _):
+            assert (await repo.get_entity("entity-1"))["name"] == "customer"
+    else:
+        with pytest.raises(MetadataPermissionDenied):
+            async with iq.transaction(workload, read_only=True) as (repo, _):
+                await repo.get_entity("entity-1")
+    if workload in FEATURE_READERS:
+        async with iq.transaction(workload, read_only=True) as (repo, _):
+            assert (await repo.get_feature_view("spend"))["active_version"] == 1
+    else:
+        with pytest.raises(MetadataPermissionDenied):
+            async with iq.transaction(workload, read_only=True) as (repo, _):
+                await repo.get_feature_view("spend")
+        with pytest.raises(MetadataPermissionDenied):
+            async with iq.transaction(workload) as (repo, _):
+                await repo.create_entity({**ENTITY, "name": "w", "id": "e-" + workload})
+    if workload in {"web", "maintenance"}:
+        async with iq.transaction(workload, read_only=True) as (repo, _):
+            assert len(await repo.legacy_semantic_models()) == 1
+    else:
+        with pytest.raises(MetadataPermissionDenied):
+            async with iq.transaction(workload, read_only=True) as (repo, _):
+                await repo.legacy_semantic_models()
+    usage = {"usage_id": "u-" + workload, "semantic_model_id": "sm-1",
+             "model_fingerprint": "fp", "succeeded": True}
+    if workload in {"web", "agent"}:
+        async with iq.transaction(workload) as (repo, _):
+            await repo.record_semantic_usage(usage)
+    else:
+        with pytest.raises(MetadataPermissionDenied):
+            async with iq.transaction(workload) as (repo, _):
+                await repo.record_semantic_usage(usage)
+    if workload != "agent":
+        with pytest.raises(MetadataPermissionDenied):
+            async with iq.transaction(workload) as (_, conn):
+                await conn.execute("UPDATE nova_meta.config_semantic_verified_queries "
+                                   "SET usage_count=usage_count+1")
+
+
+async def test_feature_import_is_maintenance_only(iq):
+    env = iq.environment
+    async with await psycopg.AsyncConnection.connect(
+        env.role_config("nova_meta_migrator").dsn, autocommit=True,
+    ) as conn:
+        with pytest.raises(psycopg.errors.ObjectNotInPrerequisiteState):
+            async with conn.transaction():
+                await conn.execute("SET LOCAL ROLE nova_meta_owner")
+                await conn.execute(
+                    "INSERT INTO nova_meta.config_semantic_models (semantic_model_id,owner_name,"
+                    "name,ossie_version,created_at,updated_at) VALUES ('sm-x','u','n','0.1',"
+                    "now(),now())")
+        await iq.admin("UPDATE nova_meta.deployment_state SET maintenance=true")
+        async with conn.transaction():
+            await conn.execute("SET LOCAL ROLE nova_meta_owner")
+            # A legacy view whose version is still BUILDING after an interrupted build.
+            await conn.execute(
+                "INSERT INTO nova_meta.config_feature_views (name,id,entity_id,source_relation,"
+                "entity_keys,event_timestamp,feature_columns,freshness_seconds,ttl_seconds,"
+                "owner_name,status,created_at,updated_at) VALUES ('legacy','fv-legacy','e',"
+                "'shop.t','[\"k\"]','ts','[\"f\"]',1,1,'iq-alice','BUILDING','2026-01-01',"
+                "'2026-01-01')")
+            await conn.execute(
+                "INSERT INTO nova_meta.config_feature_view_versions (view_name,version,"
+                "relation_name,definition,status,created_at) VALUES ('legacy',1,'r','{}',"
+                "'BUILDING','2026-01-01')")
+        await iq.admin("UPDATE nova_meta.deployment_state SET maintenance=false")
+    async with iq.transaction() as (repo, _):
+        assert (await repo.get_feature_view("legacy"))["provenance"] == "imported"
+        assert await repo.finish_feature_view_version("legacy", 1, row_count=None) is True
+    await iq.admin("UPDATE nova_meta.deployment_state SET maintenance=true")
+    with pytest.raises(MetadataReadOnlyMaintenance):
+        async with iq.transaction() as (repo, _):
+            await repo.create_entity(ENTITY)

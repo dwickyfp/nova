@@ -14,12 +14,16 @@ It closes the Wave E and Wave H gaps in the new store:
   exactly one, never on top of an imported branch, and never under another
   scope (a guessed id cannot overwrite another principal's record);
 * Search versions are created once, and a build claim advances a generation so
-  a builder that lost its claim can neither record progress nor finish.
+  a builder that lost its claim can neither record progress nor finish;
+* Feature View and Group versions are allocated MAX+1, only built versions are
+  served, and a view pinned by any group version cannot be dropped;
+* the legacy agent semantic models are read-only, and verified-query usage
+  counters only move forward on the caller's own rows.
 
 Whether a caller may see a Semantic View, story or decision remains the owning
-service's (and the engine's) check. Vector/full-text index payloads keep their
-engine owner and News access proofs stay in Redis; this repository holds only
-Nova control rows.
+service's (and the engine's) check. Vector/full-text index payloads and
+materialized feature tables keep their engine owner and News access proofs stay
+in Redis; this repository holds only Nova control rows.
 """
 
 from __future__ import annotations
@@ -595,4 +599,334 @@ class IntelligenceMetadataRepository:
             "mode,query_count,metrics) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (run["id"], run["index_name"], run["index_version"], self.actor.principal,
              run["mode"], run["query_count"], Jsonb(run["metrics"])),
+        )
+
+    # ── Entity registry ───────────────────────────────────────────────────
+
+    async def create_entity(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Register an active entity owned by the caller; a taken scoped name conflicts."""
+        await self._bound()
+        row = await self._one(
+            "INSERT INTO nova_meta.config_entities (catalog_name,database_name,schema_name,name,"
+            "id,description,relation_name,key_columns,owner_name,tags,status) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'ACTIVE') RETURNING *",
+            (data["catalog"], data["database"], data["schema"], data["name"], data["id"],
+             data.get("description"), data["relation"], Jsonb(data["key_columns"]),
+             self.actor.principal, Jsonb(data.get("tags") or [])),
+        )
+        assert row is not None
+        return row
+
+    async def get_entity(self, entity_id: str) -> dict[str, Any] | None:
+        """An active entity; the service still checks the caller's source access."""
+        await self._bound()
+        return await self._one(
+            "SELECT * FROM nova_meta.config_entities WHERE id=%s AND status='ACTIVE'",
+            (entity_id,),
+        )
+
+    async def list_entities(self) -> list[dict[str, Any]]:
+        await self._bound()
+        return await self._all(
+            "SELECT * FROM nova_meta.config_entities WHERE status='ACTIVE' ORDER BY name,id", (),
+        )
+
+    async def deprecate_entity(self, entity_id: str, *, expected_revision: int) -> dict[str, Any]:
+        await self._bound()
+        row = await self._one(
+            "UPDATE nova_meta.config_entities SET status='DEPRECATED',"
+            "metadata_revision=metadata_revision+1 WHERE id=%s AND status='ACTIVE' "
+            "AND metadata_revision=%s RETURNING *",
+            (entity_id, _positive(expected_revision, "revision")),
+        )
+        if row is None:
+            raise MetadataConflict()
+        return row
+
+    # ── Feature Views ─────────────────────────────────────────────────────
+
+    async def create_feature_view(
+        self, definition: dict[str, Any], *, relation_name: str,
+    ) -> dict[str, Any]:
+        """Create a building view owned by the caller, with its first building version."""
+        await self._bound()
+        view = await self._one(
+            "INSERT INTO nova_meta.config_feature_views (name,id,entity_id,source_relation,"
+            "entity_keys,event_timestamp,feature_columns,freshness_seconds,ttl_seconds,"
+            "owner_name,status) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'BUILDING') RETURNING *",
+            (definition["name"], definition["id"], definition["entity_id"],
+             definition["source_relation"], Jsonb(definition["entity_keys"]),
+             definition["event_timestamp"], Jsonb(definition["feature_columns"]),
+             definition["freshness_seconds"], definition["ttl_seconds"],
+             self.actor.principal),
+        )
+        assert view is not None
+        await self.add_feature_view_version(
+            view["name"], relation_name, definition, expected_latest=0,
+        )
+        return view
+
+    async def get_feature_view(self, name: str) -> dict[str, Any] | None:
+        await self._bound()
+        return await self._one(
+            "SELECT * FROM nova_meta.config_feature_views WHERE name=%s", (name,),
+        )
+
+    async def get_feature_view_version(self, name: str, version: int) -> dict[str, Any] | None:
+        await self._bound()
+        return await self._one(
+            "SELECT * FROM nova_meta.config_feature_view_versions WHERE view_name=%s "
+            "AND version=%s", (name, version),
+        )
+
+    async def add_feature_view_version(
+        self, name: str, relation_name: str, definition: dict[str, Any], *,
+        expected_latest: int,
+    ) -> dict[str, Any]:
+        """Allocate the next building version; a refresh that read an older one conflicts."""
+        await self._bound()
+        if type(expected_latest) is not int or expected_latest < 0:
+            raise ValueError("The latest version read is required")
+        row = await self._one(
+            "INSERT INTO nova_meta.config_feature_view_versions (view_name,version,"
+            "relation_name,definition,status) VALUES (%s,%s,%s,%s,'BUILDING') RETURNING *",
+            (name, expected_latest + 1, relation_name, Jsonb(definition)),
+        )
+        assert row is not None
+        return row
+
+    async def finish_feature_view_version(
+        self, name: str, version: int, *, row_count: int | None,
+    ) -> bool:
+        """Mark a building version READY with its row count, or FAILED when None."""
+        await self._bound()
+        if row_count is None:
+            row = await self._one(
+                "UPDATE nova_meta.config_feature_view_versions SET status='FAILED' "
+                "WHERE view_name=%s AND version=%s AND status='BUILDING' RETURNING version",
+                (name, version),
+            )
+        else:
+            row = await self._one(
+                "UPDATE nova_meta.config_feature_view_versions SET status='READY',row_count=%s "
+                "WHERE view_name=%s AND version=%s AND status='BUILDING' RETURNING version",
+                (row_count, name, version),
+            )
+        return row is not None
+
+    async def activate_feature_view(
+        self, name: str, version: int, *, expected_revision: int,
+    ) -> dict[str, Any]:
+        """Serve a built version; the previously active one is retired atomically."""
+        await self._bound()
+        _positive(expected_revision, "revision")
+        await self.connection.execute(
+            "UPDATE nova_meta.config_feature_view_versions SET status='DEPRECATED' "
+            "WHERE view_name=%s AND status='ACTIVE' AND version<>%s", (name, version),
+        )
+        activated = await self._one(
+            "UPDATE nova_meta.config_feature_view_versions SET status='ACTIVE' "
+            "WHERE view_name=%s AND version=%s AND status IN ('READY','ACTIVE','DEPRECATED') "
+            "RETURNING version", (name, version),
+        )
+        if activated is None:
+            raise MetadataConflict()
+        view = await self._one(
+            "UPDATE nova_meta.config_feature_views SET active_version=%s,status='ACTIVE',"
+            "metadata_revision=metadata_revision+1 WHERE name=%s AND metadata_revision=%s "
+            "RETURNING *", (version, name, expected_revision),
+        )
+        if view is None:
+            raise MetadataConflict()
+        return view
+
+    async def drop_feature_view(self, name: str, *, expected_revision: int) -> bool:
+        """Remove an unpinned view and then its versions; a pinned view is refused."""
+        await self._bound()
+        cursor = await self.connection.execute(
+            "DELETE FROM nova_meta.config_feature_views WHERE name=%s AND metadata_revision=%s",
+            (name, _positive(expected_revision, "revision")),
+        )
+        if cursor.rowcount != 1:
+            raise MetadataConflict()
+        await self.connection.execute(
+            "DELETE FROM nova_meta.config_feature_view_versions WHERE view_name=%s", (name,),
+        )
+        return True
+
+    # ── Feature Groups ────────────────────────────────────────────────────
+
+    async def create_feature_group(
+        self, *, name: str, group_id: str, entity_id: str, members: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Create a group owned by the caller and activate its first version."""
+        await self._bound()
+        await self.connection.execute(
+            "INSERT INTO nova_meta.config_feature_groups (name,id,entity_id,owner_name,status) "
+            "VALUES (%s,%s,%s,%s,'ACTIVE')", (name, group_id, entity_id, self.actor.principal),
+        )
+        await self.connection.execute(
+            "INSERT INTO nova_meta.config_feature_group_versions (group_name,version,members,"
+            "status) VALUES (%s,1,%s,'ACTIVE')", (name, Jsonb(members)),
+        )
+        group = await self._one(
+            "UPDATE nova_meta.config_feature_groups SET active_version=1,"
+            "metadata_revision=metadata_revision+1 WHERE name=%s RETURNING *", (name,),
+        )
+        assert group is not None
+        return group
+
+    async def get_feature_group(self, name: str) -> dict[str, Any] | None:
+        await self._bound()
+        return await self._one(
+            "SELECT * FROM nova_meta.config_feature_groups WHERE name=%s", (name,),
+        )
+
+    async def get_feature_group_version(self, name: str, version: int) -> dict[str, Any] | None:
+        await self._bound()
+        return await self._one(
+            "SELECT * FROM nova_meta.config_feature_group_versions WHERE group_name=%s "
+            "AND version=%s", (name, version),
+        )
+
+    async def add_feature_group_version(
+        self, name: str, members: list[dict[str, Any]], *, expected_latest: int,
+    ) -> dict[str, Any]:
+        await self._bound()
+        if type(expected_latest) is not int or expected_latest < 0:
+            raise ValueError("The latest version read is required")
+        row = await self._one(
+            "INSERT INTO nova_meta.config_feature_group_versions (group_name,version,members,"
+            "status) VALUES (%s,%s,%s,'DRAFT') RETURNING *",
+            (name, expected_latest + 1, Jsonb(members)),
+        )
+        assert row is not None
+        return row
+
+    async def activate_feature_group(
+        self, name: str, version: int, *, expected_revision: int,
+    ) -> dict[str, Any]:
+        await self._bound()
+        _positive(expected_revision, "revision")
+        await self.connection.execute(
+            "UPDATE nova_meta.config_feature_group_versions SET status='DEPRECATED' "
+            "WHERE group_name=%s AND status='ACTIVE' AND version<>%s", (name, version),
+        )
+        activated = await self._one(
+            "UPDATE nova_meta.config_feature_group_versions SET status='ACTIVE' "
+            "WHERE group_name=%s AND version=%s RETURNING version", (name, version),
+        )
+        if activated is None:
+            raise MetadataConflict()
+        group = await self._one(
+            "UPDATE nova_meta.config_feature_groups SET active_version=%s,status='ACTIVE',"
+            "metadata_revision=metadata_revision+1 WHERE name=%s AND metadata_revision=%s "
+            "RETURNING *", (version, name, expected_revision),
+        )
+        if group is None:
+            raise MetadataConflict()
+        return group
+
+    async def drop_feature_group(self, name: str, *, expected_revision: int) -> bool:
+        await self._bound()
+        cursor = await self.connection.execute(
+            "DELETE FROM nova_meta.config_feature_groups WHERE name=%s AND metadata_revision=%s",
+            (name, _positive(expected_revision, "revision")),
+        )
+        if cursor.rowcount != 1:
+            raise MetadataConflict()
+        await self.connection.execute(
+            "DELETE FROM nova_meta.config_feature_group_versions WHERE group_name=%s", (name,),
+        )
+        return True
+
+    # ── Training lineage ──────────────────────────────────────────────────
+
+    async def record_training_set(self, data: dict[str, Any]) -> None:
+        await self._bound()
+        await self.connection.execute(
+            "INSERT INTO nova_meta.config_feature_training_sets (id,group_name,group_version,"
+            "label_relation,generated_sql,lineage,owner_name) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (data["id"], data["group_name"], data["group_version"], data["label_relation"],
+             data["generated_sql"], Jsonb(data["lineage"]), self.actor.principal),
+        )
+
+    async def get_training_set(self, training_set_id: str) -> dict[str, Any] | None:
+        await self._bound()
+        return await self._one(
+            "SELECT * FROM nova_meta.config_feature_training_sets WHERE id=%s",
+            (training_set_id,),
+        )
+
+    async def link_model(self, data: dict[str, Any]) -> None:
+        """Record which model version was trained from the caller's training set."""
+        await self._bound()
+        await self.connection.execute(
+            "INSERT INTO nova_meta.config_feature_ml_links (id,model_id,model_version,"
+            "training_set_id,group_name,group_version,lineage) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (data["id"], data["model_id"], data["model_version"], data["training_set_id"],
+             data["group_name"], data["group_version"], Jsonb(data["lineage"])),
+        )
+
+    async def model_links(self, training_set_id: str) -> list[dict[str, Any]]:
+        await self._bound()
+        return await self._all(
+            "SELECT * FROM nova_meta.config_feature_ml_links WHERE training_set_id=%s "
+            "ORDER BY created_at,id", (training_set_id,),
+        )
+
+    # ── Legacy semantic models and usage ──────────────────────────────────
+
+    async def legacy_semantic_models(self) -> list[dict[str, Any]]:
+        """Every legacy model, for the one-time Semantic View migration."""
+        await self._bound()
+        return await self._all(
+            "SELECT * FROM nova_meta.config_semantic_models ORDER BY semantic_model_id", (),
+        )
+
+    async def legacy_verified_queries(self) -> list[dict[str, Any]]:
+        await self._bound()
+        return await self._all(
+            "SELECT * FROM nova_meta.config_semantic_verified_queries "
+            "ORDER BY verified_query_id", (),
+        )
+
+    async def record_semantic_usage(
+        self, usage: dict[str, Any], *, verified_query_id: str | None = None,
+    ) -> None:
+        """Append the caller's redacted query shape; count a verified query's use."""
+        await self._bound()
+        await self.connection.execute(
+            "INSERT INTO nova_meta.audit_semantic_query_usage (usage_id,owner_name,"
+            "semantic_model_id,model_fingerprint,metric_names,dimension_names,filter_shape,"
+            "time_grain,execution_latency_ms,scan_bytes,succeeded,active_role,"
+            "security_context_version,semantic_version) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            (usage["usage_id"], self.actor.principal, usage["semantic_model_id"],
+             usage["model_fingerprint"], Jsonb(usage.get("metrics") or []),
+             Jsonb(usage.get("dimensions") or []), Jsonb(usage.get("filter_shape") or []),
+             usage.get("time_grain"), usage.get("execution_latency_ms"), None,
+             bool(usage["succeeded"]), self.actor.active_role,
+             self.actor.security_context_version, usage.get("semantic_version")),
+        )
+        if verified_query_id:
+            await self.connection.execute(
+                "UPDATE nova_meta.config_semantic_verified_queries SET usage_count=usage_count+1,"
+                "success_count=success_count+%s WHERE verified_query_id=%s AND owner_name=%s",
+                (1 if usage["succeeded"] else 0, verified_query_id, self.actor.principal),
+            )
+
+    async def semantic_usage(
+        self, semantic_model_id: str, model_fingerprint: str, semantic_version: int, *,
+        limit: int = 2000,
+    ) -> list[dict[str, Any]]:
+        """The caller's own usage for one model version, newest first."""
+        await self._bound()
+        return await self._all(
+            "SELECT * FROM nova_meta.audit_semantic_query_usage WHERE owner_name=%s "
+            "AND active_role=%s AND security_context_version=%s AND semantic_model_id=%s "
+            "AND model_fingerprint=%s AND semantic_version=%s "
+            "ORDER BY created_at DESC,usage_id DESC LIMIT %s",
+            (self.actor.principal, self.actor.active_role, self.actor.security_context_version,
+             semantic_model_id, model_fingerprint, semantic_version, min(max(limit, 1), 2000)),
         )
