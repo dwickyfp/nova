@@ -1,0 +1,25 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="5" skipped="0" tests="10" time="1.113">
+    <testcase classname="tests.unit.test_consent_grant_response" name="test_one_tool_decision_reports_the_existing_read_grant[True-allow_once-assistant]" time="0.497">
+      <failure type="failure">Diagnostic body omitted; see verification narrative.</failure>
+    </testcase>
+    <testcase classname="tests.unit.test_consent_grant_response" name="test_one_tool_decision_reports_the_existing_read_grant[True-allow_once-agent]" time="0.001">
+      <failure type="failure">Diagnostic body omitted; see verification narrative.</failure>
+    </testcase>
+    <testcase classname="tests.unit.test_consent_grant_response" name="test_one_tool_decision_reports_the_existing_read_grant[True-deny-assistant]" time="0.001">
+      <failure type="failure">Diagnostic body omitted; see verification narrative.</failure>
+    </testcase>
+    <testcase classname="tests.unit.test_consent_grant_response" name="test_one_tool_decision_reports_the_existing_read_grant[True-deny-agent]" time="0.001">
+      <failure type="failure">Diagnostic body omitted; see verification narrative.</failure>
+    </testcase>
+    <testcase classname="tests.unit.test_consent_grant_response" name="test_one_tool_decision_reports_the_existing_read_grant[False-allow_once-assistant]" time="0.001" />
+    <testcase classname="tests.unit.test_consent_grant_response" name="test_one_tool_decision_reports_the_existing_read_grant[False-allow_once-agent]" time="0.001" />
+    <testcase classname="tests.unit.test_consent_grant_response" name="test_one_tool_decision_reports_the_existing_read_grant[False-deny-assistant]" time="0.001" />
+    <testcase classname="tests.unit.test_consent_grant_response" name="test_one_tool_decision_reports_the_existing_read_grant[False-deny-agent]" time="0.001" />
+    <testcase classname="tests.unit.test_consent_grant_response" name="test_file_approval_reports_the_existing_read_grant[True]" time="0.004">
+      <failure type="failure">Diagnostic body omitted; see verification narrative.</failure>
+    </testcase>
+    <testcase classname="tests.unit.test_consent_grant_response" name="test_file_approval_reports_the_existing_read_grant[False]" time="0.001" />
+  </testsuite>
+</testsuites>

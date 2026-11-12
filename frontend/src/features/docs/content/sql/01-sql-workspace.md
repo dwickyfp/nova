@@ -115,6 +115,10 @@ revoke it for the current login. Nova checks the saved approval before each
 new turn; a revoked or expired approval asks again. The approval lasts at most
 12 hours, and a service interruption can require you to approve again.
 
+For an action that still needs approval, **Allow** or **Deny** applies to that
+action. Either choice keeps your existing **Always allow read-only** selection.
+Choose **Need approval** when you want read-only queries to ask again.
+
 ## See a query plan
 
 Put `EXPLAIN` in front of a query to see how Nova will run it. The plan

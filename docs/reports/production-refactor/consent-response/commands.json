@@ -1,0 +1,254 @@
+{
+  "source_parent_commit": "9f0cad4960174c0092f7e7b2c3a3b47b78f66f76",
+  "before": {
+    "tests": 10,
+    "failures": 5,
+    "errors": 0,
+    "skipped": 0,
+    "time_seconds": 1.113
+  },
+  "focused": {
+    "tests": 36,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "time_seconds": 4.665
+  },
+  "unit": {
+    "tests": 10852,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "time_seconds": 822.295
+  },
+  "eval": {
+    "tests": 354,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "time_seconds": 34.288
+  },
+  "docs": {
+    "tests": 15,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "time_seconds": 0.332
+  },
+  "ruff": {
+    "exit_code": 0,
+    "count": 110,
+    "command": [
+      "uv",
+      "run",
+      "ruff",
+      "check",
+      "--force-exclude",
+      "app/common/audit.py",
+      "app/common/audit_text.py",
+      "app/common/durable_jobs.py",
+      "app/common/metadata_audit.py",
+      "app/common/preferences.py",
+      "app/core/config.py",
+      "app/core/deps.py",
+      "app/core/metadata_bootstrap.py",
+      "app/core/metadata_db.py",
+      "app/core/metadata_import.py",
+      "app/core/metadata_logging.py",
+      "app/core/metadata_migrations.py",
+      "app/core/metadata_schema.py",
+      "app/core/redis.py",
+      "app/main.py",
+      "app/modules/agents/router.py",
+      "app/modules/agents/studio_router.py",
+      "app/modules/ai_ml/metadata_service.py",
+      "app/modules/ai_ml/repository.py",
+      "app/modules/ai_ml/router.py",
+      "app/modules/assistant/consent.py",
+      "app/modules/assistant/read_grants.py",
+      "app/modules/assistant/router.py",
+      "app/modules/assistant/service.py",
+      "app/modules/assistant/state.py",
+      "app/modules/assistant/tool_gate.py",
+      "app/modules/auth/service.py",
+      "app/modules/intelligence/actions.py",
+      "app/modules/llm_functions/registrations.py",
+      "app/modules/llm_functions/repository.py",
+      "app/modules/llm_functions/router.py",
+      "app/modules/query/service.py",
+      "app/modules/stages/metadata_service.py",
+      "app/modules/stages/repository.py",
+      "app/modules/stages/router.py",
+      "app/modules/stages/schemas.py",
+      "app/modules/stages/service.py",
+      "app/modules/task_orchestration/execution.py",
+      "app/modules/task_orchestration/metadata_scheduler.py",
+      "app/modules/task_orchestration/worker.py",
+      "app/observability/http.py",
+      "app/sql_frontend/execution/stages.py",
+      "scripts/inventory_control_plane.py",
+      "scripts/profile_metadata_constraints.py",
+      "tests/eval/semantic_execution.py",
+      "tests/eval/test_assistant_role_switch.py",
+      "tests/eval/test_business_ontology_trajectory.py",
+      "tests/eval/test_custom_sql_tools_trajectory.py",
+      "tests/eval/test_evidence_health_trajectory.py",
+      "tests/eval/test_mcp_consent_trajectory.py",
+      "tests/eval/test_read_grant_context.py",
+      "tests/eval/test_semantic_clarification_trajectory.py",
+      "tests/eval/test_semantic_latest_month.py",
+      "tests/integration/build_metadata_pooler.py",
+      "tests/integration/check_metadata_logs.py",
+      "tests/integration/prepare_metadata_fixture.py",
+      "tests/integration/test_custom_sql_tools_l3.py",
+      "tests/integration/test_metadata_ai_configuration.py",
+      "tests/integration/test_metadata_ai_registry.py",
+      "tests/integration/test_metadata_audit.py",
+      "tests/integration/test_metadata_bootstrap.py",
+      "tests/integration/test_metadata_jobs.py",
+      "tests/integration/test_metadata_migrator.py",
+      "tests/integration/test_metadata_model_aliases.py",
+      "tests/integration/test_metadata_pg_foundation.py",
+      "tests/integration/test_metadata_pgbouncer.py",
+      "tests/integration/test_metadata_preferences.py",
+      "tests/integration/test_metadata_retained_legacy.py",
+      "tests/integration/test_metadata_retired_agents.py",
+      "tests/integration/test_metadata_scheduler.py",
+      "tests/integration/test_metadata_stages.py",
+      "tests/integration/test_task_outcome_uncertainty.py",
+      "tests/unit/test_agent_mission_journal.py",
+      "tests/unit/test_agent_read_grant_policy.py",
+      "tests/unit/test_agent_replay_completion.py",
+      "tests/unit/test_agent_run_storage_failure.py",
+      "tests/unit/test_ai_ml_ssrf_guard.py",
+      "tests/unit/test_api_auth_inventory.py",
+      "tests/unit/test_assistant_consent_ownership.py",
+      "tests/unit/test_assistant_secure_approval.py",
+      "tests/unit/test_assistant_stage_b.py",
+      "tests/unit/test_assistant_stage_c.py",
+      "tests/unit/test_consent_grant_response.py",
+      "tests/unit/test_control_plane_inventory.py",
+      "tests/unit/test_control_plane_session_boundaries.py",
+      "tests/unit/test_durable_jobs.py",
+      "tests/unit/test_llm_alias_authorization.py",
+      "tests/unit/test_mcp_registry_access.py",
+      "tests/unit/test_metadata_ai_registry.py",
+      "tests/unit/test_metadata_audit.py",
+      "tests/unit/test_metadata_bootstrap_config.py",
+      "tests/unit/test_metadata_db_config.py",
+      "tests/unit/test_metadata_import.py",
+      "tests/unit/test_metadata_log_acceptance.py",
+      "tests/unit/test_metadata_model_aliases.py",
+      "tests/unit/test_metadata_preferences.py",
+      "tests/unit/test_metadata_scheduler.py",
+      "tests/unit/test_metadata_schema.py",
+      "tests/unit/test_neva_read_grants.py",
+      "tests/unit/test_notebook_data_tokens.py",
+      "tests/unit/test_nova119_assistant_ssrf_and_provider_gate.py",
+      "tests/unit/test_observability_metrics.py",
+      "tests/unit/test_process_role.py",
+      "tests/unit/test_release_runtime_resource_boundary.py",
+      "tests/unit/test_stage_command_hardening.py",
+      "tests/unit/test_stage_registration_boundary.py",
+      "tests/unit/test_superset_bridge.py",
+      "tests/unit/test_task_orchestration_worker.py",
+      "tests/unit/test_task_outcome_uncertainty.py",
+      "tests/unit/test_web_search_tool.py"
+    ]
+  },
+  "gates": {
+    "eval": {
+      "command": [
+        "uv",
+        "run",
+        "pytest",
+        "tests/eval",
+        "-q",
+        "--junit-xml=/tmp/nova-consent-response-eval.xml"
+      ],
+      "started_at": "2026-11-12T01:07:03.589902+00:00",
+      "exit_code": 0,
+      "ended_at": "2026-11-12T01:07:45.175421+00:00"
+    },
+    "scorecard": {
+      "command": [
+        "uv",
+        "run",
+        "python",
+        "-m",
+        "tests.eval.report"
+      ],
+      "started_at": "2026-11-12T01:07:45.177423+00:00",
+      "exit_code": 0,
+      "ended_at": "2026-11-12T01:07:50.880595+00:00"
+    },
+    "boundary": {
+      "command": [
+        "uv",
+        "run",
+        "python",
+        "scripts/check_user_data_system_access.py"
+      ],
+      "started_at": "2026-11-12T01:07:51.178859+00:00",
+      "exit_code": 0,
+      "ended_at": "2026-11-12T01:07:51.451924+00:00"
+    }
+  },
+  "inventory": {
+    "source_commit": "9f0cad4960174c0092f7e7b2c3a3b47b78f66f76",
+    "application_tree_sha256": "9794df15dec3412e8836e9af8d1b1f7bf79da27ac69039b31e072475f30ee490",
+    "reviewed_calls": 875,
+    "calls_rechecked": [
+      "59440602e40eb13f1a5233362429ef091cc836a37c4c602babc297960280261e",
+      "cd2be2c9d7c1e8ea94141b14323add7c94da12ad0704c19c5e0d856fd9a5e873"
+    ],
+    "affected_function_ast_unchanged": true,
+    "live_observation_refreshed": false,
+    "feature_acceptance_statuses_changed": false
+  },
+  "application_tree_sha256": "9794df15dec3412e8836e9af8d1b1f7bf79da27ac69039b31e072475f30ee490",
+  "source_files_sha256": {
+    "backend/app/modules/assistant/router.py": "9543c96ee442fe1678ba3bbca752c0d40f7d3843d9479d459f369db0423f765a",
+    "backend/app/modules/agents/router.py": "2560c65fa3c13223d5d607307bc20f41abdb2d3856ddc0997e34f39a5fa05ff1",
+    "backend/tests/unit/test_consent_grant_response.py": "8e47778a135bd01a57ce77541546bae47dae8e9babae49a91f5558bac425b4d7"
+  },
+  "mypy": {
+    "passed": true,
+    "existing_notes": 3
+  },
+  "scorecard": {
+    "scenarios_passed": 54,
+    "scenarios_total": 54,
+    "checks_passed": 189,
+    "checks_total": 189
+  },
+  "boundary": {
+    "passed": true
+  },
+  "commands": {
+    "unit": "uv run pytest tests/unit --cov=app --cov-branch --cov-report=term-missing --cov-report=xml:/tmp/nova-consent-response-coverage.xml --junit-xml=/tmp/nova-consent-response-unit.xml",
+    "mypy": "uv run mypy app --no-error-summary",
+    "docs": "pnpm exec vitest run --browser.headless src/features/docs --reporter=default --reporter=junit --outputFile=/tmp/nova-consent-response-docs.xml"
+  },
+  "reused_checks": {
+    "postgres": "9f0cad49: 489 real PG cases pass; metadata code, schema, dependencies and PG tests unchanged by this response-only change",
+    "frontend": "c71ba4b1: lint/build/1609 tests pass; frontend application code and dependencies unchanged; edited documentation independently tested and viewed"
+  },
+  "docs_view": {
+    "browser": "Chrome",
+    "path": "/docs/sql/sql-workspace#choose-when-neva-asks-for-approval",
+    "verified": "Rendered Allow/Deny paragraph, existing grant scope and revocation instructions",
+    "new_sql_or_python_examples": false
+  },
+  "coverage": {
+    "version": "7.14.1",
+    "timestamp": "1794446426181",
+    "lines-valid": "131509",
+    "lines-covered": "87603",
+    "line-rate": "0.6661",
+    "branches-valid": "32988",
+    "branches-covered": "19812",
+    "branch-rate": "0.6006",
+    "complexity": "0"
+  }
+}

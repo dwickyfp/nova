@@ -1,0 +1,41 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="0" skipped="0" tests="36" time="4.665">
+    <testcase classname="tests.unit.test_consent_grant_response" name="test_one_tool_decision_reports_the_existing_read_grant[True-allow_once-assistant]" time="0.008" />
+    <testcase classname="tests.unit.test_consent_grant_response" name="test_one_tool_decision_reports_the_existing_read_grant[True-allow_once-agent]" time="0.006" />
+    <testcase classname="tests.unit.test_consent_grant_response" name="test_one_tool_decision_reports_the_existing_read_grant[True-deny-assistant]" time="0.003" />
+    <testcase classname="tests.unit.test_consent_grant_response" name="test_one_tool_decision_reports_the_existing_read_grant[True-deny-agent]" time="0.005" />
+    <testcase classname="tests.unit.test_consent_grant_response" name="test_one_tool_decision_reports_the_existing_read_grant[False-allow_once-assistant]" time="0.007" />
+    <testcase classname="tests.unit.test_consent_grant_response" name="test_one_tool_decision_reports_the_existing_read_grant[False-allow_once-agent]" time="0.003" />
+    <testcase classname="tests.unit.test_consent_grant_response" name="test_one_tool_decision_reports_the_existing_read_grant[False-deny-assistant]" time="0.005" />
+    <testcase classname="tests.unit.test_consent_grant_response" name="test_one_tool_decision_reports_the_existing_read_grant[False-deny-agent]" time="0.004" />
+    <testcase classname="tests.unit.test_consent_grant_response" name="test_file_approval_reports_the_existing_read_grant[True]" time="0.008" />
+    <testcase classname="tests.unit.test_consent_grant_response" name="test_file_approval_reports_the_existing_read_grant[False]" time="0.014" />
+    <testcase classname="tests.unit.test_assistant_secure_approval" name="test_secure_approval_requires_the_owner_and_exact_password_field" time="0.005" />
+    <testcase classname="tests.unit.test_assistant_secure_approval" name="test_user_creation_failure_never_returns_password" time="0.834" />
+    <testcase classname="tests.unit.test_assistant_secure_approval" name="test_stage_upload_approval_requires_owned_pending_call" time="0.009" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_owner_can_resolve_their_own_pending_call" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_foreign_user_gets_404_and_cannot_resolve_same_loop" time="0.003" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_foreign_user_gets_404_and_cannot_resolve" time="0.033" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_foreign_user_cannot_deny_either" time="0.023" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_unknown_tool_call_id_is_404" time="0.028" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_owner_sets_the_grant_on_their_own_conversation_only" time="0.003" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_allow_session_on_a_read_only_call_sets_the_grant" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_agent_studio_allow_session_sets_the_same_read_only_grant" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_allow_session_on_a_non_read_only_call_is_rejected[destructive]" time="0.003" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_allow_session_on_a_non_read_only_call_is_rejected[denied]" time="0.002" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_allow_session_on_a_non_read_only_call_is_400_over_http" time="0.022" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_owner_revoke_clears_the_grant" time="0.015" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_foreign_revoke_is_404_and_leaves_the_owner_grant_intact" time="0.016" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_owner_sets_the_grant_on_a_fresh_thread" time="0.017" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_read_only_approval_without_a_login_is_refused[False]" time="0.011" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_read_only_approval_without_a_login_is_refused[True]" time="0.033" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_owner_clears_the_grant_with_false" time="0.078" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_foreign_set_is_404_and_leaves_the_owner_grant_untouched" time="0.033" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_set_grant_does_not_reset_a_grant_on_another_thread" time="0.023" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_revoked_grant_prompts_again_on_the_next_read_only_call" time="0.046" />
+    <testcase classname="tests.unit.test_agent_read_grant_policy" name="test_agent_policy_and_login_changes_recheck_the_current_approval[False]" time="0.032" />
+    <testcase classname="tests.unit.test_agent_read_grant_policy" name="test_agent_policy_and_login_changes_recheck_the_current_approval[True]" time="0.079" />
+    <testcase classname="tests.unit.test_agent_read_grant_policy" name="test_overlapping_logins_do_not_share_live_consent" time="0.034" />
+  </testsuite>
+</testsuites>

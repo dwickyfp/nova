@@ -1,6 +1,6 @@
 {
   "python_files": 697,
-  "application_tree_sha256": "de0c43da679951af7232872ce3ccecca11189e8ef3571df8b5e37dd36c245677",
+  "application_tree_sha256": "9794df15dec3412e8836e9af8d1b1f7bf79da27ac69039b31e072475f30ee490",
   "references": {
     "AI_SEARCH_EVAL_RUNS": [
       "backend/app/modules/intelligence/search.py:1017",
@@ -6896,10 +6896,10 @@
         "AUDIT_SEMANTIC_QUERY_USAGE",
         "CONFIG_ASSISTANT_MESSAGES"
       ],
-      "source_file_sha256": "d3db8c4f96d2914c7e7eeb62a91fbea9abbc24c26cd8602a70edb2207bf36869",
+      "source_file_sha256": "2560c65fa3c13223d5d607307bc20f41abdb2d3856ddc0997e34f39a5fa05ff1",
       "callsite_sha256": "59440602e40eb13f1a5233362429ef091cc836a37c4c602babc297960280261e",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "Rechecked after read-grant isolation: unchanged owner/active-role/security-version scoped control-history SELECT; fixed table destinations; see WAVE_F_REVIEW.md and read-grants verification."
+      "review_notes": "Rechecked after consent response correction: unchanged function AST and SQL call hashes; owner, active-role and security-version scoped control-history SELECT. No caller data access through system credentials."
     },
     {
       "path": "backend/app/modules/agents/router.py",
@@ -6919,10 +6919,10 @@
         "AUDIT_SEMANTIC_QUERY_USAGE",
         "CONFIG_ASSISTANT_MESSAGES"
       ],
-      "source_file_sha256": "d3db8c4f96d2914c7e7eeb62a91fbea9abbc24c26cd8602a70edb2207bf36869",
+      "source_file_sha256": "2560c65fa3c13223d5d607307bc20f41abdb2d3856ddc0997e34f39a5fa05ff1",
       "callsite_sha256": "cd2be2c9d7c1e8ea94141b14323add7c94da12ad0704c19c5e0d856fd9a5e873",
       "review_status": "CLASSIFIED_METADATA",
-      "review_notes": "Rechecked after read-grant isolation: unchanged owner/active-role/security-version scoped control-history SELECT; fixed table destinations; see WAVE_F_REVIEW.md and read-grants verification."
+      "review_notes": "Rechecked after consent response correction: unchanged function AST and SQL call hashes; owner, active-role and security-version scoped control-history SELECT. No caller data access through system credentials."
     },
     {
       "path": "backend/app/modules/agents/rule_proposals.py",
@@ -33035,7 +33035,7 @@
       "system_calls": []
     }
   },
-  "source_commit": "c71ba4b1aecfe59cd4780af5fd40e8fc215c0046",
+  "source_commit": "9f0cad4960174c0092f7e7b2c3a3b47b78f66f76",
   "live": {
     "started_at": "2026-11-12T00:06:30.186499+00:00",
     "finished_at": "2026-11-12T00:06:37.302279+00:00",

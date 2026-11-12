@@ -889,10 +889,9 @@ async def resolve_tool_call(
         return ConsentDecisionResponse(
             tool_call_id=tool_call_id,
             status="denied" if resolved else "cancelled",
-            grant_active=False,
+            grant_active=thread.consent.covers("read_only", user=user),
         )
 
-    grant_active = False
     secure_fields = consent_broker.secure_fields_of(tool_call_id) or ()
     if consent_broker.upload_required_of(tool_call_id):
         raise HTTPException(status_code=400, detail="Choose a file for this action")
@@ -917,7 +916,6 @@ async def resolve_tool_call(
                 detail="allow_session is only valid for a read-only tool call",
             )
         await read_grants.grant(thread, user, thread_id, True)
-        grant_active = thread.consent.covers("read_only", user=user)
 
     resolved = consent_broker.resolve(
         tool_call_id,
@@ -927,7 +925,7 @@ async def resolve_tool_call(
     return ConsentDecisionResponse(
         tool_call_id=tool_call_id,
         status="approved" if resolved else "cancelled",
-        grant_active=grant_active,
+        grant_active=thread.consent.covers("read_only", user=user),
     )
 
 
@@ -944,7 +942,8 @@ async def resolve_upload_tool_call(
     owner = consent_broker.owner_of(tool_call_id)
     if owner is None or owner[1] != user["username"]:
         raise HTTPException(status_code=404, detail="Tool call not found")
-    if thread_store.get(owner[0], user_name=user["username"]) is None:
+    thread = thread_store.get(owner[0], user_name=user["username"])
+    if thread is None:
         raise HTTPException(status_code=404, detail="Tool call not found")
     if not consent_broker.upload_required_of(tool_call_id):
         raise HTTPException(status_code=400, detail="A file is not valid for this action")
@@ -984,5 +983,5 @@ async def resolve_upload_tool_call(
     return ConsentDecisionResponse(
         tool_call_id=tool_call_id,
         status="approved",
-        grant_active=False,
+        grant_active=thread.consent.covers("read_only", user=user),
     )

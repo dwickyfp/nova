@@ -2769,10 +2769,9 @@ async def resolve_agent_tool_call(
         return ConsentDecisionResponse(
             tool_call_id=tool_call_id,
             status="denied" if resolved else "cancelled",
-            grant_active=False,
+            grant_active=runtime.consent.covers("read_only", user=user),
         )
 
-    grant_active = False
     if body.decision == "allow_session":
         if consent_broker.classification_of(tool_call_id) != "read_only":
             raise HTTPException(
@@ -2780,11 +2779,10 @@ async def resolve_agent_tool_call(
                 detail="allow_session is only valid for a read-only tool call",
             )
         await read_grants.grant(runtime, user, thread_id, True)
-        grant_active = runtime.consent.covers("read_only", user=user)
 
     resolved = consent_broker.resolve(tool_call_id, True, user_name=user["username"])
     return ConsentDecisionResponse(
         tool_call_id=tool_call_id,
         status="approved" if resolved else "cancelled",
-        grant_active=grant_active,
+        grant_active=runtime.consent.covers("read_only", user=user),
     )

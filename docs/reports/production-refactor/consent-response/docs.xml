@@ -1,0 +1,37 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="vitest tests" tests="15" failures="0" errors="0" time="0.3325">
+  <testsuite name="src/features/docs/content.test.ts" tests="13" failures="0" errors="0" skipped="0" time="0.0097">
+    <testcase classname="src/features/docs/content.test.ts" name="docs content parsing &gt; reads front matter and strips it from the body" time="0.0010999999">
+        </testcase>
+    <testcase classname="src/features/docs/content.test.ts" name="docs content parsing &gt; collects headings outside code fences with renderer-matching ids" time="0.0002">
+        </testcase>
+    <testcase classname="src/features/docs/content.test.ts" name="docs content parsing &gt; orders pages by file prefix and drops unknown sections and files" time="0.0004000001">
+        </testcase>
+    <testcase classname="src/features/docs/content.test.ts" name="docs content parsing &gt; parses in-docs links" time="0.0003">
+        </testcase>
+    <testcase classname="src/features/docs/content.test.ts" name="docs content parsing &gt; recognises callouts" time="0.0000999999">
+        </testcase>
+    <testcase classname="src/features/docs/content.test.ts" name="docs content parsing &gt; ranks title matches first and requires every word" time="0.0003000002">
+        </testcase>
+    <testcase classname="src/features/docs/content.test.ts" name="published docs pages &gt; publishes every authored page with a unique route" time="0.0008">
+        </testcase>
+    <testcase classname="src/features/docs/content.test.ts" name="published docs pages &gt; has a guide for every section in the navigation" time="0.0000999999">
+        </testcase>
+    <testcase classname="src/features/docs/content.test.ts" name="published docs pages &gt; every page has a title and a description, and lives in a known section" time="0.0022">
+        </testcase>
+    <testcase classname="src/features/docs/content.test.ts" name="published docs pages &gt; pages start at level-2 headings (the title is rendered for them)" time="0.0008">
+        </testcase>
+    <testcase classname="src/features/docs/content.test.ts" name="published docs pages &gt; every internal link points to an existing page and heading" time="0.0005">
+        </testcase>
+    <testcase classname="src/features/docs/content.test.ts" name="published docs pages &gt; code blocks name their language" time="0.0014000001">
+        </testcase>
+    <testcase classname="src/features/docs/content.test.ts" name="published docs pages &gt; does not expose storage vendors, physical paths, or internal API routes" time="0.0005999999">
+        </testcase>
+  </testsuite>
+  <testsuite name="src/features/docs/docs-markdown.test.tsx" tests="2" failures="0" errors="0" skipped="0" time="0.3228">
+    <testcase classname="src/features/docs/docs-markdown.test.tsx" name="documentation renderer &gt; renders section anchors, callouts, tables and copyable code" time="0.3126000001">
+        </testcase>
+    <testcase classname="src/features/docs/docs-markdown.test.tsx" name="documentation renderer &gt; keeps source text inert inside highlighted code" time="0.0093">
+        </testcase>
+  </testsuite>
+</testsuites>

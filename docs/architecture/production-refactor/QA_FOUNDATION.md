@@ -949,3 +949,30 @@ the earlier live schema observation and its timestamps; no live acceptance row
 is promoted. Migration checksums and epoch remain unchanged. Durable PG consent,
 audit-session projection, job execution binding, runtime ports, production Compose,
 rehearsals/cutover and whole-feature/live-AI acceptance are still open.
+
+## Consent response and completed read-grant CI
+
+The eight CI jobs for c71ba4b1 completed successfully. Its downloaded reports
+record 486 PG cases and 217 engine cases passed, with 24 engine skips retained.
+The metadata log scan found zero credential/envelope canaries in 77 lines.
+The [CI record](../../reports/production-refactor/ci-c71ba4b1.json) preserves the
+artifact digests and skip reasons. This CI engine is unpatched and does not
+establish governed-stack or live-AI acceptance.
+
+A subsequent response regression made the approval picker show an inactive
+read-only grant after Allow/Deny or file approval, while authorization still
+used the existing grant. Both decision surfaces and Console file approval now
+return the context-bound grant status. Five parent failures and all four
+controlled-provider API attempts are retained in the
+[evidence packet](../../reports/production-refactor/consent-response/README.md).
+The final API attempt passes all four flows and cleans its owned fixtures;
+earlier fixture-contract failures are not erased or counted as live-model proof.
+
+Local checks pass 10,852 unit/coverage cases, 354 agent trajectories, the
+54-scenario/189-check scorecard, full mypy, Ruff on 110 changed Python files,
+the data-access boundary scan and 15 docs browser cases. The updated approval
+paragraph was viewed in Chrome. Metadata code/schema and frontend application
+code/dependencies are unchanged, so the prior 489-case PG and 1,609-case frontend
+results remain applicable. The application digest is
+`9794df15dec3412e8836e9af8d1b1f7bf79da27ac69039b31e072475f30ee490`.
+No metadata epoch, migration checksum or whole-feature acceptance row changes.
