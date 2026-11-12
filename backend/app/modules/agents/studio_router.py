@@ -124,13 +124,37 @@ async def update_studio_settings(
     )
 
 
+async def _verified_agents(agents: list[dict], *, role: str, user: dict) -> list[dict]:
+    """Agents the caller may use, checked again on every request.
+
+    Each agent's check is independent, so a few run at a time. A caller served
+    by one delegated connection is checked in order, since its statements
+    cannot overlap. The first failing check still decides, in list order.
+    """
+    from app.modules.query.service import delegated_connection_for
+
+    if delegated_connection_for(user["username"]) is not None:
+        return [a for a in agents if await has_verified_access(a, role_name=role, user=user)]
+    limit = asyncio.Semaphore(2)
+
+    async def check(agent: dict) -> bool:
+        async with limit:
+            return await has_verified_access(agent, role_name=role, user=user)
+
+    results = await asyncio.gather(*(check(a) for a in agents), return_exceptions=True)
+    for result in results:
+        if isinstance(result, BaseException):
+            raise result
+    return [agent for agent, allowed in zip(agents, results, strict=True) if allowed is True]
+
+
 @router.get("/studio/capabilities", response_model=StudioCapabilities)
 async def get_studio_capabilities(user: dict = Depends(get_current_user)):
     """What the caller can use, for the Studio Capabilities view."""
     owner = user["username"]
     agents = await agent_repository.list_agents(owner_name=owner)
     role = session_security(user).active_role
-    agents = [a for a in agents if await has_verified_access(a, role_name=role, user=user)]
+    agents = await _verified_agents(agents, role=role, user=user)
     skills = await agent_repository.list_skills(owner_name=owner)
     await _seed_builtin_tools(owner)
     tools = await _visible_registry_tools(owner)

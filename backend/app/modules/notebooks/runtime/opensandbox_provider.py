@@ -36,7 +36,11 @@ META_OWNER = "nova.owner"
 ENTRYPOINT = ["/opt/nova/entrypoint.sh"]
 
 
-def _connection_config():
+#: Ordinary control calls (list, kill, files) answer quickly.
+REQUEST_SECONDS = 60
+
+
+def _connection_config(request_seconds: int = REQUEST_SECONDS):
     from opensandbox.config import ConnectionConfig
 
     if not settings.OPENSANDBOX_API_KEY:
@@ -44,7 +48,7 @@ def _connection_config():
     return ConnectionConfig(
         domain=settings.OPENSANDBOX_DOMAIN,
         api_key=settings.OPENSANDBOX_API_KEY,
-        request_timeout=timedelta(seconds=60),
+        request_timeout=timedelta(seconds=request_seconds),
         use_server_proxy=settings.OPENSANDBOX_USE_SERVER_PROXY,
     )
 
@@ -129,9 +133,14 @@ class OpenSandboxProvider:
             ],
         )
         try:
+            # Creation can include the server pulling a missing image, so it
+            # gets the runtime's whole start budget rather than the control
+            # call timeout. A request abandoned anyway is reaped by the sweep.
             sandbox = await Sandbox.create(
                 spec.image,
-                connection_config=_connection_config(),
+                connection_config=_connection_config(
+                    max(REQUEST_SECONDS, spec.ready_timeout_seconds)
+                ),
                 entrypoint=ENTRYPOINT,
                 env=spec.env,
                 metadata={

@@ -122,8 +122,8 @@ async def test_database_without_functions_is_not_a_choice(engine):
 
 async def test_database_dropped_during_scan_is_skipped(engine):
     _, fail = engine
-    fail["SHOW FULL FUNCTIONS FROM `reporting`"] = asyncmy.errors.ProgrammingError(
-        1049, "Unknown database"
+    fail["SHOW FULL FUNCTIONS FROM `reporting`"] = asyncmy.errors.OperationalError(
+        5501, "Getting analyzing error. Detail message: Unknown database 'reporting'."
     )
     functions, databases = await FunctionService().list_udfs_with_databases()
     assert "reporting" not in databases

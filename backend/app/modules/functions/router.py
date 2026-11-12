@@ -78,6 +78,11 @@ async def drop_udf(
     """Drop a user-defined function as the caller."""
     try:
         sql = await function_service.drop_udf(database, name, conn)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to drop UDF: {e}") from e
+        logger.warning("UDF drop failed: %s", type(e).__name__)
+        raise HTTPException(status_code=500, detail="The function could not be dropped") from e
     return {"message": f"Function {database}.{name} dropped", "sql": sql}

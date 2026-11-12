@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from app.core.database import db
@@ -29,7 +30,9 @@ _LOADS_FRESH_SECONDS = 30
 #: How long a stale answer may still be served before a visit waits again.
 _LOADS_KEEP_SECONDS = 600
 _LOADS_LOCK_SECONDS = 60
-_BACKGROUND: set["asyncio.Task[list[dict]]"] = set()
+_BACKGROUND: set["asyncio.Task[Any]"] = set()
+_STATS_CACHE_KEY = "nova:monitoring:loads:stats"
+_STATS_REFRESH_LOCK = "nova:monitoring:loads:stats:refreshing"
 #: The history page shows recent loads; older ones stay reachable by database.
 _LOADS_SCAN_LIMIT = 5000
 _LOAD_COLUMNS = (
@@ -631,50 +634,65 @@ class MonitoringRepository:
         return {"items": items[offset : offset + limit], "total": len(items)}
 
     async def _recent_loads(self) -> list[dict]:
-        """The most recent loads into user databases, from one cached scan.
+        """The most recent loads into user databases, from one cached scan."""
+        items = await self._cached_scan(
+            _LOADS_CACHE_KEY, _LOADS_REFRESH_LOCK, self._scan_recent_loads,
+        )
+        return list(items)
 
-        Stale-while-revalidate: an answer older than the fresh window is still
-        returned at once while one background scan replaces it, so only the
-        very first visit waits for the engine's slow scan.
+    async def _cached_scan(
+        self, key: str, lock: str, scan: Callable[[], Awaitable[Any]],
+    ) -> Any:
+        """Stale-while-revalidate over one slow, caller-independent engine scan.
+
+        An answer older than the fresh window is still returned at once while
+        one background scan replaces it, so only the very first visit waits.
+        Callers check access before calling; the cached value is the same
+        system-pool answer for every permitted caller.
         """
         from app.core.redis import session_store
 
         client = session_store._redis
         if client is None:
-            return await self._scan_recent_loads()
+            return await scan()
         try:
-            cached = await client.get(_LOADS_CACHE_KEY)
+            cached = await client.get(key)
         except Exception:  # noqa: BLE001 - a cache fault never blocks the answer
-            logger.debug("Data loads cache read failed", exc_info=True)
-            return await self._scan_recent_loads()
+            logger.debug("Monitoring cache read failed", exc_info=True)
+            return await scan()
         if not cached:
-            return await self._refresh_recent_loads(client)
+            return await self._refresh(client, key, lock, scan)
         entry = json.loads(cached)
-        if not isinstance(entry, dict):
-            return await self._refresh_recent_loads(client)
+        if not isinstance(entry, dict) or "items" not in entry:
+            return await self._refresh(client, key, lock, scan)
         if time.time() - float(entry.get("at", 0)) > _LOADS_FRESH_SECONDS:
             try:
                 # One refresh at a time across workers.
-                if await client.set(_LOADS_REFRESH_LOCK, "1", nx=True, ex=_LOADS_LOCK_SECONDS):
-                    task = asyncio.create_task(self._refresh_recent_loads(client))
+                if await client.set(lock, "1", nx=True, ex=_LOADS_LOCK_SECONDS):
+                    task = asyncio.create_task(self._refresh(client, key, lock, scan))
                     _BACKGROUND.add(task)
                     task.add_done_callback(_BACKGROUND.discard)
             except Exception:  # noqa: BLE001
-                logger.debug("Data loads refresh could not start", exc_info=True)
-        return list(entry.get("items", []))
+                logger.debug("Monitoring refresh could not start", exc_info=True)
+        return entry["items"]
 
-    async def _refresh_recent_loads(self, client: Any) -> list[dict]:
-        items = await self._scan_recent_loads()
+    async def _refresh(
+        self, client: Any, key: str, lock: str, scan: Callable[[], Awaitable[Any]],
+    ) -> Any:
+        items = await scan()
         try:
             await client.set(
-                _LOADS_CACHE_KEY,
-                json.dumps({"at": time.time(), "items": items}),
-                ex=_LOADS_KEEP_SECONDS,
+                key, json.dumps({"at": time.time(), "items": items}), ex=_LOADS_KEEP_SECONDS,
             )
-            await client.delete(_LOADS_REFRESH_LOCK)
+            await client.delete(lock)
         except Exception:  # noqa: BLE001
-            logger.debug("Data loads cache write failed", exc_info=True)
+            logger.debug("Monitoring cache write failed", exc_info=True)
         return items
+
+    async def _refresh_recent_loads(self, client: Any) -> list[dict]:
+        return list(await self._refresh(
+            client, _LOADS_CACHE_KEY, _LOADS_REFRESH_LOCK, self._scan_recent_loads,
+        ))
 
     async def _scan_recent_loads(self) -> list[dict]:
         excluded = ", ".join(f"'{name}'" for name in _INTERNAL_LOAD_DBS)
@@ -687,7 +705,17 @@ class MonitoringRepository:
         return [_load_item(row) for row in result["rows"]]
 
     async def get_load_stats(self) -> dict:
-        """Aggregate stats for the data loads dashboard."""
+        """Aggregate stats for the data loads dashboard.
+
+        Counting every load job is a full engine scan (65 s measured with about
+        220 databases), so it shares the loads list's stale-while-revalidate cache.
+        """
+        stats = await self._cached_scan(
+            _STATS_CACHE_KEY, _STATS_REFRESH_LOCK, self._scan_load_stats,
+        )
+        return dict(stats)
+
+    async def _scan_load_stats(self) -> dict:
         result = await db.execute_system(
             """
             SELECT
@@ -733,83 +761,90 @@ class MonitoringRepository:
         from app.modules.monitoring.alerts import AlertMetrics
 
         metrics = AlertMetrics()
-        reachable = False
+        reached: list[bool] = []
 
-        # FE membership -------------------------------------------------
-        try:
-            result = await db.execute_system("SHOW FRONTENDS")
-            rows = self._rows_to_maps(result)
-            reachable = True
-            metrics.fe_total = len(rows)
-            metrics.fe_alive = sum(1 for r in rows if self._truthy(r.get("Alive")))
-            metrics.fe_leader_count = sum(
-                1
-                for r in rows
-                if str(r.get("Role", "")).upper() == "LEADER"
-                and self._truthy(r.get("Alive"))
-                and self._truthy(r.get("Join"))
-            )
-            metrics.fe_max_journal_lag = self._journal_lag(rows)
-            metrics.fe_meta_log_count = self._max_int(rows, ("MetaLogCount", "metaLogCount"))
-        except Exception as exc:
-            logger.warning("Alert probe SHOW FRONTENDS failed: %s", exc)
+        async def frontends() -> None:
+            try:
+                result = await db.execute_system("SHOW FRONTENDS")
+                rows = self._rows_to_maps(result)
+                reached.append(True)
+                metrics.fe_total = len(rows)
+                metrics.fe_alive = sum(1 for r in rows if self._truthy(r.get("Alive")))
+                metrics.fe_leader_count = sum(
+                    1
+                    for r in rows
+                    if str(r.get("Role", "")).upper() == "LEADER"
+                    and self._truthy(r.get("Alive"))
+                    and self._truthy(r.get("Join"))
+                )
+                metrics.fe_max_journal_lag = self._journal_lag(rows)
+                metrics.fe_meta_log_count = self._max_int(rows, ("MetaLogCount", "metaLogCount"))
+            except Exception as exc:
+                logger.warning("Alert probe SHOW FRONTENDS failed: %s", exc)
 
-        # BE membership / storage --------------------------------------
-        try:
-            result = await db.execute_system("SHOW BACKENDS")
-            rows = self._rows_to_maps(result)
-            reachable = True
-            metrics.be_total = len(rows)
-            live = [
-                r
-                for r in rows
-                if self._truthy(r.get("Alive"))
-                and not self._truthy(r.get("SystemDecommissioned"))
-                and not self._truthy(r.get("ClusterDecommissioned"))
-            ]
-            metrics.be_alive = len(live)
-            metrics.be_disk_used_pct_max = self._max_float(
-                live, ("MaxDiskUsedPct", "UsedPct")
-            )
-        except Exception as exc:
-            logger.warning("Alert probe SHOW BACKENDS failed: %s", exc)
+        async def backends() -> None:
+            try:
+                result = await db.execute_system("SHOW BACKENDS")
+                rows = self._rows_to_maps(result)
+                reached.append(True)
+                metrics.be_total = len(rows)
+                live = [
+                    r
+                    for r in rows
+                    if self._truthy(r.get("Alive"))
+                    and not self._truthy(r.get("SystemDecommissioned"))
+                    and not self._truthy(r.get("ClusterDecommissioned"))
+                ]
+                metrics.be_alive = len(live)
+                metrics.be_disk_used_pct_max = self._max_float(
+                    live, ("MaxDiskUsedPct", "UsedPct")
+                )
+            except Exception as exc:
+                logger.warning("Alert probe SHOW BACKENDS failed: %s", exc)
 
-        # Compaction score (FE) ----------------------------------------
-        try:
-            result = await db.execute_system(
-                "SELECT MAX(MAX_COMPACTION_SCORE) FROM information_schema.be_tablets"
-            )
-            if result["rows"]:
-                metrics.max_compaction_score = self._float_or_none(result["rows"][0][0])
-        except Exception as exc:
-            logger.debug("Alert probe compaction score failed: %s", exc)
+        async def compaction_score() -> None:
+            try:
+                result = await db.execute_system(
+                    "SELECT MAX(MAX_COMPACTION_SCORE) FROM information_schema.be_tablets"
+                )
+                if result["rows"]:
+                    metrics.max_compaction_score = self._float_or_none(result["rows"][0][0])
+            except Exception as exc:
+                logger.debug("Alert probe compaction score failed: %s", exc)
 
-        # BE compaction failures ---------------------------------------
-        try:
-            result = await db.execute_system(
-                "SELECT SUM(C) FROM ("
-                " SELECT COUNT(*) AS C FROM information_schema.be_compactions"
-                " WHERE STATUS != 'SUCCESS'"
-                ") t"
-            )
-            if result["rows"]:
-                metrics.be_compaction_failures = self._int_or_none(result["rows"][0][0])
-        except Exception as exc:
-            logger.debug("Alert probe compaction failures failed: %s", exc)
+        async def compaction_failures() -> None:
+            try:
+                result = await db.execute_system(
+                    "SELECT SUM(C) FROM ("
+                    " SELECT COUNT(*) AS C FROM information_schema.be_compactions"
+                    " WHERE STATUS != 'SUCCESS'"
+                    ") t"
+                )
+                if result["rows"]:
+                    metrics.be_compaction_failures = self._int_or_none(result["rows"][0][0])
+            except Exception as exc:
+                logger.debug("Alert probe compaction failures failed: %s", exc)
 
-        # FE metric ratios ---------------------------------------------
-        try:
-            metrics.query_err_rate, metrics.query_latency_p95_ms = (
-                await self._fe_query_metrics()
-            )
-        except Exception as exc:
-            logger.debug("Alert probe fe query metrics failed: %s", exc)
+        async def query_metrics() -> None:
+            try:
+                metrics.query_err_rate, metrics.query_latency_p95_ms = (
+                    await self._fe_query_metrics()
+                )
+            except Exception as exc:
+                logger.debug("Alert probe fe query metrics failed: %s", exc)
 
-        try:
-            metrics.fe_heap_used_ratio = await self._fe_heap_ratio()
-        except Exception as exc:
-            logger.debug("Alert probe fe heap failed: %s", exc)
+        async def heap() -> None:
+            try:
+                metrics.fe_heap_used_ratio = await self._fe_heap_ratio()
+            except Exception as exc:
+                logger.debug("Alert probe fe heap failed: %s", exc)
 
+        # The probes are independent reads; each owns its fields and failure.
+        await asyncio.gather(
+            frontends(), backends(), compaction_score(), compaction_failures(),
+            query_metrics(), heap(),
+        )
+        reachable = bool(reached)
         metrics.engine_reachable = reachable
         return metrics
 

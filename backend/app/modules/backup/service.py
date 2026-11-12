@@ -45,6 +45,10 @@ class BackupError(ValueError):
     """A backup/recovery operation the service refused before or after the engine."""
 
 
+class BackupUnsupported(BackupError):
+    """An option the pinned engine does not offer; refused without an engine call."""
+
+
 def _safe_ident(value: str, what: str) -> str:
     if not _NAME.match(value or ""):
         raise BackupError(f"Invalid {what}: {value!r}")
@@ -316,23 +320,20 @@ class BackupService:
 
     # ── Recycle bin ─────────────────────────────────────────────
 
-    async def list_recycle_bin(
-        self,
-        *,
-        username: str,
-        encrypted_password: str,
-        session_id: str | None,
-        role: str | None = None,
-    ) -> list[dict]:
-        """``SHOW CATALOG RECYCLE BIN`` — recoverable dropped objects."""
-        result = await self._query(
-            "SHOW CATALOG RECYCLE BIN",
-            username=username,
-            encrypted_password=encrypted_password,
-            session_id=session_id,
-            role=role,
+    async def list_recycle_bin(self, **_caller: object) -> list[dict]:
+        """Refuse: the pinned engine lists dropped objects only for its root account.
+
+        ``information_schema.recyclebin_catalogs`` is the StarRocks 4.1.4
+        surface (``SHOW CATALOG RECYCLE BIN`` is another engine's syntax), but
+        the engine answers it only for ``root`` ("operation can be executed only
+        by root user", verified 2026-11-12). Nova never runs a caller's request
+        as root, so no Nova user can list it. Recovery by exact name still works.
+        """
+        raise BackupUnsupported(
+            "Nova cannot list dropped objects: the database engine shows that list "
+            "only to its own administrator account. Recover a dropped table or "
+            "database by its exact name."
         )
-        return _rows_to_maps(result)
 
     async def recover(
         self,
@@ -343,17 +344,18 @@ class BackupService:
         session_id: str | None,
         role: str | None = None,
     ) -> dict:
-        """``RECOVER TABLE|DATABASE <name> [AS <new_name>]``."""
+        """``RECOVER TABLE|DATABASE <name>``; the pinned engine cannot rename."""
         name = _safe_ident(body.name, "object name")
+        if body.new_name:
+            raise BackupUnsupported(
+                "This Nova engine version cannot rename while recovering. "
+                "Recover the object first, then rename it."
+            )
         if body.object_type == "database":
             statement = f"RECOVER DATABASE {_quote(name)}"
-            if body.new_name:
-                statement += f" AS {_quote(_safe_ident(body.new_name, 'new name'))}"
         else:
             database = _safe_ident(body.database or "", "database")
             statement = f"RECOVER TABLE {_quote(database)}.{_quote(name)}"
-            if body.new_name:
-                statement += f" AS {_quote(_safe_ident(body.new_name, 'new name'))}"
         await self._run(
             statement,
             username=username,

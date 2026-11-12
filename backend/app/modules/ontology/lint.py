@@ -98,7 +98,8 @@ def _mentions(text: str, index: dict[str, set[str]]) -> set[str]:
     return found
 
 
-async def lint(user: dict, catalog, repository) -> list[Finding]:
+async def lint(user: dict, catalog, repository, *, layer: dict | None = None) -> list[Finding]:
+    """Meaning checks; ``layer`` reuses a caller's already computed visible layer."""
     state = await load_state(repository)
     domains = state.domains
     visible = {
@@ -113,7 +114,8 @@ async def lint(user: dict, catalog, repository) -> list[Finding]:
     def qualified(concept: Concept) -> str:
         return access.qualified_path(domains[concept.domain_id], domains) + "." + concept.slug
 
-    layer = await visible_layer(user, catalog, repository)
+    if layer is None:
+        layer = await visible_layer(user, catalog, repository)
     items = {item["key"]: item for item in layer["items"]}
     visible_views = {
         e["semantic"]["view_id"] for item in layer["items"] for e in item["evidence"]

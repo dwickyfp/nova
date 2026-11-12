@@ -83,6 +83,39 @@ def test_runtimes_are_not_configured_without_an_api_key(monkeypatch):
         adapter._connection_config()
 
 
+def test_control_calls_keep_a_short_request_timeout(monkeypatch):
+    monkeypatch.setattr(adapter.settings, "OPENSANDBOX_API_KEY", "test-only")
+    assert adapter._connection_config().request_timeout.total_seconds() == 60
+    assert adapter._connection_config(180).request_timeout.total_seconds() == 180
+
+
+async def test_creation_waits_for_the_whole_start_budget(monkeypatch):
+    import sys
+    import types
+
+    monkeypatch.setattr(adapter.settings, "OPENSANDBOX_API_KEY", "test-only")
+    seen = {}
+
+    class _Created(Exception):
+        pass
+
+    async def create(image, *, connection_config, **kwargs):
+        seen["request"] = connection_config.request_timeout.total_seconds()
+        raise _Created()
+
+    fake = types.SimpleNamespace(Sandbox=types.SimpleNamespace(create=create))
+    monkeypatch.setitem(sys.modules, "opensandbox", fake)
+    monkeypatch.setitem(sys.modules, "code_interpreter", types.SimpleNamespace(
+        CodeInterpreter=None, SupportedLanguage=None))
+    spec = types.SimpleNamespace(
+        image="runtime", egress=[], env={}, runtime_id="r", notebook_id="n", owner_hash="o",
+        cpu="1", memory="1Gi", lifetime_seconds=600, ready_timeout_seconds=180,
+    )
+    with pytest.raises(ProviderError):
+        await adapter.OpenSandboxProvider().create(spec)
+    assert seen["request"] == 180
+
+
 class _Response:
     status_code = 200
 

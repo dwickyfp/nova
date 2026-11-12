@@ -93,13 +93,13 @@ findings. In particular:
   provenance and uncertain usage commits remain in the risk register.
 - `AI_EMBED` has an unresolved registration-template contract gap. The live
   embedding waiver does not establish implementation correctness.
-- UI QA on 2026-11-12 (see [the checkpoint](../../reports/production-refactor/workspace-caller-port/README.md)):
-  `GET /backup/recycle-bin` is refused by the SQL frontend;
-  the SQL editor depends on a public CDN; `monitoring/loads/stats` (65.7 s) and
-  `ontology/metrics` (29.1 s) exceed 40 s under six parallel calls; one
-  unexplained page reload did not recur. The UDF listing, worker startup,
-  orphaned-role restart and notebook-docs defects found in the same pass are
-  fixed; Notebook SQL/Python/novaduck flows pass after the sandbox image check.
+- UI QA on 2026-11-12 (see [the checkpoint](../../reports/production-refactor/workspace-caller-port/README.md)
+  and [the open-findings record](../../reports/production-refactor/open-findings/README.md)):
+  the CDN editor dependency, pipe listing, sandbox start timeout, UDF create/drop
+  and docs, and four slow endpoints are fixed. The engine shows its recycle bin
+  only to root, so Nova refuses that listing explicitly. `ontology/metrics`
+  (16–21 s) and `ontology/lint` (8–10 s) remain slow pending a decision on
+  visibility caching; one page reload did not recur.
 - Historical Agent runs with missing events remain preserved; their provenance
   is unresolved. Do not fabricate events or silently discard history.
 

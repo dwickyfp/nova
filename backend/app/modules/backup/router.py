@@ -39,7 +39,7 @@ from .schemas import (
     SnapshotResponse,
     SnapshotRestore,
 )
-from .service import BackupError, backup_service
+from .service import BackupError, BackupUnsupported, backup_service
 
 router = APIRouter()
 
@@ -162,15 +162,17 @@ async def create_repository(body: RepositoryCreate, user: BackupAdmin):
     response_class=SanitizingJSONResponse,
 )
 async def list_recycle_bin(user: CurrentUser):
-    """List recoverable dropped objects via ``SHOW CATALOG RECYCLE BIN``."""
+    """Not available to Nova users on the pinned engine (501)."""
     try:
         rows = await backup_service.list_recycle_bin(**_caller(user))
+    except BackupUnsupported as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
     except BackupError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return RecycleBinResponse(
         items=[
             RecycleBinItem(
-                name=str(r.get("Name") or r.get("name") or ""),
+                name=str(r.get("NAME") or r.get("Name") or r.get("name") or ""),
                 raw={k: str(v) for k, v in r.items()},
             )
             for r in rows
@@ -181,7 +183,7 @@ async def list_recycle_bin(user: CurrentUser):
 
 @router.post("/recover", response_class=SanitizingJSONResponse)
 async def recover(body: RecoverRequest, user: BackupAdmin):
-    """``RECOVER TABLE|DATABASE``. Privileged — admin roles only."""
+    """``RECOVER TABLE|DATABASE`` by exact name. Privileged — admin roles only."""
     try:
         result = await backup_service.recover(body, **_caller(user))
     except BackupError as exc:

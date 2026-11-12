@@ -46,6 +46,28 @@ class _OnceCatalog:
         return getattr(self._catalog, name)
 
 
+class _OnceRepository:
+    """The ontology repository for one Overview request: each kind is read once.
+
+    The layer, the counts and the meaning checks all read the current domains,
+    concepts and representations, and each read is a full revision-window scan
+    of control metadata. Within one request the same snapshot serves them all.
+    """
+
+    def __init__(self, repository) -> None:
+        self._repository = repository
+        self._current: dict[tuple[str, type], list] = {}
+
+    async def current(self, kind: str, model: type) -> list:
+        key = (kind, model)
+        if key not in self._current:
+            self._current[key] = await self._repository.current(kind, model)
+        return list(self._current[key])
+
+    def __getattr__(self, name: str):
+        return getattr(self._repository, name)
+
+
 def _when(run: EvalRun | None) -> str | None:
     return run.updated_at.isoformat() if run else None
 
@@ -54,7 +76,7 @@ async def overview(user: dict, service: EvaluationService) -> dict:
     from app.modules.ontology.derived import visible_layer
     from app.modules.ontology.lint import lint
 
-    repository = service.repository
+    repository = _OnceRepository(service.repository)
     runs = [run for run in await service.runs() if run.status == "COMPLETED"]
     answers = [run for run in runs if run.kind == "answers"]
     with_runs = [run for run in answers if run.mode == "with_ontology"]
@@ -109,7 +131,7 @@ async def overview(user: dict, service: EvaluationService) -> dict:
             counts["metrics"] += 1
             if any(b.concept_id == concept.id and b.status == "VALIDATED" for b in bindings):
                 counts["bound"] += 1
-    findings = await lint(user, catalog, repository)
+    findings = await lint(user, catalog, repository, layer=layer)
     proposals = [item for item in await repository.current("proposals", Proposal)
                  if item.source == "ENGINE"]
     decided = Counter(item.status for item in proposals)

@@ -242,3 +242,37 @@ async def test_concurrent_requests_share_one_access_check(monkeypatch) -> None:
     gate.set()
     assert all(await asyncio.gather(*waiting))
     assert calls == 1
+
+
+async def test_capabilities_check_agents_concurrently_and_keep_order(monkeypatch):
+    import asyncio
+
+    from app.modules.agents import studio_router
+
+    started = asyncio.Barrier(2)
+
+    async def verified(agent, *, role_name, user):
+        await asyncio.wait_for(started.wait(), 1)  # two checks must be in flight together
+        return agent["agent_id"] != "denied"
+
+    monkeypatch.setattr(studio_router, "has_verified_access", verified)
+    monkeypatch.setattr("app.modules.query.service.delegated_connection_for", lambda name: None)
+    agents = [{"agent_id": "a"}, {"agent_id": "denied"}, {"agent_id": "b"}, {"agent_id": "c"}]
+    allowed = await studio_router._verified_agents(agents, role="ANALYST", user={"username": "u"})
+    assert [a["agent_id"] for a in allowed] == ["a", "b", "c"]
+
+
+async def test_capabilities_check_a_delegated_caller_in_order(monkeypatch):
+    from app.modules.agents import studio_router
+
+    order: list[str] = []
+
+    async def verified(agent, *, role_name, user):
+        order.append(agent["agent_id"])
+        return True
+
+    monkeypatch.setattr(studio_router, "has_verified_access", verified)
+    monkeypatch.setattr("app.modules.query.service.delegated_connection_for", lambda name: object())
+    agents = [{"agent_id": "a"}, {"agent_id": "b"}]
+    await studio_router._verified_agents(agents, role="ANALYST", user={"username": "u"})
+    assert order == ["a", "b"]

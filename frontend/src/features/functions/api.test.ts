@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createUDF, deleteUDF, fetchBuiltinFunctions, fetchUDFs } from './api'
+import { createUDF, deleteUDF, fetchBuiltinFunctions, fetchCreatableDatabases, fetchUDFs, parseUDFArgs } from './api'
 
 const fetchMock = vi.fn()
 
@@ -64,6 +64,9 @@ describe('functions API calls', () => {
 
     expect(requestedUrl()).toBe('/api/v1/functions/udf')
     expect(requestedMethod()).toBe('POST')
+    // The service takes named, typed arguments, not the dialog's text.
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string)
+    expect(body.args).toEqual([{ name: 'x', type: 'INTEGER' }])
   })
 
   it('deletes a user-defined function by database and name', async () => {
@@ -136,5 +139,44 @@ describe('functions response shapes', () => {
     const res = await fetchUDFs()
 
     expect(res.databases).toEqual([])
+  })
+})
+
+describe('databases for a new function', () => {
+  it('offers every database the active role can use, not only those holding a function', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ roles: [], databases: ['sales', 'empty_db'], schemas: [] }))
+
+    const databases = await fetchCreatableDatabases()
+
+    expect(requestedUrl()).toBe('/api/v1/query/context')
+    expect(databases).toEqual(['sales', 'empty_db'])
+  })
+
+  it('returns no choices when the context has none', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ roles: [] }))
+
+    expect(await fetchCreatableDatabases()).toEqual([])
+  })
+})
+
+describe('function arguments', () => {
+  it('keeps commas inside a type with the type', () => {
+    expect(parseUDFArgs('x INT, amount DECIMAL(10,2) , label VARCHAR')).toEqual([
+      { name: 'x', type: 'INT' },
+      { name: 'amount', type: 'DECIMAL(10,2)' },
+      { name: 'label', type: 'VARCHAR' },
+    ])
+  })
+
+  it('allows a function without arguments', () => {
+    expect(parseUDFArgs('  ')).toEqual([])
+  })
+
+  it('refuses an argument without a type before anything is sent', async () => {
+    expect(() => parseUDFArgs('x')).toThrow(/name and a type/)
+    await expect(createUDF({
+      name: 'f', database: 'db', function_type: 'sql', args: 'x', return_type: 'INT', body: 'x',
+    })).rejects.toThrow(/name and a type/)
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

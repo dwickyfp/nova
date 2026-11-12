@@ -11,9 +11,19 @@ allow-listed before it is interpolated — a strip-only sanitizer let a ``;``
 open a second statement.
 """
 
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from typing import Any
+
+import asyncmy.errors
+
 from app.common.identifiers import check_identifier
 from app.core.database import db
 from app.core.security import decrypt_password
+
+#: Engine errors for a database that no longer exists (dropped while listing).
+_MISSING_DATABASE = {1049, 5501}
 
 
 class ObjectRepository:
@@ -298,7 +308,49 @@ class ObjectRepository:
                 mvs.append({"name": row[0], "database": database, "type": "MATERIALIZED_VIEW"})
         return mvs
 
-    # ── Table Types (efficient single query) ───────────────────
+    # ── Table Types ────────────────────────────────────────────
+
+    @asynccontextmanager
+    async def _user_cursor(
+        self, *, username: str, encrypted_password: str, role: str | None = None,
+    ) -> AsyncIterator[Any]:
+        """One caller connection, with the requested role set once."""
+        password = decrypt_password(encrypted_password)
+        async with db.user_conn(username, password) as conn, conn.cursor() as cur:
+            if role:
+                await cur.execute(f"SET ROLE {check_identifier(role, field='role')}")
+            yield cur
+
+    @staticmethod
+    async def _table_types(cur: Any, database: str) -> dict[str, list[dict]]:
+        """Tables, views and materialized views of one database, in two statements.
+
+        ``SHOW FULL TABLES`` types each relation; it reports a materialized view
+        as ``VIEW``, so the database's materialized views are listed once and
+        moved out of the views.
+        """
+        database = check_identifier(database, field="database")
+        await cur.execute(f"SHOW FULL TABLES FROM `{database}`")
+        relations = [(str(row[0]), str(row[1]).upper()) for row in await cur.fetchall()]
+        materialized: set[str] = set()
+        try:
+            await cur.execute(f"SHOW MATERIALIZED VIEWS FROM `{database}`")
+            columns = [d[0].lower() for d in cur.description or ()]
+            at = columns.index("name") if "name" in columns else 0
+            materialized = {str(row[at]) for row in await cur.fetchall()}
+        except Exception:  # noqa: BLE001 - a database without the privilege lists none
+            materialized = set()
+        tables: list[dict] = []
+        views: list[dict] = []
+        mvs: list[dict] = []
+        for name, kind in relations:
+            if name in materialized:
+                mvs.append({"name": name, "database": database, "type": "MATERIALIZED_VIEW"})
+            elif kind == "VIEW":
+                views.append({"name": name, "database": database, "type": "VIEW"})
+            else:
+                tables.append({"name": name, "database": database, "type": "TABLE"})
+        return {"tables": tables, "views": views, "materialized_views": mvs}
 
     async def list_table_types(
         self,
@@ -312,49 +364,45 @@ class ObjectRepository:
 
         Returns: {"tables": [...], "views": [...], "materialized_views": [...]}
         """
-        database = check_identifier(database, field="database")
-        result = await self._execute_user(
-            f"SHOW TABLES FROM `{database}`",
-            username=username,
-            encrypted_password=encrypted_password,
-            role=role,
-            database=database,
-        )
-        tables = []
-        views = []
-        mvs = []
+        async with self._user_cursor(
+            username=username, encrypted_password=encrypted_password, role=role,
+        ) as cur:
+            return await self._table_types(cur, database)
 
-        for row in result["rows"]:
-            name = row[0]
-            # Try to detect type by checking SHOW CREATE VIEW
-            try:
-                await self._execute_user(
-                    f"SHOW CREATE VIEW `{database}`.`{name}`",
-                    username=username,
-                    encrypted_password=encrypted_password,
-                    role=role,
-                    database=database,
-                )
-                views.append({"name": name, "database": database, "type": "VIEW"})
-            except Exception:
-                tables.append({"name": name, "database": database, "type": "TABLE"})
+    async def table_types_by_database(
+        self,
+        databases: list[str],
+        *,
+        username: str,
+        encrypted_password: str,
+        role: str | None = None,
+        connections: int = 4,
+    ) -> dict[str, dict[str, list[dict]]]:
+        """Categorized relations for many databases over a few caller connections.
 
-        # Check for materialized views
-        try:
-            mv_result = await self._execute_user(
-                f"SHOW ALTER MATERIALIZED VIEW FROM `{database}`",
-                username=username,
-                encrypted_password=encrypted_password,
-                role=role,
-                database=database,
-            )
-            if mv_result["rows"]:
-                for row in mv_result["rows"]:
-                    mvs.append({"name": row[0], "database": database, "type": "MATERIALIZED_VIEW"})
-        except Exception:
-            pass
+        Each connection carries the caller's identity and requested role, so the
+        engine applies the same access as one connection per statement did.
+        A database dropped while listing has nothing to list.
+        """
+        pending = list(databases)
+        found: dict[str, dict[str, list[dict]]] = {}
 
-        return {"tables": tables, "views": views, "materialized_views": mvs}
+        async def work() -> None:
+            async with self._user_cursor(
+                username=username, encrypted_password=encrypted_password, role=role,
+            ) as cur:
+                while pending:
+                    name = pending.pop(0)
+                    try:
+                        found[name] = await self._table_types(cur, name)
+                    except asyncmy.errors.Error as error:
+                        if not error.args or error.args[0] not in _MISSING_DATABASE:
+                            raise
+                        found[name] = {"tables": [], "views": [], "materialized_views": []}
+
+        if pending:
+            await asyncio.gather(*(work() for _ in range(min(connections, len(pending)))))
+        return found
 
 
 object_repo = ObjectRepository()

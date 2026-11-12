@@ -33,15 +33,16 @@ class ObjectService:
             role=role,
         )
         result = []
+        by_database = await self._repo.table_types_by_database(
+            [database["name"] for database in databases],
+            username=username,
+            encrypted_password=encrypted_password,
+            role=role,
+        )
 
         for database in databases:
             name = database["name"]
-            types = await self._repo.list_table_types(
-                name,
-                username=username,
-                encrypted_password=encrypted_password,
-                role=role,
-            )
+            types = by_database[name]
             result.append({
                 "name": name,
                 "table_count": len(types["tables"]),

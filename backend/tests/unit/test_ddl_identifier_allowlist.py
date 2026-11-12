@@ -48,8 +48,10 @@ CONFIRMED_ESCALATION_PAYLOAD = "INT) ENGINE=OLAP; CREATE USER `pwn`"
 class RecordingConnection:
     """The caller-connection boundary: records every statement executed on it."""
 
-    def __init__(self) -> None:
+    def __init__(self, rows: list[tuple] | None = None) -> None:
         self.calls: list[str] = []
+        #: Rows a ``SHOW`` statement returns, shaped like the engine's output.
+        self.rows = rows or []
 
     def cursor(self):
         return _RecordingCursor(self)
@@ -67,6 +69,9 @@ class _RecordingCursor:
 
     async def execute(self, sql: str, params=None) -> None:
         self._conn.calls.append(sql)
+
+    async def fetchall(self):
+        return tuple(self._conn.rows)
 
 
 @pytest.fixture
@@ -426,12 +431,37 @@ class TestDelegateFirst:
         assert sql.startswith("CREATE FUNCTION db1.f1(x INT)")
 
     async def test_udf_drop_runs_on_the_caller_connection(self):
+        """The pinned engine drops by signature, so each overload is named in full."""
+        from app.modules.functions.service import function_service
+
+        conn = RecordingConnection(rows=[
+            ("f1(INT)", "INT", "SQL", "NULL", "x"),
+            ("f1(INT,DECIMAL(10,2))", "INT", "SQL", "NULL", "x"),
+            ("other(INT)", "INT", "SQL", "NULL", "x"),
+        ])
+        sql = await function_service.drop_udf("db1", "f1", conn)
+        assert conn.calls == [
+            "SHOW FULL FUNCTIONS FROM `db1`",
+            "DROP FUNCTION db1.f1(INT)",
+            "DROP FUNCTION db1.f1(INT, DECIMAL(10,2))",
+        ]
+        assert sql == "DROP FUNCTION db1.f1(INT); DROP FUNCTION db1.f1(INT, DECIMAL(10,2))"
+
+    async def test_udf_drop_of_a_missing_function_is_not_found(self):
+        from app.modules.functions.service import function_service
+
+        conn = RecordingConnection(rows=[("other(INT)", "INT", "SQL", "NULL", "x")])
+        with pytest.raises(LookupError):
+            await function_service.drop_udf("db1", "f1", conn)
+        assert conn.calls == ["SHOW FULL FUNCTIONS FROM `db1`"]
+
+    async def test_udf_drop_refuses_a_global_function(self):
         from app.modules.functions.service import function_service
 
         conn = RecordingConnection()
-        sql = await function_service.drop_udf("db1", "f1", conn)
-        assert conn.calls == [sql]
-        assert sql == "DROP FUNCTION IF EXISTS db1.f1"
+        with pytest.raises(ValueError, match="Global"):
+            await function_service.drop_udf("", "f1", conn)
+        assert conn.calls == []
 
     async def test_udf_drop_refuses_bad_name_before_the_engine(self):
         from app.modules.functions.service import function_service

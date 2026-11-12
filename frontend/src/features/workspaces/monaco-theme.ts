@@ -1,3 +1,4 @@
+import './monaco-setup'
 import type { Monaco } from '@monaco-editor/react'
 import { readModeToken, readToken } from '@/lib/read-token'
 

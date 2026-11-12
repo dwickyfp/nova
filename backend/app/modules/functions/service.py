@@ -917,7 +917,24 @@ BUILTIN_FUNCTIONS: dict[str, list[dict]] = {
 
 #: Parallel per-database listings; 220 databases take well under a second.
 _UDF_SCAN_CONCURRENCY = 8
-_UNKNOWN_DATABASE = 1049
+#: The pinned engine reports a missing database as 5501 (verified 2026-11-12).
+_UNKNOWN_DATABASE = {1049, 5501}
+
+
+def _split_types(text: str) -> list[str]:
+    """Split ``INT,DECIMAL(10,2)`` at top-level commas only."""
+    parts: list[str] = []
+    depth, current = 0, ""
+    for char in text:
+        depth += char == "("
+        depth -= char == ")"
+        if char == "," and depth == 0:
+            parts.append(current)
+            current = ""
+        else:
+            current += char
+    parts.append(current)
+    return parts
 
 class FunctionService:
     """Service for built-in function reference and UDF management."""
@@ -963,7 +980,7 @@ class FunctionService:
                     rows, desc = await self._show(f"SHOW FULL FUNCTIONS FROM `{quoted}`")
                 except asyncmy.errors.Error as error:
                     # A database dropped during the scan has no functions to list.
-                    if error.args and error.args[0] == _UNKNOWN_DATABASE:
+                    if error.args and error.args[0] in _UNKNOWN_DATABASE:
                         return name, [], []
                     raise
             return name, rows, desc
@@ -1085,21 +1102,36 @@ class FunctionService:
                 "These are managed by the system and auto-registered on startup."
             )
 
-        if database:
-            safe_database = check_identifier(database, field="database")
-            qualified = f"{safe_database}.{safe_name}"
-        else:
-            qualified = safe_name
-        sql = f"DROP FUNCTION IF EXISTS {qualified}"
+        if not database:
+            raise ValueError("Global functions are managed by Nova and cannot be dropped here")
+        safe_database = check_identifier(database, field="database")
+
+        async def drop(cur: Any) -> str:
+            # The pinned engine drops one overload at a time, by its signature.
+            await cur.execute(f"SHOW FULL FUNCTIONS FROM `{safe_database}`")
+            signatures = [
+                str(row[0]) for row in await cur.fetchall()
+                if str(row[0]).partition("(")[0].strip().lower() == safe_name.lower()
+            ]
+            if not signatures:
+                raise LookupError(f"Function {safe_database}.{safe_name} does not exist")
+            statements = []
+            for signature in signatures:
+                types = signature.partition("(")[2]
+                types = types[:-1] if types.endswith(")") else types
+                checked = ", ".join(
+                    check_column_type(part.strip()) for part in _split_types(types) if part.strip()
+                )
+                statement = f"DROP FUNCTION {safe_database}.{safe_name}({checked})"
+                await cur.execute(statement)
+                statements.append(statement)
+            return "; ".join(statements)
 
         if conn is None:
             async with db.system_conn() as system_conn, system_conn.cursor() as cur:
-                await cur.execute(sql)
-        else:
-            async with conn.cursor() as cur:
-                await cur.execute(sql)
-
-        return sql
+                return await drop(cur)
+        async with conn.cursor() as cur:
+            return await drop(cur)
 
     def list_built_in(
         self,

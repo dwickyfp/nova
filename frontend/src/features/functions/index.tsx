@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { Fragment, useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
@@ -14,6 +14,7 @@ import {
   createUDF,
   deleteUDF,
   fetchBuiltinFunctions,
+  fetchCreatableDatabases,
   fetchUDFs,
   type UserDefinedFunction,
 } from './api'
@@ -106,9 +107,8 @@ function BuiltinFunctionsTab() {
               </tr>
             )}
             {filtered.map((fn) => (
-              <>
+              <Fragment key={fn.name}>
                 <tr
-                  key={fn.name}
                   className="border-b cursor-pointer hover:bg-muted/50 transition-colors"
                   onClick={() => setExpanded(expanded === fn.name ? null : fn.name)}
                 >
@@ -129,13 +129,13 @@ function BuiltinFunctionsTab() {
                   <td className="px-3 py-2 font-mono text-muted-foreground">{fn.return_type}</td>
                 </tr>
                 {expanded === fn.name && (
-                  <tr key={`${fn.name}-desc`} className="border-b bg-muted/30">
+                  <tr className="border-b bg-muted/30">
                     <td colSpan={5} className="px-10 py-3 text-sm text-muted-foreground">
                       {fn.description || 'No description available.'}
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -153,13 +153,18 @@ function BuiltinFunctionsTab() {
 function CreateUDFDialog({
   open,
   onOpenChange,
-  databases,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
-  databases: string[]
 }) {
   const queryClient = useQueryClient()
+  // Any database the role can use, not only those that already hold a function.
+  const databasesQuery = useQuery({
+    queryKey: ['functions', 'creatable-databases'],
+    queryFn: fetchCreatableDatabases,
+    enabled: open,
+  })
+  const databases = databasesQuery.data ?? []
   const [name, setName] = useState('')
   const [database, setDatabase] = useState('')
   const [functionType, setFunctionType] = useState('sql')
@@ -226,6 +231,9 @@ function CreateUDFDialog({
                   ))}
                 </SelectContent>
               </Select>
+              {databasesQuery.isError ? (
+                <p className="text-xs text-destructive">Could not load databases. Close and try again.</p>
+              ) : null}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -386,15 +394,20 @@ function UDFTab() {
                 </td>
                 <td className="px-3 py-2 font-mono text-muted-foreground">{fn.return_type}</td>
                 <td className="px-3 py-2 text-right">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                    onClick={() => deleteMutation.mutate(fn)}
-                    disabled={deleteMutation.isPending}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                  {fn.scope === 'global' ? (
+                    <span className="text-xs text-muted-foreground">Global</span>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Delete ${fn.name}`}
+                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                      onClick={() => deleteMutation.mutate(fn)}
+                      disabled={deleteMutation.isPending}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -406,7 +419,7 @@ function UDFTab() {
         {filtered.length} function{filtered.length !== 1 ? 's' : ''}
       </p>
 
-      <CreateUDFDialog open={createOpen} onOpenChange={setCreateOpen} databases={databases} />
+      <CreateUDFDialog open={createOpen} onOpenChange={setCreateOpen} />
     </div>
   )
 }
