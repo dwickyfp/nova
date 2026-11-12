@@ -1,0 +1,40 @@
+{
+  "started_at": "2026-11-12T03:19:57.093996+00:00",
+  "read_only": true,
+  "consistent_snapshot": false,
+  "query_sha256": "efd4aa8e92ef1ae0aa32247d199490fada51bd8ea80a220b6d0ad3f1db2519d7",
+  "groups": [
+    {
+      "source_rows": 2,
+      "group_sha256": "fa96def9c79dbeb4d5c5e864ad0af70ebfce97798534b1c72f1e73c231a0ba44",
+      "distinct_payload_references": 1,
+      "object_checks": [
+        {
+          "status": "READ",
+          "sha256": "aa84b5dcd71db702b7bb7ae08b66c46c7a6da52015285335ede625264add3696",
+          "bytes": 197,
+          "length_matches": true,
+          "etag_matches": true
+        }
+      ]
+    },
+    {
+      "source_rows": 2,
+      "group_sha256": "cae5c64581d07f2c24bda8eeed855a10d37b23b2366491e3ca2a1931e520c4af",
+      "distinct_payload_references": 1,
+      "object_checks": [
+        {
+          "status": "READ",
+          "sha256": "a41670b8e58488b25fa659dc848a880cd01ae9e37d022476e4f37823d7c21a9c",
+          "bytes": 389,
+          "length_matches": true,
+          "etag_matches": true
+        }
+      ]
+    }
+  ],
+  "metadata_unchanged_during_probe": true,
+  "source_rows": 4,
+  "completed_at": "2026-11-12T03:19:57.683847+00:00",
+  "limits": "Current objects only; no writer freeze or historical version reconstruction. No rows or objects changed."
+}

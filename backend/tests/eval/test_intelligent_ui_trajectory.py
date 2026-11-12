@@ -194,7 +194,10 @@ async def test_composing_again_after_a_number_rewrite_sends_the_composer_once():
                    "required_tools": ["query_execute"], "skills": [], "ml_task": None,
                    "presentation": "interactive"},
     )
-    context = LoopContext(user_name="alice", intelligent_ui=True)
+    context = LoopContext(
+        user_name="alice", intelligent_ui=True,
+        run_id="00000000-0000-4000-9996-000000000001",
+    )
     frames = [frame async for frame in AssistantLoop(
         provider=provider, registry=registry, max_iterations=10,
     ).run(thread=AssistantThread(thread_id="compose-once", user_name="alice", title="UI"),
@@ -205,5 +208,7 @@ async def test_composing_again_after_a_number_rewrite_sends_the_composer_once():
     composers = [m for m in last if str(m.get("content") or "").startswith("<FINAL_COMPOSER>")]
     assert len(composers) == 1
     assert any("Compose the final answer again" in str(m.get("content") or "") for m in last)
-    assert "999" not in "".join(frame for frame in frames
-                                if frame.startswith("event: text_delta\n"))
+    deltas = [json.loads(frame.split("data: ", 1)[1]) for frame in frames
+              if frame.startswith("event: text_delta\n")]
+    assert deltas and all(delta["run_id"] == context.run_id for delta in deltas)
+    assert "".join(delta["text"] for delta in deltas) == "West revenue was 120."

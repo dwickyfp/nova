@@ -1,7 +1,7 @@
 # Migration, scaling and remaining QA
 
-Updated 2026-11-12 (Asia/Jakarta), from parent `97012355` through the maintenance
-checkpoint ([source and evidence](../../reports/production-refactor/maintenance-runtime/README.md)).
+Updated 2026-11-12 (Asia/Jakarta), through the Workspace sharing storage
+checkpoint ([source and evidence](../../reports/production-refactor/workspace-sharing/README.md)).
 The owner requested this checkpoint before further work: finish migration and
 application scaling first, then resume the remaining whole-feature QA. Tests
 needed to validate an architecture change still run with that change.
@@ -15,8 +15,8 @@ checks do not establish a migrated or scalable production deployment.
 | Area | Verified state | Remaining implementation |
 | --- | --- | --- |
 | Metadata authority | Runtime domains still use StarRocks `NOVA_SYSTEM`; PG17 transaction, identity, migration and storage boundaries are tested | Port every domain and writer, finish import/provenance, rehearse twice, freeze all writers, validate final import, activate PG epoch and cut over once |
-| Ownership inventory | 163 source-table entries and 875 reviewed system call sites | 147 entries remain `NOT_STARTED`, six have tested storage with caller ports pending, ten have prepared import-only schemas; no entry records completed cutover |
-| PG schema | Revisions 0001–0012 prepare deployment state, preferences, password flags, AI registry/aliases/definitions, jobs/outbox, scheduler fencing, audit, retained history and Stages | Remaining domain DDL, constraints, executable grants/RLS, caller transactions and whole-import validation |
+| Ownership inventory | 163 source-table entries and 875 reviewed system call sites | 145 entries remain `NOT_STARTED`, eight have tested storage with caller ports pending, ten have prepared import-only schemas; no entry records completed cutover |
+| PG schema | Revisions 0001–0013 prepare deployment state, preferences, password flags, AI registry/aliases/definitions, jobs/outbox, scheduler fencing, audit, retained history, Stages and Workspace ownership/shares | Remaining domain DDL, constraints, executable grants/RLS, caller transactions and whole-import validation |
 | Durable jobs | Queue, outbox, leases/fencing and receipts pass real-PG fixture tests | Actual producers/consumers, outbox publisher, participant verification and recovery; Redis must cease being authoritative for work |
 | Agent runtime | Replay and approval defects have been repaired in the existing runtime | Transactional PG conversations/runs/events, actor-bound durable consent, exact effect intents, reconnect and restart recovery |
 | Workload processes | API supports `all`, `web`, `query`; seven workload roles now have separate processes and supervised default startup; maintenance owns Search builds, Catalog/News refresh and ML retention | Remaining agent/outbox separation; per-role admission, dependency readiness, fenced claims, isolation and validated limits across the full deployment |
@@ -98,6 +98,12 @@ findings. In particular:
 
 ## Existing validation to reuse only when applicable
 
+The Workspace sharing checkpoint passes 531 real-PG tests (42 Workspace cases),
+10,909 unit/coverage tests, 358 evals, the 54/189 scorecard, mypy, changed-file
+Ruff and the user-data boundary check. The initial eval failure and its corrected
+text-versus-UUID assertion are retained in the linked evidence. This prepares
+two additional stores; it does not migrate Workspace/Notebook runtime callers.
+
 The maintenance checkpoint passes 10,909 unit/coverage tests (zero skips),
 358 evals, the 54/189 scorecard, 84 focused tests, mypy, Ruff on 129 changed
 Python files and 12 monitoring tests. Local metrics confirm Search polling in
@@ -132,10 +138,11 @@ These are pre-cutover results and must not be reported as final migrated-feature
 acceptance.
 
 CI for `c71ba4b1` passed eight jobs: 486 PG tests and 217 engine passes, with
-24 engine skips retained. CI for remote `2b441d80` also passed all eight jobs, with 489 PG passes and
-217 engine passes / 24 skips: [evidence](../../reports/production-refactor/ci-2b441d80.json).
-The subsequent proposal-identity and workload-separation changes still need their
-own delivered-commit CI result. The
+24 engine skips retained. CI for `2b441d80` and `3f6b3789` also passed all eight jobs,
+with 489 PG passes and 217 engine passes / 24 skips each:
+[latest verified result](../../reports/production-refactor/ci-3f6b3789.json).
+The subsequent maintenance and Workspace checkpoints still need their own
+delivered-commit CI results. The
 ordinary CI engine is unpatched and does not establish governed acceptance.
 
 ## Owner-approved exceptions and safe execution

@@ -71,6 +71,19 @@ payload availability, then define explicit conflict reconciliation. Import must
 stop with a redacted conflict manifest until that policy is implemented. Counts
 alone do not prove the historical objects are intact.
 
+A subsequent read-only object probe found four source rows in the same two
+groups. Each group referenced one existing object; stored lengths and ETags
+matched the bytes read, and the duplicate metadata was unchanged between the
+probe's two reads. This checks currently available payloads, without a writer
+freeze or reconstruction of overwritten historical bytes. All IDs and rows
+remain untouched. See the [bounded evidence](../../reports/production-refactor/workspace-sharing/historical-object-profile.json).
+
+Revision 0013 and [the Workspace store](PG_WORKSPACES.md) now prepare ownership
+and shares with forced RLS, aggregate revision CAS, atomic replacement and
+transactional success audit. File/version storage, object receipts, runtime
+caller ports and session revocation remain open. This does not close R19 or
+activate PostgreSQL authority.
+
 ## Stages and audit
 
 The four `StageService.system_conn` blocks only read/write `CONFIG_STAGES`.
