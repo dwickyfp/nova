@@ -73,7 +73,7 @@ export function applyNovaSqlTheme(monaco: Monaco, dark: boolean) {
 
 /**
  * Notebook cell themes: the SQL theme's syntax colors on a transparent editor,
- * so the cell's own surface (the muted token, set in CSS) shows through in
+ * so the cell's own surface shows through in
  * either mode. Only the current mode is (re)defined, from the live page: read
  * per mode, a light theme built while the page is dark would get dark values.
  * Call again when the theme changes; pass the returned name to the editor.

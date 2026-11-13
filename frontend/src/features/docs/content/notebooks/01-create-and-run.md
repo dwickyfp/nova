@@ -34,8 +34,9 @@ duckdb.sql('SELECT 41 + 1').fetchall()
 ```
 
 Markdown cells contain explanations, headings and lists. Click **Edit Markdown
-cell** to change one. A cell's optional **Cell title** helps identify it in
-the outline.
+cell** to change one. Press **Ctrl+Enter** or **Cmd+Enter** to render the text;
+Markdown does not need a running runtime. It uses its own headings and has no title field.
+Python and SQL cells have an optional **Cell title** to identify them in the outline.
 
 Use the **Cell type** dropdown above each cell to choose **Python**, **SQL** or
 **Markdown**. It shows the current type even when the cell is not selected.
@@ -44,7 +45,8 @@ SQL and Python syntax is highlighted as soon as the notebook opens.
 ## Save and organize
 
 Changes save automatically; check that the toolbar says **Saved** before
-leaving. Use **Move up**, **Move down**, or the drag handle to reorder a cell.
+leaving. Open **Cell actions** for **Move up** and **Move down**, or use the
+drag handle to reorder a cell.
 **Undo the last cell change** restores the last supported document edit.
 
 Open **Outline, variables and packages** to inspect the notebook outline,

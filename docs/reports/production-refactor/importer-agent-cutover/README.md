@@ -34,7 +34,7 @@ metadata and payloads remain in place.
 
 The first fresh-process check rejected valid PG settings in the shared dotenv.
 The configuration repair keeps metadata fields with `MetadataRuntimeSettings`,
-retains unknown-field refusal and hides input values in errors. Its seven red
+retains unknown-field refusal in the main application Settings and hides input values in errors. Its seven red
 regressions, 66-case focused pass, 13 process-mapping checks and full unit run 18
 (11,153 passed, 64%) remain retained. Operator credentials never enter application
 settings; workload passwords and stable provisioning files remain outside Git.
@@ -131,6 +131,43 @@ FE container and original development checkout were restarted without reset.
 All dev roles became ready again. The separate Python Command+Enter retry
 returned the expected one-row value 42 in 2.0 seconds. The interrupted attempt
 remains retained. Schema-0045 activation is still pending CI.
+
+## Compact cell design and final frontend checks
+
+The later owner request removes the Markdown title field and uses one compact
+cell panel: type/title at the left, execution count, duration, Run and Cell actions
+at the right. All cells retain the orange edge. Move commands remain available
+in Cell actions and through the keyboard/drag handle. Narrow cells move the code
+title to another row; Markdown keeps its own headings. Ctrl/Cmd+Enter renders
+Markdown even when the runtime is stopped. Saved outputs retain their appearance;
+internal stale-result protections remain.
+
+The owner authorized integration of the stopped parallel Notebook work. It keeps
+highlighted previews visible while Monaco initializes, places the caret at the
+clicked position, resizes the editor without a delayed jump, gives Markdown four
+initial lines and stabilizes cell callbacks. Existing APIs and payloads are unchanged.
+
+Final local lint passed with zero errors and 31 existing warnings; build passed.
+Full frontend run 07 passed **1,637 tests in 195 files**, with 58.84% line coverage
+in 101.05 seconds, using one test worker. The validated source hashes are retained.
+Desktop, 320/390/768 px layouts, both themes, assistant-open state, and the updated
+Notebook docs were inspected. Live Markdown Ctrl+Enter rendered with the runtime
+stopped; earlier SQL/Python shortcut results remain recorded above.
+
+All attempts remain retained. Runs 03/04 lost the Studio test iframe to sign-in;
+its fixture now awaits each render and cancels/clears query clients before restoring
+mocks. The focused Notebook/docs/Studio run passed 72 cases. Run 05 passed 1,633
+cases but failed one new Notebook fixture because two rendered cells made the
+menu locator ambiguous; independent cases preserve both movement assertions.
+Run 06 was interrupted during concurrent source/test activity and resource pressure;
+zero-collected cases do not count as passes. After the owner confirmed the parallel
+work had stopped, its source was reviewed and run 07 validated the combined result.
+
+CI [43364121410](https://github.com/dwickyfp/nova/actions/runs/43364121410) passed
+all eight jobs for `06b4142069f5de7375db02dd4e3a68af68134d1b`, covering the
+schema-0045 backend repair and earlier Notebook UI. The later UI changes have the
+separate local frontend evidence above. Activation and final delivery are recorded
+in the next operational update rather than inferred from this CI result.
 
 ## Earlier checkpoints and retained failures
 
