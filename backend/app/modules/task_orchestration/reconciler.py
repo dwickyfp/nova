@@ -28,6 +28,12 @@ State mutation is explicit:
 * :meth:`Reconciler.abandon_stale_nodes` abandons a ``running`` row whose
   heartbeat lapsed — the lost trace, settled from durable state and audited
   ``NODE_ABANDONED``.
+* :meth:`Reconciler.settle_abandoned_runs` ends what an abandoned node holds.
+  A native attempt whose trace shows ``SUCCESS``/``FAILED`` takes that verified
+  outcome and the graph continues. Otherwise the run is held until no effect of
+  the attempt can still be in flight (:func:`effect_deadline`), then the graph
+  run is settled ``failed`` with the node left ``abandoned`` and an explanation.
+  Nothing is re-run: an unknown outcome is reported, never replayed.
 
 All are idempotent: a repeated pass on unchanged engine state performs no
 write, because each transition is conditional on the row's current state.
@@ -37,7 +43,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, tzinfo
+from datetime import UTC, datetime, timedelta, tzinfo
 from typing import Any, Protocol
 from uuid import UUID
 
@@ -104,6 +110,111 @@ class EngineNativeObserver:
 
     async def read_schedules(self, task_names: list[str]) -> dict[str, str]:
         return await fetch_native_schedules(task_names)
+
+
+#: Written on a node when its worker's heartbeat lapses, before the outcome is known.
+STOPPED_REPORTING_MESSAGE = (
+    "This step stopped reporting progress; Nova is confirming its outcome and will not repeat it"
+)
+
+#: Written on a node when its run is ended without a confirmed outcome.
+UNKNOWN_OUTCOME_MESSAGE = (
+    "This step stopped reporting progress (its worker or the metadata database was "
+    "interrupted), so its outcome is unknown. Nova ended the run without repeating the "
+    "step. Check whether its changes were applied before running the task again."
+)
+
+#: Seconds a Python task's sandbox and data token outlive the run's timeout
+#: (``python_task._run_in_sandbox``): after that the attempt can write nothing.
+_PYTHON_EFFECT_MARGIN_SECONDS = 600
+
+
+def _aware(value: Any) -> datetime | None:
+    if not isinstance(value, datetime):
+        return None
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def effect_deadline(row: dict[str, Any], task: dict[str, Any] | None) -> datetime | None:
+    """When no effect of an abandoned attempt can still be in flight.
+
+    Counted from the node's last heartbeat (its start when it never stamped
+    one), plus the heartbeat window, plus the longest the attempt's work may
+    outlive its worker:
+
+    * ``python`` — the sandbox lifetime and data-token TTL, the run timeout plus
+      a margin; the sandbox is removed and its token stops working by then;
+    * every other handler — the worker's native/statement poll window, which
+      bounds how long Nova ever waits on the engine for one node.
+
+    A node whose task is gone (``DROP TASK`` refuses while a step could still be
+    in flight) needs only the heartbeat window. ``None`` when the row carries no
+    timestamp, which keeps the run held.
+    """
+    base = _aware(row.get("heartbeat_at")) or _aware(row.get("started_at"))
+    if base is None:
+        return None
+    window = float(settings.WORKER_HEARTBEAT_TIMEOUT_SECONDS)
+    if task is not None:
+        if str(task.get("handler") or "sql") == "python":
+            window += settings.TASK_PYTHON_TIMEOUT_SECONDS + _PYTHON_EFFECT_MARGIN_SECONDS
+        else:
+            window += settings.WORKER_TASK_POLL_TIMEOUT_SECONDS
+    return base + timedelta(seconds=window)
+
+
+@dataclass(frozen=True)
+class RunHold:
+    """Whether an active graph run can still change anything."""
+
+    live: bool
+    #: When a run held only by abandoned steps is settled; ``None`` otherwise.
+    settles_at: datetime | None = None
+
+
+async def active_run_hold(
+    repository: TaskOrchestrationRepository,
+    run: dict[str, Any],
+    *,
+    now: datetime | None = None,
+) -> RunHold:
+    """Classify an active run for callers that must wait for it (``DROP TASK``).
+
+    A run is not live only when it is held by abandoned steps alone and every
+    one of them is past its :func:`effect_deadline`: nothing of it can run or
+    write any more, and the reconciler settles it ``failed``. Anything else —
+    a pending run, a running step, a run with no abandoned step, or an
+    abandoned step still inside its window — is live.
+    """
+    if str(run.get("state")) != "running":
+        return RunHold(live=True)
+    rows = await repository.list_node_runs(str(run["id"]))
+    abandoned = [row for row in rows if row.get("state") == NodeState.ABANDONED.value]
+    if not abandoned or any(row.get("state") == NodeState.RUNNING.value for row in rows):
+        return RunHold(live=True)
+    tasks = {str(t["id"]): t for t in await repository.list_tasks(str(run["graph_id"]))}
+    deadlines = [effect_deadline(row, tasks.get(str(row.get("task_id")))) for row in abandoned]
+    known = [deadline for deadline in deadlines if deadline is not None]
+    if len(known) != len(deadlines):
+        return RunHold(live=True)
+    settles_at = max(known)
+    if (now or datetime.now(UTC)) >= settles_at:
+        return RunHold(live=False, settles_at=settles_at)
+    return RunHold(live=True, settles_at=settles_at)
+
+
+@dataclass
+class AbandonedSettleReport:
+    """What one pass over abandoned nodes verified and ended."""
+
+    #: Abandoned nodes whose native trace proved their outcome.
+    verified: list[str] = field(default_factory=list)
+    #: Graph runs to drive again because a node now has a verified outcome.
+    requeue: list[str] = field(default_factory=list)
+    #: Graph runs ended ``failed`` with an unknown step outcome.
+    settled: list[str] = field(default_factory=list)
+    #: Graph runs still held because an attempt may still be in flight.
+    held: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -247,7 +358,9 @@ class Reconciler:
         for node in stale:
             # Fenced on the generation read: a node retaken since is not ours to end.
             moved = await self._repository.abandon_task_run(
-                str(node["id"]), generation=int(node.get("lease_generation") or 0)
+                str(node["id"]),
+                generation=int(node.get("lease_generation") or 0),
+                error_message=STOPPED_REPORTING_MESSAGE,
             )
             if not moved:
                 continue
@@ -266,6 +379,161 @@ class Reconciler:
                 graph_run_id=str(node.get("graph_run_id") or ""),
             )
         return abandoned
+
+    async def settle_abandoned_runs(self, *, now: datetime | None = None) -> AbandonedSettleReport:
+        """Resolve what abandoned nodes hold, by verification or by deadline.
+
+        An abandoned node holds its graph run ``running`` (the worker will not
+        repeat it, start a finalizer, or admit an overlapping run). Left alone
+        that hold is permanent, and the task can never be dropped. Per node:
+
+        1. A native attempt is verified from ``task_runs``. ``SUCCESS`` or
+           ``FAILED`` (from this attempt, not an older one) is recorded and the
+           graph run is driven again, continuing as for any settled node.
+           ``RUNNING``/``PENDING`` keeps the run held.
+        2. Otherwise the node waits for its :func:`effect_deadline`. Once every
+           abandoned node of a run is past it and no node is running, the run
+           is claimed under a new lease and settled ``failed``. Nodes stay
+           ``abandoned`` with :data:`UNKNOWN_OUTCOME_MESSAGE`; dependents and
+           finalizers do not start, and nothing is re-submitted.
+
+        Every write is conditional (node state and lease generation, graph lease),
+        so concurrent passes or deliveries cannot double-settle.
+        """
+        report = AbandonedSettleReport()
+        rows = await self._repository.list_unsettled_abandoned_task_runs()
+        if not rows:
+            return report
+        current = now or datetime.now(UTC)
+        tasks = {str(t["id"]): t for t in await self._repository.list_tasks()}
+
+        native_names: dict[str, str] = {}
+        for row in rows:
+            task = tasks.get(str(row.get("task_id")))
+            native = row.get("delegated") and (task or {}).get("handler", "sql") in {None, "sql"}
+            if task is not None and native:
+                native_names[str(row["id"])] = _native_lookup_name(row, task)
+        observed: dict[str, NativeRun] = {}
+        if native_names:
+            try:
+                observed = await self._observer.read_runs(sorted(set(native_names.values())))
+            except Exception:  # noqa: BLE001 - an unreadable trace verifies nothing
+                logger.warning("native task trace unavailable; abandoned nodes stay held")
+                observed = {}
+
+        held: set[str] = set()
+        expired: dict[str, list[tuple[dict[str, Any], dict[str, Any] | None]]] = {}
+        for row in rows:
+            graph_run_id = str(row.get("graph_run_id") or "")
+            task = tasks.get(str(row.get("task_id")))
+            native_name = native_names.get(str(row["id"]))
+            if native_name is not None and task is not None:
+                seen = observed.get(native_name)
+                state = _NATIVE_TO_NODE[seen.state] if seen is not None else None
+                if (
+                    seen is not None
+                    and state is not None
+                    and not _is_stale_native_row(row, seen, await self._engine_zone())
+                ):
+                    await self._record_verified(report, row, task, state, seen)
+                    continue
+                if seen is not None and seen.state in {NativeState.RUNNING, NativeState.PENDING}:
+                    held.add(graph_run_id)
+                    continue
+            deadline = effect_deadline(row, task)
+            if deadline is None or current < deadline:
+                held.add(graph_run_id)
+                continue
+            expired.setdefault(graph_run_id, []).append((row, task))
+
+        for graph_run_id, nodes in expired.items():
+            if graph_run_id in held or graph_run_id in report.requeue:
+                continue
+            if await self._settle_unknown_run(graph_run_id, nodes):
+                report.settled.append(graph_run_id)
+        report.held = sorted(held - set(report.requeue))
+        return report
+
+    async def _record_verified(
+        self,
+        report: AbandonedSettleReport,
+        row: dict[str, Any],
+        task: dict[str, Any],
+        state: NodeState,
+        observed: NativeRun,
+    ) -> None:
+        moved = await self._repository.settle_abandoned_task_run(
+            str(row["id"]),
+            state.value,
+            generation=int(row.get("lease_generation") or 0),
+            query_id=observed.query_id,
+            error_message=observed.error_message,
+        )
+        if not moved:
+            return
+        report.verified.append(str(row["id"]))
+        graph_run_id = str(row.get("graph_run_id") or "")
+        if graph_run_id and graph_run_id not in report.requeue:
+            report.requeue.append(graph_run_id)
+        await self._audit(
+            str(task["name"]),
+            task,
+            action="NODE_" + state.value.upper(),
+            status="SUCCESS" if state is NodeState.SUCCESS else state.value.upper(),
+            error=observed.error_message or "outcome verified from the native task trace",
+            graph_run_id=graph_run_id,
+        )
+        if state is NodeState.SUCCESS:
+            await self._repository.reset_consecutive_failures(str(task["id"]))
+
+    async def _settle_unknown_run(
+        self,
+        graph_run_id: str,
+        nodes: list[tuple[dict[str, Any], dict[str, Any] | None]],
+    ) -> bool:
+        """End one run held only by expired abandoned nodes as ``failed``."""
+        run = await self._repository.get_graph_run(graph_run_id)
+        if run is None or str(run.get("state")) not in {"pending", "running"}:
+            return False
+        latest = await self._repository.list_node_runs(graph_run_id)
+        if any(row.get("state") == NodeState.RUNNING.value for row in latest):
+            return False
+        generation = await self._repository.claim_graph_run(
+            graph_run_id, [str(run["state"])], "running"
+        )
+        if generation is None:
+            return False
+        for row, _task in nodes:
+            existing = row.get("error_message")
+            if not existing or existing == STOPPED_REPORTING_MESSAGE:
+                await self._repository.settle_abandoned_task_run(
+                    str(row["id"]),
+                    NodeState.ABANDONED.value,
+                    generation=int(row.get("lease_generation") or 0),
+                    error_message=UNKNOWN_OUTCOME_MESSAGE,
+                )
+        moved = await self._repository.transition_graph_run(
+            graph_run_id, ["running"], "failed", generation=generation
+        )
+        if not moved:
+            return False
+        names = sorted(str(task["name"]) for _row, task in nodes if task is not None)
+        reason = (
+            f"Step {', '.join(names) or 'of a dropped task'} stopped without a confirmed "
+            "result; the run was ended without repeating it"
+        )
+        logger.info("graph run %s settled as failed: abandoned step outcome unknown", graph_run_id)
+        await write_audit_log(
+            event_type="task_graph_run",
+            user_name="nova-reconciler",
+            action="GRAPH_RUN_FAILED",
+            object_type="TASK_GRAPH_RUN",
+            object_name=graph_run_id,
+            status="FAILED",
+            error_message=reason,
+            database_name=str(run.get("graph_id") or "") or None,
+        )
+        return True
 
     async def reconcile_native(self) -> NativeReconcileReport:
         """Advance running nodes from the engine's ``task_runs``; surface pauses.

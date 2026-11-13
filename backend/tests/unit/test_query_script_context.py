@@ -75,3 +75,55 @@ def test_set_catalog_selects_the_catalog_without_a_database(recording):
         "database": "analytics",
     })
     assert engine.databases == ["analytics", "sf_sales.", "sf_sales.", None]
+
+
+@pytest.fixture
+def quiet_audit(monkeypatch):
+    from app.modules.query.service import query_service
+
+    async def _no_audit(**_kwargs):
+        return None
+
+    monkeypatch.setattr(query_service, "_audit_engine_result", _no_audit)
+    return query_service
+
+
+@pytest.mark.asyncio
+async def test_preflight_uses_the_database_a_preceding_use_selects(quiet_audit):
+    """``USE db; CREATE STREAM s ON TABLE t`` passes preflight with no request database."""
+    refusal = await quiet_audit.preflight_script(
+        ["USE QA_DB", "CREATE STREAM s1 ON TABLE t"], username="u"
+    )
+    assert refusal is None
+
+
+@pytest.mark.asyncio
+async def test_preflight_still_requires_a_database_without_use(quiet_audit):
+    refusal = await quiet_audit.preflight_script(["CREATE STREAM s1 ON TABLE t"], username="u")
+    assert refusal is not None
+    assert "active database is required" in (refusal.error or "")
+
+
+@pytest.mark.asyncio
+async def test_preflight_honours_set_catalog_default_clearing_the_database(quiet_audit):
+    refusal = await quiet_audit.preflight_script(
+        ["SET CATALOG default_catalog", "CREATE STREAM s1 ON TABLE t"],
+        username="u",
+        database="QA_DB",
+    )
+    assert refusal is not None
+
+
+def test_web_script_use_then_stream_passes_preflight(recording):
+    """The whole-script preflight of ``execute_statements`` follows the USE too."""
+    client, _ = recording
+    payload = client.post(EXECUTE_ENDPOINT, json={
+        "sql": "USE QA_DB; CREATE STREAM s1 ON TABLE t",
+    }).json()
+    assert "active database is required" not in str(payload)
+
+
+def test_empty_script_has_an_error_code(recording):
+    client, _ = recording
+    payload = client.post(EXECUTE_ENDPOINT, json={"sql": "  ;  "}).json()
+    assert payload[0]["error_code"] == "syntax_error"

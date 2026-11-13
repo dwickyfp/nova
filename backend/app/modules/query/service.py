@@ -338,6 +338,15 @@ def delegated_username() -> str | None:
     return current[0] if current else None
 
 
+def _refusal_status(exc: BaseException) -> str:
+    """Audit status of a statement stopped before the engine.
+
+    A statement waiting for the person to confirm it did not fail; history shows
+    it as asked, not as an error.
+    """
+    return "CONFIRMATION_REQUIRED" if isinstance(exc, ConfirmationRequiredError) else "ERROR"
+
+
 class QueryService:
     """Orchestrates SQL execution with @stage dialect support."""
 
@@ -520,7 +529,7 @@ class QueryService:
                 context.validated = planning.validated
             except (ValueError, AccessControlError, ForbiddenSQLError) as exc:
                 await self._audit_engine_result(
-                    status="ERROR",
+                    status=_refusal_status(exc),
                     sql=sql,
                     username=username,
                     role=role,
@@ -563,6 +572,10 @@ class QueryService:
             result.destructive = plan.requires_confirmation
             result.statement_kind = type(statement).__name__
             result.effects = asdict(plan.effects)
+            if result.error and not result.error_code:
+                # Every failure carries a stable code; a handler that did not
+                # name a more specific one reports a failure while running.
+                result.error_code = "execution_error"
             return result
 
     def _adapters(self):
@@ -710,6 +723,9 @@ class QueryService:
         """
         stmt_sql = ""
         analysis = None
+        # A USE earlier in the script is the context of the statements after
+        # it, exactly as it will be when they run.
+        context_database, context_schema = database, schema
         with parsing_scope():
             try:
                 for stmt_sql in statements:
@@ -731,11 +747,14 @@ class QueryService:
                         len(stmt_sql),
                         self._planner.semantics.validate_preflight,
                         statement,
-                        PlanningContext(database=database, schema=schema),
+                        PlanningContext(database=context_database, schema=context_schema),
+                    )
+                    context_database, context_schema = _context_after(
+                        stmt_sql, context_database, context_schema
                     )
             except (ValueError, AccessControlError, ForbiddenSQLError) as exc:
                 await self._audit_engine_result(
-                    status="ERROR",
+                    status=_refusal_status(exc),
                     sql=stmt_sql,
                     username=username,
                     role=role,
@@ -774,7 +793,14 @@ class QueryService:
         """
         statements = await run_sql_cpu(len(sql), split_sql_statements, sql)
         if not statements:
-            return [QueryResult(original_sql=sql, warnings=["Empty SQL"], error="Empty SQL")]
+            return [
+                QueryResult(
+                    original_sql=sql,
+                    warnings=["Empty SQL"],
+                    error="Empty SQL",
+                    error_code="syntax_error",
+                )
+            ]
 
         # Without a held connection each statement gets its own pooled one, so a
         # transaction or session setting cannot reach the statements after it.
@@ -788,6 +814,9 @@ class QueryService:
 
                 script_effects = PlanEffects()
                 confirmation_statement = None
+                # A USE earlier in the script is the context of the statements
+                # after it, exactly as it will be when they run.
+                context_database, context_schema = database, schema
                 for stmt_sql in statements:
                     analysis = None
                     normalized = await run_sql_cpu(
@@ -808,7 +837,10 @@ class QueryService:
                         len(stmt_sql),
                         self._planner.semantics.validate_preflight,
                         statement,
-                        PlanningContext(database=database, schema=schema),
+                        PlanningContext(database=context_database, schema=context_schema),
+                    )
+                    context_database, context_schema = _context_after(
+                        stmt_sql, context_database, context_schema
                     )
                     if per_statement_session:
                         refuse_per_statement_session(statement)
@@ -822,7 +854,7 @@ class QueryService:
                     )
             except (ValueError, AccessControlError, ForbiddenSQLError) as exc:
                 await self._audit_engine_result(
-                    status="ERROR",
+                    status=_refusal_status(exc),
                     sql=stmt_sql,
                     username=username,
                     role=role,
@@ -919,6 +951,7 @@ class QueryService:
         date_from: str | None = None,
         date_to: str | None = None,
         min_duration_ms: int | None = None,
+        files_only: bool = False,
     ) -> dict:
         """Retrieve query execution history from AUDIT_LOG."""
         selection = audit_filter(
@@ -926,6 +959,7 @@ class QueryService:
             status=status.upper() if status else None, sql_contains=search or None,
             database_name=database_name or None, since=date_from or None,
             through=date_to or None, min_duration_ms=min_duration_ms,
+            file_present=files_only,
         )
         columns = (
             "log_id", "query_id", "event_time", "user_name", "object_name", "action",

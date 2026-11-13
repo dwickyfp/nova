@@ -214,7 +214,15 @@ export function AgentsPage() {
           <DialogHeader>
             <DialogTitle>Create agent</DialogTitle>
           </DialogHeader>
-          <div className='space-y-4'>
+          {/* A form, so Enter in either field creates the agent. */}
+          <form
+            id='create-agent'
+            className='space-y-4'
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (draft.name.trim() && !createAgent.isPending) createAgent.mutate()
+            }}
+          >
             <div className='space-y-2'>
               <Label htmlFor='agent-name'>Agent name</Label>
               <Input
@@ -233,14 +241,15 @@ export function AgentsPage() {
                 placeholder='Answers sales and revenue questions'
               />
             </div>
-          </div>
+          </form>
           <DialogFooter>
-            <Button variant='outline' onClick={() => setCreateOpen(false)}>
+            <Button type='button' variant='outline' onClick={() => setCreateOpen(false)}>
               Cancel
             </Button>
             <Button
+              type='submit'
+              form='create-agent'
               disabled={!draft.name.trim() || createAgent.isPending}
-              onClick={() => createAgent.mutate()}
             >
               <Save className='size-4' />
               Create agent

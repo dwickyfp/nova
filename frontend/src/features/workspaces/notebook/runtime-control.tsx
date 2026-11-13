@@ -94,7 +94,7 @@ export function RuntimeControl({
         : null;
 
   return (
-    <div className="flex min-w-0 items-center gap-2">
+    <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
       {runtime.status === "ABSENT" ||
       runtime.status === "STOPPED" ||
       runtime.status === "FAILED" ||
@@ -113,7 +113,7 @@ export function RuntimeControl({
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="flex h-8 min-w-0 items-center gap-2 rounded-md border border-surface-border px-2.5 text-sm hover:bg-muted"
+            className="flex h-8 shrink-0 items-center gap-2 rounded-md border border-surface-border px-2.5 text-sm hover:bg-muted"
             aria-label={`Runtime: ${state.label}`}
           >
             <span

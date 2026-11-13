@@ -1391,3 +1391,38 @@ class TestDropTask:
         sent = engine.await_args.args[0]
         assert sent.engine_sql == "DROP TASK IF EXISTS native_tpl FORCE"
         assert sent.requires_confirmation and result.rows == [["OK"]]
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "DROP TASK stream_lab.default.qa_job",
+        "DROP TASK IF EXISTS stream_lab.default.qa_job",
+        "DROP TASK `stream_lab`.`default`.`qa_job`",
+    ],
+)
+def test_drop_task_accepts_the_documented_three_part_name(sql):
+    # The docs name tasks database.default.task; DROP TASK refused `default`.
+    from app.modules.task_orchestration.ddl import parse_drop_task
+
+    target = parse_drop_task(sql)
+    assert (target.database_name, target.schema_name, target.name) == (
+        "stream_lab",
+        "default",
+        "qa_job",
+    )
+
+
+@pytest.mark.parametrize("action", ["SUSPEND", "RESUME"])
+def test_alter_task_accepts_the_documented_three_part_name(action):
+    from app.modules.task_orchestration.ddl import parse_task_statement
+    from app.sql_frontend.parser import parse_statement
+
+    sql = f"ALTER TASK stream_lab.default.qa_job {action}"
+    target = parse_task_statement(sql, parsed=parse_statement(sql))
+    assert (target.database_name, target.schema_name, target.name, target.action) == (
+        "stream_lab",
+        "default",
+        "qa_job",
+        action.lower(),
+    )

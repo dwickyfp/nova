@@ -351,6 +351,34 @@ class TaskMetadataRepository:
         )
         return [row["id"] for row in await cursor.fetchall()]
 
+    async def list_unsettled_abandoned_task_runs(self, *, limit: int = 200) -> list[dict[str, Any]]:
+        """Abandoned nodes whose graph run is still active, oldest first."""
+        await self._bound()
+        return await self._all(
+            "SELECT r.* FROM nova_meta.config_task_runs r JOIN nova_meta.config_task_graph_runs g "
+            "ON g.id=r.graph_run_id WHERE r.state='abandoned' AND g.state IN ('pending','running') "
+            "ORDER BY r.started_at,r.id LIMIT %s", (max(1, int(limit)),),
+        )
+
+    async def settle_abandoned_task_run(
+        self, run_id: str, to_state: str, *, generation: int, query_id: str | None = None,
+        error_message: str | None = None,
+    ) -> bool:
+        """Record a verified outcome (or an explanation) on an abandoned node.
+
+        Fenced on the generation read with the row, so a node retaken since is
+        never overwritten by a stale reconciliation.
+        """
+        await self._bound()
+        row = await self._one(
+            "UPDATE nova_meta.config_task_runs SET state=%s,"
+            "starrocks_query_id=coalesce(%s,starrocks_query_id),"
+            "error_message=coalesce(%s,error_message) WHERE id=%s "
+            "AND state='abandoned' AND lease_generation=%s RETURNING id",
+            (to_state, query_id, error_message, run_id, _generation(generation)),
+        )
+        return row is not None
+
     async def list_task_runs(self, graph_run_id: str) -> list[dict[str, Any]]:
         await self._bound()
         cursor = await self.connection.execute(

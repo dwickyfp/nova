@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 import json
 import logging
+import re
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -110,18 +111,62 @@ def _logical_row(row: list, location_map: list[tuple[str, str]]) -> list:
     ]
 
 
+#: An ANSI terminal escape sequence (colour/style). The engine colours its
+#: query-profile text for a terminal; a result grid shows the codes as noise.
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def _prints_terminal_profile(statement: Any) -> bool:
+    """Whether the engine returns this statement's result as coloured profile text.
+
+    ``EXPLAIN ANALYZE`` (and the other ``EXPLAIN``/``DESC`` forms, harmlessly)
+    and ``ANALYZE PROFILE``, from the central parser's tree.
+    """
+    from app.sql_frontend.antlr_utils import walk_nodes
+
+    tree = getattr(getattr(statement, "parsed", None), "statement_context", None)
+    if tree is None:
+        return False
+    names = {type(node).__name__ for node in walk_nodes(tree)}
+    return bool(names & {"ExplainDescContext", "AnalyzeProfileStatementContext"})
+
+
+def _without_terminal_codes(row: list) -> list:
+    return [_ANSI_ESCAPE.sub("", value) if isinstance(value, str) else value for value in row]
+
+
+def _listing_row(
+    row: list, location_map: list[tuple[str, str]], columns: list[str] | None
+) -> list:
+    """One ``LIST @stage`` row as the client sees it.
+
+    Physical paths become ``@stage`` paths. Object storage keeps no time for a
+    folder, so the engine reports the Unix epoch (or the listing time); a folder
+    shows no modification time instead.
+    """
+    row = _logical_row(row, location_map)
+    names = [str(name).upper() for name in columns or ()]
+    if "IS_DIR" in names and "MODIFICATION_TIME" in names:
+        is_dir, modified = names.index("IS_DIR"), names.index("MODIFICATION_TIME")
+        if max(is_dir, modified) < len(row) and str(row[is_dir]).lower() in {"1", "true"}:
+            row[modified] = None
+    return row
+
+
 class _LogicalLocationSink:
     """Rewrites physical stage paths in ``LIST @stage`` rows as they stream."""
 
     def __init__(self, sink, location_map: list[tuple[str, str]]) -> None:
         self._sink = sink
         self._map = location_map
+        self._columns: list[str] | None = None
 
     async def begin(self, columns: list[str], column_types: tuple[str, ...]) -> None:
+        self._columns = list(columns)
         await self._sink.begin(columns, column_types)
 
     async def rows(self, rows: list[list]) -> None:
-        await self._sink.rows([_logical_row(row, self._map) for row in rows])
+        await self._sink.rows([_listing_row(row, self._map, self._columns) for row in rows])
 
 
 class FeatureAdapters:
@@ -187,7 +232,7 @@ class FeatureAdapters:
         typed payload and shapes the result.
         """
         from app.modules.access_control.security_context import require_security_context
-        from app.modules.catalog.connections import connection_service
+        from app.modules.catalog.connections import CatalogConnectionError, connection_service
 
         if not isinstance(plan.payload, CatalogPayload):
             raise SemanticError("Catalog action requires a typed catalog payload")
@@ -235,7 +280,9 @@ class FeatureAdapters:
                 else:
                     one = await connection_service.describe(payload.name, user)
                     if one is None:
-                        raise ValueError(f"Connection '{payload.name}' does not exist")
+                        raise CatalogConnectionError(
+                            f"Connection '{payload.name}' does not exist"
+                        )
                     found = [one]
                 columns = [
                     "Name", "Type", "Credentials", "Catalogs", "Owner", "Comment", "Created",
@@ -280,10 +327,15 @@ class FeatureAdapters:
             else:
                 raise SemanticError("Unsupported catalog operation")
         except Exception as exc:
+            from app.modules.catalog.errors import CatalogError
+
             # The services audited the refusal or failure with its context.
             message = _redact_error_message(str(exc))
             return QueryResult(
                 error=message,
+                # A connection or catalog request Nova refused (unknown name,
+                # invalid endpoint, not permitted) versus a failure while running.
+                error_code="catalog_error" if isinstance(exc, CatalogError) else "execution_error",
                 elapsed_ms=round((time.monotonic() - start) * 1000, 2),
                 original_sql=parsed.original_sql,
                 executed_sql=parsed.normalized_sql,
@@ -409,7 +461,7 @@ class FeatureAdapters:
             from app.sql_frontend.errors import BindingError
 
             if not context.capabilities or not context.capabilities.describe_files:
-                raise BindingError("Engine cannot describe a stage relation")
+                raise BindingError("The columns of these stage files cannot be read")
             source = "SELECT * FROM " + reference.full_match
             from dataclasses import replace as replace_ref
 
@@ -703,7 +755,11 @@ class FeatureAdapters:
             )
 
             if browse:
-                result.rows = [_logical_row(row, location_map) for row in result.rows]
+                result.rows = [
+                    _listing_row(row, location_map, result.columns) for row in result.rows
+                ]
+            if result.rows and _prints_terminal_profile(context.statements.get(plan.source_key)):
+                result.rows = [_without_terminal_codes(row) for row in result.rows]
             if location_map and result.error:
                 result.error = _logical_location(result.error, location_map)
             result.original_sql = redact_for_output(sql)
@@ -972,7 +1028,7 @@ class FeatureAdapters:
                 elapsed_ms=elapsed_ms,
                 original_sql=sql,
                 executed_sql=feature_sql,
-                warnings=["ML_PREDICT executed in bounded vectorized Nova batches"],
+                warnings=["Predictions were computed in batches"],
             )
         except Exception as exc:
             await self._audit(
@@ -1061,7 +1117,7 @@ class FeatureAdapters:
                 elapsed_ms=elapsed_ms,
                 original_sql=sql,
                 executed_sql=normalized_sql,
-                warnings=["ML_FORECAST executed with persisted forecast semantics"],
+                warnings=["Forecast computed from the saved model"],
             )
         except Exception as exc:
             await self._audit(
@@ -1117,6 +1173,13 @@ class FeatureAdapters:
                     payload.action, user,
                 )
                 if changed is None:
+                    name_node = parsed.statement_context.novaQualifiedTaskName()
+                    if name_node is not None and name_node.getText().count(".") >= 2:
+                        # Engine tasks are named db.task at most; a schema in
+                        # the name means a Nova task the role does not have.
+                        raise TaskLoweringError(
+                            f"Task {payload.name} does not exist or is not owned by your role"
+                        )
                     sql = parsed.normalized_sql
                     return await self.execute_engine(
                         EngineSqlPlan(sql, sql, plan.effects, payload.source_key,
@@ -1310,8 +1373,8 @@ class FeatureAdapters:
             timezone = await self._task_repository.get_engine_timezone()
             if not timezone:
                 raise TaskLoweringError(
-                    "cannot determine the engine timezone; CREATE TASK stores an "
-                    "explicit IANA zone and will not assume UTC"
+                    "Nova cannot determine the server time zone, so the task was not "
+                    "saved. Try again in a moment."
                 )
             task = validated_frontend or parse_create_task(
                 normalized_sql,
@@ -1513,9 +1576,9 @@ class FeatureAdapters:
             original_sql=sql,
             executed_sql=normalized_sql,
             warnings=[
-                "ALTER USER … REQUIRE PASSWORD CHANGE is Nova metadata; no statement "
-                "was sent to StarRocks. The user is asked to change the password at "
-                "their next login."
+                "The user will be asked to choose a new password the next time they sign in."
+                if parsed.required
+                else "The user is no longer asked to choose a new password."
             ],
         )
 

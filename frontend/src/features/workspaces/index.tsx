@@ -1245,7 +1245,7 @@ export function WorkspacesPage() {
     queryKey: ["query-history", historyFilter === "file" ? activeTabId : "all"],
     queryFn: () =>
       api.get<HistoryResponse>(
-        `/query/history?limit=50${historyFilter === "file" && activeTabId ? `&file_id=${encodeURIComponent(activeTabId)}` : ""}`,
+        `/query/history?limit=50${historyFilter === "file" && activeTabId ? `&file_id=${encodeURIComponent(activeTabId)}` : "&files_only=true"}`,
       ),
     enabled: resultsTab === "history",
     refetchInterval: resultsTab === "history" ? 5000 : false,

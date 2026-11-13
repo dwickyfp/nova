@@ -135,7 +135,14 @@ DROP DATABASE ml_examples;
 - Training needs enough usable rows. Classification also needs enough examples
   of its categories for the validation split.
 - Use numeric targets for regression and a consistent date frequency for
-  forecasting. Missing or incorrectly named inputs fail validation or training.
+  forecasting.
+- Every column you name in `TARGET`, `TIMESTAMP`, `SERIES`, or `FEATURES` must
+  be in the training query's `SELECT` list, spelled with the same letter case.
+  Otherwise Nova refuses the statement before training starts and no model is
+  saved. The message names the column and lists the columns the query
+  returns, for example `TARGET column 'loyal' is not returned by the training
+  query. Its columns are: visits, spend. Add 'loyal' to the SELECT list, or
+  name one of these columns.`
 - A model's database and its alias database must match.
 - Model training can take longer than a normal query. Inspect its status and
   metrics before creating an alias.

@@ -231,6 +231,9 @@ class AuditFilter:
     #: Statement text containing any of these literal, case-insensitive words.
     sql_contains_any: tuple[str, ...] = ()
     sql_present: bool = False
+    #: Only statements run from a Workspace file (a worksheet tab), not the
+    #: queries a notebook runtime, a MySQL client or an agent sends.
+    file_present: bool = False
 
     def __post_init__(self) -> None:
         for name in ("event_type", "user_name", "status", "action", "object_name",
@@ -277,6 +280,8 @@ class AuditFilter:
             params.extend(word.upper() for word in self.sql_contains_any)
         if self.sql_present:
             conditions.append("sql_text IS NOT NULL")
+        if self.file_present:
+            conditions.append("file_id IS NOT NULL")
         return (" AND ".join(conditions) or "TRUE"), params
 
 

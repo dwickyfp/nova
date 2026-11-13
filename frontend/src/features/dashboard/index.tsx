@@ -146,7 +146,7 @@ export function Dashboard() {
 
   const queryHistoryQuery = useQuery<QueryHistoryResponse>({
     queryKey: ["dashboard", "query-history"],
-    queryFn: () => api.get<QueryHistoryResponse>("/query/history?limit=10"),
+    queryFn: () => api.get<QueryHistoryResponse>("/query/history?limit=10&files_only=true"),
   });
 
   const recentWork = useMemo(

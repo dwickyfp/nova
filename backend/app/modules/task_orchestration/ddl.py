@@ -623,7 +623,7 @@ def parse_drop_task(
     if type(statement).__name__ != "DropTaskStatementContext":
         raise TaskDDLError("not a DROP TASK statement")
     name, scoped_database, scoped_schema = _split_qualified_task_name(
-        _slice(sql, statement.qualifiedName())
+        _slice(sql, statement.novaQualifiedTaskName())
     )
     return DropTaskTarget(
         name=name,
@@ -662,7 +662,7 @@ def parse_task_statement(
         raw = _slice(sql, statement.novaQualifiedTaskName())
         action = "describe"
     elif kind == "AlterTaskStatementContext":
-        raw = _slice(sql, statement.qualifiedName())
+        raw = _slice(sql, statement.novaQualifiedTaskName())
         action = (
             "resume" if statement.RESUME() else "suspend" if statement.SUSPEND() else "set"
         )

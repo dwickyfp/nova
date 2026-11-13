@@ -607,6 +607,12 @@ class TestBareAndDirectoryStagesReachTranslation:
         assert translated.startswith("SELECT * FROM FILES(")
         assert "'list_files_only'='true'" in translated
 
+    def test_a_listing_does_not_warn_about_a_file_format(self):
+        """``LIST`` reads no file content, so the CSV fallback warning is noise."""
+        _, warnings = translate_stage_query(parse_sql("LIST @stage1"), {"stage1": self._config()})
+
+        assert not any("No file extension" in warning for warning in warnings)
+
     def test_an_unknown_stage_still_raises(self):
         """Resolution is not weakened: a stage with no config is still refused."""
         parsed = parse_sql("SELECT * FROM @nope")

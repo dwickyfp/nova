@@ -159,4 +159,4 @@ a SQL task that does the same work.
 | `'requests' is not on this deployment's approved package list. Ask an administrator to approve it.` | The package is not approved. Packages are checked when you create the task and again at every run. |
 | `RUNTIME_VERSION '3.9' is not available; use 3.12` | Use `RUNTIME_VERSION = '3.12'` or leave it out. |
 | `The Python runtime could not start: ...` | The runtime service did not start. Run the task again; if it keeps failing, tell your administrator. |
-| A step remains `abandoned` and its run stays `running` | The outcome could not be confirmed. Earlier statements may have committed. Nova holds the run without repeating the step; ask an administrator to verify its outcome before starting replacement work. |
+| A step is `abandoned` and its run is `running` | The outcome could not be confirmed. Earlier statements may have committed. Nova does not repeat the step. When the step can no longer be making changes, the run ends `failed` (see [Run states](/docs/tasks/manage-and-monitor-tasks)). Check whether its changes were applied before running the task again. |

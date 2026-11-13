@@ -184,3 +184,39 @@ stack, ACCOUNTADMIN does not (and was not given one).
 | Docs content tests | 15 passed |
 | PG17 integration tests for 0046/0047 | collected, not run (needs a disposable PG17; CI) |
 | Frontend `pnpm test:coverage` | 1651 passed, 1 failed: `notebook.test.tsx` Markdown-editing test timed out under full-suite load (17.5 s); the file passes 36/36 twice on its own |
+
+## Follow-up: open items resolved (same day)
+
+| Item | Finding | Change | Verified |
+| --- | --- | --- | --- |
+| Abandoned task run blocked `DROP TASK` forever (`py_summary`) | A step left `abandoned` after the metadata DB restart kept its graph run `running`; the reconciler re-claimed it every 30 s and `DROP TASK` refused | Reconciler settles abandoned steps: verified native results are adopted; otherwise, once the step can no longer be making changes, the run ends `failed` with "outcome is unknown, not repeated" (no replay). `DROP TASK` refuses only genuinely live runs and says when a pending settlement ends | 30 unit tests; live: `py_summary` settled and dropped; normal runs still succeed and still block DROP while running |
+| `DROP TASK` / `ALTER TASK db.default.task` did not parse | Grammar used the engine name rule, which rejects the keyword `default` | Both use `novaQualifiedTaskName` (grammar regenerated, drift check passes); a missing three-part name gets Nova's "does not exist" instead of an engine syntax error | Unit tests; live DROP/ALTER |
+| Script preflight ignored an earlier `USE` | Preflight checked every statement against the request database | Preflight carries the database set by `USE` | Unit + live (`USE db; CREATE STREAM ...`) |
+| EXPLAIN ANALYZE colour codes, LIST @stage 1970 folder dates and CSV warning, missing error codes, engine names in notes | Output formatting and messages | Codes stripped, folder time null, warning only when reading a file, `catalog_error`/`execution_error` codes, plain-language notes | Unit + live |
+| `CREATE ML_MODEL` with an unselected TARGET left a failed record | No column check before training | Columns checked first; clear error, no record | Unit + live |
+| `SUBMIT TASK`, `CREATE`/`RESUME ROUTINE LOAD` ran in the background without the caller's identity | Inconsistent with the pipe refusal and the identity rules | Refused with a pointer to `CREATE TASK`; docs sql/08 | Unit + live |
+| Deleted notebook kept its runtime (held the quota) | Delete did not touch runtimes | Deleting a notebook, folder or shared workspace stops every live runtime of the notebooks removed | Unit; live: folder delete stopped the runtime in about 2 s |
+| Notebook probes in Recent work and History | History listed every audited query | `files_only` history filter (`file_id IS NOT NULL`) for Home and **All files**; audit unchanged | Unit; live: 0 probes while notebooks ran |
+| History showed **ERR** for a statement awaiting confirmation | Audited as `ERROR` | Audited as `CONFIRMATION_REQUIRED`, shown **NOT RUN** | Unit; live |
+| Enter did not submit Create agent | Not a form | Form submit | Live: Enter created the agent |
+| Notebook toolbar overlap at 375 px; active tab hidden after resize | Runtime button shrank below its label; reveal ran only on tab change | Button keeps its width, the group wraps; reveal also on strip resize | Live at 375 px: no overlap, tab visible |
+
+### Explained, not code defects
+
+- **Cell output stream ends early.** Reproduced only when the worker process
+  restarts during a cell (dev hot reload, or a crash): the new worker cancels
+  the orphaned cell and the next request can meet the kernel still unwinding.
+  Three quiet runs: 0 of 39 cells; every logged occurrence today coincides
+  with a worker restart. Nova reports that the cell may have run and never
+  repeats it, as required for unknown outcomes. Observation: the dev worker
+  overran its 45 s SIGINT grace and was killed during one reload.
+- **Metadata PostgreSQL restarts.** Three times today a backend process exited
+  with code 2 and no preceding error (the SIGQUIT signature), with no
+  container event, no OOM kill and memory at 224/512 MiB; no reliable
+  precursor in the logs. Each time the stack recovered by itself in about
+  90 seconds.
+- **DuckDB connector limits** (`MERGE`, `CREATE OR REPLACE`, `USE`,
+  `ROLLBACK` on Nova tables) are documented on the novaduck page with native
+  alternatives.
+- **Frontend test timeouts** appear only when several heavy suites run at
+  once (machine load); the files pass on their own.

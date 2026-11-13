@@ -373,11 +373,12 @@ class TestValidationFailureIsReported:
             schema="default",
         )
         assert result.error is not None
-        assert "timezone" in result.error.lower()
+        assert "time zone" in result.error.lower()
 
 
 class TestNonTaskStatementsAreUnaffected:
-    async def test_submit_task_still_goes_to_the_engine(self, wired):
+    async def test_native_submit_task_is_refused_before_the_engine(self, wired):
+        """The engine's background task would not run as the caller and role."""
         service, engine, tasks, _ = wired
         result = await service.execute(
             sql="SUBMIT TASK x AS INSERT INTO t SELECT 1",
@@ -387,8 +388,10 @@ class TestNonTaskStatementsAreUnaffected:
             database="db1",
             schema="default",
         )
-        assert result.success
-        assert engine.calls, "a real engine statement must still be executed"
+        assert not result.success
+        assert result.error_code == "capability_unsupported"
+        assert "Use CREATE TASK" in (result.error or "")
+        assert not engine.calls, "the engine must not receive SUBMIT TASK"
         assert tasks.tasks == {}, "SUBMIT TASK must not create Nova metadata"
 
     async def test_plain_select_still_goes_to_the_engine(self, wired):

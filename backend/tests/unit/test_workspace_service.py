@@ -324,3 +324,18 @@ class TestEnsureWorkspaceBucketIsIdempotent:
 
         with pytest.raises(StorageUnavailableError):
             storage_bootstrap.ensure_workspace_bucket()
+
+
+def test_a_folder_delete_covers_everything_below_it():
+    from app.modules.workspaces.service import subtree_ids
+
+    entries = [
+        {"id": "f", "path": "reports"},
+        {"id": "n1", "path": "reports/q1.ipynb"},
+        {"id": "n2", "path": "reports/deep/q2.ipynb"},
+        {"id": "x", "path": "reports-old/x.ipynb"},
+        {"id": "y", "path": "other.ipynb"},
+    ]
+    assert subtree_ids(entries, "f") == ["f", "n1", "n2"]
+    assert subtree_ids(entries, "y") == ["y"]
+    assert subtree_ids(entries, "gone") == ["gone"]

@@ -112,6 +112,7 @@ def _native_statement_checks(statement: ast.Statement, context: Any = None) -> N
     _copy_names_a_stage(statement)
     _native_session_settings(statement)
     _native_pipe_execution(statement)
+    _native_background_jobs(statement)
     return None
 
 
@@ -147,10 +148,48 @@ def _native_pipe_execution(statement: ast.Statement) -> None:
         from app.sql_frontend.errors import CapabilityUnsupportedError
 
         raise CapabilityUnsupportedError(
-            "Pipe execution is unavailable with Ranger: background pipe tasks do not "
-            "preserve the caller's principal and active role. Use caller-scoped COPY "
-            "or scheduled Nova tasks instead."
+            "Pipes run in the background without your sign-in and active role. "
+            "Load files with COPY INTO, or schedule a load with CREATE TASK."
         )
+
+
+#: Engine statements that start work the engine runs later in the background,
+#: as a stored job rather than as the caller's session. Like pipes, that work
+#: does not carry the caller's sign-in and active role, so access policies are
+#: not applied to it as they are to the caller.
+_BACKGROUND_JOB_REFUSALS = {
+    "SubmitTaskStatementContext": (
+        "SUBMIT TASK runs in the background without your sign-in and active role. "
+        "Use CREATE TASK, which runs as you."
+    ),
+    "CreateRoutineLoadStatementContext": (
+        "Routine loads run in the background without your sign-in and active role. "
+        "Load files with COPY INTO, or schedule a load with CREATE TASK."
+    ),
+    "ResumeRoutineLoadStatementContext": (
+        "Routine loads run in the background without your sign-in and active role. "
+        "Load files with COPY INTO, or schedule a load with CREATE TASK."
+    ),
+}
+
+
+def _native_background_jobs(statement: ast.Statement) -> None:
+    """Refuse engine background jobs that would not run as the caller.
+
+    Stopping, pausing, showing and dropping existing jobs stays available.
+    Nova's ``CREATE TASK`` shares the grammar rule of ``SUBMIT TASK`` and is
+    told apart by its first keyword, as the AST builder does.
+    """
+    parsed = statement.parsed
+    kind = type(parsed.statement_context).__name__
+    message = _BACKGROUND_JOB_REFUSALS.get(kind)
+    if message is None:
+        return
+    if kind == "SubmitTaskStatementContext" and parsed.visible_tokens[0].text.upper() == "CREATE":
+        return
+    from app.sql_frontend.errors import CapabilityUnsupportedError
+
+    raise CapabilityUnsupportedError(message)
 
 
 def _stage_paths_end_cleanly(statement: ast.Statement) -> None:

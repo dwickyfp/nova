@@ -79,15 +79,24 @@ export function WorkspaceTabStrip({
   const visibleTabIds = openTabIds.filter((id) => tabs[id]);
   const scroller = useRef<HTMLDivElement>(null);
 
-  // Bring the active tab into view inside the strip.
+  // Bring the active tab into view inside the strip, also when the strip
+  // narrows (a smaller window or the file panel opening).
   useEffect(() => {
     const strip = scroller.current;
-    const tab = activeTabId ? tabElements.current.get(activeTabId) : null;
-    if (!strip || !tab) return;
-    const left = tab.offsetLeft;
-    if (left < strip.scrollLeft) strip.scrollLeft = left;
-    else if (left + tab.offsetWidth > strip.scrollLeft + strip.clientWidth)
-      strip.scrollLeft = left + tab.offsetWidth - strip.clientWidth;
+    if (!strip) return;
+    const reveal = () => {
+      const tab = activeTabId ? tabElements.current.get(activeTabId) : null;
+      if (!tab) return;
+      const left = tab.offsetLeft;
+      if (left < strip.scrollLeft) strip.scrollLeft = left;
+      else if (left + tab.offsetWidth > strip.scrollLeft + strip.clientWidth)
+        strip.scrollLeft = left + tab.offsetWidth - strip.clientWidth;
+    };
+    reveal();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(reveal);
+    observer.observe(strip);
+    return () => observer.disconnect();
   }, [activeTabId, visibleTabIds.length]);
 
   useEffect(

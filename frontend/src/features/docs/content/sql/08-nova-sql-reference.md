@@ -126,3 +126,6 @@ described in [AI SQL functions](/docs/ai-ml/ai-sql-functions).
 | `INSERT INTO FILES(...) ...` | `INTO FILES writes to a file path and is not read-only.` |
 | `COPY INTO @stage ...`, `INSERT INTO @stage ...` | `INTO @stage exports query results and is not read-only.` |
 | `SET sql_dialect = '<other>'` | `Nova parses StarRocks SQL only; sql_dialect must remain StarRocks` |
+| `SUBMIT TASK ...` | `SUBMIT TASK runs in the background without your sign-in and active role. Use CREATE TASK, which runs as you.` See [Create a task](/docs/tasks/create-a-task). |
+| `CREATE ROUTINE LOAD ...`, `RESUME ROUTINE LOAD ...` | `Routine loads run in the background without your sign-in and active role. Load files with COPY INTO, or schedule a load with CREATE TASK.` |
+| `CREATE PIPE ...`, `ALTER PIPE ... RESUME` | `Pipes run in the background without your sign-in and active role. Load files with COPY INTO, or schedule a load with CREATE TASK.` |

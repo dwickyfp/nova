@@ -638,3 +638,14 @@ async def test_people_on_a_shared_notebook_each_get_their_own_runtime(env, monke
     assert bob_runtime.files_namespace == shared and not bob_runtime.files_writable
     # Nothing is keyed by the notebook alone any more.
     assert await state.active_runtime("nb-1") is None
+
+
+async def test_deleting_a_notebook_stops_its_runtime(env):
+    # Seen live: a runtime outlived its deleted notebook, could not be stopped
+    # from any page, and held its owner's runtime quota.
+    runtime = await started(env)
+    assert await env["service"].stop_for_deleted(["another-notebook"]) == 0
+    assert await env["service"].stop_for_deleted(["nb-1"]) == 1
+    await asyncio.wait_for(drain(env["worker"]), timeout=10)
+    assert await state.active_runtime(CH) is None
+    assert runtime.sandbox_id in env["provider"].killed

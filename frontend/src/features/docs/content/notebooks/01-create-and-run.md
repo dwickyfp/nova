@@ -61,8 +61,10 @@ Restarting clears Python variables and local SQL tables. Stopping releases
 the runtime; the saved document remains. Run the setup cells again after a
 restart or a new runtime.
 
-The runtime is also stopped after inactivity or its lifetime limit. Closing
-the document is not a substitute for stopping a runtime you no longer need.
+The runtime is also stopped after inactivity or its lifetime limit, and when
+the notebook (or a folder or shared workspace containing it) is deleted.
+Closing the document is not a substitute for stopping a runtime you no longer
+need.
 
 ## Limits and errors
 

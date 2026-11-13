@@ -141,7 +141,7 @@ async def test_poll_interval_above_engine_limit_rejected_before_execution(calls)
 async def test_background_pipe_execution_rejected_by_ranger_frontend(sql):
     statement = ast_builders.build(parse_statement(sql))
     with pytest.raises(
-        CapabilityUnsupportedError, match="Pipe execution is unavailable with Ranger"
+        CapabilityUnsupportedError, match="Pipes run in the background without your sign-in"
     ):
         await SQLPlanner().plan(statement, PlanningContext())
 

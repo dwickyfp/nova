@@ -134,12 +134,12 @@ def test_engine_response_names_stages_not_buckets_or_endpoints():
     context = SimpleNamespace(
         username="u", encrypted_password="e", database="db", schema=None, role="r",
         max_rows=10, connection=None, session_id=None, file_id=None, row_sink=None,
-        engine_session_prepared=False, transaction_active=False,
+        engine_session_prepared=False, transaction_active=False, statements={},
     )
     result = asyncio.run(
         adapters._run_on_engine(
-            None, context, sql="SELECT * FROM @raw/x.csv", executed_sql=physical,
-            audit_sql=physical, warnings=[],
+            SimpleNamespace(source_key=0), context, sql="SELECT * FROM @raw/x.csv",
+            executed_sql=physical, audit_sql=physical, warnings=[],
             location_map=[("s3://lake/tenants/a", "@raw"),
                           ("http://minio.internal:9000", "<storage endpoint>")],
             parsed=SimpleNamespace(command_type=CommandType.STAGE_QUERY),

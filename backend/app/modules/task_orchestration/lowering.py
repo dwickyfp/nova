@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import contextlib
 from dataclasses import dataclass, replace
+from datetime import UTC
 from typing import Any
 
 from app.modules.task_orchestration.ddl import LoweredTask
@@ -289,10 +290,13 @@ async def drop_nova_task(
     The caller's active role must own the task (the rule every task API uses).
     A task other tasks run after, or finalize, is refused with their names:
     dropping it would leave them waiting on a task that no longer exists. A
-    task whose graph has a pending or running run is refused until the run
-    settles. Run history stays, as it does for the engine's own tasks.
+    task whose graph has a live run is refused until the run settles. A run held
+    only by abandoned steps whose effects can no longer be in flight is not
+    live (the reconciler ends it ``failed``), so it does not block the drop.
+    Run history stays, as it does for the engine's own tasks.
     """
     from app.modules.task_orchestration.access import owns_task
+    from app.modules.task_orchestration.reconciler import active_run_hold
     from app.modules.task_orchestration.repository import task_graph_id
 
     task = await task_orchestration_repository.find_task(name, database_name, schema_name)
@@ -318,7 +322,17 @@ async def drop_nova_task(
     own_edges = [edge for edge in edges if str(edge["child_task"]) == name]
     graph_ids = {str(edge["graph_id"]) for edge in own_edges} or {task_graph_id(task)}
     for graph_id in sorted(graph_ids):
-        if await task_orchestration_repository.list_active_graph_runs(graph_id):
+        for run in await task_orchestration_repository.list_active_graph_runs(graph_id):
+            hold = await active_run_hold(task_orchestration_repository, run)
+            if not hold.live:
+                continue
+            if hold.settles_at is not None:
+                raise TaskLoweringError(
+                    f"Task {task_graph_id(task)} has a run whose step outcome is not confirmed "
+                    "yet; Nova ends that run by "
+                    f"{hold.settles_at.astimezone(UTC):%Y-%m-%d %H:%M} UTC. "
+                    "Drop the task after that"
+                )
             raise TaskLoweringError(
                 f"Task {task_graph_id(task)} has a run in progress; drop it after the run ends"
             )

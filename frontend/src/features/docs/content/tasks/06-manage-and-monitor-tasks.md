@@ -97,17 +97,28 @@ DROP TASK IF EXISTS log_orders;
 | `pending` | The run is waiting to start, for example behind a running run with overlap policy `queue`. |
 | `running` | The run is in progress. |
 | `success` | Every step succeeded or was skipped. |
-| `failed` | A step failed. Steps after it were skipped. |
+| `failed` | A step failed, or a step's outcome could not be confirmed (see below). Steps after it did not run. |
 
 A single step can also be `skipped`: its `WHEN` condition was false, or a step
 before it failed.
 
 An `abandoned` step means its outcome is unknown. This can happen when a worker
 stops reporting progress, a connection breaks during submission, or a native
-task's result cannot be confirmed before the observation deadline. The run stays
-`running`; Nova does not repeat the step, start its finalizer, or free its overlap
-slot. Ask an administrator to verify whether the changes were applied before
-starting replacement work.
+task's result cannot be confirmed before the observation deadline. Nova never
+repeats an abandoned step. While the step could still be making changes, its run
+stays `running`: Nova does not start the steps after it or its finalizer, and
+does not start an overlapping run.
+
+Nova then settles the run by itself:
+
+- If Nova can read the native task's result, the step takes that result
+  (`success` or `failed`) and the run continues as usual.
+- Otherwise, once the step can no longer be making changes, the run ends
+  `failed`. By default that is about 70 minutes after the step stopped
+  reporting for a Python task (its time limit plus 10 minutes), and about 4
+  hours for other tasks. The step stays `abandoned` with the message
+  `This step stopped reporting progress (...), so its outcome is unknown.`
+  Check whether its changes were applied before you run the task again.
 
 ## Failures and retries
 
@@ -122,6 +133,7 @@ Common errors:
 | `This task already has an active run` | The previous run has not finished and the overlap policy is `skip`. Wait for it, or use `OVERLAP_POLICY = queue`. |
 | `Statement 2 of 3 failed: ... (statement 1 ran and is kept)` | A statement in a multi-statement task failed. Earlier statements were not undone. |
 | `Task ... has a run in progress; drop it after the run ends` | `DROP TASK` waits for the current run to end. |
+| `Task ... has a run whose step outcome is not confirmed yet; Nova ends that run by 2026-11-13 10:42 UTC. Drop the task after that` | A step of the current run is `abandoned` and could still be making changes. Run `DROP TASK` again after the time shown. |
 | `Tasks clean_a, clean_b, notify_done run after or finalize load_raw; drop them first` | Drop the tasks that depend on this one first. |
 
 ## Who can see and run a task

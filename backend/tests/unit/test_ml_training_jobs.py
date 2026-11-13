@@ -178,6 +178,8 @@ def trainer(monkeypatch):
 
     train = AsyncMock(return_value=RESULT)
     monkeypatch.setattr(ml_engine_service, "train_model_locally", train)
+    # The named-column check reads the query's columns from the engine.
+    monkeypatch.setattr(ml_engine_service, "_check_named_columns", AsyncMock())
     return train
 
 

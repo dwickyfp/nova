@@ -12,6 +12,7 @@ import asyncio
 import contextlib
 import json
 import time
+from collections.abc import Iterable
 from typing import Any
 
 from app.core.config import settings
@@ -182,20 +183,24 @@ class NotebookRuntimeService:
         runtime = await state.active_runtime(ch)
         if runtime is None:
             return {"runtime": {"status": "STOPPED"}}
-        if runtime.current_execution:
-            await state.redis().set(state.cancel_key(runtime.current_execution), "1",
-                                    ex=state.DAY)
-        # A stop jumps the queue: queued cells are cancelled by the worker.
-        job_id = state.new_id("job")
-        await state.redis().set(
-            state.job_key(job_id), json.dumps({"kind": "stop", "reason": "user",
-                                               "job_id": job_id, "runtime_id": runtime.id}),
-            ex=state.DAY,
-        )
-        await state.redis().lpush(state.queue_key(runtime.id), job_id)
-        await state.redis().xadd(state.WAKE, {"runtime_id": runtime.id}, maxlen=1000,
-                                 approximate=True)
+        await _queue_stop(runtime, reason="user")
         return {"runtime": {**runtime.public(), "status": "STOPPING"}}
+
+    async def stop_for_deleted(self, notebook_ids: Iterable[str]) -> int:
+        """Stop every live runtime of notebooks that were just deleted.
+
+        A runtime is per person, so a shared notebook can have several. Called by
+        the delete that removed them, which already checked the caller may edit.
+        Without this a runtime outlives its notebook, nobody can stop it from the
+        page, and it holds its owner's runtime quota until the idle sweep.
+        """
+        wanted = {str(item) for item in notebook_ids}
+        stopped = 0
+        for runtime in await state.live_runtimes():
+            if runtime.notebook_id in wanted and runtime.status not in {"STOPPING", "STOPPED"}:
+                await _queue_stop(runtime, reason="deleted")
+                stopped += 1
+        return stopped
 
     async def restart(self, user: dict[str, Any], notebook_id: str) -> dict[str, Any]:
         _entry, space = await _require_notebook(user, notebook_id)
@@ -543,6 +548,22 @@ def _public_execution(row: dict[str, Any]) -> dict[str, Any]:
         "duration_ms": row.get("duration_ms"),
         "outputs": row.get("outputs"),
     }
+
+
+async def _queue_stop(runtime: state.RuntimeState, *, reason: str) -> None:
+    """Queue a stop that jumps the queue; queued cells are cancelled by the worker."""
+    client = state.redis()
+    if runtime.current_execution:
+        await client.set(state.cancel_key(runtime.current_execution), "1", ex=state.DAY)
+    job_id = state.new_id("job")
+    await client.set(
+        state.job_key(job_id),
+        json.dumps({"kind": "stop", "reason": reason, "job_id": job_id,
+                    "runtime_id": runtime.id}),
+        ex=state.DAY,
+    )
+    await client.lpush(state.queue_key(runtime.id), job_id)
+    await client.xadd(state.WAKE, {"runtime_id": runtime.id}, maxlen=1000, approximate=True)
 
 
 notebook_runtime_service = NotebookRuntimeService()
