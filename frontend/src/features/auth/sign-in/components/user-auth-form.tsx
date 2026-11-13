@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/password-input";
+import { SignInSplash } from "./sign-in-splash";
 
 // ── Login form schema ────────────────────────────────────────
 const loginSchema = z.object({
@@ -87,6 +88,7 @@ export function UserAuthForm({
   ...props
 }: UserAuthFormProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [welcomeMessage, setWelcomeMessage] = useState<string | null>(null);
   const [setupToken, setSetupToken] = useState<string | null>(null);
   // Set when the admin required a password change: the credential is valid, but
   // the user must set a new password before entering Nova.
@@ -95,6 +97,28 @@ export function UserAuthForm({
   );
   const navigate = useNavigate();
   const { auth } = useAuthStore();
+
+  function enterNova(result: LoginResult, message: string) {
+    if (result.status !== "AUTHENTICATED" || !result.access_token || !result.user) {
+      toast.error("Please sign in again to continue.");
+      setSetupToken(null);
+      setForcedChangeToken(null);
+      return;
+    }
+    auth.setAccessToken(result.access_token);
+    auth.setUser(getAuthUser(result));
+    setWelcomeMessage(message);
+  }
+
+  const openWorkspace = useCallback(async () => {
+    try {
+      await navigate({ to: getSafeRedirectPath(redirectTo), replace: true });
+      toast.success(welcomeMessage);
+    } catch {
+      setWelcomeMessage(null);
+      toast.error("Could not open your workspace. Please sign in again.");
+    }
+  }, [navigate, redirectTo, welcomeMessage]);
 
   // ── Login form ──
   const loginForm = useForm<z.infer<typeof loginSchema>>({
@@ -146,10 +170,7 @@ export function UserAuthForm({
         setForcedChangeToken(result.access_token);
         toast.info("Please set a new password before continuing.");
       } else if (result.status === "AUTHENTICATED") {
-        auth.setAccessToken(result.access_token);
-        auth.setUser(getAuthUser(result));
-        navigate({ to: getSafeRedirectPath(redirectTo), replace: true });
-        toast.success(`Welcome back, ${data.username}!`);
+        enterNova(result, `Welcome back, ${data.username}!`);
       }
     } catch {
       toast.error("Network error. Please try again.");
@@ -196,10 +217,7 @@ export function UserAuthForm({
 
         if (loginRes.ok) {
           const loginResult = (await loginRes.json()) as LoginResult;
-          auth.setAccessToken(loginResult.access_token);
-          auth.setUser(getAuthUser(loginResult));
-          navigate({ to: getSafeRedirectPath(redirectTo), replace: true });
-          toast.success("Password changed. Welcome to Nova!");
+          enterNova(loginResult, "Password changed. Welcome to Nova!");
         } else {
           toast.error(
             "Password changed but login failed. Please log in manually.",
@@ -250,10 +268,7 @@ export function UserAuthForm({
       });
       if (loginRes.ok) {
         const loginResult = (await loginRes.json()) as LoginResult;
-        auth.setAccessToken(loginResult.access_token);
-        auth.setUser(getAuthUser(loginResult));
-        navigate({ to: getSafeRedirectPath(redirectTo), replace: true });
-        toast.success("Password changed. Welcome to Nova");
+        enterNova(loginResult, "Password changed. Welcome to Nova!");
       } else {
         toast.error(
           "Password changed but login failed. Please log in manually.",
@@ -265,6 +280,10 @@ export function UserAuthForm({
     } finally {
       setIsLoading(false);
     }
+  }
+
+  if (welcomeMessage) {
+    return <SignInSplash onReady={openWorkspace} />;
   }
 
   // ── Render: Forced password change ───────────────────────

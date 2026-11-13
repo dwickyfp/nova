@@ -22,6 +22,12 @@ you switch to another one.
 2. Type your **Username** and **Password**.
 3. Click **Sign in**.
 
+After a successful sign-in, a full-screen Nova phoenix briefly flaps its wings
+before your workspace opens. If you opened a link to a specific Nova page,
+you continue to that page. The transition also appears after a required
+password change. With reduced motion enabled on your device, the phoenix
+stays still and the transition is shorter.
+
 If the details are wrong, Nova shows **Invalid username or password.**
 
 ## Set a new password when Nova asks
