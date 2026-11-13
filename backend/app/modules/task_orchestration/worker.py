@@ -2,8 +2,8 @@
 
 One delivery of a graph run is processed to a stable point:
 
-1. Load the graph's tasks and edges from ``NOVA_SYSTEM`` — the source of truth,
-   never the stream payload, which carries ids only.
+1. Load the graph's tasks and edges from the metadata store — the source of
+   truth, never the queue envelope, which carries ids only.
 2. Evaluate the DAG state machine (:mod:`dag`) against the node rows already
    persisted.
 3. Execute every **ready** node delegate-first, then persist its outcome with a
@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
 from app.common.audit import write_audit_log
@@ -45,6 +45,7 @@ from app.modules.task_orchestration.ddl import SCRIPT_HANDLERS
 from app.modules.task_orchestration.execution import (
     DelegateExecutor,
     NodeExecutionError,
+    NodeOutcomeUnknown,
     TaskSpec,
     native_attempt_name,
 )
@@ -52,19 +53,13 @@ from app.modules.task_orchestration.repository import TaskOrchestrationRepositor
 
 logger = logging.getLogger(__name__)
 
-#: Node states that mean "this node must be executed now".
 # A stale heartbeat cannot prove whether StarRocks accepted the native submit.
-# Replaying an abandoned INSERT could write data twice, so an abandoned node is
-# never re-run: it fails with ``ABANDONED_NODE_ERROR`` for the owner to inspect.
-# Holding it instead kept the graph run ``running`` forever, which blocked every
-# later run under ``skip`` and made DROP TASK refuse the task.
+# Keep uncertain runs active so overlap admission cannot start a replacement.
 _RUNNABLE = frozenset({NodeState.PENDING})
 
-ABANDONED_NODE_ERROR = (
-    "The worker stopped while this step was running, so Nova cannot tell whether "
-    "its changes were applied. It was not run again: check the data, then run the "
-    "task again."
-)
+
+class LeaseLost(RuntimeError):
+    """This delivery no longer holds the node or graph lease it executes under."""
 
 
 class TaskLookup(Protocol):
@@ -84,6 +79,8 @@ class GraphRunJob:
     execution_user: str | None = None
     execution_role: str | None = None
     execution_session_id: str | None = None
+    #: The graph-run lease generation this delivery claimed (fences settle/heartbeat).
+    generation: int | None = None
 
     @classmethod
     def from_payload(cls, payload: dict[str, str]) -> GraphRunJob:
@@ -127,8 +124,8 @@ class GraphRunWorker:
         if graph_run is None:
             logger.warning("graph run %s not found; the stream job is stale", job.graph_run_id)
             return None
-        # ``NOVA_SYSTEM`` is the source of truth: the graph id comes from the
-        # persisted row, not the stream payload, which is transport only.
+        # The metadata row is the source of truth: the graph id comes from the
+        # persisted row, not the delivery, which is transport only.
         job = GraphRunJob(
             graph_run_id=job.graph_run_id,
             graph_id=str(graph_run["graph_id"]),
@@ -162,18 +159,19 @@ class GraphRunWorker:
 
         # Claim the run by moving pending -> running. If another delivery got
         # here first, the conditional write affects no rows and we stand down.
-        already = graph_run.get("state") == GraphState.RUNNING.value
-        if not already:
-            claimed = await self._repository.transition_graph_run(
-                job.graph_run_id,
-                [GraphState.PENDING.value],
-                GraphState.RUNNING.value,
-            )
-            if not claimed:
-                latest = await self._repository.get_graph_run(job.graph_run_id)
-                return GraphState(str((latest or {}).get("state", "")))
+        # A ``running`` run is retaken only by a redelivery after its previous
+        # holder lost the job lease; the new generation fences that holder out.
+        current = str(graph_run.get("state") or GraphState.PENDING.value)
+        generation = await self._repository.claim_graph_run(
+            job.graph_run_id,
+            [current if current == GraphState.RUNNING.value else GraphState.PENDING.value],
+            GraphState.RUNNING.value,
+        )
+        if generation is None:
+            latest = await self._repository.get_graph_run(job.graph_run_id)
+            return GraphState(str((latest or {}).get("state", "")))
 
-        return await self._drive(job)
+        return await self._drive(replace(job, generation=generation))
 
     async def _has_other_active_run(self, job: GraphRunJob) -> bool:
         """Wait for running siblings and pending siblings ahead in the queue."""
@@ -251,6 +249,10 @@ class GraphRunWorker:
 
         while True:
             states, rows = await self._load_states(job.graph_run_id, all_nodes, by_name)
+            if NodeState.ABANDONED in states.values():
+                # A failed sibling or a finalizer cannot resolve an unknown
+                # external effect. Preserve all evidence for reconciliation.
+                return GraphState.RUNNING
             decision = evaluate(graph, states)
 
             if decision.ready:
@@ -349,14 +351,11 @@ class GraphRunWorker:
                 if (task.get("handler") or "sql") != "sql":
                     # Only a single-statement SQL node is a native engine task.
                     row = await self._repository.create_task_run_once(
-                        job.graph_run_id, task["id"], delegated=False)
+                        job.graph_run_id, task["id"], delegated=False
+                    )
                 else:
                     row = await self._repository.create_task_run_once(job.graph_run_id, task["id"])
-            moved = await self._repository.transition_task_run(
-                row["id"],
-                [NodeState.PENDING.value, NodeState.ABANDONED.value],
-                NodeState.SKIPPED.value,
-            )
+            moved = await self._repository.skip_pending_task_run(row["id"])
             if moved:
                 changed = True
                 await self._audit(job, task, task.get("created_by"), NodeState.SKIPPED.value, None)
@@ -382,8 +381,7 @@ class GraphRunWorker:
         no progress this iteration and must not loop (NOVA-52): a ``ready`` node
         that is already ``running`` (or settled) is not this delivery's to claim.
         """
-        claimed: list[tuple[dict[str, Any], str]] = []
-        settled_abandoned = False
+        claimed: list[tuple[dict[str, Any], str, int]] = []
         for name in ready:
             task = by_name[name]
             row = existing.get(task["id"])
@@ -391,65 +389,51 @@ class GraphRunWorker:
                 if (task.get("handler") or "sql") != "sql":
                     # Only a single-statement SQL node is a native engine task.
                     row = await self._repository.create_task_run_once(
-                        job.graph_run_id, task["id"], delegated=False)
+                        job.graph_run_id, task["id"], delegated=False
+                    )
                 else:
                     row = await self._repository.create_task_run_once(job.graph_run_id, task["id"])
             current = _to_node_state(str(row["state"] or "pending"))
-            if current is NodeState.ABANDONED:
-                if await self._fail_abandoned(job, task, row["id"]):
-                    settled_abandoned = True
-                continue
             if current not in _RUNNABLE:
                 # Another delivery already handled this node, or a live worker
                 # is executing it.
                 continue
-            moved = await self._repository.transition_task_run(
-                row["id"], [current.value], NodeState.RUNNING.value
-            )
-            if moved:
-                claimed.append((task, row["id"]))
+            # Claiming commits the node's intent (running, new lease generation)
+            # before any engine submit; only this generation may record its outcome.
+            lease = await self._repository.claim_task_run(row["id"], [current.value])
+            if lease is not None:
+                claimed.append((task, row["id"], lease))
                 if len(claimed) >= self._max_parallel_nodes:
                     break
 
         if not claimed:
-            # Failing an abandoned node is progress: the caller re-evaluates and
-            # the graph settles instead of staying ``running``.
-            return settled_abandoned
+            return False
         await asyncio.gather(
-            *(self._when_then_execute(job, task, run_id) for task, run_id in claimed)
+            *(self._when_then_execute(job, task, run_id, lease) for task, run_id, lease in claimed)
         )
         return True
 
-    async def _fail_abandoned(self, job: GraphRunJob, task: dict[str, Any], run_id: str) -> bool:
-        """Fail an abandoned node without re-running it; True when this call moved it."""
-        moved = await self._repository.transition_task_run(
-            run_id,
-            [NodeState.ABANDONED.value],
-            NodeState.FAILED.value,
-            error_message=ABANDONED_NODE_ERROR,
-        )
-        if moved:
-            await self._audit(
-                job, task, task.get("created_by"), NodeState.FAILED.value, ABANDONED_NODE_ERROR
-            )
-        return moved
-
-    async def _when_then_execute(self, job: GraphRunJob, task: dict[str, Any], run_id: str) -> None:
+    async def _when_then_execute(
+        self, job: GraphRunJob, task: dict[str, Any], run_id: str, lease: int
+    ) -> None:
         """Evaluate ``WHEN`` then execute, as one schedulable unit."""
         if task.get("execution_identity_error"):
             await self._finalize(
                 job,
                 task,
                 run_id,
+                lease,
                 job.execution_user,
                 NodeState.FAILED,
                 error=task["execution_identity_error"],
             )
             return
-        if await self._when_allows(job, task, run_id):
-            await self._execute_one(job, task, run_id)
+        if await self._when_allows(job, task, run_id, lease):
+            await self._execute_one(job, task, run_id, lease)
 
-    async def _when_allows(self, job: GraphRunJob, task: dict[str, Any], run_id: str) -> bool:
+    async def _when_allows(
+        self, job: GraphRunJob, task: dict[str, Any], run_id: str, lease: int
+    ) -> bool:
         """Evaluate the node's ``WHEN``. False skips the node (and descendants).
 
         The expression is evaluated on the owner's connection through the same
@@ -466,12 +450,12 @@ class GraphRunWorker:
                 allowed = await _stream_when_allows(task, owner)
             except Exception as exc:  # noqa: BLE001 - an error is a failure, not a skip
                 await self._finalize(
-                    job, task, run_id, owner, NodeState.FAILED, error=_safe_message(exc)
+                    job, task, run_id, lease, owner, NodeState.FAILED, error=_safe_message(exc)
                 )
                 return False
             if allowed:
                 return True
-            await self._finalize(job, task, run_id, owner, NodeState.SKIPPED)
+            await self._finalize(job, task, run_id, lease, owner, NodeState.SKIPPED)
             return False
         spec = TaskSpec(
             name=task["name"],
@@ -485,20 +469,23 @@ class GraphRunWorker:
             allowed = await self._executor.evaluate_when(expression, spec=spec, owner=owner)
         except Exception as exc:  # noqa: BLE001 - an error is a failure, not a skip
             message = _safe_message(exc)
-            await self._finalize(job, task, run_id, owner, NodeState.FAILED, error=message)
+            await self._finalize(job, task, run_id, lease, owner, NodeState.FAILED, error=message)
             return False
         if allowed:
             return True
-        await self._finalize(job, task, run_id, owner, NodeState.SKIPPED)
+        await self._finalize(job, task, run_id, lease, owner, NodeState.SKIPPED)
         return False
 
-    async def _execute_one(self, job: GraphRunJob, task: dict[str, Any], run_id: str) -> None:
+    async def _execute_one(
+        self, job: GraphRunJob, task: dict[str, Any], run_id: str, lease: int
+    ) -> None:
         owner = task.get("created_by")
         if not owner:
             await self._finalize(
                 job,
                 task,
                 run_id,
+                lease,
                 owner,
                 NodeState.FAILED,
                 error="task has no owner; delegate-first cannot run",
@@ -507,7 +494,7 @@ class GraphRunWorker:
 
         handler = task.get("handler") or "sql"
         if handler in SCRIPT_HANDLERS:
-            await self._execute_script(job, task, run_id, owner, handler)
+            await self._execute_script(job, task, run_id, lease, owner, handler)
             return
         if handler != "sql":
             from app.modules.task_orchestration.internal_handlers import run_internal_task
@@ -515,15 +502,16 @@ class GraphRunWorker:
             try:
                 await run_internal_task(task, job, run_id, self._executor, self._repository)
             except Exception as exc:
-                await self._finalize(job, task, run_id, owner, NodeState.FAILED,
-                                     error=_safe_message(exc))
+                await self._finalize(
+                    job, task, run_id, lease, owner, NodeState.FAILED, error=_safe_message(exc)
+                )
             else:
-                await self._finalize(job, task, run_id, owner, NodeState.SUCCESS)
+                await self._finalize(job, task, run_id, lease, owner, NodeState.SUCCESS)
             return
 
         body = task.get("definition") or ""
         if not body.strip():
-            await self._finalize(job, task, run_id, owner, NodeState.SKIPPED)
+            await self._finalize(job, task, run_id, lease, owner, NodeState.SKIPPED)
             return
 
         spec = TaskSpec(
@@ -537,16 +525,28 @@ class GraphRunWorker:
         )
 
         async def heartbeat() -> None:
-            await self._repository.mark_task_run_heartbeat(run_id)
-            await self._repository.mark_graph_run_heartbeat(job.graph_run_id)
+            await self._heartbeat(job, run_id, lease)
 
         try:
             result = await self._executor.execute(spec, owner, heartbeat=heartbeat)
+        except NodeOutcomeUnknown as exc:
+            await self._finalize(
+                job,
+                task,
+                run_id,
+                lease,
+                owner,
+                NodeState.ABANDONED,
+                query_id=exc.query_id,
+                error=str(exc),
+            )
+            return
         except NodeExecutionError as exc:
             await self._finalize(
                 job,
                 task,
                 run_id,
+                lease,
                 owner,
                 NodeState.FAILED,
                 query_id=exc.query_id,
@@ -558,7 +558,7 @@ class GraphRunWorker:
             # include the exception's repr if it could carry a secret; the
             # executor already redacts engine messages.
             await self._finalize(
-                job, task, run_id, owner, NodeState.FAILED, error=_safe_message(exc)
+                job, task, run_id, lease, owner, NodeState.FAILED, error=_safe_message(exc)
             )
             return
 
@@ -573,6 +573,7 @@ class GraphRunWorker:
             job,
             task,
             run_id,
+            lease,
             owner,
             state,
             query_id=result.query_id,
@@ -580,7 +581,13 @@ class GraphRunWorker:
         )
 
     async def _execute_script(
-        self, job: GraphRunJob, task: dict[str, Any], run_id: str, owner: str, handler: str
+        self,
+        job: GraphRunJob,
+        task: dict[str, Any],
+        run_id: str,
+        lease: int,
+        owner: str,
+        handler: str,
     ) -> None:
         """Run a SQL script or Python node; Nova executes it, not a native task."""
         spec = TaskSpec(
@@ -593,8 +600,7 @@ class GraphRunWorker:
         )
 
         async def heartbeat() -> None:
-            await self._repository.mark_task_run_heartbeat(run_id)
-            await self._repository.mark_graph_run_heartbeat(job.graph_run_id)
+            await self._heartbeat(job, run_id, lease)
 
         try:
             if handler == "python":
@@ -611,21 +617,34 @@ class GraphRunWorker:
                 )
         except NodeExecutionError as exc:
             await self._finalize(
-                job, task, run_id, owner, NodeState.FAILED, error=str(exc) or "task failed"
+                job, task, run_id, lease, owner, NodeState.FAILED, error=str(exc) or "task failed"
             )
             return
         except Exception as exc:  # noqa: BLE001 - any failure fails the node
             await self._finalize(
-                job, task, run_id, owner, NodeState.FAILED, error=_safe_message(exc)
+                job, task, run_id, lease, owner, NodeState.FAILED, error=_safe_message(exc)
             )
             return
-        await self._finalize(job, task, run_id, owner, NodeState.SUCCESS, output=output or "")
+        await self._finalize(
+            job, task, run_id, lease, owner, NodeState.SUCCESS, output=output or ""
+        )
+
+    async def _heartbeat(self, job: GraphRunJob, run_id: str, lease: int) -> None:
+        """Renew both leases; a lost lease stops this delivery's execution."""
+        node_held = await self._repository.heartbeat_task_run(run_id, generation=lease)
+        graph_held = job.generation is None or await self._repository.heartbeat_graph_run(
+            job.graph_run_id,
+            generation=job.generation,
+        )
+        if not node_held or not graph_held:
+            raise LeaseLost(run_id)
 
     async def _finalize(
         self,
         job: GraphRunJob,
         task: dict[str, Any],
         run_id: str,
+        lease: int,
         owner: str | None,
         state: NodeState,
         *,
@@ -644,14 +663,21 @@ class GraphRunWorker:
         audit unconditionally (the previous behaviour) produced a ``NODE_*``
         audit for a row this delivery no longer controlled.
         """
-        moved = await self._repository.transition_task_run(
-            run_id,
-            [NodeState.RUNNING.value],
-            state.value,
-            query_id=query_id,
-            error_message=error,
-            **({"output": output} if output is not None else {}),
-        )
+        if state is NodeState.ABANDONED:
+            # The engine outcome is unknown: end this lease and leave the node
+            # for native verification or operator reconciliation, never replay.
+            moved = await self._repository.abandon_task_run(
+                run_id, generation=lease, query_id=query_id, error_message=error,
+            )
+        else:
+            moved = await self._repository.finish_task_run(
+                run_id,
+                state.value,
+                generation=lease,
+                query_id=query_id,
+                error_message=error,
+                output=output,
+            )
         if not moved:
             logger.info(
                 "node run %s was not in 'running'; %s outcome not recorded by this delivery",
@@ -664,10 +690,13 @@ class GraphRunWorker:
     async def _settle(
         self, job: GraphRunJob, state: GraphState, *, reason: str | None = None
     ) -> None:
+        if job.generation is None:
+            raise RuntimeError("A graph run is settled only by the delivery that claimed it")
         moved = await self._repository.transition_graph_run(
             job.graph_run_id,
             [GraphState.PENDING.value, GraphState.RUNNING.value],
             state.value,
+            generation=job.generation,
         )
         if moved:
             logger.info("graph run %s settled as %s", job.graph_run_id, state.value)

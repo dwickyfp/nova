@@ -50,7 +50,7 @@ class ModelRuntime:
             alias,
             owner_name=owner_name,
             database_name=database_name,
-            **({"tenant": tenant} if tenant != "default" else {}),
+            tenant=tenant,
         )
         if row is None:
             raise ValueError(f"Model alias '{alias}' was not found in this scope")
@@ -121,7 +121,7 @@ class ModelRuntime:
             version,
             owner_name=owner_name,
             database_name=database_name,
-            **({"tenant": tenant} if tenant != "default" else {}),
+            tenant=tenant,
         )
         if metadata is None:
             raise ValueError(f"Model version '{model_id}:{version}' was not found")
@@ -192,7 +192,7 @@ class ModelRuntime:
             version,
             owner_name=owner_name,
             database_name=database_name,
-            **({"tenant": tenant} if tenant != "default" else {}),
+            tenant=tenant,
         )
         if metadata is None:
             raise ValueError(f"Model version '{model_id}:{version}' was not found")

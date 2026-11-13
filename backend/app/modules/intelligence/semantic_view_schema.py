@@ -1,67 +1,7 @@
-"""Metadata schema for schema-scoped, versioned Semantic Views."""
+"""Verify the migrated Intelligence metadata authority at startup."""
 
-from app.core.database import db
-
-SEMANTIC_VIEW_DDL = (
-    """
-CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS (
-    catalog_name VARCHAR(128) NOT NULL,
-    database_name VARCHAR(128) NOT NULL,
-    schema_name VARCHAR(128) NOT NULL,
-    name VARCHAR(128) NOT NULL,
-    id VARCHAR(64) NOT NULL,
-    owner_name VARCHAR(128) NOT NULL,
-    visibility VARCHAR(16),
-    active_version INT,
-    status VARCHAR(32) NOT NULL,
-    created_at DATETIME NOT NULL,
-    updated_at DATETIME NOT NULL,
-    news_enabled BOOLEAN,
-    news_config JSON,
-    news_updated_by VARCHAR(128),
-    news_updated_at DATETIME
-) PRIMARY KEY(catalog_name,database_name,schema_name,name)
-DISTRIBUTED BY HASH(catalog_name,database_name,schema_name,name) BUCKETS 1
-PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
-""",
-    """
-CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_SEMANTIC_VIEW_VERSIONS (
-    view_id VARCHAR(64) NOT NULL,
-    version INT NOT NULL,
-    definition JSON NOT NULL,
-    fingerprint VARCHAR(64) NOT NULL,
-    status VARCHAR(32) NOT NULL,
-    validation JSON,
-    created_at DATETIME NOT NULL,
-    validated_at DATETIME,
-    activated_at DATETIME
-) PRIMARY KEY(view_id,version)
-DISTRIBUTED BY HASH(view_id,version) BUCKETS 1
-PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
-""",
-)
-
-#: Columns added after the first release; existing deployments gain them at startup.
-SEMANTIC_VIEW_COLUMNS = (
-    "visibility VARCHAR(16)",
-    "news_enabled BOOLEAN",
-    "news_config JSON",
-    "news_updated_by VARCHAR(128)",
-    "news_updated_at DATETIME",
-)
+from app.core.metadata_runtime import metadata_db
 
 
 async def ensure_semantic_view_schema() -> None:
-    from app.modules.superset.semantic import MAPPING_DDL
-
-    for ddl in (*SEMANTIC_VIEW_DDL, MAPPING_DDL):
-        await db.execute_system(ddl)
-    for column in SEMANTIC_VIEW_COLUMNS:
-        try:
-            await db.execute_system(
-                f"ALTER TABLE NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS ADD COLUMN {column}"
-            )
-        except Exception as exc:
-            message = str(exc).lower()
-            if "already exists" not in message and "duplicate" not in message:
-                raise
+    await metadata_db().probe()

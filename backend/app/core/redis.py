@@ -11,6 +11,29 @@ from app.core.config import settings
 
 SESSION_PREFIX = "nova:session:"
 
+# Session existence, membership, revision and TTL change in one Redis operation.
+# A concurrent logout must never leave a new partial session behind.
+_SWITCH_ROLE = """
+if not redis.call('HGET', KEYS[1], 'username') then return -1 end
+local roles = redis.call('HGET', KEYS[1], 'assigned_roles')
+if not roles or roles == '' then roles = redis.call('HGET', KEYS[1], 'roles') or '' end
+local assigned = false
+for role in string.gmatch(roles, '[^,]+') do
+    if role == ARGV[1] then assigned = true end
+end
+if not assigned then return -2 end
+local revision = redis.call('HGET', KEYS[1], 'security_context_version') or '1'
+if not string.match(revision, '^[1-9]%d*$') then return -3 end
+if tonumber(revision) >= 9007199254740991 then return -3 end
+if redis.call('HEXISTS', KEYS[1], 'security_context_version') == 0 then
+    redis.call('HSET', KEYS[1], 'security_context_version', '1')
+end
+redis.call('HINCRBY', KEYS[1], 'security_context_version', 1)
+redis.call('HSET', KEYS[1], 'active_role', ARGV[1])
+redis.call('EXPIRE', KEYS[1], ARGV[2])
+return redis.call('HGET', KEYS[1], 'security_context_version')
+"""
+
 
 class SessionStore:
     """Redis session store for authenticated user sessions.
@@ -75,8 +98,9 @@ class SessionStore:
         if not raw:
             return None
         data: dict[str, Any] = {
-            key.decode() if isinstance(key, bytes) else key:
-            value.decode() if isinstance(value, bytes) else value
+            key.decode() if isinstance(key, bytes) else key: value.decode()
+            if isinstance(value, bytes)
+            else value
             for key, value in raw.items()
         }
         roles_value = data.get("assigned_roles") or data.get("roles", "")
@@ -84,9 +108,7 @@ class SessionStore:
         data["assigned_roles"] = list(data["roles"])
         data["default_role"] = data.get("default_role") or None
         data["active_role"] = data.get("active_role") or None
-        data["security_context_version"] = int(
-            data.get("security_context_version") or 1
-        )
+        data["security_context_version"] = int(data.get("security_context_version") or 1)
         return data
 
     async def set_active_role(self, session_id: str, active_role: str) -> int:
@@ -95,18 +117,15 @@ class SessionStore:
             raise RuntimeError("SessionStore not initialized. Call init() first.")
 
         key = f"{SESSION_PREFIX}{session_id}"
-        current = await self.get(session_id)
-        if not current or active_role not in current["assigned_roles"]:
-            raise ValueError("Role is not assigned to this session")
-        version = int(current.get("security_context_version") or 1) + 1
-        await self._redis.hset(
-            key,
-            mapping={
-                "active_role": active_role,
-                "security_context_version": str(version),
-            },
+        version = int(
+            await self._redis.eval(_SWITCH_ROLE, 1, key, active_role, settings.SESSION_TTL_SECONDS)
         )
-        await self._redis.expire(key, settings.SESSION_TTL_SECONDS)
+        if version == -1:
+            raise ValueError("Session is missing or expired")
+        if version == -2:
+            raise ValueError("Role is not assigned to this session")
+        if version < 1:
+            raise ValueError("Session security revision is invalid")
         return version
 
     async def delete(self, session_id: str) -> None:

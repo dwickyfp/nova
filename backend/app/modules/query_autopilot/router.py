@@ -7,7 +7,7 @@ from app.core.deps import get_current_user
 from app.core.role_gates import require_active_role
 from app.modules.monitoring.router import READ_ROLES
 from app.modules.query_autopilot.models import Candidate, Enrollment, Policy
-from app.modules.query_autopilot.repository import repository
+from app.modules.query_autopilot.repository import acting, repository, request_actor
 from app.modules.query_autopilot.service import AutopilotService, Conflict, public_record
 from app.modules.query_autopilot.telemetry import collector
 
@@ -52,14 +52,12 @@ class Mutation(BaseModel):
 
 @router.get("/overview")
 async def overview(user: Reader):
-    policy = await service.policy()
-    counts = {}
-    from app.core.database import db
-    from app.modules.query_autopilot.schema import TABLES
-
-    for kind in ("families", "incidents", "opportunities", "experiments", "actions"):
-        result = await db.execute_system(f"SELECT COUNT(*) FROM NOVA_SYSTEM.{TABLES[kind]}")
-        counts[kind] = int(result["rows"][0][0])
+    with acting(request_actor(user)):
+        policy = await service.policy()
+        counts = {
+            kind: await repository.count(kind)
+            for kind in ("families", "incidents", "opportunities", "experiments", "actions")
+        }
     return {
         "policy": policy,
         "counts": counts,
@@ -72,7 +70,8 @@ async def overview(user: Reader):
 
 @router.get("/policies")
 async def policy(user: Reader):
-    return await service.policy()
+    with acting(request_actor(user)):
+        return await service.policy()
 
 
 @router.put("/policies")
@@ -145,9 +144,10 @@ async def listing(
     family_id: str | None = None,
     cohort_id: str | None = None,
 ):
-    rows = await repository.page(
-        collection, after=after, limit=limit + 1, family_id=family_id, cohort_id=cohort_id
-    )
+    with acting(request_actor(user)):
+        rows = await repository.page(
+            collection, after=after, limit=limit + 1, family_id=family_id, cohort_id=cohort_id
+        )
     return {
         "items": [public_record(row) for row in rows[:limit]],
         "next_cursor": rows[limit - 1]["id"] if len(rows) > limit else None,
@@ -156,7 +156,8 @@ async def listing(
 
 @router.get("/{collection}/{identifier}")
 async def detail(collection: Collection, identifier: str, user: Reader):
-    record = await repository.get(collection, identifier)
+    with acting(request_actor(user)):
+        record = await repository.get(collection, identifier)
     if record is None:
         raise HTTPException(404, "Record not found")
     return public_record(record)

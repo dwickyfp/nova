@@ -1,36 +1,15 @@
-"""Migration Connector repository — source metadata + NOVA_SYSTEM persistence.
+"""Source-cluster schema observations for migration planning.
 
-Two responsibilities, deliberately in one layer because both are I/O:
-
-1. **Read source-cluster metadata** over a connection to the **registered
-   source** (``app.modules.migration.source``). Enumeration follows the NOVA-84
-   findings: tables/views from ``information_schema``, **materialized views from
-   ``information_schema.materialized_views``** (not ``tables``), tasks/pipes from
-   their own ``information_schema`` surfaces, functions from
-   ``SHOW FULL FUNCTIONS``. DDL is read through ``SHOW CREATE``; MV DDL uses
-   ``SHOW CREATE MATERIALIZED VIEW``.
-
-   QA Finding 1 (High): every read takes the open source connection. There is no
-   path that falls back to Nova's local system pool — an operator who registered
-   a remote source must never be shown the local engine's objects.
-
-2. **Persist registered source connections** in
-   ``NOVA_SYSTEM.CONFIG_MIGRATION_SOURCES``. The invariant is the same as
-   ``CONFIG_EXTERNAL_CATALOGS``: **no credential-bearing value is stored**. The
-   row carries the source *address* (host, port, username) and a *secret
-   reference* for the password; the value stays in the secret store and is
-   resolved at call time.
-
-Nothing here executes a migration.
+Enumeration and SHOW CREATE use an explicitly opened source connection. The
+only target-admin observation is the live backend count for replication sizing.
+Source registrations and jobs belong to the actor-bound PG metadata repository;
+startup only verifies its installed epoch.
 """
 
 from __future__ import annotations
 
-from uuid import uuid4
-
 import asyncmy
 import asyncmy.cursors
-from asyncmy.errors import ProgrammingError
 
 from app.core.config import settings
 
@@ -73,149 +52,23 @@ DISTRIBUTED BY HASH(id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 """
 
-#: Columns added after the first revision shipped. ``CREATE TABLE IF NOT EXISTS``
-#: cannot evolve an existing table, so they are added explicitly when absent
-#: (StarRocks rejects ``ADD COLUMN IF NOT EXISTS``; idempotency is the caller's
-#: job, same pattern as ``nova_system.migrate_task_orchestration_columns``).
-SOURCE_COLUMN_MIGRATIONS: tuple[tuple[str, str], ...] = (
-    ("host", "VARCHAR(256) NOT NULL DEFAULT ''"),
-    ("port", 'INT NOT NULL DEFAULT "9030"'),
-    ("username", 'VARCHAR(128) NOT NULL DEFAULT "root"'),
-    ("secret_ref", "VARCHAR(1024)"),
-)
-
-JOB_COLUMN_MIGRATIONS: tuple[tuple[str, str], ...] = (
-    ("session_fingerprint", 'VARCHAR(64) NOT NULL DEFAULT ""'),
-)
-
-
 class MigrationRepository:
-    """Source metadata reads + source-connection persistence."""
+    """Read source schemas and target engine capabilities."""
 
     @staticmethod
     async def _connect() -> asyncmy.Connection:
         return await asyncmy.connect(
             host=settings.STARROCKS_HOST,
             port=settings.STARROCKS_FE_MYSQL_PORT,
-            user="root",
-            password="",
+            user=settings.STARROCKS_ROOT_USER,
+            password=settings.STARROCKS_ROOT_PASSWORD,
             autocommit=True,
         )
 
     async def ensure_schema(self) -> None:
-        conn = await self._connect()
-        try:
-            async with conn.cursor() as cur:
-                await cur.execute(CONFIG_MIGRATION_SOURCES_DDL)
-                await cur.execute(CONFIG_MIGRATION_JOBS_DDL)
-                for column, column_type in SOURCE_COLUMN_MIGRATIONS:
-                    if await self._column_exists(cur, column):
-                        continue
-                    await cur.execute(
-                        f"ALTER TABLE NOVA_SYSTEM.CONFIG_MIGRATION_SOURCES "
-                        f"ADD COLUMN {column} {column_type}"
-                    )
-                for column, column_type in JOB_COLUMN_MIGRATIONS:
-                    await cur.execute(
-                        "SELECT COLUMN_NAME FROM information_schema.columns "
-                        "WHERE TABLE_SCHEMA = 'NOVA_SYSTEM' "
-                        "AND TABLE_NAME = 'CONFIG_MIGRATION_JOBS' AND COLUMN_NAME = %s",
-                        (column,),
-                    )
-                    if await cur.fetchall():
-                        continue
-                    try:
-                        await cur.execute(
-                            f"ALTER TABLE NOVA_SYSTEM.CONFIG_MIGRATION_JOBS "
-                            f"ADD COLUMN {column} {column_type}"
-                        )
-                    except ProgrammingError:
-                        await cur.execute(
-                            "SELECT COLUMN_NAME FROM information_schema.columns "
-                            "WHERE TABLE_SCHEMA = 'NOVA_SYSTEM' "
-                            "AND TABLE_NAME = 'CONFIG_MIGRATION_JOBS' AND COLUMN_NAME = %s",
-                            (column,),
-                        )
-                        if not await cur.fetchall():
-                            raise
-        finally:
-            conn.close()
+        from app.core.metadata_runtime import metadata_db
 
-    @staticmethod
-    async def _column_exists(cur: asyncmy.cursors.Cursor, column: str) -> bool:
-        await cur.execute(
-            "SELECT COLUMN_NAME FROM information_schema.columns "
-            "WHERE TABLE_SCHEMA = 'NOVA_SYSTEM' "
-            "AND TABLE_NAME = 'CONFIG_MIGRATION_SOURCES' AND COLUMN_NAME = %s",
-            (column,),
-        )
-        return bool(await cur.fetchall())
-
-    # ── Source connection registry ──────────────────────────────
-
-    _SELECT_COLUMNS = "id, name, host, port, username, secret_ref, comment, created_at, created_by"
-
-    async def list_sources(self) -> list[dict]:
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(
-                    f"SELECT {self._SELECT_COLUMNS} "
-                    "FROM NOVA_SYSTEM.CONFIG_MIGRATION_SOURCES ORDER BY name"
-                )
-                return [dict(row) for row in await cur.fetchall()]
-        finally:
-            conn.close()
-
-    async def get_source(self, name: str) -> dict | None:
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(
-                    f"SELECT {self._SELECT_COLUMNS} "
-                    "FROM NOVA_SYSTEM.CONFIG_MIGRATION_SOURCES WHERE name = %s",
-                    (name,),
-                )
-                row = await cur.fetchone()
-                return dict(row) if row else None
-        finally:
-            conn.close()
-
-    async def create_source(
-        self,
-        *,
-        name: str,
-        host: str,
-        port: int,
-        username: str,
-        secret_ref: str,
-        comment: str,
-        created_by: str,
-    ) -> dict:
-        conn = await self._connect()
-        try:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "INSERT INTO NOVA_SYSTEM.CONFIG_MIGRATION_SOURCES "
-                    "(id, name, host, port, username, secret_ref, comment, "
-                    "created_at, created_by) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), %s)",
-                    (
-                        str(uuid4()),
-                        name,
-                        host,
-                        port,
-                        username,
-                        secret_ref,
-                        comment,
-                        created_by,
-                    ),
-                )
-        finally:
-            conn.close()
-        created = await self.get_source(name)
-        assert created is not None
-        return created
+        await metadata_db().probe()
 
     async def target_replication_num(self) -> int | None:
         """The local engine's safe replication factor, or ``None`` if unknown.

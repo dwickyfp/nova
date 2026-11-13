@@ -29,6 +29,7 @@ from typing import Any, Literal
 import httpx
 
 from app.core.config import settings
+from app.core.metadata_scope import actor_for
 
 from .charts import (
     SUPERSET_VERSION,
@@ -509,4 +510,7 @@ async def may_publish(user: dict[str, Any]) -> bool:
     """Whether the active role is a BI author (checked apart from capability)."""
     from .access import SUPERSET_VIEWER, superset_role_for
 
-    return await superset_role_for(str(user.get("active_role") or "")) != SUPERSET_VIEWER
+    return (
+        await superset_role_for(str(user.get("active_role") or ""), actor=actor_for(user))
+        != SUPERSET_VIEWER
+    )

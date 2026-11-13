@@ -5,6 +5,10 @@
 > are flat tables in `NOVA_SYSTEM`; Redis holds runtime state and managed storage
 > holds object payloads. Inspect [bootstrap SQL](../docker/init-nova.sql), the
 > owning schema initialization, and [root contracts](../AGENTS.md).
+> The approved [production migration](architecture/production-refactor/ACCEPTANCE.md)
+> replaces this historical placement rule with PG17 after verified cutover.
+> Consult its [baseline](architecture/production-refactor/BASELINE_AUDIT.md) and
+> [migration state](architecture/production-refactor/TRACEABILITY.md) for progress.
 
 > All persistent state lives in StarRocks `NOVA_SYSTEM` database.
 > No SQLite, no PostgreSQL. Nova is a pure StarRocks application.

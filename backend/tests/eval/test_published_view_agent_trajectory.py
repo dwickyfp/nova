@@ -34,8 +34,8 @@ async def test_bound_published_view_trajectory_uses_consent_and_finishes(monkeyp
         columns=["total_revenue"], rows=[[100]], row_count=1, error=None,
     )])
     monkeypatch.setattr(semantic_view_service, "get_active_for_agent", get_active)
-    monkeypatch.setattr(agent_repository, "get_semantic_model", legacy_get)
-    monkeypatch.setattr(agent_repository, "list_verified_queries", legacy_vqr)
+    monkeypatch.setattr(agent_repository, "get_semantic_model", legacy_get, raising=False)
+    monkeypatch.setattr(agent_repository, "list_verified_queries", legacy_vqr, raising=False)
     monkeypatch.setattr(agent_repository, "record_semantic_usage", AsyncMock())
     monkeypatch.setattr(query_service, "execute_statements", execute)
 

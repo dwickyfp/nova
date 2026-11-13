@@ -69,6 +69,7 @@ export function ToolsRegistryPage() {
 
 function ToolsList() {
   const queryClient = useQueryClient()
+  const user = useAuthStore((state) => state.auth.user)
   const toolsQuery = useQuery({ queryKey: ['tools'], queryFn: () => toolsApi.list() })
 
   const toggle = useMutation({
@@ -79,6 +80,10 @@ function ToolsList() {
   })
 
   if (toolsQuery.isLoading) return <Skeleton className='mt-4 h-64 w-full' />
+  if (toolsQuery.isError) return (
+    <EmptyState variant='error' title='Could not load tools' description={toolsQuery.error.message}
+      action={<Button variant='outline' onClick={() => toolsQuery.refetch()}>Retry</Button>} />
+  )
 
   const tools = (toolsQuery.data?.tools ?? []).filter(
     (tool) => tool.source !== 'builtin'
@@ -104,7 +109,7 @@ function ToolsList() {
             <div className='flex items-center gap-2'>
               <span className='font-mono text-sm font-medium'>{tool.name}</span>
               <Badge variant='outline'>
-                {tool.source === 'mcp' ? 'MCP' : tool.source}
+                {tool.source.startsWith('mcp:') ? 'MCP' : tool.source}
               </Badge>
             </div>
             <p className='mt-1 text-sm text-muted-foreground'>{tool.description}</p>
@@ -112,6 +117,7 @@ function ToolsList() {
           <div className='flex shrink-0 items-center gap-2'>
             <Switch
               checked={tool.is_enabled}
+              disabled={toggle.isPending || (tool.owner_name !== user?.username && user?.activeRole !== 'ACCOUNTADMIN')}
               onCheckedChange={(v) => toggle.mutate({ id: tool.tool_id, enabled: v })}
               aria-label={`Enable ${tool.name}`}
             />
@@ -124,7 +130,7 @@ function ToolsList() {
 
 function McpServers() {
   const queryClient = useQueryClient()
-  const canManage = useAuthStore((state) => state.auth.user?.roles.includes('ACCOUNTADMIN') ?? false)
+  const canManage = useAuthStore((state) => state.auth.user?.activeRole === 'ACCOUNTADMIN')
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState({
     name: '',
@@ -188,10 +194,13 @@ function McpServers() {
           <Plus className='size-4' />
           Add MCP server
         </Button>
-      </div> : <p className='mb-4 text-sm text-muted-foreground'>MCP connectors are managed by your Nova administrator.</p>}
+      </div> : <p className='mb-4 text-sm text-muted-foreground'>Managing MCP connectors requires the active ACCOUNTADMIN role.</p>}
 
       {serversQuery.isLoading ? (
         <Skeleton className='h-40 w-full' />
+      ) : serversQuery.isError ? (
+        <EmptyState variant='error' title='Could not load MCP servers' description={serversQuery.error.message}
+          action={<Button variant='outline' onClick={() => serversQuery.refetch()}>Retry</Button>} />
       ) : servers.length === 0 ? (
         <EmptyState
           icon={Plug}

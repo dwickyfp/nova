@@ -102,8 +102,12 @@ class TestTrainingSqlIsGuarded:
     """The guard must run on training_sql exactly as it does on the worksheet."""
 
     async def test_blocked_statement_never_reaches_the_engine(self, service, monkeypatch):
-        cursor = RecordingCursor()
-        monkeypatch.setattr(service, "_connect", lambda: _async_return(_conn_with(cursor)))
+        from unittest.mock import AsyncMock
+
+        from app.modules.query import service as query_module
+
+        engine = AsyncMock()
+        monkeypatch.setattr(query_module.query_service, "execute", engine)
 
         with pytest.raises(ForbiddenSQLError):
             await service._prepare_user_sql(
@@ -111,7 +115,7 @@ class TestTrainingSqlIsGuarded:
             )
 
         # Nothing was executed — the guard fired before a connection was used.
-        assert cursor.executed == []
+        engine.assert_not_awaited()
 
     @pytest.mark.parametrize(
         "sql",
@@ -219,7 +223,7 @@ class TestNoCredentialMaterialEscapes:
             async def reserve_version(self, spec, *, feature_columns):
                 del feature_columns
                 captured["training_sql"] = spec.input_sql
-                return "model-1", 1
+                return "model-1", 1, "reservation-1"
 
             async def register_version(self, **kwargs):
                 return None

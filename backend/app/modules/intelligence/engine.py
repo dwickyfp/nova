@@ -48,6 +48,7 @@ from app.modules.intelligence.contracts import (
 )
 from app.modules.intelligence.cursors import read_cursor, write_cursor
 from app.modules.intelligence.engine_repository import intelligence_repository, metadata_lock
+from app.modules.intelligence.metadata_repository import user_actor
 from app.modules.intelligence.semantic_views import semantic_view_service
 from app.modules.ml_engine.analysis import detect_change, outcome_dimensions
 
@@ -678,7 +679,7 @@ class IntelligenceService:
             grant = await self._decision_grant(record_id, user)
             if grant:
                 record = await self.repository.shared_decision(
-                    record_id, grant["owner_name"], Decision
+                    record_id, grant["owner_name"], Decision, actor=user_actor(user)
                 )
                 if record is not None and revision is not None:
                     record = await self.repository.get(
@@ -2170,7 +2171,7 @@ class IntelligenceService:
         )
         from app.modules.access_control.business_policy import read_business_policy
 
-        current_policy = await read_business_policy()
+        current_policy = await read_business_policy(user)
         dimensions["policy_compliance"] = (
             (
                 decision.policy.policy_revision == current_policy.revision

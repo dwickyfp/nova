@@ -111,31 +111,22 @@ def test_native_role_unavailable_is_observed_but_cannot_be_enrolled():
         Enrollment.model_validate({**enrollment.model_dump(), "scope": observation.scope})
 
 
-async def test_audit_optional_metadata_upgrade_failure_keeps_original_audit(monkeypatch):
-    from asyncmy.errors import ProgrammingError
+async def test_audit_metadata_failure_does_not_fallback_or_claim_durable_telemetry(monkeypatch):
+    from app.common import audit
+    from app.core.metadata_db import MetadataUnavailable
 
-    from app.common.audit import write_audit_log
-
-    write = AsyncMock(
-        side_effect=[ProgrammingError(1054, "Unknown column 'nova_execution_id'"), {"affected": 1}]
-    )
-    monkeypatch.setattr("app.common.audit.db.execute_system", write)
-    token = EXECUTION.set(ExecutionIdentity())
+    write = AsyncMock(side_effect=MetadataUnavailable())
+    monkeypatch.setattr(audit, "_persist", write)
+    identity = ExecutionIdentity()
+    token = EXECUTION.set(identity)
     try:
-        query_id = await write_audit_log(
-            event_type="QUERY",
-            user_name="alice",
-            action="SELECT",
-            object_type="QUERY",
-            object_name="query",
-            status="SUCCESS",
-        )
-        assert query_id != EXECUTION.get().id
-        assert write.call_count == 2
-        legacy, args = write.call_args.args
-        assert "nova_execution_id" not in legacy
-        assert legacy.count("%s") == len(args)
-        assert args[0] == query_id
+        with pytest.raises(MetadataUnavailable):
+            await audit.write_audit_log(
+                event_type="QUERY", user_name="alice", action="SELECT", object_type="QUERY",
+                object_name="query", status="SUCCESS",
+            )
+        write.assert_awaited_once()
+        assert identity.audit_ids == []
     finally:
         EXECUTION.reset(token)
 
@@ -220,3 +211,50 @@ def test_policy_epoch_is_frozen_at_query_start_and_isolates_cohorts():
     assert later.scope.policy_revision == "3:59:2"
     assert earlier.family_id == later.family_id
     assert earlier.scope.cohort_id != later.scope.cohort_id
+
+
+@pytest.mark.parametrize("shutdown_drain", [False, True])
+async def test_process_collector_binds_service_identity_and_preserves_user_scope(
+    monkeypatch, shutdown_drain,
+):
+    import asyncio
+
+    from app.core.metadata_actor import acting_as, current_actor
+    from app.modules.access_control.security_context import SecurityContext
+    from app.modules.query_autopilot import runtime
+    from app.modules.query_autopilot.repository import TELEMETRY_ACTOR
+
+    caller = SecurityContext("caller", "ANALYST", session_id="login", security_context_version=8)
+    collector = Collector()
+    collector.observe(identity=ExecutionIdentity(), sql="SELECT 42", source="web",
+                      status="success", elapsed_ms=1,
+                      kwargs={"username": "caller", "role": "ANALYST",
+                              "security_context_version": 8})
+    stop = asyncio.Event()
+    if shutdown_drain:
+        stop.set()
+    observed = []
+
+    async def get_policy(*args):
+        assert current_actor() == TELEMETRY_ACTOR
+        return {}
+
+    async def save(batch):
+        assert current_actor() == TELEMETRY_ACTOR
+        observed.extend(batch)
+        stop.set()
+
+    repo = AsyncMock()
+    repo.get.side_effect = get_policy
+    repo.page.return_value = []
+    repo.observations.side_effect = save
+    monkeypatch.setattr(runtime, "current_policy_revision", AsyncMock(return_value="revision"))
+    with acting_as(caller):
+        async with asyncio.timeout(1):
+            await collector.run(stop, repo)
+        assert current_actor() == caller
+    assert collector.persisted == 1 and collector.failed_batches == 0
+    assert len(observed) == 1
+    assert observed[0].scope.principal == "caller"
+    assert observed[0].scope.active_role == "ANALYST"
+    assert observed[0].scope.security_context_version == 8

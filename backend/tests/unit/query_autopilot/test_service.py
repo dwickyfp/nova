@@ -17,6 +17,15 @@ class MemoryRepository:
         self.records = {}
         self.writes = []
 
+    @asynccontextmanager
+    async def transaction(self):
+        records, writes = deepcopy(self.records), deepcopy(self.writes)
+        try:
+            yield
+        except BaseException:
+            self.records, self.writes = records, writes
+            raise
+
     async def get(self, kind, identifier):
         return deepcopy(self.records.get((kind, identifier)))
 
@@ -42,6 +51,24 @@ class MemoryRepository:
 
     async def cleanup_before(self, kind, when):
         self.writes.append(("cleanup", kind, when))
+
+    async def purge_finished_jobs(self, when):
+        self.writes.append(("cleanup", "jobs", when))
+
+    async def claim_job(self, identifier, *, expected_version):
+        current = await self.get("jobs", identifier)
+        if current is None or current["version"] != expected_version:
+            return None
+        generation = current.get("claim_generation", 0) + 1
+        await self.put("jobs", identifier, {
+            **current, "state": "RUNNING", "version": expected_version + 1,
+            "claim_generation": generation,
+        }, expected_version=expected_version)
+        return generation
+
+    async def heartbeat_job(self, identifier, generation):
+        current = await self.get("jobs", identifier)
+        return bool(current and current.get("claim_generation") == generation)
 
 
 class Payloads:
@@ -170,6 +197,7 @@ async def setup(monkeypatch):
     user = {
         "username": "admin",
         "active_role": "ACCOUNTADMIN",
+        "assigned_roles": ["ACCOUNTADMIN"],
         "security_context_version": 1,
         "session_id": "session",
     }
@@ -239,6 +267,7 @@ async def test_retention_removes_payloads_but_keeps_decisions_and_hides_handles(
         "observations",
         "rollups",
         "baselines",
+        "jobs",
     }
     assert public_record({"id": "x", "actor_session_id": "secret", "payload_ref": "private"}) == {
         "id": "x"

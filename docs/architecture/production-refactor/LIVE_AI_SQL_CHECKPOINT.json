@@ -1,0 +1,332 @@
+{
+  "scope": "Pre-cutover live AI SQL; seven text functions; synthetic inputs only",
+  "application_tree_sha256": "39d8b7c5000eb1ab2e9b6a6e916c0112d75d93fb94a44e2fdfde0c0b25bbcacd",
+  "started_at": "2026-11-11T10:20:43.042639+00:00",
+  "attempts": [
+    {
+      "function_type": "complete",
+      "attempt": 1,
+      "sql": "SELECT AI_COMPLETE('Reply with the word ready.') AS answer",
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:20:44.662846+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "synthetic_output": "ready",
+      "duration_seconds": 3.71
+    },
+    {
+      "function_type": "complete",
+      "attempt": 2,
+      "sql": "SELECT AI_COMPLETE('Reply with the word ready.') AS answer",
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:20:48.372043+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "synthetic_output": "ready",
+      "duration_seconds": 0.8
+    },
+    {
+      "function_type": "complete",
+      "attempt": 3,
+      "sql": "SELECT AI_COMPLETE('Reply with the word ready.') AS answer",
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:20:49.173185+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "synthetic_output": "ready",
+      "duration_seconds": 0.23
+    },
+    {
+      "function_type": "sentiment",
+      "attempt": 1,
+      "sql": "SELECT AI_SENTIMENT('The delivery arrived early and I am happy.') AS answer",
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:20:49.600561+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "synthetic_output": "{\"sentiment\":\"positive\",\"confidence\":0.99}",
+      "duration_seconds": 3.07
+    },
+    {
+      "function_type": "sentiment",
+      "attempt": 2,
+      "sql": "SELECT AI_SENTIMENT('The delivery arrived early and I am happy.') AS answer",
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:20:52.669972+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "synthetic_output": "{\"sentiment\":\"positive\",\"confidence\":0.99}",
+      "duration_seconds": 0.19
+    },
+    {
+      "function_type": "sentiment",
+      "attempt": 3,
+      "sql": "SELECT AI_SENTIMENT('The delivery arrived early and I am happy.') AS answer",
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:20:52.863436+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "synthetic_output": "{\"sentiment\":\"positive\",\"confidence\":0.99}",
+      "duration_seconds": 0.1
+    },
+    {
+      "function_type": "classify",
+      "attempt": 1,
+      "sql": "SELECT AI_CLASSIFY('Please explain this charge.', 'billing,delivery,other') AS answer",
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:20:53.284056+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "synthetic_output": "billing",
+      "duration_seconds": 1.63
+    },
+    {
+      "function_type": "classify",
+      "attempt": 2,
+      "sql": "SELECT AI_CLASSIFY('Please explain this charge.', 'billing,delivery,other') AS answer",
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:20:54.914786+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "synthetic_output": "billing",
+      "duration_seconds": 0.1
+    },
+    {
+      "function_type": "classify",
+      "attempt": 3,
+      "sql": "SELECT AI_CLASSIFY('Please explain this charge.', 'billing,delivery,other') AS answer",
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:20:55.018160+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "synthetic_output": "billing",
+      "duration_seconds": 0.1
+    },
+    {
+      "function_type": "summarize",
+      "attempt": 1,
+      "sql": "SELECT AI_SUMMARIZE('Exactly 10 orders were shipped today. No orders remain pending.') AS answer",
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:20:55.283670+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "synthetic_output": "Exactly 10 orders were shipped today, and none are pending.",
+      "duration_seconds": 1.61
+    },
+    {
+      "function_type": "summarize",
+      "attempt": 2,
+      "sql": "SELECT AI_SUMMARIZE('Exactly 10 orders were shipped today. No orders remain pending.') AS answer",
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:20:56.898735+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "synthetic_output": "Exactly 10 orders were shipped today, and none are pending.",
+      "duration_seconds": 0.11
+    },
+    {
+      "function_type": "summarize",
+      "attempt": 3,
+      "sql": "SELECT AI_SUMMARIZE('Exactly 10 orders were shipped today. No orders remain pending.') AS answer",
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:20:57.005911+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "synthetic_output": "Exactly 10 orders were shipped today, and none are pending.",
+      "duration_seconds": 0.23
+    },
+    {
+      "function_type": "extract",
+      "attempt": 1,
+      "sql": "SELECT AI_EXTRACT('The total is 120.', '{\"type\":\"object\",\"properties\":{\"total\":{\"type\":\"number\"}}}') AS answer",
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:20:57.706381+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "synthetic_output": "{\"total\":120}",
+      "duration_seconds": 1.49
+    },
+    {
+      "function_type": "extract",
+      "attempt": 2,
+      "sql": "SELECT AI_EXTRACT('The total is 120.', '{\"type\":\"object\",\"properties\":{\"total\":{\"type\":\"number\"}}}') AS answer",
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:20:59.200574+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "synthetic_output": "{\"total\":120}",
+      "duration_seconds": 0.11
+    },
+    {
+      "function_type": "extract",
+      "attempt": 3,
+      "sql": "SELECT AI_EXTRACT('The total is 120.', '{\"type\":\"object\",\"properties\":{\"total\":{\"type\":\"number\"}}}') AS answer",
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:20:59.308458+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "synthetic_output": "{\"total\":120}",
+      "duration_seconds": 0.1
+    },
+    {
+      "function_type": "translate",
+      "attempt": 1,
+      "sql": "SELECT AI_TRANSLATE('Good morning', 'Indonesian') AS answer",
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:20:59.725831+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "synthetic_output": "Selamat pagi",
+      "duration_seconds": 2.54
+    },
+    {
+      "function_type": "translate",
+      "attempt": 2,
+      "sql": "SELECT AI_TRANSLATE('Good morning', 'Indonesian') AS answer",
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:21:02.268153+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "synthetic_output": "Selamat pagi",
+      "duration_seconds": 0.21
+    },
+    {
+      "function_type": "translate",
+      "attempt": 3,
+      "sql": "SELECT AI_TRANSLATE('Good morning', 'Indonesian') AS answer",
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:21:02.474887+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "synthetic_output": "Selamat pagi",
+      "duration_seconds": 0.09
+    },
+    {
+      "function_type": "filter",
+      "attempt": 1,
+      "sql": "SELECT AI_FILTER('My parcel arrived damaged.', 'mentions damage') AS answer",
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:21:03.030410+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "synthetic_output": "true",
+      "duration_seconds": 2.47
+    },
+    {
+      "function_type": "filter",
+      "attempt": 2,
+      "sql": "SELECT AI_FILTER('My parcel arrived damaged.', 'mentions damage') AS answer",
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:21:05.504688+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "synthetic_output": "true",
+      "duration_seconds": 0.19
+    },
+    {
+      "function_type": "filter",
+      "attempt": 3,
+      "sql": "SELECT AI_FILTER('My parcel arrived damaged.', 'mentions damage') AS answer",
+      "model": "cx/gpt-6-luna",
+      "started_at": "2026-11-11T10:21:05.692604+00:00",
+      "status": "PASS",
+      "http_status": 200,
+      "sql_succeeded": true,
+      "output_valid": true,
+      "synthetic_output": "true",
+      "duration_seconds": 0.09
+    }
+  ],
+  "temporary_aliases": [
+    {
+      "id": "ec4df46c-4229-4c5d-9192-20a7e91e5a47",
+      "function_type": "complete",
+      "deleted": true
+    },
+    {
+      "id": "b1a514cb-6ff5-4c27-ac5c-ffbafeac5b8b",
+      "function_type": "sentiment",
+      "deleted": true
+    },
+    {
+      "id": "874d8d52-b710-430d-a735-fcc0ecc101d1",
+      "function_type": "classify",
+      "deleted": true
+    },
+    {
+      "id": "ec8495b3-d4b5-41b5-a940-7286af1ae2fc",
+      "function_type": "summarize",
+      "deleted": true
+    },
+    {
+      "id": "6033f3b2-e85a-4439-8672-30bf6a9646f0",
+      "function_type": "extract",
+      "deleted": true
+    },
+    {
+      "id": "0daacfde-39b7-4b0a-9b2c-1830fc9391b7",
+      "function_type": "translate",
+      "deleted": true
+    },
+    {
+      "id": "5c9a5048-ca98-478a-9e1f-013b6fff8f9d",
+      "function_type": "filter",
+      "deleted": true
+    }
+  ],
+  "embedding": "OWNER_WAIVED",
+  "original_registration_restored": true,
+  "finished_at": "2026-11-11T10:21:07.073988+00:00",
+  "provider_invocation_evidence": {
+    "gateway_success_counters_after_run": {
+      "complete": 1,
+      "sentiment": 1,
+      "classify": 1,
+      "summarize": 1,
+      "extract": 1,
+      "translate": 1,
+      "filter": 1
+    },
+    "classification": "Seven initial provider calls; fourteen repeated SQL results served from engine cache. PASS entries verify SQL output only; this run does not prove three independent provider attempts per function."
+  }
+}

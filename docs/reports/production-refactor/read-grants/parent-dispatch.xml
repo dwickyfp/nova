@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="4" skipped="0" tests="5" time="1.695">
+    <testcase classname="tests.eval.test_read_grant_context" name="test_dispatch_and_prefetch_require_the_approving_context[changed0]" time="1.192" />
+    <testcase classname="tests.eval.test_read_grant_context" name="test_dispatch_and_prefetch_require_the_approving_context[changed1]" time="0.014">
+      <failure type="failure">Diagnostic content omitted; see the verification narrative.</failure>
+    </testcase>
+    <testcase classname="tests.eval.test_read_grant_context" name="test_dispatch_and_prefetch_require_the_approving_context[changed2]" time="0.016">
+      <failure type="failure">Diagnostic content omitted; see the verification narrative.</failure>
+    </testcase>
+    <testcase classname="tests.eval.test_read_grant_context" name="test_dispatch_and_prefetch_require_the_approving_context[changed3]" time="0.023">
+      <failure type="failure">Diagnostic content omitted; see the verification narrative.</failure>
+    </testcase>
+    <testcase classname="tests.eval.test_read_grant_context" name="test_dispatch_and_prefetch_require_the_approving_context[changed4]" time="0.015">
+      <failure type="failure">Diagnostic content omitted; see the verification narrative.</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

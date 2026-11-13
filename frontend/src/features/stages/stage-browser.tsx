@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { useAuthStore } from '@/stores/auth-store'
 import {
   AlertCircle,
   ArrowLeft,
@@ -45,6 +46,7 @@ type StageBrowserProps = {
 }
 
 export function StageBrowser({ stage, onBack }: StageBrowserProps) {
+  const securityEpoch = useAuthStore((state) => state.securityEpoch)
   const queryClient = useQueryClient()
   const [path, setPath] = useState<string[]>([])
   const [uploadOpen, setUploadOpen] = useState(false)
@@ -57,7 +59,7 @@ export function StageBrowser({ stage, onBack }: StageBrowserProps) {
   const prefix = path.join('/')
 
   const filesQuery = useQuery({
-    queryKey: ['stage-files', stage.id, prefix],
+    queryKey: ['stage-files', stage.id, securityEpoch, prefix],
     queryFn: () => fetchStageFiles(stage.id, prefix),
   })
 

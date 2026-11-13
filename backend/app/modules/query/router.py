@@ -348,6 +348,8 @@ async def get_query_context(user: CurrentUser):
         username=user["username"],
         encrypted_password=user["encrypted_password"],
         active_role=_resolve_active_role(user),
+        session_id=user.get("session_id"),
+        security_context_version=int(user.get("security_context_version") or 1),
     )
 
 

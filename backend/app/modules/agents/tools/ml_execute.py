@@ -157,6 +157,7 @@ class MLExecuteTool:
                         role=user.get("active_role"),
                         tenant=user.get("tenant", "default"),
                         security_context_version=user.get("security_context_version", 1),
+                        session_id=user.get("session_id"),
                     ),
                     mode=MLMode(str(arguments.get("mode") or "interactive")),
                     persist=bool(arguments.get("persist", False)),

@@ -143,18 +143,19 @@ async def test_external_catalogs_go_to_write_back(caller, monkeypatch):
 
 
 @pytest.fixture
-def stages(monkeypatch):
+def stages(monkeypatch, fake_metadata_db):
     uploads, checks, audits = [], [], []
 
     from app.modules.stages import access, service
-
-    async def list_stages():
-        return [{"id": "st-1", "name": "landing", "database_name": "raw", "schema_name": "files"},
-                {"id": "st-2", "name": "dup", "database_name": "a", "schema_name": "x"},
-                {"id": "st-3", "name": "dup", "database_name": "b", "schema_name": "x"}]
+    from tests.unit.stage_metadata_fakes import install_stages
+    install_stages(monkeypatch, [
+        {"id": "st-1", "name": "landing", "database_name": "raw", "schema_name": "files"},
+        {"id": "st-2", "name": "dup", "database_name": "a", "schema_name": "x"},
+        {"id": "st-3", "name": "dup", "database_name": "b", "schema_name": "x"},
+    ])
 
     async def upload(stage_id, filename, content):
-        uploads.append((stage_id, filename, content))
+        uploads.append((stage_id["id"], filename, content))
 
     async def check(stage, *, action, username, active_role, **kwargs):
         checks.append((stage["id"], action, username, active_role))
@@ -164,9 +165,8 @@ def stages(monkeypatch):
     async def audit(**kwargs):
         audits.append(kwargs)
 
-    monkeypatch.setattr(service.stage_service, "list_stages", list_stages)
     monkeypatch.setattr(service.stage_service, "upload_file", upload)
-    monkeypatch.setattr(access, "check_stage_access", check)
+    monkeypatch.setattr("app.modules.stages.metadata_service.check_stage_access", check)
     monkeypatch.setattr("app.common.audit.write_audit_log", audit)
     return uploads, checks, audits
 

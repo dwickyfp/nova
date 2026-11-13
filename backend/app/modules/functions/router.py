@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,6 +12,7 @@ from app.modules.functions.schemas import (
 from app.modules.functions.service import function_service
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 #: ``Annotated`` dependency aliases (the convention used across the tree); a
 #: ``Depends()`` in an argument default trips ruff B008. UDF DDL runs on the
@@ -45,7 +47,10 @@ async def list_udfs(
             database=database
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list UDFs: {e}") from e
+        logger.warning("UDF listing failed: %s", type(e).__name__)
+        raise HTTPException(
+            status_code=503, detail="User-defined functions are unavailable right now",
+        ) from e
     return UDFListResponse(
         functions=functions, count=len(functions), databases=databases
     )
@@ -73,6 +78,11 @@ async def drop_udf(
     """Drop a user-defined function as the caller."""
     try:
         sql = await function_service.drop_udf(database, name, conn)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to drop UDF: {e}") from e
+        logger.warning("UDF drop failed: %s", type(e).__name__)
+        raise HTTPException(status_code=500, detail="The function could not be dropped") from e
     return {"message": f"Function {database}.{name} dropped", "sql": sql}

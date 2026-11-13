@@ -1,0 +1,164 @@
+{
+  "commit": "c71ba4b1aecfe59cd4780af5fd40e8fc215c0046",
+  "url": "https://github.com/dwickyfp/nova/actions/runs/43128671399",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "name": "Superset integration (image build, unit tests)",
+      "conclusion": "success"
+    },
+    {
+      "name": "Backend unit (L1)",
+      "conclusion": "success"
+    },
+    {
+      "name": "PostgreSQL 17 metadata boundaries",
+      "conclusion": "success"
+    },
+    {
+      "name": "Frontend (lint, build, vitest)",
+      "conclusion": "success"
+    },
+    {
+      "name": "Backend static (ruff, mypy)",
+      "conclusion": "success"
+    },
+    {
+      "name": "Grammar drift (ANTLR regenerate-and-diff)",
+      "conclusion": "success"
+    },
+    {
+      "name": "Notebook runtime image (build, kernel tests)",
+      "conclusion": "success"
+    },
+    {
+      "name": "Backend integration (L3, real engine)",
+      "conclusion": "success"
+    }
+  ],
+  "metadata": {
+    "tests": 486,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 486,
+    "artifact_sha256": "17a93844899266105de78b7a6f02d8815e090d89cb7626a9ee40f7d691503929",
+    "time_seconds": 289.388
+  },
+  "engine": {
+    "tests": 241,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 24,
+    "passed": 217,
+    "artifact_sha256": "a7efdc6b92f370e5f98c07a13f799f8b53dcc5c33b57c82bd310023b7c4b569f",
+    "time_seconds": 1360.336,
+    "skips": [
+      {
+        "test": "test_custom_sql_tools_insert_select_update_delete_on_scoped_engine_user",
+        "reason": "Set NOVA_CUSTOM_SQL_LIVE=1 for the isolated custom-tool engine test"
+      },
+      {
+        "test": "test_real_provider_uses_two_temporary_custom_sql_tools",
+        "reason": "Set NOVA_CUSTOM_SQL_LLM_LIVE=1 and NOVA_CUSTOM_SQL_LLM_PORT for the live provider probe"
+      },
+      {
+        "test": "test_release_pins_keep_live_principal_role_masks_and_revocation",
+        "reason": "Requires initialized isolated patched-FE/Ranger installation; see acceptance notes"
+      },
+      {
+        "test": "test_missions_resources_replay_and_role_version_boundaries",
+        "reason": "Requires initialized isolated patched-FE/Ranger installation; see acceptance notes"
+      },
+      {
+        "test": "test_automatic_investigation_resume_keeps_exact_pins_and_live_authorization",
+        "reason": "Requires initialized isolated patched-FE/Ranger installation; see acceptance notes"
+      },
+      {
+        "test": "test_production_scoring_is_bound_scoped_and_cannot_replay_mutations",
+        "reason": "Requires initialized isolated patched-FE/Ranger installation; see acceptance notes"
+      },
+      {
+        "test": "test_actions_require_review_consent_verify_schedule_and_live_authorization",
+        "reason": "Requires initialized isolated patched-FE/Ranger installation; see acceptance notes"
+      },
+      {
+        "test": "test_lifecycle_rechecks_same_role_principals_masks_and_revocation",
+        "reason": "Requires an isolated patched-FE Ranger acceptance installation"
+      },
+      {
+        "test": "test_function_detail_is_reconstructable_and_runs",
+        "reason": "engine has UDFs disabled (enable_udf=false)"
+      },
+      {
+        "test": "test_plan_blocks_objects_without_definition",
+        "reason": "engine does not support CREATE TASK"
+      },
+      {
+        "test": "test_batch_executes_in_standalone_worker_across_two_clusters",
+        "reason": "set NOVA_MIGRATION_SOURCE_PORT to opt in to cross-cluster migration"
+      },
+      {
+        "test": "test_planning_verifies_only_what_ranger_lets_the_role_read",
+        "reason": "Creates a user, a role and a Ranger policy on a patched FE; opt in explicitly"
+      },
+      {
+        "test": "test_profiles_and_sketches_see_only_the_callers_rows",
+        "reason": "Creates users, a role and Ranger policies on a patched FE; opt in explicitly"
+      },
+      {
+        "test": "test_frontend_ranger_managed_role_and_strict_rejection",
+        "reason": "Requires isolated patched StarRocks/Ranger fixture: NOVA_FRONTEND_RANGER_URL and NOVA_FRONTEND_RANGER_TOKEN (security-admin session)"
+      },
+      {
+        "test": "test_shared_data_update_delete_and_repeated_insert_commit",
+        "reason": "Start docker-compose.shared-data.test.yml and set NOVA_SHARED_DATA_PORT"
+      },
+      {
+        "test": "test_shared_data_update_delete_rollback",
+        "reason": "Start docker-compose.shared-data.test.yml and set NOVA_SHARED_DATA_PORT"
+      },
+      {
+        "test": "test_committed_transaction_is_distinct_from_visible_data",
+        "reason": "Requires an isolated FE with delayed publication"
+      },
+      {
+        "test": "test_expired_label_cannot_overwrite_durable_claim",
+        "reason": "Requires disposable FE with label_clean_interval_second=1"
+      },
+      {
+        "test": "test_superset_phase_1_acceptance",
+        "reason": "Requires a governed Nova stack with Superset: NOVA_SUPERSET_URL and NOVA_SUPERSET_SERVICE_TOKEN"
+      },
+      {
+        "test": "test_superset_phases_3_and_4_acceptance",
+        "reason": "Requires a governed Nova stack with Superset: NOVA_SUPERSET_URL and NOVA_SUPERSET_SERVICE_TOKEN"
+      },
+      {
+        "test": "test_superset_phase_2_acceptance",
+        "reason": "Set NOVA_SUPERSET_WORKER_CONTAINER"
+      },
+      {
+        "test": "test_superset_phase_6_acceptance",
+        "reason": "Requires a governed Nova stack with Superset: NOVA_SUPERSET_URL and NOVA_SUPERSET_SERVICE_TOKEN"
+      },
+      {
+        "test": "test_superset_phase_5_semantics_and_backup_acceptance",
+        "reason": "Set NOVA_BACKEND_CONTAINER and NOVA_SUPERSET_DB_CONTAINER"
+      },
+      {
+        "test": "test_superset_phase_5_metrics_acceptance",
+        "reason": "Set NOVA_PROMETHEUS_URL and NOVA_GRAFANA_URL"
+      }
+    ]
+  },
+  "metadata_log_scan": {
+    "lines": 77,
+    "matches": {
+      "credential_canary": 0,
+      "encrypted_credential": 0
+    },
+    "passed": true
+  },
+  "limits": "Unpatched disposable CI engine: skipped cases remain outside passing evidence. Governed stack, live AI, external fault tests and full release acceptance are not established by these eight green jobs."
+}

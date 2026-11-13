@@ -10,6 +10,7 @@ from jose import JWTError
 from app.common.news_entitlement import is_news_enabled
 from app.common.user_flags import is_must_change_password
 from app.core.deps import get_current_user
+from app.core.metadata_scope import actor_for
 from app.core.redis import session_store
 from app.core.security import create_access_token, decode_renewable_token, decrypt_password
 from app.modules.auth.profile import ProfileFields, ProfileResponse, get_profile, save_profile
@@ -33,7 +34,7 @@ CurrentUser = Annotated[dict, Depends(get_current_user)]
 
 @router.get("/profile", response_model=ProfileResponse)
 async def read_profile(user: CurrentUser) -> ProfileResponse:
-    return await get_profile(user["username"])
+    return await get_profile(user)
 
 
 @router.put("/profile", response_model=ProfileResponse)
@@ -80,6 +81,7 @@ async def change_password(
         current_password=req.current_password,
         new_password=req.new_password,
         confirm_password=req.confirm_password,
+        actor=actor_for(user),
     )
     return result
 
@@ -125,6 +127,10 @@ async def get_me(user: CurrentUser):
     ``must_change_password`` is read here too, so a reload after a forced-change
     login cannot skip the requirement by going straight to a route.
     """
+    try:
+        actor = actor_for(user)
+    except HTTPException:
+        actor = None  # no valid active role: no flag can be read for this session
     return SessionInfo(
         username=user["username"],
         roles=user["roles"],
@@ -133,8 +139,8 @@ async def get_me(user: CurrentUser):
         active_role=user.get("active_role"),
         security_context_version=user.get("security_context_version", 1),
         session_id=user["session_id"],
-        must_change_password=await is_must_change_password(user["username"]),
-        news_enabled=await is_news_enabled(user["username"]),
+        must_change_password=actor is not None and await is_must_change_password(actor),
+        news_enabled=actor is not None and await is_news_enabled(user["username"], actor),
     )
 
 

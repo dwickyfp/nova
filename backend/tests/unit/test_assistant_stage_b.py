@@ -16,6 +16,7 @@ Coverage mirrors the spec's acceptance criteria for T-B1/T-B2/T-B3:
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import pytest
@@ -41,6 +42,7 @@ from app.modules.assistant.tools import (
     ToolOutcome,
     ToolRegistry,
 )
+from tests.unit.test_assistant_consent_ownership import _signed_in
 
 # ── Fakes ────────────────────────────────────────────────────────────────────
 
@@ -140,6 +142,81 @@ def _tool_call_statuses(frames: list[str]) -> list[str]:
     means a prompt is open.
     """
     return [_frame_data(f).get("status") for f in frames if _frame_event(f) == "tool_call"]
+
+
+@pytest.mark.parametrize("decision", [True, False, None])
+async def test_pending_card_accepts_an_immediate_decision(decision):
+    broker = ConsentBroker()
+    tool = StubTool()
+    registry = ToolRegistry()
+    registry.register(tool)
+    provider = FakeProvider([
+        {"role": "assistant", "content": "", "tool_calls": [_tool_call("immediate")]},
+        {"role": "assistant", "content": "done"},
+    ])
+
+    def prepare(invocation, classification):
+        future = broker.open(
+            invocation.tool_call_id, thread_id="t1", user=_signed_in("alice"),
+            classification=classification,
+        )
+        return future
+
+    loop = AssistantLoop(provider=provider, registry=registry)
+    frames = []
+    async for frame in loop.run(
+        thread=_thread(), user_content="SELECT 1", context=LoopContext(user_name="alice"),
+        resolve_consent=prepare,
+    ):
+        frames.append(frame)
+        if _frame_event(frame) == "tool_call" and _frame_data(frame)["status"] == "pending":
+            # Do not advance the generator before acting on the visible card.
+            call_id = _frame_data(frame)["tool_call_id"]
+            assert call_id != "immediate"
+            assert broker.owner_of(call_id, user=_signed_in("alice")) == ("t1", "alice")
+            assert tool.invocations == []
+            assert broker.resolve(call_id, decision, user=_signed_in("alice"))
+    assert len(tool.invocations) == (1 if decision is True else 0)
+    assert broker.owner_of(call_id, user=_signed_in("alice")) is None
+    assert any(_frame_event(frame) == "done" for frame in frames)
+
+
+async def test_closing_at_pending_card_cancels_prepared_consent():
+    future = asyncio.get_running_loop().create_future()
+    tool = StubTool()
+    registry = ToolRegistry()
+    registry.register(tool)
+    provider = FakeProvider([
+        {"role": "assistant", "content": "", "tool_calls": [_tool_call("cancel")]},
+    ])
+    loop = AssistantLoop(provider=provider, registry=registry)
+    stream = loop.run(
+        thread=_thread(), user_content="SELECT 1", context=LoopContext(user_name="alice"),
+        resolve_consent=lambda *_: future,
+    )
+    async for frame in stream:
+        if _frame_event(frame) == "tool_call":
+            await stream.aclose()
+            break
+    assert future.cancelled()
+    assert tool.invocations == []
+
+
+async def test_cancelled_consent_is_removed_without_touching_reused_call_id():
+    broker = ConsentBroker()
+    cancelled = broker.open("reused", thread_id="t1", user=_signed_in("alice"))
+    cancelled.cancel()
+    await asyncio.sleep(0)
+    assert broker.owner_of("reused", user=_signed_in("alice")) is None
+
+    completed = broker.open("reused", thread_id="t1", user=_signed_in("alice"))
+    assert broker.resolve("reused", True, user=_signed_in("alice"))
+    replacement = broker.open("reused", thread_id="t2", user=_signed_in("bob"))
+    await completed
+    await asyncio.sleep(0)
+    assert broker.owner_of("reused", user=_signed_in("bob")) == ("t2", "bob")
+    assert not replacement.done()
+    broker.cancel_all()
 
 
 # ── Event contract ───────────────────────────────────────────────────────────
@@ -935,26 +1012,26 @@ def test_chat_endpoint_composition_matches_ai_functions():
 
 async def test_consent_broker_resolves_a_waiting_future():
     broker = ConsentBroker()
-    future = broker.open("c1", thread_id="t1", user_name="alice")
-    assert broker.thread_for("c1") == "t1"
-    assert broker.owner_of("c1") == ("t1", "alice")
-    assert broker.resolve("c1", True, user_name="alice") is True
+    future = broker.open("c1", thread_id="t1", user=_signed_in("alice"))
+    assert broker.thread_for("c1", user=_signed_in("alice")) == "t1"
+    assert broker.owner_of("c1", user=_signed_in("alice")) == ("t1", "alice")
+    assert broker.resolve("c1", True, user=_signed_in("alice")) is True
     assert await future is True
-    assert broker.resolve("c1", True, user_name="alice") is False
+    assert broker.resolve("c1", True, user=_signed_in("alice")) is False
 
 
 async def test_consent_broker_cancels_all_on_shutdown():
     broker = ConsentBroker()
-    future = broker.open("c1", thread_id="t1", user_name="alice")
+    future = broker.open("c1", thread_id="t1", user=_signed_in("alice"))
     broker.cancel_all()
     assert await future is None
 
 
 async def test_consent_broker_forgets_the_thread_once_resolved():
     broker = ConsentBroker()
-    broker.open("c1", thread_id="t1", user_name="alice")
-    broker.resolve("c1", True, user_name="alice")
-    assert broker.thread_for("c1") is None
+    broker.open("c1", thread_id="t1", user=_signed_in("alice"))
+    broker.resolve("c1", True, user=_signed_in("alice"))
+    assert broker.thread_for("c1", user=_signed_in("alice")) is None
 
 
 # ── NOVA-121: a duplicate tool_call_id must not clobber a pending entry ──────
@@ -963,38 +1040,38 @@ async def test_consent_broker_forgets_the_thread_once_resolved():
 async def test_consent_broker_rejects_a_duplicate_tool_call_id():
     """The second ``open`` for a pending id raises and touches nothing."""
     broker = ConsentBroker()
-    first = broker.open("dup", thread_id="t1", user_name="alice")
+    first = broker.open("dup", thread_id="t1", user=_signed_in("alice"))
 
     with pytest.raises(ConsentConflictError):
-        broker.open("dup", thread_id="t2", user_name="bob")
+        broker.open("dup", thread_id="t2", user=_signed_in("bob"))
 
     # The first entry is intact — same owner, same future.
-    assert broker.owner_of("dup") == ("t1", "alice")
-    assert broker.resolve("dup", True, user_name="alice") is True
+    assert broker.owner_of("dup", user=_signed_in("alice")) == ("t1", "alice")
+    assert broker.resolve("dup", True, user=_signed_in("alice")) is True
     assert await first is True
 
 
 async def test_duplicate_open_does_not_orphan_the_first_future():
     """The original future must still resolve — not hang to the loop budget."""
     broker = ConsentBroker()
-    first = broker.open("dup", thread_id="t1", user_name="alice")
+    first = broker.open("dup", thread_id="t1", user=_signed_in("alice"))
     with pytest.raises(ConsentConflictError):
-        broker.open("dup", thread_id="t1", user_name="alice")
+        broker.open("dup", thread_id="t1", user=_signed_in("alice"))
 
     assert first.done() is False
-    broker.resolve("dup", False, user_name="alice")
+    broker.resolve("dup", False, user=_signed_in("alice"))
     assert await first is False
 
 
 async def test_clashing_id_is_reusable_once_the_first_entry_is_gone():
     """The conflict is only while pending; a resolved id can be opened again."""
     broker = ConsentBroker()
-    broker.open("reuse", thread_id="t1", user_name="alice")
-    broker.resolve("reuse", True, user_name="alice")
+    broker.open("reuse", thread_id="t1", user=_signed_in("alice"))
+    broker.resolve("reuse", True, user=_signed_in("alice"))
 
-    second = broker.open("reuse", thread_id="t2", user_name="bob")
-    assert broker.owner_of("reuse") == ("t2", "bob")
-    assert broker.resolve("reuse", True, user_name="bob") is True
+    second = broker.open("reuse", thread_id="t2", user=_signed_in("bob"))
+    assert broker.owner_of("reuse", user=_signed_in("bob")) == ("t2", "bob")
+    assert broker.resolve("reuse", True, user=_signed_in("bob")) is True
     assert await second is True
 
 
@@ -1004,23 +1081,23 @@ async def test_clashing_id_is_reusable_once_the_first_entry_is_gone():
 async def test_foreign_user_cannot_resolve_someone_elses_tool_call():
     """A non-owner must not approve or deny another user's pending call."""
     broker = ConsentBroker()
-    victim = broker.open("victim-call", thread_id="alice-thread", user_name="alice")
+    victim = broker.open("victim-call", thread_id="alice-thread", user=_signed_in("alice"))
 
     # Bob, a different authenticated user, tries to approve it.
-    assert broker.resolve("victim-call", True, user_name="bob") is False
+    assert broker.resolve("victim-call", True, user=_signed_in("bob")) is False
     assert victim.done() is False  # the entry is left for the real owner
 
     # Alice can still resolve it afterwards.
-    assert broker.resolve("victim-call", True, user_name="alice") is True
+    assert broker.resolve("victim-call", True, user=_signed_in("alice")) is True
     assert await victim is True
 
 
 async def test_foreign_deny_does_not_terminate_the_owners_call():
     broker = ConsentBroker()
-    victim = broker.open("victim-call", thread_id="alice-thread", user_name="alice")
-    assert broker.resolve("victim-call", False, user_name="mallory") is False
+    victim = broker.open("victim-call", thread_id="alice-thread", user=_signed_in("alice"))
+    assert broker.resolve("victim-call", False, user=_signed_in("mallory")) is False
     assert victim.done() is False
-    assert broker.resolve("victim-call", True, user_name="alice") is True
+    assert broker.resolve("victim-call", True, user=_signed_in("alice")) is True
     assert await victim is True
 
 

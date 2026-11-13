@@ -387,7 +387,7 @@ async def evaluate_outcome(
 @router.get("/business-policy", response_model=BusinessPolicy)
 async def get_business_policy(user: CurrentUser):
     Scope.from_user(user)
-    return await read_business_policy()
+    return await read_business_policy(user)
 
 
 @router.get("/effectiveness")
@@ -464,7 +464,7 @@ async def decision_policy_status(
             "decisions", decision_id, user, mission_id=mission_id
         ) if mission_id else await intelligence_service.get("decisions", decision_id, user)
     )
-    policy = await read_business_policy()
+    policy = await read_business_policy(user)
     return {
         "current": bool(decision.policy and decision.policy.policy_revision == policy.revision),
         "policy_revision": policy.revision,

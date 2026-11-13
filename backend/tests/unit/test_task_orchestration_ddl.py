@@ -9,8 +9,8 @@ credential-bearing column name.
 from __future__ import annotations
 
 import inspect
-import json
 import re
+from unittest.mock import AsyncMock
 
 import pytest
 from asyncmy.errors import ProgrammingError
@@ -34,9 +34,11 @@ EXPECTED_TABLES = {
 
 
 def _declared_tables() -> set[str]:
-    return set(re.findall(r"CREATE TABLE IF NOT EXISTS NOVA_SYSTEM\.(\w+)", "\n".join(
-        TASK_ORCHESTRATION_DDL
-    )))
+    return set(
+        re.findall(
+            r"CREATE TABLE IF NOT EXISTS NOVA_SYSTEM\.(\w+)", "\n".join(TASK_ORCHESTRATION_DDL)
+        )
+    )
 
 
 class TestDdlStatements:
@@ -45,8 +47,8 @@ class TestDdlStatements:
 
     def test_every_statement_is_create_table_if_not_exists(self):
         for ddl in TASK_ORCHESTRATION_DDL:
-            assert ddl.strip().upper().startswith(
-                "CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASK"
+            assert (
+                ddl.strip().upper().startswith("CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASK")
             ), ddl[:80]
 
     def test_every_table_is_a_primary_key_table(self):
@@ -56,7 +58,7 @@ class TestDdlStatements:
 
     def test_every_table_uses_buckets_one_and_persistent_index(self):
         for ddl in TASK_ORCHESTRATION_DDL:
-            assert 'DISTRIBUTED BY HASH(' in ddl
+            assert "DISTRIBUTED BY HASH(" in ddl
             assert "BUCKETS 1" in ddl
             assert '"enable_persistent_index"="true"' in ddl
 
@@ -126,9 +128,9 @@ class TestRepositoryNeverSelectsCredentialColumns:
             "NOVA_SYSTEM.CONFIG_TASK_RUNS",
         }
 
-    def test_wal_marks_encoder_rejects_nothing_and_emits_valid_json(self):
-        encoded = repo.TaskOrchestrationRepository._encode_wal_marks({"p1": 1, "p2": 2})
-        assert json.loads(encoded) == {"p1": 1, "p2": 2}
+    def test_jsonb_wal_marks_preserve_partition_offsets(self):
+        decode = repo.TaskOrchestrationRepository._decode_wal_marks
+        assert decode({"p1": 1, "p2": 2}) == {"p1": 1, "p2": 2}
 
     def test_wal_marks_decoder_tolerates_corrupt_values(self):
         decode = repo.TaskOrchestrationRepository._decode_wal_marks
@@ -139,28 +141,41 @@ class TestRepositoryNeverSelectsCredentialColumns:
 
 
 class TestUpdateColumnWhitelist:
-    """The SET clause interpolates keys, so keys must be validated before writing."""
+    async def test_accepts_whitelisted_columns_with_the_read_revision(
+        self, monkeypatch, fake_metadata_db
+    ):
+        store = AsyncMock()
+        store.get_task.return_value = {"id": "task", "version": 4}
+        store.update_task.return_value = {
+            "id": "task",
+            "version": 5,
+            "name": "x",
+            "timezone": "UTC",
+        }
+        monkeypatch.setattr(repo, "TaskMetadataRepository", lambda connection, actor: store)
+        result = await repo.TaskOrchestrationRepository().update_task(
+            "task", {"name": "x", "timezone": "UTC"}
+        )
+        assert result["version"] == 5
+        store.update_task.assert_awaited_once_with(
+            "task", {"name": "x", "timezone": "UTC"}, expected_version=4
+        )
+        assert len(fake_metadata_db.committed) == 1
 
-    def test_accepts_whitelisted_columns(self):
-        clause, values = repo._assignments("task", {"name": "x", "timezone": "UTC"})
-        assert clause == "name = %s, timezone = %s"
-        assert values == ["x", "UTC"]
-
-    def test_rejects_unknown_column(self):
+    @pytest.mark.parametrize(
+        "changes",
+        [
+            {"name": "x", "password": "leak"},
+            {"version = 0 WHERE 1=1 --": "boom"},
+            {},
+        ],
+    )
+    async def test_refuses_invalid_columns_before_opening_a_transaction(
+        self, changes, fake_metadata_db
+    ):
         with pytest.raises(repo.UnknownUpdateColumnError):
-            repo._assignments("task", {"name": "x", "password": "leak"})
-
-    def test_rejects_injection_shaped_key(self):
-        with pytest.raises(repo.UnknownUpdateColumnError):
-            repo._assignments("task", {"version = 0 WHERE 1=1 --": "boom"})
-
-    def test_rejects_empty_payload(self):
-        with pytest.raises(ValueError):
-            repo._assignments("edge", {})
-
-    def test_every_entity_whitelist_is_non_empty(self):
-        for entity, allowed in repo._UPDATABLE_COLUMNS.items():
-            assert allowed, entity
+            await repo.TaskOrchestrationRepository().update_task("task", changes)
+        assert fake_metadata_db.transactions == []
 
 
 class TestEdgeKindColumn:
@@ -172,15 +187,11 @@ class TestEdgeKindColumn:
     """
 
     def test_edges_table_declares_edge_kind(self):
-        edges_ddl = next(
-            ddl for ddl in TASK_ORCHESTRATION_DDL if "CONFIG_TASK_EDGES" in ddl
-        )
+        edges_ddl = next(ddl for ddl in TASK_ORCHESTRATION_DDL if "CONFIG_TASK_EDGES" in ddl)
         assert "edge_kind" in edges_ddl
 
     def test_edge_kind_has_a_default_so_existing_rows_are_after(self):
-        edges_ddl = next(
-            ddl for ddl in TASK_ORCHESTRATION_DDL if "CONFIG_TASK_EDGES" in ddl
-        )
+        edges_ddl = next(ddl for ddl in TASK_ORCHESTRATION_DDL if "CONFIG_TASK_EDGES" in ddl)
         assert "DEFAULT 'after'" in edges_ddl
 
     def test_edge_kind_is_migrated_for_existing_tables(self):

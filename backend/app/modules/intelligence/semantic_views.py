@@ -16,8 +16,8 @@ from pydantic import BaseModel, Field
 from app.common.audit import write_audit_log
 from app.common.responses import SanitizingJSONResponse
 from app.common.sql_guard import split_sql_statements
-from app.core.database import db
 from app.core.deps import get_current_user
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.agents.semantic.compiler import SemanticCompiler
 from app.modules.agents.semantic.ir import SemanticModelIR
 from app.modules.agents.semantic.ossie import SUPPORTED_VERSIONS, OssieParseError, parse_ossie
@@ -34,6 +34,11 @@ from app.modules.assistant.skills import contains_credential_shape
 from app.modules.assistant.tools import policy
 from app.modules.intelligence.access import can_manage
 from app.modules.intelligence.entities import entity_registry
+from app.modules.intelligence.metadata_repository import (
+    intelligence_metadata,
+    service_actor,
+    user_actor,
+)
 from app.modules.intelligence.newsroom_contracts import NewsSettings
 from app.modules.intelligence.semantic_regression import (
     MAX_RESULT_ROWS,
@@ -100,16 +105,38 @@ class SemanticViewVerifiedQueryCreate(BaseModel):
     tags: builtins.list[str] = Field(default_factory=list, max_length=32)
 
 
-def _record(result: dict, row: list) -> dict[str, Any]:
-    return dict(zip(result["columns"], row, strict=True))
+_VIEW_FIELDS = (
+    "id", "catalog_name", "database_name", "schema_name", "name", "owner_name",
+    "visibility", "active_version", "status", "created_at", "updated_at",
+    "news_enabled", "news_config", "news_updated_by", "news_updated_at",
+)
+_VERSION_FIELDS = (
+    "view_id", "version", "definition", "fingerprint", "status", "validation",
+    "created_at", "validated_at", "activated_at",
+)
+#: Metadata reads made without a caller (scheduled News, agent pins, links).
+_SERVICE_READER = "semantic-views"
 
 
 def _json(value: Any) -> Any:
     return json.loads(value) if isinstance(value, str) else value
 
 
-def _view_row(result: dict, row: list) -> dict[str, Any]:
-    view = _record(result, row)
+def _reader(user: dict | None) -> SecurityContext:
+    """Preserve the explicit session or the actor bound at the entrypoint."""
+    from app.core.metadata_actor import current_actor
+
+    return user_actor(user) if user is not None else current_actor()
+
+
+def _writer(user: dict) -> SecurityContext:
+    """The metadata actor of a change: always the caller's own session (403 otherwise)."""
+    return user_actor(user)
+
+
+def _view_row(row: dict) -> dict[str, Any]:
+    """A PG view row in the service's shape, with its revision for the CAS."""
+    view = {field: row.get(field) for field in _VIEW_FIELDS}
     view["created_at"] = str(view["created_at"])
     view["updated_at"] = str(view["updated_at"])
     view["news_enabled"] = bool(view.get("news_enabled"))
@@ -117,15 +144,35 @@ def _view_row(result: dict, row: list) -> dict[str, Any]:
     view["news_updated_at"] = (
         str(view["news_updated_at"]) if view.get("news_updated_at") else None
     )
+    view["metadata_revision"] = row.get("metadata_revision")
     return view
+
+
+def _version_row(row: dict) -> dict[str, Any]:
+    version = {field: row.get(field) for field in _VERSION_FIELDS}
+    version["definition"] = _json(version["definition"])
+    version["validation"] = _json(version["validation"]) if version["validation"] else None
+    for field in ("created_at", "validated_at", "activated_at"):
+        version[field] = str(version[field]) if version[field] else None
+    return version
 
 
 def _public_view(view: dict, user: dict) -> dict[str, Any]:
     """Only a manager sees how News is configured; everyone sees whether it is on."""
-    if can_manage(view["owner_name"], user):
-        return view
-    hidden = {"news_config", "news_updated_by", "news_updated_at"}
+    hidden = {"metadata_revision"}
+    if not can_manage(view["owner_name"], user):
+        hidden |= {"news_config", "news_updated_by", "news_updated_at"}
     return {key: value for key, value in view.items() if key not in hidden}
+
+
+def _require_owned(view: dict | None, user: dict) -> dict:
+    if (
+        not view
+        or (view.get("visibility") == "PRIVATE" and view["owner_name"] != user.get("username"))
+        or not can_manage(view["owner_name"], user)
+    ):
+        raise HTTPException(status_code=404, detail="Semantic View not found")
+    return view
 
 
 def _legacy_review_draft(view: dict, row: dict, user: dict) -> bool:
@@ -158,56 +205,62 @@ class SemanticViewService:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @staticmethod
-    async def _get(view_id: str) -> dict | None:
-        result = await db.execute_system(
-            "SELECT id,catalog_name,database_name,schema_name,name,owner_name,"
-            "visibility,active_version,status,created_at,updated_at,"
-            "news_enabled,news_config,news_updated_by,news_updated_at "
-            "FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS WHERE id=%s",
-            [view_id],
-        )
-        if not result["rows"]:
-            return None
-        return _view_row(result, result["rows"][0])
+    async def _get(view_id: str, user: dict | None = None) -> dict | None:
+        async with intelligence_metadata(_reader(user), read_only=True) as repo:
+            row = await repo.get_view(view_id)
+        return _view_row(row) if row else None
 
     @staticmethod
     async def news_views() -> builtins.list[dict]:
         """Views with News switched on; metadata only, the reader authorizes each."""
-        result = await db.execute_system(
-            "SELECT id,catalog_name,database_name,schema_name,name,owner_name,"
-            "visibility,active_version,status,created_at,updated_at,"
-            "news_enabled,news_config,news_updated_by,news_updated_at "
-            "FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS "
-            "WHERE news_enabled=TRUE AND status<>'DEPRECATED' ORDER BY name"
-        )
-        return [_view_row(result, row) for row in result["rows"]]
+        async with intelligence_metadata(service_actor(_SERVICE_READER), read_only=True) as repo:
+            rows = await repo.news_views()
+        return [_view_row(row) for row in rows]
 
     @staticmethod
     async def save_news(
-        view_id: str, *, enabled: bool, config: dict | None, username: str
-    ) -> None:
-        await db.execute_system(
-            "UPDATE NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS SET news_enabled=%s,news_config=%s,"
-            "news_updated_by=%s,news_updated_at=NOW() WHERE id=%s",
-            [enabled, json.dumps(config) if config is not None else None, username, view_id],
-        )
+        view_id: str,
+        *,
+        enabled: bool,
+        config: dict | None,
+        user: dict,
+        expected_revision: int | None = None,
+    ) -> dict:
+        """Store News settings as ``user``; PG records who changed them and when.
+
+        ``expected_revision`` is the view revision the caller's decision was
+        based on; a change since then is a 409. Without it the revision is
+        read in the same transaction.
+        """
+        async with intelligence_metadata(_writer(user)) as repo:
+            if expected_revision is None:
+                current = await repo.get_view(view_id)
+                if not current:
+                    raise HTTPException(status_code=404, detail="Semantic View not found")
+                expected_revision = int(current["metadata_revision"])
+            row = await repo.save_news(
+                view_id, enabled, config, expected_revision=expected_revision
+            )
+        return _view_row(row)
 
     @staticmethod
-    async def _version(view_id: str, version: int) -> dict | None:
-        result = await db.execute_system(
-            "SELECT view_id,version,definition,fingerprint,status,validation,created_at,"
-            "validated_at,activated_at FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEW_VERSIONS "
-            "WHERE view_id=%s AND version=%s",
-            [view_id, version],
-        )
-        if not result["rows"]:
-            return None
-        row = _record(result, result["rows"][0])
-        row["definition"] = _json(row["definition"])
-        row["validation"] = _json(row["validation"]) if row["validation"] else None
-        for field in ("created_at", "validated_at", "activated_at"):
-            row[field] = str(row[field]) if row[field] else None
-        return row
+    async def _version(view_id: str, version: int, user: dict | None = None) -> dict | None:
+        async with intelligence_metadata(_reader(user), read_only=True) as repo:
+            row = await repo.get_version(view_id, version)
+        return _version_row(row) if row else None
+
+    @staticmethod
+    async def _versions(view_id: str, user: dict | None = None) -> builtins.list[dict]:
+        """Every version of one view, newest first."""
+        async with intelligence_metadata(_reader(user), read_only=True) as repo:
+            rows = await repo.list_versions(view_id)
+        return [_version_row(row) for row in rows]
+
+    @staticmethod
+    async def _latest(view_id: str, user: dict | None = None) -> int:
+        """The newest version number, 0 when the view has none."""
+        async with intelligence_metadata(_reader(user), read_only=True) as repo:
+            return await repo.latest_version(view_id)
 
     @staticmethod
     async def _source_access(definition: dict, user: dict) -> bool:
@@ -305,20 +358,15 @@ class SemanticViewService:
         return True
 
     async def _visible(self, view_id: str, user: dict) -> dict:
-        view = await self._get(view_id)
+        view = await self._get(view_id, user)
         if not view or view["status"] == "DEPRECATED":
             raise HTTPException(status_code=404, detail="Semantic View not found")
         if view.get("visibility") == "PRIVATE" and view["owner_name"] != user.get("username"):
             raise HTTPException(status_code=404, detail="Semantic View not found")
         version = view["active_version"]
         if version is None and can_manage(view["owner_name"], user):
-            result = await db.execute_system(
-                "SELECT MAX(version) FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEW_VERSIONS "
-                "WHERE view_id=%s",
-                [view_id],
-            )
-            version = result["rows"][0][0]
-        definition = await self._version(view_id, version) if version else None
+            version = await self._latest(view_id, user) or None
+        definition = await self._version(view_id, version, user) if version else None
         if not definition:
             raise HTTPException(status_code=404, detail="Semantic View not found")
         if _legacy_review_draft(view, definition, user):
@@ -345,28 +393,19 @@ class SemanticViewService:
         return True
 
     async def list(self, user: dict) -> builtins.list[dict]:
-        result = await db.execute_system(
-            "SELECT id FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS "
-            "WHERE status<>'DEPRECATED' ORDER BY name"
-        )
+        async with intelligence_metadata(_reader(user), read_only=True) as repo:
+            rows = await repo.list_views()
         visible = []
-        for row in result["rows"]:
+        for row in rows:
             try:
-                visible.append(_public_view(await self._visible(row[0], user), user))
+                visible.append(_public_view(await self._visible(str(row["id"]), user), user))
             except HTTPException:
                 continue
         return visible
 
     async def describe(self, view_id: str, user: dict) -> dict:
         view = await self._visible(view_id, user)
-        result = await db.execute_system(
-            "SELECT version FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEW_VERSIONS "
-            "WHERE view_id=%s ORDER BY version DESC",
-            [view_id],
-        )
-        versions: builtins.list[dict | None] = [
-            await self._version(view_id, row[0]) for row in result["rows"]
-        ]
+        versions: builtins.list[dict | None] = list(await self._versions(view_id, user))
         if not can_manage(view["owner_name"], user):
             accessible_versions: builtins.list[dict | None] = []
             for row in versions:
@@ -409,12 +448,12 @@ class SemanticViewService:
     ) -> dict | None:
         """Resolve one published definition under the caller's current role."""
         try:
-            view = await self._get(view_id)
+            view = await self._get(view_id, user)
             if not view or view["status"] != "ACTIVE" or not view["active_version"]:
                 return None
             if not await self._private_agent_access(view, user, agent_id):
                 return None
-            row = await self._version(view_id, int(view["active_version"]))
+            row = await self._version(view_id, int(view["active_version"]), user)
             if not row or row["status"] != "ACTIVE":
                 return None
             definition = row["definition"]
@@ -444,14 +483,14 @@ class SemanticViewService:
         self, view_id: str, version: int, expected_fingerprint: str, user: dict,
         *, agent_id: str | None = None,
     ) -> dict:
-        view = await self._get(view_id)
+        view = await self._get(view_id, user)
         if (
             not view
             or view["status"] != "ACTIVE"
             or not await self._private_agent_access(view, user, agent_id)
         ):
             raise HTTPException(404, "Pinned Semantic View is unavailable or unauthorized")
-        row = await self._version(view_id, version)
+        row = await self._version(view_id, version, user)
         if not row or row["status"] not in {"ACTIVE", "DEPRECATED"}:
             raise HTTPException(409, "Pinned semantic version is unavailable")
         ir = SemanticModelIR.from_ossie(row["definition"])
@@ -471,10 +510,8 @@ class SemanticViewService:
     async def list_active_for_agent(
         self, user: dict, *, agent_id: str | None = None
     ) -> builtins.list[dict]:
-        result = await db.execute_system(
-            "SELECT id FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS "
-            "WHERE status='ACTIVE' AND active_version IS NOT NULL ORDER BY name"
-        )
+        async with intelligence_metadata(_reader(user), read_only=True) as repo:
+            rows = await repo.list_views(active_only=True)
         # Each view's access is checked as the caller, a few at a time; the
         # list keeps the catalogue's name order.
         gate = asyncio.Semaphore(4)
@@ -483,16 +520,16 @@ class SemanticViewService:
             async with gate:
                 return await self.get_active_for_agent(view_id, user, agent_id=agent_id)
 
-        found = await asyncio.gather(*(readable(str(row[0])) for row in result["rows"]))
+        found = await asyncio.gather(*(readable(str(row["id"])) for row in rows))
         return [definition for definition in found if definition]
 
     async def _readable_version(self, view_id: str, version: int, user: dict) -> tuple[dict, dict]:
-        view = await self._get(view_id)
+        view = await self._get(view_id, user)
         if not view or view["status"] == "DEPRECATED":
             raise HTTPException(status_code=404, detail="Semantic View not found")
         if view.get("visibility") == "PRIVATE" and view["owner_name"] != user.get("username"):
             raise HTTPException(status_code=404, detail="Semantic View not found")
-        row = await self._version(view_id, version)
+        row = await self._version(view_id, version, user)
         if not row or (
             row["status"] not in {"ACTIVE", "DEPRECATED"}
             and not can_manage(view["owner_name"], user)
@@ -628,11 +665,7 @@ class SemanticViewService:
     ) -> dict:
         view = await self._owned(view_id, user)
         _, base = await self._readable_version(view_id, base_version, user)
-        result = await db.execute_system(
-            "SELECT MAX(version) FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEW_VERSIONS WHERE view_id=%s",
-            [view_id],
-        )
-        latest_version = int(result["rows"][0][0] or 0)
+        latest_version = await self._latest(view_id, user)
         if latest_version != base_version:
             raise HTTPException(status_code=409, detail="A newer Semantic View version exists")
         definition = json.loads(json.dumps(base["definition"]))
@@ -668,11 +701,11 @@ class SemanticViewService:
         )
         definition["verified_queries"] = verified
         new_ir = SemanticModelIR.from_ossie(definition)
-        await self._insert_version(view_id, latest_version + 1, definition, new_ir.fingerprint)
+        # The insert is a CAS on the latest version read: a concurrent version is a 409.
+        created = await self._insert_version(
+            view_id, latest_version + 1, definition, new_ir.fingerprint, user
+        )
         await self._audit("ALTER", view["name"], user)
-        created = await self._version(view_id, latest_version + 1)
-        if created is None:
-            raise HTTPException(status_code=409, detail="Semantic version requires reconciliation")
         return created
 
     async def adopt_verified_plan(
@@ -684,11 +717,7 @@ class SemanticViewService:
         taken from the answer that proposed it, so the verified SQL always
         matches the view it is stored in.
         """
-        result = await db.execute_system(
-            "SELECT MAX(version) FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEW_VERSIONS WHERE view_id=%s",
-            [view_id],
-        )
-        latest = int(result["rows"][0][0] or 0) if result.get("rows") else 0
+        latest = await self._latest(view_id, user)
         if not latest:
             raise HTTPException(status_code=404, detail="Semantic View not found")
         _view, row = await self._readable_version(view_id, latest, user)
@@ -718,35 +747,31 @@ class SemanticViewService:
             raise HTTPException(status_code=403, detail="Semantic source is unavailable")
         if not await self._entity_access(ir, user):
             raise HTTPException(status_code=422, detail="Semantic entity reference is unavailable")
-        scope = [body.catalog, body.database, body.schema_name, body.name]
-        existing = await db.execute_system(
-            "SELECT id FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS WHERE catalog_name=%s "
-            "AND database_name=%s AND schema_name=%s AND name=%s",
-            scope,
-        )
-        if existing["rows"]:
-            raise HTTPException(status_code=409, detail="Semantic View already exists")
         view_id = str(uuid4())
-        await db.execute_system(
-            "INSERT INTO NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS "
-            "(catalog_name,database_name,schema_name,name,id,owner_name,active_version,"
-            "status,visibility,created_at,updated_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,NULL,'DRAFT','PUBLIC',NOW(),NOW())",
-            [*scope, view_id, user["username"]],
-        )
-        await self._insert_version(view_id, 1, definition, ir.fingerprint)
+        # The view starts as the caller's draft with its first version, in one
+        # transaction; a scoped name taken concurrently is a 409 too.
+        async with intelligence_metadata(_writer(user)) as repo:
+            if await repo.find_view(body.catalog, body.database, body.schema_name, body.name):
+                raise HTTPException(status_code=409, detail="Semantic View already exists")
+            await repo.create_view(
+                catalog=body.catalog, database=body.database, schema=body.schema_name,
+                name=body.name, view_id=view_id, definition=definition,
+                fingerprint=ir.fingerprint, visibility="PUBLIC",
+            )
         await self._audit("CREATE", body.name, user)
         await _relink(view_id)
         return await self.describe(view_id, user)
 
     @staticmethod
-    async def _insert_version(view_id: str, version: int, definition: dict, fingerprint: str):
-        await db.execute_system(
-            "INSERT INTO NOVA_SYSTEM.CONFIG_SEMANTIC_VIEW_VERSIONS "
-            "(view_id,version,definition,fingerprint,status,created_at) "
-            "VALUES (%s,%s,%s,%s,'DRAFT',NOW())",
-            [view_id, version, json.dumps(definition), fingerprint],
-        )
+    async def _insert_version(
+        view_id: str, version: int, definition: dict, fingerprint: str, user: dict
+    ) -> dict:
+        """Add draft ``version``, only while ``version - 1`` is still the newest (else 409)."""
+        async with intelligence_metadata(_writer(user)) as repo:
+            row = await repo.add_version(
+                view_id, definition, fingerprint, expected_latest=version - 1
+            )
+        return _version_row(row)
 
     async def add_version(self, view_id: str, body: SemanticViewVersionCreate, user: dict):
         view = await self._owned(view_id, user)
@@ -755,25 +780,14 @@ class SemanticViewService:
             ir, user
         ):
             raise HTTPException(status_code=403, detail="Semantic sources or entities unavailable")
-        result = await db.execute_system(
-            "SELECT MAX(version) FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEW_VERSIONS WHERE view_id=%s",
-            [view_id],
-        )
-        number = int(result["rows"][0][0] or 0) + 1
-        await self._insert_version(view_id, number, definition, ir.fingerprint)
+        number = await self._latest(view_id, user) + 1
+        created = await self._insert_version(view_id, number, definition, ir.fingerprint, user)
         await self._audit("ALTER", view["name"], user)
         await _relink(view_id)
-        return await self._version(view_id, number)
+        return created
 
     async def _owned(self, view_id: str, user: dict) -> dict:
-        view = await self._get(view_id)
-        if (
-            not view
-            or (view.get("visibility") == "PRIVATE" and view["owner_name"] != user.get("username"))
-            or not can_manage(view["owner_name"], user)
-        ):
-            raise HTTPException(status_code=404, detail="Semantic View not found")
-        return view
+        return _require_owned(await self._get(view_id, user), user)
 
     @staticmethod
     async def _run_validation_query(sql: str, user: dict, database: str):
@@ -796,7 +810,7 @@ class SemanticViewService:
 
     async def validate(self, view_id: str, version: int, user: dict) -> dict:
         view = await self._owned(view_id, user)
-        row = await self._version(view_id, version)
+        row = await self._version(view_id, version, user)
         if not row or row["status"] not in {"DRAFT", "VALIDATED"}:
             raise HTTPException(status_code=409, detail="Semantic version cannot be validated")
         definition = row["definition"]
@@ -827,7 +841,7 @@ class SemanticViewService:
                     errors.append("Verified query could not be compiled or executed")
         regression = None
         if view["active_version"]:
-            active = await self._version(view_id, view["active_version"])
+            active = await self._version(view_id, view["active_version"], user)
             if active:
                 active_queries = active["definition"].get("verified_queries") or []
                 regression = await compare_semantic_versions(
@@ -866,11 +880,11 @@ class SemanticViewService:
             "fingerprint": ir.fingerprint,
             "baseline_version": view["active_version"],
         }
-        await db.execute_system(
-            "UPDATE NOVA_SYSTEM.CONFIG_SEMANTIC_VIEW_VERSIONS SET validation=%s,"
-            "status=%s,validated_at=NOW() WHERE view_id=%s AND version=%s",
-            [json.dumps(report), "VALIDATED" if not errors else "DRAFT", view_id, version],
-        )
+        # PG stamps validated_at and refuses a version published meanwhile.
+        async with intelligence_metadata(_writer(user)) as repo:
+            stored = await repo.record_validation(view_id, version, report)
+        if stored is None:
+            raise HTTPException(status_code=409, detail="Semantic version cannot be validated")
         await self._audit("VALIDATE", view["name"], user)
         return report
 
@@ -881,16 +895,14 @@ class SemanticViewService:
         user: dict,
         acknowledge_regressions: bool = False,
     ) -> dict:
-        from app.modules.intelligence.engine_repository import metadata_lock
-
         view = await self._owned(view_id, user)
-        row = await self._version(view_id, version)
+        row = await self._version(view_id, version, user)
         row = self._require_publishable(view, row, version, acknowledge_regressions)
         signature = self._publication_signature(row)
         if not await self._source_access(row["definition"], user):
             raise HTTPException(status_code=403, detail="Semantic source is unavailable")
-        # Data probes can span a large catalog. Keep the write lease for the
-        # projection, and bind that projection to the exact checked candidate.
+        # Data probes can span a large catalog, so they run before the metadata
+        # transaction; the publication is bound to the exact checked candidate.
         try:
             current = await asyncio.wait_for(
                 query_service.execute(
@@ -913,15 +925,9 @@ class SemanticViewService:
             raise HTTPException(
                 status_code=403, detail="Publication execution context is unavailable"
             )
-        async with metadata_lock(f"semantic-publish:{view_id}") as lease:
-            await self._publish_locked(
-                view_id,
-                version,
-                user,
-                acknowledge_regressions,
-                lease,
-                preflight_signature=signature,
-            )
+        await self._commit_publication(
+            view_id, version, user, acknowledge_regressions, preflight_signature=signature
+        )
         bi_datasets = await self.sync_bi(view_id, user)
         return {**await self.describe(view_id, user), "bi_datasets": bi_datasets}
 
@@ -941,7 +947,7 @@ class SemanticViewService:
             and view.get("active_version")
             and view.get("visibility") != "PRIVATE"
         ):
-            row = await self._version(view_id, view["active_version"])
+            row = await self._version(view_id, view["active_version"], user)
             try:
                 model = SemanticModelIR.from_ossie(row["definition"]) if row else None
             except (TypeError, ValueError, KeyError):
@@ -985,68 +991,52 @@ class SemanticViewService:
             )
         return row
 
-    async def _publish_locked(
+    async def _commit_publication(
         self,
         view_id: str,
         version: int,
         user: dict,
         acknowledge_regressions: bool,
-        lease,
         *,
-        preflight_signature: str | None = None,
+        preflight_signature: str,
     ) -> dict:
-        view = await self._owned(view_id, user)
-        row = await self._version(view_id, version)
-        row = self._require_publishable(view, row, version, acknowledge_regressions)
-        if preflight_signature is not None:
+        """Publish the checked candidate in one metadata transaction.
+
+        The view and version are read again inside the transaction and must
+        still match the preflight; the pointer then moves with a revision CAS
+        and the expected active version, so a concurrent publication, News
+        change or drop is a 409 and no partial state is ever visible.
+        """
+        if user.get("session_id"):
+            from app.core.redis import session_store
+            from app.modules.assistant.security import session_security
+
+            session = await session_store.get(user["session_id"])
+            if not session or session_security(
+                {**session, "session_id": user["session_id"]}
+            ) != session_security(user):
+                raise HTTPException(
+                    status_code=403, detail="Publication execution context is unavailable"
+                )
+        async with intelligence_metadata(_writer(user)) as repo:
+            current = await repo.get_view(view_id)
+            view = _require_owned(_view_row(current) if current else None, user)
+            stored = await repo.get_version(view_id, version)
+            row = self._require_publishable(
+                view, _version_row(stored) if stored else None, version, acknowledge_regressions
+            )
             if self._publication_signature(row) != preflight_signature:
                 raise HTTPException(
                     status_code=409, detail="Publication inputs changed; review and validate again"
                 )
-            if user.get("session_id"):
-                from app.core.redis import session_store
-                from app.modules.assistant.security import session_security
-
-                session = await session_store.get(user["session_id"])
-                if not session or session_security(
-                    {**session, "session_id": user["session_id"]}
-                ) != session_security(user):
-                    raise HTTPException(
-                        status_code=403, detail="Publication execution context is unavailable"
-                    )
-        elif not await self._source_access(row["definition"], user):
-            raise HTTPException(status_code=403, detail="Semantic source is unavailable")
-        if not await lease.renew():
-            raise HTTPException(status_code=409, detail="Publication lease expired; retry")
-        # Make the new version readable before moving the catalog pointer. Each
-        # partial state can be replayed without leaving the previous version unavailable.
-        await db.execute_system(
-            "UPDATE NOVA_SYSTEM.CONFIG_SEMANTIC_VIEW_VERSIONS "
-            "SET status='ACTIVE',activated_at=NOW() WHERE view_id=%s AND version=%s",
-            [view_id, version],
-        )
-        if not await lease.renew():
-            raise HTTPException(status_code=409, detail="Publication lease expired; retry")
-        changed = await db.execute_system(
-            "UPDATE NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS "
-            "SET active_version=%s,status='ACTIVE',updated_at=NOW() WHERE id=%s "
-            "AND (active_version <=> %s OR active_version=%s)",
-            [version, view_id, view["active_version"], version],
-        )
-        if changed.get("affected") == 0:
-            current = await self._get(view_id)
-            if not current or current["active_version"] != version:
-                raise HTTPException(
-                    status_code=409, detail="Active version changed; validate again"
+            if not (row["status"] == "ACTIVE" and view["active_version"] == version):
+                await repo.publish(
+                    view_id,
+                    version,
+                    expected_revision=int(view["metadata_revision"]),
+                    expected_active=view["active_version"],
                 )
-        if not await lease.renew():
-            raise HTTPException(status_code=409, detail="Publication lease expired; retry")
-        await db.execute_system(
-            "UPDATE NOVA_SYSTEM.CONFIG_SEMANTIC_VIEW_VERSIONS SET status='DEPRECATED' "
-            "WHERE view_id=%s AND status='ACTIVE' AND version<>%s",
-            [view_id, version],
-        )
-        await self._audit("PUBLISH", view["name"], user)
+            await self._audit("PUBLISH", view["name"], user)
         await _relink(view_id)
         from app.modules.ontology.representations import refresh_after_publish
 
@@ -1054,13 +1044,11 @@ class SemanticViewService:
         return {**view, "active_version": version, "status": "ACTIVE"}
 
     async def deprecate(self, view_id: str, user: dict) -> None:
-        view = await self._owned(view_id, user)
-        await db.execute_system(
-            "UPDATE NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS "
-            "SET status='DEPRECATED',active_version=NULL,updated_at=NOW() WHERE id=%s",
-            [view_id],
-        )
-        await self._audit("DEPRECATE", view["name"], user)
+        async with intelligence_metadata(_writer(user)) as repo:
+            current = await repo.get_view(view_id)
+            view = _require_owned(_view_row(current) if current else None, user)
+            await repo.deprecate(view_id, expected_revision=int(view["metadata_revision"]))
+            await self._audit("DEPRECATE", view["name"], user)
         await _relink(view_id)
         await self._remove_bi(view, user)
 
@@ -1071,14 +1059,11 @@ class SemanticViewService:
         await sync_semantic_view(user, view, None)
 
     async def drop(self, view_id: str, user: dict) -> None:
-        view = await self._owned(view_id, user)
-        await db.execute_system(
-            "DELETE FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEW_VERSIONS WHERE view_id=%s",
-            [view_id],
-        )
-        await db.execute_system(
-            "DELETE FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS WHERE id=%s", [view_id]
-        )
+        # The view goes first, then its versions, in one transaction.
+        async with intelligence_metadata(_writer(user)) as repo:
+            current = await repo.get_view(view_id)
+            view = _require_owned(_view_row(current) if current else None, user)
+            await repo.drop(view_id, expected_revision=int(view["metadata_revision"]))
         await self._audit("DROP", view["name"], user)
         await _relink(view_id)
         await self._remove_bi(view, user)
@@ -1093,19 +1078,19 @@ class SemanticViewService:
             await self.get_version_for_agent(
                 view_id, body.version, expected_fingerprint, user, agent_id=agent_id
             )
-            view = await self._get(view_id)
+            view = await self._get(view_id, user)
             assert view is not None
         elif agent_id:
             if not await self.get_active_for_agent(view_id, user, agent_id=agent_id):
                 raise HTTPException(status_code=404, detail="Semantic View not found")
-            view = await self._get(view_id)
+            view = await self._get(view_id, user)
             assert view is not None
         else:
             view = await self._visible(view_id, user)
         version = body.version or view["active_version"]
         if not version:
             raise HTTPException(status_code=409, detail="Semantic View has no active version")
-        row = await self._version(view_id, version)
+        row = await self._version(view_id, version, user)
         if not row or row["status"] not in {"ACTIVE", "DEPRECATED"}:
             raise HTTPException(status_code=404, detail="Semantic version not found")
         if not await self._source_access(row["definition"], user):
@@ -1210,6 +1195,7 @@ class SemanticViewService:
             status="SUCCESS",
             session_id=user.get("session_id"),
             active_role=user.get("active_role"),
+            security_context_version=user.get("security_context_version"),
         )
 
 

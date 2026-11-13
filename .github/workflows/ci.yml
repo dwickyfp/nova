@@ -10,6 +10,119 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  metadata-pg:
+    name: PostgreSQL 17 metadata boundaries
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync --locked
+      - name: Build pinned metadata test runtime and transaction pooler
+        timeout-minutes: 8
+        run: docker build -f docker/metadata-test.Dockerfile -t nova-metadata-test:ci .
+      - name: Prepare private TLS fixture
+        working-directory: backend
+        run: uv run python tests/integration/prepare_metadata_fixture.py "$RUNNER_TEMP/nova-metadata-pg"
+      - name: Start disposable PostgreSQL
+        run: |
+          docker compose ls
+          docker ps --format '{{.Names}}'
+          docker compose -p nova-metadata-ci -f "$RUNNER_TEMP/nova-metadata-pg/compose.yaml" up -d --wait
+      - name: Verify metadata transactions and security boundaries
+        run: |
+          mkdir -m 700 "$RUNNER_TEMP/nova-metadata-report"
+          docker run --rm -i --network host --user "$(id -u):$(id -g)" \
+            --cap-drop ALL --security-opt no-new-privileges \
+            -e RUNNER_TEMP \
+            -v "$RUNNER_TEMP/nova-metadata-pg:$RUNNER_TEMP/nova-metadata-pg:ro" \
+            -v "$RUNNER_TEMP/nova-metadata-report:/reports" \
+            nova-metadata-test:ci - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import pytest
+          configuration = json.loads(
+              (Path(os.environ["RUNNER_TEMP"]) / "nova-metadata-pg/connection.json").read_text()
+          )
+          os.environ["NOVA_TEST_METADATA_ADMIN_DSN"] = configuration["admin_dsn"]
+          os.environ["NOVA_TEST_METADATA_DISPOSABLE"] = "acknowledged"
+          raise SystemExit(pytest.main([
+              "tests/integration/test_metadata_pg_foundation.py",
+              "tests/integration/test_metadata_bootstrap.py",
+              "tests/integration/test_metadata_importer.py",
+              "tests/integration/test_metadata_pgbouncer.py",
+              "tests/integration/test_metadata_process.py",
+              "tests/integration/test_metadata_preferences.py",
+              "tests/integration/test_metadata_ai_registry.py",
+              "tests/integration/test_metadata_model_aliases.py",
+              "tests/integration/test_metadata_ai_configuration.py",
+              "tests/integration/test_metadata_function_registration.py",
+              "tests/integration/test_metadata_audit.py",
+              "tests/integration/test_metadata_retained_legacy.py",
+              "tests/integration/test_metadata_retired_agents.py",
+              "tests/integration/test_metadata_stages.py",
+              "tests/integration/test_metadata_workspaces.py",
+              "tests/integration/test_metadata_workspace_files.py",
+              "tests/integration/test_metadata_workspace_service.py",
+              "tests/integration/test_metadata_notebooks.py",
+              "tests/integration/test_metadata_tasks.py",
+              "tests/integration/test_metadata_streams.py",
+              "tests/integration/test_metadata_ml_engine.py",
+              "tests/integration/test_metadata_catalog.py",
+              "tests/integration/test_metadata_ontology.py",
+              "tests/integration/test_metadata_agents.py",
+              "tests/integration/test_agent_rule_proposal_live.py",
+              "tests/integration/test_metadata_intelligence.py",
+              "tests/integration/test_metadata_intelligence_views_port.py",
+              "tests/integration/test_metadata_query_autopilot.py",
+              "tests/integration/test_metadata_assistant_policy_bi.py",
+              "tests/integration/test_metadata_jobs.py",
+              "tests/integration/test_metadata_scheduler.py",
+              "tests/integration/test_metadata_migrator.py", "-v",
+              "-p", "no:cacheprovider", "--junit-xml=/reports/metadata-pg.xml",
+          ]))
+          PY
+      - name: Refuse skipped or empty acceptance
+        if: always()
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from xml.etree import ElementTree as ET
+          report = Path(os.environ["RUNNER_TEMP"]) / "nova-metadata-report/metadata-pg.xml"
+          suites = list(ET.parse(report).getroot().iter("testsuite"))
+          assert sum(int(s.attrib["tests"]) for s in suites) > 0, "No PG tests executed"
+          for suite in suites:
+              assert all(int(suite.attrib[k]) == 0 for k in ("failures", "errors", "skipped")), suite.attrib
+          PY
+      - name: Scan database logs for credential canaries
+        if: always()
+        working-directory: backend
+        run: |
+          umask 077
+          docker compose -p nova-metadata-ci -f "$RUNNER_TEMP/nova-metadata-pg/compose.yaml" \
+            logs --no-color nova-metadata-db > "$RUNNER_TEMP/nova-metadata-server.log" 2>&1
+          uv run python tests/integration/check_metadata_logs.py "$RUNNER_TEMP/nova-metadata-server.log" \
+            > "$RUNNER_TEMP/nova-metadata-report/log-scan.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: metadata-pg-report
+          path: |
+            ${{ runner.temp }}/nova-metadata-report/metadata-pg.xml
+            ${{ runner.temp }}/nova-metadata-report/log-scan.json
+      - name: Remove this job's disposable database
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/nova-metadata-pg/compose.yaml" ]; then
+            docker compose -p nova-metadata-ci -f "$RUNNER_TEMP/nova-metadata-pg/compose.yaml" down --volumes
+          fi
+
   backend-static:
     name: Backend static (ruff, mypy)
     runs-on: ubuntu-latest
@@ -158,6 +271,28 @@ jobs:
         working-directory: backend
         run: uv run python -m tests.eval.report
 
+      - name: Agent trajectory suite
+        working-directory: backend
+        run: |
+          uv run python - <<'PY'
+          import os
+          import secrets
+          from cryptography.fernet import Fernet
+          import pytest
+          os.environ["FERNET_KEY"] = Fernet.generate_key().decode()
+          os.environ["SECRET_KEY"] = secrets.token_urlsafe(32)
+          raise SystemExit(pytest.main(["tests/eval", "-q", "--junit-xml=eval.xml"]))
+          PY
+
+      - name: Upload agent trajectory report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-trajectories
+          path: backend/eval.xml
+          retention-days: 7
+          if-no-files-found: ignore
+
       # Threshold is report-only in this first gate: the denominator is now
       # correct (include=app/**), the baseline is measured, but the floor is not
       # yet enforced. Flipping `--cov-fail-under` on is a follow-up once the
@@ -200,6 +335,25 @@ jobs:
       - name: Install dependencies
         working-directory: backend
         run: uv sync --locked
+
+      - name: Prepare private PG17 metadata fixture
+        working-directory: backend
+        run: uv run python tests/integration/prepare_metadata_fixture.py "$RUNNER_TEMP/nova-engine-pg"
+
+      - name: Start PG17 alongside the governed engine
+        run: |
+          docker compose ls
+          docker ps --format '{{.Names}} {{.Ports}}'
+          docker compose -p backend -f "$RUNNER_TEMP/nova-engine-pg/compose.yaml" up -d --wait
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          dsn = json.loads((Path(os.environ["RUNNER_TEMP"]) / "nova-engine-pg/connection.json").read_text())["admin_dsn"]
+          print("::add-mask::" + dsn)
+          with open(os.environ["GITHUB_ENV"], "a") as handle:
+              handle.write("NOVA_TEST_METADATA_ADMIN_DSN=" + dsn + "\n")
+              handle.write("NOVA_TEST_METADATA_DISPOSABLE=acknowledged\n")
+          PY
 
       # The proxy acceptance suite self-gates on a local `mysql:8.0` image
       # (test_mysql_proxy_cli.py:50-62) because it runs a *real* client against
@@ -384,11 +538,14 @@ jobs:
 
   frontend:
     name: Frontend (lint, build, vitest)
-    # Playwright 1.59.1 ships no Chromium for Ubuntu 26.04, which ubuntu-latest
-    # now resolves to. Move off 24.04 together with a Playwright upgrade.
     runs-on: ubuntu-24.04
+    container:
+      # Match the locked Playwright package; this image supplies browser OS deps.
+      image: mcr.microsoft.com/playwright:v1.59.1-noble@sha256:b0ab6f3cb99aa7803adbc14d9027ec1785fc6e433b97e134e0f8fe61683b6b53
+      options: --shm-size=1g
     defaults:
       run:
+        shell: bash
         working-directory: frontend
     steps:
       - uses: actions/checkout@v4
@@ -415,8 +572,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install Playwright browser
-        run: pnpm exec playwright install --with-deps chromium
+      - name: Verify the pinned Chromium runtime
+        timeout-minutes: 2
+        run: |
+          node --input-type=module - <<'JS'
+          import { chromium } from 'playwright';
+          const browser = await chromium.launch({ headless: true });
+          console.log(`Chromium ${browser.version()}`);
+          await browser.close();
+          JS
 
       - name: Intelligent UI catalog and validator drift
         run: pnpm ui:check

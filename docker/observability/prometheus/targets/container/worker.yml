@@ -1,3 +1,24 @@
 - targets: ["nova-worker:9102"]
   labels:
     service: nova-worker
+- targets: ["nova-ingestion-worker:9105"]
+  labels:
+    service: nova-ingestion-worker
+- targets: ["nova-ml-worker:9106"]
+  labels:
+    service: nova-ml-worker
+- targets: ["nova-notebook-worker:9107"]
+  labels:
+    service: nova-notebook-worker
+- targets: ["nova-automation-worker:9108"]
+  labels:
+    service: nova-automation-worker
+- targets: ["nova-autopilot-worker:9109"]
+  labels:
+    service: nova-autopilot-worker
+- targets: ["nova-maintenance-worker:9110"]
+  labels:
+    service: nova-maintenance-worker
+- targets: ["nova-outbox-worker:9111"]
+  labels:
+    service: nova-outbox-worker

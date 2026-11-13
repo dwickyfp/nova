@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { useAuthStore } from '@/stores/auth-store'
 import {
   AlertCircle,
   Boxes,
@@ -48,6 +49,21 @@ const emptyForm: StageCreatePayload = {
 }
 
 export function StagesPage() {
+  const securityEpoch = useAuthStore((state) => state.securityEpoch)
+  const canChoosePrefix = useAuthStore((state) => state.auth.user?.activeRole === 'ACCOUNTADMIN')
+  return (
+    <StageManager
+      key={securityEpoch}
+      securityEpoch={securityEpoch}
+      canChoosePrefix={canChoosePrefix}
+    />
+  )
+}
+
+function StageManager({ securityEpoch, canChoosePrefix }: {
+  securityEpoch: number
+  canChoosePrefix: boolean
+}) {
   const queryClient = useQueryClient()
   const [selected, setSelected] = useState<Stage | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
@@ -57,7 +73,7 @@ export function StagesPage() {
   const [pageSize, setPageSize] = useState(PAGE_SIZE)
 
   const stagesQuery = useQuery({
-    queryKey: ['stages'],
+    queryKey: ['stages', securityEpoch],
     queryFn: fetchStages,
   })
 
@@ -107,7 +123,7 @@ export function StagesPage() {
   const pageItems = stages.slice(pageStart, pageStart + pageSize)
 
   const createDisabled =
-    !form.name.trim() || !form.database_name.trim() || !form.schema_name.trim()
+    !form.name.trim() || !form.database_name.trim() || !form.schema_name.trim() || !form.storage_connection.trim()
 
   return (
     <div className='flex min-h-0 min-w-0 flex-1 flex-col gap-6 overflow-hidden'>
@@ -281,6 +297,7 @@ export function StagesPage() {
               <Label htmlFor='stage-name'>Name</Label>
               <Input
                 id='stage-name'
+                maxLength={128}
                 value={form.name}
                 onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
                 placeholder='stage1'
@@ -295,6 +312,7 @@ export function StagesPage() {
                 <Label htmlFor='stage-database'>Database</Label>
                 <Input
                   id='stage-database'
+                  maxLength={128}
                   value={form.database_name}
                   onChange={(event) =>
                     setForm((prev) => ({ ...prev, database_name: event.target.value }))
@@ -307,6 +325,7 @@ export function StagesPage() {
                 <Label htmlFor='stage-schema'>Schema</Label>
                 <Input
                   id='stage-schema'
+                  maxLength={128}
                   value={form.schema_name}
                   onChange={(event) =>
                     setForm((prev) => ({ ...prev, schema_name: event.target.value }))
@@ -320,6 +339,7 @@ export function StagesPage() {
               <Label htmlFor='stage-connection'>Storage connection</Label>
               <Input
                 id='stage-connection'
+                maxLength={128}
                 value={form.storage_connection}
                 onChange={(event) =>
                   setForm((prev) => ({ ...prev, storage_connection: event.target.value }))
@@ -328,24 +348,32 @@ export function StagesPage() {
                 autoComplete='off'
               />
               <p className='text-xs text-muted-foreground'>
-                Connection name from the server configuration. The provider stays
-                invisible to stage users.
+                Use a configured connection name. Nova creates a separate folder
+                for each new stage.
               </p>
             </div>
-            <div className='grid gap-1.5'>
-              <Label htmlFor='stage-prefix'>
-                Base prefix <span className='font-normal text-muted-foreground'>(optional)</span>
-              </Label>
-              <Input
-                id='stage-prefix'
-                value={form.base_prefix ?? ''}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, base_prefix: event.target.value }))
-                }
-                placeholder='datalake/bronze/stage1'
-                autoComplete='off'
-              />
-            </div>
+            {canChoosePrefix && (
+              <div className='grid gap-1.5'>
+                <Label htmlFor='stage-prefix'>
+                  Base prefix <span className='font-normal text-muted-foreground'>(optional)</span>
+                </Label>
+                <Input
+                  id='stage-prefix'
+                  maxLength={512}
+                  aria-describedby='stage-prefix-help'
+                  value={form.base_prefix ?? ''}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, base_prefix: event.target.value }))
+                  }
+                  placeholder='datalake/bronze/stage1'
+                  autoComplete='off'
+                />
+                <p id='stage-prefix-help' className='text-xs text-muted-foreground'>
+                  ACCOUNTADMIN can register an existing folder. Leave this empty for
+                  a new folder.
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant='outline' onClick={() => setCreateOpen(false)}>

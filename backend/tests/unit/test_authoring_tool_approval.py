@@ -32,7 +32,12 @@ async def test_create_agent_cannot_silently_update_existing_name(monkeypatch) ->
         ToolInvocation("call", "create_agent", {"name": "analyst"}),
         SimpleNamespace(
             user_name="alice",
-            user={"username": "alice", "encrypted_password": "encrypted"},
+            user={
+                "username": "alice",
+                "encrypted_password": "encrypted",
+                "active_role": "analyst",
+                "assigned_roles": ["analyst"],
+            },
             database="sales",
         ),
     )
@@ -85,7 +90,12 @@ async def test_create_agent_audits_before_and_after_write(monkeypatch) -> None:
         ToolInvocation("call", "create_agent", {"name": "analyst"}),
         SimpleNamespace(
             user_name="alice",
-            user={"username": "alice", "encrypted_password": "encrypted"},
+            user={
+                "username": "alice",
+                "encrypted_password": "encrypted",
+                "active_role": "analyst",
+                "assigned_roles": ["analyst"],
+            },
             database="sales",
             audit_session_id="thread-1",
         ),
@@ -96,26 +106,36 @@ async def test_create_agent_audits_before_and_after_write(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_semantic_metadata_uses_callers_query_pipeline(monkeypatch) -> None:
-    execute = AsyncMock(return_value=[QueryResult(
-        columns=["Field", "Type", "Null", "Key"],
-        rows=[["order_id", "BIGINT", "NO", "PRI"], ["amount", "DECIMAL", "YES", ""]],
-        row_count=2,
-    )])
+    execute = AsyncMock(
+        return_value=[
+            QueryResult(
+                columns=["Field", "Type", "Null", "Key"],
+                rows=[["order_id", "BIGINT", "NO", "PRI"], ["amount", "DECIMAL", "YES", ""]],
+                row_count=2,
+            )
+        ]
+    )
     monkeypatch.setattr("app.modules.query.service.query_service.execute_statements", execute)
     context = SimpleNamespace(
         user={
-            "username": "alice", "encrypted_password": "encrypted", "active_role": "analyst",
+            "username": "alice",
+            "encrypted_password": "encrypted",
+            "active_role": "analyst",
             "security_context_version": 3,
         },
         audit_session_id="thread-1",
     )
     metadata = await create_semantic_model_tool._fetch_metadata(["sales.orders"], context)
-    assert metadata == [{
-        "table": "sales.orders",
-        "primary_key": "order_id",
-        "columns": [{"name": "order_id", "type": "BIGINT"},
-                    {"name": "amount", "type": "DECIMAL"}],
-    }]
+    assert metadata == [
+        {
+            "table": "sales.orders",
+            "primary_key": "order_id",
+            "columns": [
+                {"name": "order_id", "type": "BIGINT"},
+                {"name": "amount", "type": "DECIMAL"},
+            ],
+        }
+    ]
     assert execute.await_args.kwargs["username"] == "alice"
     assert execute.await_args.kwargs["role"] == "analyst"
     assert execute.await_args.kwargs["encrypted_password"] == "encrypted"
@@ -136,9 +156,9 @@ async def test_semantic_metadata_denial_stops_before_provider(monkeypatch) -> No
         create_view,
     )
     outcome = await create_semantic_model_tool.run(
-        ToolInvocation("call", "create_semantic_model", {
-            "name": "sales", "tables": ["sales.orders"]
-        }),
+        ToolInvocation(
+            "call", "create_semantic_model", {"name": "sales", "tables": ["sales.orders"]}
+        ),
         SimpleNamespace(
             user_name="alice",
             user={"username": "alice", "encrypted_password": "encrypted", "active_role": "analyst"},
@@ -154,33 +174,45 @@ async def test_semantic_metadata_denial_stops_before_provider(monkeypatch) -> No
 
 @pytest.mark.asyncio
 async def test_semantic_create_cannot_silently_update_existing_name(monkeypatch) -> None:
-    metadata = [{
-        "table": "sales.orders",
-        "columns": [{"name": "order_id"}, {"name": "amount"}],
-    }]
+    metadata = [
+        {
+            "table": "sales.orders",
+            "columns": [{"name": "order_id"}, {"name": "amount"}],
+        }
+    ]
     spec = {
         "name": "sales",
-        "datasets": [{
-            "name": "orders",
-            "source": "sales.orders",
-            "primary_key": "order_id",
-            "fields": [
-                {"name": "order_id", "datatype": "Integer"},
-                {"name": "amount", "datatype": "Decimal"},
-            ],
-        }],
-        "metrics": [{
-            "name": "revenue", "expression": "SUM(orders.amount)", "datatype": "Decimal",
-        }],
+        "datasets": [
+            {
+                "name": "orders",
+                "source": "sales.orders",
+                "primary_key": "order_id",
+                "fields": [
+                    {"name": "order_id", "datatype": "Integer"},
+                    {"name": "amount", "datatype": "Decimal"},
+                ],
+            }
+        ],
+        "metrics": [
+            {
+                "name": "revenue",
+                "expression": "SUM(orders.amount)",
+                "datatype": "Decimal",
+            }
+        ],
     }
-    lookup = AsyncMock(return_value={"rows": [["existing-view"]]})
+    lookup = AsyncMock(return_value={"id": "existing-view"})
     publish_view = AsyncMock()
     insert_version = AsyncMock()
     monkeypatch.setattr(
-        create_semantic_model_tool, "_fetch_metadata", AsyncMock(return_value=metadata),
+        create_semantic_model_tool,
+        "_fetch_metadata",
+        AsyncMock(return_value=metadata),
     )
     monkeypatch.setattr(
-        create_semantic_model_tool, "_generate", AsyncMock(return_value=spec),
+        create_semantic_model_tool,
+        "_generate",
+        AsyncMock(return_value=spec),
     )
     monkeypatch.setattr(
         "app.modules.assistant.tools.create_semantic_view.query_service.execute",
@@ -194,10 +226,14 @@ async def test_semantic_create_cannot_silently_update_existing_name(monkeypatch)
         "app.modules.intelligence.semantic_views.semantic_view_service._entity_access",
         AsyncMock(return_value=True),
     )
-    monkeypatch.setattr(
-        "app.modules.intelligence.semantic_views.db.execute_system",
-        lookup,
-    )
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def metadata(actor):
+        assert actor.principal == "alice" and actor.active_role == "analyst"
+        yield SimpleNamespace(find_view=lookup)
+
+    monkeypatch.setattr("app.modules.intelligence.semantic_views.intelligence_metadata", metadata)
     monkeypatch.setattr(
         "app.modules.assistant.tools.create_semantic_view.semantic_view_service.publish",
         publish_view,
@@ -207,17 +243,22 @@ async def test_semantic_create_cannot_silently_update_existing_name(monkeypatch)
         insert_version,
     )
     outcome = await create_semantic_model_tool.run(
-        ToolInvocation("call", "create_semantic_model", {
-            "name": "sales", "tables": ["sales.orders"]
-        }),
+        ToolInvocation(
+            "call", "create_semantic_model", {"name": "sales", "tables": ["sales.orders"]}
+        ),
         SimpleNamespace(
             user_name="alice",
-            user={"username": "alice", "encrypted_password": "encrypted"},
+            user={
+                "username": "alice",
+                "encrypted_password": "encrypted",
+                "active_role": "analyst",
+                "assigned_roles": ["analyst"],
+            },
         ),
     )
     assert not outcome.ok
     assert "creation was rejected" in (outcome.error or "")
     lookup.assert_awaited_once()
-    assert "SELECT id FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS" in lookup.await_args.args[0]
+    assert lookup.await_args.args[-1] == "sales"
     publish_view.assert_not_awaited()
     insert_version.assert_not_awaited()

@@ -1,0 +1,94 @@
+{
+  "scope": "Running Neva grant API, two real logins, existing Redis, controlled helper restoration; no model or tool invocation",
+  "source_commit": "02195d1903c2af515a0dba2c5b0f7f202908bc21",
+  "started_at": "2026-11-12T00:04:56.261927+00:00",
+  "cases": [
+    {
+      "id": "independent_real_logins",
+      "passed": true
+    },
+    {
+      "id": "first_login_approval",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "id": "owner_session_restored",
+      "passed": true
+    },
+    {
+      "id": "new_login_not_restored",
+      "passed": true
+    },
+    {
+      "id": "same_login_after_process_restart",
+      "passed": true
+    },
+    {
+      "id": "changed_login_clears_memory",
+      "passed": true
+    },
+    {
+      "id": "other_login_did_not_erase_original",
+      "passed": true
+    },
+    {
+      "id": "second_login_explicit_approval",
+      "passed": true
+    },
+    {
+      "id": "both_login_grants_independent",
+      "passed": true
+    },
+    {
+      "id": "overlapping_context_rejected_at_dispatch",
+      "passed": true
+    },
+    {
+      "id": "approving_context_accepted_at_dispatch",
+      "passed": true
+    },
+    {
+      "id": "second_login_revocation",
+      "passed": true
+    },
+    {
+      "id": "revocation_does_not_affect_other_login",
+      "passed": true
+    },
+    {
+      "id": "api_revocation_clears_another_process_memory",
+      "passed": true
+    },
+    {
+      "id": "real_key_expiry_clears_memory",
+      "passed": true
+    },
+    {
+      "id": "stale_cleanup_preserves_new_approval",
+      "passed": true
+    }
+  ],
+  "cleanup": [
+    {
+      "resource": "disposable_thread",
+      "http_status": 204
+    },
+    {
+      "resource": "owned_grant_keys",
+      "remaining": 0
+    },
+    {
+      "resource": "owned_login",
+      "http_status": 200
+    },
+    {
+      "resource": "owned_login",
+      "http_status": 200
+    }
+  ],
+  "application_tree_sha256": "4b21917a5ab23c7d68b9a9e9010c9a24d27bdafa0d37a60652d36b4c5df0b159",
+  "fixture_title_sha256": "8ddd2a94bb4654683ac8bf779271ba349e20c02c6c99c128212b80c13db39e86",
+  "ended_at": "2026-11-12T00:05:00.784691+00:00",
+  "attempt_note": "PASS: all 16 assertions on final source after reconciliation; every fixture/login was removed."
+}

@@ -12,6 +12,7 @@ to write-back.
 from __future__ import annotations
 
 import pytest
+from fakeredis.aioredis import FakeRedis
 
 from app.core.config import settings
 from app.core.redis import session_store
@@ -21,19 +22,17 @@ from app.modules.superset import access
 from app.proxy.executor import ProxyQueryExecutor, _reads_only
 from app.proxy.protocol import scramble_native_password
 from app.proxy.session import SessionState
-from tests.unit.test_superset_bridge import FakeRedis
 
 
 @pytest.fixture
-def redis(monkeypatch):
-    fake = FakeRedis()
+async def redis(monkeypatch):
+    fake = FakeRedis(decode_responses=True)
     monkeypatch.setattr(session_store, "_redis", fake)
 
-    async def exists(key):
-        return int(fake._live(key) is not None)
-
-    fake.exists = exists
-    return fake
+    try:
+        yield fake
+    finally:
+        await fake.aclose()
 
 
 async def _session(role: str = "analyst") -> data_tokens.BiSession:
@@ -58,7 +57,8 @@ async def _runtime_live(redis, runtime_id="rt-1"):
 async def test_notebook_tokens_live_in_their_own_namespace(redis):
     session = await _session()
     issued = await _mint(session)
-    assert redis.keys_matching("nova:nb:token:*") and not redis.keys_matching("nova:bi:token:*")
+    assert await redis.keys("nova:nb:token:*")
+    assert not await redis.keys("nova:bi:token:*")
     scramble = b"x" * 20
     response = scramble_native_password(issued.token, scramble)
     # Not a BI token…

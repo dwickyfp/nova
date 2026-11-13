@@ -25,8 +25,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.common.audit import write_audit_log
+from app.common.metadata_actors import session_actor
 from app.common.ssrf_guard import BlockedEndpointError, resolve_and_validate_url
-from app.core.deps import get_current_user, require_role
+from app.core.deps import get_current_user
+from app.core.exceptions import NovaException
+from app.core.metadata_scope import actor_for, metadata_transaction
+from app.core.role_gates import require_active_role
 from app.modules.ai_ml.default_model import (
     DefaultModelSettings,
     read_default_model,
@@ -59,7 +63,7 @@ router = APIRouter()
 
 # Provider config is system config. Reused, not re-declared, from the repo's
 # admin role set (same list ``/users``, monitoring and task orchestration use).
-require_admin = Depends(require_role(*ADMIN_ROLES))
+require_admin = Depends(require_active_role(*ADMIN_ROLES))
 
 # Read routes still require only authentication. Built once so routes use a
 # module-level dependency instead of calling ``Depends(...)`` in argument
@@ -92,27 +96,32 @@ def _validate_provider_endpoint(endpoint: str) -> None:
 
 @router.get("/default-model", response_model=DefaultModelSettings)
 async def get_default_model(user: dict = require_user):
-    return await read_default_model()
+    return await read_default_model(actor_for(user))
 
 
 @router.put("/default-model", response_model=DefaultModelSettings)
 async def update_default_model(body: DefaultModelSettings, user: dict = require_admin):
+    actor = actor_for(user)
     try:
-        result = await save_default_model(body)
+        # The setting and its success audit commit together.
+        async with metadata_transaction(actor):
+            result = await save_default_model(body, actor)
+            await write_audit_log(
+                event_type="AI_PROVIDER", user_name=user["username"], action="UPDATE",
+                object_type="DEFAULT_MODEL", object_name=body.model_id or "automatic",
+                status="SUCCESS", session_id=user.get("session_id"),
+                active_role=user.get("active_role"),
+                security_context_version=actor.security_context_version,
+            )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
-    await write_audit_log(
-        event_type="AI_PROVIDER", user_name=user["username"], action="UPDATE",
-        object_type="DEFAULT_MODEL", object_name=body.model_id or "automatic", status="SUCCESS",
-        session_id=user.get("session_id"), active_role=user.get("active_role"),
-    )
     return result
 
 
 @router.get("/web-search", response_model=WebSearchStatus)
 async def get_web_search(user: dict = require_user):
     """Whether Studio web search has a Tavily key. The key itself is never returned."""
-    return await web_search_status()
+    return await web_search_status(actor_for(user))
 
 
 @router.put("/web-search/api-key", response_model=WebSearchStatus)
@@ -123,29 +132,35 @@ async def update_web_search_key(body: TavilyKeyRequest, user: dict = require_adm
     api_key = clean_tavily_key(body.api_key)
     if api_key is None:
         raise HTTPException(status_code=400, detail="Enter a valid Tavily API key.")
+    actor = actor_for(user)
     try:
-        result = await save_tavily_api_key(api_key)
+        async with metadata_transaction(actor):
+            result = await save_tavily_api_key(api_key, actor)
+            await write_audit_log(
+                event_type="AI_PROVIDER", user_name=user["username"], action="UPDATE",
+                object_type="WEB_SEARCH_KEY", object_name="tavily", status="SUCCESS",
+                session_id=user.get("session_id"), active_role=user.get("active_role"),
+                security_context_version=actor.security_context_version,
+            )
     except EncryptionError:
         raise HTTPException(
             status_code=500, detail="The key could not be stored securely."
         ) from None
-    await write_audit_log(
-        event_type="AI_PROVIDER", user_name=user["username"], action="UPDATE",
-        object_type="WEB_SEARCH_KEY", object_name="tavily", status="SUCCESS",
-        session_id=user.get("session_id"), active_role=user.get("active_role"),
-    )
     return result
 
 
 @router.delete("/web-search/api-key", response_model=WebSearchStatus)
 async def delete_web_search_key(user: dict = require_admin):
     """Remove the Tavily API key; agents then report that web search is not configured."""
-    result = await clear_tavily_api_key()
-    await write_audit_log(
-        event_type="AI_PROVIDER", user_name=user["username"], action="DELETE",
-        object_type="WEB_SEARCH_KEY", object_name="tavily", status="SUCCESS",
-        session_id=user.get("session_id"), active_role=user.get("active_role"),
-    )
+    actor = actor_for(user)
+    async with metadata_transaction(actor):
+        result = await clear_tavily_api_key(actor)
+        await write_audit_log(
+            event_type="AI_PROVIDER", user_name=user["username"], action="DELETE",
+            object_type="WEB_SEARCH_KEY", object_name="tavily", status="SUCCESS",
+            session_id=user.get("session_id"), active_role=user.get("active_role"),
+            security_context_version=actor.security_context_version,
+        )
     return result
 
 
@@ -154,7 +169,7 @@ async def list_providers(
     user: dict = require_user,
 ):
     """List all registered AI providers."""
-    providers = await ai_service.list_providers()
+    providers = await ai_service.list_providers(actor=session_actor(user))
     provider_responses = [AIProviderResponse(**p) for p in providers]
     return AIProviderListResponse(providers=provider_responses, count=len(provider_responses))
 
@@ -167,9 +182,13 @@ async def create_provider(
     """Create a new AI provider. Admin-only: provider config is system config."""
     _validate_provider_endpoint(body.endpoint)
     try:
-        result = await ai_service.create_provider(body.model_dump(), user["username"])
+        result = await ai_service.create_provider(
+            body.model_dump(), user["username"], actor=session_actor(user)
+        )
         if result is None:
             raise RuntimeError("Created AI provider is unavailable")
+    except NovaException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     await write_audit_log(
@@ -186,7 +205,7 @@ async def delete_provider(
     user: dict = require_admin,
 ):
     """Delete an AI provider and cascade-delete all its models. Admin-only."""
-    deleted = await ai_service.delete_provider(provider_id)
+    deleted = await ai_service.delete_provider(provider_id, actor=session_actor(user))
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Provider '{provider_id}' not found")
     await write_audit_log(
@@ -209,7 +228,9 @@ async def update_provider(
     if data.get("endpoint") is not None:
         _validate_provider_endpoint(data["endpoint"])
     try:
-        result = await ai_service.update_provider(provider_id, data)
+        result = await ai_service.update_provider(provider_id, data, actor=session_actor(user))
+    except NovaException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     if not result:
@@ -243,7 +264,7 @@ async def test_connection(
         api_key=body.api_key,
         # Only administrators can save a provider, so only they may probe the
         # local network; everyone else keeps the public-only check.
-        allow_private_network=any(role in user["roles"] for role in ADMIN_ROLES),
+        allow_private_network=user.get("active_role") in ADMIN_ROLES,
     )
     return TestConnectionResponse(**result)
 
@@ -257,7 +278,7 @@ async def list_models(
     user: dict = require_user,
 ):
     """List all AI models for a specific provider."""
-    models = await ai_service.list_models(provider_id)
+    models = await ai_service.list_models(provider_id, actor=session_actor(user))
     model_responses = [AIModelResponse(**m) for m in models]
     return AIModelListResponse(models=model_responses, count=len(model_responses))
 
@@ -273,7 +294,9 @@ async def create_model(
     data = body.model_dump()
     data["provider_id"] = provider_id
     try:
-        result = await ai_service.create_model(data, user["username"])
+        result = await ai_service.create_model(
+            data, user["username"], actor=session_actor(user)
+        )
         if result is None:
             raise RuntimeError("Created AI model is unavailable")
     except ValueError as e:
@@ -297,7 +320,10 @@ async def delete_model(
     user: dict = require_admin,
 ):
     """Delete an AI model by ID."""
-    deleted = await ai_service.delete_model(model_id)
+    try:
+        deleted = await ai_service.delete_model(model_id, actor=session_actor(user))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Model '{model_id}' not found")
     await write_audit_log(
@@ -323,7 +349,7 @@ async def update_model(
     if not data:
         raise HTTPException(status_code=400, detail="No fields to update")
     try:
-        result = await ai_service.update_model(model_id, data)
+        result = await ai_service.update_model(model_id, data, actor=session_actor(user))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     if not result:
@@ -359,17 +385,19 @@ async def update_api_key(
 
     Admin-only: it rotates a system credential.
     """
-    from app.common.crypto import encrypt
-    encrypted_key = encrypt(req.api_key)
-    
-    conn = await ai_service._connect()
     try:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                "UPDATE NOVA_SYSTEM.CONFIG_AI_PROVIDERS SET api_key = %s WHERE id = %s",
-                (encrypted_key, provider_id),
-            )
-    finally:
-        conn.close()
-    
+        updated = await ai_service.set_provider_api_key(
+            provider_id, req.api_key, actor=session_actor(user)
+        )
+    except NovaException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Provider '{provider_id}' not found")
+    await write_audit_log(
+        event_type="AI_PROVIDER", user_name=user["username"], action="UPDATE",
+        object_type="AI_PROVIDER_KEY", object_name=provider_id, status="SUCCESS",
+        session_id=user.get("session_id"), active_role=user.get("active_role"),
+    )
     return {"success": True, "message": "API key updated and encrypted"}

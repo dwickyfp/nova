@@ -50,7 +50,7 @@ class Journal(MemoryRepository):
             if table == kind and row.decision_id == decision_id
         ]
 
-    async def shared_decision(self, record_id, owner_name, model):
+    async def shared_decision(self, record_id, owner_name, model, *, actor):
         row = self.rows.get(("decisions", record_id))
         return deepcopy(row) if row and row.scope.principal == owner_name else None
 
@@ -110,11 +110,15 @@ async def program(monkeypatch):
     monkeypatch.setattr(decisions, "utc_now", lambda: END)
     monkeypatch.setattr(engine, "utc_now", lambda: END)
     policy = BusinessPolicy(revision=2, maximum_cost=1000, reviewer_roles=["ANALYST"])
-    monkeypatch.setattr(decisions, "read_business_policy", AsyncMock(side_effect=lambda: policy))
+    monkeypatch.setattr(
+        decisions, "read_business_policy", AsyncMock(side_effect=lambda *_args, **_kwargs: policy)
+    )
     from app.modules.access_control import business_policy
 
     monkeypatch.setattr(
-        business_policy, "read_business_policy", AsyncMock(side_effect=lambda: policy)
+        business_policy,
+        "read_business_policy",
+        AsyncMock(side_effect=lambda *_args, **_kwargs: policy),
     )
 
     async def numerical(value, user, *, operation_id):
@@ -537,8 +541,11 @@ async def resumed_outcome(resumed_decision, monkeypatch):
     selected = await decisions.operate_decision(
         original.id,
         DecisionOperation(
-            operation_id="outcome-select", expected_revision=1, operation="select",
-            option_id="transfer", mission_id=binding.mission_id,
+            operation_id="outcome-select",
+            expected_revision=1,
+            operation="select",
+            option_id="transfer",
+            mission_id=binding.mission_id,
         ),
         user,
     )
@@ -546,8 +553,10 @@ async def resumed_outcome(resumed_decision, monkeypatch):
     approved = await decisions.operate_decision(
         original.id,
         DecisionOperation(
-            operation_id="outcome-approve", expected_revision=selected.revision,
-            operation="approve", mission_id=binding.mission_id,
+            operation_id="outcome-approve",
+            expected_revision=selected.revision,
+            operation="approve",
+            mission_id=binding.mission_id,
         ),
         user,
     )
@@ -581,7 +590,8 @@ async def resumed_outcome(resumed_decision, monkeypatch):
 
 
 async def test_resumed_outcome_uses_current_credentials_and_preserves_historical_decision(
-    resumed_outcome, monkeypatch,
+    resumed_outcome,
+    monkeypatch,
 ):
     service, repo, source, _, approved, user, binding, admission = resumed_outcome
     save = repo.save
@@ -600,19 +610,21 @@ async def test_resumed_outcome_uses_current_credentials_and_preserves_historical
     assert approved.scope != outcome.scope
     assert source.calls[-1][1]["session_id"] == user["session_id"]
     assert not admission.held and admission.assert_owned.await_count > 0
-    assert await service.evaluate_outcome(
-        approved.id, user, mission_id=binding.mission_id
-    ) == outcome
+    assert (
+        await service.evaluate_outcome(approved.id, user, mission_id=binding.mission_id) == outcome
+    )
 
 
 async def test_outcome_refuses_a_stale_approved_mission_pin_before_observation(
-    resumed_outcome, monkeypatch,
+    resumed_outcome,
+    monkeypatch,
 ):
     service, repo, _, _, approved, user, binding, _ = resumed_outcome
     await decisions.operate_decision(
         approved.id,
         DecisionOperation(
-            operation_id="newer-cancellation", expected_revision=approved.revision,
+            operation_id="newer-cancellation",
+            expected_revision=approved.revision,
             operation="cancel",
         ),
         USER,
@@ -627,7 +639,8 @@ async def test_outcome_refuses_a_stale_approved_mission_pin_before_observation(
 
 
 async def test_resumed_outcome_observations_do_not_collide_with_original_security_scope(
-    resumed_outcome, monkeypatch,
+    resumed_outcome,
+    monkeypatch,
 ):
     service, repo, _, _, approved, user, binding, _ = resumed_outcome
     read, save = repo.get, repo.save
@@ -648,16 +661,28 @@ async def test_resumed_outcome_observations_do_not_collide_with_original_securit
     monkeypatch.setattr(repo, "get", scoped_get)
     monkeypatch.setattr(repo, "save", scoped_save)
     await service.evaluate_outcome(approved.id, USER)
-    original = next(row for (kind, _), row in repo.rows.items()
-                    if kind == "observations" and row.window == approved.outcome_window)
+    original = next(
+        row
+        for (kind, _), row in repo.rows.items()
+        if kind == "observations" and row.window == approved.outcome_window
+    )
     monitor = repo.rows[("monitors", original.monitor_id)]
-    assert original.id == decisions.fingerprint([
-        monitor.id, monitor.revision, original.window.model_dump(), original.evidence[0].digest,
-    ])
+    assert original.id == decisions.fingerprint(
+        [
+            monitor.id,
+            monitor.revision,
+            original.window.model_dump(),
+            original.evidence[0].digest,
+        ]
+    )
     outcome = await service.evaluate_outcome(approved.id, user, mission_id=binding.mission_id)
-    current = next(row for (kind, _), row in repo.rows.items()
-                   if kind == "observations" and row.window == approved.outcome_window
-                   and row.scope == Scope.from_user(user))
+    current = next(
+        row
+        for (kind, _), row in repo.rows.items()
+        if kind == "observations"
+        and row.window == approved.outcome_window
+        and row.scope == Scope.from_user(user)
+    )
     assert outcome.status == "complete" and current.id != original.id
     assert current.monitor_id == original.monitor_id
     assert current.monitor_revision == original.monitor_revision
@@ -666,15 +691,17 @@ async def test_resumed_outcome_observations_do_not_collide_with_original_securit
     assert repo.rows[("observations", original.id)] == original
     assert monitor.scope == approved.scope
     snapshot = len([kind for kind, _ in repo.rows if kind == "observations"])
-    assert await service.evaluate_outcome(
-        approved.id, user, mission_id=binding.mission_id
-    ) == outcome
+    assert (
+        await service.evaluate_outcome(approved.id, user, mission_id=binding.mission_id) == outcome
+    )
     assert len([kind for kind, _ in repo.rows if kind == "observations"]) == snapshot
 
 
 @pytest.mark.parametrize("change", ["generation", "session", "cancel", "decision"])
 async def test_outcome_rechecks_binding_and_decision_after_observation_before_persistence(
-    resumed_outcome, monkeypatch, change,
+    resumed_outcome,
+    monkeypatch,
+    change,
 ):
     service, repo, _, _, approved, user, binding, admission = resumed_outcome
     observe = service.observe
@@ -693,7 +720,8 @@ async def test_outcome_rechecks_binding_and_decision_after_observation_before_pe
             await decisions.operate_decision(
                 approved.id,
                 DecisionOperation(
-                    operation_id="cancel-during-query", expected_revision=approved.revision,
+                    operation_id="cancel-during-query",
+                    expected_revision=approved.revision,
                     operation="cancel",
                 ),
                 USER,
@@ -708,7 +736,8 @@ async def test_outcome_rechecks_binding_and_decision_after_observation_before_pe
 
 
 async def test_outcome_does_not_commit_after_admission_ownership_is_lost(
-    resumed_outcome, monkeypatch,
+    resumed_outcome,
+    monkeypatch,
 ):
     from app.modules.agents.harness_repository import AdmissionUnavailable
 
@@ -728,7 +757,8 @@ async def test_outcome_does_not_commit_after_admission_ownership_is_lost(
 
 
 async def test_policy_endpoint_authorizes_resumed_decision_through_exact_mission_pin(
-    resumed_decision, monkeypatch,
+    resumed_decision,
+    monkeypatch,
 ):
     from fastapi import FastAPI
     from httpx import ASGITransport, AsyncClient
@@ -748,8 +778,10 @@ async def test_policy_endpoint_authorizes_resumed_decision_through_exact_mission
         response = await client.get(url, params={"mission_id": binding.mission_id})
         assert response.status_code == 200
         assert response.json() == {
-            "current": False, "policy_revision": policy.revision,
-            "can_review": True, "can_edit": True,
+            "current": False,
+            "policy_revision": policy.revision,
+            "can_review": True,
+            "can_edit": True,
         }
         pins = list(binding.object_refs)
         binding.object_refs.clear()

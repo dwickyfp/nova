@@ -1,14 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
+import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import { DndContext } from "@dnd-kit/core";
 import { SortableContext } from "@dnd-kit/sortable";
 import { NotebookCellView } from "./cell";
+import { readToken } from "@/lib/read-token";
 import { cellForFile, columnKind, formatCell, formatDuration, INTERACTIVE_POLICY, needsScripts } from "./helpers";
 import { isEditableName, isNotebookName, nextNotebookName } from "./names";
 import { CellOutputs } from "./outputs";
 import { parseSseBlock } from "./stream";
 import type { CellOutput, NotebookCell } from "./types";
 import { isStale, type CellRun } from "./use-notebook";
+import "@/styles/index.css";
 
 const cell = (overrides: Partial<NotebookCell> = {}): NotebookCell => ({
   id: "c1",
@@ -195,6 +198,24 @@ describe("cell outputs", () => {
 });
 
 describe("cell", () => {
+  function contrast(text: string, background: string) {
+    const luminance = (color: string) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 1;
+      const context = canvas.getContext("2d")!;
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+      const channels = Array.from(context.getImageData(0, 0, 1, 1).data).slice(0, 3);
+      const [r, g, b] = channels.map((value) => {
+        const channel = value / 255;
+        return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+      });
+      return r * 0.2126 + g * 0.7152 + b * 0.0722;
+    };
+    const levels = [luminance(text), luminance(background)].sort((a, b) => b - a);
+    return (levels[0] + 0.05) / (levels[1] + 0.05);
+  }
+
   async function renderCell(props: Partial<Parameters<typeof NotebookCellView>[0]> = {}) {
     const onCommand = vi.fn();
     const screen = await render(
@@ -205,10 +226,8 @@ describe("cell", () => {
             index={1}
             count={3}
             run={run()}
-            stale={false}
             active={false}
             editing={false}
-            runtimeReady
             canEdit
             canRun
             onSelect={vi.fn()}
@@ -225,6 +244,133 @@ describe("cell", () => {
     );
     return { screen, onCommand };
   }
+
+  it.each(["sql", "python"] as const)("highlights %s before editing and escapes code markup", async (kind) => {
+    const source = kind === "sql" ? "SELECT '<img src=x onerror=alert(1)>' AS value" : "print('<img src=x onerror=alert(1)>')";
+    const { screen } = await renderCell({ cell: cell({ kind, source }) });
+    const preview = screen.container.querySelector("[data-cell-preview]");
+    expect(preview?.querySelector(".hljs-keyword, .hljs-built_in")).not.toBeNull();
+    expect(preview?.textContent).toContain(source);
+    expect(preview?.querySelector("img")).toBeNull();
+    expect(screen.container.querySelector(".monaco-editor")).toBeNull();
+  });
+
+  it.each([false, true])("keeps preview and editor syntax legible in dark=%s", async (dark) => {
+    const wasDark = document.documentElement.classList.contains("dark");
+    document.documentElement.classList.toggle("dark", dark);
+    try {
+      const source = "-- notebook comment\nSELECT 'value', 42";
+      const { screen } = await renderCell({ cell: cell({ source }) });
+      const background = readToken("--card", "#ffffff");
+      const preview = screen.container.querySelector("[data-cell-preview]")!;
+      const syntax = Array.from(preview.querySelectorAll<HTMLElement>(".hljs > span"));
+      expect(syntax.length).toBeGreaterThanOrEqual(4);
+      for (const token of syntax) {
+        expect(contrast(getComputedStyle(token).color, background), token.textContent ?? "").toBeGreaterThanOrEqual(4.5);
+      }
+      await screen.unmount();
+      const editorScreen = await renderCell({ cell: cell({ source }), active: true, editing: true });
+      await expect.element(editorScreen.screen.getByRole("textbox", { name: "SQL cell editor" })).toBeVisible();
+      await expect.poll(() => editorScreen.screen.container.querySelectorAll(".view-line span span").length).toBeGreaterThanOrEqual(4);
+      for (const token of editorScreen.screen.container.querySelectorAll<HTMLElement>(".view-line span span")) {
+        if (token.textContent?.trim()) {
+          expect(contrast(getComputedStyle(token).color, background), token.textContent).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await editorScreen.screen.unmount();
+    } finally {
+      document.documentElement.classList.toggle("dark", wasDark);
+    }
+  });
+
+  it.each(["Control", "Meta"])("runs exactly once with %s+Enter inside the code editor", async (modifier) => {
+    const onKey = vi.fn();
+    const onSource = vi.fn();
+    const { screen } = await renderCell({ active: true, editing: true, onKey, onSource });
+    const editor = screen.getByRole("textbox", { name: "SQL cell editor" });
+    await expect.element(editor).toBeVisible();
+    await expect.element(editor).toHaveFocus();
+    await userEvent.keyboard(`{${modifier}>}{Enter}{/${modifier}}`);
+    expect(onKey).toHaveBeenCalledExactlyOnceWith("c1", "run");
+    await userEvent.keyboard("{Enter}");
+    expect(onKey).toHaveBeenCalledTimes(1);
+    expect(onSource).toHaveBeenCalledWith("c1", expect.stringContaining("\n"));
+    // Let Monaco's 50 ms word-highlight task finish before disposing its model.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  });
+
+  it.each([{ canRun: false }, { run: run({ status: "running" }) }])("refuses keyboard execution while unavailable", async (props) => {
+    const onKey = vi.fn();
+    const { screen } = await renderCell({ ...props, onKey });
+    const preview = screen.container.querySelector("[data-cell-preview]")!;
+    preview.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true }));
+    expect(onKey).not.toHaveBeenCalled();
+  });
+
+  it("finishes Markdown editing with Ctrl+Enter without a running runtime", async () => {
+    const onKey = vi.fn();
+    const { screen } = await renderCell({
+      cell: cell({ kind: "markdown", source: "## Notes" }),
+      active: true, editing: true, canRun: false, run: undefined, onKey,
+    });
+    const editor = screen.getByRole("textbox", { name: "Markdown cell editor" });
+    await expect.element(editor).toHaveFocus();
+    await userEvent.keyboard("{Control>}{Enter}{/Control}");
+    expect(onKey).toHaveBeenCalledExactlyOnceWith("c1", "run");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  });
+
+  it("opens a cell from its preview without switching editing off first", async () => {
+    const onSelect = vi.fn();
+    const { screen } = await renderCell({ onSelect });
+    const preview = screen.container.querySelector<HTMLElement>("[data-cell-preview]")!;
+    await userEvent.click(preview);
+    expect(onSelect).toHaveBeenCalledWith("c1", true);
+    expect(onSelect).not.toHaveBeenCalledWith("c1", false);
+  });
+
+  it("gives Markdown room for several lines and keeps editing on clicks inside", async () => {
+    const onSelect = vi.fn();
+    const onSource = vi.fn();
+    const { screen } = await renderCell({
+      cell: cell({ kind: "markdown", source: "Notes" }),
+      active: true, editing: true, run: undefined, onSelect, onSource,
+    });
+    const editor = screen.getByRole("textbox", { name: "Markdown cell editor" });
+    await expect.element(editor).toHaveFocus();
+    const box = screen.container.querySelector<HTMLElement>("[data-cell-editor]")!;
+    expect(box.getBoundingClientRect().height).toBeGreaterThanOrEqual(4 * 20);
+    await userEvent.click(box);
+    expect(onSelect).not.toHaveBeenCalledWith("c1", false);
+    await userEvent.keyboard("{End}{Enter}a{Enter}b{Enter}c{Enter}d{Enter}e");
+    expect(onSource).toHaveBeenLastCalledWith("c1", "Notes\na\nb\nc\nd\ne");
+    await expect.poll(() => box.getBoundingClientRect().height).toBeGreaterThanOrEqual(6 * 20);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  });
+
+  it("changes type directly from its labelled dropdown using the keyboard", async () => {
+    const onKind = vi.fn();
+    const { screen } = await renderCell({ onKind });
+    const type = screen.getByRole("combobox", { name: "Cell type" });
+    await expect.element(type).toHaveTextContent("SQL");
+    await type.click();
+    await userEvent.keyboard("{Home}");
+    await expect.element(page.getByRole("option", { name: "Python", exact: true })).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    expect(onKind).toHaveBeenCalledExactlyOnceWith("c1", "python");
+    await expect.element(type).toHaveFocus();
+    await type.click();
+    await page.getByRole("option", { name: "Markdown", exact: true }).click();
+    expect(onKind).toHaveBeenLastCalledWith("c1", "markdown");
+  });
+
+  it.each([{ canEdit: false }, { run: run({ status: "running" }) }])("keeps the type visible but refuses changing it when locked", async (props) => {
+    const { screen } = await renderCell(props);
+    const type = screen.getByRole("combobox", { name: "Cell type" });
+    await expect.element(type).toHaveTextContent("SQL");
+    await expect.element(type).toBeDisabled();
+  });
 
   it("moves with the keyboard from its handle", async () => {
     const { screen, onCommand } = await renderCell();
@@ -255,20 +401,39 @@ describe("cell", () => {
 
   it("runs but cannot be changed in a view-only workspace", async () => {
     const { screen, onCommand } = await renderCell({ canEdit: false });
-    expect(screen.getByRole("button", { name: "Move up" }).element()).toHaveProperty("disabled", true);
+    await screen.getByRole("button", { name: "Cell actions" }).click();
+    await expect.element(page.getByRole("menuitem", { name: /^Move up/ })).toHaveAttribute("aria-disabled", "true");
+    await userEvent.keyboard("{Escape}");
     await screen.getByRole("button", { name: "Run this cell" }).click();
     expect(onCommand).toHaveBeenCalledWith("c1", "run");
   });
 
-  it("moves up and down from its toolbar, never past the ends", async () => {
+  it("moves up and down from Cell actions", async () => {
     const { screen, onCommand } = await renderCell();
-    await screen.getByRole("button", { name: "Move up" }).click();
-    await screen.getByRole("button", { name: "Move down" }).click();
+    await screen.getByRole("button", { name: "Cell actions" }).click();
+    await page.getByRole("menuitem", { name: /^Move up/ }).click();
+    await screen.getByRole("button", { name: "Cell actions" }).click();
+    await page.getByRole("menuitem", { name: /^Move down/ }).click();
     expect(onCommand).toHaveBeenNthCalledWith(1, "c1", "move-up");
     expect(onCommand).toHaveBeenNthCalledWith(2, "c1", "move-down");
+  });
+
+  it("refuses moving beyond the first position", async () => {
     const first = await renderCell({ index: 0 });
-    const up = first.screen.container.querySelector<HTMLButtonElement>('button[aria-label="Move up"]');
-    expect(up?.disabled).toBe(true);
+    await first.screen.getByRole("button", { name: "Cell actions" }).click();
+    await expect.element(page.getByRole("menuitem", { name: /^Move up/ })).toHaveAttribute("aria-disabled", "true");
+    await userEvent.keyboard("{Escape}");
+  });
+
+  it("uses Markdown headings without a separate title or old execution controls", async () => {
+    const { screen } = await renderCell({
+      cell: cell({ kind: "markdown", source: "## Revenue notes", title: "Old code title" }),
+      onTitle: vi.fn(), run: run({ status: "failed" }),
+    });
+    await expect.element(screen.getByRole("heading", { name: "Revenue notes" })).toBeVisible();
+    expect(screen.container.querySelector('[aria-label="Cell title"]')).toBeNull();
+    expect(screen.container.querySelector('[aria-label="Run this cell"]')).toBeNull();
+    await expect.element(screen.getByRole("combobox", { name: "Cell type" })).toHaveTextContent("Markdown");
   });
 
   it("saves a title on Enter and keeps SQL without an engine choice", async () => {

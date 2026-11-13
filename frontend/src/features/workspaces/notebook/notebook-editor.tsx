@@ -57,7 +57,7 @@ import type { CellKeyAction } from "./cell-editor";
 import { RuntimeControl } from "./runtime-control";
 import { NotebookNevaSurface, type CellProposal } from "./neva";
 import { NotebookSidePanel, type SidePanelTab } from "./side-panel";
-import type { CellKind, CellOutput, NotebookCell, RunMode } from "./types";
+import type { CellKind, CellOutput, NotebookCell, RunMode, SqlEngine } from "./types";
 import { useNotebook, type NotebookModel } from "./use-notebook";
 
 const SAVE_LABEL: Record<NotebookModel["saveState"], string> = {
@@ -240,11 +240,28 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
     [addCell, cells, focusCanvas, runCells, select],
   );
 
+  // Cells are memoized: hand them handlers that never change identity, so
+  // typing in one cell re-renders that cell only, not the whole notebook.
+  const latest = useRef({ onCellKey, command, updateCell: model.updateCell });
+  latest.current = { onCellKey, command, updateCell: model.updateCell };
+  const cellHandlers = useMemo(
+    () => ({
+      onKind: (id: string, kind: CellKind) => latest.current.updateCell(id, { kind }),
+      onName: (id: string, name: string | null) => latest.current.updateCell(id, { name }),
+      onTitle: (id: string, title: string | null) => latest.current.updateCell(id, { title }),
+      onEngine: (id: string, engine: SqlEngine) =>
+        latest.current.updateCell(id, { engine }),
+      onKey: (id: string, action: CellKeyAction) => latest.current.onCellKey(id, action),
+      onCommand: (id: string, action: CellCommand) => latest.current.command(id, action),
+    }),
+    [],
+  );
+
   // Command mode: keys on the canvas while no editor has focus.
   const onCanvasKey = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement;
-      if (target.closest(".monaco-editor") || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
+      if (target.closest('.monaco-editor, [role="combobox"], [role="listbox"]') || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
         return;
       }
       const meta = event.metaKey || event.ctrlKey;
@@ -349,13 +366,9 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
       const to = cells.findIndex((c) => c.id === over.id);
       if (to >= 0) {
         moveCell(String(active.id), to);
-        toast.message("Cell moved", {
-          description: "Outputs below it may be out of date",
-          action: { label: "Undo", onClick: () => model.undo() },
-        });
       }
     },
-    [cells, model, moveCell],
+    [cells, moveCell],
   );
 
   const insertIndexFromEvent = useCallback(
@@ -723,7 +736,7 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
             dropActive && "bg-surface-1",
           )}
         >
-          <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-3 px-4 py-6 pr-6">
+          <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-0 px-3 py-4 pr-4">
             {cells.length === 0 ? (
               <EmptyState
                 title="Start an analysis"
@@ -759,20 +772,18 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
                         index={index}
                         count={cells.length}
                         run={runs[cell.id]}
-                        stale={stale.has(cell.id)}
                         active={activeId === cell.id}
                         editing={activeId === cell.id && editing}
-                        runtimeReady={ready}
                         canEdit={canEdit}
                         canRun={canRun}
                         onSelect={select}
                         onSource={model.updateSource}
-                        onKind={(id, kind) => model.updateCell(id, { kind })}
-                        onName={(id, name) => model.updateCell(id, { name })}
-                        onTitle={(id, title) => model.updateCell(id, { title })}
-                        onEngine={(id, engine) => model.updateCell(id, { engine })}
-                        onKey={onCellKey}
-                        onCommand={command}
+                        onKind={cellHandlers.onKind}
+                        onName={cellHandlers.onName}
+                        onTitle={cellHandlers.onTitle}
+                        onEngine={cellHandlers.onEngine}
+                        onKey={cellHandlers.onKey}
+                        onCommand={cellHandlers.onCommand}
                         tableActions={tableActions}
                       />
                       {proposal?.mode === "insert_below" && proposal.targetCellId === cell.id ? (
@@ -871,7 +882,7 @@ function InsertBar({
   disabled: boolean;
 }) {
   return (
-    <div className="group/insert flex h-4 items-center gap-2 pl-14 opacity-0 transition-opacity focus-within:opacity-100 hover:opacity-100">
+    <div className="group/insert flex h-6 items-center gap-2 pl-7 opacity-0 transition-opacity focus-within:opacity-100 hover:opacity-100">
       <div className="h-px flex-1 bg-surface-border" />
       {(["python", "sql", "markdown"] as const).map((kind) => (
         <button

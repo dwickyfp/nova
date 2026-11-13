@@ -33,7 +33,7 @@ from app.modules.backup.schemas import (
     SnapshotCreate,
     SnapshotRestore,
 )
-from app.modules.backup.service import BackupError, backup_service
+from app.modules.backup.service import BackupError, BackupUnsupported, backup_service
 
 SECRET_SENTINEL = "AKIA_BACKUP_SENTINEL_0001"
 
@@ -245,15 +245,20 @@ class TestRepositories:
 
 
 class TestRecycleBin:
-    async def test_list_reads_engine_surface(self, pipeline):
-        pipeline.default = _Result(
-            columns=["Name", "Type"], rows=[["staging", "TABLE"]]
-        )
-        rows = await backup_service.list_recycle_bin(
-            username="alice", encrypted_password="enc", session_id="s1"
-        )
-        assert pipeline.statements()[0] == "SHOW CATALOG RECYCLE BIN"
-        assert rows == [{"Name": "staging", "Type": "TABLE"}]
+    async def test_list_is_refused_without_an_engine_call(self, pipeline):
+        """The engine answers the recycle-bin catalog only for root."""
+        with pytest.raises(BackupUnsupported, match="exact name"):
+            await backup_service.list_recycle_bin(
+                username="alice", encrypted_password="enc", session_id="s1"
+            )
+        assert pipeline.calls == []
+
+    def test_http_list_reports_not_implemented_without_engine_text(self, client, pipeline):
+        resp = client.get("/api/v1/backup/recycle-bin")
+        assert resp.status_code == 501
+        detail = resp.json()["detail"]
+        assert "exact name" in detail and "root" not in detail and "RPC" not in detail
+        assert pipeline.calls == []
 
     async def test_recover_table(self, pipeline):
         await backup_service.recover(
@@ -264,16 +269,30 @@ class TestRecycleBin:
         )
         assert pipeline.statements()[0] == "RECOVER TABLE `DATALAKE`.`orders`"
 
-    async def test_recover_database_with_rename(self, pipeline):
+    async def test_recover_database(self, pipeline):
         await backup_service.recover(
-            RecoverRequest(object_type="database", name="DATALAKE", new_name="DATALAKE_restored"),
+            RecoverRequest(object_type="database", name="DATALAKE"),
             username="alice",
             encrypted_password="enc",
             session_id="s1",
         )
-        assert pipeline.statements()[0] == (
-            "RECOVER DATABASE `DATALAKE` AS `DATALAKE_restored`"
-        )
+        assert pipeline.statements()[0] == "RECOVER DATABASE `DATALAKE`"
+
+    @pytest.mark.parametrize("object_type", ["database", "table"])
+    def test_rename_while_recovering_is_refused(self, client, pipeline, object_type):
+        resp = client.post("/api/v1/backup/recover", json={
+            "object_type": object_type, "database": "d", "name": "t", "new_name": "t2",
+        })
+        assert resp.status_code == 400
+        assert "rename" in resp.json()["detail"]
+        assert pipeline.calls == []
+
+    def test_every_issued_statement_parses_with_the_pinned_grammar(self):
+        """The fake pipeline skips the parser; check the real one here."""
+        from app.sql_frontend.parser import parse_statement
+
+        for sql in ("RECOVER DATABASE `DATALAKE`", "RECOVER TABLE `d`.`t`"):
+            parse_statement(sql)
 
     def test_http_recover(self, client, pipeline):
         resp = client.post(
@@ -329,7 +348,7 @@ class TestAuthorization:
 
     def test_reads_are_open_to_authenticated_users(self, low_priv_client, pipeline):
         assert low_priv_client.get("/api/v1/backup/snapshots").status_code == 200
-        assert low_priv_client.get("/api/v1/backup/recycle-bin").status_code == 200
+        assert low_priv_client.get("/api/v1/backup/recycle-bin").status_code == 501
         assert low_priv_client.get("/api/v1/backup/repositories").status_code == 200
 
     def test_admin_role_is_accepted(self, client, pipeline):

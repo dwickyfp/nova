@@ -3,14 +3,15 @@
 The init-nova.sql creates tables with flat naming:
   CONFIG_STAGES, CONFIG_USER_PREFERENCES, CONFIG_PINNED_QUERIES, AUDIT_LOG, etc.
 
-All persistent state lives in StarRocks NOVA_SYSTEM — no SQLite, no PostgreSQL.
+Legacy definitions remain available to source-inventory tools. Runtime control
+metadata uses PostgreSQL; startup never applies these definitions.
 """
 
-import contextlib
 
 from asyncmy.errors import ProgrammingError
 
 from app.core.database import db
+from app.modules.access_control.security_context import SecurityContext
 
 AI_MODEL_COLUMN_MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("logical_alias", "VARCHAR(128)"),
@@ -19,26 +20,6 @@ AI_MODEL_COLUMN_MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("modality", "VARCHAR(32)"),
     ("metric", "VARCHAR(32)"),
 )
-
-ENTITIES_DDL = """
-CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_ENTITIES (
-    catalog_name VARCHAR(128) NOT NULL,
-    database_name VARCHAR(128) NOT NULL,
-    schema_name VARCHAR(128) NOT NULL,
-    name VARCHAR(128) NOT NULL,
-    id VARCHAR(64) NOT NULL,
-    description TEXT,
-    relation_name VARCHAR(512) NOT NULL,
-    key_columns JSON NOT NULL,
-    owner_name VARCHAR(128) NOT NULL,
-    tags JSON,
-    status VARCHAR(32) NOT NULL,
-    created_at DATETIME NOT NULL,
-    updated_at DATETIME NOT NULL
-) PRIMARY KEY(catalog_name, database_name, schema_name, name)
-DISTRIBUTED BY HASH(catalog_name, database_name, schema_name, name) BUCKETS 1
-PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
-"""
 
 WORKSPACE_ENTRIES_DDL = """
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_WORKSPACE_ENTRIES (
@@ -494,95 +475,35 @@ async def migrate_ml_metadata() -> None:
 
 
 async def init_task_orchestration() -> None:
-    """Idempotently create the Phase 9 CONFIG_TASK* tables.
+    """Verify the installed metadata epoch; application roles never create tables."""
+    from app.core.metadata_runtime import metadata_db
 
-    Invariant: no credential-bearing column is ever defined here. If a
-    credential must be referenced, store the object *name*, never its value.
-    """
-    for ddl in TASK_ORCHESTRATION_DDL:
-        await db.execute_system(ddl)
-    await migrate_task_orchestration_columns()
+    await metadata_db().probe()
 
 
 async def init_nova_system() -> None:
-    """Verify NOVA_SYSTEM exists and setup marker is present.
+    """Verify metadata readiness; legacy DDL above is retained for import tooling."""
+    from app.core.metadata_runtime import metadata_db
 
-    The actual DDL is handled by init-nova.sql in Docker.
-    This just ensures the setup_complete preference exists.
-    """
-    try:
-        await db.execute_system(WORKSPACE_ENTRIES_DDL)
-        await db.execute_system(WORKSPACE_FILE_VERSIONS_DDL)
-        await db.execute_system(WORKSPACES_DDL)
-        await db.execute_system(WORKSPACE_SHARES_DDL)
-        await db.execute_system(ENTITIES_DDL)
-        for ddl in RANGER_CONTROL_PLANE_DDL:
-            await db.execute_system(ddl)
-        await migrate_ml_metadata()
-        result = await db.execute_system(
-            "SELECT pref_value FROM NOVA_SYSTEM.CONFIG_USER_PREFERENCES "
-            "WHERE user_name = '__system__' AND pref_key = 'setup_complete'"
-        )
-        if not result["rows"]:
-            await db.execute_system(
-                "INSERT INTO NOVA_SYSTEM.CONFIG_USER_PREFERENCES "
-                "(user_name, pref_key, pref_value, updated_at) "
-                "VALUES ('__system__', 'setup_complete', 'false', NOW())"
-            )
-    except Exception:
-        # Tables may not exist yet if init hasn't run
-        pass
-    else:
-        from app.modules.assistant.repository import UI_STATE_DDL
-
-        await db.execute_system(UI_STATE_DDL)
-        # Once the base schema is confirmed, an AI model migration failure
-        # must fail startup rather than leaving model CRUD on a stale schema.
-        await migrate_ai_model_columns()
-        from app.modules.query_autopilot.schema import ensure_schema
-
-        await ensure_schema()
-        from app.modules.streams.claims import CLAIMS_DDL
-        from app.modules.streams.journal import (
-            CONSUMPTION_OPERATIONS_DDL,
-            CONSUMPTIONS_DDL,
-            STREAM_COLUMN_MIGRATIONS,
-        )
-        from app.modules.streams.repository import NAMESPACE_OPERATIONS_DDL, STREAMS_DDL
-        from app.modules.streams.sources import STREAM_SOURCE_DDL
-
-        for ddl in (
-            CLAIMS_DDL, STREAMS_DDL, NAMESPACE_OPERATIONS_DDL,
-            CONSUMPTIONS_DDL, CONSUMPTION_OPERATIONS_DDL, *STREAM_SOURCE_DDL,
-        ):
-            await db.execute_system(ddl)
-        for table, column, column_type in STREAM_COLUMN_MIGRATIONS:
-            if not await _column_exists(table, column):
-                with contextlib.suppress(ProgrammingError):
-                    await db.execute_system(
-                        f"ALTER TABLE NOVA_SYSTEM.{table} ADD COLUMN {column} {column_type}"
-                    )
-        from app.modules.superset.access import AUTHOR_ROLES_DDL
-
-        await db.execute_system(AUTHOR_ROLES_DDL)
+    await metadata_db().probe()
 
 
 async def is_setup_complete() -> bool:
-    """Check if the initial admin setup has been completed."""
+    """Check if the initial admin setup has been completed.
+
+    Read before any session exists, with the explicit settings-reader context;
+    a missing marker or a store error means not complete.
+    """
+    from app.common.preference_store import SYSTEM_OWNER, read_value, settings_reader
+
     try:
-        result = await db.execute_system(
-            "SELECT pref_value FROM NOVA_SYSTEM.CONFIG_USER_PREFERENCES "
-            "WHERE user_name = '__system__' AND pref_key = 'setup_complete'"
-        )
-        return bool(result["rows"]) and result["rows"][0][0] == "true"
+        return await read_value(settings_reader(), SYSTEM_OWNER, "setup_complete") == "true"
     except Exception:
         return False
 
 
-async def mark_setup_complete() -> None:
-    """Mark the initial setup as complete."""
-    await db.execute_system(
-        "INSERT INTO NOVA_SYSTEM.CONFIG_USER_PREFERENCES "
-        "(user_name, pref_key, pref_value, updated_at) "
-        "VALUES ('__system__', 'setup_complete', 'true', NOW())"
-    )
+async def mark_setup_complete(actor: SecurityContext) -> None:
+    """Mark the initial setup as complete; RLS requires active ACCOUNTADMIN."""
+    from app.common.preference_store import SYSTEM_OWNER, write_values
+
+    await write_values(actor, SYSTEM_OWNER, {"setup_complete": "true"})

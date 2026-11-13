@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.metadata_actor import acting_as
 from app.modules.catalog import visibility
+from app.modules.catalog.metadata_repository import CATALOG_REFRESHER
 from app.modules.catalog.sync import reconcile_catalogs, sync_catalog
 from tests.conftest import s3_credentials
 from tests.integration import test_external_catalogs_l3 as external_l3
@@ -40,6 +42,22 @@ namespace = external_l3.namespace
 MINIO_ACCESS, MINIO_SECRET = s3_credentials()
 
 
+@pytest.fixture
+def catalog_refresh(engine_workload):
+    async def refresh(name=None, *, lineage=False):
+        async with engine_workload("maintenance"):
+            with acting_as(CATALOG_REFRESHER):
+                if lineage:
+                    from app.modules.catalog.lineage import harvest_lineage
+
+                    return await harvest_lineage()
+                if name is None:
+                    return await reconcile_catalogs(actor=CATALOG_REFRESHER, trigger="manual")
+                return await sync_catalog(name, actor=CATALOG_REFRESHER, trigger="manual")
+
+    return refresh
+
+
 async def _create_raw_catalog(names: dict) -> None:
     """``CREATE EXTERNAL CATALOG`` as root, the way a DBA would outside Nova."""
     await _admin_execute(
@@ -47,7 +65,7 @@ async def _create_raw_catalog(names: dict) -> None:
     )
 
 
-async def _store_rows(catalog: str) -> dict[str, list]:
+async def _store_rows(catalog: str, metadata_inspect) -> dict[str, list]:
     rows = {}
     for table, column in (
         ("CATALOG_CATALOGS", "name"),
@@ -56,7 +74,9 @@ async def _store_rows(catalog: str) -> dict[str, list]:
         ("CATALOG_SYNC_RUNS", "catalog_name"),
     ):
         rows[table] = list(
-            await _admin_execute(f"SELECT * FROM NOVA_SYSTEM.{table} WHERE {column} = '{catalog}'")
+            await metadata_inspect(
+                f"SELECT * FROM nova_meta.{table.lower()} WHERE {column}=%s", (catalog,)
+            )
             or []
         )
     return rows
@@ -70,7 +90,7 @@ def _assert_no_credential(value: object) -> None:
 
 class TestRawSqlCatalogSync:
     async def test_raw_catalog_tables_columns_and_drops_are_recorded(
-        self, admin_client, namespace
+        self, admin_client, namespace, metadata_inspect, catalog_refresh
     ):
         catalog, database, table = namespace["catalog"], namespace["database"], namespace["table"]
         await _create_raw_catalog(namespace)
@@ -79,11 +99,11 @@ class TestRawSqlCatalogSync:
             "PROPERTIES ('write.format.default'='parquet')"
         )
 
-        runs = await reconcile_catalogs(trigger="manual")
+        runs = await catalog_refresh()
 
         run = next(r for r in runs if r["catalog_name"] == catalog)
         assert run["status"] == "ok", run
-        rows = await _store_rows(catalog)
+        rows = await _store_rows(catalog, metadata_inspect)
         (row,) = rows["CATALOG_CATALOGS"]
         assert "engine" in row and "iceberg" in row  # source, catalog_type
         objects = {(r[2], r[3], r[4]) for r in rows["CATALOG_OBJECTS"]}
@@ -96,26 +116,26 @@ class TestRawSqlCatalogSync:
 
         # A table dropped outside Nova is marked, not forgotten.
         await _admin_execute(f"DROP TABLE {catalog}.{database}.{table} FORCE")
-        run = await sync_catalog(catalog, trigger="manual")
+        run = await catalog_refresh(catalog)
         assert run["counts"]["dropped"] == 1
-        dropped = await _admin_execute(
-            "SELECT dropped_at FROM NOVA_SYSTEM.CATALOG_OBJECTS "
+        dropped = await metadata_inspect(
+            "SELECT dropped_at FROM nova_meta.catalog_objects "
             f"WHERE catalog_name = '{catalog}' AND object_name = '{table}'"
         )
         assert dropped and dropped[0][0] is not None
 
         # So is the catalog itself once the engine no longer has it.
         await _admin_execute(f"DROP CATALOG {catalog}")
-        await reconcile_catalogs(trigger="manual")
-        gone = await _admin_execute(
-            f"SELECT dropped_at FROM NOVA_SYSTEM.CATALOG_CATALOGS WHERE name = '{catalog}'"
+        await catalog_refresh()
+        gone = await metadata_inspect(
+            f"SELECT dropped_at FROM nova_meta.catalog_catalogs WHERE name = '{catalog}'"
         )
         assert gone and gone[0][0] is not None
 
 
 class TestCatalogApi:
     async def test_caller_lists_catalogs_columns_and_cannot_refresh(
-        self, admin_client, namespace
+        self, admin_client, namespace, metadata_inspect, catalog_refresh
     ):
         catalog, database, table = namespace["catalog"], namespace["database"], namespace["table"]
         await _create_raw_catalog(namespace)
@@ -128,8 +148,7 @@ class TestCatalogApi:
             f"GRANT ALL ON DATABASE `{database}` TO '{L3_ADMIN_USER}'",
             f"GRANT ALL ON ALL TABLES IN DATABASE `{database}` TO '{L3_ADMIN_USER}'",
         )
-        await sync_catalog(catalog, trigger="manual")
-        await reconcile_catalogs(trigger="manual")
+        await catalog_refresh()
         await visibility.bump()
 
         resp = await admin_client.get("/api/v1/catalog/catalogs")
@@ -159,8 +178,8 @@ class TestCatalogApi:
         # The suite's role is not a security admin: refresh is refused and audited.
         resp = await admin_client.post(f"/api/v1/catalog/catalogs/{catalog}/refresh")
         assert resp.status_code == 403, resp.text
-        audit = await _admin_execute(
-            "SELECT status FROM NOVA_SYSTEM.AUDIT_LOG "
+        audit = await metadata_inspect(
+            "SELECT status FROM nova_meta.audit_log "
             f"WHERE action = 'REFRESH_METADATA' AND object_name = '{catalog}' "
             "ORDER BY event_time DESC LIMIT 1"
         )

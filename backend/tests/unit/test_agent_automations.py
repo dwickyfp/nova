@@ -68,8 +68,14 @@ class FakeExecutor:
         @asynccontextmanager
         async def connection():
             self.owners.append(owner)
-            yield SimpleNamespace(name="impersonated")
+            @asynccontextmanager
+            async def cursor(*_args, **_kwargs):
+                yield SimpleNamespace()
+            yield SimpleNamespace(name="impersonated", cursor=cursor)
         return connection()
+
+    async def _prepare_task_session(self, cursor, spec):
+        assert spec.active_role == "analyst"
 
 
 @pytest.fixture
@@ -84,7 +90,6 @@ def run_env(monkeypatch):
                         AsyncMock(return_value={"thread_id": "t1"}))
     append = AsyncMock()
     monkeypatch.setattr(assistant_repository, "append_message", append)
-    monkeypatch.setattr(automations, "write_audit_log", AsyncMock())
     seen = {}
 
     async def run_turn(agent, item, thread_id):
@@ -107,7 +112,7 @@ async def test_a_run_executes_as_the_owner_and_lands_in_history(run_env):
     assert result.status == "delivered:inbox"
     assert result.thread_id == "t1"
     assert [call.kwargs["role"] for call in append.call_args_list] == ["user", "assistant"]
-    repository.record_run.assert_awaited_once()
+    repository.record_run.assert_not_awaited()
 
 
 async def test_an_unmet_condition_is_recorded_but_not_delivered(run_env, monkeypatch):
@@ -134,17 +139,27 @@ async def test_delivery_calls_the_owners_mcp_tool_with_the_answer(run_env, monke
                         AsyncMock(return_value={"server_id": "s1", "endpoint": "https://x"}))
     call = AsyncMock(return_value={"content": []})
     monkeypatch.setattr(mcp_client, "call_tool", call)
-    result = await AutomationRunner(FakeExecutor(), repository=repository).run(
-        automation(delivery={"mcp_tool_id": "t9", "text_argument": "text",
-                             "fixed_arguments": {"channel": "#sales"}}),
-        now=NOW,
-    )
+    prepared, receipt = AsyncMock(), AsyncMock()
+
+    async def delivered(*_args):
+        prepared.assert_awaited_once()
+        return {"content": []}
+
+    call.side_effect = delivered
+    with automations.delivery_journal(prepared, receipt):
+        result = await AutomationRunner(FakeExecutor(), repository=repository).run(
+            automation(delivery={"mcp_tool_id": "t9", "text_argument": "text",
+                                 "fixed_arguments": {"channel": "#sales"}}),
+            now=NOW,
+        )
     assert result.status == "delivered:inbox+external"
     assert call.call_args.args[2] == {"channel": "#sales",
                                       "text": "Penjualan minggu lalu 9.000.000."}
+    assert prepared.call_args.args[0]["arguments"] == call.call_args.args[2]
+    receipt.assert_awaited_once()
 
 
-async def test_a_failed_run_is_recorded_not_raised(run_env):
+async def test_a_failed_run_returns_a_redacted_outcome_for_the_job_owner(run_env):
     _seen, _append, repository = run_env
 
     class Broken:
@@ -153,26 +168,22 @@ async def test_a_failed_run_is_recorded_not_raised(run_env):
 
     result = await AutomationRunner(Broken(), repository=repository).run(automation(), now=NOW)
     assert result.status == "failed:RuntimeError"
-    repository.record_run.assert_awaited_once()
+    repository.record_run.assert_not_awaited()
 
 
-async def test_a_due_fire_runs_once_across_workers(monkeypatch):
+async def test_worker_drains_durable_jobs_without_using_redis_claims(monkeypatch):
     monkeypatch.setattr(automations.automation_repository, "due",
                         AsyncMock(return_value=[automation()]))
-    claims = set()
-
-    class Redis:
-        async def set(self, key, value, nx, ex):
-            if key in claims:
-                return None
-            claims.add(key)
-            return True
-
     runner = SimpleNamespace(run=AsyncMock())
-    first, second = AutomationWorker(runner, Redis()), AutomationWorker(runner, Redis())
-    assert await first.tick(NOW) == 1
-    assert await second.tick(NOW) == 0
-    runner.run.assert_awaited_once()
+    redis = SimpleNamespace(set=AsyncMock(side_effect=RuntimeError("Redis unavailable")))
+    worker = AutomationWorker(runner, redis)
+    worker._jobs = SimpleNamespace(enqueue=AsyncMock(),
+                                  claim=AsyncMock(side_effect=[{"id": "job"}, None]),
+                                  run=AsyncMock())
+    assert await worker.tick(NOW) == 1
+    worker._jobs.enqueue.assert_awaited_once_with(automation())
+    worker._jobs.run.assert_awaited_once_with({"id": "job"}, runner, NOW)
+    redis.set.assert_not_awaited()
 
 
 async def test_the_chat_tool_is_a_write_and_owner_only():

@@ -1,5 +1,4 @@
 import os
-from contextlib import suppress
 from uuid import uuid4
 
 import asyncmy
@@ -19,7 +18,9 @@ from tests.conftest import engine_host_ports, s3_credentials
 pytestmark = pytest.mark.engine
 
 
-async def test_frontend_http_native_forms_task_metadata_and_explicit_binding(client, admin_token):
+async def test_frontend_http_native_forms_task_metadata_and_explicit_binding(
+    client, admin_token, metadata_inspect
+):
     client.headers["Authorization"] = f"Bearer {admin_token}"
     name = "frontend_" + uuid4().hex[:12]
     task = "frontend_task_" + uuid4().hex[:12]
@@ -51,16 +52,23 @@ async def test_frontend_http_native_forms_task_metadata_and_explicit_binding(cli
         await ranger_client.put_role(
             RangerRole(name=role, users=[RangerRoleMember(name="nova_admin")])
         )
-        policy = await ranger_client.put_policy(RangerPolicy.model_validate({
-            "name": f"frontend-fixture/{role}", "service": settings.RANGER_SERVICE_NAME,
-            "resources": {
-                "catalog": {"values": ["default_catalog"]},
-                "database": {"values": [database]}, "table": {"values": ["*"]},
-                "column": {"values": ["*"]},
-            },
-            "policyItems": [{"roles": [role],
-                             "accesses": [{"type": "select", "isAllowed": True}]}],
-        }))
+        policy = await ranger_client.put_policy(
+            RangerPolicy.model_validate(
+                {
+                    "name": f"frontend-fixture/{role}",
+                    "service": settings.RANGER_SERVICE_NAME,
+                    "resources": {
+                        "catalog": {"values": ["default_catalog"]},
+                        "database": {"values": [database]},
+                        "table": {"values": ["*"]},
+                        "column": {"values": ["*"]},
+                    },
+                    "policyItems": [
+                        {"roles": [role], "accesses": [{"type": "select", "isAllowed": True}]}
+                    ],
+                }
+            )
+        )
         login = await client.post(
             "/api/v1/auth/login",
             json={
@@ -97,16 +105,25 @@ async def test_frontend_http_native_forms_task_metadata_and_explicit_binding(cli
         assert merged["affected_rows"] == 2
         assert f"INTO {name} (`id`, `amount`) SELECT" in merged["executed_sql"]
         assert (await execute(f"SELECT id, amount FROM {name} ORDER BY id"))["rows"] == [
-            [1, 12], [4, 0],
+            [1, 12],
+            [4, 0],
         ]
         await execute(f"INSERT INTO {name}_src VALUES (4,41)")
-        duplicate = (await client.post("/api/v1/query/execute", json={
-            "sql": merge, "database": database, "confirm_destructive": True,
-        })).json()[0]
+        duplicate = (
+            await client.post(
+                "/api/v1/query/execute",
+                json={
+                    "sql": merge,
+                    "database": database,
+                    "confirm_destructive": True,
+                },
+            )
+        ).json()[0]
         assert not duplicate["success"]
         assert "more than one source row matches the same key" in duplicate["error"]
         assert (await execute(f"SELECT id, amount FROM {name} ORDER BY id"))["rows"] == [
-            [1, 12], [4, 0],
+            [1, 12],
+            [4, 0],
         ]
         assert (await execute("SELECT 'CREATE TASK; @s; ML_PREDICT; UPDATE' AS literal"))[
             "rows"
@@ -118,24 +135,23 @@ async def test_frontend_http_native_forms_task_metadata_and_explicit_binding(cli
         stage = await execute("SELECT * FROM @products.products_new.csv", schema="public")
         assert stage["row_count"] > 0 and "FILES(" in stage["executed_sql"]
         assert s3_credentials()[1] not in stage["executed_sql"]
-        audits = await db.execute_system(
-            "SELECT sql_text, rewritten_sql FROM NOVA_SYSTEM.AUDIT_LOG "
+        audits = await metadata_inspect(
+            "SELECT sql_text, rewritten_sql FROM nova_meta.audit_log "
             "WHERE user_name='nova_admin' AND rewritten_sql LIKE '%products_new.csv%' "
             "ORDER BY event_time DESC LIMIT 1"
         )
-        assert audits["rows"] and s3_credentials()[1] not in str(audits["rows"])
+        assert audits and s3_credentials()[1] not in str(audits)
         await execute(f"EXPLAIN SELECT * FROM {name}")
         await execute(
             f"CREATE TASK {database}.default.{task} AS INSERT INTO {database}.{name} VALUES (3,30)"
         )
-        metadata = await db.execute_system(
-            "SELECT definition, schema_name, owner_role FROM NOVA_SYSTEM.CONFIG_TASKS "
-            "WHERE name=%s",
+        metadata = await metadata_inspect(
+            "SELECT definition, schema_name, owner_role FROM nova_meta.config_tasks WHERE name=%s",
             [task],
         )
-        assert len(metadata["rows"]) == 1
-        assert "VALUES (3,30)" in metadata["rows"][0][0]
-        assert metadata["rows"][0][1] == "default" and metadata["rows"][0][2]
+        assert len(metadata) == 1
+        assert "VALUES (3,30)" in metadata[0][0]
+        assert metadata[0][1] == "default" and metadata[0][2]
         connection = await asyncmy.connect(
             host="127.0.0.1",
             port=engine_host_ports()["starrocks-fe"],
@@ -161,8 +177,6 @@ async def test_frontend_http_native_forms_task_metadata_and_explicit_binding(cli
         finally:
             connection.close()
     finally:
-        with suppress(Exception):
-            await db.execute_system("DELETE FROM NOVA_SYSTEM.CONFIG_TASKS WHERE name=%s", [task])
         await db.execute_system(f"DROP TABLE IF EXISTS {database}.{name}_copy")
         await db.execute_system(f"DROP TABLE IF EXISTS {database}.{name}_src")
         await db.execute_system(f"DROP TABLE IF EXISTS {database}.{name}")

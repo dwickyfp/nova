@@ -21,6 +21,7 @@ from app.modules.ontology import service as service_module
 from app.modules.ontology.contracts import RepresentationChange
 from app.modules.ontology.resolver import ConceptResolver
 from tests.benchmark.harness import ScriptedProvider, allow, deny, text_frame, tool_call_frame
+from tests.eval.semantic_execution import assert_answer_with_window_probes
 from tests.unit._ontology import ADMIN, FINANCE_STEWARD, SALES_STEWARD
 from tests.unit.test_business_ontology import World
 from tests.unit.test_ontology_grounding import _plan, sales_definition, setup_tool
@@ -129,7 +130,7 @@ async def test_a_grounded_question_is_answered_with_the_official_metric(world, m
     ])
     joined, context = await run(provider, registry, "omzet per kota")
     assert '"finish_reason":"stop"' in joined
-    execute.assert_awaited_once()
+    assert_answer_with_window_probes(execute, USER)
     assert context.ontology_release_id == release.id
     assert context.quality_facts["concept_grounding"]["concepts"] == ["Finance.NetRevenue"]
     assert context.quality_facts["semantic_selection"]["metrics"] == ["total_revenue"]
@@ -151,7 +152,7 @@ async def test_a_word_describing_the_asked_metric_does_not_block_the_answer(worl
     ])
     joined, context = await run(provider, registry, question)
     assert '"finish_reason":"stop"' in joined
-    execute.assert_awaited_once()
+    assert_answer_with_window_probes(execute, USER)
     grounding = context.quality_facts["concept_grounding"]
     assert grounding["status"] == "grounded"
     assert grounding["concepts"] == ["Finance.NetRevenue", "Finance.OrderCount"]

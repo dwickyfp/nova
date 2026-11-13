@@ -20,8 +20,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.core.metadata_db import MetadataPermissionDenied, MetadataUnavailable
+from app.core.metadata_schema import load_migrations
 from app.modules.agents import repository
-from app.modules.assistant import repository as assistant_repository
+from tests.unit.agent_metadata_fakes import install_agent_store
 
 #: Column names that would indicate a credential or a statement at rest. None may
 #: appear in an Agent Studio DDL.
@@ -69,19 +71,12 @@ def _ddl_columns(ddl: str) -> list[str]:
 def test_no_agent_studio_column_can_hold_a_credential_or_statement() -> None:
     for ddl in (
         repository.AGENTS_DDL,
-        repository.SEMANTIC_MODELS_DDL,
         repository.AGENT_SKILLS_DDL,
     ):
         columns = {c.lower() for c in _ddl_columns(ddl)}
         assert columns  # the extractor found the columns
         overlap = columns & _FORBIDDEN_COLUMNS
         assert not overlap, f"forbidden column(s) in DDL: {overlap}"
-
-
-def test_semantic_model_version_is_not_nullable() -> None:
-    # A model without a pinned version must be unstorable; the parser guarantees
-    # a version, and the column enforces it.
-    assert "ossie_version     VARCHAR(32) NOT NULL" in repository.SEMANTIC_MODELS_DDL
 
 
 def test_agent_row_normalises_json_and_defaults() -> None:
@@ -130,93 +125,64 @@ def test_driver_native_json_values_are_accepted() -> None:
 
 
 @pytest.mark.asyncio
-async def test_agent_lookup_retries_a_malformed_metadata_result(monkeypatch) -> None:
-    class FlakyDB:
-        calls = []
-
-        async def execute_system(self, _sql, params):
-            self.calls.append(params)
-            if len(self.calls) == 1:
-                return {"rows": [[None] * 8]}
-            return {"rows": [["agent-1", "alice", *([None] * 31)]]}
-
-    db = FlakyDB()
-    monkeypatch.setattr(repository, "db", db)
-    monkeypatch.setattr(repository, "_agent_row", lambda row: {"columns": len(row)})
-
-    result = await repository.AgentRepository().get_agent("agent-1", owner_name="alice")
-
-    assert result == {"columns": 33}
-    assert db.calls == [["agent-1", "alice"], ["agent-1", "alice"]]
+async def test_agent_lookup_propagates_unavailable_metadata_without_replay(monkeypatch) -> None:
+    store = install_agent_store(monkeypatch, AsyncMock())
+    store.get_agent.side_effect = MetadataUnavailable()
+    with pytest.raises(MetadataUnavailable):
+        await repository.AgentRepository().get_agent("agent-1", owner_name="alice")
+    store.get_agent.assert_awaited_once_with("agent-1")
 
 
 @pytest.mark.asyncio
-async def test_metadata_read_rejects_malformed_then_empty_rows(monkeypatch) -> None:
-    execute = AsyncMock(
-        side_effect=[
-            {"rows": [["wrong-agent", "alice"]]},
-            {"rows": []},
-            {"rows": []},
-            {"rows": []},
-            {"rows": []},
-        ]
-    )
-    monkeypatch.setattr(repository.db, "execute_system", execute)
-
-    with pytest.raises(repository.AgentMetadataUnavailable):
-        await repository._read_rows(
-            "SELECT agent_id, owner_name FROM NOVA_SYSTEM.CONFIG_AGENTS WHERE owner_name = %s",
-            ["alice"],
-            lambda row: len(row) == 2 and row[1] == "alice" and row[0] == "agent-1",
-        )
-
-    assert execute.await_count == 5
+async def test_metadata_read_cannot_return_foreign_owner(monkeypatch) -> None:
+    store = install_agent_store(monkeypatch, AsyncMock())
+    store.get_agent.return_value = {"agent_id": "agent-1", "owner_name": "bob"}
+    assert await repository.AgentRepository().get_agent("agent-1", owner_name="alice") is None
+    store.get_agent.assert_awaited_once_with("agent-1")
 
 
 @pytest.mark.asyncio
-async def test_role_read_recovers_from_wrong_shape_without_dropping_access(monkeypatch) -> None:
-    execute = AsyncMock(
-        side_effect=[
-            {"rows": [["analyst"]]},
-            {"rows": [["agent-1", "alice", "analyst", "USAGE", "current", None]]},
-        ]
-    )
-    monkeypatch.setattr(repository.db, "execute_system", execute)
-
-    roles = await repository.AgentRepository().list_agent_roles("agent-1", owner_name="alice")
-
-    assert roles[0]["verified_fingerprint"] == "current"
-    assert execute.await_count == 2
+async def test_role_read_preserves_verification_and_owner_scope(monkeypatch) -> None:
+    store = install_agent_store(monkeypatch, AsyncMock())
+    store.list_agent_roles.return_value = [{
+        "agent_id": "agent-1", "owner_name": "alice", "role_name": "analyst",
+        "grant_type": "USAGE", "verified_fingerprint": "current", "verified_at": None,
+    }]
+    repo = repository.AgentRepository()
+    roles = await repo.list_agent_roles("agent-1", owner_name="alice")
+    assert roles == [{"role_name": "analyst", "grant_type": "USAGE",
+                      "verified_fingerprint": "current", "verified_at": None}]
+    assert await repo.list_agent_roles("agent-1", owner_name="bob") == []
 
 
 @pytest.mark.asyncio
 async def test_shared_agent_requires_visibility_and_active_role_grant(monkeypatch) -> None:
-    class FakeDB:
-        async def execute_system(self, sql, params):
-            if "CONFIG_AGENT_ROLES" in sql:
-                if params == ["agent-1", "owner"]:
-                    return {"rows": [["agent-1", "owner", "city_reader", "USAGE", None, None]]}
-                return {"rows": [["agent-1", "city_reader"]] if params == ["city_reader"] else []}
-            if "visibility = 'shared'" in sql:
-                row = ["agent-1", "owner", *([None] * 31)]
-                row[26] = "shared"
-                return {"rows": [row]}
-            return {"rows": []}
-
-    monkeypatch.setattr(repository, "db", FakeDB())
-    monkeypatch.setattr(
-        repository, "_agent_row", lambda row: {"agent_id": row[0], "owner_name": row[1]}
-    )
+    store = install_agent_store(monkeypatch, AsyncMock(), principal="reader", role="city_reader")
+    row = {"agent_id": "agent-1", "owner_name": "owner", "visibility": "shared",
+           "updated_at": "2026-10-01T00:00:00"}
+    store.get_agent.return_value = row
+    store.list_agents.return_value = [row]
+    store.list_agent_roles.return_value = [{"role_name": "city_reader"}]
     repo = repository.AgentRepository()
     assert await repo.get_agent("agent-1", owner_name="reader") is None
-    assert await repo.get_shared_agent("agent-1", role_name="other") is None
-    shared = await repo.get_shared_agent("agent-1", role_name="city_reader")
-    assert shared is not None and shared["agent_id"] == "agent-1"
-    assert await repo.list_shared_agents(role_name="other") == []
+    for operation in (repo.get_shared_agent("agent-1", role_name="other"),
+                      repo.list_shared_agents(role_name="other")):
+        with pytest.raises(MetadataPermissionDenied):
+            await operation
+    assert (await repo.get_shared_agent("agent-1", role_name="city_reader"))[
+        "agent_id"
+    ] == "agent-1"
     assert len(await repo.list_shared_agents(role_name="city_reader")) == 1
+    row["visibility"] = "private"
+    assert await repo.get_shared_agent("agent-1", role_name="city_reader") is None
+    assert await repo.list_shared_agents(role_name="city_reader") == []
 
 
-def test_assistant_threads_ddl_has_agent_id_and_migration() -> None:
-    assert "agent_id" in assistant_repository.THREADS_DDL
-    assert "ADD COLUMN agent_id" in assistant_repository.THREADS_AGENT_ID_DDL
-    assert "CONFIG_ASSISTANT_THREADS" in assistant_repository.THREADS_AGENT_ID_DDL
+def test_assistant_threads_pg_schema_preserves_agent_id() -> None:
+    migration = next(
+        item for item in load_migrations() if item.name == "0024_assistant_policy_bi.sql"
+    )
+    section = migration.statement.split("CREATE TABLE nova_meta.config_assistant_threads", 1)[
+        1
+    ].split("CREATE TABLE", 1)[0]
+    assert "agent_id varchar(64)" in section

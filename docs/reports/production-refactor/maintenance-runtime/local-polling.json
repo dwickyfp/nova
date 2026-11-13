@@ -1,0 +1,10 @@
+{
+  "api_ready_status": 200,
+  "frontend_status": 200,
+  "proxy_listening": true,
+  "api_search_poll_timestamp": 0.0,
+  "maintenance_poll_advanced": true,
+  "maintenance_poll_age_seconds": 5.2003090381622314,
+  "maintenance_poll_errors": 0.0,
+  "scope": "Read-only role ownership and service liveness; no index creation or embeddings"
+}

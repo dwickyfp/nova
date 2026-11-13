@@ -1110,9 +1110,9 @@ class TestWorkerDispatch:
         )
         monkeypatch.setattr(*target, runner)
         repo = SimpleNamespace(
-            transition_task_run=AsyncMock(return_value=True),
-            mark_task_run_heartbeat=AsyncMock(),
-            mark_graph_run_heartbeat=AsyncMock(),
+            finish_task_run=AsyncMock(return_value=True),
+            heartbeat_task_run=AsyncMock(return_value=True),
+            heartbeat_graph_run=AsyncMock(return_value=True),
         )
         worker = worker_module.GraphRunWorker(repo, executor=object())
         monkeypatch.setattr(worker, "_audit", AsyncMock())
@@ -1133,12 +1133,12 @@ class TestWorkerDispatch:
             "database_name": "sales",
             "schema_name": "etl",
         }
-        await worker._execute_one(job, task, "run-1")
+        await worker._execute_one(job, task, "run-1", 3)
         assert calls == [("t", "s1", "alice")]
-        kwargs = repo.transition_task_run.call_args.kwargs
-        assert repo.transition_task_run.call_args.args[2] == "success"
+        kwargs = repo.finish_task_run.call_args.kwargs
+        assert repo.finish_task_run.call_args.args[1] == "success"
         assert kwargs["output"] == "2 statements ran"
-        repo.mark_task_run_heartbeat.assert_awaited_with("run-1")
+        repo.heartbeat_task_run.assert_awaited_with("run-1", generation=3)
 
     async def test_script_failure_fails_the_node(self, monkeypatch):
         from app.modules.task_orchestration import worker as worker_module
@@ -1147,7 +1147,7 @@ class TestWorkerDispatch:
             raise NodeExecutionError("Statement 1 of 1 failed: denied")
 
         monkeypatch.setattr(script_task, "run_sql_script", runner)
-        repo = SimpleNamespace(transition_task_run=AsyncMock(return_value=True))
+        repo = SimpleNamespace(finish_task_run=AsyncMock(return_value=True))
         worker = worker_module.GraphRunWorker(repo, executor=object())
         monkeypatch.setattr(worker, "_audit", AsyncMock())
         job = worker_module.GraphRunJob(graph_run_id="g1", graph_id="x", trigger_type="schedule")
@@ -1159,12 +1159,13 @@ class TestWorkerDispatch:
             "owner_role": "analyst",
             "database_name": "sales",
         }
-        await worker._execute_one(job, task, "run-1")
-        assert repo.transition_task_run.call_args.args[2] == "failed"
-        assert repo.transition_task_run.call_args.kwargs["error_message"] == (
+        await worker._execute_one(job, task, "run-1", 3)
+        assert repo.finish_task_run.call_args.args[1] == "failed"
+        assert repo.finish_task_run.call_args.kwargs["error_message"] == (
             "Statement 1 of 1 failed: denied"
         )
-        assert "output" not in repo.transition_task_run.call_args.kwargs
+        assert repo.finish_task_run.call_args.kwargs["output"] is None
+        assert repo.finish_task_run.call_args.kwargs["generation"] == 3
 
 
 # ── Tokens, delegation, sandbox ownership ──────────────────────────────

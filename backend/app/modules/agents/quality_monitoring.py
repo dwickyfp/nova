@@ -5,10 +5,10 @@ from copy import deepcopy
 
 from fastapi import HTTPException
 
-from app.core.database import db
 from app.modules.agents import quality
 from app.modules.agents.quality_scoring import PromotionGates, aggregate_status
 from app.modules.agents.releases import SCORER_SET_VERSION
+from app.modules.assistant.repository import assistant_repository
 from app.modules.intelligence.contracts import Scope, fingerprint
 from app.modules.intelligence.engine_repository import metadata_lock
 from app.observability.metrics import studio_operation
@@ -26,19 +26,10 @@ async def _score_production(configuration_id: str, user: dict) -> dict:
     await require_execution_binding(user)
     scope = Scope.from_user(user)
     async with metadata_lock(f"agent-quality:monitoring:{configuration_id}") as lock:
-        configuration = await db.execute_system(
-            "SELECT payload,revision FROM NOVA_SYSTEM.CONFIG_AGENT_QUALITY_MONITORING WHERE id=%s "
-            "AND principal=%s AND active_role=%s AND security_context_version=%s "
-            "ORDER BY revision DESC LIMIT 2",
-            [configuration_id, scope.principal, scope.active_role, scope.security_context_version],
-        )
-        rows = configuration["rows"]
-        if not rows:
+        configurations = await quality.records("monitoring", None, user, configuration_id)
+        if not configurations:
             raise HTTPException(404, "Quality monitoring configuration is unavailable")
-        if len(rows) > 1 and rows[0][1] == rows[1][1]:
-            raise HTTPException(409, "Monitoring revision requires reconciliation")
-        raw = rows[0][0]
-        config = json.loads(raw) if isinstance(raw, str) else raw
+        config = configurations[0]
         if config.get("enabled") is not True or config.get("schedule_status", "ready") != "ready":
             return {"status": "disabled"}
         bounds = quality.MonitoringRequest.model_validate(
@@ -49,22 +40,12 @@ async def _score_production(configuration_id: str, user: dict) -> dict:
         )
         agent = await _require_agent(config["agent_id"], user)
         cases = deepcopy(await quality.records("cases", agent["agent_id"], user))
-        traces = await db.execute_system(
-            "SELECT message_id,steps FROM NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES "
-            "WHERE agent_id=%s AND user_name=%s AND role='assistant' "
-            "AND get_json_string(CAST(security_context AS VARCHAR),'$.active_role')=%s "
-            "AND get_json_int(CAST(security_context AS VARCHAR),'$.security_context_version')=%s "
-            "ORDER BY created_at DESC LIMIT %s",
-            [
-                agent["agent_id"],
-                scope.principal,
-                scope.active_role,
-                scope.security_context_version,
-                bounds.max_traces,
-            ],
+        traces = await assistant_repository.quality_traces(
+            agent["agent_id"], user, limit=bounds.max_traces,
         )
         scored = 0
-        for message_id, raw_steps in traces["rows"][: bounds.max_traces]:
+        for trace_row in traces[:bounds.max_traces]:
+            message_id, raw_steps = trace_row["message_id"], trace_row["steps"]
             if int(fingerprint(message_id)[:8], 16) / 0x100000000 >= bounds.sample_rate:
                 continue
             if not await lock.renew():

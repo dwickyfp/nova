@@ -2,7 +2,7 @@
 
 Business metadata (tags, comments, owners, classifications), lineage edges, and
 links from Semantic Views and entities attach to a securable id, never to a
-name string. ``NOVA_SYSTEM.CATALOG_SECURABLES`` maps each id to the name it
+name string. ``nova_meta.catalog_securables`` maps each id to the name it
 currently has and records when it was first seen and when it disappeared.
 
 * The id of a newly seen securable is derived from its natural key, so two
@@ -25,33 +25,17 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from app.core.database import db
-
+from .metadata_repository import catalog_transaction, like_pattern
 from .repository import row_id
 
 if TYPE_CHECKING:
+    from .metadata_repository import CatalogMetadataRepository
     from .sync import Harvest
 
-_PK_PROPERTIES = 'PROPERTIES("replication_num"="1", "enable_persistent_index"="true")'
-
-CATALOG_SECURABLES_DDL = f"""
-CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_SECURABLES (
-    id             VARCHAR(64) NOT NULL,
-    securable_type VARCHAR(32) NOT NULL,
-    catalog_name   VARCHAR(256) NOT NULL,
-    database_name  VARCHAR(256) NOT NULL,
-    object_name    VARCHAR(256) NOT NULL,
-    column_name    VARCHAR(256) NOT NULL,
-    parent_id      VARCHAR(64),
-    data_type      VARCHAR(1024),
-    ordinal        INT,
-    first_seen_at  DATETIME,
-    updated_at     DATETIME,
-    dropped_at     DATETIME
-) PRIMARY KEY(id)
-DISTRIBUTED BY HASH(id) BUCKETS 1
-{_PK_PROPERTIES}
-"""
+__all__ = [
+    "RELATION_TYPES", "SECURABLE_TYPES", "Securable", "catalog_id", "column_id",
+    "database_id", "like_pattern", "record_harvest", "relation_id", "securables",
+]
 
 RELATION_TYPES = frozenset({"table", "view", "materialized_view"})
 SECURABLE_TYPES = frozenset({"catalog", "database", "column", *RELATION_TYPES})
@@ -61,7 +45,6 @@ _COLUMNS = (
     "column_name", "parent_id", "data_type", "ordinal", "first_seen_at", "updated_at",
     "dropped_at",
 )
-_BATCH = 200
 
 
 def catalog_id(catalog: str) -> str:
@@ -136,154 +119,15 @@ class Securable:
         )
 
 
-def _select() -> str:
-    return (
-        "SELECT " + ", ".join(f"`{name}`" for name in _COLUMNS)
-        + " FROM NOVA_SYSTEM.CATALOG_SECURABLES"
-    )
-
-
-def _securables(result: dict) -> list[Securable]:
-    return [
-        Securable.from_row(dict(zip(_COLUMNS, row, strict=False)))
-        for row in result.get("rows") or []
-    ]
+def securables(rows: Iterable[dict[str, Any]]) -> list[Securable]:
+    return [Securable.from_row(row) for row in rows]
 
 
 def _identity(row: Securable) -> tuple:
     return (row.securable_type, row.parent_id, row.data_type, row.ordinal)
 
 
-class SecurableRepository:
-    """The id registry. Every statement uses the system pool."""
-
-    async def ensure_schema(self) -> None:
-        await db.execute_system(CATALOG_SECURABLES_DDL)
-
-    async def get(self, securable_id: str) -> Securable | None:
-        rows = await self.get_many([securable_id])
-        return rows[0] if rows else None
-
-    async def get_many(self, ids: Sequence[str]) -> list[Securable]:
-        found: list[Securable] = []
-        unique = list(dict.fromkeys(ids))
-        for start in range(0, len(unique), _BATCH):
-            chunk = unique[start : start + _BATCH]
-            found.extend(
-                _securables(
-                    await db.execute_system(
-                        _select() + f" WHERE id IN ({', '.join(['%s'] * len(chunk))})", chunk
-                    )
-                )
-            )
-        return found
-
-    async def children(self, parent_id: str) -> list[Securable]:
-        return _securables(
-            await db.execute_system(
-                _select() + " WHERE parent_id = %s ORDER BY ordinal, column_name", [parent_id]
-            )
-        )
-
-    async def in_catalog(self, catalog: str) -> list[Securable]:
-        return _securables(
-            await db.execute_system(_select() + " WHERE catalog_name = %s", [catalog])
-        )
-
-    async def of_type(self, securable_type: str) -> list[Securable]:
-        return _securables(
-            await db.execute_system(_select() + " WHERE securable_type = %s", [securable_type])
-        )
-
-    async def search_names(self, term: str, limit: int) -> list[Securable]:
-        pattern = like_pattern(term)
-        return _securables(
-            await db.execute_system(
-                _select()
-                + " WHERE LOWER(object_name) LIKE %s OR LOWER(column_name) LIKE %s "
-                "OR LOWER(database_name) LIKE %s OR LOWER(catalog_name) LIKE %s "
-                "ORDER BY securable_type, catalog_name, database_name, object_name, ordinal "
-                "LIMIT %s",
-                [pattern, pattern, pattern, pattern, int(limit)],
-            )
-        )
-
-    async def write(self, rows: Iterable[Securable]) -> None:
-        batch: list[Securable] = []
-
-        async def flush() -> None:
-            if not batch:
-                return
-            placeholders = "(" + ", ".join(["%s"] * len(_COLUMNS)) + ")"
-            await db.execute_system(
-                "INSERT INTO NOVA_SYSTEM.CATALOG_SECURABLES ("
-                + ", ".join(f"`{name}`" for name in _COLUMNS)
-                + ") VALUES "
-                + ", ".join([placeholders] * len(batch)),
-                [value for row in batch for value in row.as_row().values()],
-            )
-            batch.clear()
-
-        for row in rows:
-            batch.append(row)
-            if len(batch) >= _BATCH:
-                await flush()
-        await flush()
-
-    async def mark_dropped(self, ids: Sequence[str], at: datetime) -> None:
-        for start in range(0, len(ids), _BATCH):
-            chunk = list(ids[start : start + _BATCH])
-            await db.execute_system(
-                "UPDATE NOVA_SYSTEM.CATALOG_SECURABLES SET dropped_at = %s, updated_at = %s "
-                f"WHERE id IN ({', '.join(['%s'] * len(chunk))})",
-                [at, at, *chunk],
-            )
-
-    async def mark_catalog_dropped(self, catalog: str, at: datetime) -> None:
-        """Drop a catalog and everything under it that is still live."""
-        await db.execute_system(
-            "UPDATE NOVA_SYSTEM.CATALOG_SECURABLES SET dropped_at = %s, updated_at = %s "
-            "WHERE catalog_name = %s AND dropped_at IS NULL",
-            [at, at, catalog],
-        )
-
-
-securable_repo = SecurableRepository()
-
-
-def like_pattern(term: str) -> str:
-    """A case-insensitive ``LIKE`` substring pattern with wildcards escaped."""
-    escaped = term.casefold().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    return f"%{escaped}%"
-
-
-# ── Sync hooks ──────────────────────────────────────────────────
-
-
-async def record_catalogs(
-    names: Iterable[str], now: datetime, repo: SecurableRepository | None = None
-) -> None:
-    """Match catalog securables to the engine's catalog list."""
-    repo = repo or securable_repo
-    live = set(names)
-    stored = {row.catalog_name: row for row in await repo.of_type("catalog")}
-    writes = []
-    for name in sorted(live):
-        current = stored.get(name)
-        if current is None or current.dropped_at is not None:
-            writes.append(
-                Securable(
-                    id=current.id if current else catalog_id(name),
-                    securable_type="catalog",
-                    catalog_name=name,
-                    first_seen_at=(current.first_seen_at if current else None) or now,
-                    updated_at=now,
-                )
-            )
-    await repo.write(writes)
-    for name, row in stored.items():
-        if name not in live and row.dropped_at is None:
-            await repo.mark_catalog_dropped(name, now)
+# ── Sync hook ───────────────────────────────────────────────────
 
 
 def _desired(catalog: str, harvest: Harvest) -> tuple[dict[str, Securable], set[str]]:
@@ -323,38 +167,30 @@ def _desired(catalog: str, harvest: Harvest) -> tuple[dict[str, Securable], set[
 
 
 async def record_harvest(
-    catalog: str, harvest: Harvest, now: datetime, repo: SecurableRepository | None = None
+    repo: CatalogMetadataRepository, catalog: str, harvest: Harvest, generation: int
 ) -> dict[str, int]:
     """Register what one catalog sync saw and mark what disappeared as dropped.
 
-    Only new, changed, or returning securables are written. A column is marked
-    dropped only when its relation is gone or the harvest read the relation's
-    columns: a relation whose columns could not be described keeps them.
+    Runs in the sync's transaction under the generation it claimed. Only new,
+    changed, or returning securables are written. A column is marked dropped
+    only when its relation is gone or the harvest read the relation's columns:
+    a relation whose columns could not be described keeps them.
     """
-    repo = repo or securable_repo
-    existing = {row.id: row for row in await repo.in_catalog(catalog)}
+    existing = {row.id: row for row in securables(await repo.securables_in_catalog(catalog))}
     desired, described = _desired(catalog, harvest)
-    writes = []
-    for key, row in desired.items():
-        current = existing.get(key)
-        if (
-            current is not None
+    writes = [
+        row for key, row in desired.items()
+        if not (
+            (current := existing.get(key)) is not None
             and current.dropped_at is None
             and _identity(current) == _identity(row)
             and current.full_name == row.full_name
-        ):
-            continue
-        writes.append(
-            Securable(
-                **{
-                    **row.as_row(),
-                    "first_seen_at": (current.first_seen_at if current else None) or now,
-                    "updated_at": now,
-                    "dropped_at": None,
-                }
-            )
         )
-    await repo.write(writes)
+    ]
+    if writes:
+        await repo.write_securables(
+            catalog, [row.as_row() for row in writes], generation=generation
+        )
     gone = []
     for key, row in existing.items():
         if key in desired or row.dropped_at is not None:
@@ -364,5 +200,35 @@ async def record_harvest(
         ):
             continue
         gone.append(key)
-    await repo.mark_dropped(gone, now)
+    if gone:
+        await repo.mark_securables_dropped(catalog, gone, generation=generation)
     return {"securables_written": len(writes), "securables_dropped": len(gone)}
+
+
+class SecurableRepository:
+    async def get(self, securable_id: str) -> Securable | None:
+        rows = await self.get_many([securable_id])
+        return rows[0] if rows else None
+
+    async def get_many(self, ids: Sequence[str]) -> list[Securable]:
+        async with catalog_transaction(read_only=True) as repo:
+            return securables(await repo.get_securables(ids))
+
+    async def children(self, parent_id: str) -> list[Securable]:
+        async with catalog_transaction(read_only=True) as repo:
+            return securables(await repo.securable_children(parent_id))
+
+    async def in_catalog(self, catalog: str) -> list[Securable]:
+        async with catalog_transaction(read_only=True) as repo:
+            return securables(await repo.securables_in_catalog(catalog))
+
+    async def of_type(self, securable_type: str) -> list[Securable]:
+        async with catalog_transaction(read_only=True) as repo:
+            return securables(await repo.securables_of_type(securable_type))
+
+    async def search_names(self, term: str, limit: int) -> list[Securable]:
+        async with catalog_transaction(read_only=True) as repo:
+            return securables(await repo.search_securable_names(term, limit))
+
+
+securable_repo = SecurableRepository()

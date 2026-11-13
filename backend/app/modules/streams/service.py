@@ -20,10 +20,12 @@ A stream with nothing pending never goes stale: there is nothing to lose.
 
 from __future__ import annotations
 
+import functools
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import Any, TypeVar, cast
 
 from app.core.config import settings
 from app.modules.streams import codec
@@ -33,7 +35,8 @@ from app.modules.streams.consumption import (
     ConsumptionState,
     StreamConsumptionService,
 )
-from app.modules.streams.journal import StarRocksConsumptionJournal
+from app.modules.streams.control import acting_as, caller_actor, stream_metadata
+from app.modules.streams.journal import ConsumptionJournal
 from app.modules.streams.namespace import StreamName
 from app.modules.streams.reducer import (
     ACTION,
@@ -68,14 +71,6 @@ STALE = "STALE"
 #: Journal operation of a ``SHOW_INITIAL_ROWS`` snapshot row; only the stream
 #: that took the snapshot reads it.
 INITIAL = "INITIAL"
-_LATEST = (
-    "JOIN (SELECT catalog_name, database_name, schema_name, name, MAX(generation) g "
-    "FROM NOVA_SYSTEM.CONFIG_STREAMS GROUP BY catalog_name, database_name, schema_name, "
-    "name) m ON s.catalog_name=m.catalog_name AND s.database_name=m.database_name AND "
-    "s.schema_name=m.schema_name AND s.name=m.name AND s.generation=m.g"
-)
-
-
 def _stale_error(retention_days: int) -> StreamError:
     return StreamError(
         "STREAM_STALE",
@@ -89,6 +84,32 @@ class StreamCaller:
     username: str
     role: str | None
     security_context_version: int = 1
+
+    def acting(self):  # noqa: ANN201 - a context manager binding the metadata actor
+        """Record Stream control metadata as this caller while the block runs."""
+        return acting_as(
+            caller_actor(self.username, self.role, self.security_context_version)
+        )
+
+
+_Method = TypeVar("_Method", bound=Callable[..., Awaitable[Any]])
+
+
+def _as_caller(method: _Method) -> _Method:
+    """Bind the method's ``caller`` as the Stream metadata actor while it runs."""
+
+    @functools.wraps(method)
+    async def bound(self: Any, *args: Any, **kwargs: Any) -> Any:
+        caller = kwargs.get("caller") or next(
+            (arg for arg in args if isinstance(arg, StreamCaller)), None
+        )
+        if caller is None or not caller.role:
+            # The method refuses a caller without a role before any write.
+            return await method(self, *args, **kwargs)
+        with caller.acting():
+            return await method(self, *args, **kwargs)
+
+    return cast(_Method, bound)
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,12 +130,13 @@ class ResolvedStream:
 class StreamService:
     def __init__(self) -> None:
         self.repository = StreamRepository()
-        self.journal = StarRocksConsumptionJournal()
+        self.journal = ConsumptionJournal()
         self.consumption = StreamConsumptionService(
             ClaimRepository(), self.journal, TargetCommitVerifier()
         )
 
     async def _execute(self, sql: str, params: tuple | list | None = None) -> dict:
+        """Engine observations only; Stream control metadata is in PostgreSQL."""
         from app.core.database import db
 
         return await db.execute_system(sql, params)
@@ -139,13 +161,7 @@ class StreamService:
     # ── objects ─────────────────────────────────────────────────────────
 
     async def mode_of(self, stream_id: str) -> StreamMode:
-        result = await self._execute(
-            "SELECT mode FROM NOVA_SYSTEM.CONFIG_STREAM_DEFINITIONS WHERE stream_id=%s",
-            (stream_id,),
-        )
-        if not result["rows"]:
-            raise StreamError("STREAM_METADATA_INCONSISTENT", "The stream has no definition")
-        return StreamMode(str(result["rows"][0][0]))
+        return (await self.definition(stream_id))[0]
 
     async def current(self, name: StreamName) -> StreamRecord:
         record = await self.repository.current(name)
@@ -157,16 +173,14 @@ class StreamService:
 
     async def definition(self, stream_id: str) -> tuple[StreamMode, int | None]:
         """``(mode, initial snapshot commit)`` of a stream."""
-        result = await self._execute(
-            "SELECT mode, initial_commit_seq FROM NOVA_SYSTEM.CONFIG_STREAM_DEFINITIONS "
-            "WHERE stream_id=%s",
-            (stream_id,),
-        )
-        if not result["rows"]:
+        async with stream_metadata(read_only=True) as repository:
+            row = await repository.definition(stream_id)
+        if row is None:
             raise StreamError("STREAM_METADATA_INCONSISTENT", "The stream has no definition")
-        mode, initial = result["rows"][0]
-        return StreamMode(str(mode)), (int(initial) if initial is not None else None)
+        initial = row["initial_commit_seq"]
+        return StreamMode(str(row["mode"])), (int(initial) if initial is not None else None)
 
+    @_as_caller
     async def create(
         self,
         name: StreamName,
@@ -226,19 +240,14 @@ class StreamService:
             caller.role,
             ChangeCursor(source_record.epoch, start),
         )
-        await self._execute(
-            "INSERT INTO NOVA_SYSTEM.CONFIG_STREAM_DEFINITIONS (stream_id, mode, source_id, "
-            "created_by, created_at, show_initial_rows, initial_commit_seq) "
-            "VALUES (%s, %s, %s, %s, NOW(), %s, %s)",
-            (
+        async with stream_metadata() as repository:
+            await repository.create_definition(
                 record.stream_id,
                 str(mode),
                 source_record.source_id,
-                caller.username,
-                show_initial_rows,
-                initial,
-            ),
-        )
+                show_initial_rows=show_initial_rows,
+                initial_commit_seq=initial,
+            )
         published = await self.repository.publish(record)
         if replacing is not None and replacing.source_id != source_record.source_id:
             previous = await source_registry.get(replacing.source_id)
@@ -321,6 +330,7 @@ class StreamService:
             )
         return head.sequence, sequence
 
+    @_as_caller
     async def drop(self, name: StreamName, caller: StreamCaller, *, if_exists: bool = False):
         record = await self.repository.current(name)
         if record is None or record.status not in {READY, STALE}:
@@ -348,41 +358,36 @@ class StreamService:
         )
         return bool(result["rows"])
 
+    @_as_caller
     async def list_streams(self, database: str, caller: StreamCaller) -> list[dict[str, Any]]:
-        result = await self._execute(
-            "SELECT s.name, s.source_database, s.source_name, s.stream_id, s.owner_role, "
-            "s.created_at, d.mode, s.status FROM NOVA_SYSTEM.CONFIG_STREAMS s JOIN (SELECT "
-            "catalog_name, "
-            "database_name, schema_name, name, MAX(generation) g FROM NOVA_SYSTEM.CONFIG_STREAMS "
-            "WHERE database_name=%s GROUP BY catalog_name, database_name, schema_name, name) m "
-            "ON s.catalog_name=m.catalog_name AND s.database_name=m.database_name AND "
-            "s.schema_name=m.schema_name AND s.name=m.name AND s.generation=m.g "
-            "LEFT JOIN NOVA_SYSTEM.CONFIG_STREAM_DEFINITIONS d ON d.stream_id=s.stream_id "
-            "WHERE s.status IN ('READY', 'STALE') ORDER BY s.name",
-            (database,),
+        rows = await self.repository.current_generations(
+            database=database, statuses=(READY, STALE),
         )
         visible = []
-        for row in result["rows"]:
+        for row in rows:
             try:
-                await self.authorize_read(caller, str(row[1]), str(row[2]))
+                await self.authorize_read(
+                    caller, str(row["source_database"]), str(row["source_name"])
+                )
             except StreamError:
                 continue
             visible.append(
                 {
-                    "name": row[0],
+                    "name": row["name"],
                     "database": database,
-                    "source": f"{row[1]}.{row[2]}",
-                    "stream_id": row[3],
-                    "owner_role": row[4],
-                    "created_at": row[5],
-                    "mode": row[6] or "STANDARD",
-                    "status": row[7],
+                    "source": f"{row['source_database']}.{row['source_name']}",
+                    "stream_id": row["stream_id"],
+                    "owner_role": row["owner_role"],
+                    "created_at": row["created_at"],
+                    "mode": row["mode"] or "STANDARD",
+                    "status": row["status"],
                 }
             )
-        return visible
+        return sorted(visible, key=lambda item: item["name"])
 
     # ── reads ───────────────────────────────────────────────────────────
 
+    @_as_caller
     async def resolve(self, name: StreamName, caller: StreamCaller) -> ResolvedStream:
         record = await self.current(name)
         await self.authorize_read(caller, record.source.database, record.source.name)
@@ -412,21 +417,18 @@ class StreamService:
     async def _retention(
         self, source: SourceRecord, after: int, through: int
     ) -> tuple[Any, bool, int | None]:
-        """``(stale_after, expired, seconds left)``, all in the engine's clock."""
+        """``(stale_after, expired, seconds left)``, in the clock that recorded commits."""
         if through <= after:
             return None, False, None
-        days = int(settings.STREAM_RETENTION_DAYS)
-        limit = f"DATE_ADD(MIN(recorded_at), INTERVAL {days} DAY)"
-        result = await self._execute(
-            f"SELECT {limit}, {limit} <= NOW(), TIMESTAMPDIFF(SECOND, NOW(), {limit}) "
-            "FROM NOVA_SYSTEM.AUDIT_STREAM_SOURCE_COMMITS WHERE source_id=%s AND commit_seq > %s "
-            "AND commit_seq <= %s",
-            (source.source_id, after, through),
-        )
-        if not result["rows"] or result["rows"][0][0] is None:
+        window = await source_registry.commit_window(source, after, through)
+        if window["stale_after"] is None:
             return None, False, None
-        moment, expired, remaining = result["rows"][0]
-        return moment, bool(expired), int(remaining) if remaining is not None else None
+        remaining = window["remaining_seconds"]
+        return (
+            window["stale_after"],
+            bool(window["expired"]),
+            int(remaining) if remaining is not None else None,
+        )
 
     async def _check_retention(
         self, record: StreamRecord, source: SourceRecord, after: int, through: int
@@ -480,12 +482,11 @@ class StreamService:
         if not resolved.has_data:
             return []
         source, after, through = resolved.source, resolved.after, resolved.head.sequence
-        index = await self._execute(
-            "SELECT commit_seq, commit_id, row_count FROM NOVA_SYSTEM.AUDIT_STREAM_SOURCE_COMMITS "
-            "WHERE source_id=%s AND commit_seq > %s AND commit_seq <= %s ORDER BY commit_seq",
-            (source.source_id, after, through),
-        )
-        commits = {int(row[0]): (str(row[1]), int(row[2])) for row in index["rows"]}
+        index = await source_registry.commits(source, after, through)
+        commits = {
+            int(row["commit_seq"]): (str(row["commit_id"]), int(row["row_count"]))
+            for row in index
+        }
         if sorted(commits) != list(range(after + 1, through + 1)):
             raise StreamError("STREAM_SOURCE_BLOCKED", "The source's commit sequence has a gap")
         total = sum(count for _id, count in commits.values())
@@ -609,6 +610,7 @@ class StreamService:
         )
         return f"({rows_select} UNION ALL {guard})"
 
+    @_as_caller
     async def status(self, name: StreamName, caller: StreamCaller) -> dict[str, Any]:
         record = await self.repository.current(name)
         if record is None or record.status not in {READY, STALE}:
@@ -644,27 +646,22 @@ class StreamService:
             out["source_status"] = source.status
         return out
 
+    @_as_caller
     async def backlog(self, name: StreamName, caller: StreamCaller) -> dict[str, Any]:
         resolved = await self.resolve(name, caller)
-        result = await self._execute(
-            "SELECT COUNT(*), COALESCE(SUM(row_count), 0), MIN(recorded_at) FROM "
-            "NOVA_SYSTEM.AUDIT_STREAM_SOURCE_COMMITS WHERE source_id=%s AND commit_seq > %s "
-            "AND commit_seq <= %s",
-            (resolved.source.source_id, resolved.after, resolved.head.sequence),
-        )
-        commits, changes, oldest = result["rows"][0]
-        moment, _expired = await self.stale_after(
+        window = await source_registry.commit_window(
             resolved.source, resolved.after, resolved.head.sequence
         )
         return {
             "name": f"{name.database}.{name.name}",
-            "pending_commits": int(commits),
-            "pending_row_changes": int(changes),
-            "oldest_pending_commit_at": oldest,
-            "stale_after": moment,
+            "pending_commits": int(window["commits"]),
+            "pending_row_changes": int(window["changes"]),
+            "oldest_pending_commit_at": window["oldest"],
+            "stale_after": window["stale_after"],
             "estimate": "row changes before reduction; a Standard stream may show fewer",
         }
 
+    @_as_caller
     async def consumptions(
         self, name: StreamName, caller: StreamCaller, limit: int = 50
     ) -> list[dict[str, Any]]:
@@ -677,6 +674,7 @@ class StreamService:
 
     # ── consumption ─────────────────────────────────────────────────────
 
+    @_as_caller
     async def consume(
         self,
         resolved: ResolvedStream,
@@ -758,16 +756,14 @@ class StreamService:
         Stale streams no longer hold the floor: their changes are released.
         """
         floor = None
-        result = await self._execute(
-            "SELECT s.stream_id, s.cursor_epoch, s.cursor_sequence "
-            f"FROM NOVA_SYSTEM.CONFIG_STREAMS s {_LATEST} "
-            "WHERE s.source_id=%s AND s.status='READY'",
-            (source.source_id,),
+        live = await self.repository.current_generations(
+            source_id=source.source_id, statuses=(READY,)
         )
-        for stream_id, epoch, sequence in result["rows"]:
+        for row in live:
             try:
                 cursor = await self.journal.committed_cursor(
-                    str(stream_id), ChangeCursor(int(epoch), int(sequence))
+                    str(row["stream_id"]),
+                    ChangeCursor(int(row["cursor_epoch"]), int(row["cursor_sequence"])),
                 )
             except StreamError:
                 return
@@ -798,14 +794,14 @@ class StreamService:
         )
 
         started = time.time()
-        result = await self._execute(
-            "SELECT s.catalog_name, s.database_name, s.schema_name, s.name, s.source_id, "
-            "s.status FROM NOVA_SYSTEM.CONFIG_STREAMS s "
-            f"{_LATEST} WHERE s.status IN ('READY', 'STALE')"
-        )
+        streams = await self.repository.current_generations(statuses=(READY, STALE))
         counts = {READY: 0, STALE: 0}
         backlog_max, remaining_min = 0, None
-        for catalog, database, schema, stream, source_id, status in result["rows"]:
+        for row in streams:
+            catalog, database, schema, stream, source_id, status = (
+                row["catalog_name"], row["database_name"], row["schema_name"], row["name"],
+                row["source_id"], row["status"],
+            )
             counts[str(status)] = counts.get(str(status), 0) + 1
             if status != READY:
                 continue
@@ -832,17 +828,14 @@ class StreamService:
                 remaining_min = (
                     remaining if remaining_min is None else min(remaining_min, remaining)
                 )
-        sources = await self._execute(
-            "SELECT source_id, status FROM NOVA_SYSTEM.CONFIG_STREAM_SOURCES "
-            "WHERE status <> 'DROPPED'"
+        sources = await source_registry.sources(
+            ("REGISTERING", READY, "BLOCKED", "SOURCE_INVALID")
         )
         by_status: dict[str, int] = {}
-        for source_id, status in sources["rows"]:
-            by_status[str(status)] = by_status.get(str(status), 0) + 1
-            if status == READY:
-                source = await source_registry.get(str(source_id))
-                if source is not None:
-                    await self.collect_source(source)
+        for source in sources:
+            by_status[source.status] = by_status.get(source.status, 0) + 1
+            if source.status == READY:
+                await self.collect_source(source)
         for status, count in counts.items():
             STREAM_OBJECTS.labels(status).set(count)
         for status in ("READY", "BLOCKED", "SOURCE_INVALID", "REGISTERING"):

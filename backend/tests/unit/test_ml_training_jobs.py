@@ -9,13 +9,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import HTTPException
 
 from app.core.config import settings
 from app.core.security import encrypt_password
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.ml_engine import job_worker, jobs
 from app.modules.ml_engine.job_worker import MLJobWorker
 from app.modules.ml_engine.jobs import MLJobSessionRequired, MLJobUnavailable
@@ -23,8 +26,10 @@ from app.modules.ml_engine.jobs import MLJobSessionRequired, MLJobUnavailable
 USER = {
     "username": "alice",
     "active_role": "analyst",
+    "assigned_roles": ["analyst", "admin"],
     "security_context_version": 4,
     "tenant": "default",
+    "session_id": "session-1",
 }
 REQUEST = {
     "model_name": "churn",
@@ -46,29 +51,19 @@ RESULT = {"model_id": "m-1", "model_name": "churn", "status": "READY", "training
 
 
 class Repo:
-    """In-memory stand-in with the conditional updates the real table performs."""
+    """Worker protocol fake; the real PG suite proves claims and effect settlement."""
 
     def __init__(self) -> None:
         self.rows: dict[str, dict] = {}
+        self.outcomes = []
 
-    async def create(
-        self,
-        *,
-        job_id,
-        actor,
-        fingerprint,
-        role,
-        security_context_version,
-        tenant,
-        request,
-        encrypted_sql,
-    ) -> None:
+    async def submit(self, actor, *, job_id, fingerprint, tenant, request, encrypted_sql):
         self.rows[job_id] = {
             "id": job_id,
-            "actor": actor,
+            "actor": actor.principal,
             "session_fingerprint": fingerprint,
-            "active_role": role,
-            "security_context_version": security_context_version,
+            "active_role": actor.active_role,
+            "security_context_version": actor.security_context_version,
             "tenant": tenant,
             "request_json": json.dumps(request),
             "encrypted_sql": encrypted_sql,
@@ -82,52 +77,58 @@ class Repo:
             "finished_at": None,
         }
 
-    async def get(self, job_id):
+    async def get(self, actor, job_id):
         row = self.rows.get(job_id)
-        return dict(row) if row else None
+        return dict(row) if row and row["actor"] == actor.principal else None
 
-    async def queued(self, limit):
-        return [dict(r) for r in self.rows.values() if r["status"] == "queued"][:limit]
+    async def claim_next(self, holder, *, lease_seconds):
+        for row in self.rows.values():
+            if row["status"] != "queued" or row["cancel_requested"]:
+                continue
+            row["status"] = "running"
+            return jobs.ClaimedJob(
+                "train",
+                SimpleNamespace(job_id=UUID(row["id"])),
+                dict(row),
+                generation=1,
+                operation_id=uuid4(),
+            )
+        return None
 
-    async def claim(self, job_id) -> bool:
+    async def heartbeat(self, claimed, *, lease_seconds):
+        return True, self.rows[claimed.job_id]["cancel_requested"]
+
+    async def request_cancel(self, actor, job_id):
         row = self.rows[job_id]
-        if row["status"] != "queued" or row["cancel_requested"]:
-            return False
-        row["status"] = "running"
-        return True
+        assert actor.principal == row["actor"]
+        if row["status"] in {"queued", "running"}:
+            row["cancel_requested"] = True
 
-    async def heartbeat(self, job_id) -> bool:
-        return self.rows[job_id]["cancel_requested"]
-
-    async def request_cancel(self, job_id) -> None:
-        if self.rows[job_id]["status"] in {"queued", "running"}:
-            self.rows[job_id]["cancel_requested"] = True
-
-    async def finish(
-        self,
-        job_id,
-        *,
-        status,
-        expected="running",
-        result=None,
-        error_kind=None,
-        error_message=None,
-    ) -> bool:
-        row = self.rows[job_id]
-        if row["status"] != expected:
-            return False
+    async def settle(self, claimed, outcome):
+        self.outcomes.append(outcome)
+        row = self.rows[claimed.job_id]
+        if outcome is None:
+            return "blocked"
         row.update(
-            status=status,
-            result_json=json.dumps(result) if result is not None else None,
-            error_kind=error_kind,
-            error_message=error_message,
+            status=outcome.status,
+            result_json=json.dumps(outcome.result) if outcome.result is not None else None,
+            error_kind=outcome.error_kind,
+            error_message=outcome.error_message,
         )
+        return outcome.status
+
+    async def withdraw(self, actor, job_id, *, error_kind, error_message):
+        row = self.rows[job_id]
+        assert actor.principal == row["actor"]
+        if row["status"] != "queued":
+            return False
+        row.update(status="failed", error_kind=error_kind, error_message=error_message)
         return True
 
-    async def interrupt_stale(self, **kwargs) -> None:
+    async def interrupt_stale(self):
         pass
 
-    async def prune_finished(self) -> None:
+    async def prune_finished(self):
         pass
 
 
@@ -154,11 +155,13 @@ def queue(monkeypatch):
     session = {
         "username": "alice",
         "active_role": "analyst",
+        "assigned_roles": ["analyst"],
         "security_context_version": 4,
         "encrypted_password": encrypt_password("alice-password"),
     }
     sessions = {"session-1": session}
     monkeypatch.setattr(jobs, "ml_job_repo", repo)
+    monkeypatch.setattr(jobs, "ml_job_store", repo)
     monkeypatch.setattr(job_worker, "ml_job_repo", repo)
     monkeypatch.setattr(jobs.aioredis, "from_url", lambda *args, **kwargs: redis)
     monkeypatch.setattr(jobs, "write_audit_log", AsyncMock())
@@ -223,7 +226,7 @@ async def test_queueing_rejects_options_the_worker_would_not_understand(queue):
 
 async def test_session_link_is_removed_when_the_job_cannot_be_stored(queue):
     repo, redis, _, _ = queue
-    repo.create = AsyncMock(side_effect=ConnectionError("engine down"))
+    repo.submit = AsyncMock(side_effect=ConnectionError("engine down"))
 
     with pytest.raises(ConnectionError):
         await _submit()
@@ -296,6 +299,70 @@ async def test_worker_refuses_a_job_whose_session_link_is_missing(queue, trainer
     assert repo.rows[job_id]["error_kind"] == "session_expired"
 
 
+async def test_same_user_on_another_login_cannot_resume_the_job(queue, trainer):
+    repo, redis, session, sessions = queue
+    job_id = await _submit()
+    sessions["session-2"] = dict(session)
+    redis.values[f"nova:ml:job-session:{job_id}"] = "session-2"
+    await _run_one(redis)
+    trainer.assert_not_awaited()
+    assert repo.rows[job_id]["error_kind"] == "session_expired"
+
+
+@pytest.mark.parametrize("action", ["verify", "complete"])
+async def test_recovered_attempt_verifies_without_retraining(queue, trainer, action):
+    repo, redis, _, _ = queue
+    await _submit()
+    claimed = await repo.claim_next(uuid4(), lease_seconds=30)
+    claimed.action = action
+    await MLJobWorker(redis).process_claimed(claimed)
+    trainer.assert_not_awaited()
+    assert repo.outcomes == [None]
+    assert redis.values  # An unresolved effect keeps its session link until reconciliation.
+
+
+async def test_heartbeat_failure_stops_training_before_settlement(queue, trainer):
+    repo, redis, _, _ = queue
+    stopped = asyncio.Event()
+
+    async def train(**kwargs):
+        try:
+            await asyncio.Event().wait()
+        finally:
+            stopped.set()
+
+    trainer.side_effect = train
+    repo.heartbeat = AsyncMock(side_effect=ConnectionError("private-detail"))
+    await _submit()
+    await asyncio.wait_for(_run_one(redis), 1)
+    assert stopped.is_set()
+    assert repo.outcomes[0].status == "cancelled"
+    assert "private-detail" not in str(repo.outcomes)
+
+
+async def test_cancelling_worker_loop_drains_active_training(queue, trainer):
+    repo, redis, _, _ = queue
+    started, ended = asyncio.Event(), asyncio.Event()
+
+    async def train(**kwargs):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            ended.set()
+
+    trainer.side_effect = train
+    await _submit()
+    worker = MLJobWorker(redis, poll_interval=0.001)
+    task = asyncio.create_task(worker.run_forever(asyncio.Event()))
+    await asyncio.wait_for(started.wait(), 1)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, 1)
+    assert ended.is_set() and worker._active == {}
+    assert repo.outcomes[0].status == "interrupted"
+
+
 async def test_invalid_training_request_is_reported_without_secrets(queue, trainer):
     repo, redis, _, _ = queue
     trainer.side_effect = ValueError("Unknown column; 'aws.s3.secret_key'='hunter2-secret'")
@@ -336,7 +403,7 @@ async def test_caller_cancellation_stops_the_training(queue, trainer):
     await worker.run_once()
     await started.wait()
 
-    await repo.request_cancel(job_id)
+    await repo.request_cancel(SecurityContext.from_session(USER), job_id)
     await asyncio.gather(*worker._active.values())
 
     assert stopped.is_set() and repo.rows[job_id]["status"] == "cancelled"
@@ -419,7 +486,9 @@ async def test_worker_respects_its_concurrency(queue, trainer):
 async def test_caller_receives_the_workers_result(queue, trainer):
     _, redis, _, _ = queue
     job_id = await _submit()
-    waiting = asyncio.create_task(jobs.wait_for_training(job_id, timeout_seconds=5))
+    waiting = asyncio.create_task(
+        jobs.wait_for_training(job_id, actor=SecurityContext.from_session(USER), timeout_seconds=5)
+    )
 
     await _run_one(redis)
 
@@ -441,7 +510,9 @@ async def test_worker_failures_surface_as_the_error_a_local_run_would_raise(queu
     repo.rows[job_id].update(status="failed", error_kind=kind, error_message="why")
 
     with pytest.raises(error, match="why"):
-        await jobs.wait_for_training(job_id, timeout_seconds=5)
+        await jobs.wait_for_training(
+            job_id, actor=SecurityContext.from_session(USER), timeout_seconds=5
+        )
 
 
 async def test_unclaimed_job_is_withdrawn_so_no_late_worker_trains_it(monkeypatch, queue, trainer):
@@ -450,7 +521,9 @@ async def test_unclaimed_job_is_withdrawn_so_no_late_worker_trains_it(monkeypatc
     job_id = await _submit()
 
     with pytest.raises(MLJobUnavailable, match="nova-worker"):
-        await jobs.wait_for_training(job_id, timeout_seconds=5)
+        await jobs.wait_for_training(
+            job_id, actor=SecurityContext.from_session(USER), timeout_seconds=5
+        )
 
     assert repo.rows[job_id]["status"] == "failed"
     assert await MLJobWorker(redis).run_once() == 0
@@ -461,7 +534,9 @@ async def test_caller_that_goes_away_cancels_its_job(queue):
     repo, _, _, _ = queue
     job_id = await _submit()
     repo.rows[job_id]["status"] = "running"
-    waiting = asyncio.create_task(jobs.wait_for_training(job_id, timeout_seconds=30))
+    waiting = asyncio.create_task(
+        jobs.wait_for_training(job_id, actor=SecurityContext.from_session(USER), timeout_seconds=30)
+    )
     await asyncio.sleep(0.01)
 
     waiting.cancel()
@@ -477,7 +552,9 @@ async def test_overall_timeout_cancels_the_job(queue):
     repo.rows[job_id]["status"] = "running"
 
     with pytest.raises(MLJobUnavailable, match="timed out"):
-        await jobs.wait_for_training(job_id, timeout_seconds=0.01)
+        await jobs.wait_for_training(
+            job_id, actor=SecurityContext.from_session(USER), timeout_seconds=0.01
+        )
 
     assert repo.rows[job_id]["cancel_requested"] is True
 

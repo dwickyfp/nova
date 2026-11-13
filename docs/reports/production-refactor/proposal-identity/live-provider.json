@@ -1,0 +1,268 @@
+{
+  "scope": "Live Console SQL tool with explicit per-action approval and server proposal IDs; synthetic SELECT only",
+  "application_tree_sha256": "61a077e69db6f24ceb4c2a6244abdbddd7ceea6a5f6ee9adbed88d73faf043f8",
+  "started_at": "2026-11-12T01:39:04.549209+00:00",
+  "attempts": [
+    {
+      "provider_type": "openai",
+      "model": "cx/gpt-6-luna",
+      "attempt": 1,
+      "started_at": "2026-11-12T01:39:06.879048+00:00",
+      "status": "PASS",
+      "history_verified": true,
+      "tool_calls_observed": [
+        {
+          "tool_name": "query_execute",
+          "classification": "read_only",
+          "status": "pending",
+          "expected_sql": true,
+          "tool_call_id": "e5e62d97-b5d1-4ce6-b014-53d068d1e0c5",
+          "server_uuid": true
+        }
+      ],
+      "tool_statuses": [
+        {
+          "tool_call_id": "e5e62d97-b5d1-4ce6-b014-53d068d1e0c5",
+          "status": "running"
+        },
+        {
+          "tool_call_id": "e5e62d97-b5d1-4ce6-b014-53d068d1e0c5",
+          "status": "done"
+        }
+      ],
+      "consent_decisions": [
+        {
+          "decision": "allow_once",
+          "http_status": 200,
+          "grant_active": false
+        }
+      ],
+      "grant_active": false,
+      "finish_reason": "stop",
+      "error_events": 0,
+      "tool_calls": 1,
+      "output_schema_valid": true,
+      "grant_revoked": true,
+      "fixture_deleted": true,
+      "duration_seconds": 30.93
+    },
+    {
+      "provider_type": "openai",
+      "model": "cx/gpt-6-luna",
+      "attempt": 2,
+      "started_at": "2026-11-12T01:39:37.810191+00:00",
+      "status": "PASS",
+      "history_verified": true,
+      "tool_calls_observed": [
+        {
+          "tool_name": "query_execute",
+          "classification": "read_only",
+          "status": "pending",
+          "expected_sql": true,
+          "tool_call_id": "3004667e-fe47-4623-b13b-475bec481326",
+          "server_uuid": true
+        }
+      ],
+      "tool_statuses": [
+        {
+          "tool_call_id": "3004667e-fe47-4623-b13b-475bec481326",
+          "status": "running"
+        },
+        {
+          "tool_call_id": "3004667e-fe47-4623-b13b-475bec481326",
+          "status": "done"
+        }
+      ],
+      "consent_decisions": [
+        {
+          "decision": "allow_once",
+          "http_status": 200,
+          "grant_active": false
+        }
+      ],
+      "grant_active": false,
+      "finish_reason": "stop",
+      "error_events": 0,
+      "tool_calls": 1,
+      "output_schema_valid": true,
+      "grant_revoked": true,
+      "fixture_deleted": true,
+      "duration_seconds": 22.78
+    },
+    {
+      "provider_type": "openai",
+      "model": "cx/gpt-6-luna",
+      "attempt": 3,
+      "started_at": "2026-11-12T01:40:00.603789+00:00",
+      "status": "PASS",
+      "history_verified": true,
+      "tool_calls_observed": [
+        {
+          "tool_name": "query_execute",
+          "classification": "read_only",
+          "status": "pending",
+          "expected_sql": true,
+          "tool_call_id": "2a4ecf77-ba9d-45e1-a81b-f3172c02d47b",
+          "server_uuid": true
+        }
+      ],
+      "tool_statuses": [
+        {
+          "tool_call_id": "2a4ecf77-ba9d-45e1-a81b-f3172c02d47b",
+          "status": "running"
+        },
+        {
+          "tool_call_id": "2a4ecf77-ba9d-45e1-a81b-f3172c02d47b",
+          "status": "done"
+        }
+      ],
+      "consent_decisions": [
+        {
+          "decision": "allow_once",
+          "http_status": 200,
+          "grant_active": false
+        }
+      ],
+      "grant_active": false,
+      "finish_reason": "stop",
+      "error_events": 0,
+      "tool_calls": 1,
+      "output_schema_valid": true,
+      "grant_revoked": true,
+      "fixture_deleted": true,
+      "duration_seconds": 34.16
+    },
+    {
+      "provider_type": "openai",
+      "model": "cx/gpt-6.1-sol",
+      "attempt": 1,
+      "started_at": "2026-11-12T01:40:34.765632+00:00",
+      "status": "PASS",
+      "history_verified": true,
+      "tool_calls_observed": [
+        {
+          "tool_name": "query_execute",
+          "classification": "read_only",
+          "status": "pending",
+          "expected_sql": true,
+          "tool_call_id": "074d8268-c87e-48ac-bab5-7f9522723517",
+          "server_uuid": true
+        }
+      ],
+      "tool_statuses": [
+        {
+          "tool_call_id": "074d8268-c87e-48ac-bab5-7f9522723517",
+          "status": "running"
+        },
+        {
+          "tool_call_id": "074d8268-c87e-48ac-bab5-7f9522723517",
+          "status": "done"
+        }
+      ],
+      "consent_decisions": [
+        {
+          "decision": "allow_once",
+          "http_status": 200,
+          "grant_active": false
+        }
+      ],
+      "grant_active": false,
+      "finish_reason": "stop",
+      "error_events": 0,
+      "tool_calls": 1,
+      "output_schema_valid": true,
+      "grant_revoked": true,
+      "fixture_deleted": true,
+      "duration_seconds": 41.62
+    },
+    {
+      "provider_type": "openai",
+      "model": "cx/gpt-6.1-sol",
+      "attempt": 2,
+      "started_at": "2026-11-12T01:41:16.390896+00:00",
+      "status": "PASS",
+      "history_verified": true,
+      "tool_calls_observed": [
+        {
+          "tool_name": "query_execute",
+          "classification": "read_only",
+          "status": "pending",
+          "expected_sql": true,
+          "tool_call_id": "41d94f58-7f81-426b-8ae8-d16b93c96e04",
+          "server_uuid": true
+        }
+      ],
+      "tool_statuses": [
+        {
+          "tool_call_id": "41d94f58-7f81-426b-8ae8-d16b93c96e04",
+          "status": "running"
+        },
+        {
+          "tool_call_id": "41d94f58-7f81-426b-8ae8-d16b93c96e04",
+          "status": "done"
+        }
+      ],
+      "consent_decisions": [
+        {
+          "decision": "allow_once",
+          "http_status": 200,
+          "grant_active": false
+        }
+      ],
+      "grant_active": false,
+      "finish_reason": "stop",
+      "error_events": 0,
+      "tool_calls": 1,
+      "output_schema_valid": true,
+      "grant_revoked": true,
+      "fixture_deleted": true,
+      "duration_seconds": 39.57
+    },
+    {
+      "provider_type": "openai",
+      "model": "cx/gpt-6.1-sol",
+      "attempt": 3,
+      "started_at": "2026-11-12T01:41:55.962770+00:00",
+      "status": "PASS",
+      "history_verified": true,
+      "tool_calls_observed": [
+        {
+          "tool_name": "query_execute",
+          "classification": "read_only",
+          "status": "pending",
+          "expected_sql": true,
+          "tool_call_id": "1740968f-389a-4a7f-af1a-d1c9576d6845",
+          "server_uuid": true
+        }
+      ],
+      "tool_statuses": [
+        {
+          "tool_call_id": "1740968f-389a-4a7f-af1a-d1c9576d6845",
+          "status": "running"
+        },
+        {
+          "tool_call_id": "1740968f-389a-4a7f-af1a-d1c9576d6845",
+          "status": "done"
+        }
+      ],
+      "consent_decisions": [
+        {
+          "decision": "allow_once",
+          "http_status": 200,
+          "grant_active": false
+        }
+      ],
+      "grant_active": false,
+      "finish_reason": "stop",
+      "error_events": 0,
+      "tool_calls": 1,
+      "output_schema_valid": true,
+      "grant_revoked": true,
+      "fixture_deleted": true,
+      "duration_seconds": 35.51
+    }
+  ],
+  "fixture_prefix": "Synthetic proposal identity provider QA 0659a0bad5",
+  "owned_login_logout_status": 200,
+  "finished_at": "2026-11-12T01:42:31.491896+00:00"
+}

@@ -13,11 +13,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, datetime
 from typing import Any
-from uuid import uuid4
 
-from app.core.database import db
+from app.core.metadata_db import MetadataConflict, MetadataPermissionDenied
+from app.modules.agents.metadata_repository import agent_metadata
 
 CANDIDATES_DDL = """
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_VERIFIED_QUERY_CANDIDATES (
@@ -47,10 +46,6 @@ _COLUMNS = (
     "created_at, decided_at"
 )
 MAX_CANDIDATES_PER_MESSAGE = 3
-
-
-def _now() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def plan_sha256(plan: dict[str, Any]) -> str:
@@ -91,75 +86,41 @@ def _row(values: list[Any]) -> dict[str, Any]:
 
 
 class VerifiedCandidateRepository:
-    async def ensure_schema(self) -> None:
-        await db.execute_system(CANDIDATES_DDL)
-
     async def propose(
-        self,
-        *,
-        agent_id: str,
-        owner_name: str,
-        proposed_by: str,
-        thread_id: str,
-        message_id: str,
-        candidate: dict[str, Any],
+        self, *, agent_id: str, owner_name: str, proposed_by: str, thread_id: str,
+        message_id: str, candidate: dict[str, Any],
     ) -> str | None:
-        """Store a pending candidate unless the same plan is already pending or adopted."""
-        await self.ensure_schema()
-        digest = plan_sha256(candidate["semantic_plan"])
-        existing = await db.execute_system(
-            "SELECT candidate_id FROM NOVA_SYSTEM.CONFIG_VERIFIED_QUERY_CANDIDATES "
-            "WHERE agent_id = %s AND view_id = %s AND plan_sha256 = %s "
-            "AND status IN ('pending', 'approved')",
-            [agent_id, candidate["view_id"], digest],
-        )
-        if existing.get("rows"):
-            return None
-        candidate_id = str(uuid4())
-        await db.execute_system(
-            f"INSERT INTO NOVA_SYSTEM.CONFIG_VERIFIED_QUERY_CANDIDATES ({_COLUMNS}) VALUES ("
-            + ", ".join(["%s"] * 15) + ")",
-            [
-                candidate_id, agent_id, owner_name, proposed_by, candidate["view_id"],
-                candidate.get("view_version"), candidate["question"],
-                json.dumps(candidate["semantic_plan"], default=str), digest,
-                thread_id, message_id, "pending", None, _now(), None,
-            ],
-        )
-        return candidate_id
+        async with agent_metadata(proposed_by) as store:
+            if store.actor.principal != proposed_by:
+                raise MetadataPermissionDenied()
+            return await store.propose_candidate({
+                **candidate, "agent_id": agent_id, "owner_name": owner_name,
+                "thread_id": thread_id, "message_id": message_id,
+                "plan_sha256": plan_sha256(candidate["semantic_plan"]),
+            })
 
     async def list(self, *, agent_id: str, owner_name: str, status: str | None = None) -> list:
-        await self.ensure_schema()
-        sql = (
-            f"SELECT {_COLUMNS} FROM NOVA_SYSTEM.CONFIG_VERIFIED_QUERY_CANDIDATES "
-            "WHERE agent_id = %s AND owner_name = %s"
-        )
-        params: list[Any] = [agent_id, owner_name]
-        if status:
-            sql += " AND status = %s"
-            params.append(status)
-        result = await db.execute_system(sql + " ORDER BY created_at DESC LIMIT 200", params)
-        return [_row(row) for row in result.get("rows") or []]
+        async with agent_metadata(read_only=True) as store:
+            if store.actor.principal != owner_name:
+                raise MetadataPermissionDenied()
+            return [_row([row.get(key) for key in _COLUMNS.split(", ")])
+                    for row in await store.list_candidates(agent_id, status)]
 
     async def get(self, candidate_id: str, *, owner_name: str) -> dict[str, Any] | None:
-        await self.ensure_schema()
-        result = await db.execute_system(
-            f"SELECT {_COLUMNS} FROM NOVA_SYSTEM.CONFIG_VERIFIED_QUERY_CANDIDATES "
-            "WHERE candidate_id = %s AND owner_name = %s",
-            [candidate_id, owner_name],
-        )
-        rows = result.get("rows") or []
-        return _row(rows[0]) if rows else None
+        async with agent_metadata(read_only=True) as store:
+            if store.actor.principal != owner_name:
+                raise MetadataPermissionDenied()
+            row = await store.get_candidate(candidate_id)
+            return _row([row.get(key) for key in _COLUMNS.split(", ")]) if row else None
 
     async def decide(self, candidate_id: str, *, status: str, decided_by: str) -> None:
         if status not in {"approved", "rejected"}:
             raise ValueError("A candidate is approved or rejected.")
-        await db.execute_system(
-            "UPDATE NOVA_SYSTEM.CONFIG_VERIFIED_QUERY_CANDIDATES "
-            "SET status = %s, decided_by = %s, decided_at = %s "
-            "WHERE candidate_id = %s AND status = 'pending'",
-            [status, decided_by, _now(), candidate_id],
-        )
+        async with agent_metadata(decided_by) as store:
+            if store.actor.principal != decided_by:
+                raise MetadataPermissionDenied()
+            if not await store.decide_candidate(candidate_id, status):
+                raise MetadataConflict()
 
 
 verified_candidate_repository = VerifiedCandidateRepository()

@@ -20,6 +20,13 @@ import signal
 from app.common.secret_keys import require_configured_secrets
 from app.core.config import settings
 from app.core.database import db
+from app.core.metadata_db import MetadataDatabase
+from app.core.metadata_process import (
+    close_process_metadata,
+    load_runtime_settings,
+    open_process_metadata,
+    watch_metadata,
+)
 from app.core.redis import session_store
 from app.observability.metrics import PROXY_EXPECTED, start_metrics_server
 from app.proxy.server import MySQLProxyServer
@@ -31,6 +38,18 @@ async def _run() -> None:
     # Fail closed before the first connection: the proxy serves sessions signed
     # with SECRET_KEY, so a missing key must abort boot (NOVA-108).
     require_configured_secrets()
+    metadata_settings = load_runtime_settings()
+    # Fail closed on schema/epoch/login problems; wait only for an outage.
+    metadata = await open_process_metadata("proxy", settings=metadata_settings)
+    if metadata is None:  # only possible when a stop event is supplied
+        return
+    try:
+        await _run_admitted(metadata, metadata_settings.readiness_interval_seconds)
+    finally:
+        await close_process_metadata(metadata, "proxy")
+
+
+async def _run_admitted(metadata: MetadataDatabase, readiness_interval: float) -> None:
     await db.init_system_pool()
     # Superset logs in with data tokens bound to Nova sessions in Redis.
     await session_store.init()
@@ -54,19 +73,19 @@ async def _run() -> None:
             signal.signal(signal_number, lambda *_: _request_stop())
 
     from app.modules.query_autopilot.repository import repository
-    from app.modules.query_autopilot.schema import ensure_schema
     from app.modules.query_autopilot.telemetry import collector
 
-    try:
-        await ensure_schema()
-    except Exception:
-        logger.warning("Autopilot schema unavailable; proxy telemetry will report dropped batches")
     telemetry_stop = asyncio.Event()
     telemetry_task = asyncio.create_task(collector.run(telemetry_stop, repository))
+    readiness = asyncio.create_task(watch_metadata(
+        metadata, "proxy", stop_event, interval=readiness_interval,
+    ))
     await server.start()
     try:
         await stop_event.wait()
     finally:
+        stop_event.set()
+        await readiness
         await server.stop()
         telemetry_stop.set()
         await telemetry_task

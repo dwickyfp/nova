@@ -155,7 +155,11 @@ async def test_located_result_gets_a_governed_map() -> None:
     frames, _, provider = await _map_run()
     ui = _payloads(frames, "ui")
     assert len(ui) == 1 and ui[0]["payload"]["provenance"]["auto"] == "map"
-    assert ui[0]["payload"]["provenance"]["tool_calls"] == {"evidence_1": "q-1"}
+    calls = _payloads(frames, "tool_call")
+    assert len(calls) == 1 and calls[0]["tool_call_id"] != "q-1"
+    assert ui[0]["payload"]["provenance"]["tool_calls"] == {
+        "evidence_1": calls[0]["tool_call_id"],
+    }
     program = "".join(item["text"] for item in _payloads(frames, "ui_delta"))
     assert 'GeoMap(@Evidence("evidence_1"), "longitude", "latitude"' in program
     assert len(_payloads(frames, "table")) == 1
@@ -187,7 +191,9 @@ async def test_a_plain_data_answer_gets_a_ranking_on_the_same_stream() -> None:
     provenance = ui[0]["payload"]["provenance"]
     assert provenance["auto"] == "ranking" and provenance["composer"] == "deterministic"
     assert provenance["evidence_ids"] == ["evidence_1"]
-    assert provenance["tool_calls"] == {"evidence_1": "q-1"}
+    calls = _payloads(frames, "tool_call")
+    assert len(calls) == 1 and calls[0]["tool_call_id"] != "q-1"
+    assert provenance["tool_calls"] == {"evidence_1": calls[0]["tool_call_id"]}
     program = "".join(item["text"] for item in _payloads(frames, "ui_delta"))
     assert 'Chart(@Sort(@Evidence("evidence_1"), "revenue_total", "desc")' in program
     assert any(step.get("kind") == "ui" for step in context.steps)

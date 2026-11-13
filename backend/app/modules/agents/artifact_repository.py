@@ -14,8 +14,8 @@ Artifacts saved before BI are *legacy*: ``bi_object_id`` is empty and the
 row's ``viz_spec`` (a viz-core worksheet or ``DashboardSpec``) or Vega-Lite
 ``chart_spec`` describes it. Nothing writes those columns any more. A legacy
 artifact is read-only until :mod:`app.modules.superset.conversion` converts it
-in place; once none remain, :meth:`ArtifactRepository.retire_legacy_columns`
-drops the two columns.
+in place. Imported presentation definitions remain in PG for historical recovery;
+application processes never add or drop schema columns.
 """
 
 from __future__ import annotations
@@ -27,7 +27,9 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from app.common.sql_guard import redact_sql_credentials, split_sql_statements
-from app.core.database import db
+from app.core.metadata_actor import current_actor
+from app.core.metadata_db import MetadataConflict, MetadataPermissionDenied
+from app.modules.agents.metadata_repository import agent_metadata
 from app.modules.agents.tools.data_to_chart import sanitize_chart_spec
 from app.modules.assistant.tools.policy import classify_statements
 
@@ -97,7 +99,7 @@ def _now() -> datetime:
 
 def _datetime(value: object) -> datetime:
     if isinstance(value, datetime):
-        return value.replace(tzinfo=None) if value.tzinfo else value
+        return value.astimezone(UTC).replace(tzinfo=None) if value.tzinfo else value
     if isinstance(value, str):
         for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
             try:
@@ -192,35 +194,20 @@ def _row(values: list[object] | tuple[object, ...]) -> dict[str, Any]:
     }
 
 
+def _public(row: dict[str, Any]) -> dict[str, Any]:
+    values = [row.get(name.strip()) for name in _BASE_COLUMNS.split(",")]
+    # A migrated table artifact is still rendered as a chart with its original SQL.
+    values[5] = "chart" if row["artifact_type"] == "table" else row["artifact_type"]
+    legacy = [row.get(name) for name in LEGACY_COLUMNS] if not row.get("bi_object_id") else []
+    return _row(values + legacy)
+
+
+def _require_owner(owner: str) -> None:
+    if current_actor().principal != owner:
+        raise MetadataPermissionDenied()
+
+
 class ArtifactRepository:
-    def __init__(self) -> None:
-        #: Whether the legacy columns still exist; read at schema check.
-        self._legacy_columns = True
-
-    def _columns(self) -> str:
-        if self._legacy_columns:
-            return f"{_BASE_COLUMNS}, {', '.join(LEGACY_COLUMNS)}"
-        return _BASE_COLUMNS
-
-    async def ensure_schema(self) -> None:
-        await db.execute_system(ARTIFACTS_DDL)
-        await self.ensure_bi_columns()
-
-    async def ensure_bi_columns(self) -> list[str]:
-        """Add the Superset pointer columns an older table lacks."""
-        described = await db.execute_system("DESCRIBE NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS")
-        existing = {str(row[0]) for row in described["rows"]}
-        self._legacy_columns = all(name in existing for name in LEGACY_COLUMNS)
-        added = []
-        for name, column_type in BI_COLUMNS:
-            if name not in existing:
-                await db.execute_system(
-                    "ALTER TABLE NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS "
-                    f"ADD COLUMN {name} {column_type}"
-                )
-                added.append(name)
-        return added
-
     async def create_bi(
         self,
         *,
@@ -237,38 +224,30 @@ class ArtifactRepository:
         thread_id: str | None = None,
         artifact_id: str | None = None,
     ) -> dict[str, Any]:
-        """Record a Superset chart or dashboard as an owned Studio artifact."""
+        _require_owner(owner_name)
         if bi_kind not in {"chart", "dashboard"} or bi_kind != artifact_type:
             raise ValueError("A BI artifact must point at a Superset object of its own kind.")
-        artifact_id = artifact_id or str(uuid4())
-        now = _now()
+        _bi_id(bi_object_id)
+        if bi_dataset_id is not None:
+            _bi_id(bi_dataset_id)
         stored_sql = validate_artifact_sql(sql_text) if artifact_type == "chart" else ""
-        await db.execute_system(
-            "INSERT INTO NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS ("
-            "artifact_id, owner_name, agent_id, thread_id, title, artifact_type, "
-            "sql_text, database_name, schema_name, "
-            "bi_kind, bi_object_id, bi_dataset_id, created_at, updated_at"
-            ") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            [
-                artifact_id,
-                owner_name,
-                agent_id,
-                thread_id,
-                title,
-                artifact_type,
-                stored_sql,
-                database_name,
-                schema_name,
-                bi_kind,
-                bi_object_id,
-                bi_dataset_id,
-                now,
-                now,
-            ],
-        )
-        created = await self.get(artifact_id, owner_name=owner_name)
-        assert created is not None
-        return created
+        async with agent_metadata(owner_name) as store:
+            row = await store.create_artifact(
+                {
+                    "artifact_id": artifact_id or str(uuid4()),
+                    "title": title,
+                    "artifact_type": artifact_type,
+                    "sql_text": stored_sql,
+                    "database_name": database_name,
+                    "schema_name": schema_name,
+                    "bi_kind": bi_kind,
+                    "bi_object_id": bi_object_id,
+                    "bi_dataset_id": bi_dataset_id,
+                    "agent_id": agent_id,
+                    "thread_id": thread_id,
+                }
+            )
+        return _public(row)
 
     async def update_bi_source(
         self,
@@ -278,57 +257,42 @@ class ArtifactRepository:
         expected_updated_at: datetime,
         sql_text: str,
     ) -> dict[str, Any] | None:
-        """Record the new SQL of a BI chart after Superset accepted it."""
-        result = await db.execute_system(
-            "UPDATE NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS SET sql_text = %s, updated_at = %s "
-            "WHERE artifact_id = %s AND owner_name = %s AND updated_at = %s",
-            [
-                validate_artifact_sql(sql_text),
-                _now(),
-                artifact_id,
-                owner_name,
-                _datetime(expected_updated_at),
-            ],
-        )
-        if not result.get("affected", 0):
-            return None
-        return await self.get(artifact_id, owner_name=owner_name)
-
-    async def _select(self, where: str, params: builtins.list[object]) -> dict[str, Any]:
-        """Select artifact rows; re-detect the columns once if another process
-        dropped the legacy ones since this one checked the schema."""
-        query = "SELECT {} FROM NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS " + where
+        _require_owner(owner_name)
+        statement = validate_artifact_sql(sql_text)
         try:
-            return await db.execute_system(query.format(self._columns()), params)
-        except Exception as exc:
-            # StarRocks reports "Unknown column" or "Column ... cannot be resolved".
-            if not self._legacy_columns or not any(name in str(exc) for name in LEGACY_COLUMNS):
-                raise
-            await self.ensure_bi_columns()
-            return await db.execute_system(query.format(self._columns()), params)
+            async with agent_metadata(owner_name) as store:
+                current = await store.get_artifact(artifact_id)
+                if current is None or _datetime(current["updated_at"]) != _datetime(
+                    expected_updated_at
+                ):
+                    return None
+                row = await store.update_artifact(
+                    artifact_id,
+                    {"sql_text": statement},
+                    expected_revision=current["metadata_revision"],
+                )
+        except MetadataConflict:
+            return None
+        return _public(row)
 
     async def list(self, *, owner_name: str) -> list[dict[str, Any]]:
-        result = await self._select("WHERE owner_name = %s ORDER BY updated_at DESC", [owner_name])
-        return [_row(row) for row in result["rows"]]
+        _require_owner(owner_name)
+        async with agent_metadata(read_only=True) as store:
+            rows = await store.list_artifacts()
+        return [_public(row) for row in rows]
 
     async def get(self, artifact_id: str, *, owner_name: str) -> dict[str, Any] | None:
-        result = await self._select(
-            "WHERE artifact_id = %s AND owner_name = %s", [artifact_id, owner_name]
-        )
-        if not result["rows"]:
-            return None
-        return _row(result["rows"][0])
+        _require_owner(owner_name)
+        async with agent_metadata(read_only=True) as store:
+            row = await store.get_artifact(artifact_id)
+        return _public(row) if row else None
 
     async def delete(self, artifact_id: str, *, owner_name: str) -> bool:
-        result = await db.execute_system(
-            "DELETE FROM NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS "
-            "WHERE artifact_id = %s AND owner_name = %s",
-            [artifact_id, owner_name],
-        )
-        return bool(result.get("affected", 0))
+        _require_owner(owner_name)
+        async with agent_metadata(owner_name) as store:
+            return await store.delete_artifact(artifact_id)
 
     async def list_legacy(self, *, owner_name: str) -> builtins.list[dict[str, Any]]:
-        """The owner's artifacts saved before BI (not yet converted)."""
         return [row for row in await self.list(owner_name=owner_name) if row["legacy"]]
 
     async def attach_bi(
@@ -340,42 +304,56 @@ class ArtifactRepository:
         bi_object_id: int,
         bi_dataset_id: int | None,
     ) -> dict[str, Any] | None:
-        """Point a legacy artifact at the Superset object converted from it.
-
-        The artifact keeps its id, so threads, favorites and dashboards that
-        name it still resolve. Its legacy description is cleared.
-        """
-        clear = ", chart_spec = NULL, viz_spec = NULL" if self._legacy_columns else ""
-        result = await db.execute_system(
-            "UPDATE NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS "
-            f"SET bi_kind = %s, bi_object_id = %s, bi_dataset_id = %s, updated_at = %s{clear} "
-            "WHERE artifact_id = %s AND owner_name = %s AND bi_object_id IS NULL",
-            [bi_kind, bi_object_id, bi_dataset_id, _now(), artifact_id, owner_name],
-        )
-        if not result.get("affected", 0):
-            return None
-        return await self.get(artifact_id, owner_name=owner_name)
-
-    async def legacy_remaining(self) -> int:
-        """Artifacts of every owner still waiting for conversion."""
-        result = await db.execute_system(
-            "SELECT COUNT(*) FROM NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS WHERE bi_object_id IS NULL"
-        )
-        return int(result["rows"][0][0])
-
-    async def retire_legacy_columns(self) -> bool:
-        """Drop ``chart_spec`` and ``viz_spec`` once no legacy artifact remains."""
-        if not self._legacy_columns or await self.legacy_remaining():
-            return False
-        described = await db.execute_system("DESCRIBE NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS")
-        existing = {str(row[0]) for row in described["rows"]}
-        for name in LEGACY_COLUMNS:
-            if name in existing:
-                await db.execute_system(
-                    f"ALTER TABLE NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS DROP COLUMN {name}"
+        _require_owner(owner_name)
+        _bi_id(bi_object_id)
+        if bi_dataset_id is not None:
+            _bi_id(bi_dataset_id)
+        try:
+            async with agent_metadata(owner_name) as store:
+                current = await store.get_artifact(artifact_id)
+                if current is None or current["bi_object_id"] is not None:
+                    return None
+                if bi_kind != _public(current)["artifact_type"]:
+                    raise ValueError("The BI object must match the artifact kind.")
+                row = await store.update_artifact(
+                    artifact_id,
+                    {
+                        "bi_kind": bi_kind,
+                        "bi_object_id": bi_object_id,
+                        "bi_dataset_id": bi_dataset_id,
+                    },
+                    expected_revision=current["metadata_revision"],
                 )
-        self._legacy_columns = False
-        return True
+        except MetadataConflict:
+            return None
+        return _public(row)
+
+    async def shared_dashboard(
+        self, dashboard_id: str, *, owner_name: str
+    ) -> dict[str, Any] | None:
+        from app.modules.viz.spec import DashboardSpec, WorksheetSpec
+
+        async with agent_metadata(read_only=True) as store:
+            result = await store.shared_dashboard(dashboard_id, owner_name)
+        if result is None:
+            return None
+        # Specs contain field shelves named "rows" and categorical filter values;
+        # validate their types instead of deleting those presentation properties.
+        try:
+            result["viz_spec"] = DashboardSpec.model_validate(result["viz_spec"]).model_dump()
+            for chart in result["charts"]:
+                if chart.get("viz_spec") is not None:
+                    chart["viz_spec"] = WorksheetSpec.model_validate(chart["viz_spec"]).model_dump()
+                if chart.get("chart_spec") is not None:
+                    chart["chart_spec"] = chart_template(chart["chart_spec"], title=chart["title"])
+        except ValueError:
+            return None
+        return result
+
+
+def _bi_id(value: int) -> None:
+    if type(value) is not int or value <= 0:
+        raise ValueError("A BI object identifier must be a positive integer.")
 
 
 artifact_repository = ArtifactRepository()

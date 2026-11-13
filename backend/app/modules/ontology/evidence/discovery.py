@@ -142,8 +142,10 @@ async def start(service: EvaluationService, body: JoinRunRequest, user: dict) ->
                  "skipped": skipped, "declared": len(declared_joins(models)),
                  "started": time.time()},
     )
-    await access.audit("EVALUATE", "ONTOLOGY_EVALUATION", run.id, user)
-    return await service.repository.save("eval_runs", run)
+    async with access.governed(user):
+        saved = await service.repository.save("eval_runs", run)
+        await access.audit("EVALUATE", "ONTOLOGY_EVALUATION", run.id, user)
+    return saved
 
 
 async def step(service: EvaluationService, run: EvalRun, user: dict) -> EvalRun:
@@ -429,6 +431,7 @@ def summarise_joins(results: list[EvalResult], gold: set[tuple[str, str]]) -> di
     }
 
 
+@access.with_caller
 async def data_relationships(
     user: dict, sources: dict[str, str], service: EvaluationService | None = None,
 ) -> list[dict[str, Any]]:

@@ -17,14 +17,15 @@ from typing import Any, ParamSpec
 import asyncmy
 
 from app.common.audit import write_audit_log
+from app.common.metadata_audit import AuditReader, audit_filter
 from app.common.sql_guard import (
     CredentialsRedactionError,
     split_sql_statements,
 )
 from app.common.user_flags import set_must_change_password
-from app.core.config import get_storage_connection
-from app.core.database import db
+from app.core.config import require_storage_connection
 from app.core.exceptions import ForbiddenSQLError
+from app.core.metadata_scope import scoped_transaction
 from app.core.security import decrypt_password
 from app.modules.access_control.security_context import (
     SecurityContextError,
@@ -422,7 +423,7 @@ class QueryService:
             )
             raise
         try:
-            require_security_context(
+            security = require_security_context(
                 principal=username,
                 active_role=role,
                 database=database,
@@ -431,127 +432,138 @@ class QueryService:
             )
         except SecurityContextError as exc:
             await self._audit_engine_result(
-                status="ERROR", sql=sql, username=username, role=role,
-                database=database, schema=schema, session_id=session_id, file_id=file_id,
+                status="ERROR",
+                sql=sql,
+                username=username,
+                role=role,
+                database=database,
+                schema=schema,
+                session_id=session_id,
+                file_id=file_id,
                 error_message=str(exc),
             )
             raise
-        context = ExecutionContext(
-            username=username,
-            encrypted_password=encrypted_password,
-            database=database,
-            schema=schema,
-            role=role,
-            max_rows=max_rows,
-            session_id=session_id,
-            file_id=file_id,
-            tenant=tenant,
-            security_context_version=security_context_version,
-            connection=connection,
-            confirm_destructive=confirm_destructive,
-            allow_stage_export=allow_stage_export,
-            row_sink=row_sink,
-            # Inside a client's explicit engine transaction the session already
-            # holds its role and database (the engine refuses SET ROLE there),
-            # and statements are audited as executed, not yet committed.
-            engine_session_prepared=client_transaction,
-            transaction_active=client_transaction,
-        )
-        try:
-            size = len(normalized_sql)
-            parts = await run_sql_cpu(size, split_sql_statements, normalized_sql)
-            if len(parts) > 1:
-                # Direct single-result callers still receive a confirmation refusal.
-                for item in parts:
-                    candidate = self._builders.build(await self._frontend(item))
-                    analysis = self._planner.preflight(candidate)
-                    if analysis.requires_confirmation and not confirm_destructive:
-                        raise ConfirmationRequiredError(analysis.effects, analysis.statement_kind)
-            parsed = await self._frontend(normalized_sql, original_sql=sql)
-            statement = await run_sql_cpu(size, self._builders.build, parsed)
-            context.statements[0] = statement
-            binder = Binder(
-                self._catalog_provider_factory(
-                    self._repo, context, lambda: decrypt_password(encrypted_password)
-                )
-            )
-            planning = PlanningContext(
+        from app.core.metadata_scope import acting_as_sync
+
+        with acting_as_sync(security):
+            context = ExecutionContext(
+                username=username,
+                encrypted_password=encrypted_password,
                 database=database,
                 schema=schema,
-                binder=binder,
-                capabilities=await self._capability_resolver(),
+                role=role,
+                max_rows=max_rows,
+                session_id=session_id,
+                file_id=file_id,
+                tenant=tenant,
+                security_context_version=security_context_version,
+                connection=connection,
                 confirm_destructive=confirm_destructive,
-            )
-            from app.sql_frontend.binding.relations import RelationBinder
-
-            context.capabilities = planning.capabilities
-            context.binder = binder
-            planning.relation_binder = RelationBinder(
-                binder,
-                database=database,
-                stage_schema=self._adapters().stage_schema_provider(context),
+                allow_stage_export=allow_stage_export,
+                row_sink=row_sink,
+                # Inside a client's explicit engine transaction the session already
+                # holds its role and database (the engine refuses SET ROLE there),
+                # and statements are audited as executed, not yet committed.
+                engine_session_prepared=client_transaction,
+                transaction_active=client_transaction,
             )
             try:
-                analysis, plan, bound = await run_sql_cpu(
-                    size, self._plan_without_awaiting, statement, planning
+                size = len(normalized_sql)
+                parts = await run_sql_cpu(size, split_sql_statements, normalized_sql)
+                if len(parts) > 1:
+                    # Direct single-result callers still receive a confirmation refusal.
+                    for item in parts:
+                        candidate = self._builders.build(await self._frontend(item))
+                        analysis = self._planner.preflight(candidate)
+                        if analysis.requires_confirmation and not confirm_destructive:
+                            raise ConfirmationRequiredError(
+                                analysis.effects, analysis.statement_kind
+                            )
+                parsed = await self._frontend(normalized_sql, original_sql=sql)
+                statement = await run_sql_cpu(size, self._builders.build, parsed)
+                context.statements[0] = statement
+                binder = Binder(
+                    self._catalog_provider_factory(
+                        self._repo, context, lambda: decrypt_password(encrypted_password)
+                    )
                 )
-            except NeedsEventLoop:
-                analysis = self._planner.preflight(statement)
-                plan = await self._planner.plan(statement, planning)
-                bound = self._planner.preflight(statement)
-            if not bound.effects.includes(plan.effects) or (
-                plan.requires_confirmation and not bound.requires_confirmation
-            ):
-                raise SemanticError("Execution plan exceeds declared semantic effects")
-            if plan.requires_confirmation and not confirm_destructive:
-                raise ConfirmationRequiredError(plan.effects, type(statement).__name__)
-            context.validated = planning.validated
-        except (ValueError, AccessControlError, ForbiddenSQLError) as exc:
-            await self._audit_engine_result(
-                status="ERROR",
-                sql=sql,
-                username=username,
-                role=role,
-                database=database,
-                schema=schema,
-                session_id=session_id,
-                file_id=file_id,
-                error_message=_redact_error_message(str(exc)),
-            )
-            if isinstance(exc, (AccessControlError, ForbiddenSQLError)):
+                planning = PlanningContext(
+                    database=database,
+                    schema=schema,
+                    binder=binder,
+                    capabilities=await self._capability_resolver(),
+                    confirm_destructive=confirm_destructive,
+                )
+                from app.sql_frontend.binding.relations import RelationBinder
+
+                context.capabilities = planning.capabilities
+                context.binder = binder
+                planning.relation_binder = RelationBinder(
+                    binder,
+                    database=database,
+                    stage_schema=self._adapters().stage_schema_provider(context),
+                )
+                try:
+                    analysis, plan, bound = await run_sql_cpu(
+                        size, self._plan_without_awaiting, statement, planning
+                    )
+                except NeedsEventLoop:
+                    analysis = self._planner.preflight(statement)
+                    plan = await self._planner.plan(statement, planning)
+                    bound = self._planner.preflight(statement)
+                if not bound.effects.includes(plan.effects) or (
+                    plan.requires_confirmation and not bound.requires_confirmation
+                ):
+                    raise SemanticError("Execution plan exceeds declared semantic effects")
+                if plan.requires_confirmation and not confirm_destructive:
+                    raise ConfirmationRequiredError(plan.effects, type(statement).__name__)
+                context.validated = planning.validated
+            except (ValueError, AccessControlError, ForbiddenSQLError) as exc:
+                await self._audit_engine_result(
+                    status="ERROR",
+                    sql=sql,
+                    username=username,
+                    role=role,
+                    database=database,
+                    schema=schema,
+                    session_id=session_id,
+                    file_id=file_id,
+                    error_message=_redact_error_message(str(exc)),
+                )
+                if isinstance(exc, (AccessControlError, ForbiddenSQLError)):
+                    raise
+                failure = QueryResult(
+                    original_sql=sql,
+                    executed_sql=normalized_sql,
+                    error=_redact_error_message(str(exc)),
+                    error_code=getattr(exc, "code", "semantic_error"),
+                )
+                if context.statements:
+                    statement = context.statements[0]
+                    analysis = self._planner.preflight(statement)
+                    failure.statement_kind = analysis.statement_kind
+                    failure.effects = asdict(analysis.effects)
+                    failure.destructive = analysis.requires_confirmation
+                return failure
+            try:
+                result = await self._adapters().executor().execute(plan, context)
+            except SemanticError as exc:
+                await self._audit_engine_result(
+                    status="ERROR",
+                    sql=sql,
+                    username=username,
+                    role=role,
+                    database=database,
+                    schema=schema,
+                    session_id=session_id,
+                    file_id=file_id,
+                    error_message=_redact_error_message(str(exc)),
+                )
                 raise
-            failure = QueryResult(
-                original_sql=sql,
-                executed_sql=normalized_sql,
-                error=_redact_error_message(str(exc)),
-                error_code=getattr(exc, "code", "semantic_error"),
-            )
-            if context.statements:
-                statement = context.statements[0]
-                analysis = self._planner.preflight(statement)
-                failure.statement_kind = analysis.statement_kind
-                failure.effects = asdict(analysis.effects)
-                failure.destructive = analysis.requires_confirmation
-            return failure
-        try:
-            result = await self._adapters().executor().execute(plan, context)
-        except SemanticError as exc:
-            await self._audit_engine_result(
-                status="ERROR",
-                sql=sql,
-                username=username,
-                role=role,
-                database=database,
-                schema=schema,
-                session_id=session_id,
-                file_id=file_id,
-                error_message=_redact_error_message(str(exc)),
-            )
-            raise
-        result.destructive = plan.requires_confirmation
-        result.statement_kind = type(statement).__name__
-        result.effects = asdict(plan.effects)
-        return result
+            result.destructive = plan.requires_confirmation
+            result.statement_kind = type(statement).__name__
+            result.effects = asdict(plan.effects)
+            return result
 
     def _adapters(self):
         return FeatureAdapters(
@@ -561,7 +573,7 @@ class QueryService:
             task_repository=task_orchestration_repository,
             set_flag=set_must_change_password,
             check_stage_access=check_stage_access,
-            get_storage_connection=get_storage_connection,
+            get_storage_connection=require_storage_connection,
             resolve_storage_credentials=resolve_storage_credentials,
         )
 
@@ -903,58 +915,26 @@ class QueryService:
         min_duration_ms: int | None = None,
     ) -> dict:
         """Retrieve query execution history from AUDIT_LOG."""
-        where, params = self._build_history_filters(
-            username=username,
-            file_id=file_id,
-            status=status,
-            search=search,
-            database_name=database_name,
-            date_from=date_from,
-            date_to=date_to,
-            min_duration_ms=min_duration_ms,
+        selection = audit_filter(
+            event_type="query", user_name=username, file_id=file_id or None,
+            status=status.upper() if status else None, sql_contains=search or None,
+            database_name=database_name or None, since=date_from or None,
+            through=date_to or None, min_duration_ms=min_duration_ms,
         )
-
-        count_result = await db.execute_system(
-            f"SELECT COUNT(*) FROM NOVA_SYSTEM.AUDIT_LOG WHERE {where}",
-            params,
+        columns = (
+            "log_id", "query_id", "event_time", "user_name", "object_name", "action",
+            "sql_text", "status", "duration_ms", "rows_affected", "error_message",
+            "file_id", "database_name", "schema_name", "session_id",
         )
-        total = count_result["rows"][0][0] if count_result["rows"] else 0
-
-        result = await db.execute_system(
-            f"""
-            SELECT log_id, query_id, event_time, user_name, object_name, action,
-                   sql_text, status, duration_ms, rows_affected, error_message,
-                   file_id, database_name, schema_name, session_id
-            FROM NOVA_SYSTEM.AUDIT_LOG
-            WHERE {where}
-            ORDER BY event_time DESC
-            LIMIT %s OFFSET %s
-            """,
-            params + [limit, offset],
-        )
-
-        items = []
-        for row in result["rows"]:
-            items.append(
-                {
-                    "log_id": str(row[0]) if row[0] is not None else "",
-                    "query_id": row[1] or "",
-                    "event_time": str(row[2]) if row[2] else "",
-                    "user_name": row[3] or "",
-                    "object_name": row[4] or "",
-                    "action": row[5] or "",
-                    "sql_text": row[6] or "",
-                    "status": row[7] or "",
-                    "duration_ms": row[8],
-                    "rows_affected": row[9],
-                    "error_message": row[10],
-                    "file_id": row[11],
-                    "database_name": row[12],
-                    "schema_name": row[13],
-                    "session_id": row[14],
-                }
-            )
-
+        async with scoped_transaction(read_only=True) as scope:
+            reader = AuditReader(scope.connection)
+            total = await reader.count(selection)
+            items = await reader.events(selection, columns, limit=limit, offset=offset)
+        for item in items:
+            for field in ("log_id", "event_time"):
+                item[field] = str(item[field]) if item[field] is not None else ""
+            for field in ("query_id", "user_name", "object_name", "action", "sql_text", "status"):
+                item[field] = item[field] or ""
         return {"items": items, "total": total}
 
     async def get_history_stats(
@@ -970,83 +950,23 @@ class QueryService:
         min_duration_ms: int | None = None,
     ) -> dict:
         """Return aggregate statistics for query execution history."""
-        where, params = self._build_history_filters(
-            username=username,
-            file_id=file_id,
-            status=status,
-            search=search,
-            database_name=database_name,
-            date_from=date_from,
-            date_to=date_to,
-            min_duration_ms=min_duration_ms,
+        selection = audit_filter(
+            event_type="query", user_name=username, file_id=file_id or None,
+            status=status.upper() if status else None, sql_contains=search or None,
+            database_name=database_name or None, since=date_from or None,
+            through=date_to or None, min_duration_ms=min_duration_ms,
         )
-
-        result = await db.execute_system(
-            f"""
-            SELECT COUNT(*) AS total,
-                   AVG(duration_ms) AS avg_duration_ms,
-                   SUM(CASE WHEN status = 'ERROR' THEN 1 ELSE 0 END) AS error_count,
-                   SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) AS success_count
-            FROM NOVA_SYSTEM.AUDIT_LOG
-            WHERE {where}
-            """,
-            params,
-        )
-
-        row = result["rows"][0] if result["rows"] else (0, None, 0, 0)
-        total = row[0] or 0
-        avg_duration_ms = float(row[1]) if row[1] is not None else None
-        error_count = row[2] or 0
-        success_count = row[3] or 0
-        error_rate = (error_count / total) if total > 0 else 0.0
-
+        async with scoped_transaction(read_only=True) as scope:
+            summary = await AuditReader(scope.connection).summary(selection)
+        total = int(summary["total"])
+        errors = int(summary["error_count"])
         return {
             "total": total,
-            "avg_duration_ms": avg_duration_ms,
-            "error_count": error_count,
-            "success_count": success_count,
-            "error_rate": error_rate,
+            "avg_duration_ms": summary["avg_duration_ms"],
+            "error_count": errors,
+            "success_count": int(summary["success_count"]),
+            "error_rate": errors / total if total else 0.0,
         }
-
-    @staticmethod
-    def _build_history_filters(
-        *,
-        username: str,
-        file_id: str | None = None,
-        status: str | None = None,
-        search: str | None = None,
-        database_name: str | None = None,
-        date_from: str | None = None,
-        date_to: str | None = None,
-        min_duration_ms: int | None = None,
-    ) -> tuple[str, list]:
-        """Build shared WHERE clause and params for history queries."""
-        conditions = ["event_type = 'query'", "user_name = %s"]
-        params: list = [username]
-
-        if file_id:
-            conditions.append("file_id = %s")
-            params.append(file_id)
-        if status:
-            conditions.append("status = %s")
-            params.append(status.upper())
-        if search:
-            conditions.append("sql_text LIKE %s")
-            params.append(f"%{search}%")
-        if database_name:
-            conditions.append("database_name = %s")
-            params.append(database_name)
-        if date_from:
-            conditions.append("event_time >= %s")
-            params.append(date_from)
-        if date_to:
-            conditions.append("event_time <= %s")
-            params.append(date_to)
-        if min_duration_ms is not None:
-            conditions.append("duration_ms >= %s")
-            params.append(min_duration_ms)
-
-        return " AND ".join(conditions), params
 
     async def explain(
         self,
@@ -1087,21 +1007,28 @@ class QueryService:
         username: str,
         encrypted_password: str,
         active_role: str | None = None,
+        *,
+        session_id: str | None = None,
+        security_context_version: int = 1,
     ) -> dict:
+        from app.common.preference_store import read_values
+        from app.modules.access_control.security_context import SecurityContext
+
         password = decrypt_password(encrypted_password)
         if not active_role:
             raise ValueError("Query context requires an explicit active role")
         databases = await self._list_user_databases(username, password, active_role)
-        prefs = await db.execute_system(
-            """
-            SELECT pref_key, pref_value
-            FROM NOVA_SYSTEM.CONFIG_USER_PREFERENCES
-            WHERE user_name = %s AND pref_key IN
-            ('workspace.last_database', 'workspace.last_schema', 'workspace.last_role')
-            """,
-            [username],
+        actor = SecurityContext(
+            principal=username,
+            active_role=active_role,
+            session_id=session_id,
+            security_context_version=security_context_version,
         )
-        pref_map = {row[0]: row[1] for row in prefs["rows"]}
+        pref_map = await read_values(
+            actor,
+            username,
+            ["workspace.last_database", "workspace.last_schema", "workspace.last_role"],
+        )
         roles = await self._get_roles(username, password)
         default_db = pref_map.get("workspace.last_database") or (
             databases[0] if databases else None
@@ -1190,22 +1117,18 @@ class QueryService:
     ) -> list[str]:
         if not database:
             return ["default"]
-        result = await db.execute_system(
-            """
-            SELECT DISTINCT schema_name
-            FROM NOVA_SYSTEM.CONFIG_STAGES
-            WHERE database_name = %s
-            ORDER BY schema_name
-            """,
-            [database],
+        stage_schemas = sorted(
+            {
+                row["schema_name"]
+                for row in await _stage_identities(database, username, role)
+                if row["schema_name"]
+            }
         )
         schemas = []
-        for row in result["rows"]:
-            if not row[0]:
-                continue
+        for schema_name in stage_schemas:
             try:
                 await check_stage_access(
-                    {"database_name": database, "schema_name": row[0]},
+                    {"database_name": database, "schema_name": schema_name},
                     action="read",
                     username=username,
                     password=password,
@@ -1213,7 +1136,7 @@ class QueryService:
                 )
             except ValueError:
                 continue
-            schemas.append(row[0])
+            schemas.append(schema_name)
         return schemas or ["default"]
 
     async def _resolve_stage_refs(self, parsed, **kwargs):
@@ -1289,17 +1212,12 @@ class QueryService:
         password: str,
         role: str | None,
     ) -> list[str]:
-        result = await db.execute_system(
-            """
-            SELECT name, schema_name
-            FROM NOVA_SYSTEM.CONFIG_STAGES
-            WHERE database_name = %s
-            ORDER BY name
-            """,
-            [database],
+        rows = sorted(
+            await _stage_identities(database, username, role),
+            key=lambda row: (row["name"], row["id"]),
         )
         names = []
-        for name, schema_name in result["rows"]:
+        for name, schema_name in ((row["name"], row["schema_name"]) for row in rows):
             if schema and schema_name != schema:
                 continue
             try:
@@ -1326,32 +1244,28 @@ class QueryService:
         password: str,
         role: str | None,
     ) -> list[dict]:
-        from app.modules.stages.service import stage_service
+        from app.modules.stages.service import caller_actor, stage_service
 
-        result = await db.execute_system(
-            """
-            SELECT id, schema_name
-            FROM NOVA_SYSTEM.CONFIG_STAGES
-            WHERE name = %s AND database_name = %s
-            ORDER BY schema_name
-            """,
-            [stage_name, database],
-        )
-        rows = [row for row in result["rows"] if schema is None or row[1] == schema]
+        rows = await _stage_identities(database, username, role, name=stage_name, schema=schema)
         if len(rows) != 1:
             return []
         try:
             await check_stage_access(
-                {"database_name": database, "schema_name": rows[0][1]},
+                {"database_name": database, "schema_name": rows[0]["schema_name"]},
                 action="read",
                 username=username,
                 password=password,
                 active_role=role,
             )
+            # Ranger allowed the schema; the registration's payload is read
+            # under that scope before its storage connection is used.
+            stage = await stage_service.get_stage(rows[0]["id"], caller_actor(username, role))
         except ValueError:
             return []
+        if stage is None:
+            return []
         storage_prefix = folder.replace(".", "/") if folder else ""
-        return await stage_service.list_files(rows[0][0], prefix=storage_prefix)
+        return await stage_service.list_files(stage, prefix=storage_prefix)
 
     @staticmethod
     def _filter_strings(items: list[str], prefix: str, item_type: str) -> list[dict]:
@@ -1486,3 +1400,22 @@ def _context_after(
     if catalog:
         return connect_database(f"{catalog}."), None
     return database, schema
+
+
+async def _stage_identities(
+    database: str,
+    username: str,
+    role: str | None,
+    *,
+    name: str | None = None,
+    schema: str | None = None,
+) -> list[dict]:
+    """Stage identities in ``database`` (no payload); none without an active role."""
+    from app.modules.stages.access import StageAccessDenied
+    from app.modules.stages.service import caller_actor, discover_stages
+
+    try:
+        actor = caller_actor(username, role)
+    except StageAccessDenied:
+        return []
+    return await discover_stages(actor, database=database, schema=schema, name=name)

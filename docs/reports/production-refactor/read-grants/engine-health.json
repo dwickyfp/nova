@@ -1,0 +1,19 @@
+{
+  "observed_at": "2026-11-12T00:27:02.402249+00:00",
+  "connections": 19,
+  "states": {
+    "OK": 12,
+    "EOF": 7
+  },
+  "commands": {
+    "Sleep": 16,
+    "Query": 3
+  },
+  "active_seconds": [
+    0,
+    0,
+    0
+  ],
+  "constant_query_ok": true,
+  "duration_seconds": 0.02
+}

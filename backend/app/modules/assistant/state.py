@@ -1,12 +1,12 @@
 """Runtime assistant state — consent grants keyed by thread.
 
-Threads and messages are **persisted** in ``NOVA_SYSTEM.CONFIG_ASSISTANT_*``
+Threads and messages are **persisted** in the metadata store
 (``repository.py``), so a conversation survives a reload and is scoped per user
-in SQL. This module holds the one thing that must stay in process memory:
+by row security. This module holds the current turn's consent policy:
 
-* **Consent (E2b).** A read-only always-allow grant belongs to a live
-  conversation. It is deliberately ephemeral: a restart must not revive a grant,
-  so it lives here and dies with the process.
+* **Consent (E2b).** An explicit read-only grant belongs to one authenticated
+  login and conversation. ``read_grants`` reloads its Redis record before each
+  turn; agent policy may separately pre-approve read-only tools for that turn.
 
 ``AssistantThread`` is the runtime object the loop reads (history + consent) and
 the router appends to. The router builds one from the repository for a turn and
@@ -55,12 +55,19 @@ class ConsentPolicy:
     """
 
     always_allow_read_only: bool = False
-    #: The active role and security-context version the grant was given under;
+    #: The principal, login, active role and version the grant was given under;
     #: a turn under any other context does not inherit it.
     granted_under: dict | None = None
 
-    def covers(self, classification: ToolClassification) -> bool:
-        return self.always_allow_read_only and classification == "read_only"
+    def covers(self, classification: ToolClassification, *, user: dict | None = None) -> bool:
+        if not self.always_allow_read_only or classification != "read_only":
+            return False
+        if user is not None:
+            from app.modules.assistant.read_grants import stamp
+
+            current = stamp(user)
+            return current is not None and current == self.granted_under
+        return True
 
 
 @dataclass

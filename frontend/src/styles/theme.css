@@ -108,10 +108,10 @@
   --code-keyword: #a53126;
   --code-string: #107c70;
   --code-number: #986411;
-  --code-comment: #8e99a4;
+  --code-comment: var(--muted-foreground);
   --code-function: #4369c4;
   --code-type: #6b46c1;
-  --code-attr: #c9662e;
+  --code-attr: var(--warning-strong);
 
   /* Nova Glass Shell. One viewport-fixed backdrop sits behind the navigation
      chrome and the workspace pane; each paints the same tint colour at its own
@@ -261,7 +261,7 @@
   --code-keyword: #f36b5b;
   --code-string: #2cc6b6;
   --code-number: #f0ad3d;
-  --code-comment: #6b7a8d;
+  --code-comment: var(--muted-foreground);
   --code-function: #7398ed;
   --code-type: #a78bfa;
   --code-attr: #e89b17;

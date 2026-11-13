@@ -1,0 +1,144 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="0" skipped="0" tests="1" time="1.765" timestamp="2026-11-11T23:30:34.845238+07:00"><testcase classname="tests.integration.test_metadata_jobs" name="test_submission_and_outbox_are_atomic_and_dedupe_is_permanent" time="1.215"><error message="failed on setup with &quot;app.core.metadata_db.MetadataOperationFailed: Metadata operation failed&quot;">environment = &lt;tests.integration.test_metadata_bootstrap.Environment object at 0x116f7bfd0&gt;
+
+    @pytest_asyncio.fixture
+    async def jobs(environment):  # noqa: F811
+        await environment.bootstrap()
+&gt;       await migrate(environment.role_config("nova_meta_migrator"), app_version="c" * 40)
+
+tests/integration/test_metadata_jobs.py:58:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+config = MetadataPoolConfig(max_size=10, max_waiting=40, acquire_timeout=5, statement_timeout_ms=15000, lock_timeout_ms=3000, idle_transaction_timeout_ms=30000)
+app_version = 'cccccccccccccccccccccccccccccccccccccccc'
+directory = PosixPath('/Users/dwickyferiansyahputra/Public/Research/nova/backend/metadata_migrations')
+
+    async def migrate(
+        config: MetadataPoolConfig, *, app_version: str,
+        directory: Path = MIGRATION_DIRECTORY,
+    ) -&gt; MigrationResult:
+        """Commit all pending DDL and its ledger together; never publish an epoch."""
+        if not re.fullmatch(r"[0-9a-f]{40}", app_version):
+            raise SchemaManifestError()
+        migrations = load_migrations(directory)
+        try:
+            async with await psycopg.AsyncConnection.connect(
+                config.dsn, autocommit=True, row_factory=dict_row, prepare_threshold=None,
+                application_name="nova-metadata-migrator",
+                connect_timeout=max(1, int(config.acquire_timeout)),
+                options=(
+                    f"-c statement_timeout={config.statement_timeout_ms} "
+                    f"-c lock_timeout={config.lock_timeout_ms} "
+                    f"-c idle_in_transaction_session_timeout={config.idle_transaction_timeout_ms} "
+                    "-c synchronous_commit=on -c timezone=UTC"
+                ),
+            ) as conn:
+                if conn.info.server_version // 10000 != 17:
+                    raise MetadataSchemaMismatch()
+                async with conn.transaction():
+                    cursor = await conn.execute(
+                        "SELECT rolname, rolcanlogin, rolsuper, rolbypassrls, rolcreatedb, "
+                        "rolcreaterole, rolreplication FROM pg_catalog.pg_roles "
+                        "WHERE rolname = ANY(%s)", (list(METADATA_ROLES),),
+                    )
+                    roles = {row["rolname"]: row for row in await cursor.fetchall()}
+                    if set(roles) != set(METADATA_ROLES):
+                        raise MetadataSchemaMismatch()
+                    for name, role in roles.items():
+                        if any(role[key] for key in (
+                            "rolsuper", "rolbypassrls", "rolcreatedb", "rolcreaterole",
+                        )) or (name != "nova_meta_backup" and role["rolreplication"]):
+                            raise MetadataSchemaMismatch()
+                        if name == "nova_meta_owner" and role["rolcanlogin"]:
+                            raise MetadataSchemaMismatch()
+                    cursor = await conn.execute(
+                        "SELECT session_user = 'nova_meta_migrator' AND "
+                        "pg_has_role(session_user, 'nova_meta_owner', 'SET') AS allowed"
+                    )
+                    identity = await cursor.fetchone()
+                    if not identity or not identity["allowed"]:
+                        raise MetadataSchemaMismatch()
+                    await conn.execute("SET LOCAL ROLE nova_meta_owner")
+                    await conn.execute("SET LOCAL search_path = pg_catalog")
+                    await conn.execute(
+                        "SELECT pg_advisory_xact_lock(%s)", (METADATA_DEPLOYMENT_LOCK,),
+                    )
+                    cursor = await conn.execute(
+                        "SELECT nspowner = 'nova_meta_owner'::regrole AS owned "
+                        "FROM pg_catalog.pg_namespace WHERE nspname = 'nova_meta'"
+                    )
+                    schema = await cursor.fetchone()
+                    if schema is not None and not schema["owned"]:
+                        raise MetadataSchemaMismatch()
+                    if schema is None:
+                        await conn.execute("CREATE SCHEMA nova_meta AUTHORIZATION nova_meta_owner")
+                    await conn.execute("REVOKE ALL ON SCHEMA nova_meta FROM PUBLIC")
+                    for kind in ("TABLES", "SEQUENCES", "FUNCTIONS", "TYPES"):
+                        await conn.execute(psycopg.sql.SQL(
+                            "ALTER DEFAULT PRIVILEGES FOR ROLE nova_meta_owner IN SCHEMA nova_meta "
+                            "REVOKE ALL ON {} FROM PUBLIC"
+                        ).format(psycopg.sql.SQL(kind)))
+                    cursor = await conn.execute(
+                        "SELECT to_regclass('nova_meta.schema_migrations') AS ledger"
+                    )
+                    ledger = await cursor.fetchone()
+                    applied = []
+                    if ledger and ledger["ledger"] is not None:
+                        cursor = await conn.execute(
+                            "SELECT version, name, checksum FROM nova_meta.schema_migrations "
+                            "ORDER BY version"
+                        )
+                        applied = await cursor.fetchall()
+                        if not applied:
+                            raise SchemaManifestError()
+                    else:
+                        cursor = await conn.execute(
+                            "SELECT EXISTS(SELECT 1 FROM pg_class "
+                            "WHERE relnamespace = 'nova_meta'::regnamespace) "
+                            "OR EXISTS(SELECT 1 FROM pg_proc "
+                            "WHERE pronamespace = 'nova_meta'::regnamespace) "
+                            "OR EXISTS(SELECT 1 FROM pg_type "
+                            "WHERE typnamespace = 'nova_meta'::regnamespace) AS occupied"
+                        )
+                        occupied = await cursor.fetchone()
+                        if occupied and occupied["occupied"]:
+                            raise SchemaManifestError()
+                    count = verify_applied_migrations(migrations, applied)
+                    if count:
+                        cursor = await conn.execute(
+                            "SELECT schema_version, maintenance FROM nova_meta.deployment_state "
+                            "WHERE singleton = true"
+                        )
+                        state = await cursor.fetchone()
+                        if not state or state["schema_version"] != count:
+                            raise MetadataSchemaMismatch()
+                        if count &lt; len(migrations) and not state["maintenance"]:
+                            raise MetadataSchemaMismatch()
+                    for migration in migrations[count:]:
+                        # PostgreSQL forbids transaction control inside a DO block
+                        # nested in our transaction, including dynamic COMMIT SQL.
+                        await conn.execute(
+                            "DO $nova_schema_revision$ BEGIN\n" + migration.statement
+                            + "\nEND $nova_schema_revision$;", prepare=False,
+                        )
+                        await conn.execute(
+                            "INSERT INTO nova_meta.schema_migrations "
+                            "(version, name, checksum, app_version) VALUES (%s, %s, %s, %s)",
+                            (migration.version, migration.name, migration.checksum, app_version),
+                        )
+                    if count &lt; len(migrations):
+                        await conn.execute(
+                            "UPDATE nova_meta.deployment_state SET schema_version = %s, "
+                            "updated_at = clock_timestamp() WHERE singleton = true",
+                            (len(migrations),),
+                        )
+                return MigrationResult(len(migrations), tuple(m.version for m in migrations[count:]))
+        except (psycopg.errors.QueryCanceled, psycopg.errors.LockNotAvailable):
+            raise MetadataTimeout() from None
+        except psycopg.OperationalError:
+            raise MetadataOutcomeUnknown() from None
+        except psycopg.Error:
+&gt;           raise MetadataOperationFailed() from None
+E           app.core.metadata_db.MetadataOperationFailed: Metadata operation failed
+
+app/core/metadata_migrations.py:167: MetadataOperationFailed</error></testcase></testsuite></testsuites>

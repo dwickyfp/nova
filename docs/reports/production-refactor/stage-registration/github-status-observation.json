@@ -1,0 +1,14 @@
+{
+  "page_updated_at": "2026-11-11T20:59:33.752Z",
+  "status": {
+    "indicator": "major",
+    "description": "Partial System Outage"
+  },
+  "incidents": [
+    {
+      "name": "Impact across multiple GitHub products including Actions, Pages, and Copilot products.",
+      "status": "investigating",
+      "updated_at": "2026-11-11T20:59:33.747Z"
+    }
+  ]
+}

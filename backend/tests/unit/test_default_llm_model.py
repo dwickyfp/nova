@@ -57,9 +57,14 @@ async def test_embedding_cannot_be_selected_for_chat(registry, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_save_validates_before_writing(registry, monkeypatch):
+    from app.modules.access_control.security_context import SecurityContext
+
     execute = AsyncMock()
-    monkeypatch.setattr(default_model.db, "execute_system", execute)
+    monkeypatch.setattr(default_model, "write_values", execute)
     monkeypatch.setattr(ai_service, "get_model", AsyncMock(return_value=None))
     with pytest.raises(ValueError):
-        await default_model.save_default_model(default_model.DefaultModelSettings(model_id="gone"))
+        await default_model.save_default_model(
+            default_model.DefaultModelSettings(model_id="gone"),
+            SecurityContext(principal="admin", active_role="ACCOUNTADMIN"),
+        )
     execute.assert_not_awaited()

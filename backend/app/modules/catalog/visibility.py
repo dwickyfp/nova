@@ -102,6 +102,15 @@ async def _cached(user: dict, scope: str, load, *, fresh: bool = False):  # type
     return value
 
 
+async def cached_answer(user: dict, scope: str, load):  # type: ignore[no-untyped-def]
+    """Reuse another owner's caller-scoped answer under this cache's partition.
+
+    The same principal, active role, security-context version and access epoch
+    rules apply. ``load`` failing raises and caches nothing.
+    """
+    return await _cached(user, scope, load)
+
+
 def _opener(opener: Opener | None) -> Opener:
     if opener is not None:
         return opener

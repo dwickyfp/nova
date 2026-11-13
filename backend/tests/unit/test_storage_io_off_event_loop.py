@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
-from botocore.exceptions import EndpointConnectionError
 
 from app.core.exceptions import StorageUnavailableError
 from app.modules.query.service import QueryService
@@ -107,83 +108,63 @@ async def test_csv_header_glob_without_match_returns_untuned(monkeypatch):
     assert fetched == []
 
 
-@pytest.mark.asyncio
-async def test_workspace_read_runs_off_event_loop():
+@pytest.fixture
+def workspace(monkeypatch):
+    from app.modules.workspaces.metadata_service import (
+        WorkspaceMetadataService,
+        WorkspaceObjectStore,
+    )
+
+    service = WorkspaceService()
+    entry = {"id": "entry-id", "entry_type": "file", "object_key": "workspace/file.sql",
+             "path": "file.sql", "metadata_revision": 3}
+    files = SimpleNamespace(get_entry=AsyncMock(return_value=entry), delete=AsyncMock())
+    transactions = []
+    @asynccontextmanager
+    async def transaction(*, read_only=False):
+        transactions.append("read" if read_only else "write")
+        yield files
+        transactions.append("committed")
+    owner = WorkspaceMetadataService(transaction, WorkspaceObjectStore(service))
+    monkeypatch.setattr(WorkspaceService, "_files", property(lambda self: owner))
+    return service, files, transactions
+
+
+async def test_workspace_read_runs_off_event_loop(workspace):
+    service, _, _ = workspace
     loop_thread = threading.get_ident()
     seen = {}
-    service = WorkspaceService()
-
-    class Repository:
-        async def get_entry(self, username, entry_id):
-            return {"entry_type": "file", "object_key": "workspace/file.sql"}
-
     def read_object(key):
         seen["thread"] = threading.get_ident()
         return b"SELECT 1"
-
-    service._repo = Repository()
     service._read_object = read_object
-
     _, content = await service.get_file("analyst", "entry-id")
-
-    assert content == "SELECT 1"
-    assert seen["thread"] != loop_thread
+    assert content == "SELECT 1" and seen["thread"] != loop_thread
 
 
-@pytest.mark.asyncio
-async def test_workspace_delete_keeps_metadata_when_storage_fails():
-    service = WorkspaceService()
-    deleted_entries = []
-
-    class Repository:
-        async def get_entry(self, username, entry_id):
-            return {
-                "id": entry_id,
-                "entry_type": "file",
-                "object_key": "workspace/file.sql",
-                "path": "file.sql",
-            }
-
-        async def list_entries(self, username):
-            return [await self.get_entry(username, "entry-id")]
-
-        async def soft_delete_entry(self, username, entry_id):
-            deleted_entries.append(entry_id)
-
-    class Client:
-        def delete_object(self, **kwargs):
-            raise EndpointConnectionError(endpoint_url="http://private.invalid")
-
-    service._repo = Repository()
-    service._client = lambda: Client()
-    service._bucket = lambda: "bucket"
-
-    with pytest.raises(StorageUnavailableError):
-        await service.delete_entry("analyst", "entry-id")
-
-    assert deleted_entries == []
+async def test_workspace_delete_commits_tombstones_before_storage_cleanup(workspace, caplog):
+    service, files, transactions = workspace
+    files.delete.return_value = ["workspace/file.sql"]
+    def delete(key):
+        assert transactions[-2:] == ["write", "committed"]
+        raise StorageUnavailableError("Object store unavailable")
+    service._delete_object = delete
+    await service.delete_entry("analyst", "entry-id")
+    files.delete.assert_awaited_once_with("analyst", "entry-id", expected_revision=3)
+    assert "1 unreferenced objects" in caplog.text
 
 
-@pytest.mark.asyncio
-async def test_workspace_delete_purges_more_than_one_version_page():
-    service = WorkspaceService()
+async def test_workspace_delete_purges_more_than_one_version_page(workspace):
+    service, files, transactions = workspace
     object_keys = [f"versions/{number}.sql" for number in range(1001)]
+    files.delete.return_value = object_keys
     deleted = []
-    metadata_deleted = []
-
-    class Repository:
-        async def list_versions(self, username, entry_id, limit=100, offset=0):
-            return [
-                {"object_key": key} for key in object_keys[offset : offset + limit]
-            ]
-
-        async def delete_versions_for_entry(self, username, entry_id):
-            metadata_deleted.append(entry_id)
-
-    service._repo = Repository()
-    service._delete_object = deleted.append
-
-    await service._purge_versions("analyst", "entry-id")
-
+    thread = threading.get_ident()
+    def delete(key):
+        assert threading.get_ident() != thread
+        assert transactions[-1] == "committed"
+        deleted.append(key)
+    service._delete_object = delete
+    await service.delete_entry("analyst", "entry-id")
     assert deleted == object_keys
-    assert metadata_deleted == ["entry-id"]
+    files.delete.assert_awaited_once_with("analyst", "entry-id", expected_revision=3)

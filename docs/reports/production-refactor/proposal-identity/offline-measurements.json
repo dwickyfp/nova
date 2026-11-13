@@ -1,0 +1,136 @@
+{
+  "scope": "Offline scripted workload, local host also running unit/coverage; no production capacity claim",
+  "measurements": [
+    {
+      "benchmark": "text_only_turn",
+      "iterations": 500.0,
+      "max_us": 6067.791,
+      "mean_us": 344.68136200000004,
+      "median_us": 308.125,
+      "min_us": 286.75,
+      "p95_us": 482.958
+    },
+    {
+      "benchmark": "text_only_turn_history_10",
+      "iterations": 300.0,
+      "max_us": 6416.416,
+      "mean_us": 1063.7422166666665,
+      "median_us": 901.9585,
+      "min_us": 382.25,
+      "p95_us": 2088.042
+    },
+    {
+      "benchmark": "tool_round_trip",
+      "iterations": 500.0,
+      "max_us": 6033.167,
+      "mean_us": 1356.1011680000001,
+      "median_us": 1066.1665,
+      "min_us": 849.458,
+      "p95_us": 2723.917
+    },
+    {
+      "benchmark": "consent_auto_approve",
+      "iterations": 500.0,
+      "max_us": 6204.958,
+      "mean_us": 1091.2710419999999,
+      "median_us": 816.8755,
+      "min_us": 699.25,
+      "p95_us": 2210.583
+    },
+    {
+      "benchmark": "consent_explicit_per_call",
+      "iterations": 500.0,
+      "max_us": 2185.625,
+      "mean_us": 917.275634,
+      "median_us": 869.0415,
+      "min_us": 809.166,
+      "p95_us": 1167.083
+    },
+    {
+      "benchmark": "build_messages_history_0",
+      "iterations": 1000.0,
+      "max_us": 98.75,
+      "mean_us": 25.753305,
+      "median_us": 25.125,
+      "min_us": 24.041,
+      "p95_us": 26.833
+    },
+    {
+      "benchmark": "build_messages_history_10",
+      "iterations": 1000.0,
+      "max_us": 147.292,
+      "mean_us": 50.607791,
+      "median_us": 49.833,
+      "min_us": 47.916,
+      "p95_us": 53.625
+    },
+    {
+      "benchmark": "build_messages_history_50",
+      "iterations": 1000.0,
+      "max_us": 472.584,
+      "mean_us": 149.117211,
+      "median_us": 145.542,
+      "min_us": 140.334,
+      "p95_us": 166.917
+    },
+    {
+      "benchmark": "skill_prompt_size",
+      "budget_tokens": 3000,
+      "characters": 12587,
+      "estimated_tokens": 3146,
+      "iterations": 1.0,
+      "max_us": 0.0,
+      "mean_us": 0.0,
+      "median_us": 0.0,
+      "min_us": 0.0,
+      "p95_us": 0.0,
+      "revision": "8fb0e842b00a",
+      "sections": 7
+    },
+    {
+      "benchmark": "iteration_cap_termination",
+      "iterations": 300.0,
+      "max_us": 3348.583,
+      "mean_us": 1152.7612266666667,
+      "median_us": 1091.667,
+      "min_us": 1009.084,
+      "p95_us": 1483.208
+    },
+    {
+      "benchmark": "time_budget_termination",
+      "iterations": 500.0,
+      "max_us": 72.25,
+      "mean_us": 20.995558000000003,
+      "median_us": 20.584,
+      "min_us": 19.708,
+      "p95_us": 21.25
+    },
+    {
+      "benchmark": "denied_call_termination",
+      "iterations": 300.0,
+      "max_us": 1586.375,
+      "mean_us": 480.3262366666667,
+      "median_us": 425.458,
+      "min_us": 393.042,
+      "p95_us": 790.375
+    },
+    {
+      "benchmark": "context_curate_noop_history_50",
+      "iterations": 1000.0,
+      "max_us": 160.666,
+      "mean_us": 90.82044,
+      "median_us": 89.75,
+      "min_us": 85.417,
+      "p95_us": 95.292
+    },
+    {
+      "benchmark": "context_curate_active_history_50",
+      "iterations": 1000.0,
+      "max_us": 318.417,
+      "mean_us": 93.517414,
+      "median_us": 91.875,
+      "min_us": 86.209,
+      "p95_us": 102.375
+    }
+  ]
+}

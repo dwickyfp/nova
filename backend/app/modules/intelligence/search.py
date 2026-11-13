@@ -9,24 +9,31 @@ import json
 import logging
 import re
 import time
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, suppress
 from typing import Annotated, Any, Literal
 from uuid import uuid4
 
-import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
 from app.common.audit import write_audit_log
 from app.common.responses import SanitizingJSONResponse
-from app.core.config import settings
 from app.core.database import db
 from app.core.deps import get_current_user, require_role
+from app.core.metadata_db import (
+    MetadataConflict,
+    MetadataPermissionDenied,
+    MetadataReadOnlyMaintenance,
+)
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.agents.semantic.expressions import quote_identifier, quote_source
 from app.modules.ai_ml.embeddings import ResolvedEmbeddingModel, embedding_service
 from app.modules.intelligence.access import can_manage
 from app.modules.intelligence.entities import entity_registry
+from app.modules.intelligence.metadata_repository import (
+    intelligence_metadata,
+    service_actor,
+    user_actor,
+)
 from app.modules.intelligence.retrieval import SearchCandidate, evaluate_relevance, fuse_results
 from app.modules.intelligence.vector_backend import SearchProjection, vector_backend
 from app.modules.query.service import query_service
@@ -48,6 +55,9 @@ _NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 _BATCH_SIZE = 32
 _MAX_SOURCE_ROWS = 1_000_000
 _BUILD_TIMEOUT_SECONDS = 3600
+#: A build that records no progress for this long has lapsed; the poller takes it over.
+_BUILD_LEASE_SECONDS = 300
+_BUILDER = "ai-search-builder"
 logger = logging.getLogger(__name__)
 
 
@@ -98,12 +108,104 @@ class SearchEvalRequest(BaseModel):
     top_k: int = Field(default=10, ge=1, le=100)
 
 
-def _record(result: dict, row: list) -> dict[str, Any]:
-    return dict(zip(result["columns"], row, strict=True))
+_INDEX_FIELDS = (
+    "name",
+    "id",
+    "source_relation",
+    "key_columns",
+    "content_columns",
+    "filter_columns",
+    "entity_id",
+    "model_alias",
+    "owner_name",
+    "active_version",
+    "status",
+    "created_at",
+    "updated_at",
+)
+_VERSION_FIELDS = (
+    "index_name",
+    "version",
+    "index_id",
+    "model_id",
+    "model_revision",
+    "dimensions",
+    "metric",
+    "build_status",
+    "indexed_rows",
+    "failure_code",
+    "created_at",
+    "completed_at",
+)
+_CLAIMABLE = frozenset({"PENDING", "BUILDING", "AUTO_PENDING", "AUTO_BUILDING"})
+_SERVABLE = frozenset({"READY", "ACTIVE", "DEPRECATED"})
+_EMBEDDING = ("model_id", "model_revision", "dimensions", "metric")
+
+
+class _BuildStopped(Exception):
+    """The build lost its claim or its index was dropped; it must not record a result."""
 
 
 def _json(value: Any) -> Any:
     return json.loads(value) if isinstance(value, str) else value
+
+
+def _timestamp(value: Any) -> str | None:
+    return str(value) if value else None
+
+
+def _definition(row: dict) -> dict[str, Any]:
+    """The API shape of an index row."""
+    definition = {key: row[key] for key in _INDEX_FIELDS}
+    for key in ("key_columns", "content_columns", "filter_columns"):
+        definition[key] = _json(definition[key])
+    for key in ("created_at", "updated_at"):
+        definition[key] = _timestamp(definition[key])
+    return definition
+
+
+def _version_record(row: dict) -> dict[str, Any]:
+    """The API shape of a version row."""
+    record = {key: row[key] for key in _VERSION_FIELDS}
+    record["created_at"] = str(record["created_at"])
+    record["completed_at"] = _timestamp(record["completed_at"])
+    return record
+
+
+def _model_fields(model: ResolvedEmbeddingModel | None) -> dict[str, Any]:
+    if model is None:
+        return {"model_id": None, "model_revision": None, "dimensions": 0, "metric": "cosine"}
+    return {
+        "model_id": model.model_id,
+        "model_revision": model.revision,
+        "dimensions": model.dimensions,
+        "metric": model.metric,
+    }
+
+
+def _promotion_target(index: dict, versions: list[dict]) -> int | None:
+    """The built version an index serves without an explicit activation.
+
+    A first build is served once it is ready, and a newer build with the served
+    embedding model (a source refresh) replaces the served one. A build with
+    another model waits for an explicit activation. Only the API may activate,
+    so the build worker leaves this step to the next API read.
+    """
+    if index["status"] == "DEPRECATED":
+        return None
+    active = index["active_version"]
+    ready = [
+        row for row in versions if row["build_status"] == "READY" and row["version"] > (active or 0)
+    ]
+    if not ready:
+        return None
+    newest = max(ready, key=lambda row: row["version"])
+    if active is None:
+        return int(newest["version"])
+    served = next((row for row in versions if row["version"] == active), None)
+    if served and all(served[key] == newest[key] for key in _EMBEDDING):
+        return int(newest["version"])
+    return None
 
 
 def _source_key(values: list[Any]) -> str:
@@ -131,58 +233,10 @@ class SearchService:
         self._tasks: set[asyncio.Task] = set()
         self._poller: asyncio.Task | None = None
 
-    @asynccontextmanager
-    async def _lock(self, name: str, *, wait_seconds: float = 0) -> AsyncIterator[None]:
-        client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
-        key = f"nova:search:lock:{name}"
-        token = uuid4().hex
-        held = False
-        renewal: asyncio.Task | None = None
-        try:
-            deadline = time.monotonic() + wait_seconds
-            while not await client.set(key, token, nx=True, ex=90):
-                if time.monotonic() >= deadline:
-                    raise HTTPException(status_code=409, detail="Search index is busy")
-                await asyncio.sleep(0.1)
-            held = True
-            owner = asyncio.current_task()
-
-            async def renew() -> None:
-                while True:
-                    await asyncio.sleep(30)
-                    try:
-                        renewed = await client.eval(
-                            "if redis.call('GET', KEYS[1]) == ARGV[1] "
-                            "then return redis.call('EXPIRE', KEYS[1], 90) else return 0 end",
-                            1,
-                            key,
-                            token,
-                        )
-                        if not renewed:
-                            raise RuntimeError("Search index lock expired")
-                    except Exception:
-                        if owner:
-                            owner.cancel()
-                        raise
-
-            renewal = asyncio.create_task(renew())
-            yield
-        finally:
-            if renewal:
-                renewal.cancel()
-                with suppress(asyncio.CancelledError):
-                    await renewal
-            try:
-                if held:
-                    await client.eval(
-                        "if redis.call('GET', KEYS[1]) == ARGV[1] "
-                        "then return redis.call('DEL', KEYS[1]) else return 0 end",
-                        1,
-                        key,
-                        token,
-                    )
-            finally:
-                await client.aclose()
+    @staticmethod
+    def _builder() -> SecurityContext:
+        """The maintenance worker's own service principal for builds and refreshes."""
+        return service_actor(_BUILDER)
 
     @staticmethod
     async def _source_access(definition: dict, user: dict) -> bool:
@@ -213,63 +267,69 @@ class SearchService:
             return False
 
     @staticmethod
-    async def _get(name: str) -> dict | None:
-        result = await db.execute_system(
-            "SELECT name,id,source_relation,key_columns,content_columns,filter_columns,"
-            "entity_id,model_alias,owner_name,active_version,status,created_at,updated_at "
-            "FROM NOVA_SYSTEM.CONFIG_AI_SEARCH_INDEXES WHERE name=%s",
-            [name],
-        )
-        if not result["rows"]:
-            return None
-        row = _record(result, result["rows"][0])
-        for key in ("key_columns", "content_columns", "filter_columns"):
-            row[key] = _json(row[key])
-        for key in ("created_at", "updated_at"):
-            row[key] = str(row[key]) if row[key] else None
-        return row
+    async def _snapshot(name: str, actor: SecurityContext) -> tuple[dict | None, list[dict]]:
+        """An index row and its versions (newest first) from one read."""
+        async with intelligence_metadata(actor, read_only=True) as repo:
+            row = await repo.get_index(name)
+            versions = await repo.list_search_versions(name) if row else []
+        return row, versions
 
     @staticmethod
-    async def _version(name: str, version: int) -> dict | None:
-        result = await db.execute_system(
-            "SELECT index_name,version,index_id,model_id,model_revision,dimensions,metric,"
-            "build_status,indexed_rows,failure_code,created_at,completed_at "
-            "FROM NOVA_SYSTEM.CONFIG_AI_SEARCH_VERSIONS "
-            "WHERE index_name=%s AND version=%s",
-            [name, version],
-        )
-        if not result["rows"]:
-            return None
-        row = _record(result, result["rows"][0])
-        row["created_at"] = str(row["created_at"])
-        row["completed_at"] = str(row["completed_at"]) if row["completed_at"] else None
-        return row
+    async def _promote(name: str, actor: SecurityContext) -> bool:
+        """Serve a newly built version; False when nothing changed."""
+        try:
+            async with intelligence_metadata(actor) as repo:
+                index = await repo.get_index(name)
+                if index is None:
+                    return False
+                target = _promotion_target(index, await repo.list_search_versions(name))
+                if target is None:
+                    return False
+                await repo.activate(name, target, expected_revision=index["metadata_revision"])
+                return True
+        except (MetadataConflict, MetadataPermissionDenied, MetadataReadOnlyMaintenance):
+            # A concurrent activation won, this workload may not activate (only
+            # the API may) or writes are paused: the caller reads current state.
+            return False
+
+    async def _visible(self, name: str, user: dict, actor: SecurityContext) -> tuple[dict, list]:
+        """A live index the caller can read, with newly built versions served first."""
+        row, versions = await self._snapshot(name, actor)
+        if (
+            not row
+            or row["status"] == "DEPRECATED"
+            or not await self._source_access(_definition(row), user)
+        ):
+            raise HTTPException(status_code=404, detail="Search index not found")
+        if _promotion_target(row, versions) is not None and await self._promote(name, actor):
+            row, versions = await self._snapshot(name, actor)
+            if not row or row["status"] == "DEPRECATED":
+                raise HTTPException(status_code=404, detail="Search index not found")
+        return row, versions
 
     async def list(self, user: dict) -> list[dict]:
-        result = await db.execute_system(
-            "SELECT name FROM NOVA_SYSTEM.CONFIG_AI_SEARCH_INDEXES "
-            "WHERE status<>'DEPRECATED' ORDER BY name"
-        )
+        actor = user_actor(user)
+        async with intelligence_metadata(actor, read_only=True) as repo:
+            rows = await repo.list_indexes()
+            versions = {row["name"]: await repo.list_search_versions(row["name"]) for row in rows}
         visible = []
-        for row in result["rows"]:
-            definition = await self._get(row[0])
-            if definition and await self._source_access(definition, user):
-                visible.append(definition)
+        for row in rows:
+            definition = _definition(row)
+            if not await self._source_access(definition, user):
+                continue
+            if _promotion_target(row, versions[row["name"]]) is not None and await self._promote(
+                row["name"], actor
+            ):
+                refreshed, _ = await self._snapshot(row["name"], actor)
+                if not refreshed or refreshed["status"] == "DEPRECATED":
+                    continue
+                definition = _definition(refreshed)
+            visible.append(definition)
         return visible
 
     async def describe(self, name: str, user: dict) -> dict:
-        definition = await self._get(name)
-        if not definition or not await self._source_access(definition, user):
-            raise HTTPException(status_code=404, detail="Search index not found")
-        versions = await db.execute_system(
-            "SELECT version FROM NOVA_SYSTEM.CONFIG_AI_SEARCH_VERSIONS "
-            "WHERE index_name=%s ORDER BY version DESC",
-            [name],
-        )
-        return {
-            **definition,
-            "versions": [await self._version(name, row[0]) for row in versions["rows"]],
-        }
+        row, versions = await self._visible(name, user, user_actor(user))
+        return {**_definition(row), "versions": [_version_record(item) for item in versions]}
 
     async def create(self, body: SearchIndexCreate, user: dict) -> dict:
         definition = body.model_dump()
@@ -299,28 +359,15 @@ class SearchService:
             raise HTTPException(
                 status_code=422, detail="Embedding dimensions exceed vector backend limit"
             )
-        async with self._lock(body.name):
-            if await self._get(body.name):
-                raise HTTPException(status_code=409, detail="Search index already exists")
-            index_id = str(uuid4())
-            await db.execute_system(
-                "INSERT INTO NOVA_SYSTEM.CONFIG_AI_SEARCH_INDEXES "
-                "(name,id,source_relation,key_columns,content_columns,filter_columns,entity_id,"
-                "model_alias,owner_name,active_version,status,created_at,updated_at) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,NULL,'BUILDING',NOW(),NOW())",
-                [
-                    body.name,
-                    index_id,
-                    body.source_relation,
-                    json.dumps(body.key_columns),
-                    json.dumps(body.content_columns),
-                    json.dumps(body.filter_columns),
-                    body.entity_id,
-                    body.model_alias,
-                    user["username"],
-                ],
-            )
-            await self._insert_version(body.name, index_id, 1, model)
+        try:
+            # The index and its PENDING first version are the build's persisted
+            # intent; the maintenance worker claims it from there.
+            async with intelligence_metadata(user_actor(user)) as repo:
+                if await repo.get_index(body.name):
+                    raise HTTPException(status_code=409, detail="Search index already exists")
+                await repo.create_index({**definition, "id": str(uuid4())}, _model_fields(model))
+        except MetadataConflict:
+            raise HTTPException(status_code=409, detail="Search index already exists") from None
         await write_audit_log(
             event_type="AI_SEARCH",
             user_name=user["username"],
@@ -331,34 +378,7 @@ class SearchService:
             session_id=user.get("session_id"),
             active_role=user.get("active_role"),
         )
-        self._schedule(body.name, 1)
         return await self.describe(body.name, user)
-
-    @staticmethod
-    async def _insert_version(
-        name: str, index_id: str, version: int, model: ResolvedEmbeddingModel | None
-    ) -> None:
-        await db.execute_system(
-            "INSERT INTO NOVA_SYSTEM.CONFIG_AI_SEARCH_VERSIONS "
-            "(index_name,version,index_id,model_id,model_revision,dimensions,metric,"
-            "build_status,indexed_rows,created_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,'PENDING',0,NOW())",
-            [
-                name,
-                version,
-                index_id,
-                model.model_id if model else None,
-                model.revision if model else None,
-                model.dimensions if model else 0,
-                model.metric if model else "cosine",
-            ],
-        )
-        await db.execute_system(
-            "INSERT INTO NOVA_SYSTEM.CONFIG_AI_SEARCH_SYNC_STATE "
-            "(index_name,version,source_rows,indexed_rows,status,updated_at) "
-            "VALUES (%s,%s,0,0,'PENDING',NOW())",
-            [name, version],
-        )
 
     def _schedule(self, name: str, version: int) -> None:
         task = asyncio.create_task(self.build(name, version), name=f"search:{name}:{version}")
@@ -369,30 +389,41 @@ class SearchService:
         if self._poller is None:
             self._poller = asyncio.create_task(self._poll())
 
+    async def run(self) -> None:
+        """Own the poll/build lifecycle in the maintenance worker."""
+        if self._poller is not None:
+            raise RuntimeError("Search polling is already running")
+        await self.start()
+        try:
+            assert self._poller is not None
+            await self._poller
+        finally:
+            await self.stop()
+
     async def stop(self) -> None:
         if self._poller:
             self._poller.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._poller
-            self._poller = None
-        for task in self._tasks:
+            await asyncio.gather(self._poller, return_exceptions=True)
+        tasks = tuple(self._tasks)
+        for task in tasks:
             task.cancel()
-        if self._tasks:
-            await asyncio.gather(*self._tasks, return_exceptions=True)
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._tasks.difference_update(tasks)
+        self._poller = None
 
     async def _poll(self) -> None:
         ticks = 0
         while True:
             try:
-                result = await db.execute_system(
-                    "SELECT index_name,version FROM NOVA_SYSTEM.CONFIG_AI_SEARCH_VERSIONS "
-                    "WHERE build_status IN ('PENDING','BUILDING','AUTO_PENDING',"
-                    "'AUTO_BUILDING') LIMIT 100"
-                )
+                # Pending versions, and builds whose builder stopped recording
+                # progress (a crashed or stalled claim the poller takes over).
+                async with intelligence_metadata(self._builder(), read_only=True) as repo:
+                    pending = await repo.pending_builds(lease_seconds=_BUILD_LEASE_SECONDS)
                 scheduled = {task.get_name() for task in self._tasks if not task.done()}
-                for name, version in result["rows"]:
-                    key = f"search:{name}:{version}"
-                    if key not in scheduled:
+                for row in pending:
+                    name, version = row["index_name"], row["version"]
+                    if f"search:{name}:{version}" not in scheduled:
                         self._schedule(name, version)
                 SEARCH_LAST_SUCCESSFUL_POLL.set(time.time())
                 ticks += 1
@@ -433,55 +464,48 @@ class SearchService:
         return digest.hexdigest()
 
     async def _reconcile(self) -> None:
+        actor = self._builder()
         try:
-            result = await db.execute_system(
-                "SELECT name,active_version FROM NOVA_SYSTEM.CONFIG_AI_SEARCH_INDEXES "
-                "WHERE status='ACTIVE' AND active_version IS NOT NULL LIMIT 100"
-            )
+            async with intelligence_metadata(actor, read_only=True) as repo:
+                indexes = await repo.list_indexes(active_only=True, limit=100)
         except Exception:
             SEARCH_RECONCILIATION_ERRORS.inc()
             raise
-        for name, active_version in result["rows"]:
+        for index in indexes:
             try:
-                definition = await self._get(name)
-                if not definition:
-                    continue
-                state = await db.execute_system(
-                    "SELECT last_watermark FROM NOVA_SYSTEM.CONFIG_AI_SEARCH_SYNC_STATE "
-                    "WHERE index_name=%s AND version=%s",
-                    [name, active_version],
-                )
-                if not state["rows"] or not state["rows"][0][0]:
+                name, active_version = index["name"], index["active_version"]
+                definition = _definition(index)
+                async with intelligence_metadata(actor, read_only=True) as repo:
+                    state = await repo.get_sync_state(name, active_version)
+                if not state or not state["last_watermark"]:
                     continue
                 current = await self._source_fingerprint(definition)
-                if current == state["rows"][0][0]:
+                if current == state["last_watermark"]:
                     continue
-                async with self._lock(name):
-                    latest = await db.execute_system(
-                        "SELECT MAX(version) FROM NOVA_SYSTEM.CONFIG_AI_SEARCH_VERSIONS "
-                        "WHERE index_name=%s",
-                        [name],
+                async with intelligence_metadata(actor, read_only=True) as repo:
+                    latest = await repo.latest_search_version(name)
+                    active = await repo.get_search_version(name, active_version)
+                if latest != active_version or active is None:
+                    continue
+                model = (
+                    await embedding_service.resolve_model(
+                        model_id=active["model_id"], revision=active["model_revision"]
                     )
-                    number = int(latest["rows"][0][0] or 0)
-                    if number != active_version:
-                        continue
-                    active = await self._version(name, active_version)
-                    if active is None:
-                        continue
-                    model = (
-                        await embedding_service.resolve_model(
-                            model_id=active["model_id"], revision=active["model_revision"]
+                    if active["model_id"]
+                    else None
+                )
+                try:
+                    async with intelligence_metadata(actor) as repo:
+                        created = await repo.add_search_version(
+                            name,
+                            definition["id"],
+                            _model_fields(model),
+                            expected_latest=latest,
+                            automatic=True,
                         )
-                        if active["model_id"]
-                        else None
-                    )
-                    await self._insert_version(name, definition["id"], number + 1, model)
-                    await db.execute_system(
-                        "UPDATE NOVA_SYSTEM.CONFIG_AI_SEARCH_VERSIONS "
-                        "SET build_status='AUTO_PENDING' WHERE index_name=%s AND version=%s",
-                        [name, number + 1],
-                    )
-                self._schedule(name, number + 1)
+                except MetadataConflict:
+                    continue  # another writer created the next version first
+                self._schedule(name, created["version"])
             except Exception as exc:
                 SEARCH_RECONCILIATION_ERRORS.inc()
                 logger.warning("Search reconciliation failed: %s", type(exc).__name__)
@@ -490,24 +514,16 @@ class SearchService:
         started = time.monotonic()
         status = "skipped"
         try:
-            async with self._lock(name):
-                definition = await self._get(name)
-                version_row = await self._version(name, version)
-                if (
-                    not definition
-                    or not version_row
-                    or version_row["build_status"]
-                    not in {"PENDING", "BUILDING", "AUTO_PENDING", "AUTO_BUILDING"}
-                ):
-                    return
-                SEARCH_BUILDS_ACTIVE.inc()
-                try:
-                    built = await self._build_locked(definition, version_row)
-                    status = "success" if built else "failed"
-                finally:
-                    SEARCH_BUILDS_ACTIVE.dec()
-        except HTTPException:
-            return
+            claim = await self._claim(name, version)
+            if claim is None:
+                return
+            definition, version_row, previous, generation = claim
+            SEARCH_BUILDS_ACTIVE.inc()
+            try:
+                built = await self._build_claimed(definition, version_row, generation, previous)
+                status = "superseded" if built is None else "success" if built else "failed"
+            finally:
+                SEARCH_BUILDS_ACTIVE.dec()
         except asyncio.CancelledError:
             status = "cancelled"
             raise
@@ -520,7 +536,63 @@ class SearchService:
             SEARCH_BUILDS.labels(status=status).inc()
             SEARCH_BUILD_DURATION.labels(status=status).observe(time.monotonic() - started)
 
-    async def _build_locked(self, definition: dict, version: dict) -> bool:
+    async def _claim(self, name: str, version: int) -> tuple[dict, dict, dict | None, int] | None:
+        """Claim a pending (or lapsed) build under a new generation."""
+        async with intelligence_metadata(self._builder()) as repo:
+            index = await repo.get_index(name)
+            row = await repo.get_search_version(name, version)
+            if (
+                not index
+                or index["status"] == "DEPRECATED"
+                or not row
+                or row["build_status"] not in _CLAIMABLE
+            ):
+                return None
+            generation = await repo.claim_build(name, version)
+            if generation is None:
+                return None
+            # The first heartbeat starts the lease that the poller measures.
+            await repo.record_build_progress(
+                name, version, generation=generation, source_rows=0, indexed_rows=0
+            )
+            previous = (
+                await repo.get_search_version(name, index["active_version"])
+                if index["active_version"]
+                else None
+            )
+        return (
+            _definition(index),
+            _version_record(row),
+            _version_record(previous) if previous else None,
+            generation,
+        )
+
+    async def _heartbeat(
+        self, name: str, version: int, generation: int, rows: int, projection: SearchProjection
+    ) -> None:
+        """Record progress under the claim, or stop a build that may no longer finish."""
+        async with intelligence_metadata(self._builder()) as repo:
+            index = await repo.get_index(name)
+            dropped = not index or index["status"] == "DEPRECATED"
+            recorded = not dropped and await repo.record_build_progress(
+                name, version, generation=generation, source_rows=rows, indexed_rows=rows
+            )
+        if dropped:
+            # The drop may have run before this build created its projection.
+            await vector_backend.drop_index(projection)
+            raise _BuildStopped
+        if not recorded:
+            # A newer claim owns this version and rebuilds the projection itself.
+            raise _BuildStopped
+
+    async def _finish(self, name: str, version: int, generation: int, **result: Any) -> bool:
+        async with intelligence_metadata(self._builder()) as repo:
+            return await repo.finish_build(name, version, generation=generation, **result)
+
+    async def _build_claimed(
+        self, definition: dict, version: dict, generation: int, previous: dict | None
+    ) -> bool | None:
+        """Build the engine projection; None when the claim was lost or the index dropped."""
         name = definition["name"]
         number = version["version"]
         model = None
@@ -532,18 +604,11 @@ class SearchService:
             lexical_only=version["model_id"] is None,
         )
         started = time.monotonic()
-        automatic = version["build_status"].startswith("AUTO_")
         try:
             if version["model_id"]:
                 model = await embedding_service.resolve_model(
                     model_id=version["model_id"], revision=version["model_revision"]
                 )
-            await db.execute_system(
-                "UPDATE NOVA_SYSTEM.CONFIG_AI_SEARCH_VERSIONS "
-                "SET build_status=%s,failure_code=NULL "
-                "WHERE index_name=%s AND version=%s",
-                ["AUTO_BUILDING" if automatic else "BUILDING", name, number],
-            )
             await vector_backend.drop_index(projection)
             await vector_backend.create_index(projection)
             source = quote_source(definition["source_relation"])
@@ -554,11 +619,6 @@ class SearchService:
             )
             select = ",".join(quote_identifier(column) for column in columns)
             ordering = ",".join(quote_identifier(column) for column in definition["key_columns"])
-            previous = (
-                await self._version(name, definition["active_version"])
-                if definition["active_version"]
-                else None
-            )
             previous_table = (
                 SearchProjection(
                     definition["id"],
@@ -674,70 +734,34 @@ class SearchService:
                         ],
                     )
                 count += len(rows)
-                await db.execute_system(
-                    "UPDATE NOVA_SYSTEM.CONFIG_AI_SEARCH_SYNC_STATE "
-                    "SET source_rows=%s,indexed_rows=%s,status='BUILDING',updated_at=NOW() "
-                    "WHERE index_name=%s AND version=%s",
-                    [count, count, name, number],
-                )
-            await db.execute_system(
-                "UPDATE NOVA_SYSTEM.CONFIG_AI_SEARCH_VERSIONS "
-                "SET build_status='READY',indexed_rows=%s,completed_at=NOW() "
-                "WHERE index_name=%s AND version=%s",
-                [count, name, number],
+                await self._heartbeat(name, number, generation, count, projection)
+            finished = await self._finish(
+                name, number, generation, indexed_rows=count, watermark=digest.hexdigest()
             )
-            await db.execute_system(
-                "UPDATE NOVA_SYSTEM.CONFIG_AI_SEARCH_SYNC_STATE "
-                "SET status='READY',source_rows=%s,indexed_rows=%s,"
-                "last_watermark=%s,updated_at=NOW() "
-                "WHERE index_name=%s AND version=%s",
-                [count, count, digest.hexdigest(), name, number],
-            )
-            if automatic or definition["active_version"] is None:
-                await self._activate_locked(name, number)
-            return True
+            # A lost claim leaves the result to the build that took it over.
+            return True if finished else None
         except asyncio.CancelledError:
             raise
+        except _BuildStopped:
+            return None
         except Exception as exc:
-            await db.execute_system(
-                "UPDATE NOVA_SYSTEM.CONFIG_AI_SEARCH_VERSIONS "
-                "SET build_status='FAILED',failure_code=%s,completed_at=NOW() "
-                "WHERE index_name=%s AND version=%s",
-                [type(exc).__name__[:64], name, number],
-            )
-            await db.execute_system(
-                "UPDATE NOVA_SYSTEM.CONFIG_AI_SEARCH_SYNC_STATE "
-                "SET status='FAILED',updated_at=NOW() "
-                "WHERE index_name=%s AND version=%s",
-                [name, number],
-            )
+            try:
+                await self._finish(name, number, generation, failure_code=type(exc).__name__[:64])
+            except Exception as failure:
+                # The claim lapses and the poller takes the build over.
+                logger.warning("Search build failure was not recorded: %s", type(failure).__name__)
             return False
-
-    @staticmethod
-    async def _activate_locked(name: str, version: int) -> None:
-        row = await SearchService._version(name, version)
-        if not row or row["build_status"] not in {"READY", "ACTIVE", "DEPRECATED"}:
-            raise HTTPException(status_code=409, detail="Search version is not ready")
-        await db.execute_system(
-            "UPDATE NOVA_SYSTEM.CONFIG_AI_SEARCH_VERSIONS "
-            "SET build_status='DEPRECATED' WHERE index_name=%s AND build_status='ACTIVE'",
-            [name],
-        )
-        await db.execute_system(
-            "UPDATE NOVA_SYSTEM.CONFIG_AI_SEARCH_VERSIONS "
-            "SET build_status='ACTIVE' WHERE index_name=%s AND version=%s",
-            [name, version],
-        )
-        await db.execute_system(
-            "UPDATE NOVA_SYSTEM.CONFIG_AI_SEARCH_INDEXES "
-            "SET active_version=%s,status='ACTIVE',updated_at=NOW() WHERE name=%s",
-            [version, name],
-        )
 
     async def activate(self, name: str, version: int, user: dict) -> dict:
         definition = await self._owned(name, user)
-        async with self._lock(name, wait_seconds=5):
-            await self._activate_locked(name, version)
+        async with intelligence_metadata(user_actor(user)) as repo:
+            index = await repo.get_index(name)
+            row = await repo.get_search_version(name, version)
+            if not index or index["status"] == "DEPRECATED":
+                raise HTTPException(status_code=404, detail="Search index not found")
+            if not row or row["build_status"] not in _SERVABLE:
+                raise HTTPException(status_code=409, detail="Search version is not ready")
+            await repo.activate(name, version, expected_revision=index["metadata_revision"])
         await write_audit_log(
             event_type="AI_SEARCH",
             user_name=user["username"],
@@ -750,11 +774,16 @@ class SearchService:
         )
         return await self.describe(definition["name"], user)
 
-    async def _owned(self, name: str, user: dict) -> dict:
-        definition = await self._get(name)
-        if not definition or not can_manage(definition["owner_name"], user):
+    async def _owned(self, name: str, user: dict, *, include_dropped: bool = False) -> dict:
+        async with intelligence_metadata(user_actor(user), read_only=True) as repo:
+            row = await repo.get_index(name)
+        if (
+            not row
+            or (row["status"] == "DEPRECATED" and not include_dropped)
+            or not can_manage(row["owner_name"], user)
+        ):
             raise HTTPException(status_code=404, detail="Search index not found")
-        return definition
+        return _definition(row)
 
     async def rebuild(self, name: str, body: SearchRebuild, user: dict) -> dict:
         definition = await self._owned(name, user)
@@ -767,19 +796,17 @@ class SearchService:
             raise HTTPException(
                 status_code=503, detail="Search indexing is unavailable on this cluster"
             )
-        async with self._lock(name):
-            result = await db.execute_system(
-                "SELECT MAX(version) FROM NOVA_SYSTEM.CONFIG_AI_SEARCH_VERSIONS "
-                "WHERE index_name=%s",
-                [name],
+        async with intelligence_metadata(user_actor(user)) as repo:
+            index = await repo.get_index(name)
+            if not index or index["status"] == "DEPRECATED":
+                raise HTTPException(status_code=404, detail="Search index not found")
+            latest = await repo.latest_search_version(name)
+            created = await repo.add_search_version(
+                name, index["id"], _model_fields(model), expected_latest=latest
             )
-            version = int(result["rows"][0][0] or 0) + 1
-            await self._insert_version(name, definition["id"], version, model)
             if body.model_alias:
-                await db.execute_system(
-                    "UPDATE NOVA_SYSTEM.CONFIG_AI_SEARCH_INDEXES "
-                    "SET model_alias=%s,updated_at=NOW() WHERE name=%s",
-                    [alias, name],
+                await repo.set_model_alias(
+                    name, alias, expected_revision=index["metadata_revision"]
                 )
         await write_audit_log(
             event_type="AI_SEARCH",
@@ -791,28 +818,27 @@ class SearchService:
             session_id=user.get("session_id"),
             active_role=user.get("active_role"),
         )
-        self._schedule(name, version)
-        return {"index": name, "version": version, "status": "PENDING"}
+        return {"index": name, "version": created["version"], "status": "PENDING"}
 
     async def retry(self, name: str, version: int, user: dict) -> dict:
+        """Queue a failed build again as the next version with the same embedding model.
+
+        A failed version is terminal, so the retry is a new pending version.
+        """
         definition = await self._owned(name, user)
         if not await self._source_access(definition, user):
             raise HTTPException(status_code=403, detail="Search source is unavailable")
-        async with self._lock(name):
-            row = await self._version(name, version)
+        async with intelligence_metadata(user_actor(user)) as repo:
+            index = await repo.get_index(name)
+            row = await repo.get_search_version(name, version)
+            if not index or index["status"] == "DEPRECATED":
+                raise HTTPException(status_code=404, detail="Search index not found")
             if not row or row["build_status"] != "FAILED":
                 raise HTTPException(status_code=409, detail="Only failed builds may be retried")
-            await db.execute_system(
-                "UPDATE NOVA_SYSTEM.CONFIG_AI_SEARCH_VERSIONS "
-                "SET build_status='PENDING',failure_code=NULL WHERE index_name=%s AND version=%s",
-                [name, version],
+            latest = await repo.latest_search_version(name)
+            created = await repo.add_search_version(
+                name, index["id"], {key: row[key] for key in _EMBEDDING}, expected_latest=latest
             )
-            await db.execute_system(
-                "UPDATE NOVA_SYSTEM.CONFIG_AI_SEARCH_SYNC_STATE "
-                "SET status='PENDING',updated_at=NOW() WHERE index_name=%s AND version=%s",
-                [name, version],
-            )
-        self._schedule(name, version)
         await write_audit_log(
             event_type="AI_SEARCH",
             user_name=user["username"],
@@ -823,35 +849,31 @@ class SearchService:
             session_id=user.get("session_id"),
             active_role=user.get("active_role"),
         )
-        return {"index": name, "version": version, "status": "PENDING"}
+        return {"index": name, "version": created["version"], "status": "PENDING"}
 
     async def drop(self, name: str, user: dict) -> None:
-        definition = await self._owned(name, user)
-        async with self._lock(name, wait_seconds=5):
-            versions = await db.execute_system(
-                "SELECT version,dimensions,metric,model_id FROM "
-                "NOVA_SYSTEM.CONFIG_AI_SEARCH_VERSIONS WHERE index_name=%s",
-                [name],
-            )
-            await db.execute_system(
-                "UPDATE NOVA_SYSTEM.CONFIG_AI_SEARCH_INDEXES "
-                "SET status='DEPRECATED',active_version=NULL,updated_at=NOW() WHERE name=%s",
-                [name],
-            )
-            for version, dimensions, metric, model_id in versions["rows"]:
-                await vector_backend.drop_index(
-                    SearchProjection(
-                        definition["id"], version, dimensions, metric, model_id is None
-                    )
+        """Retire the index, then remove its engine projections.
+
+        The retired rows are the persisted intent: a repeated drop of a retired
+        index removes any projection that an earlier attempt left behind.
+        """
+        await self._owned(name, user, include_dropped=True)
+        async with intelligence_metadata(user_actor(user)) as repo:
+            index = await repo.get_index(name)
+            if not index:
+                raise HTTPException(status_code=404, detail="Search index not found")
+            versions = await repo.list_search_versions(name)
+            if index["status"] != "DEPRECATED":
+                await repo.retire_index(name, expected_revision=index["metadata_revision"])
+        for row in versions:
+            await vector_backend.drop_index(
+                SearchProjection(
+                    index["id"],
+                    row["version"],
+                    row["dimensions"],
+                    row["metric"],
+                    row["model_id"] is None,
                 )
-            await db.execute_system(
-                "DELETE FROM NOVA_SYSTEM.CONFIG_AI_SEARCH_VERSIONS WHERE index_name=%s", [name]
-            )
-            await db.execute_system(
-                "DELETE FROM NOVA_SYSTEM.CONFIG_AI_SEARCH_SYNC_STATE WHERE index_name=%s", [name]
-            )
-            await db.execute_system(
-                "DELETE FROM NOVA_SYSTEM.CONFIG_AI_SEARCH_INDEXES WHERE name=%s", [name]
             )
         await write_audit_log(
             event_type="AI_SEARCH",
@@ -866,14 +888,14 @@ class SearchService:
 
     async def query(self, name: str, body: SearchQuery, user: dict) -> dict:
         started = time.monotonic()
-        definition = await self._get(name)
-        if (
-            not definition
-            or definition["status"] != "ACTIVE"
-            or not await self._source_access(definition, user)
-        ):
+        actor = user_actor(user)
+        row, versions = await self._visible(name, user, actor)
+        if row["status"] != "ACTIVE":
             raise HTTPException(status_code=404, detail="Search index not found")
-        version = await self._version(name, definition["active_version"])
+        definition = _definition(row)
+        version = next(
+            (item for item in versions if item["version"] == row["active_version"]), None
+        )
         if not version or version["build_status"] != "ACTIVE":
             raise HTTPException(status_code=503, detail="Active search version is unavailable")
         if body.mode != "LEXICAL" and not version["model_id"]:
@@ -958,23 +980,19 @@ class SearchService:
             if len(hits) >= body.top_k:
                 break
         elapsed_ms = int((time.monotonic() - started) * 1000)
-        await db.execute_system(
-            "INSERT INTO NOVA_SYSTEM.AI_SEARCH_QUERY_LOG "
-            "(id,index_name,index_version,user_name,mode,elapsed_ms,lexical_candidates,"
-            "semantic_candidates,result_count,status,created_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'SUCCESS',NOW())",
-            [
-                str(uuid4()),
-                name,
-                version["version"],
-                user["username"],
-                body.mode,
-                elapsed_ms,
-                len(lexical),
-                len(semantic),
-                len(hits),
-            ],
-        )
+        async with intelligence_metadata(actor) as repo:
+            await repo.log_query(
+                {
+                    "id": str(uuid4()),
+                    "index_name": name,
+                    "index_version": version["version"],
+                    "mode": body.mode,
+                    "elapsed_ms": elapsed_ms,
+                    "lexical_candidates": len(lexical),
+                    "semantic_candidates": len(semantic),
+                    "result_count": len(hits),
+                }
+            )
         await write_audit_log(
             event_type="AI_SEARCH",
             user_name=user["username"],
@@ -1013,20 +1031,17 @@ class SearchService:
         summary = {metric: sum(row[metric] for row in reports) / len(reports) for metric in names}
         summary["zero_result_rate"] = sum(row["zero_result"] for row in reports) / len(reports)
         eval_id = str(uuid4())
-        await db.execute_system(
-            "INSERT INTO NOVA_SYSTEM.AI_SEARCH_EVAL_RUNS "
-            "(id,index_name,index_version,user_name,mode,query_count,metrics,created_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,NOW())",
-            [
-                eval_id,
-                name,
-                version,
-                user["username"],
-                body.mode,
-                len(reports),
-                json.dumps(summary),
-            ],
-        )
+        async with intelligence_metadata(user_actor(user)) as repo:
+            await repo.record_evaluation(
+                {
+                    "id": eval_id,
+                    "index_name": name,
+                    "index_version": version,
+                    "mode": body.mode,
+                    "query_count": len(reports),
+                    "metrics": summary,
+                }
+            )
         await write_audit_log(
             event_type="AI_SEARCH",
             user_name=user["username"],

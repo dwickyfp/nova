@@ -27,10 +27,6 @@ async def test_stage_upload_keeps_large_file_out_of_python_heap(monkeypatch):
         "base_prefix": "db/schema/stage",
     }
 
-    async def get_stage(self, _):
-        return stage
-
-    monkeypatch.setattr(StageService, "get_stage", get_stage)
     monkeypatch.setattr(
         StageService, "_s3_client_for_stage", staticmethod(lambda _: (storage, "bucket"))
     )
@@ -42,7 +38,7 @@ async def test_stage_upload_keeps_large_file_out_of_python_heap(monkeypatch):
 
         tracemalloc.start()
         try:
-            result = await StageService().upload_stream("stage-id", "file.bin", stream)
+            result = await StageService().upload_stream(stage, "file.bin", stream)
             _, peak = tracemalloc.get_traced_memory()
         finally:
             tracemalloc.stop()

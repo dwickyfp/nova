@@ -22,13 +22,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { CellEditor, type CellKeyAction } from "./cell-editor";
 import { formatDuration } from "./helpers";
@@ -58,8 +56,8 @@ function Elapsed({ since }: { since: number }) {
   return <span className="tabular-nums">{((now - since) / 1000).toFixed(1)}s</span>;
 }
 
-function statusLine(run: CellRun | undefined, stale: boolean, runtimeReady: boolean) {
-  if (!run) return runtimeReady ? null : null;
+function statusLine(run: CellRun | undefined) {
+  if (!run) return null;
   switch (run.status) {
     case "queued":
       return <span>Queued</span>;
@@ -70,13 +68,9 @@ function statusLine(run: CellRun | undefined, stale: boolean, runtimeReady: bool
         </span>
       );
     case "succeeded":
-      return (
-        <span className={stale ? "text-warning-strong" : undefined}>
-          {stale ? "Out of date, run again to update" : `Ran in ${formatDuration(run.durationMs)}`}
-        </span>
-      );
+      return <span aria-label="Last run duration">{formatDuration(run.durationMs)}</span>;
     case "failed":
-      return <span className="text-destructive">Failed{stale ? ", code changed since" : ""}</span>;
+      return <span className="text-destructive">Failed</span>;
     case "timeout":
       return <span className="text-destructive">Stopped: took too long</span>;
     case "cancelled":
@@ -109,10 +103,8 @@ type CellProps = {
   index: number;
   count: number;
   run: CellRun | undefined;
-  stale: boolean;
   active: boolean;
   editing: boolean;
-  runtimeReady: boolean;
   canEdit: boolean;
   canRun: boolean;
   onSelect: (cellId: string, edit: boolean) => void;
@@ -201,6 +193,7 @@ function ToolbarButton({
       variant="ghost"
       className="size-7 text-muted-foreground hover:text-foreground"
       aria-label={label}
+      aria-keyshortcuts={shortcut === "Ctrl+Enter" ? "Control+Enter Meta+Enter" : undefined}
       title={shortcut ? `${label} (${shortcut})` : label}
       disabled={disabled}
       onClick={onClick}
@@ -215,10 +208,8 @@ export const NotebookCellView = memo(function NotebookCellView({
   index,
   count,
   run,
-  stale,
   active,
   editing,
-  runtimeReady,
   canEdit,
   canRun,
   onSelect,
@@ -232,14 +223,12 @@ export const NotebookCellView = memo(function NotebookCellView({
   tableActions,
 }: CellProps) {
   const running = run?.status === "running" || run?.status === "queued";
-  const failed = run?.status === "failed" && !stale;
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
     useSortable({ id: cell.id, disabled: running || !canEdit });
   const executable = cell.kind !== "markdown";
   const showEditor = cell.kind !== "markdown" || editing;
   const label = KIND_LABEL[cell.kind];
-  const pinned = active || running || failed;
-  const status = statusLine(run, stale, runtimeReady);
+  const status = executable ? statusLine(run) : null;
   const first = index === 0;
   const last = index === count - 1;
 
@@ -247,10 +236,19 @@ export const NotebookCellView = memo(function NotebookCellView({
     <div
       ref={setNodeRef}
       data-cell-id={cell.id}
+      onKeyDownCapture={(event) => {
+        if (event.key !== "Enter" || !(event.ctrlKey || event.metaKey) ||
+            event.shiftKey || event.altKey || event.nativeEvent.isComposing) return;
+        const target = event.target as HTMLElement;
+        if (target.closest('[role="menu"], [role="listbox"], [role="combobox"]')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if ((canRun || (!executable && canEdit)) && !running) onKey(cell.id, "run");
+      }}
       style={{ transform: CSS.Translate.toString(transform), transition }}
-      className={cn("group/cell relative flex gap-2", isDragging && "z-20 opacity-60")}
+      className={cn("group/cell relative flex gap-1", isDragging && "z-20 opacity-60")}
     >
-      <div className="flex w-12 shrink-0 flex-col items-end gap-1 pt-1">
+      <div className="flex w-6 shrink-0 flex-col items-center pt-1.5">
         <button
           ref={setActivatorNodeRef}
           type="button"
@@ -287,58 +285,65 @@ export const NotebookCellView = memo(function NotebookCellView({
         >
           <GripVertical className="size-4" />
         </button>
-        {executable ? (
-          <span
-            className={cn(
-              "font-mono text-xs tabular-nums",
-              running ? "text-info-strong" : "text-muted-foreground",
-            )}
-            aria-label={running ? "Running" : run?.executionCount ? `Execution ${run.executionCount}` : "Not run"}
-          >
-            {gutterLabel(run)}
-          </span>
-        ) : null}
       </div>
 
       <div
-        className="@container/cellbody relative min-w-0 flex-1 pb-2 pl-3"
-        onMouseDown={() => onSelect(cell.id, false)}
+        className="@container/cellbody relative min-w-0 flex-1 rounded-md border border-surface-border border-l-2 border-l-ring bg-card px-2 pb-2"
+        onMouseDown={(event) => {
+          // A press inside the editor keeps (or starts) editing; switching the
+          // editor off and on again around the click made cells flicker and
+          // closed a Markdown editor before the caret could land.
+          const inEditor = (event.target as HTMLElement).closest("[data-cell-editor], [data-cell-preview]");
+          if (inEditor) {
+            if (!(active && editing)) onSelect(cell.id, true);
+          } else if (!active || editing) {
+            onSelect(cell.id, false);
+          }
+        }}
       >
-        <span
-          aria-hidden
-          className={cn(
-            "absolute top-1 bottom-2 left-0 w-0.5 rounded-full transition-colors",
-            failed ? "bg-destructive/70" : active ? "bg-ring" : "bg-transparent",
-          )}
-        />
-        <div className="@container/cellhead relative flex h-8 min-w-0 items-center gap-2">
-          {onTitle ? (
+        <div className="relative flex min-h-9 min-w-0 flex-wrap items-center gap-x-2">
+          <Select
+            value={cell.kind}
+            disabled={!canEdit || running}
+            onValueChange={(kind) => onKind(cell.id, kind as CellKind)}
+          >
+            <SelectTrigger size="sm" aria-label="Cell type" className="h-7 shrink-0 border-0 bg-transparent px-1 text-xs shadow-none dark:bg-transparent dark:hover:bg-muted">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(["python", "sql", "markdown"] as const).map((kind) => (
+                <SelectItem key={kind} value={kind}>{KIND_LABEL[kind]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {onTitle && executable ? (
             <InlineField
               value={cell.title ?? null}
               label="Cell title"
               placeholder="Add a title"
               disabled={!canEdit}
               onCommit={(title) => onTitle(cell.id, title)}
-              className={cn(
-                "h-7 w-full max-w-md flex-1 px-1 text-sm font-medium text-foreground",
-                !cell.title && !active && "opacity-0 group-hover/cell:opacity-100 focus:opacity-100",
-              )}
+              className="order-3 h-7 w-full max-w-md basis-full px-1 text-xs text-muted-foreground focus:text-foreground @sm/cellbody:order-none @sm/cellbody:w-20 @sm/cellbody:flex-1 @sm/cellbody:basis-auto"
             />
           ) : (
             <span className="flex-1" />
           )}
-          <span className="ml-auto hidden min-w-0 shrink truncate text-xs text-muted-foreground @md/cellhead:block">
-            {status}
-          </span>
-          <div
-            className={cn(
-              "flex shrink-0 items-center gap-0.5 transition-opacity",
-              pinned
-                ? "opacity-100"
-                : "absolute top-0 right-0 h-8 bg-background pl-2 opacity-0 group-focus-within/cell:opacity-100 group-hover/cell:opacity-100",
-            )}
-          >
-            {run?.status === "failed" && !running ? (
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            {executable ? (
+              <span
+                className={cn(
+                  "font-mono text-xs tabular-nums",
+                  running ? "text-info-strong" : "text-muted-foreground",
+                )}
+                aria-label={running ? "Running" : run?.executionCount ? `Execution ${run.executionCount}` : "Not run"}
+              >
+                {gutterLabel(run)}
+              </span>
+            ) : null}
+            <span className="hidden max-w-64 truncate text-xs text-muted-foreground @lg/cellbody:block">
+              {status}
+            </span>
+            {executable && run?.status === "failed" && !running ? (
               <Button
                 size="sm"
                 variant="ghost"
@@ -364,22 +369,6 @@ export const NotebookCellView = memo(function NotebookCellView({
                 </ToolbarButton>
               )
             ) : null}
-            <ToolbarButton
-              label="Move up"
-              shortcut="Ctrl+Shift+Up"
-              disabled={first || running || !canEdit}
-              onClick={() => onCommand(cell.id, "move-up")}
-            >
-              <ChevronUp className="size-4" />
-            </ToolbarButton>
-            <ToolbarButton
-              label="Move down"
-              shortcut="Ctrl+Shift+Down"
-              disabled={last || running || !canEdit}
-              onClick={() => onCommand(cell.id, "move-down")}
-            >
-              <ChevronDown className="size-4" />
-            </ToolbarButton>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -392,19 +381,16 @@ export const NotebookCellView = memo(function NotebookCellView({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-                  Cell type
-                </DropdownMenuLabel>
-                <DropdownMenuRadioGroup
-                  value={cell.kind}
-                  onValueChange={(kind) => onKind(cell.id, kind as CellKind)}
-                >
-                  {(["python", "sql", "markdown"] as const).map((kind) => (
-                    <DropdownMenuRadioItem key={kind} value={kind} disabled={!canEdit}>
-                      {KIND_LABEL[kind]}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
+                <DropdownMenuItem disabled={first || running || !canEdit} onSelect={() => onCommand(cell.id, "move-up")}>
+                  <ChevronUp className="size-4" />
+                  Move up
+                  <DropdownMenuShortcut>Ctrl+Shift+Up</DropdownMenuShortcut>
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled={last || running || !canEdit} onSelect={() => onCommand(cell.id, "move-down")}>
+                  <ChevronDown className="size-4" />
+                  Move down
+                  <DropdownMenuShortcut>Ctrl+Shift+Down</DropdownMenuShortcut>
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 {executable ? (
                   <>
@@ -453,7 +439,7 @@ export const NotebookCellView = memo(function NotebookCellView({
         </div>
 
         {status ? (
-          <p className="truncate pb-1 text-xs text-muted-foreground @md/cellbody:hidden">{status}</p>
+          <p className="truncate pb-1 text-xs text-muted-foreground @lg/cellbody:hidden">{status}</p>
         ) : null}
         {showEditor ? (
           <CellEditor
@@ -471,11 +457,11 @@ export const NotebookCellView = memo(function NotebookCellView({
             role="button"
             tabIndex={-1}
             aria-label="Edit Markdown cell"
-            className="cursor-text px-1 py-1 text-sm"
+            className="cursor-text px-2 py-2 text-sm"
             onDoubleClick={() => onSelect(cell.id, true)}
           >
             {cell.source.trim() ? (
-              <Markdown offline>{cell.source}</Markdown>
+              <Markdown offline className="[&>:first-child]:mt-0 [&>:last-child]:mb-0">{cell.source}</Markdown>
             ) : (
               <p className="text-muted-foreground">Double-click to write notes</p>
             )}
@@ -483,7 +469,7 @@ export const NotebookCellView = memo(function NotebookCellView({
         )}
 
         {cell.kind === "sql" ? (
-          <div className="flex h-7 min-w-0 items-center gap-2 font-mono text-xs text-muted-foreground">
+          <div className="flex min-h-7 min-w-0 flex-wrap items-center gap-x-2 px-2 font-mono text-xs text-muted-foreground">
             <span aria-hidden>→</span>
             <InlineField
               value={cell.name}
@@ -511,7 +497,7 @@ export const NotebookCellView = memo(function NotebookCellView({
         ) : null}
 
         {executable && run && run.outputs.length > 0 ? (
-          <div className={cn("pt-2", stale && "opacity-70")}>
+          <div className="px-2 pt-2">
             <CellOutputs
               outputs={run.outputs}
               tableActions={tableActions ? (output) => tableActions(cell, output) : undefined}

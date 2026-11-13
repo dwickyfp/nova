@@ -50,3 +50,27 @@ then inspect the evidence supporting the answer. See
 Use **Access** to review sharing, **Observability** to inspect runs, and
 **Improve** to review quality. Sharing the agent does not replace the active
 role's permissions on its underlying data.
+
+To verify a published Semantic View, use a role assigned to your account that
+can read its sources. Assigning a role to an agent does not assign that role
+to you; missing role or source permissions keep the access check from succeeding.
+
+Agent usage groups activity by UTC calendar day, including today. The totals
+and daily chart cover the same selected period. Session traces show your own
+conversations with that agent.
+
+## Concurrent changes and scheduled reports
+
+If a saved configuration or workflow changed while you were editing it, reload
+the latest version and compare your changes before saving again. A conflict
+does not mean your earlier edit replaced someone else's work. During maintenance,
+wait until changes are available again before retrying a save.
+
+Scheduled reports keep the owner's selected role. A lost role assignment or an
+unavailable data source can stop a run. If a delivery is marked **VERIFYING**
+or **BLOCKED**, ask your administrator to check its outcome before creating a
+replacement schedule. Nova does not automatically repeat an external delivery
+whose outcome is unknown.
+
+Deleting an agent also removes its active memories. If cleanup fails, the agent
+and its memories stay available so you can resolve the error before trying again.

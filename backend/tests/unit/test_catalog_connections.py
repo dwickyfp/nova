@@ -17,13 +17,14 @@ from fastapi.testclient import TestClient
 
 from app.common.crypto import decrypt
 from app.core.deps import get_current_user
+from app.core.metadata_schema import load_migrations
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.access_control.statement_router import SecurityStatementRouter
 from app.modules.catalog import connections, service
-from app.modules.catalog import repository as repo_module
 from app.modules.catalog.connections import ConnectionService, validate_secret_ref
 from app.modules.catalog.connections_router import router
 from app.modules.catalog.errors import CatalogError
-from app.modules.catalog.repository import CatalogRepository
+from app.modules.catalog.metadata_repository import CatalogMetadataRepository
 from app.sql_frontend.ast.builder import ast_builders
 from app.sql_frontend.ast.statements import CatalogStatement
 from app.sql_frontend.context import PlanningContext
@@ -79,34 +80,23 @@ def test_a_database_secret_payload_is_a_username_password_pair():
 # ── Store ─────────────────────────────────────────────────────────────────
 
 
-async def test_schema_includes_connections_and_encrypted_credentials(monkeypatch):
-    calls: list[str] = []
-
-    async def execute_system(sql, params=None):
-        calls.append(sql)
-        return {"rows": []}
-
-    monkeypatch.setattr(repo_module.db, "execute_system", execute_system)
-    await CatalogRepository().ensure_schema()
-    for table in ("CATALOG_CONNECTIONS", "CATALOG_CONNECTION_CREDENTIALS"):
-        assert any(f"NOVA_SYSTEM.{table} (" in sql for sql in calls), table
-    connections_ddl = next(sql for sql in calls if "CATALOG_CONNECTIONS (" in sql)
-    assert "password" not in connections_ddl.lower()
+def test_schema_includes_connections_and_encrypted_credentials():
+    schema = "\n".join(migration.statement for migration in load_migrations())
+    for table in ("catalog_connections", "catalog_connection_credentials"):
+        assert f"nova_meta.{table}" in schema
+    assert "username_enc" in schema and "password_enc" in schema
 
 
 async def test_entered_credentials_are_written_encrypted(monkeypatch):
-    calls: list[tuple[str, list]] = []
-
-    async def execute_system(sql, params=None):
-        calls.append((sql, params))
-        return {"rows": []}
-
-    monkeypatch.setattr(connections.db, "execute_system", execute_system)
-    await connections.ConnectionRepository().put_credentials("pg", "reader", PASSWORD, "admin")
-    _, params = calls[0]
+    repo = CatalogMetadataRepository(None, SecurityContext("admin", "ACCOUNTADMIN"))
+    monkeypatch.setattr(repo, "_bound", AsyncMock())
+    write = AsyncMock(return_value={"metadata_revision": 2})
+    monkeypatch.setattr(repo, "_one", write)
+    assert await repo.put_credentials("pg", "reader", PASSWORD) == 2
+    _, params = write.call_args.args
     assert PASSWORD not in json.dumps(params, default=str)
-    assert params[1].startswith("enc:") and params[2].startswith("enc:")
-    assert decrypt(params[2]) == PASSWORD
+    assert params[0].startswith("enc:") and params[1].startswith("enc:")
+    assert decrypt(params[1]) == PASSWORD
 
 
 # ── Service ───────────────────────────────────────────────────────────────
@@ -284,7 +274,7 @@ async def test_foreign_catalog_needs_entered_credentials(audits, engine):
                      secret_ref="nova://pg_shop", user=ADMIN)
     summary = await svc.describe("pg_shop", ADMIN)
     assert summary is not None and not summary.has_credentials
-    with pytest.raises(CatalogError, match="no credentials"):
+    with pytest.raises(CatalogError, match="credentials have not been configured"):
         await svc.create_foreign_catalog(name="pg_x", connection="pg_shop", user=ADMIN)
     engine.assert_not_awaited()
     await svc.set_credentials("pg_shop", "reader", PASSWORD, ADMIN)

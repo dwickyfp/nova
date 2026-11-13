@@ -15,8 +15,10 @@ vi.mock("@tanstack/react-router", async (importOriginal) => ({
   useNavigate: () => vi.fn(),
 }));
 
-// Monaco loads from a CDN; a textarea keeps the editor's contract.
+// The real editor is heavy for a component test; a textarea keeps its contract.
+vi.mock("./monaco-setup", () => ({}));
 vi.mock("@monaco-editor/react", () => ({
+  loader: { config: vi.fn() },
   default: ({
     value,
     onChange,

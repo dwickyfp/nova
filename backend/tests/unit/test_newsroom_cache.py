@@ -249,7 +249,8 @@ def sessions(room, monkeypatch):
     async def get(session_id):
         return dict(live[session_id]) if session_id in live else None
 
-    async def enabled(username):
+    async def enabled(username, actor):
+        assert actor.principal == username
         return room.warehouse.principals[username].news_enabled
 
     monkeypatch.setattr(newsroom_refresher.session_store, "get", get)

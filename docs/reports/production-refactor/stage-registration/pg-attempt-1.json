@@ -1,0 +1,19 @@
+{
+  "since": "2026-11-11T21:28:26.672668+00:00",
+  "until": "2026-11-11T21:33:06.636699+00:00",
+  "raw_log_exported": false,
+  "passed_tests": 408,
+  "failed_tests": 1,
+  "seconds": 277.43,
+  "failure": "Provider deletion and alias creation deadlocked (40P01); reversed configuration/row lock order",
+  "resolution": "One configuration lock before row locks in every AI registry mutation; deterministic waiting-delete regression",
+  "status": "FAILED",
+  "log_scan": {
+    "passed": true,
+    "lines": 21,
+    "matches": {
+      "credential_canary": 0,
+      "encrypted_credential": 0
+    }
+  }
+}

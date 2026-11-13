@@ -22,6 +22,9 @@ import asyncio
 import builtins
 import json
 import logging
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import asynccontextmanager, contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -30,11 +33,27 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from app.common.audit import write_audit_log
 from app.core.config import settings
-from app.core.database import db
+from app.core.metadata_actor import acting_as, metadata_transaction, service_actor
+from app.core.metadata_db import MetadataConflict, MetadataPermissionDenied
+from app.modules.access_control.security_context import SecurityContext
+from app.modules.agents.metadata_repository import AgentMetadataRepository, agent_metadata
 from app.modules.intelligence.contracts import Contract, Scope, SemanticRef, fingerprint
-from app.modules.intelligence.engine_repository import metadata_lock
+
+_delivery_journal: ContextVar[tuple[Callable[[dict], Awaitable[None]],
+                                  Callable[[dict], Awaitable[None]]] | None] = ContextVar(
+    "automation_delivery_journal", default=None,
+)
+
+
+@contextmanager
+def delivery_journal(prepare: Callable[[dict], Awaitable[None]],
+                     receipt: Callable[[dict], Awaitable[None]]) -> Iterator[None]:
+    token = _delivery_journal.set((prepare, receipt))
+    try:
+        yield
+    finally:
+        _delivery_journal.reset(token)
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +126,7 @@ class AutomationCreate(BaseModel):
 
 
 class AutomationUpdate(BaseModel):
+    expected_revision: int | None = Field(default=None, ge=1)
     title: str | None = Field(default=None, min_length=1, max_length=256)
     prompt: str | None = Field(default=None, min_length=3, max_length=4000)
     schedule_kind: Literal["cron", "interval"] | None = None
@@ -124,7 +144,11 @@ class AutomationExecutionBinding(Contract):
 
 
 class AutomationError(ValueError):
-    pass
+    status_code = 422
+
+
+class AutomationConflict(AutomationError):
+    status_code = 409
 
 
 def _now() -> datetime:
@@ -179,8 +203,10 @@ def condition_met(condition: dict[str, Any] | None, tables: dict[str, dict]) -> 
     return None
 
 
-def _row(values: builtins.list[Any]) -> dict[str, Any]:
-    record = dict(zip(_COLUMNS.split(", "), values, strict=True))
+def _row(values: dict[str, Any]) -> dict[str, Any]:
+    record = {key: values[key] for key in _COLUMNS.split(", ")}
+    record["revision"] = values["metadata_revision"]
+    record["run_generation"] = values["run_generation"]
     for key in ("condition_json", "delivery_json"):
         raw = record.pop(key)
         record[key.removesuffix("_json")] = json.loads(raw) if isinstance(raw, str) else raw
@@ -212,229 +238,122 @@ def automation_creation_id(owner_name: str, role_name: str, agent_id: str, ident
     return fingerprint(["studio-automation-v1", owner_name, role_name, agent_id, identity])
 
 
-class AutomationRepository:
-    _retired_checked = False
+AUTOMATION_ACTOR = service_actor("automation-worker", "nova_service")
 
+
+@asynccontextmanager
+async def _worker_store(*, read_only: bool = False):
+    async with metadata_transaction(AUTOMATION_ACTOR, read_only=read_only) as (conn, actor):
+        yield AgentMetadataRepository(conn, actor)
+
+
+class AutomationRepository:
     async def ensure_schema(self) -> None:
-        await db.execute_system(AUTOMATIONS_DDL)
-        if not self._retired_checked:
-            await db.execute_system(
-                "UPDATE NOVA_SYSTEM.CONFIG_AGENT_AUTOMATIONS SET enabled = FALSE, "
-                "next_run_at = NULL WHERE enabled = TRUE AND agent_id IN (%s, %s)",
-                list(RETIRED_AGENT_IDS),
-            )
-            self._retired_checked = True
+        """The one-shot PostgreSQL migrator owns schedules and retained history."""
+
+    @asynccontextmanager
+    async def _write(self, owner, agent_id):
+        try:
+            async with agent_metadata(owner) as repo:
+                await repo.lock_automations(agent_id)
+                yield repo
+        except MetadataConflict:
+            raise AutomationConflict(
+                "Automation revision changed; reload before updating"
+            ) from None
 
     async def create(
-        self,
-        *,
-        agent_id: str,
-        owner_name: str,
-        role_name: str,
-        body: AutomationCreate,
+        self, *, agent_id: str, owner_name: str, role_name: str, body: AutomationCreate,
         creation_identity: str | None = None,
         execution_binding: AutomationExecutionBinding | None = None,
     ) -> dict[str, Any]:
-        await self.ensure_schema()
         if creation_identity is not None and not 8 <= len(creation_identity) <= 128:
             raise AutomationError("Invalid automation creation identity")
         automation_id = (
             automation_creation_id(owner_name, role_name, agent_id, creation_identity)
-            if creation_identity is not None
-            else str(uuid4())
+            if creation_identity is not None else str(uuid4())
         )
         if execution_binding is not None and (
             execution_binding.scope.principal != owner_name
             or execution_binding.scope.active_role != role_name
             or execution_binding.scope.session_id is not None
-            or body.delivery.mcp_tool_id is not None
-            or body.delivery.fixed_arguments
+            or body.delivery.mcp_tool_id is not None or body.delivery.fixed_arguments
         ):
             raise AutomationError("Automation execution binding does not match its owner")
-        async with metadata_lock(
-            "studio-automation-owner:" + fingerprint([owner_name, agent_id])
-        ) as lease:
-            return await self._create_locked(
-                automation_id, agent_id, owner_name, role_name, body, execution_binding, lease
-            )
-
-    async def _create_locked(
-        self, automation_id, agent_id, owner_name, role_name, body, execution_binding, lease
-    ) -> dict[str, Any]:
         delivery = body.delivery.model_dump(mode="json")
         if execution_binding is not None:
             delivery["execution_binding"] = execution_binding.model_dump(mode="json")
-        expected = {
-            **body.model_dump(mode="json"),
-            "delivery": delivery,
-            "agent_id": agent_id,
-            "owner_name": owner_name,
-            "role_name": role_name,
-        }
-        prior = await self.get(automation_id, owner_name=owner_name)
-        if prior is not None:
-            if automation_configuration(prior) != automation_configuration(expected):
-                raise AutomationError("Automation creation identity inputs changed")
-            return prior
-        existing = await self.list(agent_id=agent_id, owner_name=owner_name)
-        if len(existing) >= MAX_AUTOMATIONS_PER_AGENT:
-            raise AutomationError(f"An agent has at most {MAX_AUTOMATIONS_PER_AGENT} automations.")
-        now = _now()
-        upcoming = next_run(body.schedule_kind, body.schedule_expr, body.timezone, now)
-        if not await lease.renew():
-            raise AutomationError("Automation creation lease expired")
-        await db.execute_system(
-            f"INSERT INTO NOVA_SYSTEM.CONFIG_AGENT_AUTOMATIONS ({_COLUMNS}) VALUES ("
-            + ", ".join(["%s"] * 18)
-            + ")",
-            [
-                automation_id,
-                agent_id,
-                owner_name,
-                role_name,
-                body.title,
-                body.prompt,
-                body.schedule_kind,
-                body.schedule_expr,
-                body.timezone,
-                json.dumps(body.condition.model_dump()) if body.condition else None,
-                json.dumps(delivery),
-                body.enabled,
-                _naive(upcoming),
-                None,
-                None,
-                None,
-                _naive(now),
-                _naive(now),
-            ],
-        )
-        created = await self.get(automation_id, owner_name=owner_name)
-        assert created is not None
-        return created
+        expected = {**body.model_dump(mode="json"), "delivery": delivery, "agent_id": agent_id,
+                    "owner_name": owner_name, "role_name": role_name}
+        async with self._write(owner_name, agent_id) as repo:
+            if repo.actor.active_role != role_name:
+                raise MetadataPermissionDenied()
+            prior = await repo.get_automation(automation_id, owner_name)
+            if prior:
+                if automation_configuration(_row(prior)) != automation_configuration(expected):
+                    raise AutomationError("Automation creation identity inputs changed")
+                return _row(prior)
+            if len(await repo.list_automations(agent_id)) >= MAX_AUTOMATIONS_PER_AGENT:
+                raise AutomationError(
+                    f"An agent has at most {MAX_AUTOMATIONS_PER_AGENT} automations."
+                )
+            fields = body.model_dump(exclude={"condition", "delivery"})
+            fields["condition_json"] = body.condition.model_dump() if body.condition else None
+            fields["delivery_json"] = delivery
+            fields["next_run_at"] = next_run(
+                body.schedule_kind, body.schedule_expr, body.timezone, _now())
+            return _row(await repo.create_automation(agent_id, fields, automation_id=automation_id))
 
     async def list(self, *, agent_id: str, owner_name: str) -> builtins.list[dict[str, Any]]:
-        await self.ensure_schema()
-        result = await db.execute_system(
-            f"SELECT {_COLUMNS} FROM NOVA_SYSTEM.CONFIG_AGENT_AUTOMATIONS "
-            "WHERE agent_id = %s AND owner_name = %s ORDER BY created_at DESC",
-            [agent_id, owner_name],
-        )
-        return [_row(row) for row in result.get("rows") or []]
+        async with agent_metadata(read_only=True) as repo:
+            if repo.actor.principal != owner_name:
+                return []
+            return [_row(row) for row in await repo.list_automations(agent_id)]
 
     async def get(self, automation_id: str, *, owner_name: str) -> dict[str, Any] | None:
-        await self.ensure_schema()
-        result = await db.execute_system(
-            f"SELECT {_COLUMNS} FROM NOVA_SYSTEM.CONFIG_AGENT_AUTOMATIONS "
-            "WHERE automation_id = %s AND owner_name = %s",
-            [automation_id, owner_name],
-        )
-        rows = result.get("rows") or []
-        return _row(rows[0]) if rows else None
+        async with agent_metadata(read_only=True) as repo:
+            row = await repo.get_automation(automation_id, owner_name)
+            return _row(row) if row else None
 
     async def update(
-        self,
-        automation: dict[str, Any],
-        body: AutomationUpdate,
-        *,
+        self, automation: dict[str, Any], body: AutomationUpdate, *,
         expected_configuration_digest: str | None = None,
     ) -> dict[str, Any]:
-        async with metadata_lock("studio-automation:" + automation["automation_id"]) as lease:
-            current = await self.get(
-                automation["automation_id"], owner_name=automation["owner_name"]
-            )
-            if current is None:
+        async with self._write(automation["owner_name"], automation["agent_id"]) as repo:
+            row = await repo.get_automation(automation["automation_id"], automation["owner_name"])
+            if row is None:
                 raise AutomationError("Automation unavailable")
+            current = _row(row)
             if expected_configuration_digest is not None and (
                 fingerprint(automation_configuration(current)) != expected_configuration_digest
             ):
-                raise AutomationError("Automation configuration changed; review before updating")
-            return await self._update_locked(current, body, lease)
-
-    async def _update_locked(self, automation, body, lease) -> dict[str, Any]:
-        fields = body.model_dump(exclude_unset=True)
-        merged = {**automation, **fields}
-        assignments, params = [], []
-        for column in ("title", "prompt", "schedule_kind", "schedule_expr", "timezone", "enabled"):
-            if column in fields:
-                assignments.append(f"{column} = %s")
-                params.append(fields[column])
-        if "condition" in fields:
-            assignments.append("condition_json = %s")
-            params.append(json.dumps(fields["condition"]) if fields["condition"] else None)
-        if "delivery" in fields and fields["delivery"] is not None:
-            assignments.append("delivery_json = %s")
-            params.append(json.dumps(fields["delivery"]))
-        if {"schedule_kind", "schedule_expr", "timezone", "enabled"} & set(fields):
-            upcoming = next_run(
-                merged["schedule_kind"], merged["schedule_expr"], merged["timezone"], _now()
-            )
-            assignments.append("next_run_at = %s")
-            params.append(_naive(upcoming))
-        if assignments:
-            assignments.append("updated_at = %s")
-            params.append(_naive(_now()))
-            if not await lease.renew():
-                raise AutomationError("Automation update lease expired")
-            await db.execute_system(
-                "UPDATE NOVA_SYSTEM.CONFIG_AGENT_AUTOMATIONS SET "
-                + ", ".join(assignments)
-                + " WHERE automation_id = %s AND owner_name = %s",
-                [*params, automation["automation_id"], automation["owner_name"]],
-            )
-        updated = await self.get(automation["automation_id"], owner_name=automation["owner_name"])
-        assert updated is not None
-        return updated
+                raise AutomationConflict("Automation configuration changed; review before updating")
+            if current["revision"] != (body.expected_revision or automation["revision"]):
+                raise AutomationConflict("Automation revision changed; reload before updating")
+            fields = body.model_dump(exclude_unset=True, exclude={"expected_revision"})
+            merged = {**current, **fields}
+            changes = {key: value for key, value in fields.items()
+                       if key not in {"condition", "delivery"}}
+            if "condition" in fields:
+                changes["condition_json"] = fields["condition"]
+            if fields.get("delivery") is not None:
+                changes["delivery_json"] = fields["delivery"]
+            if {"schedule_kind", "schedule_expr", "timezone", "enabled"} & fields.keys():
+                changes["next_run_at"] = next_run(
+                    merged["schedule_kind"], merged["schedule_expr"], merged["timezone"], _now())
+            if not changes:
+                return current
+            return _row(await repo.update_automation(
+                automation["automation_id"], changes, expected_revision=current["revision"]))
 
     async def delete(self, automation_id: str, *, owner_name: str) -> None:
-        async with metadata_lock("studio-automation:" + automation_id) as lease:
-            if not await lease.renew():
-                raise AutomationError("Automation delete lease expired")
-            await db.execute_system(
-                "DELETE FROM NOVA_SYSTEM.CONFIG_AGENT_AUTOMATIONS "
-                "WHERE automation_id = %s AND owner_name = %s",
-                [automation_id, owner_name],
-            )
+        async with agent_metadata(owner_name) as repo:
+            await repo.delete_automation(automation_id)
 
     async def due(self, now: datetime, *, limit: int = 20) -> builtins.list[dict[str, Any]]:
-        await self.ensure_schema()
-        result = await db.execute_system(
-            f"SELECT {_COLUMNS} FROM NOVA_SYSTEM.CONFIG_AGENT_AUTOMATIONS "
-            "WHERE enabled = TRUE AND next_run_at IS NOT NULL AND next_run_at <= %s "
-            "ORDER BY next_run_at LIMIT %s",
-            [_naive(now), limit],
-        )
-        return [_row(row) for row in result.get("rows") or []]
+        async with _worker_store(read_only=True) as repo:
+            return [_row(row) for row in await repo.due_automations(now, limit=limit)]
 
-    async def record_run(
-        self,
-        automation: dict[str, Any],
-        *,
-        status: str,
-        thread_id: str | None,
-        ran_at: datetime,
-    ) -> None:
-        try:
-            upcoming = next_run(
-                automation["schedule_kind"],
-                automation["schedule_expr"],
-                automation["timezone"],
-                ran_at,
-            )
-        except AutomationError:
-            upcoming = None
-        await db.execute_system(
-            "UPDATE NOVA_SYSTEM.CONFIG_AGENT_AUTOMATIONS SET last_run_at = %s, "
-            "last_status = %s, last_thread_id = %s, next_run_at = %s, updated_at = %s "
-            "WHERE automation_id = %s",
-            [
-                _naive(ran_at),
-                status[:64],
-                thread_id,
-                _naive(upcoming),
-                _naive(ran_at),
-                automation["automation_id"],
-            ],
-        )
 
 
 automation_repository = AutomationRepository()
@@ -463,26 +382,9 @@ class AutomationRunner:
                 "Automation %s failed: %s", automation["automation_id"], type(exc).__name__
             )
             result = RunResult(status=f"failed:{type(exc).__name__}", thread_id=None)
-        await self._repository.record_run(
-            automation, status=result.status, thread_id=result.thread_id, ran_at=ran_at
-        )
-        await write_audit_log(
-            event_type="AGENT_AUTOMATION",
-            user_name=automation["owner_name"],
-            action="RUN",
-            object_type="AGENT_AUTOMATION",
-            object_name=automation["automation_id"],
-            status="SUCCESS" if not result.status.startswith("failed") else "FAILED",
-            decision=result.status,
-            active_role=automation["role_name"],
-        )
         return result
 
-    async def _run(self, automation: dict[str, Any], ran_at: datetime) -> RunResult:
-        from app.modules.agents.repository import agent_repository
-        from app.modules.assistant.repository import assistant_repository
-        from app.modules.query.service import delegated_connection
-
+    async def _binding_valid(self, automation: dict[str, Any]) -> bool:
         owner = automation["owner_name"]
         raw_binding = (automation.get("delivery") or {}).get("execution_binding")
         binding = AutomationExecutionBinding.model_validate(raw_binding) if raw_binding else None
@@ -502,7 +404,36 @@ class AutomationRunner:
                 or binding.scope.active_role != automation["role_name"]
                 or binding.scope.session_id is not None
             ):
+                return False
+        return True
+
+    async def _run(self, automation: dict[str, Any], ran_at: datetime) -> RunResult:
+        from app.modules.query.service import delegated_connection
+        from app.modules.task_orchestration.execution import TaskSpec, _dict_cursor
+
+        owner = automation["owner_name"]
+        actor = SecurityContext.from_session(automation_execution_user(
+            automation, automation["automation_id"],
+        ))
+        with acting_as(actor):
+            if not await self._binding_valid(automation):
                 return RunResult(status="failed:execution_binding_changed", thread_id=None)
+        async with self._executor.owner_connection(owner) as connection:
+            async with _dict_cursor(connection) as cursor:
+                await self._executor._prepare_task_session(
+                    cursor, TaskSpec(name=automation["title"], body="",
+                                     active_role=automation["role_name"]),
+                )
+            with delegated_connection(owner, connection), acting_as(actor):
+                return await self._run_as_owner(automation, ran_at)
+
+    async def _run_as_owner(self, automation: dict[str, Any], ran_at: datetime) -> RunResult:
+        from app.modules.agents.repository import agent_repository
+        from app.modules.assistant.repository import assistant_repository
+
+        owner = automation["owner_name"]
+        raw_binding = (automation.get("delivery") or {}).get("execution_binding")
+        binding = AutomationExecutionBinding.model_validate(raw_binding) if raw_binding else None
         agent = await agent_repository.get_agent(automation["agent_id"], owner_name=owner)
         if agent is None:
             return RunResult(status="failed:agent_missing", thread_id=None)
@@ -512,27 +443,15 @@ class AutomationRunner:
             agent_id=agent["agent_id"],
         )
         thread_id = thread["thread_id"]
-        async with self._executor.owner_connection(owner) as connection:
+        actor = SecurityContext.from_session(automation_execution_user(automation, thread_id))
+        with acting_as(actor):
             if binding:
-                from app.modules.task_orchestration.execution import TaskSpec, _dict_cursor
+                from app.modules.intelligence.engine import intelligence_service
 
-                async with _dict_cursor(connection) as cursor:
-                    await self._executor._prepare_task_session(
-                        cursor,
-                        TaskSpec(
-                            name=automation["title"], body="", active_role=automation["role_name"]
-                        ),
-                    )
-            with delegated_connection(owner, connection):
-                if binding:
-                    from app.modules.intelligence.engine import intelligence_service
-
-                    await intelligence_service.authorize_semantic(
-                        binding.semantic,
-                        automation_execution_user(automation, thread_id),
-                        active=True,
-                    )
-                text, steps, tables = await _run_turn(agent, automation, thread_id)
+                await intelligence_service.authorize_semantic(
+                    binding.semantic, automation_execution_user(automation, thread_id), active=True,
+                )
+            text, steps, tables = await _run_turn(agent, automation, thread_id)
         security = Scope.from_user(automation_execution_user(automation, thread_id)).model_dump()
         await assistant_repository.append_message(
             thread_id,
@@ -618,10 +537,22 @@ async def _deliver(automation: dict[str, Any], owner: str, text: str) -> str:
     }
     if contains_credential_shape(json.dumps(arguments, ensure_ascii=False)):
         return "delivered:inbox;external_blocked"
+    journal = _delivery_journal.get()
+    if journal is None:
+        raise AutomationError("External delivery requires a durable occurrence")
+    await journal[0]({
+        "owner_name": owner, "role_name": automation["role_name"],
+        "tool_id": tool_id, "server_id": server["server_id"],
+        "server_configuration_digest": fingerprint(server),
+        "tool_name": str(tool["name"]), "arguments": arguments,
+    })
     try:
         result = await asyncio.wait_for(
             mcp_client.call_tool(server, str(tool["name"]), arguments), timeout=30
         )
+        await journal[1]({
+            "response_digest": fingerprint(result), "is_error": bool(result.get("isError")),
+        })
     except Exception as exc:  # noqa: BLE001 - the inbox copy already exists
         logger.warning("Automation delivery failed: %s", type(exc).__name__)
         return "delivered:inbox;external_failed"
@@ -631,23 +562,27 @@ async def _deliver(automation: dict[str, Any], owner: str, text: str) -> str:
 
 
 class AutomationWorker:
-    """Polls for due automations; a Redis claim keeps each fire single-run."""
+    """Poll PostgreSQL occurrences; Redis is never the authority for a scheduled fire."""
 
     def __init__(self, runner: AutomationRunner, client: Any, *, poll_seconds: float = 30.0):
+        from app.modules.agents.automation_jobs import AutomationJobs
+
         self._runner = runner
         self._client = client
         self._poll = poll_seconds
+        self._jobs = AutomationJobs()
+        self._holder = uuid4()
 
     async def tick(self, now: datetime | None = None) -> int:
         now = now or _now()
-        ran = 0
         for automation in await automation_repository.due(now):
-            fire = automation.get("next_run_at")
-            key = f"nova:automation:{automation['automation_id']}:{fire}"
-            claimed = await self._client.set(key, "1", nx=True, ex=24 * 3600)
-            if not claimed:
-                continue
-            await self._runner.run(automation, now=now)
+            await self._jobs.enqueue(automation)
+        ran = 0
+        for _ in range(20):
+            job = await self._jobs.claim(self._holder)
+            if job is None:
+                break
+            await self._jobs.run(job, self._runner, now)
             ran += 1
         return ran
 

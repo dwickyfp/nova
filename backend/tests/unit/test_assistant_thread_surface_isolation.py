@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
 import pytest
 from fastapi import HTTPException
 
@@ -51,13 +55,23 @@ async def test_studio_cannot_open_a_neva_thread(monkeypatch):
 
 
 async def test_studio_trace_uses_the_agent_scope(monkeypatch):
-    class _RecordingDB:
-        async def execute_system(self, sql: str, params: list) -> dict:
-            assert "agent_id = %s" in sql
-            assert params == ["neva-thread", "alice", "studio-agent"]
-            return {"rows": []}
+    store = SimpleNamespace(
+        get_thread=AsyncMock(return_value={"agent_id": None}), list_messages=AsyncMock()
+    )
 
-    monkeypatch.setattr(observability, "db", _RecordingDB())
-    assert await observability.thread_trace(
-        owner_name="alice", agent_id="studio-agent", thread_id="neva-thread"
-    ) is None
+    @asynccontextmanager
+    async def scope(owner):
+        assert owner == "alice"
+        yield store
+
+    monkeypatch.setattr(observability, "_store", scope)
+    assert (
+        await observability.thread_trace(
+            owner_name="alice",
+            agent_id="studio-agent",
+            thread_id="neva-thread",
+        )
+        is None
+    )
+    store.get_thread.assert_awaited_once_with("neva-thread")
+    store.list_messages.assert_not_awaited()

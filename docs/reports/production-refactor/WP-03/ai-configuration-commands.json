@@ -1,0 +1,352 @@
+{
+  "source_parent_commit": "4d805c2977bc1497fe1c2f4d898a0e9d03be19bf",
+  "application_tree_sha256": "4b9b8f0f39c61cd17d13668144457d235698c0758706341feaebe6b852e9d42c",
+  "source_files_sha256": {
+    ".github/workflows/ci.yml": "78eed0a2ab41af1d5eb97c5ccd42ef174ea02fcbd2579286a345de6ef5f8d94c",
+    "backend/app/core/metadata_bootstrap.py": "6c39685fcaadf68847dbd87ec819d58d2777298a5e2adaef468ad3cc86e5ef1b",
+    "backend/app/core/metadata_db.py": "bc778e91abecabc62c2179668484d02f57800db03baf1ef23daaeaa0285a69c8",
+    "backend/app/modules/llm_functions/repository.py": "05532eb7aee97f4ffab37d3f67cad4a52d3d251c7472350da152e3d1b3cec64a",
+    "backend/tests/integration/test_metadata_ai_registry.py": "494fe56514ac33b070bf84af22bc98f2c6cc572a9cceb8633c9d302b0fd67395",
+    "backend/tests/integration/test_metadata_bootstrap.py": "d323dcb87095c8170332cb4393bf08a84e23f4341c0d7c35bc6c0fffd559cc4f",
+    "backend/tests/integration/test_metadata_migrator.py": "c46fda0d6cb92ec7aa9e1bf6ec8fff280e83cc3ff65df08e0eaf2f32c416989c",
+    "backend/tests/integration/test_metadata_pg_foundation.py": "c1dc9b91ae2a76e37413b697374a0f0c1f4c68a93353c5249d821668259586c1",
+    "backend/app/core/metadata_logging.py": "f08a92dbfe235561239388e0908a71e01af51bac1235a2799d4ea19b167bf2a4",
+    "backend/app/modules/ai_ml/metadata_service.py": "eb8bc9dfd78b745fc495a241eb3c058475689246a0ae41eb321d9de679f06b42",
+    "backend/app/modules/llm_functions/registrations.py": "2a144ddac3b3809a19958df0975800ebd38e810440edd860f01fc1e7e1e6d627",
+    "backend/metadata_migrations/0008_ai_function_definitions.sql": "d13251477a717edb39a2873b49dd95787eaf4d2ecaf617e59bed63e160b4f334",
+    "backend/tests/integration/check_metadata_logs.py": "3c53aa89d5e4edeb1bcffb2feae79a989320ba39471ea07bf3a0ace396778254",
+    "backend/tests/integration/test_metadata_ai_configuration.py": "9efc846817cb85bd740b7f2a1b82743e7f8df37f7c823c7251e67bd75cd8bebd",
+    "backend/tests/unit/test_metadata_log_acceptance.py": "c87fdbe9c169804928de99e0c0dea1004e2bacad3bfd69c160c15abc9e38adb3"
+  },
+  "schema_revisions": {
+    "0001_deployment_state.sql": "8b0a3366fa07d4abcaffe87e23ee2f9aeb3fb01e8c3f2c8132b28d6a83aaaff0",
+    "0002_user_preferences.sql": "9c130bf7b1d121d222d145dafd52c0a53ad437e95e0880acda19c924c4f14fcc",
+    "0003_password_flag_workloads.sql": "fa5e8e5484d6e011de3dd9bca11771d41927dc89cacd3b11f4a94d0b03803866",
+    "0004_ai_registry.sql": "647ebc9fbd4b5aa72850041b43dc7cd7b4eb7f4a5bae32f8da9e0f6f229af470",
+    "0005_durable_jobs.sql": "e470d39ddb271f82ea87941cdb1558faeed20902d48686744ac010e7df30e7b5",
+    "0006_scheduler_fencing.sql": "c48b0c39a38c148f1f5d69662e35733130f03179841acffded12c78bb4a66df2",
+    "0007_model_aliases.sql": "72244ddb356e5ee985430066cdbda5e487d818718c100f41f99de19e2c50f6ec",
+    "0008_ai_function_definitions.sql": "d13251477a717edb39a2873b49dd95787eaf4d2ecaf617e59bed63e160b4f334"
+  },
+  "topology": "Existing docker project, PG17.11 verify-full TLS and native PgBouncer1.26.1; no new engine stack",
+  "pg_attempts": [
+    {
+      "attempt": 1,
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 1.167,
+      "artifact": "ai-configuration-pg-attempt-1.xml"
+    },
+    {
+      "attempt": 2,
+      "tests": 73,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 35.116,
+      "artifact": "ai-configuration-pg-attempt-2.xml"
+    },
+    {
+      "attempt": 3,
+      "tests": 14,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 7.075,
+      "artifact": "ai-configuration-pg-attempt-3.xml"
+    },
+    {
+      "attempt": 4,
+      "tests": 40,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 19.956,
+      "artifact": "ai-configuration-pg-attempt-4.xml"
+    },
+    {
+      "attempt": 5,
+      "tests": 262,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 132.72,
+      "artifact": "ai-configuration-pg-attempt-5.xml"
+    },
+    {
+      "attempt": 6,
+      "tests": 65,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 28.888,
+      "artifact": "ai-configuration-pg-attempt-6.xml"
+    },
+    {
+      "attempt": 7,
+      "tests": 68,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 22.242,
+      "artifact": "ai-configuration-pg-attempt-7.xml"
+    },
+    {
+      "attempt": 8,
+      "tests": 285,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 173.07,
+      "artifact": "ai-configuration-pg-attempt-8.xml"
+    },
+    {
+      "attempt": 9,
+      "tests": 285,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 185.949,
+      "artifact": "ai-configuration-pg-final.xml"
+    }
+  ],
+  "full_pg": {
+    "result": "PASS",
+    "passed": 285,
+    "skipped": 0,
+    "pytest_seconds": 186.24,
+    "selection": [
+      "test_metadata_pg_foundation",
+      "test_metadata_bootstrap",
+      "test_metadata_pgbouncer",
+      "test_metadata_preferences",
+      "test_metadata_ai_registry",
+      "test_metadata_model_aliases",
+      "test_metadata_ai_configuration",
+      "test_metadata_jobs",
+      "test_metadata_scheduler",
+      "test_metadata_migrator"
+    ],
+    "cases_by_file": {
+      "test_metadata_pg_foundation": 21,
+      "test_metadata_bootstrap": 47,
+      "test_metadata_pgbouncer": 7,
+      "test_metadata_preferences": 30,
+      "test_metadata_ai_registry": 33,
+      "test_metadata_model_aliases": 40,
+      "test_metadata_ai_configuration": 43,
+      "test_metadata_jobs": 32,
+      "test_metadata_scheduler": 15,
+      "test_metadata_migrator": 17
+    },
+    "options": [
+      "-q",
+      "--junit-xml=/tmp/nova-ai-definition-pg-9.xml"
+    ],
+    "artifact": "ai-configuration-pg-final.xml"
+  },
+  "unit_attempts": [
+    {
+      "attempt": 26,
+      "passed": 10730,
+      "warnings": 4,
+      "seconds": 444.79,
+      "result": "PASS_BEFORE_LOGGING_FIX",
+      "application_tree_sha256": "a69785b46985605310dc8ca50e3db7e16a1562725ac962630232e2b7b09a2088"
+    },
+    {
+      "attempt": 27,
+      "passed_before_interrupt": 8558,
+      "warnings": 3,
+      "seconds": 446.65,
+      "result": "INTERRUPTED",
+      "reason": "Scanner expanded to cover two additional synthetic parameter/header markers; full replacement suite started after final edit."
+    }
+  ],
+  "full_unit_coverage": {
+    "result": "PASS",
+    "argv": [
+      "uv",
+      "run",
+      "pytest",
+      "tests/unit",
+      "--cov=app",
+      "--cov-branch",
+      "--cov-report=term-missing",
+      "--cov-report=xml:/tmp/nova-refactor-coverage-28.xml"
+    ],
+    "passed": 10741,
+    "warnings": 4,
+    "seconds": 447.46,
+    "coverage_percent_rounded": 65,
+    "line_rate": 0.6663,
+    "branch_rate": 0.6002
+  },
+  "mypy": {
+    "result": "PASS",
+    "command": "uv run mypy app --no-error-summary"
+  },
+  "ruff": {
+    "argv": [
+      "uv",
+      "run",
+      "ruff",
+      "check",
+      "--force-exclude",
+      "app/common/durable_jobs.py",
+      "app/common/preferences.py",
+      "app/core/config.py",
+      "app/core/deps.py",
+      "app/core/metadata_bootstrap.py",
+      "app/core/metadata_db.py",
+      "app/core/metadata_import.py",
+      "app/core/metadata_logging.py",
+      "app/core/metadata_migrations.py",
+      "app/core/metadata_schema.py",
+      "app/core/redis.py",
+      "app/main.py",
+      "app/modules/agents/router.py",
+      "app/modules/agents/studio_router.py",
+      "app/modules/ai_ml/metadata_service.py",
+      "app/modules/ai_ml/repository.py",
+      "app/modules/ai_ml/router.py",
+      "app/modules/assistant/consent.py",
+      "app/modules/assistant/router.py",
+      "app/modules/assistant/service.py",
+      "app/modules/auth/service.py",
+      "app/modules/llm_functions/registrations.py",
+      "app/modules/llm_functions/repository.py",
+      "app/modules/llm_functions/router.py",
+      "app/modules/task_orchestration/execution.py",
+      "app/modules/task_orchestration/metadata_scheduler.py",
+      "app/modules/task_orchestration/worker.py",
+      "app/observability/http.py",
+      "scripts/inventory_control_plane.py",
+      "scripts/profile_metadata_constraints.py",
+      "tests/eval/semantic_execution.py",
+      "tests/eval/test_business_ontology_trajectory.py",
+      "tests/eval/test_evidence_health_trajectory.py",
+      "tests/eval/test_mcp_consent_trajectory.py",
+      "tests/eval/test_semantic_clarification_trajectory.py",
+      "tests/eval/test_semantic_latest_month.py",
+      "tests/integration/build_metadata_pooler.py",
+      "tests/integration/check_metadata_logs.py",
+      "tests/integration/prepare_metadata_fixture.py",
+      "tests/integration/test_metadata_ai_configuration.py",
+      "tests/integration/test_metadata_ai_registry.py",
+      "tests/integration/test_metadata_bootstrap.py",
+      "tests/integration/test_metadata_jobs.py",
+      "tests/integration/test_metadata_migrator.py",
+      "tests/integration/test_metadata_model_aliases.py",
+      "tests/integration/test_metadata_pg_foundation.py",
+      "tests/integration/test_metadata_pgbouncer.py",
+      "tests/integration/test_metadata_preferences.py",
+      "tests/integration/test_metadata_scheduler.py",
+      "tests/integration/test_task_outcome_uncertainty.py",
+      "tests/unit/test_agent_run_storage_failure.py",
+      "tests/unit/test_ai_ml_ssrf_guard.py",
+      "tests/unit/test_api_auth_inventory.py",
+      "tests/unit/test_assistant_stage_b.py",
+      "tests/unit/test_control_plane_inventory.py",
+      "tests/unit/test_control_plane_session_boundaries.py",
+      "tests/unit/test_durable_jobs.py",
+      "tests/unit/test_llm_alias_authorization.py",
+      "tests/unit/test_mcp_registry_access.py",
+      "tests/unit/test_metadata_ai_registry.py",
+      "tests/unit/test_metadata_bootstrap_config.py",
+      "tests/unit/test_metadata_db_config.py",
+      "tests/unit/test_metadata_import.py",
+      "tests/unit/test_metadata_log_acceptance.py",
+      "tests/unit/test_metadata_model_aliases.py",
+      "tests/unit/test_metadata_preferences.py",
+      "tests/unit/test_metadata_scheduler.py",
+      "tests/unit/test_metadata_schema.py",
+      "tests/unit/test_notebook_data_tokens.py",
+      "tests/unit/test_nova119_assistant_ssrf_and_provider_gate.py",
+      "tests/unit/test_observability_metrics.py",
+      "tests/unit/test_process_role.py",
+      "tests/unit/test_superset_bridge.py",
+      "tests/unit/test_task_orchestration_worker.py",
+      "tests/unit/test_task_outcome_uncertainty.py",
+      "tests/unit/test_web_search_tool.py"
+    ],
+    "python_files": 76,
+    "exit_code": 0,
+    "output": "All checks passed!\n"
+  },
+  "agent_scorecard": {
+    "result": "PASS",
+    "scenarios": 54,
+    "checks": 189,
+    "command": "uv run python -m tests.eval.report"
+  },
+  "log_scanner_focused": {
+    "passed": 11
+  },
+  "inventory": {
+    "cli_exit_code": 0,
+    "preserved_reviews": 875,
+    "unchanged_feature_rows": 759,
+    "live_observation_preserved": true,
+    "api_observation_preserved": true,
+    "application_fingerprint": {
+      "python_files": 693,
+      "application_tree_sha256": "4b9b8f0f39c61cd17d13668144457d235698c0758706341feaebe6b852e9d42c"
+    }
+  },
+  "cleanup": {
+    "remaining_fixture_schema": 0,
+    "remaining_test_roles": 0
+  },
+  "credential_log_scan": {
+    "passed": true,
+    "lines": 6,
+    "matches": {
+      "credential_canary": 0,
+      "encrypted_credential": 0
+    },
+    "container": "docker-nova-metadata-db-1",
+    "since": "2026-11-11T18:29:28.102783+00:00",
+    "raw_log_exported": false,
+    "suite_attempt": 9
+  },
+  "current_ci": "NOT_RUN",
+  "predecessor_ci": {
+    "head": "4d805c2977bc1497fe1c2f4d898a0e9d03be19bf",
+    "run": 43072322386,
+    "status": "SUCCESS",
+    "successful_jobs": 8,
+    "pg_passed": 219,
+    "pg_skipped": 0,
+    "engine": {
+      "run": 43072322386,
+      "source_commit": "4d805c2977bc1497fe1c2f4d898a0e9d03be19bf",
+      "result": "SUCCESS",
+      "passed": 217,
+      "skipped": 24,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 1474.771,
+      "skip_cases_and_reasons_unchanged": true
+    },
+    "frontend_passed": 1601
+  },
+  "runtime_authority": "StarRocks; no live AI registry/alias caller port",
+  "open_work": [
+    "Atomic governed audit integration",
+    "Native UDF participant renderer, outcome verification and supersession",
+    "Engine AI cache partitioning, current authorization and provider revocation",
+    "All caller ports, API/UI revision tokens and matching user docs",
+    "Source import orchestration, rehearsals and all-domain cutover",
+    "R33 managed AI_EMBED implementation; live embedding QA remains OWNER_WAIVED"
+  ],
+  "docs_and_workflow": {
+    "ci_jobs": 8,
+    "shell_steps": 39,
+    "local_links": 8,
+    "diff_check": "PASS",
+    "pg_ownership_tables": 15
+  }
+}

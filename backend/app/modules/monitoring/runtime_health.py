@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any, Literal
 
 import redis.asyncio as aioredis
 from pydantic import BaseModel
 
+from app.common.metadata_actors import metadata_scope
 from app.core.config import settings
+from app.modules.access_control.security_context import SecurityContext
+from app.modules.task_orchestration.leadership import SCHEDULER_LEASE_NAME
 
 HealthStatus = Literal["healthy", "unhealthy", "unknown"]
 
@@ -29,6 +32,16 @@ class RuntimeHealthResponse(BaseModel):
     worker: RuntimeServiceHealth
 
 
+async def scheduler_lease_active(actor: SecurityContext) -> bool:
+    async with metadata_scope(actor, read_only=True) as connection:
+        row = await (await connection.execute(
+            "SELECT EXISTS (SELECT 1 FROM nova_meta.scheduler_leases "
+            "WHERE name=%s AND expires_at>clock_timestamp()) AS active",
+            (SCHEDULER_LEASE_NAME,),
+        )).fetchone()
+    return bool(row and row["active"])
+
+
 class RuntimeHealthProbe:
     """Probe Redis plus the liveness markers owned by scheduler and workers."""
 
@@ -37,14 +50,17 @@ class RuntimeHealthProbe:
         *,
         client_factory: Callable[..., Any] = aioredis.from_url,
         clock: Callable[[], float] = time.time,
+        scheduler_probe: Callable[[SecurityContext], Awaitable[bool]] = scheduler_lease_active,
         timeout_seconds: float = 2.0,
     ) -> None:
         self._client_factory = client_factory
         self._clock = clock
+        self._scheduler_probe = scheduler_probe
         self._timeout_seconds = timeout_seconds
 
-    async def collect(self) -> RuntimeHealthResponse:
+    async def collect(self, actor: SecurityContext) -> RuntimeHealthResponse:
         checked_at = datetime.fromtimestamp(self._clock(), tz=UTC)
+        scheduler = await self._scheduler_health(actor)
         client = self._client_factory(settings.REDIS_URL, decode_responses=True)
         try:
             try:
@@ -59,17 +75,13 @@ class RuntimeHealthProbe:
                     redis=RuntimeServiceHealth(
                         status="unhealthy", message="Redis did not respond to PING."
                     ),
-                    scheduler=RuntimeServiceHealth(
-                        status="unknown",
-                        message="Scheduler state cannot be read while Redis is unavailable.",
-                    ),
+                    scheduler=scheduler,
                     worker=RuntimeServiceHealth(
                         status="unknown",
                         message="Worker state cannot be read while Redis is unavailable.",
                     ),
                 )
 
-            scheduler = await self._scheduler_health(client)
             worker = await self._worker_health(client)
             return RuntimeHealthResponse(
                 checked_at=checked_at,
@@ -82,15 +94,15 @@ class RuntimeHealthProbe:
         finally:
             await client.aclose()
 
-    async def _scheduler_health(self, client: Any) -> RuntimeServiceHealth:
+    async def _scheduler_health(self, actor: SecurityContext) -> RuntimeServiceHealth:
         try:
             async with asyncio.timeout(self._timeout_seconds):
-                ttl = int(await client.ttl(settings.SCHEDULER_LEADER_LOCK_KEY))
+                active = await self._scheduler_probe(actor)
         except Exception:
             return RuntimeServiceHealth(
                 status="unknown", message="Scheduler leader lease could not be read."
             )
-        if ttl > 0:
+        if active:
             return RuntimeServiceHealth(
                 status="healthy", message="An active scheduler holds the leader lease."
             )

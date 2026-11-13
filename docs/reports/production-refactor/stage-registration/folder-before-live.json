@@ -1,0 +1,33 @@
+{
+  "mode": "before",
+  "cases": [
+    {
+      "id": "upload",
+      "status": 200,
+      "pass": true
+    },
+    {
+      "id": "selected_folder_honored",
+      "status": 200,
+      "pass": false
+    },
+    {
+      "id": "no_root_file",
+      "status": 200,
+      "pass": false
+    }
+  ],
+  "cleanup": [
+    {
+      "file": "folder_canary.csv",
+      "status": 200,
+      "pass": true
+    },
+    {
+      "registration": "9d81f470-470e-4463-a5ec-fb36402b129f",
+      "status": 200,
+      "pass": true
+    }
+  ],
+  "stage_id": "9d81f470-470e-4463-a5ec-fb36402b129f"
+}

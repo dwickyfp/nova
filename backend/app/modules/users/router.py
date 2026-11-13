@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.common.news_entitlement import is_news_enabled, set_news_enabled
 from app.core.exceptions import ForbiddenSQLError
+from app.core.metadata_scope import actor_for
 from app.core.role_gates import require_active_role
 from app.modules.access_control.security_context import SecurityContext
 from app.modules.access_control.service import AccessControlError, access_control_service
@@ -282,7 +283,8 @@ async def get_user_detail(
 ):
     try:
         detail = await user_service.get_user_detail(username, host=host)
-        return UserDetailResponse(**detail, news_enabled=await is_news_enabled(username))
+        news_enabled = await is_news_enabled(username, actor_for(user))
+        return UserDetailResponse(**detail, news_enabled=news_enabled)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:

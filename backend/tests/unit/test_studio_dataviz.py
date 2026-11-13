@@ -94,11 +94,12 @@ def test_a_reference_is_bound_to_its_principal_and_cannot_be_edited():
 
 
 def _message(steps, *, stamp=STAMP):
-    async def execute_system(sql, params=None):
-        assert "user_name" in sql and params[-1] == "alice"
-        return {"rows": [("assistant", json.dumps(stamp), json.dumps(steps), "agent-1")]}
+    async def message(locator, user):
+        assert user["username"] == "alice"
+        assert locator.thread_id == "t1" and locator.message_id == "m1"
+        return steps, stamp, "agent-1"
 
-    return execute_system
+    return message
 
 
 def _semantic_step(tool_call_id="q1", evidence_id="evidence_1", sql=SQL):
@@ -156,7 +157,7 @@ BAR_NODE = {
 
 async def test_an_interactive_chart_resolves_to_its_exact_producing_query(monkeypatch):
     monkeypatch.setattr(
-        previews.db, "execute_system", _message([_semantic_step(), _ui_block(BAR, ROWS)])
+        previews, "_message", _message([_semantic_step(), _ui_block(BAR, ROWS)])
     )
     preview = await previews.resolve(Locator("t1", "m1", "content-2", BAR_NODE), ALICE)
     assert preview.sql == SQL and preview.provenance == "tool_step"
@@ -177,7 +178,7 @@ async def test_a_table_without_its_producer_has_no_provenance_and_no_guess(monke
             "rows": [["A"]],
         },
     ]
-    monkeypatch.setattr(previews.db, "execute_system", _message(steps))
+    monkeypatch.setattr(previews, "_message", _message(steps))
     preview = await previews.resolve(Locator("t1", "m1", "content-1"), ALICE)
     assert preview.sql is None and preview.provenance == "none"
     result = await capability.check(preview)
@@ -202,15 +203,15 @@ async def test_a_chart_whose_recorded_source_differs_from_its_producer_is_refuse
             "chart_spec": json.dumps({"mark": "bar"}),
         },
     ]
-    monkeypatch.setattr(previews.db, "execute_system", _message(steps))
+    monkeypatch.setattr(previews, "_message", _message(steps))
     preview = await previews.resolve(Locator("t1", "m1", "content-3"), ALICE)
     assert preview.sql is None and "differs" in (preview.provenance_issue or "")
 
 
 async def test_a_result_from_another_role_is_not_resolved(monkeypatch):
     monkeypatch.setattr(
-        previews.db,
-        "execute_system",
+        previews,
+        "_message",
         _message([_semantic_step(), _ui_block(BAR, ROWS)], stamp={**STAMP, "active_role": "hr"}),
     )
     with pytest.raises(PreviewError):
@@ -219,7 +220,7 @@ async def test_a_result_from_another_role_is_not_resolved(monkeypatch):
 
 async def test_a_node_the_program_does_not_contain_is_refused(monkeypatch):
     monkeypatch.setattr(
-        previews.db, "execute_system", _message([_semantic_step(), _ui_block(BAR, ROWS)])
+        previews, "_message", _message([_semantic_step(), _ui_block(BAR, ROWS)])
     )
     with pytest.raises(PreviewError):
         await previews.resolve(
@@ -565,7 +566,7 @@ def saga(monkeypatch):
     async def author(user):
         return user.get("active_role") != "viewer"
 
-    async def superset_role(role):
+    async def superset_role(role, *, actor):
         return "NovaAuthor"
 
     monkeypatch.setattr(SupersetClient, "for_user", for_user)
@@ -703,7 +704,7 @@ async def test_unsaved_edits_in_the_open_editor_block_the_write(saga):
 
 
 async def test_a_viewer_role_is_refused_and_audited_without_calling_superset(saga):
-    viewer = {**ALICE, "active_role": "viewer"}
+    viewer = {**ALICE, "active_role": "viewer", "roles": ["viewer"]}
     with pytest.raises(publication.PublishError) as caught:
         await publication.publish(
             viewer,
@@ -851,13 +852,13 @@ def context_env(monkeypatch):
         async def for_user(user, *, author=True):
             yield bi
 
-        async def superset_role(_):
+        async def superset_role(_, *, actor):
             return role
 
-        async def semantic(ids):
+        async def semantic(ids, *, actor):
             return {9: {"view_id": "v1", "version": 2, "status": "SYNCED"}}
 
-        async def published(ids):
+        async def published(ids, *, actor):
             return {}
 
         class Ontology(dashboard_context._Ontology):

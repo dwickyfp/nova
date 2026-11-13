@@ -10,6 +10,7 @@ from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import AssistantThread
 from app.modules.assistant.tools import ToolRegistry
 from tests.benchmark.harness import ScriptedProvider, allow, text_frame, tool_call_frame
+from tests.eval.semantic_execution import assert_answer_with_window_probes
 from tests.unit.test_semantic_guidance_fallback import USER
 from tests.unit.test_semantic_llm_planner import _plan, setup_tool
 
@@ -243,7 +244,7 @@ async def test_a_direct_ml_turn_asks_for_the_data_again_without_the_ml_steps(mon
     )]
     joined = "".join(frames).replace(" ", "")
     assert '"finish_reason":"clarification"' not in joined
-    execute.assert_awaited_once()
+    assert_answer_with_window_probes(execute, USER)
 
 
 async def test_a_compound_turn_that_answers_with_a_question_is_sent_to_query_its_parts(monkeypatch):
@@ -279,4 +280,4 @@ async def test_a_compound_turn_that_answers_with_a_question_is_sent_to_query_its
     joined = "".join(frames).replace(" ", "")
     assert '"finish_reason":"clarification"' not in joined
     assert '"finish_reason":"out_of_scope"' not in joined
-    execute.assert_awaited_once()
+    assert_answer_with_window_probes(execute, USER)

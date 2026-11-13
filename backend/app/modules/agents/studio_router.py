@@ -20,8 +20,8 @@ Studio's Settings/Capabilities.
   DELETE /mcp-servers/{server_id}         → delete (and its tools)
   POST   /mcp-servers/{server_id}/discover→ connect and register tools
 
-Every route requires ``get_current_user`` and is owner-scoped. The builtin tool
-catalog is seeded on first read so the Tools page is never empty.
+Every route requires ``get_current_user``. Personal tools are owner-scoped;
+platform MCP connectors are managed by the active ACCOUNTADMIN role.
 """
 
 # ruff: noqa: B008 — `Depends(...)` is FastAPI's DI idiom in this codebase.
@@ -119,9 +119,31 @@ async def update_studio_settings(
     body: StudioPreferencesUpdate,
     user: dict = Depends(get_current_user),
 ):
-    return await studio_service.update_preferences(
-        user["username"], body.model_dump(exclude_unset=True)
-    )
+    return await studio_service.update_preferences(user, body.model_dump(exclude_unset=True))
+
+
+async def _verified_agents(agents: list[dict], *, role: str, user: dict) -> list[dict]:
+    """Agents the caller may use, checked again on every request.
+
+    Each agent's check is independent, so a few run at a time. A caller served
+    by one delegated connection is checked in order, since its statements
+    cannot overlap. The first failing check still decides, in list order.
+    """
+    from app.modules.query.service import delegated_connection_for
+
+    if delegated_connection_for(user["username"]) is not None:
+        return [a for a in agents if await has_verified_access(a, role_name=role, user=user)]
+    limit = asyncio.Semaphore(2)
+
+    async def check(agent: dict) -> bool:
+        async with limit:
+            return await has_verified_access(agent, role_name=role, user=user)
+
+    results = await asyncio.gather(*(check(a) for a in agents), return_exceptions=True)
+    for result in results:
+        if isinstance(result, BaseException):
+            raise result
+    return [agent for agent, allowed in zip(agents, results, strict=True) if allowed is True]
 
 
 @router.get("/studio/capabilities", response_model=StudioCapabilities)
@@ -130,10 +152,10 @@ async def get_studio_capabilities(user: dict = Depends(get_current_user)):
     owner = user["username"]
     agents = await agent_repository.list_agents(owner_name=owner)
     role = session_security(user).active_role
-    agents = [a for a in agents if await has_verified_access(a, role_name=role, user=user)]
+    agents = await _verified_agents(agents, role=role, user=user)
     skills = await agent_repository.list_skills(owner_name=owner)
     await _seed_builtin_tools(owner)
-    tools = await agent_repository.list_tools(owner_name=owner)
+    tools = await _visible_registry_tools(owner)
     return StudioCapabilities(
         runtime=studio_service.runtime_capabilities(),
         agents=[
@@ -630,7 +652,6 @@ async def delete_artifact(
         from app.modules.viz.migration import forget_tile_dashboard
 
         await forget_tile_dashboard(user["username"], artifact_id)
-        await artifact_repository.retire_legacy_columns()
     await write_audit_log(
         event_type="ARTIFACT",
         user_name=user["username"],
@@ -674,9 +695,30 @@ async def _seed_builtin_tools(owner: str) -> None:
 @router.get("/tools", response_model=ToolListResponse)
 async def list_tools(user: dict = Depends(get_current_user)):
     await _seed_builtin_tools(user["username"])
-    tools = await agent_repository.list_tools(owner_name=user["username"])
+    tools = await _visible_registry_tools(user["username"])
     views = [ToolView(**t) for t in tools]
     return ToolListResponse(tools=views, count=len(views))
+
+
+async def _visible_registry_tools(owner: str) -> list[dict]:
+    personal = await agent_repository.list_tools(owner_name=owner)
+    if owner == INTERNAL_CONNECTOR_OWNER:
+        return [tool for tool in personal if tool["source"].startswith("mcp:")]
+    shared = await agent_repository.list_tools(owner_name=INTERNAL_CONNECTOR_OWNER)
+    return personal + [tool for tool in shared if tool["source"].startswith("mcp:")]
+
+
+async def _tool_for_mutation(tool_id: str, user: dict) -> dict:
+    tool = await agent_repository.get_tool(tool_id, owner_name=user["username"])
+    if tool is None:
+        tool = await agent_repository.get_tool(tool_id, owner_name=INTERNAL_CONNECTOR_OWNER)
+    if tool is None:
+        raise HTTPException(status_code=404, detail="Tool not found")
+    if tool["owner_name"] == INTERNAL_CONNECTOR_OWNER:
+        if not tool["source"].startswith("mcp:"):
+            raise HTTPException(status_code=404, detail="Tool not found")
+        _require_connector_admin(user)
+    return tool
 
 
 @router.post("/tools", response_model=ToolView, status_code=201)
@@ -696,27 +738,39 @@ async def toggle_tool(
     body: ToolToggleRequest,
     user: dict = Depends(get_current_user),
 ):
+    tool = await _tool_for_mutation(tool_id, user)
     updated = await agent_repository.set_tool_enabled(
-        tool_id, owner_name=user["username"], enabled=body.is_enabled
+        tool_id, owner_name=tool["owner_name"], enabled=body.is_enabled
     )
     if updated is None:
         raise HTTPException(status_code=404, detail="Tool not found")
+    if tool["owner_name"] == INTERNAL_CONNECTOR_OWNER:
+        await _audit_tool_change(user, tool_id, body.is_enabled)
     return ToolView(**updated)
 
 
 @router.delete("/tools/{tool_id}", status_code=204)
 async def delete_tool(tool_id: str, user: dict = Depends(get_current_user)):
-    tool = await agent_repository.get_tool(tool_id, owner_name=user["username"])
-    if tool is None:
-        raise HTTPException(status_code=404, detail="Tool not found")
+    tool = await _tool_for_mutation(tool_id, user)
     if tool["source"] == "builtin":
         raise HTTPException(
             status_code=409,
             detail="Builtin tools cannot be deleted; disable them instead.",
         )
     # A tool with no delete method: disable it. Kept simple and safe.
-    await agent_repository.set_tool_enabled(tool_id, owner_name=user["username"], enabled=False)
+    await agent_repository.set_tool_enabled(tool_id, owner_name=tool["owner_name"], enabled=False)
+    if tool["owner_name"] == INTERNAL_CONNECTOR_OWNER:
+        await _audit_tool_change(user, tool_id, False)
     return None
+
+
+async def _audit_tool_change(user: dict, tool_id: str, enabled: bool) -> None:
+    await write_audit_log(
+        event_type="MCP_TOOL_CONFIG", user_name=user["username"],
+        action="ENABLE" if enabled else "DISABLE", object_type="MCP_TOOL",
+        object_name=tool_id, status="SUCCESS", session_id=user.get("session_id"),
+        active_role=user.get("active_role"),
+    )
 
 
 # ── MCP servers ────────────────────────────────────────────────
@@ -725,8 +779,8 @@ INTERNAL_CONNECTOR_OWNER = "__nova__"
 
 
 def _require_connector_admin(user: dict) -> None:
-    if "ACCOUNTADMIN" not in (user.get("roles") or []):
-        raise HTTPException(403, "MCP connectors are managed by your Nova administrator.")
+    if user.get("active_role") != "ACCOUNTADMIN":
+        raise HTTPException(403, "MCP connectors require the active ACCOUNTADMIN role.")
 
 
 async def _audit_connector(
@@ -746,7 +800,7 @@ async def _audit_connector(
 @router.get("/mcp-servers", response_model=McpServerListResponse)
 async def list_mcp_servers(user: dict = Depends(get_current_user)):
     servers = await agent_repository.list_mcp_servers(owner_name=INTERNAL_CONNECTOR_OWNER)
-    if "ACCOUNTADMIN" not in (user.get("roles") or []):
+    if user.get("active_role") != "ACCOUNTADMIN":
         servers = [{**s, "endpoint": None, "command": None, "args": []} for s in servers]
     views = [McpServerView(**s) for s in servers]
     return McpServerListResponse(servers=views, count=len(views))
@@ -805,8 +859,8 @@ async def discover_mcp_server(
 ):
     """Connect to the server and register the tools it exposes.
 
-    Metadata only: the tools are recorded so they can be listed and selected.
-    Nova does not invoke them, and does not run stdio servers.
+    Discovery records tool metadata. Selected HTTP tools can subsequently run
+    with consent; Nova does not start stdio servers.
     """
     _require_connector_admin(user)
     owner = INTERNAL_CONNECTOR_OWNER
@@ -969,6 +1023,7 @@ async def verify_agent_access(
             encrypted_password=user.get("encrypted_password", ""),
             session_id=user.get("session_id"),
             security_context_version=int(user.get("security_context_version") or 1),
+            assigned_roles=tuple(user.get("assigned_roles") or user.get("roles") or ()),
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1263,15 +1318,14 @@ async def _shared_grant(user: dict, object_type: str, object_id: str) -> dict:
 
 @router.get("/studio/shared/threads/{thread_id}", response_class=SanitizingJSONResponse)
 async def open_shared_thread(thread_id: str, user: dict = Depends(get_current_user)) -> dict:
-    from app.modules.agents.sharing import shared_messages
-    from app.modules.assistant.repository import assistant_repository
+    from app.modules.agents.sharing import share_repository, shared_messages
 
     share = await _shared_grant(user, "thread", thread_id)
     owner = share["owner_name"]
-    thread = await assistant_repository.get_thread(thread_id, user_name=owner)
+    thread = await share_repository.thread(user, thread_id, owner_name=owner)
     if not thread:
         raise HTTPException(status_code=404, detail="The shared conversation no longer exists")
-    messages = await assistant_repository.list_messages(thread_id, user_name=owner)
+    messages = thread["messages"]
     await write_audit_log(
         event_type="STUDIO_SHARE",
         user_name=user["username"],
@@ -1311,14 +1365,15 @@ async def refresh_shared_result(
     from app.modules.agents.semantic.compiler import SemanticCompiler
     from app.modules.agents.semantic.ir import SemanticModelIR
     from app.modules.agents.semantic.planning import SemanticPlan
-    from app.modules.agents.sharing import shared_messages
-    from app.modules.assistant.repository import assistant_repository
+    from app.modules.agents.sharing import share_repository, shared_messages
     from app.modules.intelligence.semantic_views import semantic_view_service
 
     share = await _shared_grant(user, "thread", thread_id)
     owner = share["owner_name"]
-    thread = await assistant_repository.get_thread(thread_id, user_name=owner) or {}
-    messages = await assistant_repository.list_messages(thread_id, user_name=owner)
+    thread = await share_repository.thread(user, thread_id, owner_name=owner)
+    if thread is None:
+        raise HTTPException(status_code=404, detail="The shared conversation no longer exists")
+    messages = thread["messages"]
     step = next(
         (
             item
@@ -1357,7 +1412,9 @@ async def refresh_shared_result(
 @router.get("/studio/shared/dashboards/{dashboard_id}")
 async def open_shared_dashboard(dashboard_id: str, user: dict = Depends(get_current_user)) -> dict:
     share = await _shared_grant(user, "dashboard", dashboard_id)
-    artifact = await artifact_repository.get(dashboard_id, owner_name=share["owner_name"])
+    artifact = await artifact_repository.shared_dashboard(
+        dashboard_id, owner_name=share["owner_name"]
+    )
     if artifact is None or artifact.get("artifact_type") != "dashboard":
         raise HTTPException(status_code=404, detail="The shared dashboard no longer exists")
     return {
@@ -1386,7 +1443,9 @@ async def compute_shared_dashboard(
     from app.modules.viz.spec import DashboardSpec, parse_filter
 
     share = await _shared_grant(user, "dashboard", dashboard_id)
-    artifact = await artifact_repository.get(dashboard_id, owner_name=share["owner_name"])
+    artifact = await artifact_repository.shared_dashboard(
+        dashboard_id, owner_name=share["owner_name"]
+    )
     if artifact is None or artifact.get("artifact_type") != "dashboard":
         raise HTTPException(status_code=404, detail="The shared dashboard no longer exists")
     try:
@@ -1405,7 +1464,7 @@ async def compute_shared_dashboard(
         user,
         filter_values=filter_values,
         zone_filters=zone_filters,
-        owner_name=share["owner_name"],
+        artifacts=artifact["charts"],
     )
 
 

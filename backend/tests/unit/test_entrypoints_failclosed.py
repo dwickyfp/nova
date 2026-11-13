@@ -49,6 +49,9 @@ class _DbInitSpy:
 @pytest.fixture
 def entrypoint_module(monkeypatch):
     """Yield a loader that wires each entrypoint to the DB spy."""
+    monkeypatch.setattr(settings, "WORKER_IMPERSONATION_USER", "fixture_worker")
+    monkeypatch.setattr(settings, "WORKER_IMPERSONATION_PASSWORD", "fixture-worker-password")
+    monkeypatch.setattr(settings, "WORKER_IMPERSONATION_ROLE", "FIXTURE_IMPERSONATOR")
 
     def _load(module_name: str):
         module = importlib.import_module(module_name)
@@ -121,6 +124,8 @@ def test_every_entrypoint_calls_the_shared_helper():
         module = importlib.import_module(module_name)
         source = inspect.getsource(module._run)
         assert "require_configured_secrets" in source, module_name
+        # The metadata pool is the first connection each process opens.
         assert source.index("require_configured_secrets") < source.index(
-            "init_system_pool"
+            "open_process_metadata"
         ), module_name
+        assert "init_system_pool" in inspect.getsource(module), module_name

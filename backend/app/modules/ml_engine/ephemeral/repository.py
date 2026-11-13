@@ -1,30 +1,21 @@
-"""Durable ephemeral descriptors in NOVA_SYSTEM; local eviction cannot delete artifacts."""
+"""Durable ephemeral descriptors in PostgreSQL; local eviction cannot delete artifacts."""
 
 from __future__ import annotations
 
 import json
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 from typing import Any
 
-import asyncmy.cursors
-
+from app.common.metadata_actors import metadata_scope, service_actor
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.ml_engine.engines.base import TrainingOutput
 from app.modules.ml_engine.ephemeral.cache import EphemeralEntry
+from app.modules.ml_engine.metadata_repository import MLMetadataRepository
 from app.modules.ml_engine.spec import MLExecutionSpec
 from app.modules.query.sql_pipeline import redact_for_output
-
-EPHEMERAL_RUNS_DDL = """
-CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.ML_EPHEMERAL_RUNS (
-    run_id VARCHAR(64) NOT NULL,
-    scope_key VARCHAR(2048) NOT NULL,
-    fingerprint VARCHAR(64) NOT NULL,
-    descriptor_json STRING NOT NULL,
-    expires_epoch DOUBLE NOT NULL
-) PRIMARY KEY(run_id)
-DISTRIBUTED BY HASH(run_id) BUCKETS 4
-PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
-"""
 
 
 def sanitized_spec(spec: MLExecutionSpec) -> dict[str, Any]:
@@ -32,6 +23,7 @@ def sanitized_spec(spec: MLExecutionSpec) -> dict[str, Any]:
     value.pop("security")
     value.pop("budget")
     value.pop("deadline_at")
+    value.pop("reservation_token", None)
     value["input_sql"] = redact_for_output(spec.input_sql)
     value["parameters"] = _sanitize(value["parameters"])
     return value
@@ -52,8 +44,8 @@ def _sanitize(value: Any) -> Any:
     return redact_for_output(value) if isinstance(value, str) else value
 
 
-#: StarRocks STRING holds 65,533 bytes; the descriptor stays under it with room
-#: for multi-byte text.
+#: The descriptor column holds 65,533 characters; the descriptor stays under it
+#: with room for multi-byte text.
 MAX_DESCRIPTOR_BYTES = 60_000
 
 
@@ -110,88 +102,58 @@ def decode_entry(payload: str, expires_epoch: float) -> EphemeralEntry:
 
 
 class EphemeralRepository:
-    def __init__(self, registry) -> None:
-        self.registry = registry
+    """Ephemeral run descriptors, each read or written in an actor-bound transaction.
 
-    async def ensure_schema(self) -> None:
-        conn = await self.registry._connect()
-        try:
-            async with conn.cursor() as cursor:
-                await cursor.execute(EPHEMERAL_RUNS_DDL)
-        finally:
-            conn.close()
+    Callers pass the run owner's actor; the retention sweep passes the
+    maintenance service actor, which may delete only expired descriptors.
+    """
 
-    async def put(self, entry: EphemeralEntry) -> None:
+    @asynccontextmanager
+    async def _repository(
+        self, actor: SecurityContext | None, *, read_only: bool = False,
+    ) -> AsyncIterator[MLMetadataRepository]:
+        bound = actor or service_actor("ml")
+        async with metadata_scope(bound, read_only=read_only) as connection:
+            yield MLMetadataRepository(connection, bound)
+
+    async def put(self, entry: EphemeralEntry, *, actor: SecurityContext | None = None) -> None:
         expires = time.time() + max(0, entry.expires_at - time.monotonic())
-        conn = await self.registry._connect()
-        try:
-            async with conn.cursor() as cursor:
-                await cursor.execute(
-                    "INSERT INTO NOVA_SYSTEM.ML_EPHEMERAL_RUNS "
-                    "(run_id,scope_key,fingerprint,descriptor_json,expires_epoch) "
-                    "VALUES (%s,%s,%s,%s,%s)",
-                    (
-                        entry.run_id,
-                        entry.scope_key,
-                        entry.fingerprint,
-                        encode_entry(entry),
-                        expires,
-                    ),
-                )
-        finally:
-            conn.close()
+        async with self._repository(actor) as repository:
+            await repository.put_ephemeral(
+                run_id=entry.run_id,
+                scope_key=entry.scope_key,
+                fingerprint=entry.fingerprint,
+                descriptor_json=encode_entry(entry),
+                expires_epoch=expires,
+            )
 
-    async def get(self, run_id: str, scope: str) -> EphemeralEntry | None:
-        rows = await self._read(
-            "run_id=%s AND scope_key=%s AND expires_epoch>%s", (run_id, scope, time.time())
-        )
-        return rows[0] if rows else None
+    async def get(
+        self, run_id: str, scope: str, *, actor: SecurityContext | None = None,
+    ) -> EphemeralEntry | None:
+        async with self._repository(actor, read_only=True) as repository:
+            row = await repository.get_ephemeral(run_id, scope)
+        return decode_entry(row["descriptor_json"], row["expires_epoch"]) if row else None
 
-    async def by_fingerprint(self, fingerprint: str, scope: str) -> EphemeralEntry | None:
-        rows = await self._read(
-            "fingerprint=%s AND scope_key=%s AND expires_epoch>%s",
-            (fingerprint, scope, time.time()),
-        )
-        return rows[0] if rows else None
+    async def by_fingerprint(
+        self, fingerprint: str, scope: str, *, actor: SecurityContext | None = None,
+    ) -> EphemeralEntry | None:
+        async with self._repository(actor, read_only=True) as repository:
+            row = await repository.ephemeral_by_fingerprint(fingerprint, scope)
+        return decode_entry(row["descriptor_json"], row["expires_epoch"]) if row else None
 
-    async def expired(self) -> list[EphemeralEntry]:
-        return await self._read("expires_epoch<=%s", (time.time(),))
+    async def expired(self, *, actor: SecurityContext | None = None) -> list[EphemeralEntry]:
+        async with self._repository(actor, read_only=True) as repository:
+            rows = await repository.expired_ephemeral(limit=100)
+        return [decode_entry(row["descriptor_json"], row["expires_epoch"]) for row in rows]
 
-    async def _read(self, condition: str, params: tuple) -> list[EphemeralEntry]:
-        conn = await self.registry._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cursor:
-                await cursor.execute(
-                    "SELECT descriptor_json,expires_epoch FROM NOVA_SYSTEM.ML_EPHEMERAL_RUNS "
-                    f"WHERE {condition} ORDER BY expires_epoch DESC LIMIT 100",
-                    params,
-                )
-                return [
-                    decode_entry(row["descriptor_json"], row["expires_epoch"])
-                    for row in await cursor.fetchall()
-                ]
-        finally:
-            conn.close()
+    async def delete_expired(
+        self, entry: EphemeralEntry, *, actor: SecurityContext | None = None,
+    ) -> None:
+        async with self._repository(actor) as repository:
+            await repository.delete_expired_ephemeral(entry.run_id, entry.scope_key)
 
-    async def delete_expired(self, entry: EphemeralEntry) -> None:
-        conn = await self.registry._connect()
-        try:
-            async with conn.cursor() as cursor:
-                await cursor.execute(
-                    "DELETE FROM NOVA_SYSTEM.ML_EPHEMERAL_RUNS "
-                    "WHERE run_id=%s AND scope_key=%s AND expires_epoch<=%s",
-                    (entry.run_id, entry.scope_key, time.time()),
-                )
-        finally:
-            conn.close()
-
-    async def remove(self, run_id: str, scope: str) -> None:
-        conn = await self.registry._connect()
-        try:
-            async with conn.cursor() as cursor:
-                await cursor.execute(
-                    "DELETE FROM NOVA_SYSTEM.ML_EPHEMERAL_RUNS WHERE run_id=%s AND scope_key=%s",
-                    (run_id, scope),
-                )
-        finally:
-            conn.close()
+    async def remove(
+        self, run_id: str, scope: str, *, actor: SecurityContext | None = None,
+    ) -> None:
+        async with self._repository(actor) as repository:
+            await repository.remove_ephemeral(run_id, scope)

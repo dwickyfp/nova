@@ -15,268 +15,270 @@ Project configuration: `.devmesh/project.json`.
 
 <!-- DEVMESH:END -->
 
-# Nova Agent Guide
+# Nova engineering contract
 
-## Nova in 30 seconds
+Nova shares governed data access across Console, Studio, notebooks, HTTP and
+MySQL clients. Read [README.md](README.md) for the product and
+[HOW_TO_RUN.md](HOW_TO_RUN.md) for local operation.
 
-Nova is an Enterprise Intelligence OS that connects governed data, business
-meaning, agents, decisions, actions, outcomes, and learning. StarRocks provides
-its analytical engine and authentication. Console and Studio share governed
-data access, SQL execution, storage, and the bounded assistant engine. The MySQL
-proxy exposes the same Nova SQL path.
-Read [README.md](README.md) for product context and [HOW_TO_RUN.md](HOW_TO_RUN.md)
-for local operation.
+## How to use these instructions
 
-## Source of truth
+- This root file owns repository-wide rules and the development workflow.
+  Scoped `AGENTS.md` files own domain-specific contracts and checks. Read the
+  applicable guides through the task router below before editing. A scoped
+  guide may add requirements; it must not weaken root security or delivery rules.
+- Follow the user's explicit scope and recorded decisions. Preserve existing
+  authorizations and waivers within that scope; do not repeatedly ask for them
+  or extend a waiver to unrelated work. Skills support this workflow.
+- Distinguish observed runtime from the approved target. Verify implementation
+  facts in source and tests, then manifests/configuration, current architecture
+  and operations docs. Historical specs, benchmarks and proposals are context.
+  Existing code does not cancel an approved migration, and a target diagram
+  does not prove implementation.
+- Keep changing inventories, test counts, rollout state and defects out of these
+  guides. Read the [acceptance contract](docs/architecture/production-refactor/ACCEPTANCE.md),
+  [traceability](docs/architecture/production-refactor/TRACEABILITY.md) and
+  [delivery/QA backlog](docs/architecture/production-refactor/DELIVERY_STATUS_AND_QA_BACKLOG.md).
+  A prepared store, passing fixture or separate process is not completed cutover
+  or proven horizontal scaling.
 
-This file defines development invariants, not an inventory of implementation
-facts. Read the applicable nested `AGENTS.md` before editing its scope. Nested
-instructions refine these contracts; they must not weaken them. The task router
-also names guides to read for changes outside their directory scope.
+## Development workflow
 
-For implementation facts, verify code and tests first, then manifests and
-configuration, current architecture docs, operational docs, historical specs,
-and finally proposals/research. An explicit migration can describe intended
-behavior that is not implemented yet: check its status and tests rather than
-treating either old code or a proposal as an automatic replacement mandate.
+1. Inspect the active checkout, branch, staged/unstaged changes and relevant
+   services. Identify concurrent work and preserve it. Retrieve the current
+   DevMesh handoff when a development session exists; keep its goal, constraints
+   and acceptance criteria across collaboration round-trips.
+2. Identify the owning domain, actual callers/writers and applicable guides.
+   For a new app, domain, workload or architectural replacement, record its
+   entrypoints, caller identity, metadata/payload owners, external effects,
+   execution role, failure/recovery behavior and acceptance checks. Reuse the
+   existing architecture document or PR; a small fix needs no separate proposal.
+3. Implement through the existing owners. Update affected callers, schemas,
+   runtime wiring, permissions and documentation together. Keep APIs, SQL,
+   opaque IDs, owners, notebooks and artifacts compatible unless the approved
+   change explicitly alters them. New visible behavior is active through the
+   normal product path.
+4. Run focused checks to diagnose problems, then all applicable validation
+   gates on the delivered source. Check invalid input, authorization, dependency
+   failure and concurrency as relevant. Fix defects and rerun affected checks;
+   retain earlier failed attempts in acceptance evidence.
+5. Review the complete owned diff, secret boundaries and documentation. Update
+   migration/QA records with what was implemented, what is active, what was
+   tested and what remains open. A checkpoint records incomplete work without
+   marking the feature or release complete.
+6. Synchronize, commit, integrate and push using the delivery rules below.
+   Apply changed processes to the user's active checkout using existing
+   infrastructure. Report the branch, validation and any remaining limits.
 
-Not every document in `docs/` describes the current runtime. The direct agent
-loop and the SQL frontend are current extension points; Smart/Auto
-collaboration was removed and its architecture docs are historical. Historical
-architecture examples, dated benchmarks, proposals, and research are
-non-normative unless current code/tests or a requested migration establish them.
-Do not copy stale examples into production. Report unrelated documentation debt.
+When a decision or prerequisite is genuinely missing, finish independent work
+and ask a concrete question. Do not interrupt authorized, reversible work for
+routine implementation choices. Do not leave required TODOs or only a happy
+path and describe the request as complete.
 
-## Architecture invariants
+## Architecture contracts
 
-### New features are active by default
+### Identity and governed data
 
-- Implement requested features as normal, active product behavior. Do not add
-  an enable/disable flag unless the user's requirements explicitly call for it.
-  This includes environment variables, backend configuration, frontend flags,
-  UI switches, rollout gates, and flags whose default is `true`.
-- Do not invent opt-in modes, kill switches, or parallel old/new behavior for
-  hypothetical rollout, rollback, experimentation, or compatibility needs.
-  If a requirement explicitly needs a switch, implement and document its
-  purpose and default as specified by that requirement.
-- Verify new behavior through the normal application path without setting an
-  extra enable flag. Preserve authorization, consent, and required provider or
-  connection setup; active by default does not bypass those controls.
-- Existing flags are not a precedent for adding new ones. Change or remove
-  existing flags only when the requested work covers them.
+- StarRocks authenticates Nova users. Do not create another user/password store.
+  Preserve principal, exactly one named active role, login/session identity and
+  security-context version through SQL, tools, Studio, ML, delegation and caches.
+- Ranger and the patched StarRocks FE govern user data, including filters and
+  masks. `SHOW GRANTS` establishes role assignments, not Ranger authorization.
+  Start from the explicit default role; fail closed on ambiguous or stale
+  identity. Do not add a Ranger-disabled/native-RBAC bypass.
+- Never substitute root, system, service or agent-owner credentials for a
+  caller's data access. Explicitly authorized service-principal work retains
+  its own identity and authorization checks.
+- Preserve `ACCOUNTADMIN` guards in SQL, services, bootstrap and UI. Do not
+  drop, alter, rename or revoke its privileges. Preserve redacted audit events
+  for governed actions and refusals.
 
-### Security and authorization
+### State and effects
 
-- StarRocks authenticates Nova users; do not create another user/password store.
-- Preserve the authenticated principal, exactly one named active role, and
-  security-context version across SQL, Studio,
-  Semantic Views, ML, delegation, and data-derived caches. Ranger policies,
-  row filters, and masks govern user data through the patched StarRocks FE.
-- Do not substitute root, system, service, or agent-owner credentials for a
-  caller's data access. Existing explicitly authorized service-principal work
-  is a separate supported path, not a bypass.
-- `SHOW GRANTS` can establish role-marker assignments; it cannot replace Ranger
-  authorization. Reject ambiguous
-  security contexts and preserve fail-closed checks and consent boundaries.
-- Preserve `ACCOUNTADMIN` protection in SQL guards, administration services,
-  bootstrap, and UI. Do not drop, alter, rename, or revoke its privileges.
-
-### State, storage, and credentials
-
-- Durable relational Nova control-plane metadata belongs in StarRocks
-  `NOVA_SYSTEM`. Do not introduce another relational Nova metadata database.
-  Ranger's own policy database belongs to Ranger, not Nova's control plane.
-- Redis owns runtime sessions, caches, locks, leases, and wakeups. It is not a
-  second durable relational source of truth. Object/file payloads belong in
-  the existing managed storage abstraction.
-- Inspect [docker/init-nova.sql](docker/init-nova.sql) and the owning schema
-  initialization before changing tables. Follow the flat names already used
-  there, such as `CONFIG_STAGES` and `AUDIT_LOG`; do not invent nested schemas.
-- User-facing file access uses `@stage` and configured connection names. Keep
-  storage vendors, physical endpoints, and credential-bearing paths out of UI.
-- Never commit raw deployment secrets. Configuration may hold metadata,
-  environment placeholders, and supported secret references. Session passwords
-  use encrypted Redis state; supported provider keys use encrypted persistence.
-  Never expose stored secret material or credential-bearing execution state in
-  responses, logs, diagnostics, frontend state, or provider context. Keep
-  deliberate credential-entry flows separate from stored-secret readback.
-- Preserve redacted audit logging for governed actions, including refusals.
-
-### Feature flags
-
-- Core features are always on. Do not add a setting, environment variable, or
-  UI toggle that enables or disables a feature (an `*_ENABLED` style flag)
-  unless the user explicitly asks for that flag. Ship a new feature active, and
-  gate it only on real prerequisites such as authorization or infrastructure.
-- Ranger authorization is not optional: every session activates exactly one
-  named role, starting from the user's default role. Do not reintroduce a
-  native-RBAC or "Ranger disabled" mode.
-- Deployment topology, transport, tuning, and explicit safety acknowledgements
-  for destructive operations are configuration, not feature flags.
-
-### SQL and agents
-
-- Nova owns SQL syntax, semantic analysis, policy, and execution routing;
-  StarRocks owns physical planning and distributed execution. New syntax goes
-  through `backend/app/sql_frontend/`, not ad-hoc service detection or a new
-  parser. Existing guard and stage-lowering helpers retain their responsibilities.
-- Plans remain credential-free. Authorize stage access before resolving storage
-  secrets at execution. Never forward unsupported managed Nova syntax silently.
-- Studio agents compose the shared bounded engine in
-  `backend/app/modules/assistant/`. Do not create a second inference/tool loop.
-  Studio runs one selected agent per turn; do not reintroduce multi-agent
-  delegation (Smart/Auto) unless the user explicitly asks for it.
-- Find the existing owner before adding infrastructure. Do not introduce a
-  parallel parser/planner, authorization engine, storage abstraction, repository
-  layer, semantic execution path, scheduler, agent loop, or audit subsystem
-  unless the task explicitly replaces that architecture.
-- Verify engine-sensitive behavior against the pin, patches, and tests; do not
-  infer support from another database or newer upstream documentation.
-
-### User documentation
-
-- Nova's user documentation is part of the product: Markdown pages in
-  `frontend/src/features/docs/content/`, served at `/docs` (user menu → Docs).
-  Follow [the authoring guide](frontend/src/features/docs/content/AUTHORING.md).
-- Every change that adds, changes, renames, or removes something users can see
-  or call (a page, button, menu item, SQL statement, function, novaduck API,
-  setting, permission, or limit) updates the matching docs page in the same
-  change, or adds a new page. A feature is not done while its docs are missing
-  or describe old behavior.
-- Write only what was verified in the running product. Every SQL and Python
-  example is one you ran in Nova (SQL Workspace or a notebook) and that
-  worked; describe errors and limits as they actually behave.
-- Pages are for non-experts: plain English, steps that name the exact on-screen
-  labels, and no internal endpoints, file paths, environment variables,
-  storage vendors, or credentials.
-
-## Task routing
-
-| Task | Read before changing code |
+| State | Owner under the approved target |
 | --- | --- |
-| Backend domains, repositories, APIs, metadata | [backend guide](backend/AGENTS.md) |
-| SQL frontend, query/proxy consumers, grammar/generated parser, dialect compatibility | [SQL guide](backend/app/sql_frontend/AGENTS.md), [current SQL architecture](docs/arch-13-sql-frontend.md) |
-| Auth, active roles, stages, Ranger adapters, filtering/masking | [access-control guide](backend/app/modules/access_control/AGENTS.md), [Ranger architecture](docs/arch-08-ranger-authorization.md) |
-| Shared agent loop, context, providers, consent, tools | [assistant guide](backend/app/modules/assistant/AGENTS.md) |
-| Studio agents, Missions, automations, resources, memory | [agents guide](backend/app/modules/agents/AGENTS.md), [governed Studio architecture](docs/arch-15-governed-studio.md) |
-| Saved Studio charts and dashboards, Superset BI surface, `/bi`, BI tokens, `nova_superset`, legacy artifact conversion | [Superset architecture](docs/arch-17-superset.md), [access-control guide](backend/app/modules/access_control/AGENTS.md), `superset/`, `backend/app/modules/superset/` |
-| Studio Dataviz tab, Add to Dataviz, capability resolver, publication saga, Dataviz assistant, role-scoped dashboards | [Studio Dataviz architecture](docs/arch-19-studio-dataviz.md), [Superset architecture](docs/arch-17-superset.md), `backend/app/modules/superset/`, `frontend/src/features/studio/dataviz/` |
-| Inline chat charts, ShowMe, presentation models, read-only legacy views (viz core; authoring retired) | [viz architecture](docs/arch-16-viz-core.md), `backend/app/modules/viz/` |
-| Business ontology: domains, concepts, relations, metric bindings, stewardship, releases | [ontology architecture](docs/arch-18-business-ontology.md), [access-control guide](backend/app/modules/access_control/AGENTS.md), `backend/app/modules/ontology/` |
-| Nova Notebook: documents, runtimes, OpenSandbox, `nova_runtime`, notebook data tokens, notebook UI | [notebooks guide](backend/app/modules/notebooks/AGENTS.md), [notebook architecture](docs/arch-20-nova-notebook.md), [access-control guide](backend/app/modules/access_control/AGENTS.md), `docker/notebook-runtime/`, `frontend/src/features/workspaces/notebook/` |
-| Frontend routes, components, copy, layout | [frontend guide](frontend/AGENTS.md), [design system](DESIGN.md) |
-| User documentation pages, `/docs` | [docs authoring guide](frontend/src/features/docs/content/AUTHORING.md), [frontend guide](frontend/AGENTS.md) |
-| Compose, bootstrap, backend test infrastructure | [Docker guide](docker/AGENTS.md) |
-| StarRocks patches or FE image | [patch guide](patches/starrocks/AGENTS.md), [patch baseline](patches/starrocks/README.md) |
+| Durable Nova control metadata | PostgreSQL 17, `nova_control.nova_meta` |
+| User authentication and governed analytical data | StarRocks and Ranger |
+| Stream journal that must commit with analytical data | The same StarRocks transaction |
+| Durable jobs, definitions, outbox, claims, fencing, consent and receipts | PostgreSQL |
+| Sessions, caches and wakeups | Redis; separate critical and cache workloads |
+| File, notebook and model payloads | Existing managed object/file storage owner |
+| Ranger and Superset application metadata | Their separate databases |
+
+Existing domains remain on `NOVA_SYSTEM` until verified cutover. Inventory every
+writer before porting. Do not introduce production dual-write, an opt-in metadata
+backend flag, a generic SQL dialect-rewrite proxy or fallback to stale metadata.
+PG metadata is never exposed as a user SQL connection.
+
+Use the [metadata migration guide](backend/metadata_migrations/AGENTS.md) for
+actor-bound transactions, grants/RLS, revision CAS, import and epoch activation.
+Application processes never use the owner/migrator login or migrate PG at startup.
+Persist intent before external effects. Lease loss or an unknown commit outcome
+requires verification/reconciliation, not automatic replay of a mutation.
+
+### Runtime and deployment
+
+- Keep HTTP request handling separate from long-running workload ownership.
+  Use the [runtime guide](backend/app/worker/AGENTS.md) for process admission,
+  supervision, cancellation, fencing, readiness and adding roles. A process split
+  or larger resource limit alone does not establish safe replicas.
+- The accepted production target is one Compose file with inline environment
+  and privilege-scoped YAML anchors, without `.env` or an override chain.
+  All required services start normally. Follow the [Docker guide](docker/AGENTS.md)
+  for the current development topology and production acceptance.
+- Git holds a credential-free template. The actual deployment file stays
+  outside Git with restricted permissions, stable secrets and adjustable
+  resources. Use pinned images, private management ports, TLS, bounded resources,
+  log rotation, controlled shutdown and tested off-host recovery.
+- Notebook, Python and MCP execution must not receive infrastructure credentials,
+  host mounts or the Docker socket. Only the OpenSandbox controller holds the
+  required Docker access. Isolate ML execution from the API and verify artifact
+  provenance. Do not claim these target boundaries are complete without tests.
+- This delivery accepts single-host Docker OpenSandbox. Do not add KVM, Kata,
+  Kubernetes or separate hosts without an approved scope change. Single-host
+  operation does not establish cross-host HA or enterprise isolation.
+
+### Shared extension points
+
+- Find the existing owner before adding infrastructure. A new app or feature
+  uses shared identity, policy, SQL, storage, audit and bounded assistant
+  services. Do not create a parallel repository framework, parser, planner,
+  authorization engine, scheduler, semantic execution path or inference loop
+  unless the task explicitly replaces that architecture.
+- Nova owns SQL syntax, binding, policy and routing; StarRocks owns physical
+  planning/execution. New syntax goes through `backend/app/sql_frontend/`.
+  Keep plans credential-free; authorize stages before resolving secrets.
+  Unsupported managed syntax fails explicitly rather than passing through.
+- Studio runs one selected agent through `backend/app/modules/assistant/`.
+  Historical Smart/Auto delegation is not the new agent process boundary.
+  Do not restore multi-agent product behavior unless explicitly requested.
+- Verify engine-sensitive behavior against the pinned image, patches and tests.
+  Newer upstream behavior or another database is not evidence of support.
+
+### Product behavior and secrets
+
+- Features are active by default. Do not add enable/disable flags, opt-in modes,
+  kill switches or parallel old/new behavior unless explicitly required.
+  Existing flags are not permission to add more. Authorization, consent,
+  provider setup and infrastructure prerequisites still apply. Topology,
+  transport, tuning and destructive-operation acknowledgements are configuration.
+- Use existing encryption and secret resolution. Session passwords stay encrypted
+  in Redis; supported provider credentials use encrypted persistence. Never expose
+  stored secrets
+  or credential-bearing execution state in responses, logs, diagnostics,
+  frontend state, queues, artifacts or provider context. Keep intentional
+  credential-entry flows distinct from stored-secret readback.
+- Every user-visible/API/SQL/novaduck change updates the corresponding `/docs`
+  page in the same change. Follow the [authoring guide](frontend/src/features/docs/content/AUTHORING.md).
+  Run every applicable SQL/Python example in Nova before documenting it as working.
+  Use plain English and exact UI labels; keep physical endpoints, internal
+  paths, storage vendors, environment variables and credentials out of user flows.
+  User-facing file access uses `@stage` and configured connection names.
+
+## Task router
+
+Read cross-scope guides even when the edited file is outside their directory.
+
+| Change | Read before editing |
+| --- | --- |
+| Backend app/domain, repository, API or new capability | [Backend](backend/AGENTS.md) |
+| PG schema, metadata UoW, grants/RLS, imports or cutover | [Metadata](backend/metadata_migrations/AGENTS.md), [ownership inventory](docs/architecture/production-refactor/METADATA_OWNERSHIP.csv) |
+| HTTP lifecycle, workers, scheduler, proxy process, admission or scaling | [Runtime](backend/app/worker/AGENTS.md), [Docker](docker/AGENTS.md) |
+| SQL frontend, grammar, query/proxy consumers, dialects | [SQL](backend/app/sql_frontend/AGENTS.md), [architecture](docs/arch-13-sql-frontend.md) |
+| Auth, roles, Ranger, stages, filters/masks, user-data adapters | [Access control](backend/app/modules/access_control/AGENTS.md), [Ranger](docs/arch-08-ranger-authorization.md) |
+| Assistant loop, providers, consent, tools | [Assistant](backend/app/modules/assistant/AGENTS.md) |
+| Studio agents, Missions, automations, resources, memory | [Agents](backend/app/modules/agents/AGENTS.md), [Studio](docs/arch-15-governed-studio.md) |
+| Workspace files, versions, shares, object publication | [Workspaces](backend/app/modules/workspaces/AGENTS.md) |
+| Notebook documents/runtime, OpenSandbox, `nova_runtime`, data tokens | [Notebooks](backend/app/modules/notebooks/AGENTS.md), [architecture](docs/arch-20-nova-notebook.md), [Access control](backend/app/modules/access_control/AGENTS.md) |
+| Query Autopilot and recommendation/apply lifecycle | [Autopilot](backend/app/modules/query_autopilot/AGENTS.md) |
+| Superset, saved charts/dashboards, `/bi`, BI tokens, legacy artifacts | [Superset](docs/arch-17-superset.md), [Access control](backend/app/modules/access_control/AGENTS.md), `superset/`, `backend/app/modules/superset/` |
+| Studio Dataviz, publication/repair, assistant and role-scoped dashboards | [Dataviz](docs/arch-19-studio-dataviz.md), [Superset](docs/arch-17-superset.md), `frontend/src/features/studio/dataviz/` |
+| Inline charts, ShowMe, presentation models, legacy views | [Viz](docs/arch-16-viz-core.md), `backend/app/modules/viz/` |
+| Ontology domains, concepts, relations, metrics, releases | [Ontology](docs/arch-18-business-ontology.md), [Access control](backend/app/modules/access_control/AGENTS.md), `backend/app/modules/ontology/` |
+| Frontend routes, components, labels or layout | [Frontend](frontend/AGENTS.md), [Design](DESIGN.md) |
+| User docs and `/docs` | [Authoring](frontend/src/features/docs/content/AUTHORING.md), [Frontend](frontend/AGENTS.md) |
+| Compose, bootstrap, images or container-dependent test fixtures | [Docker](docker/AGENTS.md) |
+| StarRocks patches or FE image | [Patch guide](patches/starrocks/AGENTS.md), [baseline](patches/starrocks/README.md) |
 
 ## Validation routing
 
-[.github/workflows/ci.yml](.github/workflows/ci.yml) owns CI commands and setup.
-Read it before selecting checks; scoped guides give commands and additional
-behavior gates. Focused tests diagnose changes, but do not replace applicable
-CI suites. Changes spanning backend and frontend require both sets of checks.
+[CI](.github/workflows/ci.yml) owns commands, pins and setup. Scoped guides add
+behavior gates; focused tests do not replace applicable suites.
 
-| Change | Required validation |
+| Change | Required checks |
 | --- | --- |
-| Documentation/instructions only | Diff, references, stale claims, hierarchy consistency, task routing |
-| User docs pages (`frontend/src/features/docs/content/`) | Verify each example live in Nova, then `pnpm exec vitest run --browser.headless src/features/docs` and view the page at `/docs` |
-| Backend code | Unit suite with coverage, agent eval scorecard, blocking Ruff on changed Python |
-| DB access, SQL execution, auth, storage, proxy | Backend checks plus seeded real-engine integration |
-| SQL grammar/generated parser | Grammar pin/drift, regeneration and artifact diff, relevant SQL tests and consumer regressions |
-| Agent behavior | Backend checks plus affected `tests/eval/` trajectories; benchmarks when overhead changes |
-| Ranger/security or engine patch | Backend/integration checks as applicable plus patched-FE policy/role acceptance |
-| Frontend code | `pnpm lint`, `pnpm build`, `pnpm test:coverage`, CI browser setup and affected layout/state checks |
-| Superset image or `nova_superset` | CI `superset` job (image build, package tests) plus `test_superset_governed.py` on the governed stack |
+| Instructions or engineering docs only | Diff, local links, source-backed claims, hierarchy and task routing; application suites are not required for prose alone |
+| User docs | Execute applicable examples live; docs browser tests; view `/docs` |
+| Backend code | Unit/coverage, agent scorecard, changed-file Ruff and full-application mypy |
+| PG metadata/schema/import | Backend gates plus real PG17 transaction, grant/RLS, migration and concurrency checks; engine compatibility when affected |
+| DB access, SQL, auth, storage or proxy | Backend gates plus applicable seeded real-engine integration |
+| SQL grammar/generated parser | Pin/drift check, regeneration/artifact diff, SQL and consumer regressions |
+| Agent behavior | Backend gates plus affected `tests/eval/` trajectories; benchmarks when overhead changes |
+| Ranger/security/engine patch | Applicable backend/integration checks plus patched-FE policy and role acceptance |
+| Frontend code | `pnpm lint`, `pnpm build`, `pnpm test:coverage`, browser setup and affected layout/state checks |
+| Notebook runtime image | Image build/kernel tests and affected governed notebook flows |
+| Superset image or `nova_superset` | CI Superset image/package checks and governed Superset acceptance |
+| Runtime or deployment | Applicable code checks, Compose validation, affected startup/readiness/shutdown and recovery/replica checks |
 
-Full-tree Ruff is report-only in CI; changed-file Ruff and full-application mypy
-are blocking. Do not disable tests, weaken assertions, or bypass gates. No tests
-collected or every test skipped is not a pass. If a required check cannot run,
-report the missing prerequisite and stop before commit/push unless the user
-explicitly authorizes an exception.
+Full-tree Ruff is report-only; changed-file Ruff and full-application mypy are
+blocking. Never disable checks or weaken assertions to obtain a pass. Keep
+local, CI, governed-engine, live-AI and fault evidence distinct. Record commit,
+image/schema versions, topology, commands, results, skips and sanitized artifacts.
+Mocked providers do not replace live AI evidence. Retain every live attempt;
+use known data, output schemas and expected tool effects rather than prose matches.
 
-## Safe autonomy and completion
+No collected tests, skipped cases, missing prerequisites and owner waivers are
+not passes. Apply the release-specific load/embedding decisions in the acceptance
+contract without weakening other gates. Required unavailable checks block release
+and normally block commit/push; an explicit scoped user authorization may move
+those checks to CI. Record that exception and follow the resulting CI to its
+outcome. Cancelled/superseded runs are not passes.
 
-Inspect, implement, test, fix, and verify within the user's authorized scope.
-Ask only for genuinely missing product decisions or actions requiring approval;
-do not interrupt clear reversible work for routine choices. Use safe repository
-search/editing tools and shell commands suited to the environment. Preserve
-unrelated changes; avoid destructive or broad edits.
+## Infrastructure and delivery safety
 
-Reuse the running local Nova stack, including StarRocks and its supporting
-services, for tests and checks. Before running a container-dependent test,
-script, fixture, `docker compose up`, or `docker run`:
+Before any container-dependent command or fixture, inspect `docker compose ls`
+and `docker ps`, identify the existing project/ports and inspect setup/teardown.
+Reuse the compatible stack. Never create a duplicate FE/BE or supporting stack
+because a default port is unavailable. Preserve development data and volumes;
+reseed/fault tests require existing disposable resources or authorized CI.
+Ask before creating a separate stack or resetting shared state unless that exact
+work is already authorized. Start a stack automatically only when none exists
+and initialization is safe; rebuild changed services within the existing project.
+See [Docker operations](docker/AGENTS.md) for the procedure.
 
-- Inspect `docker compose ls` and `docker ps`, identify the existing project,
-  services, and published ports, and configure the test endpoints to use them.
-- Inspect test setup and teardown for automatic container creation or removal.
-  A fixture or helper that starts a stack is subject to the same reuse rule as
-  a direct Docker command. Do not run it until reuse is verified.
-- Do not create another StarRocks FE/BE or supporting stack per test, suite,
-  feature, chat, branch, or worktree. A different compose file, project name,
-  default port, or unavailable endpoint is not permission to create a duplicate.
-- Preserve existing data and volumes. Use an existing disposable test stack
-  for destructive seed/reset suites. If the running stack cannot safely satisfy
-  a check, report the specific prerequisite and ask before creating a separate
-  stack or resetting shared state. Never silently substitute an unpatched
-  engine for governed acceptance or count skipped checks as passed.
-- Start a local stack automatically only when no Nova stack is running and
-  initialization is safe; keep it available for subsequent checks. Rebuild a
-  changed service within its existing project when required by the task.
-  Ephemeral CI provisioning does not authorize duplicate local stacks.
+- Work in the active checkout when safe. Preserve unrelated staged, unstaged
+  and untracked changes; commit only the owned goal. Do not create a worktree
+  automatically. New branches use `feat/<goals>` with short lowercase kebab-case
+  names, without `codex`.
+- Before every commit and again before push, fetch remote `main` and check for
+  missing commits. Integrate them without discarding concurrent work, resolve
+  conflicts and rerun affected checks. Tests must cover the final delivered
+  source, dependencies and configuration; reuse results only while those remain
+  unchanged. Documentation-only edits need documentation checks.
+- After applicable checks pass, commit and push, setting upstream on first push.
+  Synchronization, required-check, commit, push or required integration failure
+  blocks a completion claim. Report incomplete work honestly at checkpoints.
+- If a worktree is needed, first record the original checkout and active branch
+  as the delivery target and inspect `git worktree list`. Do not assume `main`.
+  Once validated, merge the feature into that target, validate integration and
+  push it. This merge is part of authorized delivery. If the target changed or
+  safe conflict resolution needs a product decision, preserve work and ask.
+- Ensure local processes run the delivered source in the original checkout.
+  After successful delivery, preserve needed uncommitted/untracked/ignored files,
+  verify the feature is included, then remove only this task's temporary worktree
+  through its owning app or `git worktree remove`. Never force removal, delete
+  the original checkout or remove another task's worktree. Verify cleanup and
+  report its status with the delivery branch and checks.
 
-The [Docker guide](docker/AGENTS.md) gives the operational steps.
+## Maintaining the guides
 
-For implementation requests, finish the requested behavior and validation rather
-than leaving scaffolding, required TODOs, or only a happy path. Review the final
-diff, security/secret boundaries, and affected documentation. Remove temporary
-debug work. Report what changed, commands/results, and remaining limitations;
-distinguish local checks from verified GitHub Actions results.
-
-- New branches use `feat/<goals>` with a short lowercase kebab-case goal. Do not
-  use `codex/` or include `codex` in branch names.
-- After completing a coding goal, pass applicable checks, commit only that
-  goal's changes, and push before reporting completion. Set upstream on the
-  first push. Use a commit message describing the result.
-- Before every commit and again before pushing, fetch the latest remote `main`
-  and check for missing commits against that fetched branch. Integrate new
-  commits, preserve uncommitted work, resolve conflicts, and rerun relevant checks.
-- Checks must cover the exact delivered changes after the final edit and any
-  integration/conflict resolution. Reuse a passing result only when tested code,
-  dependencies, and configuration remain unchanged. Documentation-only work
-  needs documentation checks; code/configuration edits need application checks.
-- A synchronization, required-check, commit, push, required merge, or worktree
-  cleanup failure blocks completion.
-
-### Deliver features to the active checkout and clean up worktrees
-
-- Do not create a worktree automatically for every feature. Prefer the user's
-  active checkout when work can proceed safely there. Use a worktree only when
-  requested or needed to isolate changes from concurrent or unrelated work.
-- Before working in a separate worktree, record the user's original checkout
-  path and its active branch as the delivery target. Inspect `git worktree list`
-  and branch/status information; do not assume the target is `main` or the
-  temporary feature branch. If the target cannot be established, clarify it.
-- After implementation and required checks pass, commit the feature and merge
-  it into that recorded target branch in the original checkout. This merge is
-  part of completing the feature and does not need another routine approval.
-  Preserve unrelated staged, unstaged, and untracked work. Resolve conflicts
-  without discarding others' changes; if the target branch has changed or safe
-  integration requires a user decision, report the blocker before proceeding.
-- Follow the synchronization rules above, validate the integrated result, and
-  push the target branch before reporting completion. A commit or push confined
-  to the feature worktree does not complete delivery. Ensure local development
-  processes use the original checkout and reload/restart affected processes as
-  needed, reusing the existing containers, so the user can test there directly.
-- Once delivery succeeds, verify the feature commits are included in the target
-  and preserve any needed uncommitted, untracked, or ignored files before
-  removing the task's temporary worktree. Use the owning app's cleanup tool for
-  managed worktrees; otherwise use `git worktree remove` from outside that
-  worktree. Never force removal, delete the original checkout, or remove a
-  worktree still used by another task. Verify cleanup with `git worktree list`.
-- Report the delivery branch, validation result, and worktree cleanup status.
-  Do not leave completed features only in a worktree or require the user to
-  switch directories to test them. If integration or cleanup is blocked,
-  preserve the work and report what remains instead of claiming completion.
+Keep root rules stable and shared; place domain details beside their owner.
+Add a scoped guide only when it has distinct contracts, entrypoints or validation
+requirements, and add its cross-scope route above. Link to existing owners instead
+of copying their instructions. Remove superseded guidance in the same change;
+label target behavior and historical material explicitly. Check every affected
+parent/child guide when architecture changes. Never describe a prepared port,
+new service definition or unrun acceptance case as completed behavior.
 
 <!-- antislop:start -->
 ## Task-specific skills

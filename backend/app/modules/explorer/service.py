@@ -5,14 +5,14 @@ from __future__ import annotations
 import logging
 
 from app.core.database import db
-from app.core.security import decrypt_password
+from app.core.metadata_scope import actor_for
 from app.modules.catalog import visibility
 from app.modules.catalog.repository import catalog_repo
 from app.modules.catalog.sources import describe_catalog_source
 from app.modules.intelligence.entities import entity_registry
 from app.modules.intelligence.feature_store import feature_store
 from app.modules.intelligence.semantic_views import semantic_view_service
-from app.modules.stages.access import StageAccessDenied, check_stage_access
+from app.modules.stages.service import stage_service
 
 from .repository import INTERNAL_CATALOG, caller_metadata, explorer_repo
 from .schemas import (
@@ -112,7 +112,9 @@ class ExplorerService:
                 p for p in await explorer_repo.list_pipes(database)
                 if _relation_name(p.get("target_table")) in base_tables
             ]
-            stages_raw = await explorer_repo.list_stages(database)
+            # Only stages in schemas the caller may read; Ranger decides each
+            # schema before its registrations' connection or prefix is read.
+            stages_raw = await stage_service.list_stages(actor_for(user), database=database)
             tasks_raw = await explorer_repo.list_tasks(database)
         else:
             # A source catalog only provides data: its relations, sorted into
@@ -131,19 +133,6 @@ class ExplorerService:
             views_raw = by_kind["view"]
             mvs_raw = by_kind["materialized_view"]
             funcs_raw, pipes_raw, stages_raw, tasks_raw = [], [], [], []
-        password = decrypt_password(user["encrypted_password"])
-        authorized_stages = []
-        for stage in stages_raw:
-            try:
-                await check_stage_access(
-                    {"database_name": database, "schema_name": stage["schema_name"]},
-                    action="read", username=user["username"], password=password,
-                    active_role=user.get("active_role"),
-                )
-            except StageAccessDenied:
-                continue
-            authorized_stages.append(stage)
-        stages_raw = authorized_stages
         entities, semantic_views, feature_views = [], [], []
         if internal:
             entities = [
@@ -379,16 +368,12 @@ class ExplorerService:
             return None
         return PipeDetailResponse(**raw)
 
-    async def get_stage_id(self, database: str, stage_name: str) -> str | None:
-        """Lookup stage UUID by name + database from CONFIG_STAGES."""
-        from app.core.database import db
-        result = await db.execute_system(
-            "SELECT id FROM NOVA_SYSTEM.CONFIG_STAGES "
-            "WHERE name = %s AND database_name = %s",
-            (stage_name, database),
-        )
-        rows = result.get("rows", [])
-        return rows[0][0] if len(rows) == 1 else None
+    async def get_stage_id(self, database: str, stage_name: str, user: dict) -> str | None:
+        """The id of the one stage with this name in ``database``, if exactly one."""
+        from app.modules.stages.service import discover_stages
+
+        rows = await discover_stages(actor_for(user), database=database, name=stage_name)
+        return str(rows[0]["id"]) if len(rows) == 1 else None
 
 
 async def _stored_catalogs() -> dict[str, dict]:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import builtins
 import json
 from collections.abc import Callable
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from uuid import NAMESPACE_URL, uuid5
 
@@ -12,11 +13,12 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.common.audit import write_audit_log
-from app.core.database import db
+from app.core.metadata_actor import metadata_transaction
+from app.core.metadata_db import MetadataConflict
 from app.modules.agents.access import has_verified_access
 from app.modules.agents.harness_repository import harness_repository
+from app.modules.agents.metadata_repository import AgentMetadataRepository
 from app.modules.agents.mission_schema import (
-    MISSION_DDLS,
     STAGE_LABELS,
     BusinessContextAnchor,
     ContinuationDecision,
@@ -46,6 +48,7 @@ from app.modules.agents.repository import agent_repository
 from app.modules.agents.run_journal import run_journal
 from app.modules.assistant.repository import assistant_repository
 from app.modules.intelligence.contracts import Scope, SemanticRef, fingerprint, utc_now
+from app.modules.intelligence.metadata_repository import scope_actor
 from app.observability.metrics import studio_operation
 
 
@@ -298,7 +301,7 @@ def project_event(mission: Mission, run_id: str, kind: str, payload: dict) -> No
 async def canonical_payload(
     ref: ObjectRef, scope: Scope, user: dict | None = None, *, budget=None
 ) -> dict:
-    from app.modules.intelligence.engine_schema import ENGINE_TABLES
+    from app.modules.intelligence.engine_repository import intelligence_repository
 
     key = {
         "investigation": "investigations",
@@ -306,17 +309,15 @@ async def canonical_payload(
         "action": "actions",
         "outcome": "outcomes",
     }[ref.kind]
-    table = ENGINE_TABLES.get(key)
-    if table is None:
+    try:
+        payload = await intelligence_repository.get_payload(
+            key, ref.id, scope, revision=ref.revision
+        )
+    except HTTPException:
+        # A branched revision is not a canonical object either.
+        payload = None
+    if payload is None:
         raise HTTPException(status_code=404, detail="Canonical object not found")
-    result = await db.execute_system(
-        f"SELECT payload FROM NOVA_SYSTEM.{table} WHERE id=%s AND principal=%s "
-        "AND active_role=%s AND security_context_version=%s AND revision=%s LIMIT 2",
-        [ref.id, scope.principal, scope.active_role, scope.security_context_version, ref.revision],
-    )
-    if len(result["rows"]) != 1:
-        raise HTTPException(status_code=404, detail="Canonical object not found")
-    payload = _decode(result["rows"][0][0])
     recorded_scope = payload.get("scope") or {}
     if any(
         recorded_scope.get(k) != scope.model_dump().get(k)
@@ -383,20 +384,31 @@ def project_object(mission: Mission, ref: ObjectRef, record: dict) -> None:
         )
 
 
+def _mission(row: dict) -> Mission:
+    mission = Mission.model_validate(_decode(row["payload"]))
+    mission._storage_revision = row["storage_revision"]
+    return mission
+
+
+@asynccontextmanager
+async def _store(scope: Scope, *, read_only: bool = False):
+    try:
+        async with metadata_transaction(scope_actor(scope), read_only=read_only) as (conn, actor):
+            yield AgentMetadataRepository(conn, actor)
+    except MetadataConflict:
+        raise HTTPException(status_code=409, detail="Mission revision changed; reload") from None
+
+
 class MissionService:
     async def ensure_schema(self) -> None:
-        for ddl in MISSION_DDLS:
-            await db.execute_system(ddl)
+        """The one-shot PostgreSQL migrator owns Missions and their receipts."""
 
     async def _get(self, mission_id: str, scope: Scope) -> Mission:
-        result = await db.execute_system(
-            "SELECT payload FROM NOVA_SYSTEM.CONFIG_STUDIO_MISSIONS "
-            f"WHERE mission_id=%s AND {SCOPE_SQL}",
-            [mission_id, *scope_params(scope)],
-        )
-        if not result["rows"]:
+        async with _store(scope, read_only=True) as repo:
+            row = await repo.get_mission(mission_id)
+        if row is None:
             raise HTTPException(status_code=404, detail="Mission not found")
-        mission = Mission.model_validate(_decode(result["rows"][0][0]))
+        mission = _mission(row)
         if mission.scope != scope:
             raise HTTPException(status_code=404, detail="Mission not found")
         return mission
@@ -408,14 +420,11 @@ class MissionService:
         return await self.refresh(mission, user) if project else mission
 
     async def _get_owner(self, mission_id: str, scope: Scope) -> Mission:
-        result = await db.execute_system(
-            "SELECT payload FROM NOVA_SYSTEM.CONFIG_STUDIO_MISSIONS "
-            f"WHERE mission_id=%s AND {OWNER_SQL}",
-            [mission_id, scope.principal, scope.active_role],
-        )
-        if len(result["rows"]) != 1:
+        async with _store(scope, read_only=True) as repo:
+            row = await repo.get_mission(mission_id, session_scope=False)
+        if row is None:
             raise HTTPException(status_code=404, detail="Mission not found")
-        mission = Mission.model_validate(_decode(result["rows"][0][0]))
+        mission = _mission(row)
         if (mission.owner_scope.principal, mission.owner_scope.active_role) != (
             scope.principal,
             scope.active_role,
@@ -426,16 +435,13 @@ class MissionService:
     async def resumable(self, thread_id: str, user: dict) -> builtins.list[ResumableMission]:
         await require_thread(thread_id, user)
         scope = workflow_scope(user)
-        result = await db.execute_system(
-            "SELECT payload FROM NOVA_SYSTEM.CONFIG_STUDIO_MISSIONS "
-            f"WHERE thread_id=%s AND {OWNER_SQL} ORDER BY created_at DESC, mission_id LIMIT 51",
-            [thread_id, scope.principal, scope.active_role],
-        )
-        if len(result["rows"]) > 50:
+        async with _store(scope, read_only=True) as repo:
+            result = await repo.list_missions(thread_id, session_scope=False)
+        if len(result) > 50:
             raise HTTPException(status_code=422, detail="Thread Mission bound reached")
         summaries = []
-        for row in result["rows"]:
-            mission = Mission.model_validate(_decode(row[0]))
+        for row in result:
+            mission = _mission(row)
             if mission.cancel_requested:
                 continue
             if (mission.owner_scope.principal, mission.owner_scope.active_role) != (
@@ -650,25 +656,14 @@ class MissionService:
                 mission.revision += 1
                 validated = Mission.model_validate(mission.model_dump())
                 await owned()
-                result = await db.execute_system(
-                    "UPDATE NOVA_SYSTEM.CONFIG_STUDIO_MISSIONS "
-                    "SET revision=%s,payload=%s,updated_at=%s,"
-                    "session_id=%s,security_version=%s "
-                    f"WHERE mission_id=%s AND revision=%s AND {SCOPE_SQL}",
-                    [
-                        validated.revision,
-                        validated.model_dump_json(),
-                        _sql_time(validated.updated_at),
-                        scope.session_id,
-                        scope.security_context_version,
-                        mission_id,
-                        body.expected_revision,
-                        *scope_params(old_scope),
-                    ],
-                )
-                if result.get("affected") != 1:
-                    raise HTTPException(status_code=409, detail="Mission revision changed; reload")
-                await self.audit(validated, "RESUME")
+                async with _store(scope) as repo:
+                    saved = await repo.save_mission(
+                        mission_id, validated.model_dump_json(),
+                        expected_revision=body.expected_revision, resume=True,
+                        expected_storage_revision=mission._storage_revision,
+                    )
+                    validated._storage_revision = saved["storage_revision"]
+                    await self.audit(validated, "RESUME")
                 return validated
         except Exception:
             if mission:
@@ -692,14 +687,11 @@ class MissionService:
     async def list(self, thread_id: str, user: dict) -> builtins.list[Mission]:
         await require_thread(thread_id, user)
         scope = workflow_scope(user)
-        result = await db.execute_system(
-            "SELECT payload FROM NOVA_SYSTEM.CONFIG_STUDIO_MISSIONS "
-            f"WHERE thread_id=%s AND {SCOPE_SQL} ORDER BY created_at DESC, mission_id LIMIT 51",
-            [thread_id, *scope_params(scope)],
-        )
-        if len(result["rows"]) > 50:
+        async with _store(scope, read_only=True) as repo:
+            result = await repo.list_missions(thread_id, session_scope=True)
+        if len(result) > 50:
             raise HTTPException(status_code=422, detail="Thread Mission bound reached")
-        missions = [Mission.model_validate(_decode(row[0])) for row in result["rows"]]
+        missions = [_mission(row) for row in result]
         if any(m.scope != scope for m in missions):
             raise HTTPException(status_code=409, detail="Mission scope requires reconciliation")
         return [await self.refresh(m, user) for m in missions]
@@ -707,14 +699,11 @@ class MissionService:
     async def _turn_candidates(
         self, thread_id: str, scope: Scope, operation_id: str
     ) -> builtins.list[Mission]:
-        result = await db.execute_system(
-            "SELECT payload FROM NOVA_SYSTEM.CONFIG_STUDIO_MISSIONS "
-            f"WHERE thread_id=%s AND {OWNER_SQL} ORDER BY created_at DESC, mission_id LIMIT 51",
-            [thread_id, scope.principal, scope.active_role],
-        )
-        if len(result["rows"]) > 50:
+        async with _store(scope, read_only=True) as repo:
+            result = await repo.list_missions(thread_id, session_scope=False)
+        if len(result) > 50:
             raise HTTPException(status_code=422, detail="Thread Mission bound reached")
-        missions = [Mission.model_validate(_decode(row[0])) for row in result["rows"]]
+        missions = [_mission(row) for row in result]
         for mission in missions:
             if (mission.owner_scope.principal, mission.owner_scope.active_role) != (
                 scope.principal,
@@ -808,24 +797,9 @@ class MissionService:
                 ],
             )
             await owned()
-            await db.execute_system(
-                "INSERT INTO NOVA_SYSTEM.CONFIG_STUDIO_MISSIONS "
-                "(mission_id,owner_name,thread_id,role_name,session_id,security_version,"
-                "revision,payload,created_at,updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                [
-                    mission_id,
-                    scope.principal,
-                    thread_id,
-                    scope.active_role,
-                    scope.session_id,
-                    scope.security_context_version,
-                    1,
-                    mission.model_dump_json(),
-                    _sql_time(now),
-                    _sql_time(now),
-                ],
-            )
-            await self.audit(mission, "CREATE")
+            async with _store(scope) as repo:
+                await repo.create_mission(mission_id, thread_id, mission.model_dump_json())
+                await self.audit(mission, "CREATE")
             return mission
 
     async def for_turn(
@@ -939,20 +913,14 @@ class MissionService:
         if advance_revision:
             mission.updated_at = utc_now()
         validated = Mission.model_validate(mission.model_dump())
-        result = await db.execute_system(
-            "UPDATE NOVA_SYSTEM.CONFIG_STUDIO_MISSIONS SET revision=%s,payload=%s,updated_at=%s "
-            f"WHERE mission_id=%s AND revision=%s AND {SCOPE_SQL}",
-            [
-                validated.revision,
-                validated.model_dump_json(),
-                _sql_time(validated.updated_at),
-                validated.mission_id,
-                previous_revision,
-                *scope_params(validated.scope),
-            ],
-        )
-        if result.get("affected") != 1:
-            raise HTTPException(status_code=409, detail="Mission revision changed; reload")
+        async with _store(validated.scope) as repo:
+            saved = await repo.save_mission(
+                validated.mission_id, validated.model_dump_json(),
+                expected_revision=previous_revision,
+                expected_storage_revision=mission._storage_revision,
+                advance_revision=advance_revision,
+            )
+        validated._storage_revision = saved["storage_revision"]
         return validated
 
     async def attach_run(self, mission_id: str, run_id: str, user: dict) -> Mission:
@@ -983,15 +951,12 @@ class MissionService:
 
     async def _run(self, mission: Mission, run_id: str) -> dict:
         binding = mission.run_bindings.get(run_id, mission.scope)
-        result = await db.execute_system(
-            "SELECT status,last_sequence,session_id,security_version,agent_id FROM "
-            "NOVA_SYSTEM.CONFIG_AGENT_RUNS WHERE run_id=%s AND owner_name=%s "
-            "AND thread_id=%s AND role_name=%s",
-            [run_id, mission.scope.principal, mission.thread_id, mission.scope.active_role],
-        )
-        if len(result["rows"]) != 1:
+        async with _store(mission.scope, read_only=True) as repo:
+            row = await repo.get_run(run_id)
+        if row is None or row["thread_id"] != mission.thread_id:
             raise HTTPException(status_code=404, detail="Mission run not found")
-        status, sequence, session, version, agent_id = result["rows"][0]
+        status, sequence = row["status"], row["last_sequence"]
+        session, version, agent_id = row["session_id"], row["security_version"], row["agent_id"]
         if session != binding.session_id or version != binding.security_context_version:
             raise HTTPException(status_code=403, detail="Mission run security context changed")
         return {
@@ -1247,13 +1212,11 @@ class MissionService:
                 run = await self._run(mission, run_id)
                 runs.append(run)
                 cursor = mission.projection_cursor.get(run_id, -1)
-                rows = await db.execute_system(
-                    "SELECT `sequence`,frame FROM NOVA_SYSTEM.CONFIG_AGENT_RUN_EVENTS "
-                    "WHERE run_id=%s AND `sequence`>%s ORDER BY `sequence` LIMIT 100",
-                    [run_id, cursor],
-                )
+                async with _store(mission.scope, read_only=True) as repo:
+                    rows = await repo.mission_run_events(run_id, cursor)
                 events = []
-                for sequence, frame in rows["rows"]:
+                for row in rows:
+                    sequence, frame = row["sequence"], row["frame"]
                     try:
                         kind = frame.split("event: ", 1)[1].split("\n", 1)[0]
                         payload = json.loads(frame.split("data: ", 1)[1])
@@ -1492,22 +1455,20 @@ class MissionService:
     async def project_run(self, run_id: str, user: dict) -> Mission | None:
         """Refresh a linked Mission for the existing direct streaming producer."""
         scope = workflow_scope(user)
-        rows = await db.execute_system(
-            "SELECT thread_id FROM NOVA_SYSTEM.CONFIG_AGENT_RUNS WHERE run_id=%s "
-            "AND owner_name=%s AND role_name=%s AND session_id=%s AND security_version=%s",
-            [run_id, *scope_params(scope)],
-        )
-        if len(rows["rows"]) != 1:
+        async with _store(scope, read_only=True) as repo:
+            row = await repo.get_run(run_id)
+        if row is None or (row["session_id"], row["security_version"]) != (
+            scope.session_id, scope.security_context_version,
+        ):
             raise HTTPException(status_code=404, detail="Mission run not found")
-        thread_id = rows["rows"][0][0]
+        thread_id = row["thread_id"]
         await require_thread(thread_id, user)
-        result = await db.execute_system(
-            "SELECT payload FROM NOVA_SYSTEM.CONFIG_STUDIO_MISSIONS "
-            f"WHERE thread_id=%s AND {SCOPE_SQL} ORDER BY created_at DESC LIMIT 50",
-            [thread_id, *scope_params(scope)],
-        )
-        for row in result["rows"]:
-            mission = Mission.model_validate(_decode(row[0]))
+        async with _store(scope, read_only=True) as repo:
+            result = await repo.list_missions(thread_id)
+        if len(result) > 50:
+            raise HTTPException(status_code=422, detail="Thread Mission bound reached")
+        for row in result:
+            mission = _mission(row)
             if run_id in mission.run_ids:
                 return await self.refresh(mission, user)
         return None
@@ -1538,17 +1499,14 @@ class MissionService:
         async with harness_repository.admission_lock(
             mission.thread_id, mission.scope.principal
         ) as owned:
-            prior = await db.execute_system(
-                "SELECT payload,request_digest FROM NOVA_SYSTEM.CONFIG_STUDIO_DELIVERABLES "
-                f"WHERE deliverable_id=%s AND {OWNER_SQL}",
-                [deliverable_id, mission.scope.principal, mission.scope.active_role],
-            )
-            if prior["rows"]:
-                if prior["rows"][0][1] != digest:
+            async with _store(mission.scope, read_only=True) as repo:
+                prior = await repo.get_deliverable(deliverable_id)
+            if prior:
+                if prior["request_digest"] != digest:
                     raise HTTPException(
                         status_code=409, detail="Deliverable operation id collision"
                     )
-                document = MissionDeliverable.model_validate(_decode(prior["rows"][0][0]))
+                document = MissionDeliverable.model_validate(_decode(prior["payload"]))
                 await self._authorize_deliverable(mission_id, document, user)
                 return document
             mission = await self._get(mission_id, mission.scope)
@@ -1696,33 +1654,19 @@ class MissionService:
                 sources=sources,
             )
             await owned()
-            await db.execute_system(
-                "INSERT INTO NOVA_SYSTEM.CONFIG_STUDIO_DELIVERABLES (deliverable_id,mission_id,"
-                "owner_name,role_name,session_id,security_version,"
-                "request_digest,payload,created_at) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                [
-                    deliverable_id,
-                    mission_id,
-                    *scope_params(mission.scope),
-                    digest,
-                    deliverable.model_dump_json(),
-                    _sql_time(deliverable.created_at),
-                ],
-            )
-            await self.audit(mission, "DELIVER")
+            async with _store(mission.scope) as repo:
+                await repo.deliver(mission_id, digest, deliverable.model_dump_json(),
+                                   deliverable_id=deliverable_id)
+                await self.audit(mission, "DELIVER")
             return deliverable
 
     async def deliverables(
         self, mission_id: str, user: dict, *, budget=None
     ) -> builtins.list[MissionDeliverable]:
         mission = await self.get(mission_id, user, project=False)
-        result = await db.execute_system(
-            "SELECT payload FROM NOVA_SYSTEM.CONFIG_STUDIO_DELIVERABLES "
-            f"WHERE mission_id=%s AND {OWNER_SQL} ORDER BY created_at DESC LIMIT 100",
-            [mission_id, mission.scope.principal, mission.scope.active_role],
-        )
-        documents = [MissionDeliverable.model_validate(_decode(r[0])) for r in result["rows"]]
+        async with _store(mission.scope, read_only=True) as repo:
+            result = await repo.list_deliverables(mission_id)
+        documents = [MissionDeliverable.model_validate(_decode(r["payload"])) for r in result]
         for document in documents:
             await self._authorize_deliverable(mission_id, document, user, budget=budget)
         return documents

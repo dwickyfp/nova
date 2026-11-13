@@ -45,7 +45,7 @@ from app.modules.query_autopilot.policy import (
     classify,
     transition,
 )
-from app.modules.query_autopilot.repository import repository
+from app.modules.query_autopilot.repository import acting, repository, request_actor
 from app.modules.query_autopilot.runtime import (
     AuthorizationUnavailable,
     AuthorizedSQL,
@@ -147,6 +147,10 @@ class AutopilotService:
         )
 
     async def save_policy(self, policy: Policy, user: dict) -> Policy:
+        with acting(request_actor(user)):
+            return await self._save_policy(policy, user)
+
+    async def _save_policy(self, policy: Policy, user: dict) -> Policy:
         async with exclusive(self.client, ("policy:default",)):
             current = await self.policy()
             if policy.version != current.version:
@@ -159,6 +163,10 @@ class AutopilotService:
             return updated
 
     async def save_enrollment(self, value: Enrollment, user: dict) -> Enrollment:
+        with acting(request_actor(user)):
+            return await self._save_enrollment(value, user)
+
+    async def _save_enrollment(self, value: Enrollment, user: dict) -> Enrollment:
         async with exclusive(self.client, ("enrollment:" + value.id,)):
             current = await self.repo.get("enrollments", value.id)
             if current and value.version != current["version"]:
@@ -202,6 +210,10 @@ class AutopilotService:
             return updated
 
     async def save_candidate(self, candidate: Candidate, user: dict) -> Candidate:
+        with acting(request_actor(user)):
+            return await self._save_candidate(candidate, user)
+
+    async def _save_candidate(self, candidate: Candidate, user: dict) -> Candidate:
         enrollment_data = await self.repo.get("enrollments", candidate.enrollment_id)
         if not enrollment_data:
             raise ValueError("enrollment_not_found")
@@ -270,6 +282,15 @@ class AutopilotService:
         return candidate
 
     async def mutate(
+        self, candidate_id: str, operation: str, *, version: int, idempotency_key: str, user: dict
+    ) -> dict:
+        with acting(request_actor(user)):
+            return await self._mutate(
+                candidate_id, operation, version=version, idempotency_key=idempotency_key,
+                user=user,
+            )
+
+    async def _mutate(
         self, candidate_id: str, operation: str, *, version: int, idempotency_key: str, user: dict
     ) -> dict:
         identifier = digest(
@@ -363,15 +384,21 @@ class AutopilotService:
                 "actor_session_id": user["session_id"],
                 "created_at": utcnow().isoformat(),
             }
-            await self.repo.put("jobs", identifier, job, state=job["state"], insert_only=True)
-            if expired_approval:
-                await self._candidate(candidate)
-            if immediate:
-                await self._candidate(candidate)
-                job = {**job, "state": "COMPLETED", "version": 2}
-                await self.repo.put(
-                    "jobs", identifier, job, state="COMPLETED", version=2, expected_version=1
-                )
+            # The request, the candidate decision and its completion commit together.
+            async with self.repo.transaction():
+                if not await self.repo.put(
+                    "jobs", identifier, job, state=job["state"], insert_only=True
+                ):
+                    # The same request committed concurrently; report what it recorded.
+                    return public_record(await self.repo.get("jobs", identifier) or job)
+                if expired_approval:
+                    await self._candidate(candidate)
+                if immediate:
+                    await self._candidate(candidate)
+                    job = {**job, "state": "COMPLETED", "version": 2}
+                    await self.repo.put(
+                        "jobs", identifier, job, state="COMPLETED", version=2, expected_version=1
+                    )
             await self.audit(user, operation.upper(), candidate_id)
             return public_record(job)
 
@@ -2118,6 +2145,13 @@ class AutopilotService:
                     item.collected_at + timedelta(hours=policy.payload_hours),
                 )
                 if item.expires_at and expires <= now:
+                    if item.availability == Availability.EXPIRED:
+                        # Expiry is final; only the age check below still applies.
+                        if item.id not in protected and item.collected_at < now - timedelta(
+                            days=policy.history_days
+                        ):
+                            await self.repo.delete("evidence", item.id)
+                        continue
                     if item.payload_ref:
                         await self.payloads.delete(item.payload_ref)
                     expired = item.model_copy(
@@ -2145,18 +2179,6 @@ class AutopilotService:
         )
         for kind in ("rollups", "baselines"):
             await self.repo.cleanup_before(kind, now - timedelta(days=policy.history_days))
-        cursor = ""
-        while True:
-            records = await self.repo.page("jobs", after=cursor, state="COMPLETED", limit=1000)
-            if not records:
-                break
-            for record in records:
-                if (
-                    record.get("kind") in {"aggregate", "cleanup"}
-                    and record.get("finished_at")
-                    and datetime.fromisoformat(record["finished_at"])
-                    < now - timedelta(days=policy.observations_days)
-                ):
-                    await self.repo.delete("jobs", record["id"])
-            cursor = records[-1]["id"]
+        # Completed housekeeping jobs age out; decisions and their jobs stay.
+        await self.repo.purge_finished_jobs(now - timedelta(days=policy.observations_days))
         return {"state": "COMPLETED"}

@@ -29,7 +29,8 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from app.core.config import settings
-from app.core.database import db
+from app.core.metadata_scope import actor_for, metadata_transaction
+from app.modules.assistant.metadata_repository import AssistantMetadataRepository
 
 from .openui_nodes import DataNode, OpenUiParseError, data_nodes
 
@@ -175,21 +176,16 @@ class ResolvedPreview:
 async def _message(
     locator: Locator, user: dict[str, Any]
 ) -> tuple[list[dict], dict | None, str | None]:
-    result = await db.execute_system(
-        "SELECT m.role, m.security_context, m.steps, t.agent_id "
-        "FROM NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES m "
-        "JOIN NOVA_SYSTEM.CONFIG_ASSISTANT_THREADS t "
-        "ON t.thread_id = m.thread_id AND t.user_name = m.user_name "
-        "WHERE m.thread_id = %s AND m.message_id = %s AND m.user_name = %s",
-        [locator.thread_id, locator.message_id, user["username"]],
-    )
-    rows = result.get("rows") or []
-    if not rows or rows[0][0] != "assistant":
+    actor = actor_for(user)
+    async with metadata_transaction(actor, read_only=True) as scope:
+        repository = AssistantMetadataRepository(scope.connection, actor)
+        message = await repository.get_message(locator.thread_id, locator.message_id)
+        thread = await repository.get_thread(locator.thread_id)
+    if not message or not thread or message["role"] != "assistant":
         raise PreviewError("That result is not in your conversations.")
-    role, stamp, steps, agent_id = rows[0]
+    stamp, steps, agent_id = message["security_context"], message["steps"], thread["agent_id"]
     steps = json.loads(steps) if isinstance(steps, str) else (steps or [])
     stamp = json.loads(stamp) if isinstance(stamp, str) else stamp
-    del role
     return [step for step in steps if isinstance(step, dict)], stamp, agent_id
 
 
@@ -293,9 +289,10 @@ async def _resolve_notebook(locator: Locator, user: dict[str, Any]) -> ResolvedP
     from app.modules.notebooks.repository import notebook_repository
     from app.modules.workspaces.service import workspace_service
 
-    notebook_id = locator.thread_id[len(NOTEBOOK_PREFIX):]
-    username = str(user.get("username") or "")
-    row = await notebook_repository.get_execution(username, notebook_id, locator.message_id)
+    notebook_id = locator.thread_id[len(NOTEBOOK_PREFIX) :]
+    from app.core.metadata_scope import actor_for
+
+    row = await notebook_repository.get_execution(actor_for(user), notebook_id, locator.message_id)
     if row is None or row.get("status") != "succeeded" or row.get("cell_kind") != "sql":
         raise PreviewError("That notebook result is no longer available.")
     if (row.get("active_role") or "") != (user.get("active_role") or ""):

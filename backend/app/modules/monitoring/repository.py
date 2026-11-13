@@ -1,16 +1,22 @@
 """Monitoring repository — system-level queries for monitoring dashboards.
 
-All queries run through ``db.execute_system()`` (admin connection pool)
-so they work regardless of the authenticated user's RBAC privileges.
+Engine views run through ``db.execute_system()`` (admin connection pool).
+Audit history is read from the metadata audit log in the caller's own
+transaction, so row-level security applies to it.
 """
 
 import asyncio
 import json
 import logging
 import time
+from collections.abc import Awaitable, Callable
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+from app.common.metadata_audit import AuditReader, audit_filter
 from app.core.database import db
+from app.core.metadata_scope import metadata_transaction
+from app.modules.access_control.security_context import SecurityContext
 
 if TYPE_CHECKING:
     from app.modules.monitoring.alerts import AlertMetrics
@@ -29,7 +35,9 @@ _LOADS_FRESH_SECONDS = 30
 #: How long a stale answer may still be served before a visit waits again.
 _LOADS_KEEP_SECONDS = 600
 _LOADS_LOCK_SECONDS = 60
-_BACKGROUND: set["asyncio.Task[list[dict]]"] = set()
+_BACKGROUND: set["asyncio.Task[Any]"] = set()
+_STATS_CACHE_KEY = "nova:monitoring:loads:stats"
+_STATS_REFRESH_LOCK = "nova:monitoring:loads:stats:refreshing"
 #: The history page shows recent loads; older ones stay reachable by database.
 _LOADS_SCAN_LIMIT = 5000
 _LOAD_COLUMNS = (
@@ -59,11 +67,52 @@ def _load_item(row: tuple) -> dict:
 class MonitoringRepository:
     """System-level queries powering the six monitoring pages."""
 
-    # ── Query History (AUDIT_LOG where event_type='query') ───────────
+    async def assistant_usage(
+        self, actor: SecurityContext, start: datetime, end: datetime, *, limit: int,
+    ) -> list[dict]:
+        """Token counters only; conversation bodies never enter monitoring."""
+        async with metadata_transaction(actor, read_only=True) as scope:
+            cursor = await scope.connection.execute(
+                "SELECT m.message_id,m.created_at,m.user_name,m.model_name,m.prompt_tokens,"
+                "m.completion_tokens,m.total_tokens,t.workspace_file_id "
+                "FROM nova_meta.config_assistant_messages m "
+                "LEFT JOIN nova_meta.config_assistant_threads t "
+                "ON t.thread_id=m.thread_id AND t.user_name=m.user_name "
+                "WHERE m.role='assistant' AND (m.agent_id IS NULL "
+                "OR m.agent_id NOT IN ('__smart__', '__auto__')) "
+                "AND m.created_at>=%s AND m.created_at<%s "
+                "ORDER BY m.created_at DESC,m.message_id DESC LIMIT %s",
+                (start, end, limit),
+            )
+            return list(await cursor.fetchall())
+
+    async def ai_query_usage(
+        self, actor: SecurityContext, start: datetime, end: datetime,
+        *, patterns: tuple[str, ...], limit: int,
+    ) -> list[dict]:
+        """Candidate AI calls from PG audit history, still subject to its RLS."""
+        if not patterns:
+            return []
+        async with metadata_transaction(actor, read_only=True) as scope:
+            cursor = await scope.connection.execute(
+                "SELECT log_id,event_time,user_name,sql_text,status,duration_ms "
+                "FROM nova_meta.audit_log WHERE event_type='query' "
+                "AND event_time>=%s AND event_time<%s "
+                f"AND ({' OR '.join(['UPPER(sql_text) LIKE %s'] * len(patterns))}) "
+                "ORDER BY event_time DESC,log_id DESC LIMIT %s",
+                (start, end, *patterns, limit),
+            )
+            return list(await cursor.fetchall())
+
+    # ── Query History (audit events where event_type='query') ────────
+    #
+    # Audit reads run in the caller's metadata transaction. Row-level security
+    # shows an administration role every event and anyone else their own.
 
     async def get_query_history(
         self,
         *,
+        actor: SecurityContext,
         limit: int = 50,
         offset: int = 0,
         user_name: str | None = None,
@@ -74,129 +123,66 @@ class MonitoringRepository:
         date_to: str | None = None,
         search: str | None = None,
     ) -> dict:
-        """Paginated query history from AUDIT_LOG (event_type='query' only)."""
-        conditions = ["event_type = 'query'"]
-        params: list = []
-
-        if user_name:
-            conditions.append("user_name = %s")
-            params.append(user_name)
-        if status:
-            conditions.append("status = %s")
-            params.append(status.upper())
-        if database_name:
-            conditions.append("database_name = %s")
-            params.append(database_name)
-        if min_duration_ms is not None:
-            conditions.append("duration_ms >= %s")
-            params.append(min_duration_ms)
-        if date_from:
-            conditions.append("event_time >= %s")
-            params.append(date_from)
-        if date_to:
-            conditions.append("event_time <= %s")
-            params.append(date_to)
-        if search:
-            conditions.append("sql_text LIKE %s")
-            params.append(f"%{search}%")
-
-        where = " AND ".join(conditions)
-
-        count_result = await db.execute_system(
-            f"SELECT COUNT(*) FROM NOVA_SYSTEM.AUDIT_LOG WHERE {where}",
-            params,
+        """Paginated query history (event_type='query' only)."""
+        selection = audit_filter(
+            event_type="query",
+            user_name=user_name or None,
+            status=status.upper() if status else None,
+            database_name=database_name or None,
+            min_duration_ms=min_duration_ms,
+            since=date_from,
+            through=date_to,
+            sql_contains=search or None,
         )
-        total = count_result["rows"][0][0] if count_result["rows"] else 0
-
-        result = await db.execute_system(
-            f"""
-            SELECT log_id, query_id, event_time, user_name, sql_text, status,
-                   duration_ms, rows_affected, error_message, database_name,
-                   schema_name, session_id, file_id
-            FROM NOVA_SYSTEM.AUDIT_LOG
-            WHERE {where}
-            ORDER BY event_time DESC
-            LIMIT %s OFFSET %s
-            """,
-            params + [limit, offset],
-        )
-
-        items = []
-        for row in result["rows"]:
-            items.append(
-                {
-                    "log_id": row[0],
-                    "query_id": row[1] or "",
-                    "event_time": str(row[2]) if row[2] else "",
-                    "user_name": row[3] or "",
-                    "sql_text": row[4] or "",
-                    "status": row[5] or "",
-                    "duration_ms": row[6],
-                    "rows_affected": row[7],
-                    "error_message": row[8],
-                    "database_name": row[9],
-                    "schema_name": row[10],
-                    "session_id": row[11],
-                    "file_id": row[12],
-                }
+        async with metadata_transaction(actor, read_only=True) as scope:
+            reader = AuditReader(scope.connection)
+            total = await reader.count(selection)
+            rows = await reader.events(
+                selection,
+                ("log_id", "query_id", "event_time", "user_name", "sql_text", "status",
+                 "duration_ms", "rows_affected", "error_message", "database_name",
+                 "schema_name", "session_id", "file_id"),
+                limit=limit, offset=offset,
             )
-
+        items = [
+            {
+                "log_id": row["log_id"],
+                "query_id": row["query_id"] or "",
+                "event_time": str(row["event_time"]) if row["event_time"] else "",
+                "user_name": row["user_name"] or "",
+                "sql_text": row["sql_text"] or "",
+                "status": row["status"] or "",
+                "duration_ms": row["duration_ms"],
+                "rows_affected": row["rows_affected"],
+                "error_message": row["error_message"],
+                "database_name": row["database_name"],
+                "schema_name": row["schema_name"],
+                "session_id": row["session_id"],
+                "file_id": row["file_id"],
+            }
+            for row in rows
+        ]
         return {"items": items, "total": total}
 
     async def get_query_history_stats(
         self,
         *,
+        actor: SecurityContext,
         date_from: str | None = None,
         date_to: str | None = None,
     ) -> dict:
         """Aggregate stats for the query history dashboard."""
-        conditions = ["event_type = 'query'"]
-        params: list = []
-
-        if date_from:
-            conditions.append("event_time >= %s")
-            params.append(date_from)
-        if date_to:
-            conditions.append("event_time <= %s")
-            params.append(date_to)
-
-        where = " AND ".join(conditions)
-
-        result = await db.execute_system(
-            f"""
-            SELECT
-                COUNT(*)                                          AS total,
-                COALESCE(AVG(COALESCE(duration_ms, 0)), 0)       AS avg_duration_ms,
-                SUM(CASE WHEN status = 'ERROR' THEN 1 ELSE 0 END) AS error_count,
-                SUM(CASE WHEN status != 'ERROR' THEN 1 ELSE 0 END) AS success_count
-            FROM NOVA_SYSTEM.AUDIT_LOG
-            WHERE {where}
-            """,
-            params,
-        )
-
-        if not result["rows"]:
-            return {
-                "total": 0,
-                "avg_duration_ms": 0.0,
-                "error_count": 0,
-                "success_count": 0,
-                "error_rate": 0.0,
-            }
-
-        row = result["rows"][0]
-        total = row[0] or 0
-        avg_duration_ms = round(float(row[1] or 0), 2)
-        error_count = row[2] or 0
-        success_count = row[3] or 0
-        error_rate = round(error_count / total, 4) if total > 0 else 0.0
-
+        selection = audit_filter(event_type="query", since=date_from, through=date_to)
+        async with metadata_transaction(actor, read_only=True) as scope:
+            summary = await AuditReader(scope.connection).summary(selection)
+        total = summary["total"] or 0
+        error_count = summary["error_count"] or 0
         return {
             "total": total,
-            "avg_duration_ms": avg_duration_ms,
+            "avg_duration_ms": round(float(summary["avg_duration_ms"] or 0), 2),
             "error_count": error_count,
-            "success_count": success_count,
-            "error_rate": error_rate,
+            "success_count": summary["non_error_count"] or 0,
+            "error_rate": round(error_count / total, 4) if total > 0 else 0.0,
         }
 
     # ── Audit Trail (ALL event types) ────────────────────────────────
@@ -204,6 +190,7 @@ class MonitoringRepository:
     async def get_audit_trail(
         self,
         *,
+        actor: SecurityContext,
         limit: int = 50,
         offset: int = 0,
         event_type: str | None = None,
@@ -212,71 +199,46 @@ class MonitoringRepository:
         date_from: str | None = None,
         date_to: str | None = None,
     ) -> dict:
-        """Paginated audit trail — ALL event types from AUDIT_LOG."""
-        conditions: list[str] = []
-        params: list = []
-
-        if event_type:
-            conditions.append("event_type = %s")
-            params.append(event_type)
-        if user_name:
-            conditions.append("user_name = %s")
-            params.append(user_name)
-        if status:
-            conditions.append("status = %s")
-            params.append(status.upper())
-        if date_from:
-            conditions.append("event_time >= %s")
-            params.append(date_from)
-        if date_to:
-            conditions.append("event_time <= %s")
-            params.append(date_to)
-
-        where = " AND ".join(conditions) if conditions else "1 = 1"
-
-        count_result = await db.execute_system(
-            f"SELECT COUNT(*) FROM NOVA_SYSTEM.AUDIT_LOG WHERE {where}",
-            params,
+        """Paginated audit trail — ALL event types."""
+        selection = audit_filter(
+            event_type=event_type or None,
+            user_name=user_name or None,
+            status=status.upper() if status else None,
+            since=date_from,
+            through=date_to,
         )
-        total = count_result["rows"][0][0] if count_result["rows"] else 0
-
-        result = await db.execute_system(
-            f"""
-            SELECT log_id, query_id, event_type, event_time, user_name,
-                   object_type, object_name, action, sql_text, status,
-                   error_message, duration_ms, rows_affected, session_id,
-                   database_name, schema_name
-            FROM NOVA_SYSTEM.AUDIT_LOG
-            WHERE {where}
-            ORDER BY event_time DESC
-            LIMIT %s OFFSET %s
-            """,
-            params + [limit, offset],
-        )
-
-        items = []
-        for row in result["rows"]:
-            items.append(
-                {
-                    "log_id": row[0],
-                    "query_id": row[1] or "",
-                    "event_type": row[2] or "",
-                    "event_time": str(row[3]) if row[3] else "",
-                    "user_name": row[4] or "",
-                    "object_type": row[5],
-                    "object_name": row[6],
-                    "action": row[7] or "",
-                    "sql_text": row[8],
-                    "status": row[9] or "",
-                    "error_message": row[10],
-                    "duration_ms": row[11],
-                    "rows_affected": row[12],
-                    "session_id": row[13],
-                    "database_name": row[14],
-                    "schema_name": row[15],
-                }
+        async with metadata_transaction(actor, read_only=True) as scope:
+            reader = AuditReader(scope.connection)
+            total = await reader.count(selection)
+            rows = await reader.events(
+                selection,
+                ("log_id", "query_id", "event_type", "event_time", "user_name",
+                 "object_type", "object_name", "action", "sql_text", "status",
+                 "error_message", "duration_ms", "rows_affected", "session_id",
+                 "database_name", "schema_name"),
+                limit=limit, offset=offset,
             )
-
+        items = [
+            {
+                "log_id": row["log_id"],
+                "query_id": row["query_id"] or "",
+                "event_type": row["event_type"] or "",
+                "event_time": str(row["event_time"]) if row["event_time"] else "",
+                "user_name": row["user_name"] or "",
+                "object_type": row["object_type"],
+                "object_name": row["object_name"],
+                "action": row["action"] or "",
+                "sql_text": row["sql_text"],
+                "status": row["status"] or "",
+                "error_message": row["error_message"],
+                "duration_ms": row["duration_ms"],
+                "rows_affected": row["rows_affected"],
+                "session_id": row["session_id"],
+                "database_name": row["database_name"],
+                "schema_name": row["schema_name"],
+            }
+            for row in rows
+        ]
         return {"items": items, "total": total}
 
     # ── Active Queries (processlist) ─────────────────────────────────
@@ -417,6 +379,7 @@ class MonitoringRepository:
     async def get_query_cost_history(
         self,
         *,
+        actor: SecurityContext,
         limit: int = 50,
         offset: int = 0,
         user_name: str | None = None,
@@ -424,118 +387,64 @@ class MonitoringRepository:
         date_from: str | None = None,
         date_to: str | None = None,
     ) -> dict:
-        """Paginated query cost history from AUDIT_LOG with duration/rows."""
-        conditions = ["event_type = 'query'"]
-        params: list = []
-
-        if user_name:
-            conditions.append("user_name = %s")
-            params.append(user_name)
-        if database_name:
-            conditions.append("database_name = %s")
-            params.append(database_name)
-        if date_from:
-            conditions.append("event_time >= %s")
-            params.append(date_from)
-        if date_to:
-            conditions.append("event_time <= %s")
-            params.append(date_to)
-
-        where = " AND ".join(conditions)
-
-        count_result = await db.execute_system(
-            f"SELECT COUNT(*) FROM NOVA_SYSTEM.AUDIT_LOG WHERE {where}",
-            params,
+        """Paginated query cost history with duration/rows."""
+        selection = audit_filter(
+            event_type="query",
+            user_name=user_name or None,
+            database_name=database_name or None,
+            since=date_from,
+            through=date_to,
         )
-        total = count_result["rows"][0][0] if count_result["rows"] else 0
-
-        result = await db.execute_system(
-            f"""
-            SELECT log_id, query_id, event_time, user_name, database_name,
-                   sql_text, COALESCE(duration_ms, 0) AS duration_ms,
-                   COALESCE(rows_affected, 0) AS rows_affected,
-                   status, error_message
-            FROM NOVA_SYSTEM.AUDIT_LOG
-            WHERE {where}
-            ORDER BY event_time DESC
-            LIMIT %s OFFSET %s
-            """,
-            params + [limit, offset],
-        )
-
-        items = []
-        for row in result["rows"]:
-            items.append(
-                {
-                    "log_id": row[0] or "",
-                    "query_id": row[1] or "",
-                    "event_time": str(row[2]) if row[2] else "",
-                    "user_name": row[3] or "",
-                    "database_name": row[4],
-                    "sql_text": row[5] or "",
-                    "duration_ms": row[6] or 0,
-                    "rows_affected": row[7] or 0,
-                    "status": row[8] or "",
-                    "error_message": row[9],
-                }
+        async with metadata_transaction(actor, read_only=True) as scope:
+            reader = AuditReader(scope.connection)
+            total = await reader.count(selection)
+            rows = await reader.events(
+                selection,
+                ("log_id", "query_id", "event_time", "user_name", "database_name",
+                 "sql_text", "duration_ms", "rows_affected", "status", "error_message"),
+                limit=limit, offset=offset,
             )
-
+        items = [
+            {
+                "log_id": row["log_id"] or "",
+                "query_id": row["query_id"] or "",
+                "event_time": str(row["event_time"]) if row["event_time"] else "",
+                "user_name": row["user_name"] or "",
+                "database_name": row["database_name"],
+                "sql_text": row["sql_text"] or "",
+                "duration_ms": row["duration_ms"] or 0,
+                "rows_affected": row["rows_affected"] or 0,
+                "status": row["status"] or "",
+                "error_message": row["error_message"],
+            }
+            for row in rows
+        ]
         return {"items": items, "total": total}
 
     async def get_cost_aggregation(
         self,
         *,
+        actor: SecurityContext,
         group_by: str = "hour",
         date_from: str | None = None,
         date_to: str | None = None,
     ) -> list[dict]:
-        """Aggregate AUDIT_LOG by hour/day for chart data."""
-        if group_by == "day":
-            time_bucket = "DATE_FORMAT(event_time, '%%Y-%%m-%%d')"
-        else:
-            time_bucket = "DATE_FORMAT(event_time, '%%Y-%%m-%%d %%H:00:00')"
-
-        conditions = ["event_type = 'query'"]
-        params: list = []
-
-        if date_from:
-            conditions.append("event_time >= %s")
-            params.append(date_from)
-        if date_to:
-            conditions.append("event_time <= %s")
-            params.append(date_to)
-
-        where = " AND ".join(conditions)
-
-        result = await db.execute_system(
-            f"""
-            SELECT
-                {time_bucket}                   AS bucket,
-                COUNT(*)                         AS query_count,
-                COALESCE(AVG(COALESCE(duration_ms, 0)), 0) AS avg_duration_ms,
-                COALESCE(SUM(COALESCE(rows_affected, 0)), 0) AS total_rows,
-                SUM(CASE WHEN status = 'ERROR' THEN 1 ELSE 0 END) AS error_count
-            FROM NOVA_SYSTEM.AUDIT_LOG
-            WHERE {where}
-            GROUP BY bucket
-            ORDER BY bucket ASC
-            """,
-            params,
-        )
-
-        items = []
-        for row in result["rows"]:
-            items.append(
-                {
-                    "period": row[0] or "",
-                    "query_count": row[1] or 0,
-                    "avg_duration_ms": round(float(row[2] or 0), 2),
-                    "total_rows": row[3] or 0,
-                    "error_count": row[4] or 0,
-                }
+        """Query events by UTC hour or day for chart data."""
+        selection = audit_filter(event_type="query", since=date_from, through=date_to)
+        async with metadata_transaction(actor, read_only=True) as scope:
+            rows = await AuditReader(scope.connection).buckets(
+                selection, "day" if group_by == "day" else "hour",
             )
-
-        return items
+        return [
+            {
+                "period": row["period"] or "",
+                "query_count": row["query_count"] or 0,
+                "avg_duration_ms": round(float(row["avg_duration_ms"] or 0), 2),
+                "total_rows": row["total_rows"] or 0,
+                "error_count": row["error_count"] or 0,
+            }
+            for row in rows
+        ]
 
     async def get_fe_metrics_summary(self) -> dict:
         """Key metrics from information_schema.fe_metrics.
@@ -631,50 +540,65 @@ class MonitoringRepository:
         return {"items": items[offset : offset + limit], "total": len(items)}
 
     async def _recent_loads(self) -> list[dict]:
-        """The most recent loads into user databases, from one cached scan.
+        """The most recent loads into user databases, from one cached scan."""
+        items = await self._cached_scan(
+            _LOADS_CACHE_KEY, _LOADS_REFRESH_LOCK, self._scan_recent_loads,
+        )
+        return list(items)
 
-        Stale-while-revalidate: an answer older than the fresh window is still
-        returned at once while one background scan replaces it, so only the
-        very first visit waits for the engine's slow scan.
+    async def _cached_scan(
+        self, key: str, lock: str, scan: Callable[[], Awaitable[Any]],
+    ) -> Any:
+        """Stale-while-revalidate over one slow, caller-independent engine scan.
+
+        An answer older than the fresh window is still returned at once while
+        one background scan replaces it, so only the very first visit waits.
+        Callers check access before calling; the cached value is the same
+        system-pool answer for every permitted caller.
         """
         from app.core.redis import session_store
 
         client = session_store._redis
         if client is None:
-            return await self._scan_recent_loads()
+            return await scan()
         try:
-            cached = await client.get(_LOADS_CACHE_KEY)
+            cached = await client.get(key)
         except Exception:  # noqa: BLE001 - a cache fault never blocks the answer
-            logger.debug("Data loads cache read failed", exc_info=True)
-            return await self._scan_recent_loads()
+            logger.debug("Monitoring cache read failed", exc_info=True)
+            return await scan()
         if not cached:
-            return await self._refresh_recent_loads(client)
+            return await self._refresh(client, key, lock, scan)
         entry = json.loads(cached)
-        if not isinstance(entry, dict):
-            return await self._refresh_recent_loads(client)
+        if not isinstance(entry, dict) or "items" not in entry:
+            return await self._refresh(client, key, lock, scan)
         if time.time() - float(entry.get("at", 0)) > _LOADS_FRESH_SECONDS:
             try:
                 # One refresh at a time across workers.
-                if await client.set(_LOADS_REFRESH_LOCK, "1", nx=True, ex=_LOADS_LOCK_SECONDS):
-                    task = asyncio.create_task(self._refresh_recent_loads(client))
+                if await client.set(lock, "1", nx=True, ex=_LOADS_LOCK_SECONDS):
+                    task = asyncio.create_task(self._refresh(client, key, lock, scan))
                     _BACKGROUND.add(task)
                     task.add_done_callback(_BACKGROUND.discard)
             except Exception:  # noqa: BLE001
-                logger.debug("Data loads refresh could not start", exc_info=True)
-        return list(entry.get("items", []))
+                logger.debug("Monitoring refresh could not start", exc_info=True)
+        return entry["items"]
 
-    async def _refresh_recent_loads(self, client: Any) -> list[dict]:
-        items = await self._scan_recent_loads()
+    async def _refresh(
+        self, client: Any, key: str, lock: str, scan: Callable[[], Awaitable[Any]],
+    ) -> Any:
+        items = await scan()
         try:
             await client.set(
-                _LOADS_CACHE_KEY,
-                json.dumps({"at": time.time(), "items": items}),
-                ex=_LOADS_KEEP_SECONDS,
+                key, json.dumps({"at": time.time(), "items": items}), ex=_LOADS_KEEP_SECONDS,
             )
-            await client.delete(_LOADS_REFRESH_LOCK)
+            await client.delete(lock)
         except Exception:  # noqa: BLE001
-            logger.debug("Data loads cache write failed", exc_info=True)
+            logger.debug("Monitoring cache write failed", exc_info=True)
         return items
+
+    async def _refresh_recent_loads(self, client: Any) -> list[dict]:
+        return list(await self._refresh(
+            client, _LOADS_CACHE_KEY, _LOADS_REFRESH_LOCK, self._scan_recent_loads,
+        ))
 
     async def _scan_recent_loads(self) -> list[dict]:
         excluded = ", ".join(f"'{name}'" for name in _INTERNAL_LOAD_DBS)
@@ -687,7 +611,17 @@ class MonitoringRepository:
         return [_load_item(row) for row in result["rows"]]
 
     async def get_load_stats(self) -> dict:
-        """Aggregate stats for the data loads dashboard."""
+        """Aggregate stats for the data loads dashboard.
+
+        Counting every load job is a full engine scan (65 s measured with about
+        220 databases), so it shares the loads list's stale-while-revalidate cache.
+        """
+        stats = await self._cached_scan(
+            _STATS_CACHE_KEY, _STATS_REFRESH_LOCK, self._scan_load_stats,
+        )
+        return dict(stats)
+
+    async def _scan_load_stats(self) -> dict:
         result = await db.execute_system(
             """
             SELECT
@@ -733,83 +667,90 @@ class MonitoringRepository:
         from app.modules.monitoring.alerts import AlertMetrics
 
         metrics = AlertMetrics()
-        reachable = False
+        reached: list[bool] = []
 
-        # FE membership -------------------------------------------------
-        try:
-            result = await db.execute_system("SHOW FRONTENDS")
-            rows = self._rows_to_maps(result)
-            reachable = True
-            metrics.fe_total = len(rows)
-            metrics.fe_alive = sum(1 for r in rows if self._truthy(r.get("Alive")))
-            metrics.fe_leader_count = sum(
-                1
-                for r in rows
-                if str(r.get("Role", "")).upper() == "LEADER"
-                and self._truthy(r.get("Alive"))
-                and self._truthy(r.get("Join"))
-            )
-            metrics.fe_max_journal_lag = self._journal_lag(rows)
-            metrics.fe_meta_log_count = self._max_int(rows, ("MetaLogCount", "metaLogCount"))
-        except Exception as exc:
-            logger.warning("Alert probe SHOW FRONTENDS failed: %s", exc)
+        async def frontends() -> None:
+            try:
+                result = await db.execute_system("SHOW FRONTENDS")
+                rows = self._rows_to_maps(result)
+                reached.append(True)
+                metrics.fe_total = len(rows)
+                metrics.fe_alive = sum(1 for r in rows if self._truthy(r.get("Alive")))
+                metrics.fe_leader_count = sum(
+                    1
+                    for r in rows
+                    if str(r.get("Role", "")).upper() == "LEADER"
+                    and self._truthy(r.get("Alive"))
+                    and self._truthy(r.get("Join"))
+                )
+                metrics.fe_max_journal_lag = self._journal_lag(rows)
+                metrics.fe_meta_log_count = self._max_int(rows, ("MetaLogCount", "metaLogCount"))
+            except Exception as exc:
+                logger.warning("Alert probe SHOW FRONTENDS failed: %s", exc)
 
-        # BE membership / storage --------------------------------------
-        try:
-            result = await db.execute_system("SHOW BACKENDS")
-            rows = self._rows_to_maps(result)
-            reachable = True
-            metrics.be_total = len(rows)
-            live = [
-                r
-                for r in rows
-                if self._truthy(r.get("Alive"))
-                and not self._truthy(r.get("SystemDecommissioned"))
-                and not self._truthy(r.get("ClusterDecommissioned"))
-            ]
-            metrics.be_alive = len(live)
-            metrics.be_disk_used_pct_max = self._max_float(
-                live, ("MaxDiskUsedPct", "UsedPct")
-            )
-        except Exception as exc:
-            logger.warning("Alert probe SHOW BACKENDS failed: %s", exc)
+        async def backends() -> None:
+            try:
+                result = await db.execute_system("SHOW BACKENDS")
+                rows = self._rows_to_maps(result)
+                reached.append(True)
+                metrics.be_total = len(rows)
+                live = [
+                    r
+                    for r in rows
+                    if self._truthy(r.get("Alive"))
+                    and not self._truthy(r.get("SystemDecommissioned"))
+                    and not self._truthy(r.get("ClusterDecommissioned"))
+                ]
+                metrics.be_alive = len(live)
+                metrics.be_disk_used_pct_max = self._max_float(
+                    live, ("MaxDiskUsedPct", "UsedPct")
+                )
+            except Exception as exc:
+                logger.warning("Alert probe SHOW BACKENDS failed: %s", exc)
 
-        # Compaction score (FE) ----------------------------------------
-        try:
-            result = await db.execute_system(
-                "SELECT MAX(MAX_COMPACTION_SCORE) FROM information_schema.be_tablets"
-            )
-            if result["rows"]:
-                metrics.max_compaction_score = self._float_or_none(result["rows"][0][0])
-        except Exception as exc:
-            logger.debug("Alert probe compaction score failed: %s", exc)
+        async def compaction_score() -> None:
+            try:
+                result = await db.execute_system(
+                    "SELECT MAX(MAX_COMPACTION_SCORE) FROM information_schema.be_tablets"
+                )
+                if result["rows"]:
+                    metrics.max_compaction_score = self._float_or_none(result["rows"][0][0])
+            except Exception as exc:
+                logger.debug("Alert probe compaction score failed: %s", exc)
 
-        # BE compaction failures ---------------------------------------
-        try:
-            result = await db.execute_system(
-                "SELECT SUM(C) FROM ("
-                " SELECT COUNT(*) AS C FROM information_schema.be_compactions"
-                " WHERE STATUS != 'SUCCESS'"
-                ") t"
-            )
-            if result["rows"]:
-                metrics.be_compaction_failures = self._int_or_none(result["rows"][0][0])
-        except Exception as exc:
-            logger.debug("Alert probe compaction failures failed: %s", exc)
+        async def compaction_failures() -> None:
+            try:
+                result = await db.execute_system(
+                    "SELECT SUM(C) FROM ("
+                    " SELECT COUNT(*) AS C FROM information_schema.be_compactions"
+                    " WHERE STATUS != 'SUCCESS'"
+                    ") t"
+                )
+                if result["rows"]:
+                    metrics.be_compaction_failures = self._int_or_none(result["rows"][0][0])
+            except Exception as exc:
+                logger.debug("Alert probe compaction failures failed: %s", exc)
 
-        # FE metric ratios ---------------------------------------------
-        try:
-            metrics.query_err_rate, metrics.query_latency_p95_ms = (
-                await self._fe_query_metrics()
-            )
-        except Exception as exc:
-            logger.debug("Alert probe fe query metrics failed: %s", exc)
+        async def query_metrics() -> None:
+            try:
+                metrics.query_err_rate, metrics.query_latency_p95_ms = (
+                    await self._fe_query_metrics()
+                )
+            except Exception as exc:
+                logger.debug("Alert probe fe query metrics failed: %s", exc)
 
-        try:
-            metrics.fe_heap_used_ratio = await self._fe_heap_ratio()
-        except Exception as exc:
-            logger.debug("Alert probe fe heap failed: %s", exc)
+        async def heap() -> None:
+            try:
+                metrics.fe_heap_used_ratio = await self._fe_heap_ratio()
+            except Exception as exc:
+                logger.debug("Alert probe fe heap failed: %s", exc)
 
+        # The probes are independent reads; each owns its fields and failure.
+        await asyncio.gather(
+            frontends(), backends(), compaction_score(), compaction_failures(),
+            query_metrics(), heap(),
+        )
+        reachable = bool(reached)
         metrics.engine_reachable = reachable
         return metrics
 

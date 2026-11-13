@@ -374,13 +374,14 @@ class _FailRegistrationRepository(_NoopRepository):
         self.aborted: tuple[str, int] | None = None
 
     async def reserve_version(self, spec, *, feature_columns):
-        return "model-1", 1
+        return "model-1", 1, "reservation-1"
 
     async def register_version(self, **kwargs):
         raise RuntimeError("registry unavailable")
 
-    async def abort_version(self, model_id, version):
+    async def abort_version(self, model_id, version, *, actor):
         self.aborted = (model_id, version)
+        return True
 
 
 class _InspectableRunner(InlineJobRunner):

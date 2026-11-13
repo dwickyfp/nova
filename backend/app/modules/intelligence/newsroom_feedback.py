@@ -9,24 +9,15 @@ a model without replaying the stories themselves.
 
 from __future__ import annotations
 
-import json
+import logging
 from collections import defaultdict
 from typing import Literal
 
-from app.core.database import db
+from app.modules.intelligence.metadata_repository import intelligence_metadata, user_actor
+
+logger = logging.getLogger(__name__)
 
 Reaction = Literal["like", "dislike"]
-
-FEEDBACK_TABLE = "NOVA_SYSTEM.CONFIG_INTELLIGENCE_STORY_FEEDBACK"
-FEEDBACK_DDL = f"""CREATE TABLE IF NOT EXISTS {FEEDBACK_TABLE} (
-    user_name VARCHAR(128) NOT NULL,
-    story_id VARCHAR(64) NOT NULL,
-    reaction VARCHAR(8) NOT NULL,
-    features JSON NOT NULL,
-    updated_at DATETIME NOT NULL
-) PRIMARY KEY(user_name, story_id)
-DISTRIBUTED BY HASH(user_name) BUCKETS 1
-PROPERTIES("replication_num"="1", "enable_persistent_index"="true")"""
 
 #: How much each shared trait of a story counts toward a reader's interest.
 _WEIGHTS = {"slice": 1.0, "metric": 0.4, "dimension": 0.4, "direction": 0.2}
@@ -49,36 +40,26 @@ def features(story: dict) -> dict[str, str]:
 
 
 class FeedbackStore:
-    async def set(self, user_name: str, story: dict, reaction: Reaction | None) -> None:
-        if reaction is None:
-            await db.execute_system(
-                f"DELETE FROM {FEEDBACK_TABLE} WHERE user_name=%s AND story_id=%s",
-                [user_name, story["id"]],
-            )
-            return
-        await db.execute_system(
-            f"INSERT INTO {FEEDBACK_TABLE} (user_name,story_id,reaction,features,updated_at) "
-            "VALUES (%s,%s,%s,%s,NOW())",
-            [user_name, story["id"], reaction, json.dumps(features(story))],
-        )
+    """The reader's own reactions, kept in the control metadata as that reader."""
 
-    async def rows(self, user_name: str) -> list[dict]:
+    async def set(self, user: dict, story: dict, reaction: Reaction | None) -> None:
+        async with intelligence_metadata(user_actor(user)) as repo:
+            await repo.set_feedback(
+                story["id"], reaction, features(story) if reaction is not None else None
+            )
+
+    async def rows(self, user: dict) -> list[dict]:
         """The reader's own reactions, newest first; an outage means no preference."""
         try:
-            result = await db.execute_system(
-                f"SELECT story_id,reaction,features FROM {FEEDBACK_TABLE} "
-                "WHERE user_name=%s ORDER BY updated_at DESC LIMIT %s",
-                [user_name, _HISTORY],
-            )
-        except Exception:
+            async with intelligence_metadata(user_actor(user), read_only=True) as repo:
+                rows = await repo.feedback(_HISTORY)
+        except Exception as exc:
+            logger.warning("News preferences are unavailable: %s", type(exc).__name__)
             return []
         return [
-            {
-                "story_id": row[0],
-                "reaction": row[1],
-                "features": json.loads(row[2]) if isinstance(row[2], str) else row[2],
-            }
-            for row in result["rows"]
+            {"story_id": row["story_id"], "reaction": row["reaction"],
+             "features": row["features"] or {}}
+            for row in rows
         ]
 
 

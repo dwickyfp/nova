@@ -50,12 +50,12 @@ async def test_quality_lab_scopes_view_version_and_queries_to_owner(monkeypatch)
         "id": "view-1", "name": "Sales", "status": "ACTIVE", "visibility": "PRIVATE",
         "owner_name": "alice", "active_version": 1,
     }
-    get_view = AsyncMock(side_effect=lambda view_id: view if view_id == "view-1" else None)
+    get_view = AsyncMock(side_effect=lambda view_id, user: view if view_id == "view-1" else None)
     version = {
         "status": "ACTIVE", "definition": definition,
         "fingerprint": SemanticModelIR.from_ossie(definition).fingerprint,
     }
-    get_version = AsyncMock(side_effect=lambda view_id, number: (
+    get_version = AsyncMock(side_effect=lambda view_id, number, user: (
         version if view_id == "view-1" and number == 1 else None
     ))
     monkeypatch.setattr(semantic_view_service, "_get", get_view)
@@ -70,12 +70,12 @@ async def test_quality_lab_scopes_view_version_and_queries_to_owner(monkeypatch)
     assert result["quality"]["verified_query_count"] == 1
     assert result["verified_queries"][0]["verified_query_id"] == "vq-1"
     audit.assert_awaited_once_with("QUALITY", "Sales", user)
-    get_view.assert_awaited_once_with("view-1")
-    get_version.assert_awaited_once_with("view-1", 1)
+    get_view.assert_awaited_once_with("view-1", user)
+    get_version.assert_awaited_once_with("view-1", 1, user)
     with pytest.raises(HTTPException) as exc:
         await quality_semantic_view("view-1", 1, {**user, "username": "bob"})
     assert exc.value.status_code == 404
-    get_version.assert_awaited_once_with("view-1", 1)
+    get_version.assert_awaited_once_with("view-1", 1, user)
     with pytest.raises(HTTPException) as exc:
         await quality_semantic_view("other-view", 1, user)
     assert exc.value.status_code == 404

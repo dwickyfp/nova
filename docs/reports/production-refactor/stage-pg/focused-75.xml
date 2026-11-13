@@ -1,0 +1,80 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites>
+  <testsuite name="pytest" errors="0" failures="0" skipped="0" tests="75" time="46.541" timestamp="2026-11-12T05:19:53.956277+07:00">
+    <testcase classname="tests.integration.test_metadata_stages" name="test_managed_identity_cross_user_schema_access_and_atomic_audit" time="0.626" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_each_stage_consumer_can_read_only_after_scope_authorization[agent]" time="0.677" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_each_stage_consumer_can_read_only_after_scope_authorization[automation]" time="0.538" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_each_stage_consumer_can_read_only_after_scope_authorization[ml]" time="0.547" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_each_stage_consumer_can_read_only_after_scope_authorization[notebook]" time="0.498" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_each_stage_consumer_can_read_only_after_scope_authorization[proxy]" time="0.599" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_each_stage_consumer_can_read_only_after_scope_authorization[query]" time="0.574" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_each_stage_consumer_can_read_only_after_scope_authorization[task]" time="0.493" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_each_stage_consumer_can_read_only_after_scope_authorization[web]" time="0.839" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_non_consumers_have_neither_payload_nor_discovery_access[nova_meta_scheduler]" time="0.497" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_non_consumers_have_neither_payload_nor_discovery_access[nova_meta_ingestion]" time="1.038" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_non_consumers_have_neither_payload_nor_discovery_access[nova_meta_maintenance]" time="0.562" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_non_consumers_have_neither_payload_nor_discovery_access[nova_meta_outbox]" time="0.465" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_non_consumers_have_neither_payload_nor_discovery_access[nova_meta_readonly]" time="0.671" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_non_consumers_have_neither_payload_nor_discovery_access[nova_meta_backup]" time="0.588" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_readers_cannot_register_even_with_admin_actor[agent]" time="0.489" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_readers_cannot_register_even_with_admin_actor[automation]" time="0.572" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_readers_cannot_register_even_with_admin_actor[ml]" time="0.509" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_readers_cannot_register_even_with_admin_actor[notebook]" time="0.605" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_readers_cannot_register_even_with_admin_actor[proxy]" time="0.531" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_readers_cannot_register_even_with_admin_actor[query]" time="0.799" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_readers_cannot_register_even_with_admin_actor[task]" time="0.811" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_unscoped_connection_cannot_discover_or_read" time="0.886" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_scope_is_not_owner_authority_and_denials_do_not_resolve_connection" time="0.640" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_supplied_actor_must_match_the_active_uow[principal-another-user]" time="0.516" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_supplied_actor_must_match_the_active_uow[active_role-ACCOUNTADMIN]" time="0.518" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_supplied_actor_must_match_the_active_uow[security_context_version-8]" time="0.556" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_supplied_actor_must_match_the_active_uow[principal_type-SERVICE]" time="0.517" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_policy_failure_and_revocation_fail_closed_without_scope_leakage" time="0.554" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_scope_action_checks_cover_read_write_delete_and_creation" time="0.514" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_custom_mapping_requires_exact_active_accountadmin" time="0.655" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_invalid_mapping_is_rejected_before_persistence[/]" time="0.492" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_invalid_mapping_is_rejected_before_persistence[../foreign]" time="0.537" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_invalid_mapping_is_rejected_before_persistence[one/../foreign]" time="1.145" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_invalid_mapping_is_rejected_before_persistence[one\\foreign]" time="0.626" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_unknown_connection_is_rejected_without_registration" time="0.510" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_concurrent_name_creation_has_one_winner_and_one_audit" time="0.560" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_concurrent_delete_cas_and_name_recreation_never_reuse_namespace" time="0.689" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_rollback_and_caught_failure_clear_scope_and_audit" time="0.590" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_runtime_cannot_repoint_reassign_or_physically_remove[UPDATE nova_meta.config_stages SET base_prefix='foreign']" time="0.536" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_runtime_cannot_repoint_reassign_or_physically_remove[UPDATE nova_meta.config_stages SET created_by='foreign']" time="0.490" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_runtime_cannot_repoint_reassign_or_physically_remove[UPDATE nova_meta.config_stages SET database_name='foreign']" time="0.580" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_runtime_cannot_repoint_reassign_or_physically_remove[DELETE FROM nova_meta.config_stages]" time="0.593" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_runtime_cannot_repoint_reassign_or_physically_remove[TRUNCATE nova_meta.config_stages]" time="0.737" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_direct_sql_cannot_bypass_namespace_identity_or_source_byte_width[changes0]" time="0.506" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_direct_sql_cannot_bypass_namespace_identity_or_source_byte_width[changes1]" time="0.539" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_direct_sql_cannot_bypass_namespace_identity_or_source_byte_width[changes2]" time="0.477" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_direct_sql_cannot_bypass_namespace_identity_or_source_byte_width[changes3]" time="0.504" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_direct_sql_cannot_bypass_namespace_identity_or_source_byte_width[changes4]" time="0.655" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_maintenance_refuses_uow_and_direct_runtime_writes" time="0.705" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_legacy_import_preserves_identity_empty_prefix_nullable_owner_and_time" time="0.989" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_legacy_duplicate_names_abort_import_without_coalescing" time="0.601" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_stage_scope_does_not_leak_through_transaction_pooling" time="1.118" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_scoped_payload_cannot_cross_database_or_schema" time="1.042" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_rls_requires_every_actor_and_scope_field[nova.principal]" time="0.526" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_rls_requires_every_actor_and_scope_field[nova.active_role]" time="0.599" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_rls_requires_every_actor_and_scope_field[nova.security_context_version]" time="0.513" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_rls_requires_every_actor_and_scope_field[nova.principal_type]" time="0.726" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_rls_requires_every_actor_and_scope_field[nova.service_identity]" time="0.594" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_rls_requires_every_actor_and_scope_field[nova.stage_database]" time="0.535" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_rls_requires_every_actor_and_scope_field[nova.stage_schema]" time="0.507" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_rls_requires_every_actor_and_scope_field[nova.stage_action]" time="0.498" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_actor_change_during_policy_call_cannot_use_an_old_decision" time="0.525" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_cancelled_command_clears_scope_and_leaves_outer_transaction_usable" time="0.488" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_audit_failure_rolls_back_registration" time="0.471" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_runtime_cannot_resurrect_or_revise_a_tombstone" time="0.535" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_database_rejects_unsafe_mapped_prefix_even_for_admin[]" time="0.561" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_database_rejects_unsafe_mapped_prefix_even_for_admin[/foreign]" time="0.633" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_database_rejects_unsafe_mapped_prefix_even_for_admin[foreign/]" time="0.570" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_database_rejects_unsafe_mapped_prefix_even_for_admin[a//b]" time="0.643" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_database_rejects_unsafe_mapped_prefix_even_for_admin[a/./b]" time="0.632" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_database_rejects_unsafe_mapped_prefix_even_for_admin[a/../b]" time="0.662" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_database_rejects_unsafe_mapped_prefix_even_for_admin[a\\b]" time="0.532" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_database_refuses_non_admin_custom_mapping" time="0.588" />
+    <testcase classname="tests.integration.test_metadata_stages" name="test_names_are_exact_case_and_sql_filters_are_parameterized" time="0.626" />
+  </testsuite>
+</testsuites>

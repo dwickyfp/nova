@@ -21,6 +21,7 @@ from app.modules.query_autopilot.models import (
     Scope,
     digest,
 )
+from app.modules.query_autopilot.repository import TELEMETRY_ACTOR, acting
 from app.sql_frontend.fingerprint import QueryShape, fingerprint
 
 logger = logging.getLogger(__name__)
@@ -259,34 +260,35 @@ class Collector:
                 self.queue.task_done()
 
     async def run(self, stop: asyncio.Event, repo) -> None:
-        while not stop.is_set():
-            if time.monotonic() - self._last_refresh >= 5:
-                try:
-                    policy = Policy.model_validate(await repo.get("policies", "default") or {})
-                    enrollments: list[Enrollment] = []
-                    after = ""
-                    while True:
-                        page = await repo.page("enrollments", after=after, limit=1000)
-                        if not page:
-                            break
-                        enrollments.extend(Enrollment.model_validate(row) for row in page)
-                        after = page[-1]["id"]
-                    self.enabled = policy.collection_enabled
-                    self.profile_sample_rate = policy.profile_sample_rate
-                    self.payload_hours = policy.payload_hours
-                    from app.modules.query_autopilot.runtime import current_policy_revision
+        with acting(TELEMETRY_ACTOR):
+            while not stop.is_set():
+                if time.monotonic() - self._last_refresh >= 5:
+                    try:
+                        policy = Policy.model_validate(await repo.get("policies", "default") or {})
+                        enrollments: list[Enrollment] = []
+                        after = ""
+                        while True:
+                            page = await repo.page("enrollments", after=after, limit=1000)
+                            if not page:
+                                break
+                            enrollments.extend(Enrollment.model_validate(row) for row in page)
+                            after = page[-1]["id"]
+                        self.enabled = policy.collection_enabled
+                        self.profile_sample_rate = policy.profile_sample_rate
+                        self.payload_hours = policy.payload_hours
+                        from app.modules.query_autopilot.runtime import current_policy_revision
 
-                    self.policy_revision = await current_policy_revision()
-                    self.enrollments = enrollments
-                except Exception:
-                    self.enrollments = []
-                    self.policy_revision = None
-                self._last_refresh = time.monotonic()
-            await self.flush(repo)
-            with suppress(TimeoutError):
-                await asyncio.wait_for(stop.wait(), timeout=0.25)
-        while not self.queue.empty():
-            await self.flush(repo)
+                        self.policy_revision = await current_policy_revision()
+                        self.enrollments = enrollments
+                    except Exception:
+                        self.enrollments = []
+                        self.policy_revision = None
+                    self._last_refresh = time.monotonic()
+                await self.flush(repo)
+                with suppress(TimeoutError):
+                    await asyncio.wait_for(stop.wait(), timeout=0.25)
+            while not self.queue.empty():
+                await self.flush(repo)
 
     def health(self) -> dict:
         return {

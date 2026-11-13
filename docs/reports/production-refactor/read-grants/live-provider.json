@@ -1,0 +1,203 @@
+{
+  "scope": "Live Console SQL tool with login-bound persisted read-only approval; synthetic SELECT only",
+  "application_tree_sha256": "4b21917a5ab23c7d68b9a9e9010c9a24d27bdafa0d37a60652d36b4c5df0b159",
+  "started_at": "2026-11-12T00:22:38.008131+00:00",
+  "attempts": [
+    {
+      "provider_type": "openai",
+      "model": "cx/gpt-6-luna",
+      "attempt": 1,
+      "started_at": "2026-11-12T00:23:25.283667+00:00",
+      "status": "FAIL",
+      "history_verified": false,
+      "tool_calls_observed": [],
+      "tool_statuses": [],
+      "consent_decisions": [],
+      "error_class": "HTTPStatusError",
+      "duration_seconds": 109.04
+    },
+    {
+      "provider_type": "openai",
+      "model": "cx/gpt-6-luna",
+      "attempt": 2,
+      "started_at": "2026-11-12T00:25:14.365266+00:00",
+      "status": "PASS",
+      "history_verified": true,
+      "tool_calls_observed": [
+        {
+          "tool_name": "query_execute",
+          "classification": "read_only",
+          "status": "running",
+          "expected_sql": true,
+          "tool_call_id": "call_80c50e4840db48158b0d6af539f84d5b"
+        }
+      ],
+      "tool_statuses": [
+        {
+          "tool_call_id": "call_80c50e4840db48158b0d6af539f84d5b",
+          "status": "running"
+        },
+        {
+          "tool_call_id": "call_80c50e4840db48158b0d6af539f84d5b",
+          "status": "done"
+        }
+      ],
+      "consent_decisions": [],
+      "grant_active": true,
+      "finish_reason": "stop",
+      "error_events": 0,
+      "tool_calls": 1,
+      "output_schema_valid": true,
+      "grant_revoked": true,
+      "fixture_deleted": true,
+      "duration_seconds": 31.89
+    },
+    {
+      "provider_type": "openai",
+      "model": "cx/gpt-6-luna",
+      "attempt": 3,
+      "started_at": "2026-11-12T00:25:46.255569+00:00",
+      "status": "PASS",
+      "history_verified": true,
+      "tool_calls_observed": [
+        {
+          "tool_name": "query_execute",
+          "classification": "read_only",
+          "status": "running",
+          "expected_sql": true,
+          "tool_call_id": "call_2ce03f07655c4ad3a6c78a77ce8bdd96"
+        }
+      ],
+      "tool_statuses": [
+        {
+          "tool_call_id": "call_2ce03f07655c4ad3a6c78a77ce8bdd96",
+          "status": "running"
+        },
+        {
+          "tool_call_id": "call_2ce03f07655c4ad3a6c78a77ce8bdd96",
+          "status": "done"
+        }
+      ],
+      "consent_decisions": [],
+      "grant_active": true,
+      "finish_reason": "stop",
+      "error_events": 0,
+      "tool_calls": 1,
+      "output_schema_valid": true,
+      "grant_revoked": true,
+      "fixture_deleted": true,
+      "duration_seconds": 15.9
+    },
+    {
+      "provider_type": "openai",
+      "model": "cx/gpt-6.1-sol",
+      "attempt": 1,
+      "started_at": "2026-11-12T00:26:02.157860+00:00",
+      "status": "PASS",
+      "history_verified": true,
+      "tool_calls_observed": [
+        {
+          "tool_name": "query_execute",
+          "classification": "read_only",
+          "status": "running",
+          "expected_sql": true,
+          "tool_call_id": "call_0fb74cec34cb4e5191fdceb101e6b949"
+        }
+      ],
+      "tool_statuses": [
+        {
+          "tool_call_id": "call_0fb74cec34cb4e5191fdceb101e6b949",
+          "status": "running"
+        },
+        {
+          "tool_call_id": "call_0fb74cec34cb4e5191fdceb101e6b949",
+          "status": "done"
+        }
+      ],
+      "consent_decisions": [],
+      "grant_active": true,
+      "finish_reason": "stop",
+      "error_events": 0,
+      "tool_calls": 1,
+      "output_schema_valid": true,
+      "grant_revoked": true,
+      "fixture_deleted": true,
+      "duration_seconds": 32.47
+    },
+    {
+      "provider_type": "openai",
+      "model": "cx/gpt-6.1-sol",
+      "attempt": 2,
+      "started_at": "2026-11-12T00:26:34.631591+00:00",
+      "status": "PASS",
+      "history_verified": true,
+      "tool_calls_observed": [
+        {
+          "tool_name": "query_execute",
+          "classification": "read_only",
+          "status": "running",
+          "expected_sql": true,
+          "tool_call_id": "call_3f83a0b2e4774026adde3fb6603da7f2"
+        }
+      ],
+      "tool_statuses": [
+        {
+          "tool_call_id": "call_3f83a0b2e4774026adde3fb6603da7f2",
+          "status": "running"
+        },
+        {
+          "tool_call_id": "call_3f83a0b2e4774026adde3fb6603da7f2",
+          "status": "done"
+        }
+      ],
+      "consent_decisions": [],
+      "grant_active": true,
+      "finish_reason": "stop",
+      "error_events": 0,
+      "tool_calls": 1,
+      "output_schema_valid": true,
+      "grant_revoked": true,
+      "fixture_deleted": true,
+      "duration_seconds": 82.13
+    },
+    {
+      "provider_type": "openai",
+      "model": "cx/gpt-6.1-sol",
+      "attempt": 3,
+      "started_at": "2026-11-12T00:27:56.804016+00:00",
+      "status": "FAIL",
+      "history_verified": false,
+      "tool_calls_observed": [
+        {
+          "tool_name": "query_execute",
+          "classification": "read_only",
+          "status": "running",
+          "expected_sql": true,
+          "tool_call_id": "call_722df6fa326e407781ad693a0571ff08"
+        }
+      ],
+      "tool_statuses": [
+        {
+          "tool_call_id": "call_722df6fa326e407781ad693a0571ff08",
+          "status": "running"
+        },
+        {
+          "tool_call_id": "call_722df6fa326e407781ad693a0571ff08",
+          "status": "failed"
+        }
+      ],
+      "consent_decisions": [],
+      "grant_active": true,
+      "finish_reason": "timeout",
+      "error_events": 0,
+      "tool_calls": 1,
+      "output_schema_valid": false,
+      "grant_revoked": true,
+      "fixture_deleted": true,
+      "duration_seconds": 258.97
+    }
+  ],
+  "fixture_prefix": "Synthetic read-grant provider QA ca163f435e",
+  "owned_login_logout_status": 200,
+  "finished_at": "2026-11-12T00:32:15.827885+00:00"
+}

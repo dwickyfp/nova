@@ -6,6 +6,7 @@ caller's engine view is a fixed map of catalogs, databases, and relations.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import datetime
 from unittest.mock import AsyncMock
 
@@ -27,8 +28,6 @@ from app.modules.catalog.securables import (
     catalog_id,
     column_id,
     database_id,
-    record_catalogs,
-    record_harvest,
     relation_id,
 )
 from app.modules.catalog.sync import Harvest, Relation
@@ -95,6 +94,33 @@ class MemorySecurables:
              if row.catalog_name == catalog and row.dropped_at is None],
             at,
         )
+
+    async def securables_in_catalog(self, catalog):
+        return [row.as_row() for row in await self.in_catalog(catalog)]
+
+    async def securables_of_type(self, kind):
+        return [row.as_row() for row in await self.of_type(kind)]
+
+    async def write_securables(self, catalog, rows, *, generation):
+        assert generation == 1
+        for row in rows:
+            previous = self.rows.get(row["id"])
+            self.rows[row["id"]] = Securable.from_row({
+                **row, "first_seen_at": previous.first_seen_at if previous else self.now,
+                "updated_at": self.now, "dropped_at": None,
+            })
+
+    async def mark_securables_dropped(self, catalog, ids, *, generation):
+        assert generation == 1
+        if ids is None:
+            await self.mark_catalog_dropped(catalog, self.now)
+        else:
+            await self.mark_dropped(ids, self.now)
+
+
+async def record_harvest(catalog, harvest, now, store):
+    store.now = now
+    return await securables.record_harvest(store, catalog, harvest, generation=1)
 
 
 class MemoryMetadata:
@@ -333,15 +359,40 @@ async def test_columns_are_kept_when_the_harvest_could_not_describe_the_relation
     assert store.rows[email].dropped_at == T1
 
 
-async def test_record_catalogs_drops_a_missing_catalog_and_everything_under_it():
+async def test_record_catalogs_drops_a_missing_catalog_and_everything_under_it(monkeypatch):
+    from app.modules.access_control.security_context import SecurityContext
+    from app.modules.catalog import sync
+
     store = MemorySecurables()
-    await record_catalogs(["default_catalog", "lake"], T0, store)
+    store.now = T0
+    store.list_catalogs = AsyncMock(return_value=[])
+    store.create_catalog = AsyncMock()
+    store.claim_sync = AsyncMock(return_value=1)
+    store.catalogs_with_live_objects = AsyncMock(return_value=set())
+    store.retire_catalog_objects = AsyncMock()
+    engine = AsyncMock()
+    actor = SecurityContext("catalog-sync", "PUBLIC", principal_type="SERVICE")
+
+    @asynccontextmanager
+    async def transaction(bound):
+        assert bound == actor
+        yield store
+
+    monkeypatch.setattr(sync, "catalog_transaction", transaction)
+    monkeypatch.setattr(sync, "sync_catalog", AsyncMock())
+
+    async def reconcile(names, now):
+        store.now = now
+        engine.catalogs.return_value = [{"name": name, "type": "internal"} for name in names]
+        await sync.reconcile_catalogs(actor=actor, harvester=engine)
+
+    await reconcile(["default_catalog", "lake"], T0)
     await record_harvest("lake", _harvest(databases=("web",)), T0, store)
-    await record_catalogs(["default_catalog"], T1, store)
+    await reconcile(["default_catalog"], T1)
     assert store.rows[catalog_id("lake")].dropped_at == T1
     assert store.rows[database_id("lake", "web")].dropped_at == T1
     assert store.rows[catalog_id("default_catalog")].dropped_at is None
-    await record_catalogs(["default_catalog", "lake"], T1, store)
+    await reconcile(["default_catalog", "lake"], T1)
     assert store.rows[catalog_id("lake")].dropped_at is None
 
 
@@ -353,7 +404,7 @@ def test_like_pattern_escapes_wildcards():
 
 
 def test_legacy_tags_map_to_securable_ids():
-    legacy = metadata._legacy_securable
+    legacy = metadata.legacy_securable
     assert legacy("TABLE", "sales.orders") == (relation_id("default_catalog", "sales", "orders"),
                                                "table")
     assert legacy("column", "lake.web.events.ip") == (column_id("lake", "web", "events", "ip"),
@@ -362,47 +413,24 @@ def test_legacy_tags_map_to_securable_ids():
     assert legacy("function", "sales.f") is None
 
 
-class RecordingDb:
-    def __init__(self, results):
-        self.results = results
-        self.calls: list[str] = []
+async def test_runtime_never_rewrites_legacy_tags(monkeypatch):
+    from app.common import nova_system
+    from app.core import metadata_runtime
 
-    async def execute_system(self, sql, params=None):
-        self.calls.append(sql)
-        for prefix, result in self.results.items():
-            if sql.startswith(prefix):
-                return result
-        return {"rows": []}
-
-
-async def test_an_empty_legacy_tag_table_is_replaced(monkeypatch):
-    fake = RecordingDb({"SHOW COLUMNS": {"rows": [["object_type"], ["object_name"],
-                                                  ["tag_key"]]}})
-    monkeypatch.setattr(metadata.db, "execute_system", fake.execute_system)
-    await metadata._migrate_legacy_tags()
-    assert any(sql.startswith("DROP TABLE NOVA_SYSTEM.CONFIG_OBJECT_TAGS") for sql in fake.calls)
-    assert not any("RENAME" in sql for sql in fake.calls)
+    probe = AsyncMock(return_value=False)
+    metadata_db = type("Metadata", (), {"probe": probe})()
+    monkeypatch.setattr(metadata_runtime, "metadata_db", lambda: metadata_db)
+    forbidden = AsyncMock(side_effect=AssertionError("runtime cannot rewrite source tags"))
+    monkeypatch.setattr(nova_system.db, "execute_system", forbidden)
+    await nova_system.init_nova_system()
+    probe.assert_awaited_once()
+    forbidden.assert_not_awaited()
 
 
-async def test_a_legacy_tag_table_with_rows_is_kept_and_copied(monkeypatch):
-    fake = RecordingDb({
-        "SHOW COLUMNS": {"rows": [["object_type"], ["object_name"], ["tag_key"]]},
-        "SELECT object_type": {"rows": [["TABLE", "sales.orders", "pii", "yes", T0, "bob"],
-                                        ["PIPE", "sales.p", "x", None, T0, "bob"]]},
-    })
-    monkeypatch.setattr(metadata.db, "execute_system", fake.execute_system)
-    await metadata._migrate_legacy_tags()
-    assert any("RENAME CONFIG_OBJECT_TAGS_LEGACY" in sql for sql in fake.calls)
-    inserts = [sql for sql in fake.calls if sql.startswith("INSERT INTO NOVA_SYSTEM.CONFIG_OBJECT")]
-    assert len(inserts) == 1 and inserts[0].count("(%s") == 1
-    assert not any(sql.startswith("DROP") for sql in fake.calls)
-
-
-async def test_a_migrated_tag_table_is_left_alone(monkeypatch):
-    fake = RecordingDb({"SHOW COLUMNS": {"rows": [["securable_id"], ["tag_key"]]}})
-    monkeypatch.setattr(metadata.db, "execute_system", fake.execute_system)
-    await metadata._migrate_legacy_tags()
-    assert fake.calls == ["SHOW COLUMNS FROM NOVA_SYSTEM.CONFIG_OBJECT_TAGS"]
+@pytest.mark.parametrize(("kind", "name"), [("column", "db.table"), ("database", "a.b.c"),
+                                            ("pipe", "db.pipe")])
+def test_unsupported_legacy_tags_are_not_attached_to_an_unrelated_object(kind, name):
+    assert metadata.legacy_securable(kind, name) is None
 
 
 # ── Visibility ───────────────────────────────────────────────────────────
@@ -664,17 +692,16 @@ async def test_lineage_harvest_records_edges_and_a_watermark(monkeypatch):
         async def upsert(self, edges):
             stored.update({edge["id"]: edge for edge in edges})
 
-    async def execute(sql, params=None):
-        assert "status = 'SUCCESS'" in sql
+    async def statements(since):
         return _audit_rows(
             ("sales", "INSERT INTO rollup SELECT region, count(*) FROM orders GROUP BY region"),
             ("sales", "INSERT INTO rollup SELECT * FROM orders"),
             (None, "INSERT INTO sales.t VALUES (1)"),
             ("sales", "CREATE VIEW v AS WITH x AS (SELECT * FROM lake.web.events) "
                       "SELECT * FROM x"),
-        )
+        )["rows"]
 
-    monkeypatch.setattr(lineage.db, "execute_system", execute)
+    Repo.statements = staticmethod(statements)
     from app.modules.catalog import repository
 
     monkeypatch.setattr(repository.catalog_repo, "write_sync_run",
@@ -696,8 +723,7 @@ async def test_a_failed_lineage_pass_is_recorded_and_redacted(monkeypatch):
         async def watermark(self):
             return T0
 
-    monkeypatch.setattr(lineage.db, "execute_system",
-                        AsyncMock(side_effect=RuntimeError("password='x1' broke")))
+    Repo.statements = AsyncMock(side_effect=RuntimeError("password='x1' broke"))
     from app.modules.catalog import repository
 
     monkeypatch.setattr(repository.catalog_repo, "write_sync_run", AsyncMock())
@@ -720,18 +746,22 @@ def test_relation_strings_resolve_to_securable_ids():
 async def test_reconcile_links_follows_the_active_or_newest_version(monkeypatch):
     written, deleted = [], []
 
-    async def execute(sql, params=None):
-        if "FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS" in sql:
-            return {"rows": [["v1", "default_catalog", "sales", "public", "revenue", 2]]}
-        if "CONFIG_SEMANTIC_VIEW_VERSIONS" in sql:
-            return {"rows": [["v1", 1, '{"datasets": [{"source": "hr.payroll"}]}'],
-                             ["v1", 2, '{"datasets": [{"source": "sales.orders"}]}']]}
-        if "CONFIG_ENTITIES" in sql:
-            return {"rows": [["e1", "default_catalog", "sales", "public", "customer",
-                              "lake.web.events"]]}
-        return {"rows": []}
+    owner_store = AsyncMock()
+    owner_store.view_link_sources.return_value = [{
+        "id": "v1", "catalog_name": "default_catalog", "database_name": "sales",
+        "schema_name": "public", "name": "revenue",
+        "definition": {"datasets": [{"source": "sales.orders"}]},
+    }]
+    owner_store.list_entities.return_value = [{
+        "id": "e1", "catalog_name": "default_catalog", "database_name": "sales",
+        "schema_name": "public", "name": "customer", "relation_name": "lake.web.events",
+    }]
 
-    monkeypatch.setattr(links.db, "execute_system", execute)
+    @asynccontextmanager
+    async def reader():
+        yield owner_store
+
+    monkeypatch.setattr(links, "_owner_reader", reader)
 
     class Repo:
         async def all(self):
@@ -750,7 +780,7 @@ async def test_reconcile_links_follows_the_active_or_newest_version(monkeypatch)
 
 
 async def test_refresh_owner_links_never_raises(monkeypatch):
-    monkeypatch.setattr(links.db, "execute_system", AsyncMock(side_effect=RuntimeError))
+    monkeypatch.setattr(links, "_owner_reader", lambda: (_ for _ in ()).throw(RuntimeError()))
     await links.refresh_owner_links(links.SEMANTIC_VIEW, "v1")
 
 
@@ -839,21 +869,13 @@ def test_control_characters_are_rejected_in_comments_and_tag_values():
 
 
 
-def test_bootstrap_sql_matches_the_module_schema():
-    """``docker/init-nova.sql`` creates the same tables the modules ensure."""
-    import re
-    from pathlib import Path
+def test_catalog_schema_is_owned_by_the_pg_migration():
+    from app.core.metadata_schema import load_migrations
 
-    init_sql = (Path(__file__).resolve().parents[3] / "docker" / "init-nova.sql").read_text()
-
-    def normal(text: str) -> str:
-        return re.sub(r"\s+", " ", text).strip().rstrip(";").strip()
-
-    flat = normal(init_sql)
-    for ddl in (securables.CATALOG_SECURABLES_DDL, metadata.OBJECT_TAGS_DDL,
-                metadata.ANNOTATIONS_DDL, lineage.CATALOG_LINEAGE_DDL,
-                links.CATALOG_SECURABLE_LINKS_DDL):
-        assert normal(ddl) in flat
+    statement = "\n".join(item.statement for item in load_migrations())
+    for table in ("catalog_securables", "config_object_tags", "catalog_annotations",
+                  "catalog_lineage", "catalog_securable_links"):
+        assert f"CREATE TABLE nova_meta.{table}" in statement
 
 
 async def test_semantic_views_and_entities_relink_through_the_catalog(monkeypatch):

@@ -50,7 +50,7 @@ def _response(entry: dict, document, space: Space | None = None) -> dict:
 async def create_notebook(body: NotebookCreate, user: dict = Depends(get_current_user)):
     space = await space_service.resolve(user, body.space, edit=True)
     try:
-        with acting_as(user["username"]):
+        with acting_as(user):
             entry, document = await notebook_documents.create(
                 space.namespace, parent_path=body.parent_path, name=body.name,
                 content=body.content,
@@ -74,7 +74,7 @@ async def get_notebook(entry_id: str, user: dict = Depends(get_current_user)):
 async def edit_notebook(entry_id: str, body: NotebookEdit, user: dict = Depends(get_current_user)):
     try:
         space = await space_service.for_entry(user, entry_id, edit=True)
-        with acting_as(user["username"]):
+        with acting_as(user):
             entry, document, changed = await notebook_documents.edit(
                 space.namespace, entry_id, base_revision=body.base_revision, edits=body.edits
             )

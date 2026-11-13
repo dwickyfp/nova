@@ -7,8 +7,8 @@ import hashlib
 
 from pydantic import Field
 
-from app.core.database import db
-from app.modules.agents.mission import SCOPE_SQL, scope_params, workflow_scope
+from app.modules.agents.metadata_repository import agent_metadata
+from app.modules.agents.mission import workflow_scope
 from app.modules.assistant.attachments import (
     MAX_FILES,
     MAX_TEXT_TOTAL_BYTES,
@@ -91,19 +91,21 @@ def check_participant(run: dict, user: dict) -> Scope:
 
 class ResourceDelegation:
     async def ensure_schema(self) -> None:
-        for ddl in RESOURCE_DDLS:
-            await db.execute_system(ddl)
+        """Only the migrator imports the retired collaboration resource history."""
 
     async def _metadata(self, resource_id: str, run: dict, scope: Scope) -> ResourceMetadata | None:
         root_id = run.get("root_run_id") or run["run_id"]
-        result = await db.execute_system(
-            "SELECT payload FROM NOVA_SYSTEM.CONFIG_STUDIO_RESOURCES "
-            f"WHERE resource_id=%s AND {SCOPE_SQL} AND thread_id=%s AND root_run_id=%s",
-            [resource_id, *scope_params(scope), run["thread_id"], root_id],
-        )
-        if not result["rows"]:
+        async with agent_metadata(read_only=True) as repo:
+            if (repo.actor.principal, repo.actor.active_role, repo.actor.session_id,
+                repo.actor.security_context_version) != (
+                scope.principal, scope.active_role, scope.session_id,
+                scope.security_context_version,
+            ):
+                raise ValueError("Attachment security context changed")
+            row = await repo.delegated_resource(resource_id, run["thread_id"], root_id)
+        if row is None:
             return None
-        value = result["rows"][0][0]
+        value = row["payload"]
         metadata = (
             ResourceMetadata.model_validate_json(value)
             if isinstance(value, str)
@@ -116,16 +118,13 @@ class ResourceDelegation:
     async def available(self, run: dict, user: dict) -> list[ResourceMetadata]:
         scope = check_participant(run, user)
         root_id = run.get("root_run_id") or run["run_id"]
-        grants = await db.execute_system(
-            "SELECT resource_id FROM NOVA_SYSTEM.CONFIG_STUDIO_RESOURCE_GRANTS "
-            f"WHERE participant_id=%s AND {SCOPE_SQL} AND thread_id=%s AND root_run_id=%s LIMIT 4",
-            [participant_id(run), *scope_params(scope), run["thread_id"], root_id],
-        )
-        if len(grants["rows"]) > MAX_FILES:
+        async with agent_metadata(read_only=True) as repo:
+            grants = await repo.delegated_grants(participant_id(run), run["thread_id"], root_id)
+        if len(grants) > MAX_FILES:
             raise ValueError("Participant attachment bound exceeded")
         result = []
-        for row in grants["rows"]:
-            metadata = await self._metadata(row[0], run, scope)
+        for row in grants:
+            metadata = await self._metadata(row["resource_id"], run, scope)
             if metadata is None:
                 raise ValueError("Attachment grant has no source")
             result.append(metadata)

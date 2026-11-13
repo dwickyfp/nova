@@ -209,15 +209,16 @@ three Superset roles from the *active* Nova role:
 | `NovaAuthor` | Alpha, minus database admin | Explore; create and edit charts, dashboards, datasets; SQL Lab | A role listed in Nova's BI author mapping |
 | `NovaAdmin` | Admin, minus security and database admin | Manage Superset objects across owners | `ACCOUNTADMIN` |
 
-The author mapping is Nova control-plane metadata in `NOVA_SYSTEM`
-(`CONFIG_BI_AUTHOR_ROLES`), edited by `ACCOUNTADMIN` through
+The author mapping is Nova control metadata in PostgreSQL
+(`nova_meta.config_bi_author_roles` and its revision head), edited by `ACCOUNTADMIN` through
 `PUT /api/v1/superset/author-roles`, never inside Superset. Superset builds
 datasets by reflecting tables as the principal, so the same request writes the
 managed Ranger policy `nova-managed/bi/metadata/default_catalog`: `select` on
 the `information_schema` reflection views (`tables`, `tables_config`,
 `columns`, `views`, `materialized_views`) for exactly the author roles plus
 `ACCOUNTADMIN`. The policy is written first; if Ranger refuses it, the author
-list is left unchanged. Rows in those views remain limited to objects the
+list is left unchanged. The author-set write uses revision CAS with its audit;
+a conflicting update returns 409. Reads use the current PG set. Rows in those views remain limited to objects the
 principal can already see. An unmapped or missing role
 gets `NovaViewer`; an ambiguous security context gets no Superset session.
 Dataset-level access is granted broadly to authors (`all_datasource_access` on
@@ -333,12 +334,16 @@ after the named patch passes), **Blocked** (off, with the reason).
   project and the [backup module](../backend/app/modules/backup/)'s scope.
 - **Redis:** Superset data cache, thumbnail cache, Celery broker and results,
   each on its own logical database. Runtime only, consistent with Redis's role.
-- **`NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS`:** gains a Superset object reference
-  (kind and UUID). `owner_name`, `thread_id`, `agent_id`, `title`, and the
-  read-only provenance SQL remain. `viz_spec` and `chart_spec` are legacy: no
-  code writes them, conversion clears them, and the repository drops both
-  columns once no legacy artifact remains (Phase 6). Schema changes follow the owning initialization in
-  [artifact_repository.py](../backend/app/modules/agents/artifact_repository.py).
+- **Studio artifact metadata:** the prepared PG caller port keeps ownership,
+  thread, agent, title, read-only provenance SQL and Superset object references
+  in `nova_meta.config_studio_artifacts`. Migration 0030 preserves imported
+  `viz_spec` and `chart_spec`; runtime authors cannot write these columns.
+  Conversion keeps the artifact ID and uses revision CAS to attach its BI
+  reference. Historical specs remain stored and are omitted from the converted
+  artifact response. Schema changes belong to the one-shot migrator, never
+  request handling. The active development authority is still `NOVA_SYSTEM`
+  until the all-domain cutover is verified; see the
+  [delivery status](architecture/production-refactor/DELIVERY_STATUS_AND_QA_BACKLOG.md).
 - **Report and screenshot payloads** that must persist go through Nova's
   managed storage abstraction, not a new bucket configured inside Superset.
 
@@ -649,8 +654,9 @@ Acceptance:
 - Every existing artifact is converted or listed with the exact feature that
   could not be carried (for example a level-of-detail expression or table
   calculation) and stays viewable read-only until re-saved.
-- No code path writes `viz_spec` or `chart_spec`; the legacy columns are
-  removed after conversion.
+- Runtime authors do not write `viz_spec` or `chart_spec`. The importer retains
+  historical definitions; conversion omits them from the public artifact and
+  never drops schema columns from an application process.
 - Backend, frontend, eval, and governed integration suites pass on the final
   integrated result.
 

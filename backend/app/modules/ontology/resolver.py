@@ -103,6 +103,7 @@ class ConceptResolver:
     def __init__(self, service: OntologyService = ontology_service) -> None:
         self.service = service
 
+    @access.with_caller
     async def resolve(
         self,
         text: str,

@@ -8,15 +8,13 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from app.common.news_entitlement import NEWS_ENABLED
 from app.core.database import db
+from app.core.metadata_actor import acting_as
+from app.core.redis import session_store
 from app.main import create_app
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.agents.memory import memory_repository
-from app.modules.agents.repository import agent_repository
-from app.modules.agents.rule_proposals import rule_proposal_repository
-from app.modules.agents.run_journal import run_journal
 from app.modules.assistant.repository import assistant_repository
-from app.modules.intelligence.semantic_view_schema import ensure_semantic_view_schema
 from tests.benchmark.business_intelligence.bootstrap import bootstrap
 from tests.benchmark.business_intelligence.client import StudioClient
 from tests.benchmark.business_intelligence.dataset import DATABASE, load
@@ -30,22 +28,7 @@ pytestmark = pytest.mark.engine
 
 
 @pytest.fixture
-async def studio_engine(intelligence_db, tmp_path):
-    from app.common.nova_system import init_task_orchestration
-
-    await init_task_orchestration()
-    from app.common.nova_system import ML_RUNS_DDL
-
-    await db.execute_system(ML_RUNS_DDL)
-    await ensure_semantic_view_schema()
-    for repository in (
-        agent_repository,
-        assistant_repository,
-        memory_repository,
-        rule_proposal_repository,
-        run_journal,
-    ):
-        await repository.ensure_schema()
+async def studio_engine(intelligence_db, tmp_path, enable_news):
     generate(tmp_path / "data")
     await load(db.execute_system, tmp_path / "data", replace=True)
     suffix = uuid4().hex[:12]
@@ -62,9 +45,7 @@ async def studio_engine(intelligence_db, tmp_path):
     # run's identical one with HTTP 400.
     cleanup: list = []
     try:
-        await ranger_client.put_role(
-            RangerRole(name=role, users=[RangerRoleMember(name=username)])
-        )
+        await ranger_client.put_role(RangerRole(name=role, users=[RangerRoleMember(name=username)]))
         cleanup.append(lambda: ranger_client.delete_role(role))
         policy = await ranger_client.put_policy(
             RangerPolicy.model_validate(
@@ -106,19 +87,7 @@ async def studio_engine(intelligence_db, tmp_path):
         )
         await db.execute_system(f"GRANT `{role}` TO USER '{username}'")
         await db.execute_system(f"SET DEFAULT ROLE `{role}` TO '{username}'")
-        # News is off for every account until an administrator enables it.
-        cleanup.append(
-            lambda: db.execute_system(
-                "DELETE FROM NOVA_SYSTEM.CONFIG_USER_PREFERENCES "
-                "WHERE user_name=%s AND pref_key=%s",
-                [username, NEWS_ENABLED],
-            )
-        )
-        await db.execute_system(
-            "INSERT INTO NOVA_SYSTEM.CONFIG_USER_PREFERENCES "
-            "(user_name, pref_key, pref_value, updated_at) VALUES (%s, %s, 'true', NOW())",
-            [username, NEWS_ENABLED],
-        )
+        await enable_news(username)
         app = create_app()
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://nova.test", timeout=180
@@ -126,7 +95,14 @@ async def studio_engine(intelligence_db, tmp_path):
             client = StudioClient(http)
             try:
                 await client.login(username, password, role)
-                yield client, suffix, tmp_path / "data"
+                identity = await client.request("GET", "auth/me")
+                stored = await session_store.get(identity["session_id"])
+                assert stored is not None
+                actor = SecurityContext.from_session(
+                    {**stored, "session_id": identity["session_id"]}
+                )
+                with acting_as(actor):
+                    yield client, suffix, tmp_path / "data"
             finally:
                 if http.headers.get("Authorization"):
                     with suppress(Exception):
@@ -268,7 +244,7 @@ async def test_randomized_analysis_uses_complete_assignment_cohort(studio_engine
 
 
 async def test_bootstrap_and_review_use_production_api_with_restricted_identity(
-    studio_engine, monkeypatch
+    studio_engine, monkeypatch, engine_workload,
 ):
     client, suffix, fixture_directory = studio_engine
     resources = await bootstrap(client, namespace=f"api_{suffix}")
@@ -297,7 +273,6 @@ async def test_bootstrap_and_review_use_production_api_with_restricted_identity(
         user_name=resources["principal"], agent_id=finance, limit=100
     )
     assert [row["thread_id"] for row in pending] == [taught.thread_id]
-    from app.core.redis import session_store
     from app.modules.intelligence.contracts import Scope
     from app.modules.task_orchestration.internal_handlers import InternalTaskConfiguration, run_once
 
@@ -311,12 +286,13 @@ async def test_bootstrap_and_review_use_production_api_with_restricted_identity(
     )
     queued = await client.request("POST", f"agents/{finance}/knowledge/consolidate")
     assert queued["queued"] == 1
-    result = await run_once("intelligence.consolidate", config, user)
-    assert result == {"status": "complete", "extracted": 1}
-    assert await run_once("intelligence.consolidate", config, user) == {
-        "status": "excluded",
-        "extracted": 0,
-    }
+    async with engine_workload("task"):
+        result = await run_once("intelligence.consolidate", config, user)
+        assert result == {"status": "complete", "extracted": 1}
+        assert await run_once("intelligence.consolidate", config, user) == {
+            "status": "excluded",
+            "extracted": 0,
+        }
     history = await client.request("GET", f"agents/{finance}/threads/{taught.thread_id}")
     source_message = next(
         row for row in history["messages"] if row["message_id"] == config.source_message_id

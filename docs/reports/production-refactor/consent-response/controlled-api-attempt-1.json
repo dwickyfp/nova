@@ -1,0 +1,102 @@
+{
+  "scope": "Controlled local provider through running Nova APIs; constant SQL only; no live-model acceptance claim",
+  "started_at": "2026-11-12T01:09:29.702483+00:00",
+  "fixture_prefix": "Synthetic consent response f303bb7444",
+  "cases": [
+    {
+      "mode": "CONTROLLED_WRITE",
+      "decision": "allow_once",
+      "tool_calls": [],
+      "tool_statuses": [],
+      "decisions": [],
+      "error_events": 0,
+      "status": "FAIL",
+      "finish_reason": "stop",
+      "duration_seconds": 11.807
+    },
+    {
+      "mode": "CONTROLLED_READ",
+      "decision": null,
+      "tool_calls": [
+        {
+          "tool": "query_execute",
+          "classification": "read_only",
+          "status": "running",
+          "expected_sql": true
+        }
+      ],
+      "tool_statuses": [
+        "running",
+        "done"
+      ],
+      "decisions": [],
+      "error_events": 0,
+      "status": "PASS",
+      "finish_reason": "stop",
+      "duration_seconds": 11.253
+    },
+    {
+      "mode": "CONTROLLED_WRITE",
+      "decision": "deny",
+      "tool_calls": [],
+      "tool_statuses": [],
+      "decisions": [],
+      "error_events": 0,
+      "status": "FAIL",
+      "finish_reason": "stop",
+      "duration_seconds": 7.43
+    },
+    {
+      "mode": "CONTROLLED_READ",
+      "decision": null,
+      "tool_calls": [
+        {
+          "tool": "query_execute",
+          "classification": "read_only",
+          "status": "running",
+          "expected_sql": true
+        }
+      ],
+      "tool_statuses": [
+        "running",
+        "done"
+      ],
+      "decisions": [],
+      "error_events": 0,
+      "status": "PASS",
+      "finish_reason": "stop",
+      "duration_seconds": 7.665
+    }
+  ],
+  "cleanup": [
+    {
+      "resource": "owned_grant",
+      "http_status": 204
+    },
+    {
+      "resource": "owned_thread",
+      "http_status": 204
+    },
+    {
+      "resource": "owned_grant",
+      "http_status": 204
+    },
+    {
+      "resource": "owned_thread",
+      "http_status": 204
+    },
+    {
+      "resource": "owned_provider_and_models",
+      "http_status": 204
+    },
+    {
+      "resource": "owned_login",
+      "http_status": 200
+    }
+  ],
+  "provider_requests": 18,
+  "application_tree_sha256": "9794df15dec3412e8836e9af8d1b1f7bf79da27ac69039b31e072475f30ee490",
+  "finished_at": "2026-11-12T01:10:16.513802+00:00",
+  "attempt": 1,
+  "assessment": "Two write flows did not invoke the intended tool: fixture lacked the explicit JSON-schema provider capability; read flows passed. Not write-consent acceptance."
+}

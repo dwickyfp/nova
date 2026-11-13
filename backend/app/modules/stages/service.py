@@ -1,22 +1,36 @@
-"""Stage Manager service — CRUD for stages + file operations via MinIO/S3.
+"""Stage Manager service — registrations in PostgreSQL, files via MinIO/S3.
 
-Stages are registered in NOVA_SYSTEM.CONFIG_STAGES and backed by an S3-compatible
-object store (MinIO by default). Files are listed/uploaded/downloaded/deleted
-through the boto3 S3 client.
+Stage registrations live in ``nova_meta.config_stages`` and are read and
+changed through :class:`~app.modules.stages.metadata_service.StageMetadataService`
+in the caller's actor-bound metadata transaction. Ranger authorizes a stage's
+schema before its storage connection or prefix is read; files are listed,
+uploaded, downloaded and deleted through the boto3 S3 client afterwards,
+outside the metadata transaction.
 """
 
 import asyncio
 import os
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from typing import Any, BinaryIO
-from uuid import uuid4
 
-import asyncmy.cursors
 import boto3
 from botocore.client import Config as BotoConfig
 
-from app.core.config import get_storage_connection, settings
-from app.core.database import db
+from app.core.config import require_storage_connection, settings
+from app.core.metadata_scope import acting_actor, metadata_transaction
+from app.modules.access_control.security_context import SecurityContext, SecurityContextError
 from app.modules.query.dialect.injector import resolve_storage_credentials
+
+#: Fields of a registration the API and file operations use.
+STAGE_FIELDS = (
+    "id", "name", "database_name", "schema_name", "storage_connection",
+    "base_prefix", "created_at", "created_by",
+)
+
+
+class StageRegistrationError(ValueError):
+    pass
 
 
 class StagePathError(ValueError):
@@ -28,68 +42,120 @@ class StagePathError(ValueError):
     """
 
 
+def public_stage(row: dict[str, Any]) -> dict[str, Any]:
+    """A registration without its revision, tombstone or namespace bookkeeping."""
+    return {name: row.get(name) for name in STAGE_FIELDS}
+
+
+def caller_actor(
+    username: str,
+    role: str | None,
+    *,
+    session_id: str | None = None,
+    version: int | None = None,
+) -> SecurityContext:
+    """The metadata actor of a caller known only by name and active role."""
+    from app.modules.stages.access import StageAccessDenied
+
+    if not role:
+        raise StageAccessDenied("Stage access requires an active role")
+    bound = acting_actor()
+    if bound is not None:
+        if (
+            bound.principal != username or bound.active_role != role
+            or (session_id is not None and bound.session_id != session_id)
+            or (version is not None and bound.security_context_version != version)
+        ):
+            raise StageAccessDenied("Stage access does not match the active security context")
+        return bound
+    try:
+        return SecurityContext(
+            principal=username,
+            active_role=role,
+            session_id=session_id,
+            security_context_version=version or 1,
+        )
+    except SecurityContextError as exc:
+        raise StageAccessDenied("Stage access requires a valid security context") from exc
+
+
+@asynccontextmanager
+async def stage_metadata(
+    actor: SecurityContext,
+    *,
+    read_only: bool = True,
+    access_check: Callable[..., Awaitable[Any]] | None = None,
+) -> AsyncIterator[Any]:
+    """Join only the same complete actor in this task's metadata transaction."""
+    from app.modules.stages.metadata_service import StageMetadataService
+
+    async with metadata_transaction(actor, read_only=read_only) as opened:
+        yield StageMetadataService(opened.connection, actor, access_check=access_check)
+
+
+async def discover_stages(
+    actor: SecurityContext, *, database: str | None = None, schema: str | None = None,
+    name: str | None = None,
+) -> list[dict[str, Any]]:
+    """Stage identities (id, name, database, schema) for authorization.
+
+    Returns no storage connection or prefix: the caller authorizes a scope
+    before it reads a registration's payload.
+    """
+    async with stage_metadata(actor) as stages:
+        return await stages.identities(name=name, database=database, schema=schema)
+
+
 class StageService:
     """Business logic for stage management and file operations."""
 
-    # ── Stage CRUD ──────────────────────────────────────────────
+    # ── Stage registrations ─────────────────────────────────────
 
-    async def list_stages(self) -> list[dict]:
-        """List all registered stages."""
-        async with db.system_conn() as conn, conn.cursor(asyncmy.cursors.DictCursor) as cur:
-            await cur.execute(
-                "SELECT id, name, database_name, schema_name, "
-                "storage_connection, base_prefix, created_at, created_by "
-                "FROM NOVA_SYSTEM.CONFIG_STAGES ORDER BY name"
-            )
-            rows = await cur.fetchall()
-            return list(rows)
+    async def list_stages(
+        self, actor: SecurityContext, *, database: str | None = None,
+    ) -> list[dict]:
+        """Registrations in every schema the actor may read."""
+        async with stage_metadata(actor) as stages:
+            rows = await stages.list_stages(database=database)
+        return [public_stage(row) for row in rows]
 
-    async def get_stage(self, stage_id: str) -> dict | None:
-        """Get a single stage by ID."""
-        async with db.system_conn() as conn, conn.cursor(asyncmy.cursors.DictCursor) as cur:
-            await cur.execute(
-                "SELECT id, name, database_name, schema_name, "
-                "storage_connection, base_prefix, created_at, created_by "
-                "FROM NOVA_SYSTEM.CONFIG_STAGES WHERE id = %s",
-                (stage_id,),
-            )
-            row = await cur.fetchone()
-            return dict(row) if row else None
+    async def get_stage(
+        self, stage_id: str, actor: SecurityContext, *, action: str = "read",
+    ) -> dict | None:
+        """One registration after Ranger allows ``action`` on its schema.
 
-    async def create_stage(self, data: dict, username: str) -> dict | None:
-        """INSERT a new stage into CONFIG_STAGES. Returns the created stage."""
-        stage_id = str(uuid4())
-        async with db.system_conn() as conn, conn.cursor(asyncmy.cursors.DictCursor) as cur:
-            await cur.execute(
-                "INSERT INTO NOVA_SYSTEM.CONFIG_STAGES "
-                "(id, name, database_name, schema_name, storage_connection, "
-                "base_prefix, created_at, created_by) "
-                "VALUES (%s, %s, %s, %s, %s, %s, NOW(), %s)",
-                (
-                    stage_id,
-                    data["name"],
-                    data["database_name"],
-                    data["schema_name"],
-                    data["storage_connection"],
-                    data.get("base_prefix", ""),
-                    username,
-                ),
-            )
-        return await self.get_stage(stage_id)
+        ``None`` when it does not exist; ``StageAccessDenied`` when it is not allowed.
+        """
+        async with stage_metadata(actor) as stages:
+            row = await stages.get_stage(stage_id, action=action)  # type: ignore[arg-type]
+        return public_stage(row) if row else None
 
-    async def delete_stage(self, stage_id: str) -> bool:
-        """DELETE a stage by ID. Returns True if a row was deleted."""
-        async with db.system_conn() as conn, conn.cursor() as cur:
-            await cur.execute(
-                "DELETE FROM NOVA_SYSTEM.CONFIG_STAGES WHERE id = %s",
-                (stage_id,),
-            )
-            return cur.rowcount > 0
+    async def create_stage(self, data: dict, actor: SecurityContext) -> dict:
+        """Register a stage; the success audit commits with the registration."""
+        from app.modules.stages.schemas import StageCreate
+
+        body = StageCreate.model_validate(data)
+        async with stage_metadata(actor, read_only=False) as stages:
+            return public_stage(await stages.create_stage(body))
+
+    async def delete_stage(self, stage_id: str, actor: SecurityContext) -> bool:
+        """Tombstone a registration. ``False`` when it does not exist.
+
+        The revision read here is compared again by the update, so of two
+        concurrent deletions one succeeds and the other reports a conflict.
+        Files under the stage's prefix are not deleted.
+        """
+        async with stage_metadata(actor, read_only=False) as stages:
+            row = await stages.get_stage(stage_id, action="delete")
+            if row is None:
+                return False
+            await stages.delete_stage(stage_id, expected_revision=row["metadata_revision"])
+        return True
 
     # ── S3 / MinIO client ──────────────────────────────────────
 
     @staticmethod
-    def _s3_client(storage_connection: str | None = None):
+    def _s3_client(storage_connection: str):
         """Create a boto3 S3 client pointed at the stage's storage connection.
 
         Credentials, endpoint and bucket all come from the named connection in
@@ -103,7 +169,7 @@ class StageService:
         principal (NOVA-67). A resolution failure raises rather than falling
         back.
         """
-        conn = get_storage_connection(storage_connection)
+        conn = require_storage_connection(storage_connection)
         access_key, secret_key = resolve_storage_credentials(storage_connection)
         return boto3.client(
             "s3",
@@ -124,8 +190,8 @@ class StageService:
         browser disagree with ``@stage`` queries for any non-default stage
         (NOVA-67).
         """
-        connection = stage.get("storage_connection") or None
-        conn = get_storage_connection(connection)
+        connection = stage["storage_connection"]
+        conn = require_storage_connection(connection)
         return StageService._s3_client(connection), (conn.bucket or settings.S3_BUCKET)
 
     @staticmethod
@@ -197,11 +263,11 @@ class StageService:
 
     # ── File operations ─────────────────────────────────────────
 
-    async def list_files(self, stage_id: str, prefix: str = "") -> list[dict]:
+    # File operations take a registration the caller has already authorized
+    # for the action through ``get_stage``.
+
+    async def list_files(self, stage: dict, prefix: str = "") -> list[dict]:
         """List files under the stage's S3 path (non-recursive, delimited '/')."""
-        stage = await self.get_stage(stage_id)
-        if not stage:
-            raise ValueError(f"Stage '{stage_id}' not found")
 
         # Trailing slash is required for the delimiter to work correctly.
         base_prefix = self._resolve_prefix(stage)
@@ -245,23 +311,15 @@ class StageService:
 
         return await asyncio.to_thread(scan)
 
-    async def upload_file(self, stage_id: str, filename: str, content: bytes) -> dict:
+    async def upload_file(self, stage: dict, filename: str, content: bytes) -> dict:
         """Upload a file to the stage's S3 path."""
-        stage = await self.get_stage(stage_id)
-        if not stage:
-            raise ValueError(f"Stage '{stage_id}' not found")
-
         s3_key = self._build_key(stage, filename)
         s3, bucket = self._s3_client_for_stage(stage)
         await asyncio.to_thread(s3.put_object, Bucket=bucket, Key=s3_key, Body=content)
 
         return {"filename": filename, "size": len(content)}
 
-    async def upload_stream(self, stage_id: str, filename: str, stream: BinaryIO) -> dict:
-        stage = await self.get_stage(stage_id)
-        if not stage:
-            raise ValueError(f"Stage '{stage_id}' not found")
-
+    async def upload_stream(self, stage: dict, filename: str, stream: BinaryIO) -> dict:
         s3_key = self._build_key(stage, filename)
         s3, bucket = self._s3_client_for_stage(stage)
 
@@ -276,22 +334,14 @@ class StageService:
         size = await asyncio.to_thread(upload)
         return {"filename": filename, "size": size}
 
-    async def open_file(self, stage_id: str, filename: str) -> Any:
-        stage = await self.get_stage(stage_id)
-        if not stage:
-            raise ValueError(f"Stage '{stage_id}' not found")
-
+    async def open_file(self, stage: dict, filename: str) -> Any:
         s3_key = self._build_key(stage, filename)
         s3, bucket = self._s3_client_for_stage(stage)
         response = await asyncio.to_thread(s3.get_object, Bucket=bucket, Key=s3_key)
         return response["Body"]
 
-    async def download_file(self, stage_id: str, filename: str) -> bytes:
+    async def download_file(self, stage: dict, filename: str) -> bytes:
         """Download a file from the stage's S3 path. Returns raw bytes."""
-        stage = await self.get_stage(stage_id)
-        if not stage:
-            raise ValueError(f"Stage '{stage_id}' not found")
-
         s3_key = self._build_key(stage, filename)
         s3, bucket = self._s3_client_for_stage(stage)
         response = await asyncio.to_thread(s3.get_object, Bucket=bucket, Key=s3_key)
@@ -301,12 +351,8 @@ class StageService:
         finally:
             body.close()
 
-    async def delete_file(self, stage_id: str, filename: str) -> bool:
+    async def delete_file(self, stage: dict, filename: str) -> bool:
         """Delete a file from the stage's S3 path."""
-        stage = await self.get_stage(stage_id)
-        if not stage:
-            raise ValueError(f"Stage '{stage_id}' not found")
-
         s3_key = self._build_key(stage, filename)
         s3, bucket = self._s3_client_for_stage(stage)
         await asyncio.to_thread(s3.delete_object, Bucket=bucket, Key=s3_key)

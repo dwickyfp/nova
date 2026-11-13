@@ -1,7 +1,6 @@
 """Quality cases, promotion, persisted monitoring, and concurrent configuration boundaries."""
 
 import asyncio
-import json
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from types import SimpleNamespace
@@ -11,6 +10,9 @@ import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
+from app.core.metadata_actor import acting_as, bound_actor
+from app.core.metadata_db import MetadataConflict, MetadataPermissionDenied
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.agents import quality, quality_monitoring, quality_router, router, service
 from app.modules.agents.quality_scoring import (
     Assertion,
@@ -36,50 +38,54 @@ def metadata(monkeypatch):
         async with locks.setdefault(key, asyncio.Lock()):
             yield SimpleNamespace(renew=AsyncMock(return_value=True))
 
-    async def execute(sql, params):
-        kind = next((kind for kind, table in quality.QUALITY_TABLES.items() if table in sql), None)
-        if "CONFIG_ASSISTANT_MESSAGES" in sql:
-            return {"rows": deepcopy(trace_rows)}
-        if sql.startswith("INSERT"):
-            record = json.loads(params[-1])
-            rows.setdefault((kind, record["id"]), []).append(record)
-            return {"rows": []}
-        if sql.startswith("SELECT payload,revision"):
-            candidates = rows.get((kind, params[0]), [])
-            if len(params) == 4:
-                candidates = [
-                    record
-                    for record in candidates
-                    if record["scope"]
-                    == {
-                        "principal": params[1],
-                        "active_role": params[2],
-                        "security_context_version": params[3],
-                    }
-                ]
-            return {
-                "rows": [
-                    [deepcopy(record), record["revision"]] for record in reversed(candidates[-2:])
-                ]
-            }
-        candidates = [
-            versions[-1]
-            for (stored_kind, _), versions in rows.items()
-            if stored_kind == kind
-            and versions[-1]["agent_id"] == params[0]
-            and versions[-1]["scope"]
-            == {
-                "principal": params[1],
-                "active_role": params[2],
-                "security_context_version": params[3],
-            }
-            and (len(params) == 4 or versions[-1]["id"] == params[4])
-        ]
-        return {"rows": [[deepcopy(record), 1] for record in candidates]}
+    execute = AsyncMock()
 
+    class Store:
+        @property
+        def actor(self):
+            return bound_actor() or SecurityContext.from_session(USER)
+
+        async def current_quality_records(self, kind, agent_id, record_id=None):
+            await execute("read", kind, agent_id, record_id)
+            scope = {"principal": self.actor.principal, "active_role": self.actor.active_role,
+                     "security_context_version": self.actor.security_context_version}
+            result = []
+            for (stored_kind, identifier), versions in rows.items():
+                if stored_kind != kind or (record_id is not None and identifier != record_id):
+                    continue
+                candidates = [record for record in versions if record["scope"] == scope
+                              and (agent_id is None or record["agent_id"] == agent_id)]
+                if candidates:
+                    record = max(candidates, key=lambda row: row["revision"])
+                    if sum(row["revision"] == record["revision"] for row in candidates) != 1:
+                        raise MetadataConflict()
+                    result.append({"id": identifier, "revision": record["revision"],
+                                   "payload": deepcopy(record), "branches": 1})
+            return result
+
+        async def save_quality_record(
+            self, kind, identifier, agent_id, record, *, expected_revision
+        ):
+            await execute("write", kind, identifier)
+            versions = rows.setdefault((kind, identifier), [])
+            if versions and versions[-1]["revision"] != expected_revision:
+                raise MetadataConflict()
+            versions.append(deepcopy(record))
+            return record["revision"]
+
+    @asynccontextmanager
+    async def scope(*args, **kwargs):
+        yield Store()
+
+    async def traces(agent_id, user, *, limit):
+        await execute("traces", agent_id)
+        return [{"message_id": row[0], "steps": deepcopy(row[1])} for row in trace_rows[:limit]]
+
+    trace_read = AsyncMock(side_effect=traces)
+    monkeypatch.setattr(quality, "agent_metadata", scope)
     monkeypatch.setattr(quality, "metadata_lock", lock)
     monkeypatch.setattr(quality_monitoring, "metadata_lock", lock)
-    monkeypatch.setattr(quality.db, "execute_system", AsyncMock(side_effect=execute))
+    monkeypatch.setattr(quality_monitoring.assistant_repository, "quality_traces", trace_read)
     monkeypatch.setattr(schedules, "require_execution_binding", AsyncMock())
     monkeypatch.setattr(
         router,
@@ -92,7 +98,7 @@ def metadata(monkeypatch):
             }
         ),
     )
-    return SimpleNamespace(rows=rows, traces=trace_rows, execute=quality.db.execute_system)
+    return SimpleNamespace(rows=rows, traces=trace_rows, execute=execute, trace_read=trace_read)
 
 
 def case(identifier="case", revision=1, **overrides):
@@ -299,10 +305,11 @@ async def test_record_cas_prevents_scope_and_revision_overwrite(metadata):
     original = await quality.save_record("cases", case(), USER)
     with pytest.raises(HTTPException, match="changed"):
         await quality.save_record("cases", original, USER)
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(MetadataPermissionDenied):
         await quality.save_record("cases", original, {**USER, "active_role": "ADMIN"}, 1)
-    assert exc.value.status_code == 404
-    assert await quality.records("cases", "agent", {**USER, "security_context_version": 3}) == []
+    changed_user = {**USER, "security_context_version": 3}
+    with acting_as(SecurityContext.from_session(changed_user)):
+        assert await quality.records("cases", "agent", changed_user) == []
 
 
 @pytest.mark.asyncio
@@ -411,10 +418,7 @@ async def test_production_scoring_never_runs_tools_and_is_scoped_bounded_and_ide
     assert run["manifest_id"] == "historical-manifest"
     assert run["version_id"] == "historical-version"
     assert run["results"][0]["trace"]["facts"]["execution"]["finish_reason"] == "denied"
-    trace_read = next(
-        call for call in metadata.execute.await_args_list if "SELECT message_id" in call.args[0]
-    )
-    assert trace_read.args[1] == ["agent", "alice", "ANALYST", 2, 1]
+    metadata.trace_read.assert_awaited_with("agent", USER, limit=1)
     proposal = (await quality.records("proposals", "agent", USER))[0]
     assert proposal["hypothesis"] is True and proposal["observations"][0]["status"] == "fail"
 

@@ -92,29 +92,27 @@ objects by id, so restore the two together.
 
 ### Recover Deleted Objects
 
+Verified against the pinned StarRocks 4.1.4 on 2026-11-12:
+
 ```sql
--- Recover dropped table (within retention period)
+-- Recover a dropped table (within the retention period)
 RECOVER TABLE DATALAKE.orders;
 
--- Recover dropped database
+-- Recover a dropped database
 RECOVER DATABASE DATALAKE;
-
--- Recover dropped partition
-RECOVER TABLE DATALAKE.orders PARTITION p202601;
-
--- Recover with rename (if name conflicts)
-RECOVER TABLE DATALAKE.orders AS orders_restored;
 ```
 
-### Recycle Bin Management
+`RECOVER ... AS <new_name>` and `SHOW CATALOG RECYCLE BIN` are another engine's
+syntax; the pinned grammar and engine reject both. The Nova API refuses a
+rename-on-recover request with 400; recover first, then rename.
 
-```sql
--- Show recoverable objects
-SHOW CATALOG RECYCLE BIN;
+### Listing dropped objects
 
--- Configure retention
-ADMIN SET FRONTEND CONFIG ("catalog_trash_expire_second" = "86400");  -- 24 hours
-```
+StarRocks 4.1.4 exposes the recycle bin as
+`information_schema.recyclebin_catalogs`, but the engine answers it only for
+its `root` account ("operation can be executed only by root user"). Nova never
+runs a caller's request as root, so `GET /backup/recycle-bin` returns 501 with
+an explanation and no engine call. Users recover by exact name.
 
 ---
 

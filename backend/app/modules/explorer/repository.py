@@ -257,29 +257,6 @@ class ExplorerRepository:
             for row in result["rows"]
         ]
 
-    async def list_stages(self, database: str) -> list[dict]:
-        """Nova stages from CONFIG_STAGES table."""
-        sql = (
-            "SELECT name, schema_name, storage_connection, base_prefix, created_at "
-            "FROM NOVA_SYSTEM.CONFIG_STAGES "
-            "WHERE database_name = %s"
-        )
-        try:
-            result = await db.execute_system(sql, [database])
-            return [
-                {
-                    "name": row[0],
-                    "schema_name": row[1],
-                    "storage_connection": row[2],
-                    "base_prefix": row[3],
-                    "created_at": row[4],
-                }
-                for row in result["rows"]
-            ]
-        except Exception:
-            log.debug("No stages found for database %s", database)
-            return []
-
     async def list_tasks(self, database: str) -> list[dict]:
         """Nova ``CREATE TASK`` definitions from CONFIG_TASKS for a database.
 
@@ -287,26 +264,15 @@ class ExplorerRepository:
         the task body (which can name a stage whose credentials Nova injects at
         execution time).
         """
-        sql = (
-            "SELECT name, schedule_kind, schedule_expr, timezone, overlap_policy "
-            "FROM NOVA_SYSTEM.CONFIG_TASKS "
-            "WHERE database_name = %s"
-        )
-        try:
-            result = await db.execute_system(sql, [database])
-            return [
-                {
-                    "name": row[0],
-                    "schedule_kind": row[1],
-                    "schedule_expr": row[2],
-                    "timezone": row[3],
-                    "overlap_policy": row[4],
-                }
-                for row in result["rows"]
-            ]
-        except Exception:
-            log.debug("No tasks found for database %s", database)
-            return []
+        from app.core.metadata_actor import current_actor
+        from app.modules.task_orchestration.repository import TaskOrchestrationRepository
+
+        tasks = await TaskOrchestrationRepository(current_actor()).list_tasks()
+        columns = ("name", "schedule_kind", "schedule_expr", "timezone", "overlap_policy")
+        return [
+            {column: task.get(column) for column in columns}
+            for task in tasks if task["database_name"] == database
+        ]
 
     # ── Detail views ───────────────────────────────────────────
 

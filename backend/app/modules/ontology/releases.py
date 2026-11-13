@@ -144,11 +144,12 @@ class ReleaseService:
             manifest_hash=digest, status="BLOCKED" if issues else "PREPARED",
             issues=issues[:200], warnings=warnings[:200], note=body.note,
         )
-        saved = await self.repository.save("releases", release)
-        await access.audit(
-            "PREPARE", "ONTOLOGY_RELEASE", saved.id, user,
-            status="SUCCESS" if not issues else "BLOCKED",
-        )
+        async with access.governed(user):
+            saved = await self.repository.save("releases", release)
+            await access.audit(
+                "PREPARE", "ONTOLOGY_RELEASE", saved.id, user,
+                status="SUCCESS" if not issues else "BLOCKED",
+            )
         return saved
 
     async def _still_valid(self, release: Release) -> builtins.list[str]:
@@ -189,9 +190,11 @@ class ReleaseService:
         problems = await self._still_valid(release)
         if problems:
             raise HTTPException(status_code=409, detail={"issues": problems[:50]})
-        await self._move(alias, release.id, f"Publish {release.id}", actor)
-        release = await self._mark_published(release, actor)
-        await access.audit("PUBLISH", "ONTOLOGY_RELEASE", release.id, user)
+        # The alias move, the published mark and the audit commit together.
+        async with access.governed(user):
+            await self._move(alias, release.id, f"Publish {release.id}", actor)
+            release = await self._mark_published(release, actor)
+            await access.audit("PUBLISH", "ONTOLOGY_RELEASE", release.id, user)
         return release
 
     async def rollback(self, release_id: str, body: AliasMove, user: dict) -> Alias:
@@ -203,8 +206,9 @@ class ReleaseService:
             raise HTTPException(status_code=409, detail="Only a published release can be restored")
         if alias is not None and alias.release_id == release.id:
             return alias
-        moved = await self._move(alias, release.id, body.reason, actor)
-        await access.audit("ROLLBACK", "ONTOLOGY_RELEASE", release.id, user)
+        async with access.governed(user):
+            moved = await self._move(alias, release.id, body.reason, actor)
+            await access.audit("ROLLBACK", "ONTOLOGY_RELEASE", release.id, user)
         return moved
 
     async def _move(self, alias: Alias | None, release_id: str, reason: str, actor: Actor) -> Alias:

@@ -5,7 +5,7 @@ description = "Enterprise Intelligence OS for governed data, AI agents, decision
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi>=0.115.0",
+    "fastapi>=0.137.2",
     "uvicorn[standard]>=0.34.0",
     "asyncmy>=0.2.11",
     "sqlalchemy[asyncio]>=2.0.36",
@@ -37,6 +37,7 @@ dependencies = [
     "tavily-python>=0.7",
     "opensandbox==1.2.0",
     "opensandbox-code-interpreter==1.2.0",
+    "psycopg-pool>=3.2,<4",
 ]
 
 [dependency-groups]
@@ -50,10 +51,10 @@ dev = [
     "boto3-stubs[s3,secretsmanager]>=1.43.113",
     "pandas-stubs>=3.0.5.260914",
     "scipy-stubs==1.15.3.*",
-    "fakeredis[lua]>=2.32",
     { include-group = "test" },
 ]
 test = [
+    "fakeredis[lua]>=2.32",
     "pytest>=8.3.0",
     "pytest-asyncio>=0.25.0",
     "pytest-cov>=6.0.0",
@@ -74,6 +75,7 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "--strict-markers"
 markers = [
+    "metadata_pg: requires an explicitly disposable PostgreSQL 17 database with verified TLS",
     "engine: requires the real StarRocks/Redis/MinIO stack from docker-compose.test.yml",
     "functional_sql: exhaustive SQL matrix against explicitly configured Nova proxy and API",
     "slow: excluded from the fast local loop",

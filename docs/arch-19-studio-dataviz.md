@@ -91,7 +91,7 @@ creation → strict chart plan → chart data API validation → chart reuse or
 creation → **additive** dashboard layout merge and chart membership union →
 read-back verification → artifact link and audit.
 
-Each step is recorded in `NOVA_SYSTEM.CONFIG_DATAVIZ_PUBLICATIONS` (operation
+Each step is recorded in `nova_meta.config_dataviz_publications` (operation
 id, idempotency key, request fingerprint, status, created object ids, revision
 before/after, concept ids). Redis holds only a short per-dashboard lock. A
 failure compensates exactly the objects this operation created and no longer

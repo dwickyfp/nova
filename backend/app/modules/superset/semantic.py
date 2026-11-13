@@ -33,7 +33,8 @@ from typing import Any
 
 from app.common.audit import write_audit_log
 from app.core.config import settings
-from app.core.database import db
+from app.core.metadata_db import MetadataPermissionDenied
+from app.core.metadata_scope import acting_as, actor_for
 from app.modules.agents.semantic.compiler import (
     quote_semantic_identifier,
     quote_semantic_source,
@@ -47,27 +48,12 @@ from app.modules.agents.semantic.ir import (
 )
 
 from .client import BiError, SupersetClient
+from .metadata_repository import superset_metadata
 
 logger = logging.getLogger(__name__)
 
 SYNC_HEADER = "X-Nova-Semantic-Sync"
 MARKER = "nova_semantic_view"
-MAPPING_TABLE = "NOVA_SYSTEM.CONFIG_SEMANTIC_BI_DATASETS"
-MAPPING_DDL = f"""
-CREATE TABLE IF NOT EXISTS {MAPPING_TABLE} (
-    view_id VARCHAR(64) NOT NULL,
-    dataset_name VARCHAR(128) NOT NULL,
-    bi_dataset_id BIGINT,
-    owner_name VARCHAR(128) NOT NULL,
-    version INT,
-    status VARCHAR(16) NOT NULL,
-    message VARCHAR(1024),
-    synced_at DATETIME NOT NULL
-) PRIMARY KEY(view_id, dataset_name)
-DISTRIBUTED BY HASH(view_id, dataset_name) BUCKETS 1
-PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
-"""
-
 _QUALIFIED = re.compile(r"`([^`]+)`\.`([^`]+)`")
 _JOINABLE = {"many_to_one", "one_to_one"}
 
@@ -243,54 +229,42 @@ def _metric_sql(
 
 
 async def ensure_schema() -> None:
-    await db.execute_system(MAPPING_DDL)
+    from app.core.metadata_runtime import metadata_db
+
+    await metadata_db().probe()
 
 
 async def synced_datasets(view_id: str) -> list[dict[str, Any]]:
-    result = await db.execute_system(
-        f"SELECT dataset_name, bi_dataset_id, version, status, message, synced_at "
-        f"FROM {MAPPING_TABLE} WHERE view_id = %s ORDER BY dataset_name",
-        [view_id],
-    )
+    async with superset_metadata(read_only=True) as repository:
+        rows = await repository.synced_datasets(view_id)
     return [
         {
-            "dataset": row[0],
-            "bi_dataset_id": int(row[1]) if row[1] else None,
-            "version": int(row[2]) if row[2] is not None else None,
-            "status": row[3],
-            "message": row[4],
-            "synced_at": row[5],
-            # Explore on the dataset: where BI authors chart its measures.
+            "dataset": row["dataset_name"],
+            "bi_dataset_id": row["bi_dataset_id"],
+            "version": row["version"],
+            "status": row["status"],
+            "message": row["message"],
+            "synced_at": row["synced_at"],
             "bi_path": (
-                f"/bi/explore/?datasource_type=table&datasource_id={int(row[1])}"
-                if row[1]
+                f"/bi/explore/?datasource_type=table&datasource_id={int(row['bi_dataset_id'])}"
+                if row["bi_dataset_id"]
                 else None
             ),
         }
-        for row in result["rows"]
+        for row in rows
     ]
 
 
 async def _record(view_id: str, owner: str, name: str, **values: Any) -> None:
-    await db.execute_system(
-        f"INSERT INTO {MAPPING_TABLE} (view_id, dataset_name, bi_dataset_id, owner_name, "
-        "version, status, message, synced_at) VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())",
-        [
-            view_id,
-            name,
-            values.get("bi_dataset_id"),
-            owner,
-            values.get("version"),
-            values["status"],
-            (values.get("message") or "")[:1024] or None,
-        ],
-    )
+    async with superset_metadata() as repository:
+        if owner != repository.actor.principal:
+            raise MetadataPermissionDenied()
+        await repository.record_semantic_dataset(view_id, name, **values)
 
 
 async def _forget(view_id: str, name: str) -> None:
-    await db.execute_system(
-        f"DELETE FROM {MAPPING_TABLE} WHERE view_id = %s AND dataset_name = %s", [view_id, name]
-    )
+    async with superset_metadata() as repository:
+        await repository.forget_semantic_dataset(view_id, name)
 
 
 def _sync_headers() -> dict[str, str]:
@@ -352,46 +326,48 @@ async def sync_semantic_view(
 
     ``model`` is the active version's model, or ``None`` when the view has no
     datasets in BI (private, deprecated or dropped). Runs as ``user``, the
-    view's owner. Never raises: each dataset's outcome is recorded and returned.
+    authorized owner or steward. Each BI outcome is recorded and returned.
     """
-    view_id, owner = view["id"], view["owner_name"]
-    previous = {item["dataset"]: item for item in await synced_datasets(view_id)}
-    plans = dataset_plans(model, view["name"]) if model is not None else []
-    wanted = {plan.fact: plan for plan in plans}
-    if not plans and not previous:
-        return []
-    try:
-        async with SupersetClient.for_user(user, author=bool(plans)) as bi:
-            for name, item in previous.items():
-                if name not in wanted and item["bi_dataset_id"]:
-                    await _delete_dataset(bi, item["bi_dataset_id"])
-                if name not in wanted:
-                    await _forget(view_id, name)
+    async with acting_as(actor_for(user)):
+        view_id, owner = view["id"], user["username"]
+        previous = {item["dataset"]: item for item in await synced_datasets(view_id)}
+        plans = dataset_plans(model, view["name"]) if model is not None else []
+        wanted = {plan.fact: plan for plan in plans}
+        if not plans and not previous:
+            return []
+        try:
+            async with SupersetClient.for_user(user, author=bool(plans)) as bi:
+                for name, item in previous.items():
+                    if name not in wanted and item["bi_dataset_id"]:
+                        await _delete_dataset(bi, item["bi_dataset_id"])
+                    if name not in wanted:
+                        await _forget(view_id, name)
+                for plan in plans:
+                    await _sync_one(bi, view, plan, previous.get(plan.fact), publisher=owner)
+        except BiError as exc:
+            logger.info("Semantic View %s not synced to BI: %s", view["name"], exc.message)
             for plan in plans:
-                await _sync_one(bi, view, plan, previous.get(plan.fact))
-    except BiError as exc:
-        logger.info("Semantic View %s not synced to BI: %s", view["name"], exc.message)
-        for plan in plans:
-            await _record(
-                view_id, owner, plan.fact, version=view.get("active_version"),
-                bi_dataset_id=(previous.get(plan.fact) or {}).get("bi_dataset_id"),
-                status="FAILED", message=exc.message,
-            )  # fmt: skip
-    await write_audit_log(
-        event_type="bi_semantic",
-        user_name=user["username"],
-        action="SYNC_SEMANTIC_DATASETS",
-        object_type="SEMANTIC_VIEW",
-        object_name=view["name"],
-        status="SUCCESS",
-        session_id=user.get("session_id"),
-        active_role=user.get("active_role"),
-    )
-    return await synced_datasets(view_id)
+                await _record(
+                    view_id, owner, plan.fact, version=view.get("active_version"),
+                    bi_dataset_id=(previous.get(plan.fact) or {}).get("bi_dataset_id"),
+                    status="FAILED", message=exc.message,
+                )  # fmt: skip
+        await write_audit_log(
+            event_type="bi_semantic",
+            user_name=user["username"],
+            action="SYNC_SEMANTIC_DATASETS",
+            object_type="SEMANTIC_VIEW",
+            object_name=view["name"],
+            status="SUCCESS",
+            session_id=user.get("session_id"),
+            active_role=user.get("active_role"),
+        )
+        return await synced_datasets(view_id)
 
 
 async def _sync_one(
-    bi: SupersetClient, view: dict[str, Any], plan: DatasetPlan, previous: dict | None
+    bi: SupersetClient, view: dict[str, Any], plan: DatasetPlan, previous: dict | None,
+    *, publisher: str,
 ) -> None:
     marker = {
         "id": view["id"],
@@ -417,13 +393,13 @@ async def _sync_one(
         if exc.status in (401, 403):
             raise
         await _record(
-            view["id"], view["owner_name"], plan.fact, version=view.get("active_version"),
+            view["id"], publisher, plan.fact, version=view.get("active_version"),
             bi_dataset_id=dataset_id, status="FAILED", message=exc.message,
         )  # fmt: skip
         return
     message = "; ".join(plan.left_out) or None
     await _record(
-        view["id"], view["owner_name"], plan.fact, version=view.get("active_version"),
+        view["id"], publisher, plan.fact, version=view.get("active_version"),
         bi_dataset_id=dataset_id, status="SYNCED",
         message=f"Left out: {message}" if message else None,
     )  # fmt: skip

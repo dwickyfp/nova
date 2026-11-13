@@ -1,0 +1,3 @@
+# Import manifests bind these contracts by byte digest, including CSV CRLF.
+backend/metadata_import/contract.json -text
+backend/metadata_import/timestamp_provenance.csv -text whitespace=cr-at-eol

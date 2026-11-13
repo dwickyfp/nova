@@ -15,7 +15,8 @@ a masked hint of a key, never the key itself.
 
 ## Before you start
 
-- You need an administrator role, such as `ACCOUNTADMIN`.
+- Your active role must be an administrator role, such as `ACCOUNTADMIN`.
+  Having that role assigned is not enough while another role is active.
 - Have the provider's endpoint address and an API key ready.
 
 ## Open the page
@@ -74,6 +75,9 @@ AI SQL functions such as `AI_COMPLETE`, `AI_SENTIMENT`, `AI_CLASSIFY`,
 to know which model to call. A **function alias** maps a function type to a
 provider and model.
 
+Creating, changing or deleting an alias requires an active administrator role.
+The same requirement applies when registering the AI functions again.
+
 1. Click **Add Function Alias**.
 2. Choose the function **Type** and type an **Alias Name**, for example
    `default_complete`.
@@ -84,10 +88,15 @@ provider and model.
    when no alias is named.
 6. Click **Create Alias**.
 
-**UDF Registration** shows whether each AI function is registered in the
-engine (**Registered** or **Failed**).
+Saving an alias queues its SQL function update. The update may take a moment
+to appear. **UDF Registration** shows whether each AI function is present
+(**Registered** or **Failed**). Test the function after changing its configuration;
+the presence of a function alone does not confirm that the latest update succeeded.
 
 ## Limits
+
+- Chat and background AI work use active providers. A saved key is used only
+  when Nova calls that provider; the provider list does not reveal it.
 
 - Changing the default model or a provider affects every user and agent that
   relies on it. Test a new provider with **Test connection** first.

@@ -1430,14 +1430,16 @@ class FeatureAdapters:
         file_id: str | None,
         schema: str | None,
         role: str | None,
+        security_context_version: int = 1,
         parsed_frontend=None,
         validated_frontend=None,
     ) -> QueryResult:
         """Record the first-login password-change flag for a user.
 
         The statement is Nova metadata: StarRocks has no such attribute, so it is
-        parsed here and written to ``NOVA_SYSTEM.CONFIG_USER_PREFERENCES``; the
-        engine never sees it. Only the flag is stored — no password.
+        parsed here and written to the preference metadata as the caller's actor
+        (PostgreSQL also requires the active administration role); the engine
+        never sees it. Only the flag is stored — no password.
         """
         start = time.monotonic()
         try:
@@ -1454,7 +1456,15 @@ class FeatureAdapters:
                 raise ForbiddenSQLError("The root account is protected.")
             if not await user_service.user_exists(parsed.username):
                 raise ValueError("The target user does not exist.")
-            await self._set_flag(parsed.username, required=parsed.required)
+            from app.modules.access_control.security_context import SecurityContext
+
+            actor = SecurityContext(
+                principal=username,
+                active_role=role or "",
+                session_id=session_id,
+                security_context_version=security_context_version or 1,
+            )
+            await self._set_flag(parsed.username, required=parsed.required, actor=actor)
         except Exception as exc:
             elapsed_ms = round((time.monotonic() - start) * 1000, 2)
             await self._audit(

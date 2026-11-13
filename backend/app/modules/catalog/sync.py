@@ -13,7 +13,14 @@ the caller's own session before showing anything the store describes.
 * :func:`sync_catalog` refreshes one catalog: objects seen now are upserted,
   objects no longer seen get ``dropped_at``, and columns are rewritten only
   when an object's column fingerprint changed. Every run is recorded in
-  ``CATALOG_SYNC_RUNS``; an error message is redacted before it is stored.
+  ``nova_meta.catalog_sync_runs``; an error message is redacted before it is
+  stored.
+* **Fenced.** A sync first claims its catalog (``claim_sync`` advances the
+  catalog's sync generation) and records its run under that generation; the
+  inventory, securables, run outcome and catalog status are then written in
+  one transaction naming the generation. A later claim makes every write of
+  this harvest stale, so an older harvest never overwrites a newer one. The
+  engine is read between the two transactions, never inside one.
 * A foreign catalog's relations are classified by its source
   (:func:`classify_from_source`): the engine reports every JDBC relation as a
   table, so the source's own metadata says which are views and materialized
@@ -36,10 +43,13 @@ from zoneinfo import ZoneInfo
 from app.common.identifiers import check_identifier
 from app.common.sql_guard import CredentialsRedactionError, redact_sql_credentials
 from app.core.database import configured_timezone, db
+from app.core.metadata_db import MetadataConflict
+from app.modules.access_control.security_context import SecurityContext
 
 from . import securables
 from .connectors import INTERNAL_CATALOG
-from .repository import CatalogRepository, catalog_repo, row_id
+from .metadata_repository import CatalogMetadataRepository, catalog_transaction
+from .repository import row_id
 
 log = logging.getLogger(__name__)
 
@@ -53,16 +63,33 @@ _ERROR_LIMIT = 2000
 
 Execute = Callable[..., Awaitable[dict]]
 #: Sets each relation's kind from the catalog's source; see :func:`classify_from_source`.
-Classifier = Callable[[dict | None, "Harvest", CatalogRepository], Awaitable[None]]
+Classifier = Callable[[dict | None, "Harvest", SecurityContext], Awaitable[None]]
+
+#: The run error of a harvest a newer claim made stale.
+SUPERSEDED = "A newer sync of this catalog superseded this one"
 
 
 def nova_now() -> datetime:
-    """Now as ``NOW()`` writes it: naive, in the deployment timezone.
+    """Now as the engine's ``NOW()`` writes it: naive, in the deployment timezone.
 
-    Every Nova session pins ``time_zone`` to the deployment zone, so naive
-    ``DATETIME`` values across ``NOVA_SYSTEM`` share that clock.
+    Every Nova engine session pins ``time_zone`` to the deployment zone, so
+    naive ``DATETIME`` values read from the engine share that clock.
     """
     return datetime.now(ZoneInfo(configured_timezone())).replace(tzinfo=None)
+
+
+def engine_time(value: datetime) -> datetime:
+    """An engine ``DATETIME`` (naive, deployment zone) as an aware time."""
+    if value.tzinfo is not None:
+        return value
+    return value.replace(tzinfo=ZoneInfo(configured_timezone()))
+
+
+def to_engine_time(value: datetime) -> datetime:
+    """An aware time as the naive deployment-zone value the engine compares."""
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(ZoneInfo(configured_timezone())).replace(tzinfo=None)
 
 
 def redact_error(exc: BaseException | str) -> str:
@@ -271,22 +298,29 @@ def _without_system_schemas(harvest: Harvest, catalog: dict | None) -> Harvest:
 
 
 async def classify_from_source(
-    catalog: dict | None, harvest: Harvest, repo: CatalogRepository
+    catalog: dict | None, harvest: Harvest, actor: SecurityContext
 ) -> None:
     """Give a foreign catalog's relations their kinds from the source itself.
 
     Only a catalog built from a Nova connection is classified. When the source
     cannot be read, relations keep the kinds the last sync stored, so a brief
-    outage does not move views back under tables.
+    outage does not move views back under tables. The connection and its
+    stored credential are read in a short read-only transaction; the source is
+    read after it closes.
     """
-    from .connections import CONNECTION_PROPERTY, connection_repo, connection_service, endpoint_of
+    from .connections import CONNECTION_PROPERTY, connection_service, endpoint_of
     from .sources import SOURCES
 
     connection_name = ((catalog or {}).get("properties") or {}).get(CONNECTION_PROPERTY)
     if not connection_name or not harvest.relations:
         return
     try:
-        connection = await connection_repo.get(connection_name)
+        async with catalog_transaction(actor, read_only=True) as repo:
+            connection = await repo.get_connection(connection_name)
+            stored = (
+                await connection_service.stored_credentials(connection, repo)
+                if connection is not None else None
+            )
         if connection is None:
             return
         source = SOURCES.get(connection["connector_type"])
@@ -294,19 +328,21 @@ async def classify_from_source(
             return
         kinds = await source.read_objects(
             endpoint_of(connection),
-            await connection_service.resolve_credentials(connection),
+            await connection_service.credentials_for(connection, stored),
             harvest.databases,
         )
     except Exception as exc:  # noqa: BLE001 - the engine's harvest still syncs
         log.warning("Cannot read object kinds of %s from its source: %s",
                     catalog and catalog.get("name"), redact_error(exc))
-        stored = {
+        async with catalog_transaction(actor, read_only=True) as repo:
+            rows = await repo.list_objects(str((catalog or {}).get("name")))
+        stored_objects = {
             (row["database_name"], row["object_name"]): row
-            for row in await repo.list_objects(str((catalog or {}).get("name")))
+            for row in rows
             if row["object_type"] != "database"
         }
         for relation in harvest.relations:
-            previous = stored.get((relation.database, relation.name))
+            previous = stored_objects.get((relation.database, relation.name))
             if previous:
                 relation.object_type = previous["object_type"]
                 relation.engine = previous.get("engine") or relation.engine
@@ -318,68 +354,86 @@ async def classify_from_source(
             relation.engine = kind.label
 
 
+def _unrecorded(name: str, trigger: str, run_id: str, error: str) -> dict:
+    """A run that could not be recorded (no catalog row to claim)."""
+    return {
+        "id": run_id, "catalog_name": name, "trigger": trigger, "status": "error",
+        "started_at": None, "finished_at": None, "counts": {}, "error": error,
+    }
+
+
+async def _finish(
+    actor: SecurityContext, name: str, run: dict, generation: int, error: str,
+) -> dict:
+    """Record a failed or superseded run and, if still current, the catalog's error."""
+    try:
+        async with catalog_transaction(actor) as repo:
+            await repo.record_sync_status(name, generation=generation, status="error",
+                                          error=error)
+            await repo.finish_sync_run(run["id"], "error", error=error)
+            return await repo.get_sync_run(run["id"]) or {**run, "status": "error",
+                                                           "error": error}
+    except Exception:  # noqa: BLE001 - the run stays 'running' and is visible as such
+        log.warning("Could not record the failed sync of %s", name, exc_info=True)
+        return {**run, "status": "error", "error": error, "counts": {}}
+
+
 async def sync_catalog(
     name: str,
     *,
+    actor: SecurityContext,
     trigger: str = "schedule",
-    repo: CatalogRepository | None = None,
     harvester: EngineHarvester | None = None,
     classifier: Classifier = classify_from_source,
 ) -> dict:
-    """Refresh one catalog in the store and record the run. Returns the run."""
-    repo = repo or catalog_repo
+    """Refresh one catalog in the store and record the run. Returns the run.
+
+    ``actor`` is the caller of a manual refresh or the refresher's service
+    principal; the engine is read on the system pool either way.
+    """
     harvester = harvester or EngineHarvester()
-    started = nova_now()
-    run: dict[str, Any] = {
-        "id": str(uuid.uuid4()),
-        "catalog_name": name,
-        "trigger": trigger,
-        "status": "running",
-        "started_at": started,
-    }
-    catalog = await repo.get_catalog(name)
+    run_id = str(uuid.uuid4())
+    async with catalog_transaction(actor) as repo:
+        catalog = await repo.get_catalog(name)
+        generation = await repo.claim_sync(name) if catalog is not None else None
+        if generation is None:
+            return _unrecorded(name, trigger, run_id,
+                               f"Catalog '{name}' is not recorded yet; refresh all catalogs")
+        run, _ = await repo.create_sync_run_once(
+            {"id": run_id, "catalog_name": name, "trigger": trigger,
+             "sync_generation": generation}
+        )
     try:
         harvest = _without_system_schemas(await harvester.harvest(name), catalog)
-        await classifier(catalog, harvest, repo)
-        counts = await _apply(repo, name, harvest, nova_now())
-        counts.update(await securables.record_harvest(name, harvest, nova_now()))
+        await classifier(catalog, harvest, actor)
     except Exception as exc:  # noqa: BLE001 - recorded on the run and the catalog
         error = redact_error(exc)
         log.warning("Catalog sync of %s failed: %s", name, error)
-        run.update(status="error", finished_at=nova_now(), error=error, counts={})
-        if catalog is not None:
-            await repo.upsert_catalog(
-                {**catalog, "status": "error", "last_sync_error": error, "updated_at": nova_now()}
-            )
-        await repo.write_sync_run(run)
-        return run
-    finished = nova_now()
-    run.update(status="ok", finished_at=finished, counts=counts)
-    if catalog is not None:
-        await repo.upsert_catalog(
-            {
-                **catalog,
-                "status": "ok",
-                "last_sync_at": finished,
-                "last_sync_error": None,
-                "updated_at": finished,
-            }
-        )
-    await repo.write_sync_run(run)
-    return run
+        return await _finish(actor, name, run, generation, error)
+    try:
+        async with catalog_transaction(actor) as repo:
+            counts = await _apply(repo, name, harvest, generation)
+            counts.update(await securables.record_harvest(repo, name, harvest, generation))
+            await repo.record_sync_status(name, generation=generation, status="ok")
+            await repo.finish_sync_run(run_id, "ok", counts=counts)
+            return await repo.get_sync_run(run_id) or {**run, "status": "ok", "counts": counts}
+    except MetadataConflict:
+        log.info("Catalog sync of %s was superseded by a newer one", name)
+        return await _finish(actor, name, run, generation, SUPERSEDED)
+    except Exception as exc:  # noqa: BLE001 - recorded on the run and the catalog
+        error = redact_error(exc)
+        log.warning("Catalog sync of %s could not be stored: %s", name, error)
+        return await _finish(actor, name, run, generation, error)
 
 
 async def _apply(
-    repo: CatalogRepository, catalog: str, harvest: Harvest, now: datetime
+    repo: CatalogMetadataRepository, catalog: str, harvest: Harvest, generation: int
 ) -> dict[str, int]:
     existing = {row["id"]: row for row in await repo.list_objects(catalog, include_dropped=True)}
     seen: dict[str, dict] = {}
 
     for database in harvest.databases:
-        key = row_id(catalog, database, "", "database")
-        seen[key] = {
-            "id": key,
-            "catalog_name": catalog,
+        seen[row_id(catalog, database, "", "database")] = {
             "database_name": database,
             "object_name": "",
             "object_type": "database",
@@ -391,8 +445,6 @@ async def _apply(
         fingerprint = relation.fingerprint()
         previous = existing.get(key)
         seen[key] = {
-            "id": key,
-            "catalog_name": catalog,
             "database_name": relation.database,
             "object_name": relation.name,
             "object_type": relation.object_type,
@@ -405,8 +457,7 @@ async def _apply(
         if previous is None:
             # Nothing stored for it yet: batch its columns with the others.
             first_seen_columns.extend(
-                {**column, "catalog_name": catalog, "database_name": relation.database,
-                 "object_name": relation.name}
+                {**column, "database_name": relation.database, "object_name": relation.name}
                 for column in relation.columns
             )
             changed_columns += 1
@@ -414,29 +465,25 @@ async def _apply(
             previous.get("fingerprint") != fingerprint
             or previous.get("dropped_at") is not None
         ):
-            await repo.replace_columns(catalog, relation.database, relation.name, relation.columns)
+            await repo.replace_columns(catalog, relation.database, relation.name,
+                                       relation.columns, generation=generation)
             changed_columns += 1
-    await repo.insert_columns(first_seen_columns)
-
-    rows = []
-    for key, row in seen.items():
-        previous = existing.get(key)
-        first_seen = previous.get("first_seen_at") if previous else None
-        if previous is not None and previous.get("dropped_at") is not None:
-            first_seen = None
-        rows.append({**row, "first_seen_at": first_seen or now, "last_seen_at": now,
-                     "dropped_at": None})
-    await repo.upsert_objects(rows)
+    if first_seen_columns:
+        await repo.insert_columns(catalog, first_seen_columns, generation=generation)
+    if seen:
+        await repo.upsert_objects(catalog, seen.values(), generation=generation)
 
     gone = [
         key for key, row in existing.items()
         if key not in seen and row.get("dropped_at") is None
     ]
-    await repo.mark_objects_dropped(gone, now)
+    if gone:
+        await repo.mark_objects_dropped(catalog, gone, generation=generation)
     for key in gone:
         row = existing[key]
         if row.get("object_type") != "database":
-            await repo.delete_columns(catalog, row["database_name"], row["object_name"])
+            await repo.replace_columns(catalog, row["database_name"], row["object_name"], [],
+                                       generation=generation)
 
     return {
         "databases": len(harvest.databases),
@@ -467,79 +514,97 @@ def _connection_of(stored: dict) -> str | None:
     return (stored.get("properties") or {}).get(CONNECTION_PROPERTY)
 
 
-async def _heal_foreign(repo: CatalogRepository, stored: dict, now: datetime) -> None:
+async def _heal_foreign(repo: CatalogMetadataRepository, stored: dict) -> None:
     """Restore a foreign catalog's source type and kind from its connection.
 
     Earlier syncs replaced them with the engine's ``jdbc``/``external``.
     """
-    from .connections import connection_repo
-
     name = _connection_of(stored)
     if not name:
         return
-    connection = await connection_repo.get(name)
+    connection = await repo.get_connection(name)
     if connection is None:
         return
     source_type = connection["connector_type"]
     if (stored.get("kind"), stored.get("catalog_type")) != ("foreign", source_type):
-        await repo.upsert_catalog(
-            {**stored, "kind": "foreign", "catalog_type": source_type, "updated_at": now}
+        await repo.update_catalog(
+            stored["name"], {"kind": "foreign", "catalog_type": source_type},
+            expected_revision=stored["metadata_revision"],
         )
 
 
 async def reconcile_catalogs(
     *,
+    actor: SecurityContext,
     trigger: str = "schedule",
-    repo: CatalogRepository | None = None,
     harvester: EngineHarvester | None = None,
 ) -> list[dict]:
-    """Match the store to the engine's catalog list, then sync each live catalog."""
-    repo = repo or catalog_repo
-    harvester = harvester or EngineHarvester()
-    now = nova_now()
-    engine = {row["name"]: row for row in await harvester.catalogs()}
-    stored = {row["name"]: row for row in await repo.list_catalogs(include_dropped=True)}
+    """Match the store to the engine's catalog list, then sync each live catalog.
 
-    for name, row in engine.items():
-        current = stored.get(name)
-        if current is None:
-            await repo.upsert_catalog(
-                {
-                    "name": name,
-                    "kind": catalog_kind(row["type"]),
-                    "catalog_type": row["type"].lower(),
-                    "managed": False,
-                    "source": "engine",
-                    "comment": row.get("comment"),
-                    "created_at": now,
-                    "updated_at": now,
-                }
-            )
-        elif current.get("dropped_at") is None and _connection_of(current):
-            await _heal_foreign(repo, current, now)
-        elif current.get("dropped_at") is not None or _type_changed(current, row["type"]):
-            await repo.upsert_catalog(
-                {
-                    **current,
-                    "kind": catalog_kind(row["type"]),
-                    "catalog_type": row["type"].lower(),
-                    "dropped_at": None,
-                    "updated_at": now,
-                }
-            )
-    for name, row in stored.items():
-        if name not in engine and row.get("dropped_at") is None:
-            await repo.upsert_catalog({**row, "dropped_at": now, "updated_at": now})
-    # Objects of a catalog the engine no longer has, including one dropped
-    # through Nova before this pass, are retired with it.
-    for name in sorted(await repo.catalogs_with_live_objects() - engine.keys()):
-        await repo.retire_catalog_objects(name, now)
-    await securables.record_catalogs(engine, now)
+    The engine's list is read first; the catalog rows, their tombstones and the
+    retirement of vanished catalogs' inventory are then written in one
+    transaction, each under the revision or sync generation it read or claimed.
+    """
+    harvester = harvester or EngineHarvester()
+    engine = {row["name"]: row for row in await harvester.catalogs()}
+    async with catalog_transaction(actor) as repo:
+        stored = {row["name"]: row for row in await repo.list_catalogs(include_dropped=True)}
+        for name, row in engine.items():
+            current = stored.get(name)
+            if current is None:
+                await repo.create_catalog(
+                    {
+                        "name": name,
+                        "kind": catalog_kind(row["type"]),
+                        "catalog_type": row["type"].lower(),
+                        "managed": False,
+                        "source": "engine",
+                        "comment": row.get("comment"),
+                    }
+                )
+            elif current.get("dropped_at") is None and _connection_of(current):
+                await _heal_foreign(repo, current)
+            elif current.get("dropped_at") is not None or _type_changed(current, row["type"]):
+                await repo.update_catalog(
+                    name,
+                    {"kind": catalog_kind(row["type"]), "catalog_type": row["type"].lower()},
+                    expected_revision=current["metadata_revision"],
+                    revive=current.get("dropped_at") is not None,
+                )
+        for name, row in stored.items():
+            if name not in engine and row.get("dropped_at") is None:
+                await repo.drop_catalog(name, expected_revision=row["metadata_revision"])
+        registered = {
+            str(row["catalog_name"]): row for row in await repo.securables_of_type("catalog")
+        }
+        # A live catalog has its catalog securable even when its sync fails.
+        for name in sorted(engine):
+            current_securable = registered.get(name)
+            if current_securable is None or current_securable.get("dropped_at") is not None:
+                generation = await repo.claim_sync(name)
+                if generation is not None:
+                    root = securables.Securable(
+                        id=securables.catalog_id(name), securable_type="catalog",
+                        catalog_name=name,
+                    )
+                    await repo.write_securables(name, [root.as_row()], generation=generation)
+        # Objects and securables of a catalog the engine no longer has,
+        # including one dropped through Nova before this pass, are retired with it.
+        live_securables = {
+            name for name, row in registered.items() if row.get("dropped_at") is None
+        }
+        vanished = (await repo.catalogs_with_live_objects() | live_securables) - engine.keys()
+        for name in sorted(vanished):
+            generation = await repo.claim_sync(name)
+            await repo.retire_catalog_objects(name, generation=generation)
+            await repo.mark_securables_dropped(name, None, generation=generation)
 
     runs = []
     for name in engine:
         try:
-            runs.append(await sync_catalog(name, trigger=trigger, repo=repo, harvester=harvester))
+            runs.append(
+                await sync_catalog(name, actor=actor, trigger=trigger, harvester=harvester)
+            )
         except Exception:  # noqa: BLE001 - one catalog never stops the others
             log.warning("Catalog sync of %s could not be recorded", name, exc_info=True)
     return runs

@@ -104,7 +104,7 @@ async def preview_boundary(action_program, monkeypatch):
         lease.record("session")
         return deepcopy(sessions.get(ident))
 
-    async def read_policy():
+    async def read_policy(*_args, **_kwargs):
         lease.record("policy")
         return policy.model_copy(deep=True)
 

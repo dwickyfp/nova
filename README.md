@@ -66,7 +66,7 @@ SQL clients also use Nova's SQL path through the MySQL protocol proxy on port `4
 SQL development, catalog exploration, stages, data loading/export, scheduled
 tasks, monitoring, and native ML remain core platform capabilities. ML supports
 classification, regression, forecasting, anomaly detection, and clustering,
-with versioned models and run metadata in `NOVA_SYSTEM`. SQL AI functions such
+with versioned models and run metadata in PostgreSQL. SQL AI functions such
 as `AI_COMPLETE` and `AI_SENTIMENT` require a configured provider and the
 corresponding StarRocks functions.
 
@@ -129,7 +129,7 @@ they do not represent separate physical services.
 | Business meaning | Supernova Business Ontology: concepts, names, bindings, releases, learning |
 | Semantic layer | Semantic Views, metrics, relationships, verified queries |
 | Data foundation | SQL, warehouse, catalog, stages, ML, StarRocks |
-| Control plane across the stack | Security, Ranger, audit, `NOVA_SYSTEM`, Redis runtime coordination |
+| Control plane across the stack | Security, Ranger, PostgreSQL metadata and audit, Redis runtime coordination |
 
 Nova Console exposes the data and control foundation across these layers.
 
@@ -246,9 +246,9 @@ flowchart LR
     SQL["SQL frontend<br/>guard · parse · analyze · plan · execute"]
     Agent["Bounded assistant engine<br/>agents · tools · consent"]
     ML["ML worker<br/>Arrow batches · model runtime"]
-    Tasks["Scheduler + workers<br/>Redis Streams"]
+    Tasks["Scheduler + workers<br/>durable jobs + wakeups"]
     FE["StarRocks FE / BE<br/>query · auth · Ranger plugin"]
-    System["NOVA_SYSTEM<br/>config · runs · audit · metadata"]
+    System["PostgreSQL 17<br/>nova_control.nova_meta"]
     Redis["Redis<br/>sessions · cache · task stream"]
     Bridge["Internal Ranger policy bridge"]
     Ranger["Apache Ranger<br/>access · row filters · masks"]
@@ -265,7 +265,11 @@ flowchart LR
     SQL --> FE
     ML --> FE
     Tasks --> FE
-    FE --> System
+    API --> System
+    Proxy --> System
+    Agent --> System
+    ML --> System
+    Tasks --> System
     API --> Redis
     Tasks --> Redis
     FE -.->|policy downloads| Bridge
@@ -281,7 +285,7 @@ flowchart LR
 | **SQL dialect**    | The central ANTLR frontend builds typed statements and plans, then routes execution to StarRocks or Nova services. Parser generation uses Java at build time; the request path runs in Python.                                             |
 | **StarRocks**      | Version 4.1.4 is the query engine and authentication source. The patched FE passes Nova's single active role into Ranger checks.                                                                                                    |
 | **Ranger**         | Ranger 2.9.0 owns object permissions, row filters, and masks in the full security profile. Nova manages policies; the StarRocks Ranger plugin enforces them. An internal, authenticated bridge supplies policy downloads to the FE. |
-| **State and jobs** | `NOVA_SYSTEM` is a StarRocks database with prefixed tables for configuration, metadata, runs, and audit records. Redis carries sessions, caches, and task work; scheduled execution uses separate scheduler and worker processes.   |
+| **State and jobs** | PostgreSQL owns control metadata, audit, durable jobs and outbox records. Redis carries sessions, caches and wakeups; notebook live queues and leases still use Redis. Stream journals that must commit with user data remain in StarRocks.   |
 | **Storage and ML** | Stages abstract configured object storage. ML workers read governed StarRocks data in bounded batches and store versioned artifacts through the configured storage connection.                                                      |
 
 ### Authorization path
@@ -309,45 +313,30 @@ procedure, see [Ranger authorization](docs/arch-08-ranger-authorization.md) and
 You need Docker Compose, Node.js, [pnpm](https://pnpm.io/), Python 3.11, and
 [uv](https://docs.astral.sh/uv/).
 
-1. Create `docker/.env` from `docker/.env.example`. Set `NOVA_SECRET_KEY` and
-   `NOVA_FERNET_KEY` to generated, persistent values before starting the app.
+Use [HOW_TO_RUN.md](HOW_TO_RUN.md) to configure or reuse the development
+infrastructure and stable secrets. Existing installations retain their current
+credentials, engine volumes and object storage. Before running this checkout,
+an operator must provision PG17, install the metadata migrations and publish a
+validated metadata epoch. Application startup never imports historical data or
+runs the migrator. See [PG provisioning](docs/architecture/production-refactor/PG_BOOTSTRAP.md)
+and the [delivery status](docs/architecture/production-refactor/DELIVERY_STATUS_AND_QA_BACKLOG.md).
 
-   ```bash
-   cp docker/.env.example docker/.env
-   openssl rand -hex 32
-   cd backend && uv sync
-   uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-   ```
+After those prerequisites are configured, start all host development processes
+from the repository root:
 
-   Put the first generated value in `NOVA_SECRET_KEY` and the Fernet value in
-   `NOVA_FERNET_KEY` in `docker/.env`. Return to the repository root.
+```bash
+./dev.sh
+```
 
-2. Start StarRocks, Ranger, storage, Redis, and the Nova API/proxy.
+The launcher starts web (`8000`), query (`8001`), MySQL proxy (`4406`), scheduler,
+eight workload processes and Vite (`5173`), and waits for readiness. Open
+[Nova at localhost:5173](http://localhost:5173). Use the deployment's existing
+Nova account. StarRocks and Ranger continue to authenticate and authorize users;
+PG workload logins are internal infrastructure identities.
 
-   ```bash
-   docker compose --env-file docker/.env \
-     -f docker/docker-compose-engine.yml --profile app up --build -d
-   docker compose --env-file docker/.env \
-     -f docker/docker-compose-engine.yml ps
-   ```
-
-3. Start the web app.
-
-   ```bash
-   cd frontend
-   pnpm install
-   pnpm dev
-   ```
-
-Open [Nova at localhost:5173](http://localhost:5173). The API runs at
-`localhost:8000`, the Nova MySQL proxy at `localhost:4406`, and Ranger Admin
-at `localhost:6080` for local operations. The initial `nova_admin` password is
-`nova`; the first login requires a change.
-
-For host-side backend development and task scheduler/worker setup, use
-[HOW_TO_RUN.md](HOW_TO_RUN.md) and the [Ranger runbook](docs/29-ranger-access-control.md).
-The latter documents the loopback-only StarRocks development override and the
-live security acceptance script.
+The current development topology uses multiple Compose files and host processes.
+The accepted single-file production deployment and full replica/recovery
+acceptance remain tracked in the delivery status above.
 
 ## Repository
 

@@ -9,6 +9,7 @@ from app.modules.agents.tools.custom_tool import (
     CustomToolRunner,
     validate_custom_tool_definition,
 )
+from app.modules.assistant.read_grants import stamp
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import AssistantThread
 from app.modules.assistant.tools import ToolInvocation, ToolRegistry
@@ -49,6 +50,7 @@ def _context() -> LoopContext:
             "active_role": "analyst",
             "assigned_roles": ["analyst"],
             "security_context_version": 1,
+            "session_id": "custom-tool-session",
         },
     )
 
@@ -148,6 +150,7 @@ async def test_insert_then_select_tools_run_in_one_agent_turn(monkeypatch) -> No
     )
     thread = AssistantThread(thread_id="custom-tool-eval", user_name="analyst", title="Eval")
     thread.consent.always_allow_read_only = True
+    thread.consent.granted_under = stamp(_context().user)
     prompts: list[tuple[str, str]] = []
 
     async def consent(invocation, classification):
@@ -242,6 +245,7 @@ async def test_stage_export_custom_tool_requires_consent_and_reaches_pipeline(mo
     )
     thread = AssistantThread(thread_id="custom-tool-eval", user_name="analyst", title="Eval")
     thread.consent.always_allow_read_only = True
+    thread.consent.granted_under = stamp(_context().user)
     prompts = []
 
     async def consent(invocation, classification):
@@ -315,6 +319,7 @@ async def test_identifier_parameter_cannot_downgrade_stage_export_consent(monkey
     )
     thread = AssistantThread(thread_id="custom-tool-eval", user_name="analyst", title="Eval")
     thread.consent.always_allow_read_only = True
+    thread.consent.granted_under = stamp(_context().user)
     prompts = []
 
     async def deny(invocation, classification):

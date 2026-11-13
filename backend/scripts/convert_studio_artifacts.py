@@ -20,15 +20,23 @@ import asyncio
 import json
 
 from app.core.database import db
+from app.core.metadata_actor import acting_as, metadata_transaction, service_actor
+from app.core.metadata_process import close_process_metadata, open_process_metadata
 from app.core.redis import session_store
+from app.modules.access_control.security_context import SecurityContext
 
 
 async def legacy_owners() -> list[str]:
-    result = await db.execute_system(
-        "SELECT DISTINCT owner_name FROM NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS "
-        "WHERE bi_object_id IS NULL ORDER BY owner_name"
-    )
-    return [str(row[0]) for row in result["rows"]]
+    database = await open_process_metadata("maintenance")
+    try:
+        actor = service_actor("nova-artifact-converter", "NOVA_WORKER")
+        async with metadata_transaction(actor, read_only=True) as (connection, _):
+            cursor = await connection.execute(
+                "SELECT owner_name FROM nova_meta.legacy_artifact_owners()"
+            )
+            return [row["owner_name"] for row in await cursor.fetchall()]
+    finally:
+        await close_process_metadata(database, "artifact-converter-discovery")
 
 
 async def convert(owner: str, *, force: bool) -> dict:
@@ -42,9 +50,10 @@ async def convert(owner: str, *, force: bool) -> dict:
     except DelegationError as exc:
         return {"owner": owner, "error": f"not delegable: {exc}"}
     session_id = await tokens.create_delegated_session(owner, role)
-    user = {"username": owner, "session_id": session_id, "active_role": role}
+    user = {"username": owner, "session_id": session_id, "active_role": role, "roles": [role]}
     try:
-        outcomes = await convert_owner(user, force=force)
+        with acting_as(SecurityContext.from_session(user)):
+            outcomes = await convert_owner(user, force=force)
     except BiError as exc:
         return {"owner": owner, "error": exc.message}
     return {"owner": owner, "role": role, "outcomes": [o.as_dict() for o in outcomes]}
@@ -57,19 +66,17 @@ async def main() -> None:
     target.add_argument("--all-owners", action="store_true")
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
-    await db.init_system_pool()
-    await session_store.init()
+    owners = args.owner or await legacy_owners()
+    database = await open_process_metadata("web")
     try:
-        from app.modules.agents.artifact_repository import artifact_repository
-
-        await artifact_repository.ensure_schema()
-        owners = args.owner or await legacy_owners()
+        await db.init_system_pool()
+        await session_store.init()
         reports = [await convert(owner, force=args.force) for owner in owners]
         print(json.dumps(reports, indent=2, default=str))
-        print(f"Legacy artifacts remaining: {await artifact_repository.legacy_remaining()}")
     finally:
         await session_store.close()
         await db.close_system_pool()
+        await close_process_metadata(database, "artifact-converter")
 
 
 if __name__ == "__main__":

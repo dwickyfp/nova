@@ -58,6 +58,7 @@ replace an expression-partition request with arbitrary date boundaries.
 Partitioning, hash/random distribution, sort keys, bloom filters, bitmap/inverted
 indexes and replication are engine-specific choices. Ask for the access pattern
 and inspect cluster topology before selecting values. replication_num=1 is a
-single-node development choice, not a production default. Local CRUD state uses
-NOVA_SYSTEM Primary Key tables; never create another persistence database engine.
+single-node development choice, not a production default. Nova manages its own
+control metadata through product services. Never write internal metadata tables
+through user SQL.
 

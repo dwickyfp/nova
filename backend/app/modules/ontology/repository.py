@@ -1,22 +1,30 @@
 """Revision-checked persistence for shared, deployment-wide records.
 
-The write protocol is the Intelligence one (a metadata lease, a re-read of the
-newest revision, and a compare on the expected revision), but records are
-shared across the deployment rather than owned by one principal. The ontology
-and the business event hub each use it with their own tables.
+:class:`RevisionRepository` keeps the ``NOVA_SYSTEM`` protocol (a metadata
+lease, a re-read of the newest revision, and a compare on the expected
+revision) for the business event hub, whose port belongs to Intelligence.
+The ontology uses :class:`OntologyRepository`, which stores its revisions in
+PostgreSQL through :mod:`app.modules.ontology.metadata_repository`.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import TypeVar
 
 from fastapi import HTTPException
 
 from app.core.database import db
+from app.core.metadata_scope import scoped_transaction
 from app.modules.intelligence.contracts import fingerprint, utc_now
 from app.modules.intelligence.engine_repository import metadata_lock
 from app.modules.ontology.contracts import OntologyRecord
+from app.modules.ontology.metadata_repository import (
+    OntologyMetadataRepository,
+    OntologyReadBoundExceeded,
+)
 from app.modules.ontology.schema import ONTOLOGY_TABLES
 
 R = TypeVar("R", bound=OntologyRecord)
@@ -236,9 +244,62 @@ class RevisionRepository:
             return len(rows)
 
 
-class OntologyRepository(RevisionRepository):
-    def __init__(self) -> None:
-        super().__init__(ONTOLOGY_TABLES, "ontology")
+class OntologyRepository:
+    """Ontology revisions in PostgreSQL, with the method shapes callers use.
+
+    Each call joins the caller's open metadata transaction, or opens a short
+    one for the actor declared at the service boundary
+    (:func:`app.core.metadata_scope.acting_as`). Long flows such as evaluation
+    or learning therefore never hold a transaction across model or engine
+    calls; revision checks keep their separate steps safe.
+    """
+
+    namespace = "ontology"
+    tables = ONTOLOGY_TABLES
+
+    @asynccontextmanager
+    async def _repository(self, *, read_only: bool) -> AsyncIterator[OntologyMetadataRepository]:
+        async with scoped_transaction(read_only=read_only) as scope:
+            try:
+                yield OntologyMetadataRepository(scope.connection, scope.actor)
+            except OntologyReadBoundExceeded as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from None
+
+    async def latest(self, kind: str, record_id: str, model: type[R]) -> R | None:
+        async with self._repository(read_only=True) as repository:
+            return await repository.latest(kind, record_id, model)
+
+    async def revision(self, kind: str, record_id: str, revision: int, model: type[R]) -> R | None:
+        async with self._repository(read_only=True) as repository:
+            return await repository.revision(kind, record_id, revision, model)
+
+    async def latest_many(self, kind: str, record_ids: list[str], model: type[R]) -> dict[str, R]:
+        async with self._repository(read_only=True) as repository:
+            return await repository.latest_many(kind, record_ids, model)
+
+    async def history(self, kind: str, record_id: str, model: type[R]) -> list[R]:
+        async with self._repository(read_only=True) as repository:
+            return await repository.history(kind, record_id, model)
+
+    async def current(self, kind: str, model: type[R]) -> list[R]:
+        async with self._repository(read_only=True) as repository:
+            return await repository.current(kind, model)
+
+    async def current_matching(
+        self, kind: str, model: type[R], field: str, value: str, *, limit: int = 200
+    ) -> list[R]:
+        async with self._repository(read_only=True) as repository:
+            return await repository.current_matching(kind, model, field, value, limit=limit)
+
+    async def save(self, kind: str, record: R, *, expected_revision: int = 0) -> R:
+        """Append ``record`` as the next revision; unchanged content is a no-op."""
+        async with self._repository(read_only=False) as repository:
+            return await repository.save(kind, record, expected_revision=expected_revision)
+
+    async def save_many(self, kind: str, records: list[tuple[R, int]]) -> int:
+        """Append many records in one transaction; a conflict writes nothing."""
+        async with self._repository(read_only=False) as repository:
+            return await repository.save_many(kind, records)
 
 
 ontology_repository = OntologyRepository()

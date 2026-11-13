@@ -29,6 +29,7 @@ from pathlib import Path
 
 import pytest
 
+from app.modules.assistant.read_grants import stamp
 from app.modules.assistant.schemas import ToolCallView
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import AssistantThread
@@ -415,6 +416,7 @@ async def test_grant_never_auto_approves_zero_gap_into_stage():
     loop = AssistantLoop(provider=provider, registry=registry)
     thread = AssistantThread(thread_id="t1", user_name="alice", title="T")
     thread.consent.always_allow_read_only = True
+    thread.consent.granted_under = stamp(_context().user)
 
     asked: list[str] = []
 
@@ -564,6 +566,7 @@ async def test_grant_never_auto_approves_explain_over_a_mutation():
     loop = AssistantLoop(provider=provider, registry=registry)
     thread = AssistantThread(thread_id="t1", user_name="alice", title="T")
     thread.consent.always_allow_read_only = True
+    thread.consent.granted_under = stamp(_context().user)
 
     asked: list[str] = []
 
@@ -683,6 +686,7 @@ async def test_destructive_call_never_auto_approves_even_with_a_grant():
     loop = AssistantLoop(provider=provider, registry=registry)
     thread = AssistantThread(thread_id="t1", user_name="alice", title="T")
     thread.consent.always_allow_read_only = True
+    thread.consent.granted_under = stamp(_context().user)
 
     asked: list[str] = []
 
@@ -714,6 +718,7 @@ async def test_read_only_call_is_covered_by_an_allow_session_grant():
     loop = AssistantLoop(provider=provider, registry=registry)
     thread = AssistantThread(thread_id="t1", user_name="alice", title="T")
     thread.consent.always_allow_read_only = True
+    thread.consent.granted_under = stamp(_context().user)
 
     asked: list[str] = []
 
@@ -906,6 +911,7 @@ async def test_result_error_never_reaches_the_sse_frame(monkeypatch, fakes):
     loop = AssistantLoop(provider=provider, registry=registry)
     thread = AssistantThread(thread_id="t1", user_name="alice", title="T")
     thread.consent.always_allow_read_only = True
+    thread.consent.granted_under = stamp(_context().user)
 
     async def resolver(inv, cls):
         raise AssertionError("the read-only grant should have covered this call")

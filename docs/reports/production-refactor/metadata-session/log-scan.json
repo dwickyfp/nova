@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "lines": 24,
+  "matches": {
+    "credential_canary": 0,
+    "encrypted_credential": 0,
+    "session_canary": 0
+  }
+}

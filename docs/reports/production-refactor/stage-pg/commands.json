@@ -1,0 +1,197 @@
+{
+  "application_tree_sha256": "1966f668abb8cbb5d3b75227ab742b88cac2448e7b774b0a0cf628d7b2f1ce1f",
+  "source_parent_commit": "329eab3d9ae02747e6837fb1b43bd462dcd4f28c",
+  "source_files_sha256": {
+    "backend/app/modules/stages/metadata_service.py": "e2421fabf8374c7a0d2af09f2bd1969b504b634462e181585aaff366086bded5",
+    "backend/app/modules/stages/repository.py": "073825ea5de91f8af479cc4110a4589514254912c50ac068ce38eadb27b71a70",
+    "backend/metadata_migrations/0012_stage_registrations.sql": "68683022341453a0d8aa2ab14ca4ad2f64984b84608e1a5ee19e08c35caee4fd",
+    "backend/tests/integration/test_metadata_stages.py": "fb0c0e7244a44b79cc34982c6ff636b7d51cd6afed2ee4015829bfbfe7149de9",
+    ".github/workflows/ci.yml": "82a8621aa82e58a749d1b59a00fde2fea01d6b1a9bc5392a6f61a74550a4d9b3"
+  },
+  "schema_revisions": {
+    "0001_deployment_state.sql": "8b0a3366fa07d4abcaffe87e23ee2f9aeb3fb01e8c3f2c8132b28d6a83aaaff0",
+    "0006_scheduler_fencing.sql": "c48b0c39a38c148f1f5d69662e35733130f03179841acffded12c78bb4a66df2",
+    "0009_transactional_audit.sql": "963f839e965daef13d579da0bace42209cba76f189e13c3bbb35f2f439df854b",
+    "0008_ai_function_definitions.sql": "d13251477a717edb39a2873b49dd95787eaf4d2ecaf617e59bed63e160b4f334",
+    "0012_stage_registrations.sql": "68683022341453a0d8aa2ab14ca4ad2f64984b84608e1a5ee19e08c35caee4fd",
+    "0004_ai_registry.sql": "647ebc9fbd4b5aa72850041b43dc7cd7b4eb7f4a5bae32f8da9e0f6f229af470",
+    "0010_retained_legacy_metadata.sql": "eefbeb888e2805697d243361090b72008698b2d5dbad23e82ab3e676e2342594",
+    "0002_user_preferences.sql": "9c130bf7b1d121d222d145dafd52c0a53ad437e95e0880acda19c924c4f14fcc",
+    "0003_password_flag_workloads.sql": "fa5e8e5484d6e011de3dd9bca11771d41927dc89cacd3b11f4a94d0b03803866",
+    "0007_model_aliases.sql": "72244ddb356e5ee985430066cdbda5e487d818718c100f41f99de19e2c50f6ec",
+    "0011_retired_agent_history.sql": "5f894195339f638b905aa82312ef86c5b6a14c3418fa0cf32c63e9f5b85c024f",
+    "0005_durable_jobs.sql": "e470d39ddb271f82ea87941cdb1558faeed20902d48686744ac010e7df30e7b5"
+  },
+  "unchanged_prior_revisions": 11,
+  "initial_combined_test_file_sha256": "94147e39764a690b7b75bc23048fa6af8c9cb43e331e4aeb4730a34d32b2730f",
+  "unit": {
+    "tests": "10800",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "521.353"
+  },
+  "coverage": {
+    "line-rate": "0.666",
+    "branch-rate": "0.6001",
+    "lines-covered": "87565",
+    "lines-valid": "131487",
+    "branches-covered": "19791",
+    "branches-valid": "32978"
+  },
+  "sequence": {
+    "ruff": {
+      "started_at": "2026-11-11T22:27:35.888280+00:00",
+      "command": [
+        "uv",
+        "run",
+        "ruff",
+        "check",
+        "app/modules/stages/repository.py",
+        "app/modules/stages/metadata_service.py",
+        "tests/integration/test_metadata_stages.py"
+      ],
+      "exit_code": 0,
+      "ended_at": "2026-11-11T22:27:36.143138+00:00"
+    },
+    "unit-37": {
+      "started_at": "2026-11-11T22:27:36.143746+00:00",
+      "command": [
+        "uv",
+        "run",
+        "pytest",
+        "tests/unit",
+        "--cov=app",
+        "--cov-branch",
+        "--cov-report=term-missing",
+        "--cov-report=xml:/tmp/nova-refactor-coverage-37.xml",
+        "--junit-xml=/tmp/nova-refactor-unit-37.xml"
+      ],
+      "exit_code": 0,
+      "ended_at": "2026-11-11T22:36:29.469277+00:00"
+    },
+    "final-2": {
+      "started_at": "2026-11-11T22:36:29.481402+00:00",
+      "command": [
+        "uv",
+        "run",
+        "pytest",
+        "tests/integration/test_metadata_pg_foundation.py",
+        "tests/integration/test_metadata_bootstrap.py",
+        "tests/integration/test_metadata_pgbouncer.py",
+        "tests/integration/test_metadata_preferences.py",
+        "tests/integration/test_metadata_ai_registry.py",
+        "tests/integration/test_metadata_model_aliases.py",
+        "tests/integration/test_metadata_ai_configuration.py",
+        "tests/integration/test_metadata_audit.py",
+        "tests/integration/test_metadata_retained_legacy.py",
+        "tests/integration/test_metadata_retired_agents.py",
+        "tests/integration/test_metadata_stages.py",
+        "tests/integration/test_metadata_jobs.py",
+        "tests/integration/test_metadata_scheduler.py",
+        "tests/integration/test_metadata_migrator.py",
+        "-q",
+        "--tb=short",
+        "--junit-xml=/tmp/nova-stage-pg-final-2.xml"
+      ],
+      "exit_code": 0,
+      "ended_at": "2026-11-11T22:42:02.062415+00:00"
+    }
+  },
+  "postgres": {
+    "tests": 486,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "time": 330.074
+  },
+  "postgres_log_scan": {
+    "lines": 21,
+    "matches": {
+      "credential_canary": 0,
+      "encrypted_credential": 0
+    },
+    "passed": true
+  },
+  "postgres_fixture_cleanup": {
+    "nova_meta_schemas": 0,
+    "nova_meta_roles": 0
+  },
+  "static": {
+    "mypy": {
+      "exit_code": 0,
+      "command": "uv run mypy app --no-error-summary",
+      "existing_notes": 3
+    },
+    "ruff": {
+      "exit_code": 0,
+      "changed_python_files": 94,
+      "command": "uv run ruff check --force-exclude <94 changed/new Python paths>"
+    },
+    "user_data_boundary": {
+      "exit_code": 0,
+      "command": "uv run python scripts/check_user_data_system_access.py"
+    },
+    "deployment_secret_scan": {
+      "source": "Running local Compose environment and disposable PG fixture; values not exported",
+      "distinct_values_scanned": 10,
+      "matched_files": [],
+      "raw_values_exported": false
+    },
+    "documentation_links": {
+      "checked": 36,
+      "missing": 0
+    }
+  },
+  "agent_eval": {
+    "exit_code": 0,
+    "scenarios": 54,
+    "checks": 189,
+    "command": "uv run python -m tests.eval.report"
+  },
+  "attempts": [
+    {
+      "report": "focused-initial.xml",
+      "passed": 51,
+      "failed": 2,
+      "scope": "Initial fixtures; README retains diagnoses"
+    },
+    {
+      "report": "focused-75.xml",
+      "passed": 75,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "report": "combined-initial.xml",
+      "passed": 485,
+      "failed": 1,
+      "scope": "Upgrade fixture omitted a required historical owner"
+    },
+    {
+      "report": "combined-final.xml",
+      "passed": 486,
+      "failed": 0,
+      "skipped": 0
+    }
+  ],
+  "frontend": {
+    "status": "REUSED_UNCHANGED",
+    "source_commit": "329eab3d9ae02747e6837fb1b43bd462dcd4f28c",
+    "local_coverage_passed": 1605,
+    "frontend_files_or_dependencies_changed": false
+  },
+  "ci_current_checkpoint": "NOT_RUN_AT_REPORT_CAPTURE; report is bound to the listed source/schema hashes",
+  "live_ai": "NOT_RUN_IN_THIS_PHASE",
+  "live_embedding": "OWNER_WAIVED",
+  "limits": [
+    "Prepared domain; live callers remain in StarRocks",
+    "Ranger responses are controlled in PG acceptance",
+    "No production cutover, import provenance or all-feature acceptance claim",
+    "No new load, soak or cross-host HA evidence"
+  ],
+  "local_backend_readiness": {
+    "status": "ready",
+    "role": "all"
+  }
+}

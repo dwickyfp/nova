@@ -11,7 +11,10 @@ Endpoints under /api/v1/ai:
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.common.metadata_actors import session_actor
 from app.core.deps import get_current_user
+from app.core.exceptions import NovaException
+from app.core.role_gates import require_active_role
 from app.modules.llm_functions.schemas import (
     VALID_FUNCTION_TYPES,
     AliasCreate,
@@ -23,8 +26,11 @@ from app.modules.llm_functions.schemas import (
     UDFStatusResponse,
 )
 from app.modules.llm_functions.service import llm_function_service
+from app.modules.users.router import ADMIN_ROLES
 
 router = APIRouter()
+require_user = Depends(get_current_user)
+require_admin = Depends(require_active_role(*ADMIN_ROLES))
 
 
 # ── Aliases ───────────────────────────────────────────────────
@@ -32,10 +38,10 @@ router = APIRouter()
 
 @router.get("/aliases", response_model=AliasListResponse)
 async def list_aliases(
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """List all LLM function aliases."""
-    aliases = await llm_function_service.list_aliases()
+    aliases = await llm_function_service.list_aliases(actor=session_actor(user))
     alias_responses = [AliasResponse(**a) for a in aliases]
     return AliasListResponse(aliases=alias_responses, count=len(alias_responses))
 
@@ -43,20 +49,24 @@ async def list_aliases(
 @router.post("/aliases", response_model=AliasResponse, status_code=201)
 async def create_alias(
     body: AliasCreate,
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
     """Create a new LLM function alias and register the UDF."""
     if body.function_type not in VALID_FUNCTION_TYPES:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid function_type. Must be one of: {', '.join(sorted(VALID_FUNCTION_TYPES))}",
+            detail=(
+                f"Invalid function_type. Must be one of: {', '.join(sorted(VALID_FUNCTION_TYPES))}"
+            ),
         )
     try:
         result = await llm_function_service.create_alias(
-            body.model_dump(), user["username"]
+            body.model_dump(), user["username"], actor=session_actor(user)
         )
+    except NovaException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from None
     return AliasResponse(**result)
 
 
@@ -64,7 +74,7 @@ async def create_alias(
 async def update_alias(
     alias_id: str,
     body: AliasUpdate,
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
     """Update an existing alias."""
     data = body.model_dump(exclude_none=True)
@@ -73,12 +83,18 @@ async def update_alias(
     if "function_type" in data and data["function_type"] not in VALID_FUNCTION_TYPES:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid function_type. Must be one of: {', '.join(sorted(VALID_FUNCTION_TYPES))}",
+            detail=(
+                f"Invalid function_type. Must be one of: {', '.join(sorted(VALID_FUNCTION_TYPES))}"
+            ),
         )
     try:
-        result = await llm_function_service.update_alias(alias_id, data)
+        result = await llm_function_service.update_alias(
+            alias_id, data, actor=session_actor(user)
+        )
+    except NovaException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from None
     if not result:
         raise HTTPException(status_code=404, detail=f"Alias '{alias_id}' not found")
     return AliasResponse(**result)
@@ -87,10 +103,10 @@ async def update_alias(
 @router.delete("/aliases/{alias_id}", status_code=204)
 async def delete_alias(
     alias_id: str,
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
     """Delete an alias."""
-    deleted = await llm_function_service.delete_alias(alias_id)
+    deleted = await llm_function_service.delete_alias(alias_id, actor=session_actor(user))
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Alias '{alias_id}' not found")
 
@@ -100,16 +116,14 @@ async def delete_alias(
 
 @router.post("/aliases/register-udfs", response_model=UDFRegisterResponse)
 async def register_udfs(
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
-    """Re-register all LLM UDFs in StarRocks.
+    """Queue registration for every AI function whose configuration changed.
 
-    Call this after:
-    - Creating/updating/deleting an alias
-    - Changing provider API key or endpoint
-    - Backend restart
+    The maintenance worker applies and verifies the engine functions; the
+    response reports what the engine has right now.
     """
-    result = await llm_function_service.register_all_udfs()
+    result = await llm_function_service.register_all_udfs(actor=session_actor(user))
     details = [UDFStatusItem(**d) for d in result["details"]]
     return UDFRegisterResponse(
         success=result["success"],
@@ -121,10 +135,10 @@ async def register_udfs(
 
 @router.get("/aliases/udf-status", response_model=UDFStatusResponse)
 async def get_udf_status(
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """Check which LLM UDFs are registered in StarRocks."""
-    statuses = await llm_function_service.get_udf_status()
+    statuses = await llm_function_service.get_udf_status(actor=session_actor(user))
     items = [UDFStatusItem(**s) for s in statuses]
     registered = sum(1 for i in items if i.registered)
     failed = sum(1 for i in items if not i.registered)

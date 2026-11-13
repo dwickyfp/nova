@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
 
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.agents import sharing, studio_router
 from app.modules.agents.sharing import shared_messages, shared_steps, strip_rows
 
@@ -32,6 +35,20 @@ def test_snapshots_keep_plans_and_drop_every_row():
     assert strip_rows({"a": {"rows": [1], "data": {"x": 1}, "ok": True}}) == {"a": {"ok": True}}
 
 
+def test_semantic_trace_does_not_restore_nested_results_after_redaction():
+    step = {"kind": "tool", "name": "semantic_query", "trace_detail": {
+        "question": "Revenue", "semantic_plan": {"metrics": ["revenue"],
+                                                   "result": {"private": "canary"}},
+        "semantic_view": {"id": "v1", "preview": "canary"},
+    }}
+    kept = shared_steps([step])
+    assert kept[0]["trace_detail"] == {
+        "question": "Revenue", "semantic_plan": {"metrics": ["revenue"]},
+        "semantic_view": {"id": "v1"},
+    }
+    assert step["trace_detail"]["semantic_view"]["preview"] == "canary"
+
+
 def test_shared_ui_never_exports_private_form_inputs_or_embedded_snapshots():
     messages = shared_messages([
         {"role": "assistant", "content": "Public fallback", "steps": [
@@ -47,14 +64,20 @@ def test_shared_ui_never_exports_private_form_inputs_or_embedded_snapshots():
     assert "private@example.com" not in str(messages)
 
 
-async def test_visible_shares_match_the_user_or_an_assigned_role(monkeypatch):
-    execute = AsyncMock(side_effect=[{}, {"rows": []}])
-    monkeypatch.setattr(sharing.db, "execute_system", execute)
+async def test_visible_shares_keep_the_bound_user_and_only_active_role(monkeypatch):
+    store = SimpleNamespace(actor=SecurityContext.from_session(VIEWER),
+                            active_grants=AsyncMock(return_value=[]))
+
+    @asynccontextmanager
+    async def scope(*args, **kwargs):
+        yield store
+
+    monkeypatch.setattr(sharing, "agent_metadata", scope)
     await sharing.share_repository.visible(VIEWER)
-    sql, params = execute.call_args.args
-    assert "target_type = 'user' AND target_name = %s" in sql
-    assert "target_type = 'role' AND target_name IN (%s)" in sql
-    assert params == ["bob", "analyst"]
+    store.active_grants.assert_awaited_once_with(limit=500, latest_first=True)
+    assert sharing.viewer_targets({**VIEWER, "assigned_roles": ["analyst", "admin"]}) == (
+        "bob", ["analyst"],
+    )
 
 
 async def test_an_unshared_thread_is_not_found(monkeypatch):
@@ -65,15 +88,13 @@ async def test_an_unshared_thread_is_not_found(monkeypatch):
 
 
 async def test_a_shared_thread_opens_without_rows(monkeypatch):
-    from app.modules.assistant.repository import assistant_repository
-
     monkeypatch.setattr(sharing.share_repository, "grant_for",
                         AsyncMock(return_value={"owner_name": "alice"}))
-    monkeypatch.setattr(assistant_repository, "get_thread",
-                        AsyncMock(return_value={"title": "Sales", "agent_id": "a1"}))
-    monkeypatch.setattr(assistant_repository, "list_messages", AsyncMock(return_value=[
-        {"message_id": "m1", "role": "assistant", "content": "Jakarta leads.", "steps": STEPS},
-    ]))
+    monkeypatch.setattr(sharing.share_repository, "thread", AsyncMock(return_value={
+        "title": "Sales", "agent_id": "a1", "messages": [
+            {"message_id": "m1", "role": "assistant", "content": "Jakarta leads.", "steps": STEPS},
+        ],
+    }))
     monkeypatch.setattr(studio_router, "write_audit_log", AsyncMock())
     opened = await studio_router.open_shared_thread("t1", user=VIEWER)
     assert opened["owner_name"] == "alice"
@@ -81,15 +102,13 @@ async def test_a_shared_thread_opens_without_rows(monkeypatch):
 
 
 async def test_a_result_re_runs_as_the_viewer_and_is_refused_without_access(monkeypatch):
-    from app.modules.assistant.repository import assistant_repository
     from app.modules.intelligence.semantic_views import semantic_view_service
 
     monkeypatch.setattr(sharing.share_repository, "grant_for",
                         AsyncMock(return_value={"owner_name": "alice"}))
-    monkeypatch.setattr(assistant_repository, "get_thread",
-                        AsyncMock(return_value={"agent_id": "a1"}))
-    monkeypatch.setattr(assistant_repository, "list_messages",
-                        AsyncMock(return_value=[{"role": "assistant", "steps": STEPS}]))
+    monkeypatch.setattr(sharing.share_repository, "thread", AsyncMock(return_value={
+        "agent_id": "a1", "messages": [{"role": "assistant", "steps": STEPS}],
+    }))
     monkeypatch.setattr(semantic_view_service, "get_active_for_agent",
                         AsyncMock(return_value=None))
     with pytest.raises(HTTPException) as caught:
@@ -104,18 +123,41 @@ async def test_only_a_dashboard_artifact_shares_and_computes_as_the_viewer(monke
 
     from app.modules.viz.service import viz_service
 
-    monkeypatch.setattr(sharing.share_repository, "grant_for",
-                        AsyncMock(return_value={"owner_name": "alice"}))
-    monkeypatch.setattr(studio_router.artifact_repository, "get", AsyncMock(return_value={
-        "artifact_id": "d1", "title": "D", "artifact_type": "dashboard",
-        "viz_spec": {"version": 1, "title": "D", "zones": [
-            {"zone_id": "z1", "kind": "sheet", "artifact_id": "art1",
-             "rect": {"x": 0, "y": 0, "w": 12, "h": 2}},
-        ]},
-    }))
-    compute = AsyncMock(return_value={"title": "D", "zones": [
-        {"zone_id": "z1", "artifact_id": "art1", "presmodel": {"row_count": 1}},
-    ]})
+    monkeypatch.setattr(
+        sharing.share_repository, "grant_for", AsyncMock(return_value={"owner_name": "alice"})
+    )
+    monkeypatch.setattr(
+        studio_router.artifact_repository,
+        "shared_dashboard",
+        AsyncMock(
+            return_value={
+                "charts": [{"artifact_id": "art1"}],
+                "artifact_id": "d1",
+                "title": "D",
+                "artifact_type": "dashboard",
+                "viz_spec": {
+                    "version": 1,
+                    "title": "D",
+                    "zones": [
+                        {
+                            "zone_id": "z1",
+                            "kind": "sheet",
+                            "artifact_id": "art1",
+                            "rect": {"x": 0, "y": 0, "w": 12, "h": 2},
+                        },
+                    ],
+                },
+            }
+        ),
+    )
+    compute = AsyncMock(
+        return_value={
+            "title": "D",
+            "zones": [
+                {"zone_id": "z1", "artifact_id": "art1", "presmodel": {"row_count": 1}},
+            ],
+        }
+    )
     monkeypatch.setattr(viz_service, "compute_dashboard", compute)
 
     computed = await studio_router.compute_shared_dashboard(
@@ -125,17 +167,26 @@ async def test_only_a_dashboard_artifact_shares_and_computes_as_the_viewer(monke
     )
     assert computed["zones"][0]["presmodel"]["row_count"] == 1
     # The owner's definitions, the viewer's credentials.
-    assert compute.call_args.kwargs["owner_name"] == "alice"
+    assert compute.call_args.kwargs["artifacts"] == [{"artifact_id": "art1"}]
     assert compute.call_args.args[1]["username"] == "bob"
 
 
 async def test_a_non_dashboard_artifact_cannot_be_shared_as_one(monkeypatch):
-    monkeypatch.setattr(sharing.share_repository, "grant_for",
-                        AsyncMock(return_value={"owner_name": "alice"}))
-    monkeypatch.setattr(studio_router.artifact_repository, "get", AsyncMock(return_value={
-        "artifact_id": "c1", "title": "Chart", "artifact_type": "chart",
-        "viz_spec": None,
-    }))
+    monkeypatch.setattr(
+        sharing.share_repository, "grant_for", AsyncMock(return_value={"owner_name": "alice"})
+    )
+    monkeypatch.setattr(
+        studio_router.artifact_repository,
+        "shared_dashboard",
+        AsyncMock(
+            return_value={
+                "artifact_id": "c1",
+                "title": "Chart",
+                "artifact_type": "chart",
+                "viz_spec": None,
+            }
+        ),
+    )
     with pytest.raises(HTTPException) as caught:
         await studio_router.open_shared_dashboard("c1", user=VIEWER)
     assert caught.value.status_code == 404

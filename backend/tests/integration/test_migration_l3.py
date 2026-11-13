@@ -30,12 +30,9 @@ import uuid
 import asyncmy
 import pytest
 import pytest_asyncio
-import redis.asyncio as aioredis
 
-from app.modules.migration.job_worker import MigrationJobWorker
 from app.storage.secrets import SecretValue
 from tests.conftest import root_password
-from tests.integration._nova_system_ddl import ensure_audit_log
 from tests.integration._stack import (
     require_shared_stack,
     shared_stack_host_port,
@@ -54,39 +51,13 @@ SENTINEL_VALUE = "AKIA_L3_MIGRATION_SENTINEL_0001"
 #: the redaction path runs with a real value, and asserted absent everywhere.
 SENTINEL_REF = "aws://nova/l3/migration-sentinel"
 
-MIGRATION_SOURCES_DDL = """
-CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_MIGRATION_SOURCES (
-    id                 VARCHAR(64) NOT NULL,
-    name               VARCHAR(256) NOT NULL,
-    host               VARCHAR(256) NOT NULL,
-    port               INT NOT NULL DEFAULT "9030",
-    username           VARCHAR(128) NOT NULL DEFAULT "root",
-    secret_ref         VARCHAR(1024),
-    comment            VARCHAR(1024),
-    created_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
-    created_by         VARCHAR(128)
-) PRIMARY KEY(id)
-DISTRIBUTED BY HASH(id) BUCKETS 1
-PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
-"""
-
 pytestmark = pytest.mark.engine
 
 
 @pytest_asyncio.fixture(autouse=True)
-async def migration_worker(app):
-    """Run the worker dispatcher alongside the in-process API for L3 tests."""
-    from app.core.config import settings
-
-    redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
-    stop = asyncio.Event()
-    task = asyncio.create_task(MigrationJobWorker(redis).run_forever(stop))
-    try:
+async def migration_worker(app, run_workload):
+    async with run_workload("ingestion"):
         yield
-    finally:
-        stop.set()
-        await task
-        await redis.aclose()
 
 
 async def _await_execute(client, response, *, timeout_seconds: float = 120) -> dict:
@@ -157,12 +128,6 @@ async def _admin_execute(sql: str):
     finally:
         conn.close()
     return None
-
-
-async def _ensure_schema() -> None:
-    await ensure_audit_log(SR_HOST, SR_PORT, SR_USER, SR_PASSWORD)
-    await _admin_execute("CREATE DATABASE IF NOT EXISTS NOVA_SYSTEM")
-    await _admin_execute(MIGRATION_SOURCES_DDL)
 
 
 @pytest_asyncio.fixture(scope="session")
@@ -237,8 +202,7 @@ def _l3_admin_ranger_policies() -> list:
             catalog="default_catalog",
             database="*",
             table="*",
-            accesses=["create table", "create view", "create materialized view",
-                      "create function"],
+            accesses=["create table", "create view", "create materialized view", "create function"],
             resource_type="database",
         ),
         compile_access_policy(
@@ -251,12 +215,39 @@ def _l3_admin_ranger_policies() -> list:
     ]
 
 
+@contextlib.asynccontextmanager
+async def _limited_migration_access(allowed: set[str]):
+    """Change only this disposable role's policies, observed by the real worker."""
+    from app.integrations.ranger.client import ranger_client
+
+    policies = _l3_admin_ranger_policies()
+
+    async def remove(policy):
+        existing = await ranger_client.get_policy(policy.name)
+        if existing and existing.get("id") is not None:
+            await ranger_client.delete_policy(int(existing["id"]))
+
+    try:
+        for policy in policies:
+            await remove(policy)
+            limited = policy.model_copy(deep=True)
+            for item in limited.policy_items:
+                item.accesses = [access for access in item.accesses if access.type in allowed]
+            limited.policy_items = [item for item in limited.policy_items if item.accesses]
+            if limited.policy_items:
+                await ranger_client.put_policy(limited)
+        yield
+    finally:
+        for policy in policies:
+            await remove(policy)
+            await ranger_client.put_policy(policy)
+
+
 @pytest_asyncio.fixture
 async def engine(request):
     require_shared_stack(request)
     if not await _reachable():
         pytest.skip("StarRocks not reachable")
-    await _ensure_schema()
 
 
 @pytest_asyncio.fixture(scope="session")
@@ -329,10 +320,6 @@ async def source(admin_client):
     )
     assert resp.status_code == 201, resp.text
     yield name
-    with contextlib.suppress(Exception):
-        await _admin_execute(
-            f"DELETE FROM NOVA_SYSTEM.CONFIG_MIGRATION_SOURCES WHERE name = '{name}'"
-        )
 
 
 @pytest_asyncio.fixture
@@ -500,16 +487,13 @@ class TestNoCredentialLeakOnRealEngine:
         assert resp.status_code == 502, resp.text
         assert SENTINEL_VALUE not in resp.text
 
-        with contextlib.suppress(Exception):
-            await _admin_execute(
-                f"DELETE FROM NOVA_SYSTEM.CONFIG_MIGRATION_SOURCES WHERE name = '{name}'"
-            )
-
-    async def test_source_registration_stores_no_password(self, admin_client, source):
+    async def test_source_registration_stores_no_password(
+        self, admin_client, source, metadata_inspect
+    ):
         """The registry stores the address and secret *reference*, never a value."""
-        rows = await _admin_execute(
+        rows = await metadata_inspect(
             "SELECT id, name, host, port, username, secret_ref "
-            "FROM NOVA_SYSTEM.CONFIG_MIGRATION_SOURCES "
+            "FROM nova_meta.config_migration_sources "
             f"WHERE name = '{source}'"
         )
         assert rows, "source row was not persisted"
@@ -517,17 +501,19 @@ class TestNoCredentialLeakOnRealEngine:
         assert SENTINEL_VALUE not in flat
         assert SENTINEL_KEY not in flat
         # No password column exists at all.
-        columns = await _admin_execute(
-            "SELECT COLUMN_NAME FROM information_schema.columns "
-            "WHERE TABLE_SCHEMA = 'NOVA_SYSTEM' "
-            "AND TABLE_NAME = 'CONFIG_MIGRATION_SOURCES'"
+        columns = await metadata_inspect(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = 'nova_meta' "
+            "AND table_name = 'config_migration_sources'"
         )
         names = {row[0].lower() for row in (columns or [])}
         assert "password" not in names
 
 
 class TestAuditOnRealEngine:
-    async def test_dry_run_writes_an_audit_row(self, admin_client, source, namespace):
+    async def test_dry_run_writes_an_audit_row(
+        self, admin_client, source, namespace, metadata_inspect
+    ):
         """Finding 2 — the operator-facing dry-run is recorded in AUDIT_LOG."""
         resp = await admin_client.post(
             "/api/v1/migration/dry-run",
@@ -535,8 +521,8 @@ class TestAuditOnRealEngine:
         )
         assert resp.status_code == 200, resp.text
 
-        rows = await _admin_execute(
-            "SELECT action, object_name, status FROM NOVA_SYSTEM.AUDIT_LOG "
+        rows = await metadata_inspect(
+            "SELECT action, object_name, status FROM nova_meta.audit_log "
             f"WHERE action = 'dry_run' AND object_name = '{source}' "
             "ORDER BY event_time DESC LIMIT 1"
         )
@@ -544,7 +530,7 @@ class TestAuditOnRealEngine:
         assert rows[0][0] == "dry_run"
         assert SENTINEL_VALUE not in str(rows)
 
-    async def test_source_registration_writes_an_audit_row(self, admin_client):
+    async def test_source_registration_writes_an_audit_row(self, admin_client, metadata_inspect):
         name = _unique("audit_src")
         resp = await admin_client.post(
             "/api/v1/migration/sources",
@@ -552,18 +538,13 @@ class TestAuditOnRealEngine:
         )
         assert resp.status_code == 201, resp.text
 
-        rows = await _admin_execute(
-            "SELECT action, object_name FROM NOVA_SYSTEM.AUDIT_LOG "
+        rows = await metadata_inspect(
+            "SELECT action, object_name FROM nova_meta.audit_log "
             f"WHERE action = 'register_source' AND object_name = '{name}' "
             "ORDER BY event_time DESC LIMIT 1"
         )
         assert rows, "no audit row was written for source registration"
         assert SENTINEL_VALUE not in str(rows)
-
-        with contextlib.suppress(Exception):
-            await _admin_execute(
-                f"DELETE FROM NOVA_SYSTEM.CONFIG_MIGRATION_SOURCES WHERE name = '{name}'"
-            )
 
 
 class TestExecuteGateOnRealEngine:
@@ -576,9 +557,7 @@ class TestExecuteGateOnRealEngine:
         assert body["write_operations"] is True
         assert "execute_available" not in body
 
-    async def test_execute_refused_without_acknowledgement(
-        self, admin_client, source, namespace
-    ):
+    async def test_execute_refused_without_acknowledgement(self, admin_client, source, namespace):
         """A caller cannot reach the engine without acknowledging omissions."""
         resp = await admin_client.post(
             "/api/v1/migration/execute",
@@ -592,19 +571,12 @@ class TestExecuteGateOnRealEngine:
         )
         assert resp.status_code == 422, resp.text
 
-    async def test_execute_applies_to_target(
-        self, admin_client, source, namespace, monkeypatch
-    ):
+    async def test_execute_applies_to_target(self, admin_client, source, namespace):
         """Execute creates the target objects for real.
 
         Proves the whole 11-B path: plan → execute through the query pipeline →
         target exists with matching schema.
         """
-        from app.core.config import settings
-
-        monkeypatch.setattr(
-            settings, "MIGRATION_EXECUTE_REQUIRE_CONFIRMATION", False, raising=False
-        )
         db = namespace["database"]
         target = f"{db}_exec"
         with contextlib.suppress(Exception):
@@ -616,6 +588,7 @@ class TestExecuteGateOnRealEngine:
                 "source": source,
                 "database": db,
                 "target_database": target,
+                "confirmation": target,
                 "acknowledge_omissions": True,
             },
         )
@@ -666,23 +639,14 @@ class TestExecuteGateOnRealEngine:
         }
 
     async def test_preflight_reports_missing_privilege(
-        self, admin_client, source, namespace, monkeypatch
+        self, admin_client, source, namespace
     ):
         """A caller without table-creation rights is told before execute.
 
-        The L3 admin holds the Ranger policies; here the active role's Ranger
-        answer is stubbed to allow only CREATE DATABASE so the analyzer's
-        refusal is exercised against a real engine connection.
+        The disposable role temporarily holds only CREATE DATABASE in Ranger.
+        The independently running ingestion worker must observe that refusal.
         """
-        from app.modules.migration import service as service_module
-
-        original = service_module.MigrationService._check_caller_access
-
-        async def _limited(self, *, requests, **kwargs):
-            return [request.access == "create database" for request in requests]
-
-        monkeypatch.setattr(service_module.MigrationService, "_check_caller_access", _limited)
-        try:
+        async with _limited_migration_access({"create database"}):
             resp = await admin_client.post(
                 "/api/v1/migration/preflight",
                 json={
@@ -695,38 +659,28 @@ class TestExecuteGateOnRealEngine:
             body = resp.json()
             assert body["ok"] is False
             assert "CREATE TABLE" in body["missing"]
-        finally:
-            monkeypatch.setattr(service_module.MigrationService, "_check_caller_access", original)
 
-    async def test_execute_blocked_by_preflight(self, admin_client, source, namespace, monkeypatch):
-        """Execute fails fast (409) when the preflight finds a missing privilege."""
-        from app.core.config import settings
-        from app.modules.migration import service as service_module
-
-        monkeypatch.setattr(
-            settings, "MIGRATION_EXECUTE_REQUIRE_CONFIRMATION", False, raising=False
-        )
-        monkeypatch.setattr(settings, "MIGRATION_EXECUTE_PREFLIGHT", True, raising=False)
-
-        async def _no_access(self, *, requests, **kwargs):
-            return [False for _ in requests]
-
-        monkeypatch.setattr(service_module.MigrationService, "_check_caller_access", _no_access)
-        resp = await admin_client.post(
-            "/api/v1/migration/execute",
-            json={
-                "source": source,
-                "database": namespace["database"],
-                "target_database": f"{namespace['database']}_pf3",
-                "acknowledge_omissions": True,
-            },
-        )
-        body = await _await_execute(admin_client, resp)
-        assert body["status"] == "failed", body
-        assert body["results"][0]["error"] == "preflight_failed"
+    async def test_execute_blocked_by_preflight(self, admin_client, source, namespace):
+        """The worker records preflight failure before any target mutation."""
+        target = f"{namespace['database']}_pf3"
+        async with _limited_migration_access(set()):
+            resp = await admin_client.post(
+                "/api/v1/migration/execute",
+                json={
+                    "source": source,
+                    "database": namespace["database"],
+                    "target_database": target,
+                    "confirmation": target,
+                    "acknowledge_omissions": True,
+                },
+            )
+            body = await _await_execute(admin_client, resp)
+            assert body["status"] == "failed", body
+            assert body["results"][0]["error"] == "preflight_failed"
+            assert (target,) not in await _admin_execute("SHOW DATABASES")
 
     async def test_execute_moves_data_with_verification(
-        self, admin_client, source, namespace, monkeypatch, transfer_bucket
+        self, admin_client, source, namespace, transfer_bucket
     ):
         """11-C: schema + data. Export to a stage, import to the target, verify.
 
@@ -734,11 +688,6 @@ class TestExecuteGateOnRealEngine:
         storage. Skips when the test MinIO is not engine-reachable, because that
         is an environment precondition, not a Nova defect.
         """
-        from app.core.config import settings
-
-        monkeypatch.setattr(
-            settings, "MIGRATION_EXECUTE_REQUIRE_CONFIRMATION", False, raising=False
-        )
         db = namespace["database"]
         table = namespace["table"]
         target = f"{db}_data"
@@ -756,6 +705,7 @@ class TestExecuteGateOnRealEngine:
                 "source": source,
                 "database": db,
                 "target_database": target,
+                "confirmation": target,
                 "acknowledge_omissions": True,
                 "include_data": True,
             },
@@ -784,14 +734,9 @@ class TestExecuteGateOnRealEngine:
                 await _admin_execute(f"DROP DATABASE IF EXISTS {target}")
 
     async def test_execute_is_idempotent_on_rerun(
-        self, admin_client, source, namespace, monkeypatch
+        self, admin_client, source, namespace
     ):
         """Running execute twice must not fail — the second run is a no-op."""
-        from app.core.config import settings
-
-        monkeypatch.setattr(
-            settings, "MIGRATION_EXECUTE_REQUIRE_CONFIRMATION", False, raising=False
-        )
         db = namespace["database"]
         target = f"{db}_idem"
         with contextlib.suppress(Exception):
@@ -800,14 +745,17 @@ class TestExecuteGateOnRealEngine:
             "source": source,
             "database": db,
             "target_database": target,
+            "confirmation": target,
             "acknowledge_omissions": True,
         }
         try:
             first = await admin_client.post("/api/v1/migration/execute", json=payload)
             first_body = await _await_execute(admin_client, first)
+            assert first_body["status"] == "succeeded", first_body
             assert first_body["results"][0]["failed"] == 0
             second = await admin_client.post("/api/v1/migration/execute", json=payload)
             second_body = await _await_execute(admin_client, second)
+            assert second_body["status"] == "succeeded", second_body
             # Second run creates nothing new but must not fail.
             assert second_body["results"][0]["failed"] == 0
         finally:

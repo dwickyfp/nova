@@ -20,45 +20,47 @@ def test_assistant_collapsed_round_trips_through_the_request_schema():
     assert request.assistant_collapsed is True
 
 
-async def test_save_state_persists_the_assistant_preference(monkeypatch):
-    """The service writes the assistant state under its own pref key."""
-    from app.modules.workspaces.service import WorkspaceService
+async def test_save_state_persists_the_assistant_preference(monkeypatch, fake_metadata_db):
+    from unittest.mock import AsyncMock
 
-    written: dict[str, str] = {}
+    from app.modules.workspaces import service as module
+    from app.modules.workspaces.actor import acting_as
 
-    async def fake_set_preference(username, key, value):
-        written[key] = value
-
-    service = WorkspaceService()
-    monkeypatch.setattr(service._repo, "set_preference", fake_set_preference)
-
-    await service.save_state(
-        "alice",
-        open_tabs=[],
-        active_tab=None,
-        sidebar_collapsed=False,
-        assistant_collapsed=True,
-        last_database=None,
-        last_schema=None,
-        last_role=None,
-    )
-
-    assert written[WorkspaceService.PREF_ASSISTANT_STATE] == "true"
+    repo = AsyncMock()
+    repo.read.return_value = {}
+    monkeypatch.setattr(module, "PreferenceRepository", lambda connection: repo)
+    with acting_as(USER):
+        await module.WorkspaceService().save_state(
+            "alice", open_tabs=[], active_tab=None, sidebar_collapsed=False,
+            assistant_collapsed=True, last_database=None, last_schema=None, last_role=None,
+        )
+    owner, changes = repo.change.call_args.args
+    assert owner == "alice"
+    assert changes[module.WorkspaceService.PREF_ASSISTANT_STATE].value == "true"
+    assert len(fake_metadata_db.committed) == 1
+    assert fake_metadata_db.committed[0].actor.session_id == "s1"
 
 
-async def test_get_tree_reports_the_persisted_assistant_preference(monkeypatch):
-    from app.modules.workspaces.service import WorkspaceService
+async def test_get_tree_reports_the_persisted_assistant_preference(monkeypatch, fake_metadata_db):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
 
-    service = WorkspaceService()
+    from app.modules.workspaces import service as module
+    from app.modules.workspaces.actor import acting_as
 
-    async def fake_list_entries(username):
-        return []
-
-    async def fake_get_preferences(username, keys):
-        return {WorkspaceService.PREF_ASSISTANT_STATE: "true"}
-
-    monkeypatch.setattr(service._repo, "list_entries", fake_list_entries)
-    monkeypatch.setattr(service._repo, "get_preferences", fake_get_preferences)
-
-    tree = await service.get_tree("alice")
+    repo = AsyncMock()
+    repo.read.return_value = {
+        module.WorkspaceService.PREF_ASSISTANT_STATE: SimpleNamespace(deleted=False, value="true"),
+    }
+    files = AsyncMock()
+    files.list_entries.return_value = []
+    monkeypatch.setattr(module, "PreferenceRepository", lambda connection: repo)
+    monkeypatch.setattr(module.WorkspaceService, "_files", property(lambda self: files))
+    with acting_as(USER):
+        tree = await module.WorkspaceService().get_tree("alice")
     assert tree["assistant_collapsed"] is True
+    assert fake_metadata_db.committed[0].read_only
+
+
+USER = {"username": "alice", "session_id": "s1", "active_role": "ANALYST",
+        "assigned_roles": ["ANALYST"]}

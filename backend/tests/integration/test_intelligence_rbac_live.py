@@ -154,9 +154,9 @@ async def test_restricted_user_cannot_read_managed_intelligence_objects():
     finally:
         if semantic_id:
             await semantic_view_service.drop(semantic_id, owner)
-        if await feature_store._group(group):
+        if await feature_store._group(group, owner):
             await feature_store.drop_group(group, owner)
-        if await feature_store._view(view):
+        if await feature_store._view(view, owner):
             await feature_store.drop_view(view, owner)
         if entity_id:
             await db.execute_system(

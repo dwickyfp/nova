@@ -25,9 +25,11 @@ from app.observability.metrics import (
 
 from .data_mover import DataMovementError
 from .jobs import (
+    MigrationLeaseLost,
     clear_job_session,
     job_session_id,
     migration_job_repo,
+    session_fingerprint,
 )
 from .schemas import (
     DatabasesRequest,
@@ -174,22 +176,24 @@ class MigrationJobWorker:
             if job["operation"] in {"execute", "execute_batch"} and active_writes >= 1:
                 continue
             try:
-                claimed = await migration_job_repo.claim(job["id"])
+                generation = await migration_job_repo.claim(job["id"])
             except Exception:
                 MIGRATION_WORKER_POLL_ERRORS.labels(phase="claim").inc()
                 raise
-            if not claimed:
+            if generation is None:
                 continue
             processed += 1
             if job["operation"] in {"execute", "execute_batch"}:
                 active_writes += 1
             self._active[job["id"]] = asyncio.create_task(
-                self.process_claimed(job), name=f"nova-migration-{job['id']}"
+                self.process_claimed(job, generation=generation),
+                name=f"nova-migration-{job['id']}",
             )
             self._active_operations[job["id"]] = job["operation"]
         return processed
 
-    async def process_claimed(self, job: dict[str, Any]) -> None:
+    async def process_claimed(self, job: dict[str, Any], *, generation: int) -> None:
+        """Run a job claimed under ``generation``; every later write names it."""
         job_id = str(job["id"])
         operation = _metric_operation(job.get("operation"))
         started = time.perf_counter()
@@ -197,25 +201,39 @@ class MigrationJobWorker:
         MIGRATION_WORKER_ACTIVE_JOBS.inc()
         stop_heartbeat = asyncio.Event()
         heartbeat: asyncio.Task[None] | None = None
+        operation_task: asyncio.Task[tuple[str, dict[str, Any]]] | None = None
         try:
             session_id, session = await self._session(job)
-            heartbeat = asyncio.create_task(self._heartbeat(job_id, session_id, stop_heartbeat))
-            payload = json.loads(job["request_json"])
-            if job["operation"] in {"execute", "execute_batch"}:
-                status, result = await self._execute(job, payload, session_id, session)
-            else:
-                result = await self._read(job, payload, session_id, session)
-                status = "succeeded"
-            await migration_job_repo.finish(job_id, status=status, result=result)
-            finished_status = status
-            await self._audit_safely(job, status)
-        except asyncio.CancelledError:
-            await migration_job_repo.finish(
-                job_id, status="interrupted", error_code="worker_interrupted"
+            heartbeat = asyncio.create_task(
+                self._heartbeat(
+                    job_id, session_id, stop_heartbeat, generation=generation, job=job,
+                )
             )
-            finished_status = "interrupted"
-            await self._audit_safely(job, "interrupted")
+            payload = json.loads(job["request_json"])
+            operation_task = asyncio.create_task(
+                self._operate(job, payload, session_id, session, generation=generation)
+            )
+            completed, _ = await asyncio.wait(
+                {operation_task, heartbeat}, return_when=asyncio.FIRST_COMPLETED,
+            )
+            if heartbeat in completed:
+                await heartbeat
+                raise MigrationLeaseLost()
+            status, result = await operation_task
+            if await self._finish(job_id, generation, status=status, result=result):
+                finished_status = status
+                await self._audit_safely(job, status)
+        except asyncio.CancelledError:
+            if await self._finish(
+                job_id, generation, status="interrupted", error_code="worker_interrupted"
+            ):
+                finished_status = "interrupted"
+                await self._audit_safely(job, "interrupted")
             raise
+        except MigrationLeaseLost:
+            # Another reconcile pass interrupted the job; its outcome is no
+            # longer this worker's to record.
+            logger.error("migration job %s lost its lease; outcome not recorded", job_id)
         except Exception as exc:
             code = _safe_error(exc)
             logger.error(
@@ -227,15 +245,20 @@ class MigrationJobWorker:
                 type(exc).__qualname__,
                 _numeric_errno(exc),
             )
-            await migration_job_repo.finish(job_id, status="failed", error_code=code)
-            finished_status = "failed"
-            await self._audit_safely(job, "failed")
+            if await self._finish(job_id, generation, status="failed", error_code=code):
+                finished_status = "failed"
+                await self._audit_safely(job, "failed")
         finally:
             try:
                 stop_heartbeat.set()
+                if operation_task is not None:
+                    if not operation_task.done():
+                        operation_task.cancel()
+                    await asyncio.gather(operation_task, return_exceptions=True)
                 if heartbeat is not None:
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await heartbeat
+                    if not heartbeat.done():
+                        heartbeat.cancel()
+                    await asyncio.gather(heartbeat, return_exceptions=True)
                 await clear_job_session(self._client, job_id)
             finally:
                 metric_status = (
@@ -247,26 +270,46 @@ class MigrationJobWorker:
                 ).observe(time.perf_counter() - started)
                 MIGRATION_WORKER_ACTIVE_JOBS.dec()
 
-    async def _heartbeat(self, job_id: str, session_id: str, stop_event: asyncio.Event) -> None:
+    async def _operate(
+        self, job: dict[str, Any], payload: dict[str, Any], session_id: str,
+        session: dict[str, Any], *, generation: int,
+    ) -> tuple[str, dict[str, Any]]:
+        if job["operation"] in {"execute", "execute_batch"}:
+            return await self._execute(job, payload, session_id, session, generation=generation)
+        return "succeeded", await self._read(job, payload, session_id, session)
+
+    @staticmethod
+    async def _finish(job_id: str, generation: int, **outcome: Any) -> bool:
+        """Record the outcome under the claimed lease; False when the lease is gone."""
+        if await migration_job_repo.finish(job_id, generation=generation, **outcome):
+            return True
+        logger.error("migration job %s lost its lease; outcome not recorded", job_id)
+        return False
+
+    async def _heartbeat(
+        self, job_id: str, session_id: str, stop_event: asyncio.Event, *, generation: int,
+        job: dict[str, Any] | None = None,
+    ) -> None:
         while not stop_event.is_set():
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(stop_event.wait(), timeout=self._heartbeat_interval)
             if stop_event.is_set():
                 return
             try:
-                await migration_job_repo.heartbeat(job_id)
-            except Exception as exc:
-                logger.error("migration heartbeat %s failed: %s", job_id, type(exc).__name__)
-            try:
+                if not await migration_job_repo.heartbeat(job_id, generation=generation):
+                    raise MigrationLeaseLost()
+                if job is not None:
+                    await self._session(job, session_id)
                 await session_store.refresh(session_id)
             except Exception as exc:
-                logger.error("migration session refresh failed: %s", type(exc).__name__)
+                logger.error("migration heartbeat %s failed: %s", job_id, type(exc).__name__)
+                raise MigrationLeaseLost() from None
 
     async def _session(
         self, job: dict[str, Any], known_session_id: str | None = None
     ) -> tuple[str, dict[str, Any]]:
         session_id = known_session_id or await job_session_id(self._client, str(job["id"]))
-        if not session_id:
+        if not session_id or session_fingerprint(session_id) != job.get("session_fingerprint"):
             raise MigrationSessionExpired()
         session = await session_store.get(session_id)
         if not session or not session.get("encrypted_password"):
@@ -354,6 +397,8 @@ class MigrationJobWorker:
         payload: dict[str, Any],
         session_id: str,
         session: dict[str, Any],
+        *,
+        generation: int,
     ) -> tuple[str, dict[str, Any]]:
         body: ExecuteRequest | ExecuteBatchRequest
         if job["operation"] == "execute":
@@ -364,10 +409,19 @@ class MigrationJobWorker:
             databases = body.databases
         available = set((await migration_service.databases(body.source)).databases)
         results: list[dict[str, Any]] = []
+        async def progress(current_database: str | None) -> None:
+            if not await migration_job_repo.progress(
+                job["id"],
+                generation=generation,
+                current_database=current_database,
+                result={"results": results},
+            ):
+                # Stop before touching another database: a newer lease or a
+                # reconcile pass owns the job now.
+                raise MigrationLeaseLost()
+
         for database in databases:
-            await migration_job_repo.progress(
-                job["id"], current_database=database, result={"results": results}
-            )
+            await progress(database)
             try:
                 if database not in available:
                     raise SourceConnectionError("Selected database is no longer available")
@@ -417,9 +471,7 @@ class MigrationJobWorker:
             except Exception as exc:
                 result = {"database": database, "status": "failed", "error": _safe_error(exc)}
             results.append(result)
-            await migration_job_repo.progress(
-                job["id"], current_database=None, result={"results": results}
-            )
+            await progress(None)
         succeeded = sum(item["status"] == "succeeded" for item in results)
         status = "succeeded" if succeeded == len(results) else "partial" if succeeded else "failed"
         return status, {"results": results}

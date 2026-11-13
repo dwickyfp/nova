@@ -1,0 +1,11 @@
+{
+  "run": 43097473765,
+  "last_observed_status": "queued",
+  "jobs": [],
+  "cancel_result": "Cannot cancel a workflow run that is completed",
+  "rerun_result": "This workflow is already running",
+  "classification": "INCONSISTENT_REMOTE_STATUS; cancel, rerun and documented stuck-run cancellation all refused",
+  "actions_status": "github-status-recovery.json",
+  "force_cancel_result": "HTTP 409: Cannot cancel a workflow run that has not been queued yet.",
+  "force_cancel_api_reference": "https://docs.github.com/en/rest/actions/workflow-runs#force-cancel-a-workflow-run"
+}

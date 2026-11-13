@@ -1,0 +1,104 @@
+{
+  "source_parent_commit": "5eb29e94f9aa76e20805a62666cb3186bd3ee9c5",
+  "source_sha256": {
+    "backend/app/modules/workspaces/metadata_sharing.py": "c5d6e5c12e7d0fc04b7852d24a1536d002de96d3503455aba4b40a2b14a2c84f",
+    "backend/metadata_migrations/0013_workspace_sharing.sql": "ba151b8a89dc8ba297d324579c30741d60ceaab0d284d193088f6afa197e3ca4",
+    "backend/tests/integration/test_metadata_workspaces.py": "d086456c5cae6deb20e968cd5f8d1643fc155b9fe83d1fd1969be6d177679241",
+    "backend/tests/eval/test_intelligent_ui_trajectory.py": "372e4ef018788b8e88651d45153960570c52baccb5d6019ea463bcde3d54bf55",
+    ".github/workflows/ci.yml": "2d04e25ead351f33214c3d4357af29bcd01c7938b6953e5e29224634323267d7"
+  },
+  "commands": {
+    "unit": "uv run --offline --no-sync pytest tests/unit --cov=app --cov-branch --cov-report=term-missing --cov-report=xml:<private coverage artifact> --junit-xml:<private unit artifact>",
+    "postgresql": "uv run --offline --no-sync python; pytest.main with all 15 CI-listed metadata test modules, existing private fixture DSN and pinned PgBouncer binary",
+    "eval": "uv run --offline --no-sync pytest tests/eval -q --junit-xml:<private artifact>",
+    "scorecard": "uv run --offline --no-sync python -m tests.eval.report",
+    "mypy": "uv run --offline --no-sync mypy app --no-error-summary",
+    "ruff": "uv run --offline --no-sync ruff check --force-exclude <132 changed Python paths>",
+    "boundary": "uv run --offline --no-sync python scripts/check_user_data_system_access.py"
+  },
+  "unit": {
+    "tests": 10909,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 10909,
+    "time_seconds": 597.328,
+    "artifact_sha256": "1e5e368ea2753718d4f45e946f8e81c819a7870536063ca1e64515764df09e2c"
+  },
+  "postgresql": {
+    "tests": 531,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 531,
+    "time_seconds": 370.202,
+    "artifact_sha256": "3846259e7d9d7268c4b5296729dec69a7408c5f6f248787a6557014a2ef83b56"
+  },
+  "workspace_cases": 42,
+  "initial_focused": {
+    "tests": 25,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 25,
+    "time_seconds": 14.829,
+    "artifact_sha256": "1cc80dbf47c893f1d2823f9327c47ddcf844de52a8067e135ea0199780a937c9"
+  },
+  "eval_initial_retained": {
+    "tests": 358,
+    "failures": 1,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 357,
+    "time_seconds": 12.601,
+    "artifact_sha256": "073be75f491a47aea6799d4f60a0ee97bf40a535d3801892a4c75b0910bcc48b"
+  },
+  "eval_repaired_trajectory": {
+    "tests": 15,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 15,
+    "time_seconds": 3.083,
+    "artifact_sha256": "fcd6ac9c868591b4f74dec370a3cf6980813a4c99e8e3326105bb48a6f0d2817"
+  },
+  "eval_final": {
+    "tests": 358,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 358,
+    "time_seconds": 13.26,
+    "artifact_sha256": "01b71bf380f369e867ad57231d82eccea9e01c55cf22b690dd4cc4df6f59919a"
+  },
+  "scorecard": {
+    "scenarios": 54,
+    "checks": 189,
+    "status": "PASS"
+  },
+  "mypy": {
+    "status": "PASS",
+    "existing_notes": 3
+  },
+  "ruff": {
+    "files": 132,
+    "exit_code": 0
+  },
+  "boundary": "PASS",
+  "metadata_log_scan": {
+    "lines": 24,
+    "matches": {
+      "credential_canary": 0,
+      "encrypted_credential": 0
+    },
+    "passed": true
+  },
+  "feature_acceptance_statuses_changed": false,
+  "source_inventory_calls_changed": false,
+  "limits": [
+    "Prepared PG ownership/share storage; no runtime port or cutover",
+    "Current-object profile is not a frozen migration snapshot",
+    "Session-role revocation and file/object lifecycle still pending",
+    "Delivered-commit CI and full migrated-feature acceptance pending"
+  ]
+}

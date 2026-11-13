@@ -102,6 +102,24 @@ Statements that change data, such as `INSERT`, show
 When a query fails, the error is shown in the results panel. **Explain** and
 **Fix with Neva** ask the assistant to explain the error or suggest a fix.
 
+### Choose when Neva asks for approval
+
+Open **Ask Neva** and use the approval picker beside **Model**:
+
+- **Need approval** asks before running a read-only query.
+- **Always allow read-only** approves read-only tools for this conversation
+  while you remain signed in. It does not approve writes.
+
+Your approval does not carry over to a new login. Choose **Need approval** to
+revoke it for the current login. Nova checks the saved approval before each
+new turn; a revoked or expired approval asks again. The approval lasts at most
+12 hours, and a service interruption can require you to approve again.
+
+For an action that still needs approval, **Allow** or **Deny** applies to that
+action. Either choice keeps your existing **Always allow read-only** selection.
+Choose **Need approval** when you want read-only queries to ask again.
+An earlier action's approval cannot be reused for a later action.
+
 ## See a query plan
 
 Put `EXPLAIN` in front of a query to see how Nova will run it. The plan

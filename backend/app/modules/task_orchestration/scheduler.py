@@ -1,13 +1,13 @@
-"""Nova scheduler tick — decide which graphs are due, persist, then publish.
+"""Nova scheduler tick — decide which graphs are due and reserve them durably.
 
-The scheduler **never executes SQL**. It computes time and creates graph runs;
-the worker executes. That separation is what lets the scheduler be a singleton
-(design §2, rule 2).
+The scheduler **never executes SQL** against data. It computes time and creates
+graph runs; the worker executes. That separation is what lets the scheduler be a
+singleton (design §2, rule 2).
 
-Ordering is non-negotiable and is enforced here: the graph run is written to
-``NOVA_SYSTEM`` *first*, and only then is the job pushed to Redis (design §2,
-rule 1). If the push fails or Redis is flushed, the row survives and the
-reconciler re-derives the work.
+A due occurrence, its graph run, its ``task.graph`` job and the job's outbox
+wakeup commit in **one** PostgreSQL transaction that also locks the live leader
+lease. Redis only carries the wakeup the outbox publisher sends afterwards; a
+lost wakeup delays work but never loses it, because workers poll the queue.
 
 Idempotency uses a **deterministic graph-run id** of ``graph_id`` + due instant:
 two ticks for the same due time resolve to the same primary key, so the second
@@ -22,8 +22,10 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
+from app.common.metadata_actors import owner_actor, service_actor
 from app.core.config import settings
 from app.modules.task_orchestration.graph import Edge, Graph
+from app.modules.task_orchestration.leadership import MetadataLeaderLock
 from app.modules.task_orchestration.repository import (
     TaskOrchestrationRepository,
     scope_from_graph_id,
@@ -361,11 +363,16 @@ class SchedulerTick:
     def __init__(
         self,
         repository: TaskOrchestrationRepository,
-        transport: GraphRunTransport,
+        transport: GraphRunTransport | None = None,
+        *,
+        leader: MetadataLeaderLock | None = None,
     ) -> None:
         self._repository = repository
+        #: Wakeup only; the job and its outbox event are already committed.
         self._transport = transport
+        self.leader = leader
         self._streams_maintained_at = float("-inf")
+        self._roots: dict[tuple[str, str], dict[str, Any]] = {}
 
     async def tick(self, now: datetime | None = None) -> SchedulerPlan:
         moment = now or datetime.now(UTC)
@@ -373,6 +380,10 @@ class SchedulerTick:
         tasks = await self._repository.list_tasks()
         edges = await self._repository.list_all_edges()
         plan = plan_tick(tasks, edges, moment, engine_timezone)
+        self._roots = {}
+        for graph_id in {due.graph_id for due in plan.due}:
+            for name, task in _tasks_by_name(tasks, scope_from_graph_id(graph_id)).items():
+                self._roots[(graph_id, name)] = task
         try:
             from app.modules.task_orchestration.stream_triggers import plan_stream_triggers
 
@@ -382,24 +393,18 @@ class SchedulerTick:
         except Exception:
             logger.exception("stream trigger planning failed; scheduled tasks continue")
         SCHEDULER_INVALID_SCHEDULES.inc(plan.skipped)
-        existing_ids: set[str] | None = None
-        if plan.due:
-            batch_lookup = getattr(self._repository, "existing_graph_run_ids", None)
-            if batch_lookup is not None:
-                try:
-                    existing_ids = await batch_lookup([due.run_id for due in plan.due])
-                except Exception:
-                    logger.exception("batch graph-run lookup failed; using per-run checks")
-
+        existing_ids = await self._repository.existing_graph_run_ids(
+            [due.run_id for due in plan.due]
+        )
         for due in plan.due:
             # One graph's failure must not abandon the rest of the batch. Before
             # this guard a single transport error (or a DB blip) escaped
             # ``tick`` and every later due graph in the same batch was silently
             # dropped until the next tick.
             try:
-                if existing_ids is not None and due.run_id in existing_ids:
+                if due.run_id in existing_ids:
                     continue
-                await self._enqueue(due, plan, skip_existing_lookup=existing_ids is not None)
+                await self._enqueue(due, plan, skip_existing_lookup=True)
             except Exception:
                 plan.enqueue_failed += 1
                 SCHEDULER_ENQUEUE_FAILURES.inc()
@@ -478,22 +483,43 @@ class SchedulerTick:
             if due.owner_role
             else None
         )
-        created, is_new = await self._repository.create_graph_run_once(
-            {
-                "id": due.run_id,
-                "graph_id": due.graph_id,
-                "trigger_type": due.trigger_type,
-                **({"wal_marks": due.wal_marks} if due.wal_marks else {}),
-                "state": "pending",
-                "overlap_policy": due.overlap_policy,
-                "execution_role": due.owner_role,
-                "execution_user": execution_user,
-            }
+        data = {
+            "id": due.run_id,
+            "graph_id": due.graph_id,
+            "trigger_type": due.trigger_type,
+            **({"wal_marks": due.wal_marks} if due.wal_marks else {}),
+            "state": "pending",
+            "overlap_policy": due.overlap_policy,
+            "execution_role": due.owner_role,
+            "execution_user": execution_user,
+        }
+        # The job is owned by the context the run executes as; without a bound
+        # execution account it belongs to the scheduler and the worker refuses
+        # to execute it (the run fails with an identity error, as before).
+        actor = (
+            owner_actor(execution_user, due.owner_role)
+            if execution_user and due.owner_role
+            else service_actor("scheduler")
         )
+        repository = self._repository.for_actor(actor)
+        root = self._roots.get((due.graph_id, due.root_task or ""))
+        lease = self.leader.lease if self.leader is not None else None
+        if due.trigger_type == "schedule" and root is not None:
+            if lease is None:
+                raise RuntimeError("A scheduled occurrence is reserved only by the leader")
+            created, is_new = await repository.create_scheduled_graph_run(
+                lease, root, due.due_at, data,
+            )
+        else:
+            created, is_new = await repository.create_graph_run_once(data)
         if not is_new:
-            # A concurrent tick created it between our read and our write. It
-            # owns the publish; we must not double-publish.
+            # A concurrent tick created it between our read and our write. Its
+            # job already exists; nothing is published twice.
             return
         SCHEDULER_DUE_GRAPHS.inc()
-        await self._transport.publish_graph_run(created, due.task_ids)
+        if self._transport is not None:
+            try:
+                await self._transport.publish_graph_run(created, due.task_ids)
+            except Exception:  # noqa: BLE001 - the outbox delivers the wakeup
+                logger.warning("graph run %s wakeup deferred to the outbox", due.run_id)
         SCHEDULER_ENQUEUED_GRAPHS.inc()

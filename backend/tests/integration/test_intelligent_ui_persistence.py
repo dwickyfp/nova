@@ -7,8 +7,8 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
-from app.core.database import db
-from app.modules.agents.run_journal import EVENTS_DDL, RUNS_DDL, run_journal
+from app.core.metadata_db import MetadataPermissionDenied
+from app.modules.agents.run_journal import run_journal
 from app.modules.assistant.intelligent_ui import action_context, compose_block
 from app.modules.assistant.repository import assistant_repository
 from app.modules.assistant.security import observation_context
@@ -59,11 +59,7 @@ async def test_additive_migration_ui_state_and_replay(intelligence_db):
     scope = intelligence_db
     await assistant_repository.ensure_schema()
     migration = Path('migrations/20261013_studio_intelligent_ui.sql').read_text()
-    await db.execute_system(migration.rstrip().removesuffix(';'))
-    await db.execute_system(migration.rstrip().removesuffix(';'))
     assert migration.strip() in Path('../docker/init-nova.sql').read_text()
-    for ddl in (RUNS_DDL, EVENTS_DDL):
-        await db.execute_system(ddl)
     stamp = observation_context(scope)
     thread = await assistant_repository.create_thread(user_name=scope.principal, agent_id='ui-test')
     block = await compose_block(CALCULATOR, 'Adjust assumptions.', tables={}, business=False,
@@ -80,10 +76,11 @@ async def test_additive_migration_ui_state_and_replay(intelligence_db):
             security_context={**stamp, 'session_id': 'another-device'},
         )
         assert source['program'] == CALCULATOR
-        assert await assistant_repository.ui_source(
-            thread['thread_id'], message['message_id'], content_id, user_name='another-user',
-            security_context=stamp,
-        ) is None
+        with pytest.raises(MetadataPermissionDenied):
+            await assistant_repository.ui_source(
+                thread['thread_id'], message['message_id'], content_id,
+                user_name='another-user', security_context=stamp,
+            )
         for change in ({'active_role': 'OTHER'}, {'security_context_version': 2}):
             assert await assistant_repository.ui_source(
                 thread['thread_id'], message['message_id'], content_id,
@@ -125,11 +122,10 @@ async def test_additive_migration_ui_state_and_replay(intelligence_db):
         assert await assistant_repository.ui_action_seen(
             thread['thread_id'], operation_id, user_name=scope.principal,
         )
-        assert not await assistant_repository.ui_action_seen(
-            thread['thread_id'], operation_id, user_name='another-user',
-        )
-        for ddl in (RUNS_DDL, EVENTS_DDL):
-            await db.execute_system(ddl)
+        with pytest.raises(MetadataPermissionDenied):
+            await assistant_repository.ui_action_seen(
+                thread['thread_id'], operation_id, user_name='another-user',
+            )
         run_id = str(uuid4())
         await run_journal.start(run_id=run_id, owner_name=scope.principal, agent_id='ui-test',
                                 thread_id=thread['thread_id'], role_name=scope.active_role,

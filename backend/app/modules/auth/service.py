@@ -20,6 +20,7 @@ from app.modules.access_control.role_activation import (
     parse_assigned_roles,
     role_activation_service,
 )
+from app.modules.access_control.security_context import SecurityContext, SecurityContextError
 from app.modules.auth.exceptions import (
     DefaultPasswordError,
     InvalidCredentialsError,
@@ -147,8 +148,10 @@ class AuthService:
         # login. They are authenticated (the credential is valid), but the
         # session is marked so the UI routes them to the change-password screen
         # before anything else. This is the same shape as SETUP_REQUIRED above.
-        if await is_must_change_password(username):
-            security = await self._resolve_security_state(username, password)
+        # The verified default role is resolved once and also names the actor
+        # that reads the user's own password-change flag.
+        security = await self._resolve_security_state(username, password)
+        if await is_must_change_password(self._actor(username, security)):
             enc_password = encrypt_password(password)
             session_id = await session_store.create(
                 username,
@@ -177,7 +180,6 @@ class AuthService:
             }
 
         # 6. Normal authenticated session
-        security = await self._resolve_security_state(username, password)
         enc_password = encrypt_password(password)
         session_id = await session_store.create(
             username,
@@ -196,7 +198,7 @@ class AuthService:
             status="SUCCESS",
             session_id=session_id,
         )
-        await self._warm_news(username, session_id)
+        await self._warm_news(username, session_id, security)
 
         return {
             "status": "AUTHENTICATED",
@@ -225,7 +227,10 @@ class AuthService:
                 )
         except RoleActivationError as exc:
             raise InvalidCredentialsError(str(exc)) from exc
-        version = await session_store.set_active_role(session_id, active_role)
+        try:
+            version = await session_store.set_active_role(session_id, active_role)
+        except ValueError:
+            raise InvalidCredentialsError("Session changed; sign in again") from None
 
         return {
             "roles": list(assignments.assigned_roles),
@@ -254,6 +259,14 @@ class AuthService:
         if len(new_password) < 8:
             raise WeakPasswordError()
 
+        # The setup marker is written as the signed-in administrator (RLS
+        # requires active ACCOUNTADMIN). Resolve it before changing anything.
+        current = await session_store.get(session_id)
+        try:
+            actor = SecurityContext.from_session(current or {})
+        except SecurityContextError:
+            raise InvalidCredentialsError("Session expired") from None
+
         # Change password in StarRocks via root connection
         await db.execute_system(
             f"ALTER USER 'nova_admin' IDENTIFIED BY '{self._escape(new_password)}'"
@@ -276,12 +289,18 @@ class AuthService:
             # Note: caller should issue new JWT with new session_id
 
         # Mark setup complete
-        await mark_setup_complete()
+        await mark_setup_complete(actor)
 
         return {"status": "SETUP_COMPLETE", "message": "Password changed. Welcome to Nova!"}
 
     async def change_password(
-        self, username: str, current_password: str, new_password: str, confirm_password: str
+        self,
+        username: str,
+        current_password: str,
+        new_password: str,
+        confirm_password: str,
+        *,
+        actor: SecurityContext,
     ) -> dict:
         """Change password for any authenticated user."""
         if new_password != confirm_password:
@@ -300,7 +319,7 @@ class AuthService:
         )
 
         # The requirement is satisfied: clear it so the next login is normal.
-        await clear_must_change_password(username)
+        await clear_must_change_password(actor)
 
         return {"status": "PASSWORD_CHANGED", "message": "Password updated successfully"}
 
@@ -313,13 +332,21 @@ class AuthService:
             await proof_cache.forget(session_id)
 
     @staticmethod
-    async def _warm_news(username: str, session_id: str) -> None:
+    def _actor(username: str, security: dict, session_id: str | None = None) -> SecurityContext:
+        return SecurityContext(
+            principal=username,
+            active_role=str(security.get("active_role") or ""),
+            session_id=session_id,
+            security_context_version=int(security.get("security_context_version") or 1),
+        )
+
+    async def _warm_news(self, username: str, session_id: str, security: dict) -> None:
         """Queue a News reader's first access proof so their first open is quick."""
         from app.common.news_entitlement import is_news_enabled
         from app.modules.intelligence.newsroom_cache import proof_cache
 
         with suppress(Exception):
-            if await is_news_enabled(username):
+            if await is_news_enabled(username, self._actor(username, security, session_id)):
                 await proof_cache.touch(session_id)
 
     @staticmethod

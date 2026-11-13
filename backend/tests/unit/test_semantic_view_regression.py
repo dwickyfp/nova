@@ -137,18 +137,30 @@ async def test_semantic_publish_requires_acknowledgement_for_regression(
     from app.core.redis import session_store
 
     monkeypatch.setattr(session_store, "get", AsyncMock(return_value=deepcopy(user)))
-    execute = AsyncMock(return_value={"rows": []})
-    monkeypatch.setattr(module.db, "execute_system", execute)
+    view = {
+        **service._owned.return_value,
+        "id": "view-id",
+        "owner_name": "nova_admin",
+        "metadata_revision": 4,
+    }
+    store = AsyncMock()
+    store.get_view.return_value = view
+    store.get_version.return_value = service._version.return_value
+
+    @asynccontextmanager
+    async def metadata(actor):
+        assert actor.principal == "nova_admin" and actor.session_id == "admin-session"
+        yield store
+
+    monkeypatch.setattr(module, "intelligence_metadata", metadata)
+    monkeypatch.setattr(service, "sync_bi", AsyncMock(return_value=[]))
     drift = AsyncMock()
     monkeypatch.setattr("app.modules.ontology.representations.refresh_after_publish", drift)
     result = await service.publish("view-id", 2, user, acknowledge_regressions=True)
     drift.assert_awaited_once_with("view-id", user)
     assert result["active_version"] == 2
-    statements = [call.args[0] for call in execute.await_args_list]
-    # Three publication writes, then the BI sync reads the view's datasets
-    # (there are none, so BI is not called).
-    assert len(statements) == 4
-    assert "CONFIG_SEMANTIC_BI_DATASETS" in statements[3]
+    store.publish.assert_awaited_once_with("view-id", 2, expected_revision=4, expected_active=1)
+    service.sync_bi.assert_awaited_once_with("view-id", user)
     assert result["bi_datasets"] == []
     identity_check.assert_awaited_once_with(
         sql="SELECT 1",

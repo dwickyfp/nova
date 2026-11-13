@@ -208,7 +208,7 @@ async def test_publishing_a_view_compiles_it(monkeypatch):
 
 
 @pytest.fixture
-def client(monkeypatch):
+def client(monkeypatch, fake_metadata_db):
     repository, catalog = FakeRepository(), lab_catalog()
     monkeypatch.setattr(router_module, "ontology_service", OntologyService(repository, catalog))
     monkeypatch.setattr(

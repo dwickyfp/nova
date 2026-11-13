@@ -41,6 +41,16 @@ class InternalTaskConfiguration(Contract):
 async def run_once(
     handler: str, config: InternalTaskConfiguration, user: dict, *, now=None
 ) -> dict:
+    from app.core.metadata_actor import acting_as
+    from app.modules.access_control.security_context import SecurityContext
+
+    with acting_as(SecurityContext.from_session(user)):
+        return await _run_once(handler, config, user, now=now)
+
+
+async def _run_once(
+    handler: str, config: InternalTaskConfiguration, user: dict, *, now=None
+) -> dict:
     if handler not in HANDLERS:
         raise ValueError("Unknown internal task handler")
     actual = Scope.from_user(user)

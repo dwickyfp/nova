@@ -86,7 +86,7 @@ class Lab:
 
 
 @pytest.fixture
-async def lab(monkeypatch):
+async def lab(monkeypatch, fake_metadata_db):
     lab = Lab(monkeypatch)
     await lab.setup()
     return lab

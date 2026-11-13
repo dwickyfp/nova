@@ -24,13 +24,35 @@ commands run from `frontend/`.
   expose vendors, physical storage endpoints, or stored credentials. Masked
   secret status is distinct from intentional write-only credential entry.
 
+## Adding a surface or app
+
+- Add ordinary product screens through the existing router and feature owners.
+  If the user explicitly requests a separate app, define its navigation and
+  deployment boundary while reusing Nova's authenticated backend contracts,
+  authorization and domain services. A new shell does not create a new source
+  of permission or a second metadata write path.
+- Resolve API ownership and request/response contracts before wiring UI actions.
+  Preserve opaque IDs and compatibility; do not guess whether a prepared PG
+  service is active from its filename or migration revision.
+- Represent conflict (409), maintenance refusal (503), queued work, cancellation
+  and recovery states when the API exposes them. Keep edits recoverable after a
+  conflict and do not display success before the owning operation confirms it.
+  Keep infrastructure details out of user-facing errors.
+- Use the existing security-context cache/reset path when principal, role or
+  context version changes. Discard stale in-flight results and prevent previous
+  user/role data from reappearing after navigation, reconnect or role switching.
+- Ship the route, real actions, loading/empty/error states, authorization behavior,
+  browser checks and matching docs together. A screenshot, mock or hidden route
+  is not evidence of a complete feature.
+
 ## User documentation
 
 - `/docs` is a standalone surface (its own layout, like Studio) rendered from
   Markdown in `src/features/docs/content/`; sections are registered in
   `src/features/docs/nav.ts`. Do not add a docs framework or a second app.
 - A UI change that alters labels, steps, or behavior a docs page describes
-  updates that page in the same change (root contract: User documentation).
+  updates that page in the same change, following the
+  [root documentation contract](../AGENTS.md#product-behavior-and-secrets).
   `src/features/docs/content.test.ts` checks front matter, internal links,
   code-block languages, and forbidden storage/API terms for every page.
 

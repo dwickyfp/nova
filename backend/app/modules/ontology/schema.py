@@ -1,10 +1,10 @@
-"""Additive StarRocks metadata for the Supernova Business Ontology.
+"""Logical tables of the Supernova Business Ontology.
 
 Every table is append-only: a change is a new revision row, so approved
-versions stay immutable and releases can pin exact revisions.
+versions stay immutable and releases can pin exact revisions. The ontology's
+tables live in PostgreSQL (revision ``0020_ontology.sql``); the ``NOVA_SYSTEM``
+DDL helper below remains only for the business event hub, which Intelligence owns.
 """
-
-from app.core.database import db
 
 ONTOLOGY_TABLES = {
     "domains": "CONFIG_ONTOLOGY_DOMAINS",
@@ -39,9 +39,9 @@ DISTRIBUTED BY HASH(id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")"""
 
 
-ONTOLOGY_DDL = tuple(revision_table_ddl(name) for name in ONTOLOGY_TABLES.values())
-
-
 async def ensure_ontology_schema() -> None:
-    for ddl in ONTOLOGY_DDL:
-        await db.execute_system(ddl)
+    """Nothing to create: the migrator installs the ontology's PostgreSQL tables.
+
+    Kept until process startup stops calling it at cutover; it never touches
+    ``NOVA_SYSTEM``.
+    """

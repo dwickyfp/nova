@@ -1,0 +1,5 @@
+{
+  "scope": "Recover only the login created by the failed local cleanup helper using its exact process-output interval",
+  "matching_login_audits": 1,
+  "session_removed": true
+}

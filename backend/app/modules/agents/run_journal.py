@@ -1,46 +1,26 @@
-"""Scoped, durable SSE journal for an Agent Studio turn."""
+"""Scoped, durable SSE journal for an Agent Studio turn.
+
+Runs and their events live in PostgreSQL (``nova_meta.config_agent_runs`` and
+``config_agent_run_events``). A run starts with claim generation 1, bound to the
+starting login and security-context version. The producer that started it keeps
+that generation in this process and passes it with every append, heartbeat and
+finish; a takeover or interruption advances the generation in PG, so an older
+producer is fenced out by the database rather than by a Redis lock. An event
+batch and the run's high-water mark commit in one transaction.
+"""
 
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime, timedelta
+import threading
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from typing import Any
 
-from app.core.database import db
-from app.modules.agents.run_coordination import update_run
-
-RUNS_DDL = """
-CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_AGENT_RUNS (
-    run_id VARCHAR(64) NOT NULL,
-    owner_name VARCHAR(128) NOT NULL,
-    agent_id VARCHAR(64) NOT NULL,
-    thread_id VARCHAR(64) NOT NULL,
-    role_name VARCHAR(128) NOT NULL,
-    status VARCHAR(32) NOT NULL,
-    last_sequence BIGINT NOT NULL,
-    started_at DATETIME NOT NULL,
-    updated_at DATETIME NOT NULL,
-    session_id VARCHAR(64),
-    security_version INT
-) PRIMARY KEY(run_id)
-DISTRIBUTED BY HASH(run_id) BUCKETS 1
-PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
-"""
-
-EVENTS_DDL = """
-CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_AGENT_RUN_EVENTS (
-    run_id VARCHAR(64) NOT NULL,
-    sequence BIGINT NOT NULL,
-    frame TEXT NOT NULL,
-    created_at DATETIME NOT NULL
-) PRIMARY KEY(run_id, sequence)
-DISTRIBUTED BY HASH(run_id) BUCKETS 1
-PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
-"""
-
-
-def _now() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
+from app.core.metadata_actor import actor_for, current_actor, metadata_transaction
+from app.core.metadata_db import MetadataConflict
+from app.modules.agents.metadata_repository import AgentMetadataRepository
 
 
 def _frame_sequence(frame: str) -> int:
@@ -51,39 +31,78 @@ def _frame_sequence(frame: str) -> int:
         raise ValueError("The run event has no sequence.") from exc
 
 
-class AgentRunJournal:
-    async def ensure_schema(self) -> None:
-        await db.execute_system(RUNS_DDL)
-        await db.execute_system(EVENTS_DDL)
-        from app.common.nova_system import _column_exists
+def _naive(value: Any) -> Any:
+    if isinstance(value, datetime) and value.tzinfo is not None:
+        return value.astimezone(UTC).replace(tzinfo=None)
+    return value
 
-        for column, kind in (("session_id", "VARCHAR(64)"), ("security_version", "INT")):
-            if not await _column_exists("CONFIG_AGENT_RUNS", column):
-                await db.execute_system(
-                    f"ALTER TABLE NOVA_SYSTEM.CONFIG_AGENT_RUNS ADD COLUMN {column} {kind}"
-                )
+
+@asynccontextmanager
+async def _store(
+    owner_name: str | None = None, *, read_only: bool = False,
+) -> AsyncIterator[AgentMetadataRepository]:
+    actor = actor_for(owner_name) if owner_name is not None else current_actor()
+    async with metadata_transaction(actor, read_only=read_only) as (connection, actor):
+        yield AgentMetadataRepository(connection, actor)
+
+
+class AgentRunJournal:
+    def __init__(self) -> None:
+        # run_id -> claim generation this process holds as the run's producer.
+        self._claims: dict[str, int] = {}
+        # Runs whose caller switched role mid-turn; marked when the run closes.
+        self._role_changed: set[str] = set()
+        self._lock = threading.Lock()
+
+    async def ensure_schema(self) -> None:
+        """PostgreSQL migrations own this schema; nothing is created at startup."""
+
+    def claim_of(self, run_id: str) -> int | None:
+        with self._lock:
+            return self._claims.get(run_id)
+
+    def _claim(self, run_id: str, generation: int | None) -> int:
+        held = generation if generation is not None else self.claim_of(run_id)
+        if held is None:
+            raise ValueError("This process does not hold the run's claim")
+        return held
+
+    def _release(self, run_id: str) -> bool:
+        with self._lock:
+            self._claims.pop(run_id, None)
+            changed = run_id in self._role_changed
+            self._role_changed.discard(run_id)
+        return changed
 
     async def start(
         self, *, run_id: str, owner_name: str, agent_id: str,
         thread_id: str, role_name: str, session_id: str | None = None,
         security_version: int | None = None,
-    ) -> None:
-        now = _now()
-        await db.execute_system(
-            "INSERT INTO NOVA_SYSTEM.CONFIG_AGENT_RUNS "
-            "(run_id, owner_name, agent_id, thread_id, role_name, status, "
-            "last_sequence, started_at, updated_at, session_id, security_version) "
-            "VALUES (%s, %s, %s, %s, %s, 'running', -1, %s, %s, %s, %s)",
-            [
-                run_id, owner_name, agent_id, thread_id, role_name, now, now,
-                session_id, security_version,
-            ],
-        )
+    ) -> int:
+        """Open the run as its producer; returns the claim generation it holds.
 
-    async def append(self, run_id: str, frame: str) -> int:
-        return await self.append_batch(run_id, [frame])
+        The run binds to the actor's login, active role and security version;
+        the arguments must describe that same actor.
+        """
+        async with _store(owner_name) as store:
+            actor = store.actor
+            if (role_name != actor.active_role
+                    or (session_id is not None and session_id != actor.session_id)
+                    or (security_version is not None
+                        and security_version != actor.security_context_version)):
+                raise ValueError("A run starts in its caller's own security context")
+            row = await store.start_run(run_id, agent_id, thread_id)
+        generation = int(row["claim_generation"])
+        with self._lock:
+            self._claims[run_id] = generation
+        return generation
 
-    async def append_batch(self, run_id: str, frames: list[str]) -> int:
+    async def append(self, run_id: str, frame: str, *, generation: int | None = None) -> int:
+        return await self.append_batch(run_id, [frame], generation=generation)
+
+    async def append_batch(
+        self, run_id: str, frames: list[str], *, generation: int | None = None,
+    ) -> int:
         if not frames or len(frames) > 32:
             raise ValueError("A run event batch must contain 1–32 frames.")
         sequences = [_frame_sequence(frame) for frame in frames]
@@ -92,143 +111,115 @@ class AgentRunJournal:
             for previous, current in zip(sequences, sequences[1:], strict=False)
         ):
             raise ValueError("Run event sequence is not increasing.")
-        now = _now()
-        values: list[Any] = []
-        for sequence, frame in zip(sequences, frames, strict=True):
-            values.extend((run_id, sequence, frame, now))
-        await db.execute_system(
-            "INSERT INTO NOVA_SYSTEM.CONFIG_AGENT_RUN_EVENTS "
-            "(run_id, `sequence`, frame, created_at) VALUES "
-            + ", ".join(["(%s, %s, %s, %s)"] * len(frames)),
-            values,
-        )
-        await update_run(
-            run_id,
-            "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS "
-            "SET last_sequence = %s, updated_at = %s "
-            "WHERE run_id = %s AND status = 'running'",
-            [sequences[-1], now, run_id],
-        )
-        return sequences[-1]
+        claim = self._claim(run_id, generation)
+        async with _store() as store:
+            return await store.append_events(run_id, frames, generation=claim)
 
-    async def finish(self, run_id: str, status: str) -> None:
+    async def finish(self, run_id: str, status: str, *, generation: int | None = None) -> None:
+        """Close the run.
+
+        The producer closes under its claim. Without a claim (a Mission stopping
+        a run it does not produce) only ``interrupted`` is allowed: that fences
+        the producer out by advancing the claim.
+        """
         if status not in {"completed", "failed", "interrupted", "cancelled"}:
             raise ValueError("Invalid run status")
-        await update_run(
-            run_id,
-            "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS SET status = %s, updated_at = %s "
-            "WHERE run_id = %s AND status = 'running'",
-            [status, _now(), run_id],
-        )
+        claim = generation if generation is not None else self.claim_of(run_id)
+        with self._lock:
+            role_changed = run_id in self._role_changed
+        async with _store() as store:
+            if claim is None:
+                if status != "interrupted":
+                    raise ValueError("Only the run's producer can finish it")
+                await store.interrupt_stale(run_id, stale_after_seconds=0)
+                return
+            if not await store.finish_run(run_id, status, generation=claim):
+                raise MetadataConflict()
+            if role_changed:
+                await store.block_replay_after_role_change(run_id)
+        # A lost commit acknowledgment leaves this claim available for verification.
+        self._release(run_id)
 
-    async def heartbeat(self, run_id: str) -> None:
-        await update_run(
-            run_id,
-            "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS SET updated_at = %s "
-            "WHERE run_id = %s AND status = 'running'",
-            [_now(), run_id],
-        )
+    async def heartbeat(self, run_id: str, *, generation: int | None = None) -> bool:
+        claim = self._claim(run_id, generation)
+        async with _store() as store:
+            return await store.heartbeat_run(run_id, generation=claim)
 
     async def interrupt_stale(
         self, run_id: str, *, owner_name: str, agent_id: str,
         thread_id: str, role_name: str, stale_after_seconds: int = 60,
     ) -> bool:
         """Close a run whose producer has stopped renewing its lease."""
-        state = await self.get(
-            run_id, owner_name=owner_name, agent_id=agent_id,
-            thread_id=thread_id, role_name=role_name,
-        )
-        if state is None or state["status"] != "running":
-            return state is not None and state["status"] == "interrupted"
-        updated = state["updated_at"]
-        if isinstance(updated, str):
-            updated = datetime.fromisoformat(updated)
-        if updated.tzinfo is not None:
-            updated = updated.astimezone(UTC).replace(tzinfo=None)
-        cutoff = _now() - timedelta(seconds=stale_after_seconds)
-        if updated > cutoff:
-            return False
-        await update_run(
-            run_id,
-            "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS "
-            "SET status = 'interrupted', updated_at = %s "
-            "WHERE run_id = %s AND owner_name = %s AND agent_id = %s "
-            "AND thread_id = %s AND role_name = %s AND status = 'running' "
-            "AND updated_at <= %s",
-            [_now(), run_id, owner_name, agent_id, thread_id, role_name, cutoff],
-        )
-        state = await self.get(
-            run_id, owner_name=owner_name, agent_id=agent_id,
-            thread_id=thread_id, role_name=role_name,
-        )
-        return state is not None and state["status"] == "interrupted"
+        async with _store(owner_name) as store:
+            run = await store.get_run(run_id)
+            if not self._matches(run, agent_id=agent_id, thread_id=thread_id,
+                                 role_name=role_name, actor_role=store.actor.active_role):
+                return False
+            assert run is not None
+            if run["status"] != "running":
+                return bool(run["status"] == "interrupted")
+            return await store.interrupt_stale(run_id, stale_after_seconds=stale_after_seconds)
 
     async def block_replay_after_role_change(self, run_id: str) -> None:
-        await update_run(
-            run_id,
-            "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS "
-            "SET role_name = '__role_changed__', updated_at = %s WHERE run_id = %s",
-            [_now(), run_id],
-        )
+        """Mark that the caller's role changed; applied when the producer closes the run.
+
+        Event appends are bound to the role the run started in, so the marker is
+        written together with the final status instead of fencing the producer
+        out before it can record why it stopped.
+        """
+        with self._lock:
+            self._role_changed.add(run_id)
+
+    @staticmethod
+    def _matches(run: dict[str, Any] | None, *, agent_id: str, thread_id: str,
+                 role_name: str, actor_role: str) -> bool:
+        return (run is not None and run["agent_id"] == agent_id
+                and run["thread_id"] == thread_id and run["role_name"] == role_name
+                and role_name == actor_role)
 
     async def get(
         self, run_id: str, *, owner_name: str, agent_id: str,
         thread_id: str, role_name: str,
     ) -> dict[str, Any] | None:
-        result = await db.execute_system(
-            "SELECT run_id, status, last_sequence, updated_at "
-            "FROM NOVA_SYSTEM.CONFIG_AGENT_RUNS WHERE run_id = %s "
-            "AND owner_name = %s AND agent_id = %s AND thread_id = %s AND role_name = %s",
-            [run_id, owner_name, agent_id, thread_id, role_name],
-        )
-        if not result["rows"]:
+        async with _store(owner_name, read_only=True) as store:
+            run = await store.get_run(run_id)
+            actor_role = store.actor.active_role
+        if not self._matches(run, agent_id=agent_id, thread_id=thread_id,
+                             role_name=role_name, actor_role=actor_role):
             return None
-        row = result["rows"][0]
-        return dict(zip(("run_id", "status", "last_sequence", "updated_at"), row, strict=True))
+        assert run is not None
+        return {"run_id": run["run_id"], "status": run["status"],
+                "last_sequence": int(run["last_sequence"]),
+                "updated_at": _naive(run["updated_at"])}
 
     async def current(
         self, *, owner_name: str, agent_id: str, thread_id: str,
         role_name: str, security_version: int,
     ) -> str | None:
-        result = await db.execute_system(
-            "SELECT run_id FROM NOVA_SYSTEM.CONFIG_AGENT_RUNS "
-            "WHERE owner_name=%s AND agent_id=%s AND thread_id=%s AND role_name=%s "
-            "AND security_version=%s AND status='running' ORDER BY started_at DESC LIMIT 1",
-            [owner_name, agent_id, thread_id, role_name, security_version],
-        )
-        return str(result["rows"][0][0]) if result["rows"] else None
+        async with _store(owner_name, read_only=True) as store:
+            actor = store.actor
+            if role_name != actor.active_role or security_version != actor.security_context_version:
+                return None
+            run = await store.current_run(agent_id, thread_id)
+        return str(run["run_id"]) if run else None
 
     async def has_security_version(self, run_id: str, security_version: int) -> bool:
-        result = await db.execute_system(
-            "SELECT run_id FROM NOVA_SYSTEM.CONFIG_AGENT_RUNS "
-            "WHERE run_id=%s AND security_version=%s",
-            [run_id, security_version],
-        )
-        return bool(result["rows"])
+        async with _store(read_only=True) as store:
+            run = await store.get_run(run_id)
+        return run is not None and run["security_version"] == security_version
 
     async def events_after(self, run_id: str, sequence: int, *, limit: int = 100) -> list[str]:
-        result = await db.execute_system(
-            "SELECT frame FROM NOVA_SYSTEM.CONFIG_AGENT_RUN_EVENTS "
-            "WHERE run_id = %s AND `sequence` > %s "
-            "ORDER BY `sequence` ASC LIMIT %s",
-            [run_id, sequence, min(max(limit, 1), 100)],
-        )
-        return [str(row[0]) for row in result["rows"]]
+        """Stored frames after ``sequence`` up to the run's high-water mark.
+
+        Events a historical run never wrote are not waited for or invented.
+        """
+        async with _store(read_only=True) as store:
+            history = await store.history(run_id, sequence, limit=limit)
+        return [str(frame) for frame in history["frames"]]
 
     async def delete_thread(self, thread_id: str, *, owner_name: str) -> None:
-        rows = await db.execute_system(
-            "SELECT run_id FROM NOVA_SYSTEM.CONFIG_AGENT_RUNS "
-            "WHERE thread_id = %s AND owner_name = %s", [thread_id, owner_name],
-        )
-        for row in rows["rows"]:
-            await db.execute_system(
-                "DELETE FROM NOVA_SYSTEM.CONFIG_AGENT_RUN_EVENTS WHERE run_id = %s",
-                [row[0]],
-            )
-        await db.execute_system(
-            "DELETE FROM NOVA_SYSTEM.CONFIG_AGENT_RUNS "
-            "WHERE thread_id = %s AND owner_name = %s", [thread_id, owner_name],
-        )
+        async with _store(owner_name) as store:
+            await store.delete_thread_runs(thread_id)
 
 
 run_journal = AgentRunJournal()

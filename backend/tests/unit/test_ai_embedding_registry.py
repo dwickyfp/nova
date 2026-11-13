@@ -1,10 +1,15 @@
 """The AI model registry must preserve a usable embedding contract."""
 
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
 import pytest
 from pydantic import ValidationError
 
 from app.common import nova_system
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.ai_ml import router as ai_router_module
+from app.modules.ai_ml import service as service_module
 from app.modules.ai_ml.router import require_admin, router
 from app.modules.ai_ml.schemas import AIModelCreate
 from app.modules.ai_ml.service import AIService
@@ -50,118 +55,84 @@ def test_valid_models():
     )
 
 
-class FakeCursor:
-    def __init__(self, row=None):
-        self.row = row
-        self.executed = []
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *_):
-        return None
-
-    async def execute(self, sql, params):
-        self.executed.append((sql, params))
-
-    async def fetchone(self):
-        return self.row
+ADMIN = SecurityContext("admin", "ACCOUNTADMIN", session_id="s1")
 
 
-class FakeConnection:
-    def __init__(self, cursor):
-        self._cursor = cursor
+@pytest.fixture
+def registry(monkeypatch, fake_metadata_db):
+    registry = AsyncMock()
+    registry.provider.return_value = {"id": "provider-1", "is_deleted": False}
+    registry.models.return_value = []
+    registry.model.return_value = {
+        "id": "model-1",
+        **EMBEDDING,
+        "is_deleted": False,
+        "metadata_revision": 4,
+    }
+    monkeypatch.setattr(service_module, "AIRegistryRepository", lambda connection: registry)
+    return registry
 
-    def cursor(self, *_):
-        return self._cursor
 
-    def close(self):
-        return None
-
-
-async def test_alias_collision_is_rejected(monkeypatch):
-    service = AIService()
-    cursor = FakeCursor({"id": "other-model"})
-
-    async def connect():
-        return FakeConnection(cursor)
-
-    monkeypatch.setattr(service, "_connect", connect)
+async def test_alias_collision_is_rejected(registry):
+    registry.models.return_value = [{"id": "other-model", **EMBEDDING}]
     with pytest.raises(ValueError, match="alias already exists"):
-        await service._assert_unique_alias("nova.embedding.default")
-    assert cursor.executed[0][1] == ("nova.embedding.default",)
+        await AIService()._assert_unique_alias(registry, "nova.embedding.default")
+    registry.models.assert_awaited_once_with()
 
 
-async def test_existing_alias_can_be_updated(monkeypatch):
-    service = AIService()
-    cursor = FakeCursor({"id": "model-1"})
-
-    async def connect():
-        return FakeConnection(cursor)
-
-    monkeypatch.setattr(service, "_connect", connect)
-    await service._assert_unique_alias("nova.embedding.default", exclude_id="model-1")
+async def test_existing_alias_can_be_updated(registry):
+    registry.models.return_value = [{"id": "model-1", **EMBEDDING}]
+    await AIService()._assert_unique_alias(
+        registry,
+        "nova.embedding.default",
+        exclude_id="model-1",
+    )
 
 
-async def test_model_type_is_immutable(monkeypatch):
-    service = AIService()
-
-    async def get_model(_model_id):
-        return {"id": "model-1", "type": "llm"}
-
-    monkeypatch.setattr(service, "get_model", get_model)
+async def test_model_type_is_immutable(registry, fake_metadata_db):
+    registry.model.return_value = {
+        "id": "model-1",
+        "type": "llm",
+        "is_deleted": False,
+    }
     with pytest.raises(ValueError, match="cannot be changed"):
-        await service.update_model("model-1", {"type": "embedding"})
+        await AIService().update_model("model-1", {"type": "embedding"}, actor=ADMIN)
+    assert fake_metadata_db.transactions[-1].outcome == "rolled_back"
 
 
-async def test_create_embedding_persists_revision_and_dimensions(monkeypatch):
-    service = AIService()
-    cursor = FakeCursor()
-
-    async def connect():
-        return FakeConnection(cursor)
-
-    async def get_provider(_provider_id):
-        return {"id": "provider-1"}
-
-    async def get_model(model_id):
-        return {"id": model_id, **EMBEDDING}
-
-    async def unique(_alias):
-        return None
-
-    monkeypatch.setattr(service, "_connect", connect)
-    monkeypatch.setattr(service, "get_provider", get_provider)
-    monkeypatch.setattr(service, "get_model", get_model)
-    monkeypatch.setattr(service, "_assert_unique_alias", unique)
-    result = await service.create_model(EMBEDDING, "admin")
+async def test_create_embedding_persists_revision_and_dimensions(
+    registry,
+    monkeypatch,
+    fake_metadata_db,
+):
+    changes = AsyncMock()
+    changes.create_model.return_value = SimpleNamespace(record={"id": "new", **EMBEDDING})
+    monkeypatch.setattr(service_module, "AIConfigurationService", lambda connection: changes)
+    result = await AIService().create_model(EMBEDDING, "admin", actor=ADMIN)
     assert result["revision"] == "2026-09"
-    sql, params = cursor.executed[0]
-    assert "logical_alias, revision, dimensions" in sql
-    assert params[7:9] == ("2026-09", 1536)
+    definition = changes.create_model.call_args.args[1]
+    assert (definition.revision, definition.dimensions) == ("2026-09", 1536)
+    assert (definition.logical_alias, definition.modality, definition.metric) == (
+        "nova.embedding.default",
+        "text",
+        "cosine",
+    )
+    assert len(fake_metadata_db.committed) == 1
+    assert fake_metadata_db.committed[0].actor == ADMIN
 
 
-async def test_create_model_rejects_missing_provider(monkeypatch):
-    service = AIService()
-
-    async def get_provider(_provider_id):
-        return None
-
-    monkeypatch.setattr(service, "get_provider", get_provider)
+async def test_create_model_rejects_missing_provider(registry, fake_metadata_db):
+    registry.provider.return_value = None
     with pytest.raises(ValueError, match="Provider not found"):
-        await service.create_model(EMBEDDING, "admin")
+        await AIService().create_model(EMBEDDING, "admin", actor=ADMIN)
+    assert fake_metadata_db.transactions[-1].outcome == "rolled_back"
 
 
-async def test_embedding_revision_and_dimensions_cannot_change(monkeypatch):
-    service = AIService()
-
-    async def get_model(_model_id):
-        return {"id": "model-1", **EMBEDDING}
-
-    monkeypatch.setattr(service, "get_model", get_model)
+async def test_embedding_revision_and_dimensions_cannot_change(registry, fake_metadata_db):
     for change in ({"revision": "rev-2"}, {"dimensions": 768}, {"name": "other"}):
         with pytest.raises(ValueError, match="immutable"):
-            await service.update_model("model-1", change)
+            await AIService().update_model("model-1", change, actor=ADMIN)
+    assert all(tx.outcome == "rolled_back" for tx in fake_metadata_db.transactions)
 
 
 async def test_additive_model_migration_is_idempotent(monkeypatch):
@@ -193,7 +164,8 @@ def test_model_writes_require_admin_dependency():
 async def test_model_create_writes_audit_without_credential_data(monkeypatch):
     events = []
 
-    async def create(_data, _username):
+    async def create(_data, _username, *, actor):
+        assert actor == ADMIN
         return {"id": "model-1", **EMBEDDING}
 
     async def audit(**event):
@@ -204,7 +176,12 @@ async def test_model_create_writes_audit_without_credential_data(monkeypatch):
     response = await ai_router_module.create_model(
         "provider-1",
         AIModelCreate.model_validate(EMBEDDING),
-        {"username": "admin", "session_id": "s1", "active_role": "ACCOUNTADMIN"},
+        {
+            "username": "admin",
+            "session_id": "s1",
+            "active_role": "ACCOUNTADMIN",
+            "assigned_roles": ["ACCOUNTADMIN"],
+        },
     )
     assert response.id == "model-1"
     assert events == [

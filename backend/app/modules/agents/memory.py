@@ -8,20 +8,19 @@ import math
 import os
 import re
 from collections.abc import Awaitable, Callable
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from html import escape
 
 from fastapi import HTTPException
 
 from app.common.audit import write_audit_log
-from app.core.database import db
+from app.core.metadata_db import MetadataConflict, MetadataPermissionDenied
 from app.modules.agents.knowledge import (
-    EVIDENCE_DDL,
-    KNOWLEDGE_BACKFILL,
-    KNOWLEDGE_DDL,
     KnowledgeRevision,
     admissible_statement,
 )
+from app.modules.agents.metadata_repository import agent_metadata
 from app.modules.assistant.provider import AssistantProviderClient
 from app.modules.assistant.skills import contains_credential_shape
 from app.modules.intelligence.contracts import (
@@ -31,7 +30,6 @@ from app.modules.intelligence.contracts import (
     fingerprint,
     utc_now,
 )
-from app.modules.intelligence.engine_repository import metadata_lock
 
 logger = logging.getLogger(__name__)
 
@@ -88,33 +86,40 @@ def _sensitive(text: str) -> bool:
     return bool(_SECRET.search(text) or _TOKEN.search(text) or contains_credential_shape(text))
 
 
-def _row(row: list) -> dict:
-    return dict(
-        zip(
-            (
-                "memory_id",
-                "user_name",
-                "agent_id",
-                "role_name",
-                "fact_key",
-                "fact",
-                "source_quote",
-                "source_thread_id",
-                "created_at",
-                "updated_at",
-            ),
-            row,
-            strict=True,
+def _row(row: dict) -> dict:
+    return {
+        key: row[key]
+        for key in (
+            "memory_id",
+            "user_name",
+            "agent_id",
+            "role_name",
+            "fact_key",
+            "fact",
+            "source_quote",
+            "source_thread_id",
+            "created_at",
+            "updated_at",
         )
-    )
+    }
 
 
 class AgentMemoryRepository:
     async def ensure_schema(self) -> None:
-        await db.execute_system(MEMORY_DDL)
-        await db.execute_system(KNOWLEDGE_DDL)
-        await db.execute_system(EVIDENCE_DDL)
-        await db.execute_system(KNOWLEDGE_BACKFILL)
+        """The one-shot PostgreSQL migrator owns the schema and historical backfill."""
+
+    @asynccontextmanager
+    async def _write(self, memory_id: str, owner: str, role: str):
+        try:
+            async with agent_metadata(owner) as repo:
+                if repo.actor.active_role != role:
+                    raise MetadataPermissionDenied()
+                await repo.lock_memory(memory_id)
+                yield repo
+        except MetadataConflict:
+            raise HTTPException(
+                status_code=409, detail="Knowledge changed; reload before editing"
+            ) from None
 
     async def revisions(
         self,
@@ -132,17 +137,13 @@ class AgentMemoryRepository:
         return await self._revisions(memory_id, user_name, agent_id, role_name)
 
     async def _revisions(self, memory_id, user_name, agent_id, role_name):
-        result = await db.execute_system(
-            "SELECT payload FROM NOVA_SYSTEM.CONFIG_AGENT_MEMORY_REVISIONS "
-            "WHERE memory_id=%s AND user_name=%s AND agent_id=%s AND role_name=%s "
-            "ORDER BY revision DESC LIMIT 100",
-            [memory_id, user_name, agent_id, role_name],
-        )
+        async with agent_metadata(read_only=True) as repo:
+            result = await repo.scoped_memory_revisions(memory_id, user_name, agent_id, role_name)
         rows = [
             KnowledgeRevision.model_validate(
-                json.loads(row[0]) if isinstance(row[0], str) else row[0]
+                json.loads(row["payload"]) if isinstance(row["payload"], str) else row["payload"]
             )
-            for row in result["rows"]
+            for row in result
         ]
         if len(rows) > 1 and rows[0].revision == rows[1].revision:
             raise HTTPException(
@@ -157,20 +158,12 @@ class AgentMemoryRepository:
             update={"evidence_ids": revision.evidence_ids}
         )
         payload = revision.model_dump_json()
-        await db.execute_system(
-            "INSERT INTO NOVA_SYSTEM.CONFIG_AGENT_MEMORY_REVISIONS "
-            "(memory_id,revision,operation_id,user_name,agent_id,role_name,payload,created_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,NOW())",
-            [
-                revision.memory_id,
-                revision.revision,
-                fingerprint(payload)[:32],
-                user_name,
-                agent_id,
-                role_name,
-                payload,
-            ],
-        )
+        async with agent_metadata(user_name) as repo:
+            if repo.actor.active_role != role_name:
+                raise MetadataPermissionDenied()
+            await repo.append_memory_revision(
+                revision.memory_id, agent_id, revision.revision, fingerprint(payload)[:32], payload
+            )
 
     async def list(
         self,
@@ -181,35 +174,21 @@ class AgentMemoryRepository:
         limit: int = 200,
         offset: int = 0,
     ) -> list[dict]:
-        result = await db.execute_system(
-            "SELECT memory_id, user_name, agent_id, role_name, fact_key, fact, "
-            "source_quote, source_thread_id, created_at, updated_at "
-            "FROM NOVA_SYSTEM.CONFIG_AGENT_MEMORIES "
-            "WHERE user_name = %s AND agent_id = %s AND role_name = %s "
-            "ORDER BY updated_at DESC, memory_id DESC LIMIT %s OFFSET %s",
-            [user_name, agent_id, role_name, min(max(limit, 1), 500), max(offset, 0)],
-        )
-        memories = [_row(row) for row in result["rows"]]
-        if not memories:
-            return memories
-        history = await db.execute_system(
-            "SELECT memory_id,payload,branches FROM (SELECT memory_id,payload,ROW_NUMBER() OVER "
-            "(PARTITION BY memory_id ORDER BY revision DESC) AS rn "
-            ",COUNT(*) OVER (PARTITION BY memory_id,revision) AS branches "
-            "FROM NOVA_SYSTEM.CONFIG_AGENT_MEMORY_REVISIONS "
-            "WHERE user_name=%s AND agent_id=%s AND role_name=%s "
-            "AND memory_id IN (" + ",".join("%s" for _ in memories) + ")) latest WHERE rn=1",
-            [user_name, agent_id, role_name, *(row["memory_id"] for row in memories)],
-        )
-        if any(row[2] != 1 for row in history["rows"]):
+        async with agent_metadata(read_only=True) as repo:
+            stored = await repo.list_memories(
+                user_name, agent_id, role_name, min(max(limit, 1), 500), max(offset, 0)
+            )
+            memories = [_row(row) for row in stored]
+            history = await repo.memory_heads(
+                [row["memory_id"] for row in memories], user_name, agent_id, role_name
+            )
+        if any(row["branches"] != 1 for row in history):
             raise HTTPException(
                 status_code=409, detail="Concurrent knowledge revisions need review"
             )
         by_id = {
-            row[0]: KnowledgeRevision.model_validate(
-                json.loads(row[1]) if isinstance(row[1], str) else row[1]
-            )
-            for row in history["rows"]
+            row["memory_id"]: KnowledgeRevision.model_validate_json(row["payload"])
+            for row in history
         }
         for memory in memories:
             knowledge = by_id.get(memory["memory_id"])
@@ -236,7 +215,7 @@ class AgentMemoryRepository:
 
         role = session_security(user).active_role
         owner = user["username"]
-        async with metadata_lock(f"memory:{memory_id}") as lock:
+        async with self._write(memory_id, owner, role):
             rows = await self.revisions(
                 memory_id, user_name=owner, agent_id=agent_id, role_name=role
             )
@@ -257,11 +236,6 @@ class AgentMemoryRepository:
                         status_code=409,
                         detail="Review operation was already used with different inputs",
                     )
-                await db.execute_system(
-                    "UPDATE NOVA_SYSTEM.CONFIG_AGENT_MEMORIES SET fact=%s,updated_at=NOW() "
-                    "WHERE memory_id=%s AND user_name=%s AND agent_id=%s AND role_name=%s",
-                    [rows[0].fact, memory_id, owner, agent_id, role],
-                )
                 return prior
             if not rows or rows[0].revision != request.expected_revision:
                 raise HTTPException(
@@ -379,37 +353,38 @@ class AgentMemoryRepository:
                 revision.needs_revalidation = False
                 revision.visibility = "DOMAIN" if request.publish_shared else "PRIVATE"
             revision = KnowledgeRevision.model_validate(revision.model_dump())
-            if not await lock.renew():
-                raise HTTPException(status_code=409, detail="Review lease expired; retry")
             await self._append_revision(revision, owner, agent_id, role)
-            await db.execute_system(
-                "UPDATE NOVA_SYSTEM.CONFIG_AGENT_MEMORIES SET fact=%s,updated_at=NOW() "
-                "WHERE memory_id=%s AND user_name=%s AND agent_id=%s AND role_name=%s",
-                [revision.fact, memory_id, owner, agent_id, role],
+            original = await self.get(memory_id, user_name=owner, agent_id=agent_id, role_name=role)
+            assert original is not None
+            await self._write_projection(
+                memory_id=memory_id,
+                user_name=owner,
+                agent_id=agent_id,
+                role_name=role,
+                fact_key=original["fact_key"],
+                fact=revision.fact,
+                source_quote=original["source_quote"],
+                source_thread_id=original["source_thread_id"],
+                existing_id=memory_id,
             )
-        await write_audit_log(
-            event_type="AGENT_MEMORY",
-            user_name=owner,
-            action=request.operation.upper(),
-            object_type="AGENT_MEMORY",
-            object_name=memory_id,
-            status="SUCCESS",
-            session_id=user.get("session_id"),
-            active_role=role,
-        )
+            await write_audit_log(
+                event_type="AGENT_MEMORY",
+                user_name=owner,
+                action=request.operation.upper(),
+                object_type="AGENT_MEMORY",
+                object_name=memory_id,
+                status="SUCCESS",
+                session_id=user.get("session_id"),
+                active_role=role,
+            )
         return revision
 
     async def get(
         self, memory_id: str, *, user_name: str, agent_id: str, role_name: str
     ) -> dict | None:
-        result = await db.execute_system(
-            "SELECT memory_id, user_name, agent_id, role_name, fact_key, fact, "
-            "source_quote, source_thread_id, created_at, updated_at "
-            "FROM NOVA_SYSTEM.CONFIG_AGENT_MEMORIES "
-            "WHERE memory_id = %s AND user_name = %s AND agent_id = %s AND role_name = %s",
-            [memory_id, user_name, agent_id, role_name],
-        )
-        return _row(result["rows"][0]) if result["rows"] else None
+        async with agent_metadata(read_only=True) as repo:
+            row = await repo.get_memory(memory_id, user_name, agent_id, role_name)
+            return _row(row) if row else None
 
     async def upsert(
         self,
@@ -442,7 +417,7 @@ class AgentMemoryRepository:
         if finalize_outcome and not outcome:
             raise ValueError("Outcome finalization requires an outcome reference")
         memory_id = existing_id or fingerprint([user_name, agent_id, role_name, fact_key])
-        async with metadata_lock(f"memory:{memory_id}"):
+        async with self._write(memory_id, user_name, role_name):
             original = await self.get(
                 memory_id, user_name=user_name, agent_id=agent_id, role_name=role_name
             )
@@ -454,6 +429,7 @@ class AgentMemoryRepository:
                 await self._append_revision(legacy, user_name, agent_id, role_name)
                 revisions = [legacy]
             latest = revisions[0] if revisions else None
+            restoring = original is None and latest is not None
             if finalize_outcome:
                 if outcome is None:
                     raise ValueError("Outcome finalization requires an outcome reference")
@@ -476,9 +452,8 @@ class AgentMemoryRepository:
                 knowledge_revision = (
                     latest.revision if reuse and latest else latest.revision + 1 if latest else 1
                 )
-                # Allocate under the memory lease, then persist the Outcome link
-                # before exposing its Knowledge. A retry reuses a written journal
-                # revision even when its compatibility projection is still absent.
+                # The Outcome link, Knowledge revision and projection join this
+                # actor-bound transaction; none becomes visible on partial failure.
                 finalized = await finalize_outcome(memory_id, knowledge_revision)
                 if (
                     finalized["id"] != outcome["id"]
@@ -514,31 +489,18 @@ class AgentMemoryRepository:
                     digest=integrity_hash,
                     observed_at=observed_at,
                 ).model_dump(mode="json")
-            await db.execute_system(
-                "INSERT INTO NOVA_SYSTEM.CONFIG_AGENT_MEMORY_EVIDENCE "
-                "(memory_id,evidence_id,user_name,agent_id,role_name,payload,created_at) "
-                "VALUES (%s,%s,%s,%s,%s,%s,NOW())",
-                [
-                    memory_id,
-                    evidence_id,
-                    user_name,
-                    agent_id,
-                    role_name,
-                    json.dumps(evidence, ensure_ascii=False),
-                ],
-            )
-            if latest and evidence_id in latest.evidence_ids:
+            if latest and evidence_id in latest.evidence_ids and not restoring:
                 chosen = latest.fact
             else:
-                alternatives = list(latest.alternatives) if latest else []
-                conflict = bool(latest and latest.fact != fact)
+                alternatives = list(latest.alternatives) if latest and not restoring else []
+                conflict = bool(latest and not restoring and latest.fact != fact)
                 if conflict and fact not in alternatives:
                     if len(alternatives) >= 20:
                         raise HTTPException(
                             status_code=409, detail="Resolve competing definitions first"
                         )
                     alternatives.append(fact)
-                chosen = latest.fact if latest else fact
+                chosen = latest.fact if latest and not restoring else fact
                 revision = KnowledgeRevision(
                     **(
                         latest.model_dump(
@@ -558,7 +520,7 @@ class AgentMemoryRepository:
                                 "last_observed_at",
                             }
                         )
-                        if latest
+                        if latest and not restoring
                         else {}
                     ),
                     memory_id=memory_id,
@@ -568,17 +530,19 @@ class AgentMemoryRepository:
                     if conflict
                     else (
                         latest.state
-                        if latest
+                        if latest and not restoring
                         else KnowledgeState.INFERRED
                         if outcome
                         else KnowledgeState.HYPOTHESIS
                     ),
                     alternatives=alternatives,
                     evidence_ids=(
-                        [*latest.evidence_ids[-99:], evidence_id] if latest else [evidence_id]
+                        [*latest.evidence_ids[-99:], evidence_id]
+                        if latest and not restoring
+                        else [evidence_id]
                     ),
-                    semantic=latest.semantic if latest else None,
-                    authority=latest.authority if latest else "user_statement",
+                    semantic=latest.semantic if latest and not restoring else None,
+                    authority=latest.authority if latest and not restoring else "user_statement",
                     needs_revalidation=conflict,
                     recorded_at=utc_now(),
                     last_observed_at=max(
@@ -602,8 +566,6 @@ class AgentMemoryRepository:
                     if not latest:
                         revision.authority = "observed_outcome"
                 await self._append_revision(revision, user_name, agent_id, role_name)
-            # The journal precedes the compatibility projection. Retrying repairs
-            # a process crash between these writes without another logical fact.
             await self._write_projection(
                 memory_id=memory_id,
                 user_name=user_name,
@@ -615,7 +577,30 @@ class AgentMemoryRepository:
                 source_thread_id=original["source_thread_id"] if original else source_thread_id,
                 existing_id=memory_id if original else None,
             )
+            await self._write_evidence(
+                memory_id, user_name, agent_id, role_name, evidence_id, evidence
+            )
             return memory_id
+
+    async def _write_evidence(
+        self,
+        memory_id,
+        user_name,
+        agent_id,
+        role_name,
+        evidence_id,
+        evidence,
+    ):
+        async with agent_metadata(user_name) as repo:
+            if repo.actor.active_role != role_name:
+                raise MetadataPermissionDenied()
+            await repo.put_memory_evidence(memory_id, agent_id, evidence_id, evidence)
+
+    async def evidence(self, memory_id, *, user_name, agent_id, role_name, allowed):
+        async with agent_metadata(read_only=True) as repo:
+            return await repo.memory_evidence(
+                memory_id, user_name, agent_id, role_name, sorted(allowed)
+            )
 
     async def _write_projection(
         self,
@@ -630,48 +615,25 @@ class AgentMemoryRepository:
         source_thread_id,
         existing_id,
     ):
-        now = _now()
-        if existing_id:
-            await db.execute_system(
-                "UPDATE NOVA_SYSTEM.CONFIG_AGENT_MEMORIES "
-                "SET fact = %s, source_quote = %s, source_thread_id = %s, updated_at = %s "
-                "WHERE memory_id = %s AND user_name = %s AND agent_id = %s AND role_name = %s",
-                [
-                    fact,
-                    source_quote,
-                    source_thread_id,
-                    now,
-                    existing_id,
-                    user_name,
-                    agent_id,
-                    role_name,
-                ],
-            )
-            return existing_id
-        await db.execute_system(
-            "INSERT INTO NOVA_SYSTEM.CONFIG_AGENT_MEMORIES "
-            "(memory_id, user_name, agent_id, role_name, fact_key, fact, source_quote, "
-            "source_thread_id, created_at, updated_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            [
+        async with agent_metadata(user_name) as repo:
+            if repo.actor.active_role != role_name:
+                raise MetadataPermissionDenied()
+            await repo.project_memory(
                 memory_id,
-                user_name,
                 agent_id,
-                role_name,
-                fact_key,
-                fact,
-                source_quote,
-                source_thread_id,
-                now,
-                now,
-            ],
-        )
+                {
+                    "fact_key": fact_key,
+                    "fact": fact,
+                    "source_quote": source_quote,
+                    "source_thread_id": source_thread_id,
+                },
+            )
         return memory_id
 
     async def delete(
         self, memory_id: str, *, user_name: str, agent_id: str, role_name: str
     ) -> bool:
-        async with metadata_lock(f"memory:{memory_id}"):
+        async with self._write(memory_id, user_name, role_name) as repo:
             original = await self.get(
                 memory_id, user_name=user_name, agent_id=agent_id, role_name=role_name
             )
@@ -683,6 +645,8 @@ class AgentMemoryRepository:
                 if rows
                 else KnowledgeRevision(memory_id=memory_id, revision=1, fact=original["fact"])
             )
+            if not rows:
+                await self._append_revision(latest, user_name, agent_id, role_name)
             tombstone = latest.model_copy(
                 update={
                     "revision": latest.revision + 1,
@@ -700,18 +664,12 @@ class AgentMemoryRepository:
                 and latest.review_note == "Removed from active memory by its owner"
             ):
                 await self._append_revision(tombstone, user_name, agent_id, role_name)
-            await db.execute_system(
-                "DELETE FROM NOVA_SYSTEM.CONFIG_AGENT_MEMORIES "
-                "WHERE memory_id = %s AND user_name = %s AND agent_id = %s AND role_name = %s",
-                [memory_id, user_name, agent_id, role_name],
-            )
+            await repo.delete_memory_projection(memory_id, agent_id)
             return True
 
     async def delete_agent(self, *, user_name: str, agent_id: str) -> None:
-        await db.execute_system(
-            "DELETE FROM NOVA_SYSTEM.CONFIG_AGENT_MEMORIES WHERE user_name = %s AND agent_id = %s",
-            [user_name, agent_id],
-        )
+        async with agent_metadata(user_name) as repo:
+            await repo.delete_agent_memories(agent_id)
 
 
 memory_repository = AgentMemoryRepository()
@@ -766,35 +724,14 @@ async def governed_memories(memories: list[dict], user: dict) -> list[dict]:
 
 async def shared_memories(agent_id: str, user: dict) -> list[dict]:
     from app.modules.agents.router import _require_agent
-    from app.modules.agents.semantic.access import bound_view_ids
 
-    agent = await _require_agent(agent_id, user)
-    views = list(dict.fromkeys(bound_view_ids(agent)))
-    domain = (
-        " OR get_json_string(CAST(payload AS VARCHAR),'$.semantic.view_id') IN ("
-        + ",".join("%s" for _ in views)
-        + ")"
-        if views
-        else ""
-    )
-    result = await db.execute_system(
-        "SELECT memory_id,agent_id,payload FROM (SELECT memory_id,agent_id,user_name,payload,"
-        "ROW_NUMBER() OVER "
-        "(PARTITION BY memory_id ORDER BY revision DESC) rn,COUNT(*) OVER "
-        "(PARTITION BY memory_id,revision) branches FROM NOVA_SYSTEM.CONFIG_AGENT_MEMORY_REVISIONS "
-        ") latest WHERE rn=1 AND branches=1 AND (agent_id=%s" + domain + ") "
-        "AND (user_name<>%s OR agent_id<>%s) "
-        "AND memory_id IN (SELECT memory_id FROM NOVA_SYSTEM.CONFIG_AGENT_MEMORIES "
-        "WHERE agent_id=latest.agent_id) "
-        "AND get_json_string(CAST(payload AS VARCHAR),'$.visibility')='DOMAIN' "
-        "AND get_json_string(CAST(payload AS VARCHAR),'$.state')='VERIFIED' "
-        "ORDER BY memory_id LIMIT 100",
-        [agent_id, *views, user["username"], agent_id],
-    )
+    await _require_agent(agent_id, user)
+    async with agent_metadata(read_only=True) as repo:
+        result = await repo.shared_memories(agent_id)
     candidates = []
     checked_agents = {agent_id: True}
-    for row in result["rows"]:
-        source_agent = row[1]
+    for row in result:
+        source_agent = row["agent_id"]
         if source_agent not in checked_agents:
             try:
                 await _require_agent(source_agent, user)
@@ -804,9 +741,9 @@ async def shared_memories(agent_id: str, user: dict) -> list[dict]:
         if not checked_agents[source_agent]:
             continue
         revision = (
-            KnowledgeRevision.model_validate_json(row[2])
-            if isinstance(row[2], str)
-            else KnowledgeRevision.model_validate(row[2])
+            KnowledgeRevision.model_validate_json(row["payload"])
+            if isinstance(row["payload"], str)
+            else KnowledgeRevision.model_validate(row["payload"])
         )
         if (
             revision.semantic
@@ -816,7 +753,7 @@ async def shared_memories(agent_id: str, user: dict) -> list[dict]:
         ):
             candidates.append(
                 {
-                    "memory_id": row[0],
+                    "memory_id": row["memory_id"],
                     "source_agent_id": source_agent,
                     "fact_key": revision.definition.get("metric_name")
                     or revision.definition.get("definition_name")

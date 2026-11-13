@@ -32,6 +32,7 @@ from tests.unit.test_task_scheduler_tick import (
 )
 from tests.unit.test_task_scheduler_tick import (
     RecordingTransport,
+    leader,
     make_task,
 )
 
@@ -84,7 +85,7 @@ class TestSchedulerEnqueue:
             )]
         )
         transport = RecordingTransport()
-        tick = SchedulerTick(repo, transport)
+        tick = SchedulerTick(repo, transport, leader=leader())
 
         first = await tick.tick(NOW)
         # The second tick is late, so it catches up: 12:00 and 12:05 are both due.
@@ -103,7 +104,7 @@ class TestSchedulerEnqueue:
                 "solo", overlap_policy="queue", created_at=ONE_STEP_ANCHOR
             )])
         transport = RecordingTransport()
-        tick = SchedulerTick(repo, transport)
+        tick = SchedulerTick(repo, transport, leader=leader())
 
         await tick.tick(NOW)
         second = await tick.tick(NOW + timedelta(minutes=5))
@@ -117,7 +118,7 @@ class TestSchedulerEnqueue:
                 "solo", overlap_policy="allow", created_at=ONE_STEP_ANCHOR
             )])
         transport = RecordingTransport()
-        tick = SchedulerTick(repo, transport)
+        tick = SchedulerTick(repo, transport, leader=leader())
 
         await tick.tick(NOW)
         second = await tick.tick(NOW + timedelta(minutes=5))
@@ -130,7 +131,7 @@ class TestSchedulerEnqueue:
                 "solo", overlap_policy="allow", created_at=ONE_STEP_ANCHOR
             )])
         transport = RecordingTransport()
-        await SchedulerTick(repo, transport).tick(NOW)
+        await SchedulerTick(repo, transport, leader=leader()).tick(NOW)
 
         run = next(iter(repo.graph_runs.values()))
         assert run["overlap_policy"] == "allow"
@@ -168,7 +169,7 @@ class TestSchedulerEnqueue:
         repo = SchedulerFakeRepository([root], [])
         transport = RecordingTransport()
 
-        plan = await SchedulerTick(repo, transport).tick(NOW)
+        plan = await SchedulerTick(repo, transport, leader=leader()).tick(NOW)
 
         assert len(plan.due) == 1
         assert plan.due[0].graph_id == "db1.etl.nightly"
@@ -190,7 +191,7 @@ class TestSchedulerEnqueue:
             ]
         )
         transport = RecordingTransport()
-        plan = await SchedulerTick(repo, transport).tick(NOW)
+        plan = await SchedulerTick(repo, transport, leader=leader()).tick(NOW)
 
         assert len(plan.due) == 4
         assert plan.overlap_skipped == 3
@@ -209,7 +210,7 @@ class TestSchedulerEnqueue:
             ]
         )
         transport = RecordingTransport()
-        plan = await SchedulerTick(repo, transport).tick(NOW)
+        plan = await SchedulerTick(repo, transport, leader=leader()).tick(NOW)
 
         assert len(plan.due) == 4
         assert plan.overlap_skipped == 0

@@ -1,6 +1,6 @@
 import { page, userEvent } from "vitest/browser";
 import { StrictMode, useEffect, useState } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render } from "vitest-browser-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -24,6 +24,33 @@ import "@/styles/index.css";
  * and the reconsider pass. Every assertion is a control that has to actually do
  * something, so a silent regression in the event plumbing fails here.
  */
+
+const clients: QueryClient[] = [];
+const unmockedRequests: string[] = [];
+const originalFetch = globalThis.fetch;
+
+beforeAll(() => {
+  globalThis.fetch = ((input, init) => {
+    const url = input instanceof Request ? input.url : String(input);
+    if (new URL(url, location.href).pathname.startsWith("/api/")) {
+      const message = `Unmocked Studio request: ${url}\n${new Error().stack}`;
+      unmockedRequests.push(message);
+      return Promise.reject(new Error(message));
+    }
+    return originalFetch(input, init);
+  }) as typeof fetch;
+});
+
+afterAll(() => {
+  globalThis.fetch = originalFetch;
+  expect(unmockedRequests).toEqual([]);
+});
+
+function createTestClient(options?: ConstructorParameters<typeof QueryClient>[0]) {
+  const client = new QueryClient(options);
+  clients.push(client);
+  return client;
+}
 
 const AGENT: Agent = {
   agent_id: "a1",
@@ -218,7 +245,7 @@ function renderStudio(
       : AGENT;
   const agent = { ...baseAgent, sample_questions: sampleQuestions };
   mockFetch(mode, extended);
-  const client = new QueryClient({
+  const client = createTestClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
@@ -251,7 +278,12 @@ beforeEach(() => {
 
 afterEach(async () => {
   await cleanup();
+  for (const client of clients.splice(0)) {
+    await client.cancelQueries();
+    client.clear();
+  }
   vi.restoreAllMocks();
+  expect(unmockedRequests).toEqual([]);
 });
 
 it.each([false, true])("reconnects a direct run after reload and supports server stop: %s", async (cancel) => {
@@ -287,7 +319,7 @@ it.each([false, true])("reconnects a direct run after reload and supports server
     }
     return fallback(input, init);
   });
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = createTestClient({ defaultOptions: { queries: { retry: false } } });
   const screen = await render(<StrictMode><QueryClientProvider client={client}>
     <StudioChat agent={AGENT} agents={[AGENT]} onSelectAgent={() => {}}
       currentRole="ACCOUNTADMIN" activeThreadId="t-past" onThreadChange={() => {}} />
@@ -320,7 +352,7 @@ it("remembers Stop before acceptance and cancels the accepted server run", async
     }
     return fallback(input, init);
   });
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = createTestClient({ defaultOptions: { queries: { retry: false } } });
   const screen = await render(<QueryClientProvider client={client}>
     <StudioChat agent={AGENT} agents={[AGENT]} onSelectAgent={() => {}}
       currentRole="ACCOUNTADMIN" activeThreadId={null} onThreadChange={() => {}} />
@@ -350,7 +382,7 @@ it("keeps a direct provider-format failure visible after reload without resubmit
       ] });
     return fallback(input, init);
   });
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = createTestClient({ defaultOptions: { queries: { retry: false } } });
   const screen = await render(<QueryClientProvider client={client}>
     <StudioChat agent={AGENT} agents={[AGENT]} onSelectAgent={() => {}}
       currentRole="ACCOUNTADMIN" activeThreadId="t-past" onThreadChange={() => {}} />
@@ -361,9 +393,43 @@ it("keeps a direct provider-format failure visible after reload without resubmit
   expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
 });
 
+it("shows a storage interruption beside the partial answer and removes consent", async () => {
+  const screen = await renderStudio("ask_every_tool");
+  const fetch = vi.mocked(globalThis.fetch);
+  const fallback = fetch.getMockImplementation()!;
+  let stream: ReadableStreamDefaultController<Uint8Array> | undefined;
+  fetch.mockImplementation(async (input, init) => {
+    if (String(input).endsWith("/messages") && init?.method === "POST") {
+      return new Response(new ReadableStream({
+        start(controller) {
+          stream = controller;
+          controller.enqueue(new TextEncoder().encode(
+            'event: text_delta\ndata: {"text":"Partial answer from the agent."}\n\n'
+            + 'event: tool_call\ndata: {"tool_call_id":"read","tool_name":"query_execute","sql_preview":"SELECT 42","classification":"read_only","status":"pending"}\n\n',
+          ));
+        },
+      }), { headers: { "Content-Type": "text/event-stream" } });
+    }
+    return fallback(input, init);
+  });
+  await screen.getByRole("textbox", { name: "Message Nova" }).fill("Read the synthetic result");
+  await screen.getByRole("button", { name: "Send", exact: true }).click();
+  await expect.element(screen.getByRole("button", { name: "Allow once" })).toBeVisible();
+  stream!.enqueue(new TextEncoder().encode(
+    'event: error\ndata: {"code":"run_persistence_unavailable","message":"The run stopped because its progress could not be saved."}\n\n'
+    + 'event: done\ndata: {"message_id":"","finish_reason":"interrupted"}\n\n',
+  ));
+  stream!.close();
+  await expect.element(screen.getByText("Partial answer from the agent.")).toBeVisible();
+  await expect.element(screen.getByText("The run stopped because its progress could not be saved.")).toBeVisible();
+  await expect.element(screen.getByRole("button", { name: "Allow once" })).not.toBeInTheDocument();
+  await expect.element(screen.getByRole("button", { name: "Stop", exact: true })).not.toBeInTheDocument();
+  expect(fetch.mock.calls.filter(([url]) => String(url).endsWith("/decision"))).toHaveLength(0);
+});
+
 it("preserves the draft when the user switches agents", async () => {
   mockFetch("read_only", false);
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = createTestClient({ defaultOptions: { queries: { retry: false } } });
   const other = { ...AGENT, agent_id: "a2", name: "Field Ops" };
   const choices = [AGENT, other];
   function PickerHarness() {
@@ -399,7 +465,7 @@ it("remembers the agent a message was sent with", async () => {
 
 it("explains that Studio needs an agent when the user has none", async () => {
   mockFetch();
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = createTestClient({ defaultOptions: { queries: { retry: false } } });
   const root = createRootRoute({
     component: () => (
       <QueryClientProvider client={client}>
@@ -446,7 +512,7 @@ it("sends once when repeated Enter waits for an interactive state flush", async 
  */
 function renderStudioWithLateThread() {
   mockFetch("read_only", false);
-  const client = new QueryClient({
+  const client = createTestClient({
     defaultOptions: { queries: { retry: false } },
   });
 
@@ -486,7 +552,7 @@ function renderStudioWithLateThread() {
  */
 function renderStudioWithStaleThreadAfterNewChat() {
   mockFetch("read_only", false);
-  const client = new QueryClient({
+  const client = createTestClient({
     defaultOptions: { queries: { retry: false } },
   });
 
@@ -527,7 +593,7 @@ function renderStudioWithStaleThreadAfterNewChat() {
 
 describe("studio transcript click-through", () => {
   it("attaches a text file, removes it, then sends the selected file to the agent", async () => {
-    renderStudio();
+    await renderStudio();
     const chooser = page.getByLabelText("Choose files");
     const first = new File(["discard me"], "draft.txt", { type: "text/plain" });
     await userEvent.upload(chooser, first);
@@ -552,7 +618,7 @@ describe("studio transcript click-through", () => {
   });
 
   it("allows a file to be sent without typed text", async () => {
-    renderStudio();
+    await renderStudio();
     await userEvent.upload(
       page.getByLabelText("Choose files"),
       new File(["The answer is 42."], "facts.txt", { type: "text/plain" }),
@@ -569,7 +635,7 @@ describe("studio transcript click-through", () => {
   });
 
   it("attaches PDF and image files and sends their media types to the agent", async () => {
-    renderStudio();
+    await renderStudio();
     const pdf = new File(["%PDF-1.4\n"], "facts.pdf", { type: "application/pdf" });
     const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
     const pngBytes = Uint8Array.from(atob(pngBase64), (character) => character.charCodeAt(0));
@@ -615,7 +681,7 @@ describe("studio transcript click-through", () => {
     await render(
       <QueryClientProvider
         client={
-          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+          createTestClient({ defaultOptions: { queries: { retry: false } } })
         }
       >
         <StudioChat
@@ -683,7 +749,7 @@ describe("studio transcript click-through", () => {
   it("preserves the create-with-chat prefill through initial effects", async () => {
     mockFetch();
     await render(
-      <QueryClientProvider client={new QueryClient()}>
+      <QueryClientProvider client={createTestClient()}>
         <StudioChat
           agent={AGENT}
           agents={[AGENT]}
@@ -704,7 +770,7 @@ describe("studio transcript click-through", () => {
   });
 
   it("shows the personalized Nova welcome without a chat header", async () => {
-    renderStudio();
+    await renderStudio();
 
     await expect
       .element(
@@ -722,7 +788,7 @@ describe("studio transcript click-through", () => {
   });
 
   it("keeps welcome suggestions above a stationary composer across the first send", async () => {
-    renderStudio();
+    await renderStudio();
     const greetingLocator = page.getByRole("heading", {
       name: /Good (morning|afternoon|evening), Dwicky/,
     });
@@ -759,7 +825,7 @@ describe("studio transcript click-through", () => {
   });
 
   it("clears the composer and shows progress while a new thread is still being created", async () => {
-    renderStudio();
+    await renderStudio();
     const fetchMock = vi.mocked(globalThis.fetch);
     const respond = fetchMock.getMockImplementation();
     if (!respond) throw new Error("Fetch mock is unavailable");
@@ -787,7 +853,7 @@ describe("studio transcript click-through", () => {
   });
 
   it("restores the draft if a new conversation cannot be created", async () => {
-    renderStudio();
+    await renderStudio();
     const fetchMock = vi.mocked(globalThis.fetch);
     const respond = fetchMock.getMockImplementation();
     if (!respond) throw new Error("Fetch mock is unavailable");
@@ -811,7 +877,7 @@ describe("studio transcript click-through", () => {
 
   it("keeps a long question list compact and makes every question available", async () => {
     const questions = Array.from({ length: 8 }, (_, index) => `Question ${index + 1} about sales performance`);
-    renderStudio("read_only", false, null, questions);
+    await renderStudio("read_only", false, null, questions);
 
     await expect.element(page.getByRole("textbox", { name: "Message Nova" })).toBeVisible();
     const composer = page.getByTestId("studio-composer").element();
@@ -827,7 +893,7 @@ describe("studio transcript click-through", () => {
   });
 
   it("uses a white composer and a bordered text-only agent badge", async () => {
-    renderStudio();
+    await renderStudio();
     await expect
       .element(page.getByPlaceholder("Ask a question about your data"))
       .toBeVisible();
@@ -845,7 +911,7 @@ describe("studio transcript click-through", () => {
   });
 
   it("renders the process rail and the answer, and opens a step", async () => {
-    renderStudio();
+    await renderStudio();
     await page
       .getByPlaceholder("Ask a question about your data")
       .fill("Top SKUs");
@@ -905,7 +971,7 @@ describe("studio transcript click-through", () => {
   });
 
   it("shows a consent card for an ask_every_tool agent and resolves it", async () => {
-    renderStudio("ask_every_tool");
+    await renderStudio("ask_every_tool");
     await page
       .getByPlaceholder("Ask a question about your data")
       .fill("Top SKUs");
@@ -925,7 +991,7 @@ describe("studio transcript click-through", () => {
   });
 
   it("keeps the composer controls keyboard reachable", async () => {
-    renderStudio();
+    await renderStudio();
     const textarea = page.getByPlaceholder("Ask a question about your data");
     await textarea.click();
     await userEvent.keyboard("top skus{Enter}");
@@ -933,7 +999,7 @@ describe("studio transcript click-through", () => {
   });
 
   it("opens a step to show what it did", async () => {
-    renderStudio();
+    await renderStudio();
     await page
       .getByPlaceholder("Ask a question about your data")
       .fill("Top SKUs");
@@ -963,7 +1029,7 @@ describe("studio transcript click-through", () => {
   });
 
   it("offers a reconsider pass that streams as a labelled continuation", async () => {
-    renderStudio("read_only", true);
+    await renderStudio("read_only", true);
     await page
       .getByPlaceholder("Ask a question about your data")
       .fill("Top SKUs");
@@ -982,7 +1048,7 @@ describe("studio transcript click-through", () => {
   });
 
   it("rebuilds the process and the data when a stored thread is opened", async () => {
-    renderStudio("read_only", false, "t-past");
+    await renderStudio("read_only", false, "t-past");
 
     await expect.element(page.getByText("report.pdf")).toBeVisible();
     await expect.element(page.getByText("chart.png")).toBeVisible();
@@ -1018,7 +1084,7 @@ describe("studio transcript click-through", () => {
   });
 
   it("restores saved feedback and sends changes for the persisted assistant message", async () => {
-    renderStudio("read_only", false, "t-past");
+    await renderStudio("read_only", false, "t-past");
     const like = page.getByRole("button", { name: "Like answer", exact: true });
     await expect.element(like).toHaveAttribute("aria-pressed", "true");
     await expect.element(page.getByText("412 tokens")).toBeVisible();
@@ -1042,7 +1108,7 @@ describe("studio transcript click-through", () => {
     // newest conversation" effect supplies a thread id. Clearing the loading
     // flag inside a cancelled guard left the pane on "Opening the conversation"
     // forever, next to a sidebar full of history.
-    renderStudioWithLateThread();
+    await renderStudioWithLateThread();
     await expect
       .element(page.getByText(/Omzet tertinggi ada di/))
       .toBeVisible();
@@ -1052,7 +1118,7 @@ describe("studio transcript click-through", () => {
   });
 
   it("does not reopen the previous thread while New chat waits for the URL", async () => {
-    renderStudioWithStaleThreadAfterNewChat();
+    await renderStudioWithStaleThreadAfterNewChat();
     await expect
       .element(page.getByText(/Omzet tertinggi ada di/))
       .toBeVisible();

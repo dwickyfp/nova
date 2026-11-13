@@ -4,44 +4,91 @@ Inherit the [root contracts](../AGENTS.md). Paths below are repository-relative;
 commands run from the repository root unless stated otherwise. Read
 [HOW_TO_RUN.md](../HOW_TO_RUN.md) for local setup and operational prerequisites.
 
-## Topology and state
+## Current development topology
 
 - `docker/docker-compose-engine.yml` owns the governed local stack: patched
   StarRocks FE, pinned BE, Ranger services/policy bridge/bootstrap, Redis, and
-  object storage. Its `app` profile adds the backend and task/migration worker.
-  Do not assume it also starts every scheduler or Studio worker; inspect
-  `dev.sh` and the run guide for separate process ownership.
+  object storage. Its `app` profile adds the backend and workload services
+  declared in that file. Inspect `dev.sh`, the worker role registry and the run
+  guide for host-process ownership; do not infer scheduler or agent startup
+  from a Compose profile name. Process changes also follow the
+  [runtime guide](../backend/app/worker/AGENTS.md).
 - `docker/docker-compose.split.yml` is an opt-in override that replaces the
   single backend with scalable web, query and MySQL proxy tiers behind the
   `docker/gateway/` nginx gateway. `NOVA_PROCESS_ROLE` decides which startup
-  duties a process runs; only the web role bootstraps schemas, under a Redis
-  lock. Assistant and agent routes are pinned to one query replica per session
-  because their consent and cancel state is process-local; do not replace that
+  duties a process runs. The integrated runtime requires a published PG schema
+  and epoch for each workload; it never migrates metadata at application
+  startup. The historical split manifests are not a completed production
+  deployment or proof that every caller has been cut over.
+  Assistant and agent routes use the web metadata owner and are pinned to one
+  web replica per session because their consent and cancel state is process-local; do not replace that
   rule with round robin or with `hash ... consistent`, which does not pin
   replicas that share one DNS name. `/api/v1/internal/` is never routed publicly.
   `gateway/tls/` holds deployment-local certificates and is git-ignored.
-- Local frontend development uses Vite 5173 and backend 8000; the MySQL proxy
-  defaults to 4406. Compose/environment files own deployment port bindings.
+- `dev.sh` starts separate web (8000), query (8001), MySQL proxy (4406), scheduler
+  and supervised workload processes; Vite uses 5173. It checks workload
+  configuration before startup, then waits for role readiness and worker
+  heartbeats. It never publishes a metadata epoch. Compose/environment files
+  own deployment port bindings.
   The engine's native MySQL port stays internal in governed deployment;
   `docker/docker-compose.dev.yml` is an explicit development override.
 - Use the current image/build pins and
   [StarRocks patch guide](../patches/starrocks/AGENTS.md). Replacing the patched
   FE with a stock image can remove role/filter/mask enforcement even when it
   starts successfully. Keep FE/BE/grammar capability assumptions aligned.
-- Ranger owns its own policy database and services. That database is not a Nova
-  relational metadata store. Redis coordinates runtime/session work; object
-  storage carries payloads; durable relational Nova metadata uses `NOVA_SYSTEM`.
-- `docker/init-nova.sql` and `backend/app/common/nova_system.py` own bootstrap
-  and schema initialization. Preserve flat table naming, additive compatible
-  changes, role guards/defaults, and bootstrap order. Do not copy old schema
-  diagrams or invent SQL unsupported by the pinned engine.
-- Tracked configuration contains metadata, placeholders, and secret references.
-  Deployment keys belong in untracked environment/supported secret stores.
-  Share stable signing/encryption configuration across applicable processes;
-  do not generate replacement keys silently at process startup.
+- `docker/init-nova.sql` retains engine initialization and the historical
+  metadata schema needed by source exports and engine fixtures. Runtime
+  `init_nova_system` and task initialization only probe the installed PG
+  authority; they do not create metadata tables. Preserve engine role guards,
+  authentication defaults and Stream journals that commit with analytical data.
+  PG provisioning and installation belong to the separate restricted bootstrap
+  and one-shot migrator, as specified in the
+  [metadata guide](../backend/metadata_migrations/AGENTS.md).
 - Keep the authenticated Ranger policy bridge internal and allowlisted. Do not
   expose root, raw FE access, or operator credentials through public Nova paths.
   Preserve health/readiness checks and existing safe development overrides.
+
+## Production target and service changes
+
+Follow the [accepted production scope](../docs/architecture/production-refactor/ACCEPTANCE.md)
+and [migration state](../docs/architecture/production-refactor/TRACEABILITY.md).
+The development Compose files and a successful config check are not a production
+deployment acceptance result.
+
+- Deliver one Compose entrypoint with inline environment and reusable anchors
+  separated by privilege. Do not require `.env`, an override chain or opt-in
+  profiles to start required production roles. Existing development overrides
+  remain development tooling.
+- Use separate services for Nova PG17 `nova_control.nova_meta`, Ranger/Superset
+  databases, critical/cache Redis and owning workloads. Keep analytical data
+  and its transactional Stream journals in StarRocks, and payloads with their
+  storage owner. Do not expose metadata PG through user connection settings.
+- Track only credential-free templates. Keep actual deployment values and TLS
+  material outside Git with restricted permissions. Share stable encryption and
+  signing values only with the services that need them; do not rotate them on
+  restart or expose expanded Compose configuration in logs/artifacts.
+- Pin images and preserve the patched FE/BE compatibility. Define private
+  management bindings, TLS, CPU/memory/PID/output limits, log rotation, quotas
+  and restart/shutdown behavior. Production capacity remains adjustable in this
+  single file; report measured local capacity separately.
+- Assign dependencies and credentials per role. Only the OpenSandbox controller
+  receives required Docker access. User-code runtimes and application workers
+  must not inherit the socket, host mounts or infrastructure credentials.
+- Wire initialization, one-shot migration and application readiness explicitly.
+  A healthy process heartbeat does not prove schema epoch, dependency access or
+  available capacity. Match shutdown grace to drain/termination budgets and test
+  failures after partial startup as well as clean startup.
+- Do not increase replicas based only on available CPU/RAM or a service label.
+  Follow runtime claim/fencing, session/consent and duplicate-effect checks before
+  changing affinity or ownership. Single-host Compose does not provide host HA.
+- Recovery requires PG base backup/WAL and a manifest for StarRocks, object
+  storage, Ranger and Superset, with off-host copies and tested restore/PITR.
+  A mounted backup directory on the same host is insufficient.
+
+For a service addition or replacement, update normal launchers, dependency order,
+network/credential scope, limits, health, metrics/alerts and the runbook together.
+Validate fresh initialization and existing-state compatibility on disposable
+infrastructure. Do not silently restart or reseed shared dependencies to do so.
 
 ## Reuse running stacks
 
@@ -68,8 +115,10 @@ start another stack next to them.
 - Apply new work to the running stack:
   - Backend, worker, and frontend run as host processes in local development
     (`dev.sh` or a local launch configuration). Restart them to load new
-    code. Backend startup runs the `NOVA_SYSTEM` bootstrap, so a restart also
-    applies additive schema changes to the running engine.
+    code only after the required metadata schema and epoch have been published.
+    Startup checks that state; restarting is not a PG migration or cutover.
+    Keep remaining engine-side initialization with its owning domain until
+    its verified cutover.
   - After seed or test-schema changes, rerun
     `backend/tests/integration/seed_engine.sh` with `COMPOSE_PROJECT_NAME` and
     `STARROCKS_PORT` set to the running test project.

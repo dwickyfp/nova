@@ -112,7 +112,7 @@ async def test_feature_store_lifecycle_and_no_future_leakage():
         assert training["preview"]["rows"][0][-1] == 7
         refreshed = await feature_store.refresh_view(view, user)
         assert refreshed["version"] == 2 and refreshed["status"] == "READY"
-        assert (await feature_store._view(view))["active_version"] == 1
+        assert (await feature_store._view(view, user))["active_version"] == 1
         await feature_store.activate_view(view, 2, user)
         new_group_version = await feature_store.add_group_version(
             group, [FeatureGroupMember(view_name=view, version=2)], user
@@ -154,11 +154,11 @@ async def test_feature_store_lifecycle_and_no_future_leakage():
         )
         assert combined["preview"]["rows"][0][-2:] == [7, 3]
     finally:
-        if await feature_store._group(group):
+        if await feature_store._group(group, user):
             await feature_store.drop_group(group, user)
-        if await feature_store._view(view_two):
+        if await feature_store._view(view_two, user):
             await feature_store.drop_view(view_two, user)
-        if await feature_store._view(view):
+        if await feature_store._view(view, user):
             await feature_store.drop_view(view, user)
         if entity_id:
             await db.execute_system(

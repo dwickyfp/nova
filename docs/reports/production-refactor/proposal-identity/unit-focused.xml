@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="0" skipped="0" tests="7" time="1.582">
+    <testcase classname="tests.unit.test_tool_proposal_identity" name="test_server_proposal_ids_are_independent_of_provider_fields" time="0.798" />
+    <testcase classname="tests.unit.test_tool_proposal_identity" name="test_synthetic_call_without_a_wire_id_gets_a_separate_protocol_identity" time="0.000" />
+    <testcase classname="tests.unit.test_tool_proposal_identity" name="test_malformed_provider_id_is_rejected_before_consent[False]" time="0.000" />
+    <testcase classname="tests.unit.test_tool_proposal_identity" name="test_malformed_provider_id_is_rejected_before_consent[7]" time="0.000" />
+    <testcase classname="tests.unit.test_tool_proposal_identity" name="test_malformed_provider_id_is_rejected_before_consent[wire_id2]" time="0.000" />
+    <testcase classname="tests.unit.test_tool_proposal_identity" name="test_malformed_provider_id_is_rejected_before_consent[wire_id3]" time="0.003" />
+    <testcase classname="tests.unit.test_tool_proposal_identity" name="test_malformed_provider_id_is_rejected_before_consent[]" time="0.000" />
+  </testsuite>
+</testsuites>

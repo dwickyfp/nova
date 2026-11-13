@@ -420,8 +420,9 @@ class StewardshipService:
             domain_ids=sorted(plan.domain_ids), submitter=actor.principal,
             operation_id=body.operation_id, request_digest=digest,
         )
-        saved = await self.repository.save("proposals", proposal)
-        await access.audit("PROPOSE", "ONTOLOGY_PROPOSAL", saved.id, user)
+        async with access.governed(user):
+            saved = await self.repository.save("proposals", proposal)
+            await access.audit("PROPOSE", "ONTOLOGY_PROPOSAL", saved.id, user)
         return saved
 
     async def review(self, proposal_id: str, body: ReviewRequest, user: dict) -> Proposal:
@@ -462,14 +463,15 @@ class StewardshipService:
             else "APPROVED" if approved >= set(proposal.domain_ids)
             else "PENDING"
         )
-        proposal = await self.repository.save(
-            "proposals",
-            proposal.model_copy(update={"actor": actor, "reviews": reviews, "status": status}),
-            expected_revision=proposal.revision,
-        )
-        await access.audit(
-            "REVIEW", "ONTOLOGY_PROPOSAL", proposal.id, user, decision=body.decision
-        )
+        async with access.governed(user):
+            proposal = await self.repository.save(
+                "proposals",
+                proposal.model_copy(update={"actor": actor, "reviews": reviews, "status": status}),
+                expected_revision=proposal.revision,
+            )
+            await access.audit(
+                "REVIEW", "ONTOLOGY_PROPOSAL", proposal.id, user, decision=body.decision
+            )
         if proposal.status == "APPROVED":
             proposal = await self._apply(proposal, user)
         return proposal
@@ -502,14 +504,17 @@ class StewardshipService:
                 error="; ".join(plan.issues[:5]),
             )
             raise HTTPException(status_code=409, detail={"issues": plan.issues[:50]})
-        for kind, record, expected in plan.writes:
-            await self.repository.save(kind, record, expected_revision=expected)
-        applied = await self.repository.save(
-            "proposals",
-            proposal.model_copy(update={"actor": actor, "status": "APPLIED"}),
-            expected_revision=proposal.revision,
-        )
-        await access.audit("APPLY", "ONTOLOGY_PROPOSAL", proposal.id, user)
+        # Every planned record, the applied mark and the audit commit together:
+        # a conflict on any of them leaves the proposal approved and unchanged.
+        async with access.governed(user):
+            for kind, record, expected in plan.writes:
+                await self.repository.save(kind, record, expected_revision=expected)
+            applied = await self.repository.save(
+                "proposals",
+                proposal.model_copy(update={"actor": actor, "status": "APPLIED"}),
+                expected_revision=proposal.revision,
+            )
+            await access.audit("APPLY", "ONTOLOGY_PROPOSAL", proposal.id, user)
         return applied
 
     async def withdraw(self, proposal_id: str, user: dict) -> Proposal:
@@ -526,12 +531,13 @@ class StewardshipService:
             raise HTTPException(
                 status_code=409, detail=f"The proposal is {proposal.status.lower()}"
             )
-        withdrawn = await self.repository.save(
-            "proposals",
-            proposal.model_copy(update={"actor": actor, "status": "WITHDRAWN"}),
-            expected_revision=proposal.revision,
-        )
-        await access.audit("WITHDRAW", "ONTOLOGY_PROPOSAL", proposal.id, user)
+        async with access.governed(user):
+            withdrawn = await self.repository.save(
+                "proposals",
+                proposal.model_copy(update={"actor": actor, "status": "WITHDRAWN"}),
+                expected_revision=proposal.revision,
+            )
+            await access.audit("WITHDRAW", "ONTOLOGY_PROPOSAL", proposal.id, user)
         return withdrawn
 
 

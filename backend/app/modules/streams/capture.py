@@ -43,6 +43,7 @@ from typing import Any
 from app.core.config import settings
 from app.modules.streams import codec
 from app.modules.streams.codec import quote_identifier
+from app.modules.streams.control import acting_as, caller_actor
 from app.modules.streams.schemas import StreamError
 from app.modules.streams.sources import (
     BLOCKED,
@@ -119,7 +120,11 @@ class CaptureCoordinator:
 
         started = time.monotonic()
         try:
-            return await self._write(record, statement, sql, kind, caller, merge)
+            if not caller.role:
+                return await self._write(record, statement, sql, kind, caller, merge)
+            # The commit index records the writer as its control principal.
+            with acting_as(caller_actor(caller.username, caller.role)):
+                return await self._write(record, statement, sql, kind, caller, merge)
         except StreamError as exc:
             STREAM_CAPTURE_FAILURES.labels(exc.code).inc()
             raise

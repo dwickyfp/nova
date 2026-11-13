@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import AsyncMock
 
 from app.core.config import settings
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.monitoring.runtime_health import RuntimeHealthProbe
 from app.modules.task_orchestration.process_health import WorkerProcessHeartbeat
 
@@ -14,11 +16,9 @@ class FakeRedis:
         self,
         *,
         ping: bool = True,
-        scheduler_ttl: int = 20,
         workers: int = 1,
     ) -> None:
         self.ping_result = ping
-        self.scheduler_ttl = scheduler_ttl
         self.workers = workers
         self.closed = False
         self.zadds: list[tuple[str, dict[str, float]]] = []
@@ -27,10 +27,6 @@ class FakeRedis:
 
     async def ping(self) -> bool:
         return self.ping_result
-
-    async def ttl(self, key: str) -> int:
-        assert key == settings.SCHEDULER_LEADER_LOCK_KEY
-        return self.scheduler_ttl
 
     async def zcount(self, key: str, minimum: float, maximum: str) -> int:
         assert key == settings.WORKER_REGISTRY_KEY
@@ -51,18 +47,22 @@ class FakeRedis:
         self.closed = True
 
 
-def _probe(client: FakeRedis) -> RuntimeHealthProbe:
+ACTOR = SecurityContext(principal="admin", active_role="ACCOUNTADMIN")
+
+
+def _probe(client: FakeRedis, *, leader=True, error=None) -> RuntimeHealthProbe:
     return RuntimeHealthProbe(
         client_factory=lambda *_args, **_kwargs: client,
         clock=lambda: 1_800_000_000.0,
+        scheduler_probe=AsyncMock(return_value=leader, side_effect=error),
     )
 
 
 class TestRuntimeHealthProbe:
     async def test_reports_all_services_healthy_from_live_signals(self):
-        client = FakeRedis(scheduler_ttl=18, workers=2)
+        client = FakeRedis(workers=2)
 
-        result = await _probe(client).collect()
+        result = await _probe(client).collect(ACTOR)
 
         assert result.redis.status == "healthy"
         assert result.scheduler.status == "healthy"
@@ -71,19 +71,30 @@ class TestRuntimeHealthProbe:
         assert client.closed is True
 
     async def test_missing_process_signals_are_unhealthy(self):
-        result = await _probe(FakeRedis(scheduler_ttl=-2, workers=0)).collect()
+        result = await _probe(FakeRedis(workers=0), leader=False).collect(ACTOR)
 
         assert result.redis.status == "healthy"
         assert result.scheduler.status == "unhealthy"
         assert result.worker.status == "unhealthy"
         assert result.worker.instances == 0
 
-    async def test_redis_failure_makes_dependent_process_state_unknown(self):
-        result = await _probe(FakeRedis(ping=False)).collect()
+    async def test_redis_failure_does_not_hide_the_pg_lease(self):
+        result = await _probe(FakeRedis(ping=False)).collect(ACTOR)
 
         assert result.redis.status == "unhealthy"
-        assert result.scheduler.status == "unknown"
+        assert result.scheduler.status == "healthy"
         assert result.worker.status == "unknown"
+
+    async def test_pg_failure_is_unknown_without_using_redis_for_leadership(self):
+        result = await _probe(FakeRedis(), error=ConnectionError()).collect(ACTOR)
+        assert result.scheduler.status == "unknown"
+        assert result.redis.status == "healthy"
+        assert result.worker.status == "healthy"
+
+    async def test_scheduler_probe_receives_the_caller_context(self):
+        probe = _probe(FakeRedis())
+        await probe.collect(ACTOR)
+        probe._scheduler_probe.assert_awaited_once_with(ACTOR)
 
 
 class TestWorkerProcessHeartbeat:

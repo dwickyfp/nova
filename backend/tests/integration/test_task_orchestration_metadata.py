@@ -1,19 +1,4 @@
-"""Integration tests for the Phase 9 task-orchestration metadata layer.
-
-These run against a real StarRocks instance because the acceptance criteria are
-about real DDL (idempotency, Primary-Key tables, ``information_schema.columns``)
-and real CRUD — none of which a mock can prove.
-
-By default the suite brings up the project's ``docker-compose.test.yml`` stack
-via the shared ``docker_services`` fixture, then connects on port 29030. To point
-at an already-running engine instead (e.g. the dev engine on 9030), set the port::
-
-    NOVA_ORCH_SR_PORT=9030 uv run pytest tests/integration/test_task_orchestration_metadata.py
-
-Other overrides: ``NOVA_ORCH_SR_HOST``, ``NOVA_ORCH_SR_USER``,
-``NOVA_ORCH_SR_PASSWORD``. When StarRocks is unreachable the module skips rather
-than fails: a missing local prerequisite is not a regression.
-"""
+"""Task metadata and lowering against PG17, with engine timezone observations."""
 
 from __future__ import annotations
 
@@ -26,14 +11,15 @@ import asyncmy
 import pytest
 import pytest_asyncio
 
-from app.common.nova_system import (
-    TASK_ORCHESTRATION_DDL,
-    migrate_task_orchestration_columns,
-)
+from app.common.metadata_actors import metadata_scope
+from app.common.nova_system import init_task_orchestration
 from app.core.config import settings
 from app.core.database import db
+from app.core.metadata_db import MetadataPermissionDenied
+from app.core.metadata_migrations import migrate
 from app.modules.task_orchestration.repository import (
     UnknownUpdateColumnError,
+    graph_ids_from,
 )
 from app.modules.task_orchestration.repository import (
     task_orchestration_repository as repo,
@@ -43,6 +29,7 @@ from tests.integration._stack import (
     engine_port,
     require_shared_stack,
 )
+from tests.integration._task_runs import create_graph_run, create_task_run
 
 _EXPLICIT_PORT = os.getenv("NOVA_ORCH_SR_PORT")
 SR_HOST = os.getenv("NOVA_ORCH_SR_HOST", "127.0.0.1")
@@ -56,6 +43,13 @@ _USE_SHARED_STACK = _EXPLICIT_PORT is None
 #: engine is a missing local prerequisite, and the CI job fails on
 #: `skipped == collected` so an all-skip run cannot pass for green.
 pytestmark = pytest.mark.engine
+
+
+@pytest_asyncio.fixture
+async def task_metadata_login(engine_workload):
+    async with engine_workload("task"):
+        yield
+
 
 CREDENTIAL_SUBSTRINGS = ("password", "secret", "token", "credential")
 
@@ -75,9 +69,7 @@ async def _reachable() -> bool:
 async def _has_live_backend() -> bool:
     """An FE that accepts connections but has no BE cannot execute DDL."""
     try:
-        conn = await asyncmy.connect(
-            host=SR_HOST, port=SR_PORT, user=SR_USER, password=SR_PASSWORD
-        )
+        conn = await asyncmy.connect(host=SR_HOST, port=SR_PORT, user=SR_USER, password=SR_PASSWORD)
     except Exception:
         return False
     try:
@@ -109,146 +101,81 @@ async def orchestration_db(request):
 
 
 async def _ensure_ddl() -> None:
-    """Bootstrap NOVA_SYSTEM (the test stack ships without init-nova.sql) then DDL.
-
-    Also runs the additive column migrations, because the engine stack's
-    ``init-nova.sql`` may have already created ``CONFIG_TASK*`` without the
-    later ``heartbeat_at`` column — ``CREATE TABLE IF NOT EXISTS`` will not
-    evolve it, and the repository selects that column (NOVA-36).
-    """
-    await db.execute_system("CREATE DATABASE IF NOT EXISTS NOVA_SYSTEM")
-    for ddl in TASK_ORCHESTRATION_DDL:
-        await db.execute_system(ddl)
-    await migrate_task_orchestration_columns()
-
-
-async def _columns(table: str) -> set[str]:
-    result = await db.execute_system(
-        "SELECT COLUMN_NAME FROM information_schema.columns "
-        "WHERE TABLE_SCHEMA = 'NOVA_SYSTEM' AND TABLE_NAME = %s",
-        [table],
-    )
-    return {row[0] for row in result["rows"]}
-
-
-def _repo():
-    """The shared repository singleton, imported lazily to keep this helper
-    next to the tests that use it."""
-    from app.modules.task_orchestration.repository import (
-        task_orchestration_repository,
-    )
-
-    return task_orchestration_repository
+    await init_task_orchestration()
 
 
 class TestDdlIdempotency:
-    async def test_running_ddl_twice_succeeds(self, orchestration_db):
-        await db.execute_system("CREATE DATABASE IF NOT EXISTS NOVA_SYSTEM")
+    async def test_running_migrations_twice_succeeds(self, orchestration_db, engine_metadata):
         for _ in range(2):
-            for ddl in TASK_ORCHESTRATION_DDL:
-                await db.execute_system(ddl)
+            await migrate(engine_metadata.role_config("nova_meta_migrator"), app_version="e" * 40)
 
-    async def test_all_four_tables_exist(self, orchestration_db):
-        await _ensure_ddl()
-        result = await db.execute_system(
-            "SELECT TABLE_NAME FROM information_schema.tables "
-            "WHERE TABLE_SCHEMA = 'NOVA_SYSTEM' AND TABLE_NAME LIKE 'CONFIG_TASK%'"
+    async def test_all_four_tables_exist(self, orchestration_db, metadata_inspect):
+        names = await metadata_inspect(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema='nova_meta' AND table_name LIKE 'config_task%'"
         )
-        names = {row[0] for row in result["rows"]}
         assert {
-            "CONFIG_TASKS",
-            "CONFIG_TASK_EDGES",
-            "CONFIG_TASK_GRAPH_RUNS",
-            "CONFIG_TASK_RUNS",
-        } <= names
+            "config_tasks",
+            "config_task_edges",
+            "config_task_graph_runs",
+            "config_task_runs",
+        } <= {row[0] for row in names}
 
-    async def test_tables_are_primary_key_tables(self, orchestration_db):
-        """Every CONFIG_TASK* table is a Primary Key table, never Duplicate Key."""
-        await _ensure_ddl()
-        for table in (
-            "CONFIG_TASKS",
-            "CONFIG_TASK_EDGES",
-            "CONFIG_TASK_GRAPH_RUNS",
-            "CONFIG_TASK_RUNS",
-        ):
-            result = await db.execute_system(f"SHOW CREATE TABLE NOVA_SYSTEM.{table}")
-            ddl = str(result["rows"][0][1]).upper()
-            assert "PRIMARY KEY" in ddl, f"{table} is not a Primary Key table"
-            assert "DUPLICATE KEY" not in ddl, f"{table} must not be a Duplicate Key table"
+    async def test_tables_have_primary_keys(self, orchestration_db, metadata_inspect):
+        keys = await metadata_inspect(
+            "SELECT table_name FROM information_schema.table_constraints "
+            "WHERE table_schema='nova_meta' AND constraint_type='PRIMARY KEY'"
+        )
+        assert {
+            "config_tasks",
+            "config_task_edges",
+            "config_task_graph_runs",
+            "config_task_runs",
+        } <= {row[0] for row in keys}
 
 
 class TestHeartbeatColumnMigration:
-    """NOVA-36 regression: an old CONFIG_TASK* table must be healed.
+    async def test_imported_graph_without_heartbeat_can_be_read(
+        self, orchestration_db, engine_metadata
+    ):
+        identifier = str(uuid4())
+        async with engine_metadata.importer() as connection:
+            await connection.execute(
+                "INSERT INTO nova_meta.config_task_graph_runs (id,graph_id,trigger_type,state) "
+                "VALUES (%s,%s,'manual','pending')",
+                (identifier, "legacy-graph"),
+            )
+        row = await repo.get_graph_run(identifier)
+        assert row is not None and row["heartbeat_at"] is None
+        assert row["provenance"] == "imported"
 
-    ``docker/init-nova.sql`` (and any deployment created before the worker
-    landed) defines ``CONFIG_TASK_RUNS`` / ``CONFIG_TASK_GRAPH_RUNS`` without
-    ``heartbeat_at``. ``CREATE TABLE IF NOT EXISTS`` is a no-op on the existing
-    table, so the column is absent and every repository read that selects it
-    fails with "Column 'heartbeat_at' cannot be resolved" — which is exactly
-    how L3 went red on PR #46. The migration must add it to a pre-existing
-    old-schema table.
-    """
-
-    async def test_migration_adds_heartbeat_to_an_old_schema_table(self, orchestration_db):
-        table = "CONFIG_TASK_GRAPH_RUNS"
-        # Rebuild the table exactly as an older release left it: no heartbeat.
-        await db.execute_system(f"DROP TABLE IF EXISTS NOVA_SYSTEM.{table}")
-        await db.execute_system(
-            f"""
-            CREATE TABLE NOVA_SYSTEM.{table} (
-                id           VARCHAR(64) NOT NULL,
-                graph_id     VARCHAR(64) NOT NULL,
-                trigger_type VARCHAR(32) NOT NULL,
-                state        VARCHAR(32) NOT NULL,
-                wal_marks    TEXT,
-                started_at   DATETIME,
-                finished_at  DATETIME
-            ) PRIMARY KEY(id)
-            DISTRIBUTED BY HASH(id) BUCKETS 1
-            PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
-            """
-        )
-        before = await _columns(table)
-        assert "heartbeat_at" not in before, "fixture did not create an old-schema table"
-
-        await migrate_task_orchestration_columns()
-
-        after = await _columns(table)
-        assert "heartbeat_at" in after, "migration did not add the heartbeat column"
-
-        # The repository read that failed in CI must now succeed.
-        repo = _repo()
-        created = await repo.create_graph_run({"graph_id": f"g_{uuid4().hex[:8]}"})
-        fetched = await repo.get_graph_run(created["id"])
-        assert fetched is not None
-        assert fetched["heartbeat_at"] is None
-        await repo.delete_graph_run(created["id"])
-
-        # Leave the schema as the rest of the suite expects.
-        await _ensure_ddl()
-
-    async def test_migration_is_idempotent_when_the_column_exists(self, orchestration_db):
-        await _ensure_ddl()
+    async def test_migration_retains_heartbeat_columns(
+        self, orchestration_db, engine_metadata, metadata_inspect
+    ):
         for _ in range(2):
-            await migrate_task_orchestration_columns()
-        assert "heartbeat_at" in await _columns("CONFIG_TASK_RUNS")
+            await migrate(engine_metadata.role_config("nova_meta_migrator"), app_version="e" * 40)
+        rows = await metadata_inspect(
+            "SELECT table_name FROM information_schema.columns WHERE table_schema='nova_meta' "
+            "AND column_name='heartbeat_at' "
+            "AND table_name IN ('config_task_runs','config_task_graph_runs')"
+        )
+        assert {row[0] for row in rows} == {"config_task_runs", "config_task_graph_runs"}
 
 
 class TestNoCredentialColumns:
-    async def test_warehouse_columns_contain_no_credential_names(self, orchestration_db):
-        await _ensure_ddl()
-        result = await db.execute_system(
-            "SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.columns "
-            "WHERE TABLE_SCHEMA = 'NOVA_SYSTEM' AND TABLE_NAME LIKE 'CONFIG_TASK%'"
+    async def test_control_columns_contain_no_credential_names(
+        self, orchestration_db, metadata_inspect
+    ):
+        rows = await metadata_inspect(
+            "SELECT table_name,column_name FROM information_schema.columns "
+            "WHERE table_schema='nova_meta' AND table_name LIKE 'config_task%'"
         )
-        assert result["rows"], "no CONFIG_TASK% columns found — DDL did not run"
-
-        offenders = [
+        assert rows
+        assert [
             (table, column)
-            for table, column in result["rows"]
+            for table, column in rows
             if any(bad in column.lower() for bad in CREDENTIAL_SUBSTRINGS)
-        ]
-        assert offenders == [], f"credential-bearing columns found: {offenders}"
+        ] == []
 
 
 class TestRepositoryCrud:
@@ -281,50 +208,56 @@ class TestRepositoryCrud:
         assert await repo.delete_task(created["id"]) is True
         assert await repo.get_task(created["id"]) is None
 
-    async def test_edge_create_read_update_delete(self, orchestration_db):
+    async def test_edge_create_read_replace_delete(self, orchestration_db):
         await _ensure_ddl()
         graph_id = f"g_{uuid4().hex[:8]}"
         created = await repo.create_edge(graph_id, {"parent_task": "A", "child_task": "B"})
         assert created["graph_id"] == graph_id
 
-        fetched = await repo.get_edge(created["id"])
-        assert fetched is not None and fetched["parent_task"] == "A"
+        assert await repo.list_edges(graph_id) == [created]
+        async with repo.unit() as command:
+            assert await command.delete_edge(created["id"])
+            replacement = await command.create_edge(
+                graph_id, {"parent_task": "A", "child_task": "C"}
+            )
+        assert await repo.list_edges(graph_id) == [replacement]
+        assert replacement["id"] != created["id"]
+        assert await repo.delete_edge(replacement["id"]) is True
+        assert await repo.list_edges(graph_id) == []
 
-        updated = await repo.update_edge(created["id"], {"child_task": "C"})
-        assert updated is not None and updated["child_task"] == "C"
-
-        assert len(await repo.list_edges(graph_id)) == 1
-        assert await repo.delete_edge(created["id"]) is True
-        assert await repo.get_edge(created["id"]) is None
-
-    async def test_graph_run_create_read_update_delete(self, orchestration_db):
+    @pytest.mark.usefixtures("task_metadata_login")
+    async def test_graph_run_claim_finish_and_retain_history(self, orchestration_db):
         await _ensure_ddl()
         graph_id = f"g_{uuid4().hex[:8]}"
-        created = await repo.create_graph_run(
-            {"graph_id": graph_id, "trigger_type": "schedule", "state": "running"}
+        created = await create_graph_run(
+            repo, {"graph_id": graph_id, "trigger_type": "schedule", "state": "running"}
         )
         assert created["state"] == "running"
 
         fetched = await repo.get_graph_run(created["id"])
         assert fetched is not None
 
-        updated = await repo.update_graph_run(created["id"], {"state": "success"})
+        assert await repo.transition_graph_run(
+            created["id"], ["running"], "success", generation=created["lease_generation"]
+        )
+        updated = await repo.get_graph_run(created["id"])
         assert updated is not None and updated["state"] == "success"
 
-        assert len(await repo.list_graph_runs(graph_id)) == 1
-        assert await repo.delete_graph_run(created["id"]) is True
-        assert await repo.get_graph_run(created["id"]) is None
+        assert len(await repo.list_graph_runs_page(graph_id, limit=100, offset=0)) == 1
+        assert (await repo.get_graph_run(created["id"]))["state"] == "success"
 
-    async def test_task_run_create_read_update_delete(self, orchestration_db):
+    @pytest.mark.usefixtures("task_metadata_login")
+    async def test_task_run_claim_finish_and_retain_history(self, orchestration_db):
         await _ensure_ddl()
         graph_run_id = f"gr_{uuid4().hex[:8]}"
-        created = await repo.create_task_run(
+        created = await create_task_run(
+            repo,
             {
                 "graph_run_id": graph_run_id,
                 "task_id": f"t_{uuid4().hex[:8]}",
                 "state": "running",
                 "delegated": True,
-            }
+            },
         )
         assert created["attempt"] == 1
         assert created["delegated"] in (True, 1)
@@ -332,16 +265,17 @@ class TestRepositoryCrud:
         fetched = await repo.get_task_run(created["id"])
         assert fetched is not None
 
-        updated = await repo.update_task_run(
-            created["id"], {"state": "failed", "error_message": "boom"}
+        assert await repo.finish_task_run(
+            created["id"], "failed", error_message="boom", generation=created["lease_generation"]
         )
+        updated = await repo.get_task_run(created["id"])
         assert updated is not None and updated["error_message"] == "boom"
 
         assert len(await repo.list_task_runs(graph_run_id)) == 1
-        assert await repo.delete_task_run(created["id"]) is True
-        assert await repo.get_task_run(created["id"]) is None
+        assert (await repo.get_task_run(created["id"]))["state"] == "failed"
 
 
+@pytest.mark.usefixtures("task_metadata_login")
 class TestIdempotentCreatePrimitives:
     """The Primary-Key table makes a plain INSERT a destructive upsert.
 
@@ -368,7 +302,10 @@ class TestIdempotentCreatePrimitives:
 
             # The worker claims it; a second create for the same due instant
             # must not reset it back to pending.
-            await repo.transition_graph_run(run_id, ["pending"], "success")
+            generation = await repo.claim_graph_run(run_id, ["pending"], "running")
+            assert await repo.transition_graph_run(
+                run_id, ["running"], "success", generation=generation
+            )
 
             regotten, is_new2 = await repo.create_graph_run_once(
                 {
@@ -383,11 +320,9 @@ class TestIdempotentCreatePrimitives:
                 "a re-tick must not clobber a settled run (PK upsert would)"
             )
         finally:
-            await repo.delete_graph_run(run_id)
+            await repo.get_graph_run(run_id)
 
-    async def test_create_task_run_once_resolves_racers_to_one_row(
-        self, orchestration_db
-    ):
+    async def test_create_task_run_once_resolves_racers_to_one_row(self, orchestration_db):
         await _ensure_ddl()
         graph_run_id = f"gr_{uuid4().hex}"
         task_id = f"t_{uuid4().hex}"
@@ -399,23 +334,21 @@ class TestIdempotentCreatePrimitives:
             assert len(rows) == 1, "a node must have exactly one row for an attempt"
         finally:
             for row in await repo.list_task_runs(graph_run_id):
-                await repo.delete_task_run(row["id"])
+                await repo.get_task_run(row["id"])
 
-    async def test_create_task_run_once_does_not_clobber_a_running_row(
-        self, orchestration_db
-    ):
+    async def test_create_task_run_once_does_not_clobber_a_running_row(self, orchestration_db):
         await _ensure_ddl()
         graph_run_id = f"gr_{uuid4().hex}"
         task_id = f"t_{uuid4().hex}"
         try:
             row = await repo.create_task_run_once(graph_run_id, task_id)
-            await repo.transition_task_run(row["id"], ["pending"], "running")
+            assert await repo.claim_task_run(row["id"], ["pending"])
             await repo.create_task_run_once(graph_run_id, task_id)
             again = await repo.get_task_run(row["id"])
             assert again is not None and again["state"] == "running"
         finally:
             for r in await repo.list_task_runs(graph_run_id):
-                await repo.delete_task_run(r["id"])
+                await repo.get_task_run(r["id"])
 
 
 class TestListTasksByGraph:
@@ -434,9 +367,7 @@ class TestListTasksByGraph:
         outsider = f"z_{suffix}"
 
         for name in (member_a, member_b, member_c, outsider):
-            await repo.create_task(
-                {"name": name, "timezone": "UTC"}, created_by="alice"
-            )
+            await repo.create_task({"name": name, "timezone": "UTC"}, created_by="alice")
         edges = [
             await repo.create_edge(graph_id, {"parent_task": member_a, "child_task": member_b}),
             await repo.create_edge(graph_id, {"parent_task": member_b, "child_task": member_c}),
@@ -486,42 +417,54 @@ class TestUpdateColumnWhitelist:
         created = await repo.create_task(
             {"name": f"empty_{uuid4().hex[:8]}", "timezone": "UTC"}, created_by="alice"
         )
-        with pytest.raises(ValueError, match="no fields to update"):
+        with pytest.raises(UnknownUpdateColumnError):
             await repo.update_task(created["id"], {})
         await repo.delete_task(created["id"])
 
-    async def test_update_edge_rejects_unknown_column(self, orchestration_db):
+    async def test_edge_graph_identity_cannot_be_updated(self, orchestration_db):
         await _ensure_ddl()
         edge = await repo.create_edge(
             f"g_{uuid4().hex[:8]}", {"parent_task": "A", "child_task": "B"}
         )
-        with pytest.raises(UnknownUpdateColumnError):
-            await repo.update_edge(edge["id"], {"graph_id": "other"})
+        with pytest.raises(MetadataPermissionDenied):
+            async with metadata_scope(repo.actor) as connection:
+                await connection.execute(
+                    "UPDATE nova_meta.config_task_edges SET graph_id=%s WHERE id=%s",
+                    ("other", edge["id"]),
+                )
+        assert await repo.list_edges(edge["graph_id"]) == [edge]
         await repo.delete_edge(edge["id"])
 
+    @pytest.mark.usefixtures("task_metadata_login")
     async def test_update_graph_run_rejects_unknown_column(self, orchestration_db):
         await _ensure_ddl()
-        run = await repo.create_graph_run({"graph_id": f"g_{uuid4().hex[:8]}"})
-        with pytest.raises(UnknownUpdateColumnError):
-            await repo.update_graph_run(run["id"], {"graph_id": "other"})
-        await repo.delete_graph_run(run["id"])
+        run = await create_graph_run(repo, {"graph_id": f"g_{uuid4().hex[:8]}"})
+        with pytest.raises(TypeError):
+            await repo.transition_graph_run(
+                run["id"], ["pending"], "running", generation=1, graph_id="other"
+            )
+        await repo.get_graph_run(run["id"])
 
+    @pytest.mark.usefixtures("task_metadata_login")
     async def test_update_task_run_rejects_unknown_column(self, orchestration_db):
         await _ensure_ddl()
-        run = await repo.create_task_run(
-            {"graph_run_id": f"gr_{uuid4().hex[:8]}", "task_id": "t1"}
+        run = await create_task_run(
+            repo, {"graph_run_id": f"gr_{uuid4().hex[:8]}", "task_id": "t1"}
         )
-        with pytest.raises(UnknownUpdateColumnError):
-            await repo.update_task_run(run["id"], {"graph_run_id": "other"})
-        await repo.delete_task_run(run["id"])
+        with pytest.raises(TypeError):
+            await repo.finish_task_run(run["id"], "success", generation=1, graph_run_id="other")
+        await repo.get_task_run(run["id"])
 
 
 class TestWalMarksRoundTrip:
-    async def test_wal_marks_survive_round_trip_as_json_metadata(self, orchestration_db):
+    @pytest.mark.usefixtures("task_metadata_login")
+    async def test_wal_marks_survive_round_trip_as_json_metadata(
+        self, orchestration_db, metadata_inspect
+    ):
         await _ensure_ddl()
         marks = {"p1": 2, "p2": 7, "p2026_09": 42}
-        created = await repo.create_graph_run(
-            {"graph_id": f"g_{uuid4().hex[:8]}", "wal_marks": marks}
+        created = await create_graph_run(
+            repo, {"graph_id": f"g_{uuid4().hex[:8]}", "wal_marks": marks}
         )
         assert created["wal_marks"] == marks
 
@@ -529,13 +472,13 @@ class TestWalMarksRoundTrip:
         assert fetched is not None
         assert fetched["wal_marks"] == marks
 
-        raw = await db.execute_system(
-            "SELECT wal_marks FROM NOVA_SYSTEM.CONFIG_TASK_GRAPH_RUNS WHERE id = %s",
+        raw = await metadata_inspect(
+            "SELECT wal_marks FROM nova_meta.config_task_graph_runs WHERE id = %s",
             [created["id"]],
         )
-        assert json.loads(raw["rows"][0][0]) == marks
+        assert json.loads(raw[0][0]) == marks
 
-        await repo.delete_graph_run(created["id"])
+        await repo.get_graph_run(created["id"])
 
     async def test_task_definition_never_persists_a_credential_value(self, orchestration_db):
         """A task body references a credential by *name*, never by value."""
@@ -640,14 +583,10 @@ class TestCreateTaskLoweringAgainstEngine:
                 "NOVA_DEMO",
                 "gold",
             )
-            silver_rows = await repo.list_tasks_for_schema("NOVA_DEMO", "silver")
-            assert [r["id"] for r in silver_rows if r["name"] == name] == [
-                silver.task["id"]
-            ]
-            gold_rows = await repo.list_tasks_for_schema("NOVA_DEMO", "gold")
-            assert [r["id"] for r in gold_rows if r["name"] == name] == [
-                gold.task["id"]
-            ]
+            silver_rows = await repo.list_tasks(silver.task["database_name"] + ".silver." + name)
+            assert [r["id"] for r in silver_rows if r["name"] == name] == [silver.task["id"]]
+            gold_rows = await repo.list_tasks(gold.task["database_name"] + ".gold." + name)
+            assert [r["id"] for r in gold_rows if r["name"] == name] == [gold.task["id"]]
         finally:
             await repo.delete_task(silver.task["id"])
             await repo.delete_task(gold.task["id"])
@@ -671,9 +610,7 @@ class TestCreateTaskLoweringAgainstEngine:
         assert graph.adjacency.get("a") == ["b"]
         assert graph.adjacency.get("b") == []
 
-    async def test_cycle_against_stored_rows_is_rejected_and_rolled_back(
-        self, orchestration_db
-    ):
+    async def test_cycle_against_stored_rows_is_rejected_and_rolled_back(self, orchestration_db):
         """A statement that closes a cycle must leave no partial task behind.
 
         `b AFTER a` is stored under graph `b`; `a AFTER b` is then attempted
@@ -725,6 +662,7 @@ class TestCreateTaskLoweringAgainstEngine:
                 await repo.delete_task(row.task["id"])
 
 
+@pytest.mark.usefixtures("task_metadata_login")
 class TestOverlapPolicyColumnRoundTrip:
     """NOVA-54 / stage 3b: the graph-run overlap policy survives a real engine.
 
@@ -740,13 +678,14 @@ class TestOverlapPolicyColumnRoundTrip:
         created_ids = []
         try:
             for policy in ("skip", "queue", "allow"):
-                run = await repo.create_graph_run(
+                run = await create_graph_run(
+                    repo,
                     {
                         "graph_id": graph_id,
                         "trigger_type": "schedule",
                         "state": "pending",
                         "overlap_policy": policy,
-                    }
+                    },
                 )
                 created_ids.append(run["id"])
                 fetched = await repo.get_graph_run(run["id"])
@@ -754,32 +693,33 @@ class TestOverlapPolicyColumnRoundTrip:
                 assert fetched["overlap_policy"] == policy
         finally:
             for run_id in created_ids:
-                await repo.delete_graph_run(run_id)
+                await repo.get_graph_run(run_id)
 
     async def test_default_policy_is_skip(self, orchestration_db):
         await _ensure_ddl()
         graph_id = f"ovd_{uuid4().hex[:8]}"
-        run = await repo.create_graph_run(
-            {"graph_id": graph_id, "trigger_type": "schedule", "state": "pending"}
+        run = await create_graph_run(
+            repo, {"graph_id": graph_id, "trigger_type": "schedule", "state": "pending"}
         )
         try:
             fetched = await repo.get_graph_run(run["id"])
             assert fetched is not None
             assert fetched["overlap_policy"] == "skip"
         finally:
-            await repo.delete_graph_run(run["id"])
+            await repo.get_graph_run(run["id"])
 
     async def test_active_graph_runs_excludes_terminal_states(self, orchestration_db):
         await _ensure_ddl()
         graph_id = f"ova_{uuid4().hex[:8]}"
-        pending = await repo.create_graph_run(
-            {"graph_id": graph_id, "trigger_type": "schedule", "state": "pending"}
+        pending = await create_graph_run(
+            repo, {"graph_id": graph_id, "trigger_type": "schedule", "state": "pending"}
         )
-        finished = await repo.create_graph_run(
-            {"graph_id": graph_id, "trigger_type": "schedule", "state": "pending"}
+        finished = await create_graph_run(
+            repo, {"graph_id": graph_id, "trigger_type": "schedule", "state": "pending"}
         )
-        await repo.transition_graph_run(
-            finished["id"], ["pending"], "success"
+        generation = await repo.claim_graph_run(finished["id"], ["pending"], "running")
+        assert await repo.transition_graph_run(
+            finished["id"], ["running"], "success", generation=generation
         )
         try:
             active = await repo.list_active_graph_runs(graph_id)
@@ -787,8 +727,8 @@ class TestOverlapPolicyColumnRoundTrip:
             assert pending["id"] in active_ids
             assert finished["id"] not in active_ids
         finally:
-            await repo.delete_graph_run(pending["id"])
-            await repo.delete_graph_run(finished["id"])
+            await repo.get_graph_run(pending["id"])
+            await repo.get_graph_run(finished["id"])
 
 
 class TestFinalizerEdgeShape:
@@ -848,8 +788,7 @@ class TestReadApiRepositoryAgainstEngine:
         )
         persisted_a = await persist_lowered_task(parent_task, created_by="alice")
         child_task = parse_create_task(
-            f"CREATE TASK NOVA_DEMO.default.{child} AFTER {parent} "
-            "AS INSERT INTO t SELECT 1",
+            f"CREATE TASK NOVA_DEMO.default.{child} AFTER {parent} AS INSERT INTO t SELECT 1",
             timezone="UTC",
         )
         persisted_b = await persist_lowered_task(child_task, created_by="alice")
@@ -864,12 +803,12 @@ class TestReadApiRepositoryAgainstEngine:
         finalizer_graph = str(persisted_f.edges[0]["graph_id"])
         try:
             # list_graph_ids must surface the graph (qualified).
-            graph_ids = await repo.list_graph_ids()
+            graph_ids = graph_ids_from(await repo.list_all_edges(), await repo.list_tasks())
             assert child_graph in graph_ids or f"NOVA_DEMO.default.{parent}" in graph_ids
 
             # The graph's tasks, resolvable by name (the API's detail path).
             names = [parent, child, finalizer]
-            resolved = await repo.get_tasks_by_names(names)
+            resolved = await repo.list_tasks(child_graph)
             assert {str(t["name"]) for t in resolved} == set(names)
 
             # Edges carry their kind so the UI can distinguish the finalizer.
@@ -878,9 +817,7 @@ class TestReadApiRepositoryAgainstEngine:
             assert (parent, "after") in kinds
 
             fin_edges = await repo.list_edges(finalizer_graph)
-            assert (parent, "finalize") in {
-                (e["parent_task"], e["edge_kind"]) for e in fin_edges
-            }
+            assert (parent, "finalize") in {(e["parent_task"], e["edge_kind"]) for e in fin_edges}
 
             # The read model for runs: no run yet, so latest is None and the
             # per-graph task-run query returns an empty list, not an error.
@@ -896,25 +833,28 @@ class TestReadApiRepositoryAgainstEngine:
                     await repo.delete_edge(edge["id"])
                 await repo.delete_task(row.task["id"])
 
+    @pytest.mark.usefixtures("task_metadata_login")
     async def test_graph_run_read_model_round_trips(self, orchestration_db):
         await _ensure_ddl()
         graph_id = f"api_r_{uuid4().hex[:8]}"
-        run = await repo.create_graph_run(
+        run = await create_graph_run(
+            repo,
             {
                 "graph_id": graph_id,
                 "trigger_type": "schedule",
                 "state": "running",
                 "overlap_policy": "queue",
-            }
+            },
         )
         task_id = f"id_{uuid4().hex[:8]}"
-        node = await repo.create_task_run(
+        node = await create_task_run(
+            repo,
             {
                 "graph_run_id": run["id"],
                 "task_id": task_id,
                 "state": "running",
                 "delegated": True,
-            }
+            },
         )
         try:
             latest = await repo.get_latest_graph_run(graph_id)
@@ -922,14 +862,14 @@ class TestReadApiRepositoryAgainstEngine:
             assert latest["id"] == run["id"]
             assert latest["overlap_policy"] == "queue"
 
-            runs = await repo.list_graph_runs(graph_id)
+            runs = await repo.list_graph_runs_page(graph_id, limit=100, offset=0)
             assert [r["id"] for r in runs] == [run["id"]]
 
-            node_runs = await repo.list_node_runs(run["id"])
+            node_runs = await repo.list_task_runs(run["id"])
             assert [n["id"] for n in node_runs] == [node["id"]]
 
             for_graph = await repo.list_task_runs_for_graph(graph_id)
             assert {n["id"] for n in for_graph} == {node["id"]}
         finally:
-            await repo.delete_task_run(node["id"])
-            await repo.delete_graph_run(run["id"])
+            await repo.get_task_run(node["id"])
+            await repo.get_graph_run(run["id"])

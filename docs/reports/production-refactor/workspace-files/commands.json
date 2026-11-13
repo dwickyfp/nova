@@ -1,0 +1,56 @@
+{
+  "source_parent_commit": "22b6e70880bbe2655a16d54fb36cbd994baafc9f",
+  "source_sha256": {
+    "backend/app/modules/workspaces/metadata_files.py": "1053be398a7c7c8e7807f411f48ccc25ae6fedccd890aa97a1a19b4ddb13832f",
+    "backend/app/modules/workspaces/metadata_sharing.py": "a22439ef0ef375cf0816b900adfc6eb5a714842ee9c87f67df6f5a18fe115854",
+    "backend/metadata_migrations/0014_workspace_files.sql": "70890ac9c9aea86eb93c2716aac2bce7f5bde26048052a363a876a0e4da9566a",
+    "backend/tests/integration/test_metadata_workspace_files.py": "710cd22e6b2734f9a571303a874207c0a30517b628381975fcbefea49a297869",
+    ".github/workflows/ci.yml": "7e200d480ff0dd14fc98e401af220262bd84a60bfe27cb8e49620d30775f5ef5"
+  },
+  "environment": "local macOS device; existing PG17 TLS fixture in the existing docker project (host port 55432); pinned PgBouncer 1.26.1 acceptance binary; no additional stack started",
+  "commands": {
+    "unit": "uv run --offline --no-sync pytest tests/unit --cov=app --cov-branch --cov-report=xml:<private artifact> --junit-xml=<private artifact>",
+    "postgresql": "uv run --offline --no-sync pytest <all 16 CI-listed metadata modules> with the existing private fixture DSN and pinned PgBouncer binary",
+    "eval": "uv run --offline --no-sync pytest tests/eval -q --junit-xml=<private artifact>",
+    "scorecard": "uv run --offline --no-sync python -m tests.eval.report",
+    "mypy": "uv run --offline --no-sync mypy app --no-error-summary",
+    "ruff": "uv run --offline --no-sync ruff check --force-exclude <3 changed Python paths>",
+    "boundary": "uv run --offline --no-sync python scripts/check_user_data_system_access.py",
+    "log_scan": "tests/integration/check_metadata_logs.py over the fixture server log"
+  },
+  "initial_focused_failure_retained": {
+    "tests": 1, "failures": 1,
+    "cause": "trigger used chr(0); PostgreSQL rejects NUL in text (SQLSTATE 54000). Clause removed; NUL names stay refused by the repository and cannot be stored as PG text."
+  },
+  "initial_pg_invocation_retained": {
+    "status": "NOT_RUN",
+    "cause": "zsh passed the module list as one argument; pytest collected nothing (exit 4). Rerun with xargs below."
+  },
+  "unit": {"tests": 10909, "failures": 0, "errors": 0, "skipped": 0, "time_seconds": 644.283,
+           "artifact_sha256": "f0f017c87e67cf22dd44f8eea36f599618f83f292edffaae3e2d525e4928a1a1"},
+  "postgresql": {"tests": 571, "failures": 0, "errors": 0, "skipped": 0, "time_seconds": 525.665,
+                 "workspace_file_cases": 40,
+                 "artifact_sha256": "82e5d38cb6a4022a392b73fb933dfcd5d91f03859ba9fd27709106b4b356d728"},
+  "eval": {"tests": 358, "failures": 0, "errors": 0, "skipped": 0, "time_seconds": 21.672,
+           "artifact_sha256": "e6c418538bd11c1aa035458fe1178c236d5b6a10c8a6c1682604cba3879a478d"},
+  "scorecard": {"scenarios": 54, "checks": 189, "status": "PASS"},
+  "mypy": {"status": "PASS"},
+  "ruff_changed_python": {"paths": 3, "status": "PASS", "initial_findings_fixed": 2},
+  "boundary": {"status": "PASS"},
+  "log_scan": {
+    "window": "2026-11-12 server log lines (covers this checkpoint's runs)",
+    "lines": 80, "credential_canary": 0, "encrypted_credential": 0, "passed": true,
+    "artifact_sha256": "89638d99e17a81331170b9d6f686ceb2a6ecff51ab167f948eefdd8072664dc1",
+    "retained_finding": "The whole container log also holds 26 credential-canary matches, all dated 2026-11-11 (earlier sessions), each an 'invalid input syntax for type integer' error echoing a synthetic value. Not reproduced today; source test not yet identified."
+  },
+  "runtime_qa": "NOT_APPLICABLE: no runtime caller imports the new store; API /health and frontend returned 200 on the existing stack, which exercises unchanged code only.",
+  "remaining_gates": [
+    "delivered-commit CI",
+    "WorkspaceService and Notebook caller ports with object-key publication",
+    "reservation recovery worker",
+    "duplicate-version conflict manifest and import",
+    "session-role revocation",
+    "migration rehearsals and verified cutover",
+    "whole-feature and live QA on the migrated runtime"
+  ]
+}

@@ -24,20 +24,22 @@ Rules this module keeps:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
-from typing import Any
 
 from app.common.audit import write_audit_log
-from app.common.crypto import decrypt, encrypt
 from app.common.sql_guard import redact_sql_credentials
-from app.core.database import db
+from app.core.metadata_db import MetadataPermissionDenied
 from app.modules.access_control.security_context import SecurityContext, SecurityContextError
 from app.modules.access_control.service import AccessControlError, AccessControlService
 from app.storage.secrets import _SCHEME_ALIASES, SecretResolutionError, resolve_secret_reference
 
 from .errors import CatalogError, safe_catalog_name
+from .metadata_repository import (
+    CONNECTION_DEFINITION,
+    CatalogMetadataRepository,
+    catalog_transaction,
+)
 from .repository import CatalogRepository, catalog_repo
 from .schemas import ConnectionSummary, SyncRun
 from .service import CatalogAccessDenied
@@ -91,7 +93,7 @@ def validate_secret_ref(value: str) -> str:
     """
     ref = (value or "").strip()
     if ref.startswith(MANAGED_SCHEME):
-        safe_name(ref[len(MANAGED_SCHEME):])
+        safe_name(ref[len(MANAGED_SCHEME) :])
         return ref
     match = _SCHEMED.match(ref)
     if match and match.group(1) in _SCHEME_ALIASES:
@@ -113,15 +115,22 @@ def _managed_ref(name: str) -> str:
 # ---------------------------------------------------------------------------
 
 _CONNECTION_COLUMNS = (
-    "name", "connector_type", "host", "port", "database_name", "options_json",
-    "secret_ref", "owner", "comment", "created_at", "updated_at",
+    "name",
+    "connector_type",
+    "host",
+    "port",
+    "database_name",
+    "options_json",
+    "secret_ref",
+    "owner",
+    "comment",
+    "created_at",
+    "updated_at",
 )
 
 
 def _credential_table(write: bool) -> str:
-    return (
-        "CATALOG_CONNECTION_WRITE_CREDENTIALS" if write else "CATALOG_CONNECTION_CREDENTIALS"
-    )
+    return "CATALOG_CONNECTION_WRITE_CREDENTIALS" if write else "CATALOG_CONNECTION_CREDENTIALS"
 
 
 def _columns(columns: tuple[str, ...]) -> str:
@@ -129,98 +138,51 @@ def _columns(columns: tuple[str, ...]) -> str:
 
 
 class ConnectionRepository:
-    """``CATALOG_CONNECTIONS`` and ``CATALOG_CONNECTION_CREDENTIALS``, system pool.
-
-    The schema itself is created with the rest of the catalog store
-    (:data:`app.modules.catalog.repository.CATALOG_DDLS`).
-    """
-
     async def list(self) -> list[dict]:
-        result = await db.execute_system(
-            f"SELECT {_columns(_CONNECTION_COLUMNS)} FROM NOVA_SYSTEM.CATALOG_CONNECTIONS "
-            "ORDER BY name"
-        )
-        return [self._row(row) for row in result.get("rows") or []]
+        async with catalog_transaction(read_only=True) as repo:
+            return await repo.list_connections()
 
     async def get(self, name: str) -> dict | None:
-        result = await db.execute_system(
-            f"SELECT {_columns(_CONNECTION_COLUMNS)} FROM NOVA_SYSTEM.CATALOG_CONNECTIONS "
-            "WHERE name = %s",
-            [name],
-        )
-        rows = result.get("rows") or []
-        return self._row(rows[0]) if rows else None
+        async with catalog_transaction(read_only=True) as repo:
+            return await repo.get_connection(name)
 
     async def upsert(self, connection: dict) -> None:
-        row = dict(connection)
-        row["options_json"] = json.dumps(row.pop("options", None) or {})
-        await db.execute_system(
-            f"INSERT INTO NOVA_SYSTEM.CATALOG_CONNECTIONS ({_columns(_CONNECTION_COLUMNS)}) "
-            f"VALUES ({', '.join(['%s'] * len(_CONNECTION_COLUMNS))})",
-            [row.get(column) for column in _CONNECTION_COLUMNS],
-        )
+        async with catalog_transaction() as repo:
+            previous = await repo.get_connection(connection["name"])
+            if previous is None:
+                await repo.create_connection(connection)
+            else:
+                await repo.update_connection(
+                    connection["name"],
+                    {key: connection[key] for key in CONNECTION_DEFINITION if key in connection},
+                    expected_revision=connection.get(
+                        "metadata_revision", previous["metadata_revision"]
+                    ),
+                )
 
     async def delete(self, name: str) -> None:
-        await db.execute_system(
-            "DELETE FROM NOVA_SYSTEM.CATALOG_CONNECTIONS WHERE name = %s", [name]
-        )
-        await db.execute_system(
-            "DELETE FROM NOVA_SYSTEM.CATALOG_CONNECTION_CREDENTIALS WHERE connection_name = %s",
-            [name],
-        )
-        await self.delete_write_credentials(name)
+        async with catalog_transaction() as repo:
+            await repo.delete_connection(name)
 
     async def has_credentials(self, name: str, *, write: bool = False) -> bool:
-        result = await db.execute_system(
-            f"SELECT connection_name FROM NOVA_SYSTEM.{_credential_table(write)} "
-            "WHERE connection_name = %s",
-            [name],
-        )
-        return bool(result.get("rows"))
+        async with catalog_transaction(read_only=True) as repo:
+            return await repo.has_credentials(name, write=write)
 
     async def put_credentials(
         self, name: str, username: str, password: str, by: str, *, write: bool = False
     ) -> None:
-        """Store an entered credential, encrypted. Fails closed on encryption."""
-        await db.execute_system(
-            f"INSERT INTO NOVA_SYSTEM.{_credential_table(write)} "
-            "(connection_name, username_enc, password_enc, updated_by, updated_at) "
-            "VALUES (%s, %s, %s, %s, %s)",
-            [name, encrypt(username), encrypt(password), by, nova_now()],
-        )
+        async with catalog_transaction() as repo:
+            if repo.actor.principal != by:
+                raise MetadataPermissionDenied()
+            await repo.put_credentials(name, username, password, write=write)
 
     async def delete_write_credentials(self, name: str) -> None:
-        await db.execute_system(
-            "DELETE FROM NOVA_SYSTEM.CATALOG_CONNECTION_WRITE_CREDENTIALS "
-            "WHERE connection_name = %s",
-            [name],
-        )
+        async with catalog_transaction() as repo:
+            await repo.delete_credentials(name, write=True)
 
     async def read_credentials(self, name: str, *, write: bool = False) -> tuple[str, str] | None:
-        """Decrypt a stored credential for engine use only. Never returned to a client."""
-        result = await db.execute_system(
-            f"SELECT username_enc, password_enc FROM NOVA_SYSTEM.{_credential_table(write)} "
-            "WHERE connection_name = %s",
-            [name],
-        )
-        rows = result.get("rows") or []
-        if not rows:
-            return None
-        username, password = decrypt(rows[0][0]), decrypt(rows[0][1])
-        if not username or not password:
-            return None
-        return username, password
-
-    @staticmethod
-    def _row(values: Any) -> dict:
-        row = dict(zip(_CONNECTION_COLUMNS, values, strict=False))
-        raw = row.pop("options_json", None)
-        try:
-            options = json.loads(raw) if raw else {}
-        except (json.JSONDecodeError, TypeError):
-            options = {}
-        row["options"] = options if isinstance(options, dict) else {}
-        return row
+        async with catalog_transaction(read_only=True) as repo:
+            return await repo.read_credentials(name, write=write)
 
 
 connection_repo = ConnectionRepository()
@@ -275,8 +237,7 @@ class ConnectionService:
         await self._authorize(user, "LIST_CONNECTIONS", "*")
         uses = await self._catalog_uses()
         return [
-            await self._summary(row, uses.get(row["name"], []))
-            for row in await self.repo.list()
+            await self._summary(row, uses.get(row["name"], [])) for row in await self.repo.list()
         ]
 
     async def describe(self, name: str, user: dict) -> ConnectionSummary | None:
@@ -462,24 +423,39 @@ class ConnectionService:
 
     # ── Foreign catalogs ────────────────────────────────────────
 
-    async def resolve_credentials(self, connection: dict) -> Credentials:
-        """Resolve a connection's credential. Call only after authorization, or
-        from the control-plane sync, and never return it to a client."""
+    @staticmethod
+    async def stored_credentials(
+        connection: dict,
+        repo: CatalogMetadataRepository,
+    ) -> tuple[str, str] | None:
+        ref = connection["secret_ref"]
+        if not ref.startswith(MANAGED_SCHEME):
+            return None
+        if ref != _managed_ref(connection["name"]):
+            raise CatalogConnectionError("The connection's credential reference is invalid")
+        return await repo.read_credentials(connection["name"])
+
+    @staticmethod
+    async def credentials_for(connection: dict, stored: tuple[str, str] | None) -> Credentials:
         ref = connection["secret_ref"]
         if ref.startswith(MANAGED_SCHEME):
             if ref != _managed_ref(connection["name"]):
                 raise CatalogConnectionError("The connection's credential reference is invalid")
-            stored = await self.repo.read_credentials(connection["name"])
             if stored is None:
-                raise CatalogConnectionError(
-                    f"Connection '{connection['name']}' has no credentials; enter them first"
-                )
+                raise CatalogConnectionError("Connection credentials have not been configured")
             return Credentials(*stored)
         try:
             value = await asyncio.to_thread(resolve_secret_reference, ref)
         except SecretResolutionError as exc:
             raise CatalogConnectionError(str(exc)) from None
         return Credentials(value.access_key, value.secret_key)
+
+    async def resolve_credentials(self, connection: dict) -> Credentials:
+        """Resolve after authorization; close the metadata read before external I/O."""
+        stored = None
+        if connection["secret_ref"].startswith(MANAGED_SCHEME):
+            stored = await self.repo.read_credentials(connection["name"])
+        return await self.credentials_for(connection, stored)
 
     async def create_foreign_catalog(
         self,
@@ -538,7 +514,7 @@ class ConnectionService:
             await _audit(user, "CREATE_FOREIGN_CATALOG", name, "ERROR", str(exc))
             raise
         await _audit(user, "CREATE_FOREIGN_CATALOG", name, "SUCCESS", None)
-        await catalog_service._after_change(name, "create")
+        await catalog_service._after_change(name, "create", security)
         return name
 
     async def refresh_catalog(

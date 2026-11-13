@@ -114,7 +114,7 @@ class _SpyService:
         self.read_calls.append("fe")
         return {}
 
-    async def get_runtime_health(self) -> dict[str, Any]:
+    async def get_runtime_health(self, **kwargs) -> dict[str, Any]:
         self.read_calls.append("runtime_health")
         return {
             "checked_at": "2026-09-21T00:00:00Z",

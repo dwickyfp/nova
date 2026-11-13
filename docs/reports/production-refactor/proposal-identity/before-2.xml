@@ -1,0 +1,14 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="3" skipped="0" tests="3" time="1.323">
+    <testcase classname="tests.eval.test_consent_proposal_identity" name="test_a_previous_decision_cannot_resolve_a_later_provider_id_reuse" time="0.495">
+      <failure type="failure">Diagnostic body omitted; see verification narrative.</failure>
+    </testcase>
+    <testcase classname="tests.eval.test_consent_proposal_identity" name="test_parallel_turns_with_the_same_wire_id_keep_independent_approvals" time="0.002">
+      <failure type="failure">Diagnostic body omitted; see verification narrative.</failure>
+    </testcase>
+    <testcase classname="tests.eval.test_consent_proposal_identity" name="test_prefetched_calls_with_reused_wire_ids_run_once_and_keep_public_identity" time="0.004">
+      <failure type="failure">Diagnostic body omitted; see verification narrative.</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

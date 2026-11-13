@@ -307,8 +307,7 @@ async def _merge_nova(
 
 async def _put(target: str, content: bytes, caller: Caller) -> dict[str, Any]:
     from app.common.audit import write_audit_log
-    from app.modules.stages.access import check_stage_access
-    from app.modules.stages.service import stage_service
+    from app.modules.stages.service import caller_actor, discover_stages, stage_service
 
     match = _STAGE_PATH.match(target.strip())
     if not match:
@@ -325,13 +324,10 @@ async def _put(target: str, content: bytes, caller: Caller) -> dict[str, Any]:
     elif len(parts) == 2:
         schema = parts[0]
     stage_name = parts[-1]
-    stages = [
-        stage
-        for stage in await stage_service.list_stages()
-        if stage["name"] == stage_name
-        and (database is None or stage["database_name"] == database)
-        and (schema is None or stage["schema_name"] == schema)
-    ]
+    actor = caller_actor(
+        caller.username, caller.role, session_id=caller.session_id, version=caller.version
+    )
+    stages = await discover_stages(actor, name=stage_name, database=database, schema=schema)
     if len(stages) != 1:
         raise RpcError(
             f"Stage @{match.group('name')} is "
@@ -340,10 +336,11 @@ async def _put(target: str, content: bytes, caller: Caller) -> dict[str, Any]:
     stage = stages[0]
     status, error = "SUCCESS", None
     try:
-        await check_stage_access(
-            stage, action="write", username=caller.username, active_role=caller.role
-        )
-        await stage_service.upload_file(stage["id"], path, content)
+        # Ranger authorizes the write before the registration's storage is read.
+        registration = await stage_service.get_stage(stage["id"], actor, action="write")
+        if registration is None:
+            raise RpcError(f"Stage @{match.group('name')} is not found")
+        await stage_service.upload_file(registration, path, content)
     except Exception as exc:
         status, error = "DENIED" if type(exc).__name__ == "StageAccessDenied" else "ERROR", str(exc)
         raise

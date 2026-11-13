@@ -20,6 +20,7 @@ journal = _journal
 @pytest.fixture
 async def learning(program, journal, monkeypatch):
     service, repo, source, _, body = program
+    journal.participants.append((repo, ("rows", "history")))
     body.learning_enabled = True
     created = await decisions.create_decision(body, USER)
     selected = await decisions.operate_decision(
@@ -142,10 +143,8 @@ async def test_learning_recovers_each_durable_write_boundary(
     with pytest.raises(asyncio.CancelledError if cancelled else RuntimeError):
         await service.evaluate_outcome(decision.id, USER)
     pending = next(row for (kind, _), row in repo.rows.items() if kind == "outcomes")
-    if pending.learning_refs and boundary != "after_projection":
-        with pytest.raises(HTTPException) as error:
-            await service.get("outcomes", pending.id, USER)
-        assert error.value.status_code == 404
+    assert not pending.learning_refs
+    assert not journal.history and journal.projection is None
     await assert_pinned_pair(service, repo, decision, journal)
     assert len(journal.history) == 1
     if pending.learning_refs:
@@ -211,7 +210,7 @@ async def test_existing_bug_and_pre_link_crash_recover_immutable_pair(
     assert len(journal.history) == 2
 
 
-async def test_retry_after_knowledge_append_restores_memories_api_without_new_revisions(
+async def test_retry_after_atomic_knowledge_rollback_restores_memories_api(
     learning, monkeypatch
 ):
     from fastapi import FastAPI
@@ -232,42 +231,9 @@ async def test_retry_after_knowledge_append_restores_memories_api_without_new_re
     with pytest.raises(RuntimeError, match="before projection"):
         await service.evaluate_outcome(decision.id, USER)
     interrupted = next(row for (kind, _), row in repo.rows.items() if kind == "outcomes")
-    assert len(journal.history) == 1 and journal.projection is None
-    with pytest.raises(HTTPException) as missing:
-        await journal.revisions(
-            interrupted.learning_refs[0].id,
-            user_name=USER["username"],
-            agent_id=decision.agent_id,
-            role_name=USER["active_role"],
-        )
-    assert missing.value.status_code == 404
+    assert not journal.history and journal.projection is None
+    assert not interrupted.learning_refs
 
-    async def list_rows(sql, params):
-        if sql.startswith("SELECT memory_id, user_name"):
-            if journal.projection is None:
-                return {"rows": []}
-            row = journal.projection
-            keys = (
-                "memory_id",
-                "user_name",
-                "agent_id",
-                "role_name",
-                "fact_key",
-                "fact",
-                "source_quote",
-                "source_thread_id",
-            )
-            return {
-                "rows": [
-                    [*[row[key] for key in keys], interrupted.created_at, interrupted.updated_at]
-                ]
-            }
-        if sql.startswith("SELECT memory_id,payload,branches"):
-            latest = journal.history[-1]
-            return {"rows": [[latest.memory_id, latest.model_dump_json(), 1]]}
-        return {"rows": []}
-
-    monkeypatch.setattr(memory.db, "execute_system", AsyncMock(side_effect=list_rows))
     monkeypatch.setattr(router, "memory_repository", journal)
     monkeypatch.setattr(router, "_require_agent", AsyncMock())
     monkeypatch.setattr(engine, "intelligence_service", service)
@@ -281,7 +247,8 @@ async def test_retry_after_knowledge_append_restores_memories_api_without_new_re
         assert before.status_code == 200 and before.json()["memories"] == []
         monkeypatch.setattr(journal, "_append_revision", append)
         recovered = await service.evaluate_outcome(decision.id, USER)
-        assert recovered == interrupted and len(journal.history) == 1
+        assert recovered.revision == interrupted.revision + 1
+        assert len(journal.history) == 1
         after = await client.get(url)
         assert after.status_code == 200
         memories = after.json()["memories"]

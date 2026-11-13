@@ -3,7 +3,6 @@
 import pytest
 from pydantic import ValidationError
 
-from app.core.database import db
 from app.modules.intelligence.feature_store import FeatureTrainRequest, feature_store
 from app.modules.ml_engine.service import ml_engine_service
 
@@ -27,7 +26,7 @@ async def test_training_persists_model_and_exact_feature_versions(monkeypatch):
     async def authorized(_name, _user, _version=None):
         return {}, {}, [{"view_name": "behavior", "version": 3}]
 
-    async def version(_name, _version):
+    async def version(_name, _version, user):
         return {"definition": {"feature_columns": ["orders_7d"]}}
 
     async def training(_name, _body, _user):
@@ -46,9 +45,6 @@ async def test_training_persists_model_and_exact_feature_versions(monkeypatch):
         calls.append(kwargs)
         return {"model_id": "model-1", "version": 4, "status": "READY"}
 
-    async def execute(sql, parameters=None):
-        calls.append({"sql": sql, "parameters": parameters})
-
     async def audit(*_args):
         return None
 
@@ -56,7 +52,18 @@ async def test_training_persists_model_and_exact_feature_versions(monkeypatch):
     monkeypatch.setattr(feature_store, "_view_version", version)
     monkeypatch.setattr(feature_store, "create_training_set", training)
     monkeypatch.setattr(ml_engine_service, "train_model", train_model)
-    monkeypatch.setattr(db, "execute_system", execute)
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+
+    async def link_model(data):
+        calls.append(data)
+
+    @asynccontextmanager
+    async def metadata(actor):
+        assert actor.principal == "alice" and actor.session_id == "session-1"
+        yield SimpleNamespace(link_model=link_model)
+
+    monkeypatch.setattr("app.modules.intelligence.feature_store.intelligence_metadata", metadata)
     monkeypatch.setattr("app.modules.intelligence.feature_store.decrypt_password", lambda _: "pw")
     monkeypatch.setattr("app.modules.intelligence.feature_store._audit", audit)
     result = await feature_store.train(
@@ -73,7 +80,7 @@ async def test_training_persists_model_and_exact_feature_versions(monkeypatch):
         ),
         {
             "username": "alice", "encrypted_password": "encrypted",
-            "active_role": "analyst", "security_context_version": 7,
+            "active_role": "analyst", "security_context_version": 7, "assigned_roles": ["analyst"],
             "session_id": "session-1",
         },
     )
@@ -82,7 +89,8 @@ async def test_training_persists_model_and_exact_feature_versions(monkeypatch):
     assert calls[0]["role"] == "analyst"
     assert calls[0]["security_context_version"] == 7
     assert calls[0]["session_id"] == "session-1"
-    assert calls[1]["parameters"][5] == 2
+    assert calls[1]["group_version"] == 2
+    assert calls[1]["lineage"]["views"] == [{"view_name": "behavior", "version": 3}]
     assert result["model"]["version"] == 4
 
 
@@ -94,7 +102,7 @@ async def test_spent_training_budget_is_reported_not_a_server_error(monkeypatch)
     async def authorized(_name, _user, _version=None):
         return {}, {}, [{"view_name": "behavior", "version": 3}]
 
-    async def version(_name, _version):
+    async def version(_name, _version, user):
         return {"definition": {"feature_columns": ["orders_7d"]}}
 
     async def training(_name, _body, _user):

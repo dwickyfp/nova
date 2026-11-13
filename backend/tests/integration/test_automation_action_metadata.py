@@ -1,10 +1,9 @@
-"""Studio automation identity, typed binding, and compensation persist in StarRocks."""
+"""Studio automation identity, typed binding, and compensation persist in PostgreSQL."""
 
 from uuid import uuid4
 
 import pytest
 
-from app.core.database import db
 from app.modules.agents.automations import (
     AutomationCreate,
     AutomationError,
@@ -76,8 +75,4 @@ async def test_real_automation_identity_recovers_and_compensation_checks_configu
         assert disabled["delivery"] == created["delivery"]
     finally:
         if identifier:
-            await db.execute_system(
-                "DELETE FROM NOVA_SYSTEM.CONFIG_AGENT_AUTOMATIONS "
-                "WHERE automation_id=%s AND owner_name=%s",
-                [identifier, scope.principal],
-            )
+            await repository.delete(identifier, owner_name=scope.principal)

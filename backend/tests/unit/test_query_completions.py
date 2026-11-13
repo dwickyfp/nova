@@ -86,16 +86,28 @@ async def test_stage_completion_requires_active_database():
     list_stages.assert_not_awaited()
 
 
-@pytest.mark.asyncio
-async def test_list_stage_files_uses_slash_storage_prefix():
+@pytest.fixture
+def stages(monkeypatch, fake_metadata_db):
+    from app.modules.stages import metadata_service
+    from tests.unit.stage_metadata_fakes import install_stages
+
+    rows = []
+    install_stages(monkeypatch, rows)
+    monkeypatch.setattr(metadata_service, "check_stage_access", AsyncMock())
+    return rows
+
+
+async def test_list_stage_files_uses_slash_storage_prefix(stages):
     service = QueryService()
     expected = [{"name": "report.csv", "size": 12, "last_modified": None, "is_dir": False}]
-
+    stage = {
+        "id": "stage-id",
+        "name": "sales",
+        "database_name": "analytics",
+        "schema_name": "default",
+    }
+    stages.append(stage)
     with (
-        patch(
-            "app.modules.query.service.db.execute_system",
-            new=AsyncMock(return_value={"rows": [["stage-id", "default"]]}),
-        ) as execute_system,
         patch(
             "app.modules.stages.service.stage_service.list_files",
             new=AsyncMock(return_value=expected),
@@ -106,53 +118,71 @@ async def test_list_stage_files_uses_slash_storage_prefix():
             "sales",
             "analytics",
             folder="raw.daily",
-            schema="default", username="analyst", password="pw", role="analyst",
+            schema="default",
+            username="analyst",
+            password="pw",
+            role="analyst",
         )
-
     assert result == expected
-    assert execute_system.await_args.args[1] == ["sales", "analytics"]
-    list_files.assert_awaited_once_with("stage-id", prefix="raw/daily")
+    list_files.assert_awaited_once_with(
+        {
+            **stage,
+            "storage_connection": None,
+            "base_prefix": None,
+            "created_at": None,
+            "created_by": None,
+        },
+        prefix="raw/daily",
+    )
 
 
-@pytest.mark.asyncio
-async def test_list_stages_is_scoped_to_database_only():
-    service = QueryService()
+async def test_list_stages_is_scoped_to_database_and_requested_schema(stages):
+    stages.extend(
+        [
+            {
+                "id": "a",
+                "name": "raw_data",
+                "database_name": "NOVA_ANALYTICS",
+                "schema_name": "default",
+            },
+            {"id": "b", "name": "foreign", "database_name": "other", "schema_name": "default"},
+            {
+                "id": "c",
+                "name": "other_schema",
+                "database_name": "NOVA_ANALYTICS",
+                "schema_name": "private",
+            },
+        ]
+    )
+    with patch("app.modules.query.service.check_stage_access", new=AsyncMock()):
+        assert await QueryService()._list_stages(
+            "NOVA_ANALYTICS",
+            schema="default",
+            username="analyst",
+            password="pw",
+            role="analyst",
+        ) == ["raw_data"]
 
-    with patch(
-        "app.modules.query.service.db.execute_system",
-        new=AsyncMock(return_value={"rows": [["raw_data", "default"]]}),
-    ) as execute_system, patch(
-        "app.modules.query.service.check_stage_access", new=AsyncMock()
-    ):
-        result = await service._list_stages(
-            "NOVA_ANALYTICS", schema="default", username="analyst",
-            password="pw", role="analyst",
-        )
 
-    assert result == ["raw_data"]
-    assert execute_system.await_args.args[1] == ["NOVA_ANALYTICS"]
-    assert "schema_name" not in execute_system.await_args.args[0].split("WHERE", 1)[1]
-
-
-@pytest.mark.asyncio
-async def test_stage_completions_hide_denied_scopes():
+async def test_stage_completions_hide_denied_scopes(stages):
     from app.modules.stages.access import StageAccessDenied
 
-    service = QueryService()
+    stages.extend(
+        [
+            {"id": schema, "name": schema + "_stage", "database_name": "db", "schema_name": schema}
+            for schema in ("bronze", "silver")
+        ]
+    )
 
     async def authorize(stage, **kwargs):
         if stage["schema_name"] == "silver":
             raise StageAccessDenied("Stage access denied")
 
-    with (
-        patch(
-            "app.modules.query.service.db.execute_system",
-            new=AsyncMock(return_value={"rows": [["bronze_stage", "bronze"],
-                                                 ["silver_stage", "silver"]]}),
-        ),
-        patch("app.modules.query.service.check_stage_access", new=authorize),
-    ):
-        result = await service._list_stages(
-            "db", schema=None, username="analyst", password="pw", role="analyst"
-        )
-    assert result == ["bronze_stage"]
+    with patch("app.modules.query.service.check_stage_access", new=authorize):
+        assert await QueryService()._list_stages(
+            "db",
+            schema=None,
+            username="analyst",
+            password="pw",
+            role="analyst",
+        ) == ["bronze_stage"]

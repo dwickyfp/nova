@@ -1,9 +1,10 @@
 """Semantic Views and entities point at securable ids.
 
 A Semantic View's datasets and an entity's relation are stored by their owners
-(``CONFIG_SEMANTIC_VIEW_VERSIONS.definition`` and ``CONFIG_ENTITIES``) as
+(``config_semantic_view_versions.definition`` and ``config_entities`` in the
+PostgreSQL metadata store) as
 ``[catalog.]database.table`` strings, and those rows stay exactly as they are.
-``NOVA_SYSTEM.CATALOG_SECURABLE_LINKS`` records which securable id each one
+``nova_meta.catalog_securable_links`` records which securable id each one
 uses, so a relation's page can show what depends on it and the dependency
 survives a drop: the link keeps pointing at the dropped id.
 
@@ -28,29 +29,12 @@ from collections.abc import Iterable
 from datetime import datetime
 from typing import Any
 
-from app.core.database import db
-
+from .metadata_repository import catalog_transaction
 from .repository import row_id
 from .securables import relation_id
 from .sync import nova_now
 
 log = logging.getLogger(__name__)
-
-_PK_PROPERTIES = 'PROPERTIES("replication_num"="1", "enable_persistent_index"="true")'
-
-CATALOG_SECURABLE_LINKS_DDL = f"""
-CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CATALOG_SECURABLE_LINKS (
-    id            VARCHAR(64) NOT NULL,
-    owner_type    VARCHAR(32) NOT NULL,
-    owner_id      VARCHAR(64) NOT NULL,
-    owner_label   VARCHAR(512),
-    securable_id  VARCHAR(64) NOT NULL,
-    relation_name VARCHAR(1024) NOT NULL,
-    updated_at    DATETIME
-) PRIMARY KEY(id)
-DISTRIBUTED BY HASH(id) BUCKETS 1
-{_PK_PROPERTIES}
-"""
 
 SEMANTIC_VIEW = "semantic_view"
 ENTITY = "entity"
@@ -103,99 +87,67 @@ def _sources(definition: Any) -> list[str]:
 
 
 class LinkRepository:
-    async def ensure_schema(self) -> None:
-        await db.execute_system(CATALOG_SECURABLE_LINKS_DDL)
-
     async def for_securable(self, securable_id: str) -> list[dict]:
-        result = await db.execute_system(
-            "SELECT " + ", ".join(_COLUMNS) + " FROM NOVA_SYSTEM.CATALOG_SECURABLE_LINKS "
-            "WHERE securable_id = %s ORDER BY owner_type, owner_label",
-            [securable_id],
-        )
-        return [dict(zip(_COLUMNS, row, strict=False)) for row in result.get("rows") or []]
+        async with catalog_transaction(read_only=True) as repo:
+            return await repo.links_for_securable(securable_id)
 
     async def all(self) -> list[dict]:
-        result = await db.execute_system(
-            "SELECT " + ", ".join(_COLUMNS) + " FROM NOVA_SYSTEM.CATALOG_SECURABLE_LINKS"
-        )
-        return [dict(zip(_COLUMNS, row, strict=False)) for row in result.get("rows") or []]
+        async with catalog_transaction(read_only=True) as repo:
+            return await repo.all_links()
 
     async def replace_owner(self, owner_type: str, owner_id: str, links: Iterable[dict]) -> None:
-        wanted = {link["id"]: link for link in links}
-        result = await db.execute_system(
-            "SELECT id FROM NOVA_SYSTEM.CATALOG_SECURABLE_LINKS "
-            "WHERE owner_type = %s AND owner_id = %s",
-            [owner_type, owner_id],
-        )
-        stale = [str(row[0]) for row in result.get("rows") or [] if str(row[0]) not in wanted]
-        await self.write(list(wanted.values()))
-        await self.delete(stale)
+        async with catalog_transaction() as repo:
+            await repo.replace_owner_links(owner_type, owner_id, links)
 
     async def write(self, links: list[dict]) -> None:
-        for start in range(0, len(links), 200):
-            batch = links[start : start + 200]
-            placeholders = "(" + ", ".join(["%s"] * len(_COLUMNS)) + ")"
-            await db.execute_system(
-                "INSERT INTO NOVA_SYSTEM.CATALOG_SECURABLE_LINKS (" + ", ".join(_COLUMNS)
-                + ") VALUES " + ", ".join([placeholders] * len(batch)),
-                [link.get(column) for link in batch for column in _COLUMNS],
-            )
+        async with catalog_transaction() as repo:
+            await repo.write_links(links)
 
     async def delete(self, ids: list[str]) -> None:
-        for start in range(0, len(ids), 200):
-            chunk = ids[start : start + 200]
-            await db.execute_system(
-                "DELETE FROM NOVA_SYSTEM.CATALOG_SECURABLE_LINKS "
-                f"WHERE id IN ({', '.join(['%s'] * len(chunk))})",
-                chunk,
-            )
+        async with catalog_transaction() as repo:
+            await repo.delete_links(ids)
 
 
 link_repo = LinkRepository()
 
 
+def _owner_reader():
+    """Read source metadata as the caller or the explicitly bound maintenance actor."""
+    from app.core.metadata_actor import current_actor
+    from app.modules.intelligence.metadata_repository import intelligence_metadata
+
+    return intelligence_metadata(current_actor(), read_only=True)
+
+
 async def _semantic_view_links(at: datetime, view_id: str | None = None) -> list[dict]:
-    where, params = ("WHERE v.id = %s", [view_id]) if view_id else ("", [])
-    views = await db.execute_system(
-        "SELECT v.id, v.catalog_name, v.database_name, v.schema_name, v.name, "
-        "COALESCE(v.active_version, latest.version) "
-        "FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS v LEFT JOIN ("
-        "SELECT view_id, MAX(version) AS version "
-        "FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEW_VERSIONS GROUP BY view_id) latest "
-        f"ON latest.view_id = v.id {where}",
-        params,
-    )
-    rows = views.get("rows") or []
-    wanted = {(str(row[0]), int(row[5])) for row in rows if row[5] is not None}
-    if not wanted:
-        return []
-    labels = {str(row[0]): ".".join(str(part) for part in row[1:5]) for row in rows}
-    definitions = await db.execute_system(
-        "SELECT view_id, version, definition FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEW_VERSIONS"
-        + (" WHERE view_id = %s" if view_id else ""),
-        params,
-    )
+    async with _owner_reader() as repo:
+        rows = await repo.view_link_sources(view_id)
     links = []
-    for row_view, version, definition in definitions.get("rows") or []:
-        if (str(row_view), int(version)) not in wanted:
-            continue
-        for source in _sources(definition):
-            link = _link(SEMANTIC_VIEW, str(row_view), labels[str(row_view)], source, at)
+    for row in rows:
+        owner = str(row["id"])
+        label = ".".join(
+            str(row[part]) for part in ("catalog_name", "database_name", "schema_name", "name")
+        )
+        for source in _sources(row["definition"]):
+            link = _link(SEMANTIC_VIEW, owner, label, source, at)
             if link:
                 links.append(link)
     return links
 
 
 async def _entity_links(at: datetime, entity_id: str | None = None) -> list[dict]:
-    result = await db.execute_system(
-        "SELECT id, catalog_name, database_name, schema_name, name, relation_name "
-        "FROM NOVA_SYSTEM.CONFIG_ENTITIES WHERE status = 'ACTIVE'"
-        + (" AND id = %s" if entity_id else ""),
-        [entity_id] if entity_id else [],
-    )
+    async with _owner_reader() as repo:
+        if entity_id:
+            entity = await repo.get_entity(entity_id)
+            rows = [entity] if entity else []
+        else:
+            rows = await repo.list_entities()
     links = []
-    for row in result.get("rows") or []:
-        link = _link(ENTITY, str(row[0]), ".".join(str(p) for p in row[1:5]), str(row[5]), at)
+    for row in rows:
+        label = ".".join(
+            str(row[part]) for part in ("catalog_name", "database_name", "schema_name", "name")
+        )
+        link = _link(ENTITY, str(row["id"]), label, str(row["relation_name"]), at)
         if link:
             links.append(link)
     return links

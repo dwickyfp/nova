@@ -19,9 +19,9 @@ The scoping is enforced in SQL (``repository.py``), so one user's history can
 never be returned to another.
 
 Threads and messages are persisted in ``NOVA_SYSTEM`` and survive a reload.
-The read-only always-allow grant is kept in Redis per user and thread
+The read-only always-allow grant is kept in Redis per user, login and thread
 (``read_grants.py``), stamped with the active role and security-context
-version it was given under; any other context starts without it.
+version. Each turn reloads the grant, including expiry and revocation.
 """
 
 # ruff: noqa: B008 — `Depends(...)` in a default is FastAPI's dependency
@@ -573,7 +573,7 @@ async def set_grant(
         workspace_file_id=thread_row.get("workspace_file_id"),
     )
     await read_grants.grant(runtime, user, thread_id, body.always_allow_read_only)
-    return {"grant_active": runtime.consent.always_allow_read_only}
+    return {"grant_active": runtime.consent.covers("read_only", user=user)}
 
 
 @router.post("/threads/{thread_id}/messages")
@@ -695,15 +695,15 @@ async def send_message(
     context.semantic_view_ids = await _readable_views(context)
     memory = await neva_memory.memory_note(user, body.content)
 
-    async def resolve_consent(
+    def resolve_consent(
         invocation: ToolInvocation, classification: str
-    ) -> bool | None | ConsentApproval:
-        # The loop has already emitted the tool_call frame; the client answers
-        # out of band. If the stream is disconnected, treat it as cancelled.
+    ) -> asyncio.Future[bool | None | ConsentApproval]:
+        # Registration precedes publication so an immediate decision can resolve.
+        approval_user = dict(context.user or user)
         future = consent_broker.open(
             invocation.tool_call_id,
             thread_id=thread_id,
-            user_name=user_name,
+            user=approval_user,
             classification=classification,
             secure_fields=(
                 ("password",)
@@ -719,17 +719,17 @@ async def send_message(
                     # its owner, so the owner check is satisfied and the loop
                     # is released with ``None`` (cancelled).
                     consent_broker.resolve(
-                        invocation.tool_call_id, None, user_name=user_name
+                        invocation.tool_call_id, None, user=approval_user
                     )
                     return
                 await asyncio.sleep(0.25)
 
         watcher = asyncio.ensure_future(_watch_disconnect())
-        try:
-            return await future
-        finally:
+        def clear_pending(_future: asyncio.Future) -> None:
             watcher.cancel()
-            consent_broker.resolve(invocation.tool_call_id, None, user_name=user_name)
+
+        future.add_done_callback(clear_pending)
+        return future
 
     async def generate() -> AsyncIterator[str]:
         reply_parts: list[str] = []
@@ -869,7 +869,7 @@ async def resolve_tool_call(
     only covers read-only statements — it is not a switch the client can use to
     auto-approve a destructive call (E2b).
     """
-    owner = consent_broker.owner_of(tool_call_id)
+    owner = consent_broker.owner_of(tool_call_id, user=user)
     if owner is None or owner[1] != user["username"]:
         # Unknown id, already resolved, or someone else's pending call.
         raise HTTPException(status_code=404, detail="Tool call not found")
@@ -885,15 +885,14 @@ async def resolve_tool_call(
         if body.secure_input:
             raise HTTPException(status_code=400, detail="Secure input is not valid for denial")
         resolved = consent_broker.resolve(
-            tool_call_id, False, user_name=user["username"]
+            tool_call_id, False, user=user
         )
         return ConsentDecisionResponse(
             tool_call_id=tool_call_id,
             status="denied" if resolved else "cancelled",
-            grant_active=False,
+            grant_active=thread.consent.covers("read_only", user=user),
         )
 
-    grant_active = False
     secure_fields = consent_broker.secure_fields_of(tool_call_id) or ()
     if consent_broker.upload_required_of(tool_call_id):
         raise HTTPException(status_code=400, detail="Choose a file for this action")
@@ -918,17 +917,16 @@ async def resolve_tool_call(
                 detail="allow_session is only valid for a read-only tool call",
             )
         await read_grants.grant(thread, user, thread_id, True)
-        grant_active = True
 
     resolved = consent_broker.resolve(
         tool_call_id,
         ConsentApproval(body.secure_input) if body.secure_input is not None else True,
-        user_name=user["username"],
+        user=user,
     )
     return ConsentDecisionResponse(
         tool_call_id=tool_call_id,
         status="approved" if resolved else "cancelled",
-        grant_active=grant_active,
+        grant_active=thread.consent.covers("read_only", user=user),
     )
 
 
@@ -942,10 +940,11 @@ async def resolve_upload_tool_call(
     user: dict = Depends(get_current_user),
 ):
     """Approve one stage upload with browser-owned bytes outside the model context."""
-    owner = consent_broker.owner_of(tool_call_id)
+    owner = consent_broker.owner_of(tool_call_id, user=user)
     if owner is None or owner[1] != user["username"]:
         raise HTTPException(status_code=404, detail="Tool call not found")
-    if thread_store.get(owner[0], user_name=user["username"]) is None:
+    thread = thread_store.get(owner[0], user_name=user["username"])
+    if thread is None:
         raise HTTPException(status_code=404, detail="Tool call not found")
     if not consent_broker.upload_required_of(tool_call_id):
         raise HTTPException(status_code=400, detail="A file is not valid for this action")
@@ -975,7 +974,7 @@ async def resolve_upload_tool_call(
             ConsentApproval(
                 upload=(filename, stream, file.content_type or "application/octet-stream")
             ),
-            user_name=user["username"],
+            user=user,
         )
         if not resolved:
             raise HTTPException(status_code=404, detail="Tool call not found")
@@ -985,5 +984,5 @@ async def resolve_upload_tool_call(
     return ConsentDecisionResponse(
         tool_call_id=tool_call_id,
         status="approved",
-        grant_active=False,
+        grant_active=thread.consent.covers("read_only", user=user),
     )

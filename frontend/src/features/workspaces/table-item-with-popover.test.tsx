@@ -77,14 +77,19 @@ describe("workspace table hover card", () => {
       columns: typeof columns;
       count: number;
     }) => void;
-    vi.mocked(api.get)
-      .mockResolvedValueOnce({ columns: columns.slice(0, 4), count: 4 })
-      .mockImplementationOnce(
-        () =>
-          new Promise<{ columns: typeof columns; count: number }>((resolve) => {
-            resolveColumns = resolve;
-          }) as ReturnType<typeof api.get>,
-      );
+    const pendingColumns = new Promise<{ columns: typeof columns; count: number }>((resolve) => {
+      resolveColumns = resolve;
+    });
+    vi.mocked(api.get).mockImplementation((path) => {
+      if (path.endsWith("/tables/categories/columns")) {
+        return Promise.resolve({ columns: columns.slice(0, 4), count: 4 });
+      }
+      if (path.endsWith(`/tables/${name}/columns`)) return pendingColumns;
+      if (path.endsWith("/tables/empty_table/columns")) {
+        return Promise.resolve({ columns: [], count: 0 });
+      }
+      throw new Error(`Unexpected fixture request: ${path}`);
+    });
     await mount(["categories", name, "empty_table"]);
     let maximumOpen = 0;
     const observer = new MutationObserver(() => {
@@ -124,7 +129,6 @@ describe("workspace table hover card", () => {
         page.getByRole("dialog").element().getBoundingClientRect().height,
       ).toBe(height);
 
-      vi.mocked(api.get).mockResolvedValueOnce({ columns: [], count: 0 });
       await userEvent.hover(
         page.getByRole("button", { name: "empty_table", exact: true }),
       );

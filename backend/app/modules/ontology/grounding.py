@@ -86,13 +86,6 @@ class Grounding:
         }
 
 
-def never_created(exc: Exception) -> bool:
-    """The ontology tables do not exist yet, so no release was ever published."""
-    code = exc.args[0] if exc.args else None
-    message = str(exc.args[1] if len(exc.args) > 1 else exc)
-    return code == 5502 and "Unknown table 'NOVA_SYSTEM.CONFIG_ONTOLOGY_" in message
-
-
 def pinned_release(context: Any) -> str | None:
     """The ontology release this run must use, if one is pinned."""
     manifest = getattr(context, "release_manifest", None) or {}
@@ -125,8 +118,6 @@ async def ground(
                 scope_views=[str(model.get("semantic_model_id")) for model in models],
             )
     except Exception as exc:  # noqa: BLE001 - an unreadable ontology must not answer wrongly
-        if never_created(exc):
-            return Grounding(status="no_release")
         logger.warning("Ontology grounding failed: %s", type(exc).__name__)
         return Grounding(
             status="unavailable",

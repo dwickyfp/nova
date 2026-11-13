@@ -1,0 +1,10 @@
+{
+  "application_tree_sha256": "de0c43da679951af7232872ce3ccecca11189e8ef3571df8b5e37dd36c245677",
+  "unchanged_system_calls": 875,
+  "source_references_unchanged": true,
+  "previous_live_observation_preserved": {
+    "started_at": "2026-11-12T00:06:30.186499+00:00",
+    "finished_at": "2026-11-12T00:06:37.302279+00:00"
+  },
+  "feature_acceptance_changed": false
+}

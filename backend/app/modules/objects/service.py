@@ -4,11 +4,29 @@ Orchestrates metadata queries for the Snowsight-style sidebar:
   Catalog → Database → Schema → Tables/Views/MVs
 """
 
-from app.core.database import db
+from app.core.metadata_actor import actor_for
+from app.core.metadata_db import MetadataPermissionDenied
 from app.core.security import decrypt_password
 from app.modules.objects.repository import ObjectRepository
 from app.modules.stages.access import StageAccessDenied, check_stage_access
+from app.modules.stages.service import caller_actor, discover_stages
+from app.modules.task_orchestration.repository import TaskOrchestrationRepository
 
+
+async def _stage_identities(
+    database: str, username: str, role: str | None, *, schema: str | None = None,
+) -> list[dict]:
+    """Stage ids and names in ``database`` (no payload); none without an active role."""
+    try:
+        actor = caller_actor(username, role)
+    except StageAccessDenied:
+        return []
+    return await discover_stages(actor, database=database, schema=schema)
+
+
+async def _stage_schemas(database: str, username: str, role: str | None) -> list[str]:
+    rows = await _stage_identities(database, username, role)
+    return sorted({row["schema_name"] for row in rows if row["schema_name"]})
 
 class ObjectService:
     """High-level object browsing operations."""
@@ -33,15 +51,16 @@ class ObjectService:
             role=role,
         )
         result = []
+        by_database = await self._repo.table_types_by_database(
+            [database["name"] for database in databases],
+            username=username,
+            encrypted_password=encrypted_password,
+            role=role,
+        )
 
         for database in databases:
             name = database["name"]
-            types = await self._repo.list_table_types(
-                name,
-                username=username,
-                encrypted_password=encrypted_password,
-                role=role,
-            )
+            types = by_database[name]
             result.append({
                 "name": name,
                 "table_count": len(types["tables"]),
@@ -231,28 +250,17 @@ class ObjectService:
         if not database_info:
             return []
 
-        result = await db.execute_system(
-            """
-            SELECT DISTINCT schema_name
-            FROM NOVA_SYSTEM.CONFIG_STAGES
-            WHERE database_name = %s
-            ORDER BY schema_name
-            """,
-            [database],
-        )
         password = decrypt_password(encrypted_password)
         schemas = []
-        for row in result["rows"]:
-            if not row[0]:
-                continue
+        for schema_name in await _stage_schemas(database, username, role):
             try:
                 await check_stage_access(
-                    {"database_name": database, "schema_name": row[0]},
+                    {"database_name": database, "schema_name": schema_name},
                     action="read", username=username, password=password, active_role=role,
                 )
             except StageAccessDenied:
                 continue
-            schemas.append({"name": row[0]})
+            schemas.append({"name": schema_name})
         if not schemas:
             schemas.append({"name": "default"})
         return schemas
@@ -277,16 +285,11 @@ class ObjectService:
                 encrypted_password=encrypted_password,
                 role=role,
             )
-        stage_rows = await db.execute_system(
-            """
-            SELECT id, name
-            FROM NOVA_SYSTEM.CONFIG_STAGES
-            WHERE database_name = %s AND schema_name = %s
-            ORDER BY name
-            """,
-            [database, schema],
+        stage_rows = sorted(
+            await _stage_identities(database, username, role, schema=schema),
+            key=lambda row: (row["name"], row["id"]),
         )
-        if stage_rows["rows"]:
+        if stage_rows:
             try:
                 await check_stage_access(
                     {"database_name": database, "schema_name": schema},
@@ -294,7 +297,7 @@ class ObjectService:
                     password=decrypt_password(encrypted_password), active_role=role,
                 )
             except StageAccessDenied:
-                stage_rows = {"rows": []}
+                stage_rows = []
         tasks = await self._schema_tasks(
             database,
             schema,
@@ -309,8 +312,8 @@ class ObjectService:
             "views": objects["views"],
             "materialized_views": objects["materialized_views"],
             "stages": [
-                {"id": row[0], "name": row[1], "type": "STAGE"}
-                for row in stage_rows["rows"]
+                {"id": row["id"], "name": row["name"], "type": "STAGE"}
+                for row in stage_rows
             ],
             "tasks": tasks,
         }
@@ -340,26 +343,15 @@ class ObjectService:
         )
         if database not in {row["name"] for row in visible}:
             return []
-        result = await db.execute_system(
-            """
-            SELECT id, name, schedule_kind, schedule_expr, timezone, overlap_policy
-            FROM NOVA_SYSTEM.CONFIG_TASKS
-            WHERE database_name = %s AND schema_name = %s
-            ORDER BY name
-            """,
-            [database, schema],
-        )
-        columns = (
-            "id",
-            "name",
-            "schedule_kind",
-            "schedule_expr",
-            "timezone",
-            "overlap_policy",
-        )
+        actor = actor_for(username)
+        if actor.active_role != role:
+            raise MetadataPermissionDenied()
+        tasks = await TaskOrchestrationRepository(actor).list_tasks()
+        columns = ("id", "name", "schedule_kind", "schedule_expr", "timezone", "overlap_policy")
         return [
-            {**dict(zip(columns, row, strict=True)), "type": "TASK"}
-            for row in result["rows"]
+            {**{column: task.get(column) for column in columns}, "type": "TASK"}
+            for task in sorted(tasks, key=lambda task: task["name"])
+            if task["database_name"] == database and task["schema_name"] == schema
         ]
 
 

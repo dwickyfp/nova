@@ -13,6 +13,7 @@ from app.modules.assistant.consent import ConsentApproval, ConsentBroker
 from app.modules.assistant.router import resolve_tool_call, resolve_upload_tool_call
 from app.modules.assistant.schemas import ConsentDecisionRequest
 from app.modules.assistant.state import thread_store
+from tests.unit.test_assistant_consent_ownership import _signed_in
 
 
 @pytest.mark.asyncio
@@ -22,21 +23,21 @@ async def test_secure_approval_requires_the_owner_and_exact_password_field(monke
     monkeypatch.setattr("app.modules.assistant.router.consent_broker", broker)
     thread = thread_store.create(user_name="alice", title="Test")
     future = broker.open(
-        "create-user", thread_id=thread.thread_id, user_name="alice",
+        "create-user", thread_id=thread.thread_id, user=_signed_in("alice"),
         classification="destructive", secure_fields=("password",),
     )
     try:
         with pytest.raises(HTTPException) as missing:
             await resolve_tool_call(
                 "create-user", ConsentDecisionRequest(decision="allow_once"),
-                user={"username": "alice"},
+                user=_signed_in("alice"),
             )
         assert missing.value.status_code == 400
         with pytest.raises(HTTPException) as foreign:
             await resolve_tool_call(
                 "create-user", ConsentDecisionRequest(
                     decision="allow_once", secure_input={"password": "private-marker"}
-                ), user={"username": "bob"},
+                ), user=_signed_in("bob"),
             )
         assert foreign.value.status_code == 404
         with pytest.raises(HTTPException) as extra:
@@ -44,13 +45,13 @@ async def test_secure_approval_requires_the_owner_and_exact_password_field(monke
                 "create-user", ConsentDecisionRequest(
                     decision="allow_once",
                     secure_input={"password": "private-marker", "role": "admin"},
-                ), user={"username": "alice"},
+                ), user=_signed_in("alice"),
             )
         assert extra.value.status_code == 400
         response = await resolve_tool_call(
             "create-user", ConsentDecisionRequest(
                 decision="allow_once", secure_input={"password": "private-marker"}
-            ), user={"username": "alice"},
+            ), user=_signed_in("alice"),
         )
         approval = await future
         assert response.status == "approved"
@@ -102,31 +103,31 @@ async def test_stage_upload_approval_requires_owned_pending_call(monkeypatch) ->
     monkeypatch.setattr("app.modules.assistant.router.consent_broker", broker)
     thread = thread_store.create(user_name="alice", title="Upload")
     future = broker.open(
-        "stage-upload", thread_id=thread.thread_id, user_name="alice",
+        "stage-upload", thread_id=thread.thread_id, user=_signed_in("alice"),
         classification="destructive", upload_required=True,
     )
     try:
         with pytest.raises(HTTPException) as foreign:
             await resolve_upload_tool_call(
                 "stage-upload", UploadFile(file=BytesIO(b"data"), filename="data.csv"),
-                user={"username": "bob"},
+                user=_signed_in("bob"),
             )
         assert foreign.value.status_code == 404
         with pytest.raises(HTTPException) as json_approval:
             await resolve_tool_call(
                 "stage-upload", ConsentDecisionRequest(decision="allow_once"),
-                user={"username": "alice"},
+                user=_signed_in("alice"),
             )
         assert json_approval.value.status_code == 400
         with pytest.raises(HTTPException) as traversal:
             await resolve_upload_tool_call(
                 "stage-upload", UploadFile(file=BytesIO(b"data"), filename="../data.csv"),
-                user={"username": "alice"},
+                user=_signed_in("alice"),
             )
         assert traversal.value.status_code == 400
         result = await resolve_upload_tool_call(
             "stage-upload", UploadFile(file=BytesIO(b"private-file-data"), filename="data.csv"),
-            user={"username": "alice"},
+            user=_signed_in("alice"),
         )
         approval = await future
         assert result.status == "approved"
@@ -139,3 +140,30 @@ async def test_stage_upload_approval_requires_owned_pending_call(monkeypatch) ->
     finally:
         thread_store.clear()
         broker.clear()
+
+
+@pytest.mark.parametrize("changed", [
+    {"session_id": "second-login"},
+    {"active_role": "reviewer", "assigned_roles": ["reviewer"]},
+    {"security_context_version": 2},
+])
+async def test_upload_approval_cannot_cross_login_or_role(monkeypatch, changed):
+    broker = ConsentBroker()
+    monkeypatch.setattr("app.modules.assistant.router.consent_broker", broker)
+    original = _signed_in("alice")
+    thread = thread_store.create(user_name="alice", title="Upload identity")
+    future = broker.open("upload", thread_id=thread.thread_id, user=original,
+                         classification="destructive", upload_required=True)
+    file = UploadFile(file=BytesIO(b"private-file-data"), filename="data.csv")
+    try:
+        with pytest.raises(HTTPException) as refused:
+            await resolve_upload_tool_call("upload", file, {**original, **changed})
+        assert refused.value.status_code == 404
+        assert file.file.tell() == 0
+        assert not future.done()
+        assert broker.resolve("upload", False, user=original)
+        assert await future is False
+    finally:
+        await file.close()
+        broker.cancel_all()
+        thread_store.clear()

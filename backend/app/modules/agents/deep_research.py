@@ -9,7 +9,7 @@ the report is checked against the union of the investigations' result tables;
 an unsupported number is removed, exactly as in a chat answer.
 
 Runs are asynchronous. Progress, the plan, and the report live in
-``NOVA_SYSTEM.CONFIG_DEEP_RESEARCH_RUNS``, and the report is also appended to a
+the PostgreSQL research journal, and the report is also appended to a
 Studio thread so it appears in history.
 """
 
@@ -21,10 +21,11 @@ import logging
 import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from uuid import uuid4
 
 from app.common.audit import write_audit_log
-from app.core.database import configured_timezone, db
+from app.core.database import configured_timezone
+from app.core.metadata_db import MetadataConflict, MetadataPermissionDenied
+from app.modules.agents.metadata_repository import agent_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ _TASKS: set[asyncio.Task] = set()
 
 
 def _now() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
+    return datetime.now(UTC)
 
 
 def _row(values: list[Any]) -> dict[str, Any]:
@@ -83,57 +84,51 @@ def _row(values: list[Any]) -> dict[str, Any]:
         raw = record.pop(key)
         record[key.removesuffix("_json")] = json.loads(raw) if isinstance(raw, str) else raw
     for key in ("created_at", "updated_at"):
-        record[key] = str(record[key])
+        value = record[key]
+        if isinstance(value, datetime) and value.tzinfo is not None:
+            value = value.astimezone(UTC).replace(tzinfo=None)
+        record[key] = str(value)
+    if record["progress"] is None:
+        record["progress"] = []
     return record
 
 
 class DeepResearchRepository:
-    async def ensure_schema(self) -> None:
-        await db.execute_system(RUNS_DDL)
-
     async def create(self, *, agent_id: str, owner_name: str, thread_id: str,
                      question: str) -> str:
-        await self.ensure_schema()
-        run_id = str(uuid4())
-        now = _now()
-        await db.execute_system(
-            f"INSERT INTO NOVA_SYSTEM.CONFIG_DEEP_RESEARCH_RUNS ({_COLUMNS}) VALUES ("
-            + ", ".join(["%s"] * 11) + ")",
-            [run_id, agent_id, owner_name, thread_id, question, "planning", None, "[]", None,
-             now, now],
-        )
-        return run_id
+        async with agent_metadata(owner_name) as store:
+            if store.actor.principal != owner_name:
+                raise MetadataPermissionDenied()
+            return await store.create_research_run(agent_id, thread_id, question)
 
     async def update(self, run_id: str, **fields: Any) -> None:
-        assignments, params = [], []
-        for key, value in fields.items():
-            column = f"{key}_json" if key in {"plan", "progress"} else key
-            assignments.append(f"{column} = %s")
-            params.append(json.dumps(value, default=str) if key in {"plan", "progress"}
-                          else value)
-        assignments.append("updated_at = %s")
-        params.append(_now())
-        await db.execute_system(
-            "UPDATE NOVA_SYSTEM.CONFIG_DEEP_RESEARCH_RUNS SET " + ", ".join(assignments)
-            + " WHERE run_id = %s", [*params, run_id],
-        )
+        changes = {
+            f"{key}_json" if key in {"plan", "progress"} else key: value
+            for key, value in fields.items()
+        }
+        async with agent_metadata() as store:
+            # Parallel investigations share a journal; serialize its short updates.
+            current = await store.get_research_run(run_id, for_update=True)
+            if current is None:
+                raise MetadataConflict()
+            await store.update_research_run(
+                run_id, changes, expected_revision=current["metadata_revision"],
+            )
 
     async def get(self, run_id: str, *, owner_name: str) -> dict[str, Any] | None:
-        await self.ensure_schema()
-        result = await db.execute_system(
-            f"SELECT {_COLUMNS} FROM NOVA_SYSTEM.CONFIG_DEEP_RESEARCH_RUNS "
-            "WHERE run_id = %s AND owner_name = %s", [run_id, owner_name],
-        )
-        rows = result.get("rows") or []
-        if not rows:
+        async with agent_metadata(read_only=True) as store:
+            if store.actor.principal != owner_name:
+                raise MetadataPermissionDenied()
+            stored = await store.get_research_run(run_id)
+        if stored is None:
             return None
-        record = _row(rows[0])
-        # A run whose process ended mid-way is reported, not left "running" forever.
-        updated = datetime.fromisoformat(record["updated_at"])
-        if record["status"] in {"planning", "running", "writing"} and (
-            _now() - updated > RUN_BUDGET
-        ):
-            record["status"] = "interrupted"
+        record = _row([stored.get(key) for key in _COLUMNS.split(", ")])
+        updated = stored["updated_at"]
+        if updated is not None and record["status"] in {"planning", "running", "writing"}:
+            if updated.tzinfo is None:
+                raise ValueError("Research timestamp provenance is missing")
+            if _now() - updated > RUN_BUDGET:
+                record["status"] = "interrupted"
         return record
 
 

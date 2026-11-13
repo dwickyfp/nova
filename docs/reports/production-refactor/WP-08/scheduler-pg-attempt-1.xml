@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="2" time="5.473" timestamp="2026-11-11T23:50:42.818169+07:00"><testcase classname="tests.integration.test_metadata_scheduler" name="test_concurrent_leaders_have_one_winner_and_tokens_never_reset" time="2.266" /><testcase classname="tests.integration.test_metadata_scheduler" name="test_due_occurrence_reserves_one_job_and_outbox_under_original_actor" time="2.739"><failure message="app.core.metadata_db.MetadataConflict: Metadata changed concurrently; reload and try again">tests/integration/test_metadata_scheduler.py:72: in test_due_occurrence_reserves_one_job_and_outbox_under_original_actor
+    records = await asyncio.gather(*(reserve(jobs, leader, due) for _ in range(10)))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/integration/test_metadata_scheduler.py:45: in reserve
+    return await SchedulerRepository(connection).reserve(lease, due)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app/modules/task_orchestration/metadata_scheduler.py:162: in reserve
+    await self._lock_leader(lease)
+app/modules/task_orchestration/metadata_scheduler.py:147: in _lock_leader
+    raise MetadataConflict()
+E   app.core.metadata_db.MetadataConflict: Metadata changed concurrently; reload and try again</failure></testcase></testsuite></testsuites>

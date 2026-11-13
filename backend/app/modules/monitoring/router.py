@@ -26,6 +26,7 @@ constants below for why the system-pool reads still need a backend gate.
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from app.core.metadata_scope import actor_for
 from app.core.role_gates import require_active_role
 from app.modules.monitoring.ai_usage import AIUsageUnavailable, ai_usage_service
 from app.modules.monitoring.runtime_health import RuntimeHealthResponse
@@ -34,10 +35,11 @@ from app.modules.users.router import ADMIN_ROLES as ADMIN_ROLES
 
 router = APIRouter()
 
-# Monitoring reads run through the system pool (``db.execute_system``), so
-# StarRocks' own grant filter never sees the caller and every row is readable
-# regardless of privilege. The backend is therefore the only access boundary on
-# this surface.
+# Engine monitoring reads run through the system pool (``db.execute_system``),
+# so StarRocks' own grant filter never sees the caller and every row is readable
+# regardless of privilege. The backend is therefore the access boundary on this
+# surface. Audit history additionally runs in the caller's metadata transaction,
+# where row-level security shows every event only to an administration role.
 #
 # Roles permitted to read monitoring data. Reused, not re-declared, from
 # ``modules/users/router.py`` (same list ``/users`` and task orchestration use):
@@ -71,6 +73,7 @@ async def get_ai_usage(
 ) -> dict:
     try:
         return await ai_usage_service.dashboard(
+            actor=actor_for(user),
             days=days, source=source, model=model, user_name=user_name,
             offset=offset, limit=limit,
         )
@@ -128,6 +131,7 @@ async def get_query_history(
 ):
     """Paginated query execution history (event_type='query')."""
     result = await monitoring_service.get_query_history(
+        actor=actor_for(user),
         limit=limit,
         offset=offset,
         user_name=user_name,
@@ -149,6 +153,7 @@ async def get_query_stats(
 ):
     """Aggregate query stats: total, avg duration, error rate."""
     result = await monitoring_service.get_query_history_stats(
+        actor=actor_for(user),
         date_from=date_from,
         date_to=date_to,
     )
@@ -171,6 +176,7 @@ async def get_audit_trail(
 ):
     """Paginated audit trail — all event types from AUDIT_LOG."""
     result = await monitoring_service.get_audit_trail(
+        actor=actor_for(user),
         limit=limit,
         offset=offset,
         event_type=event_type,
@@ -249,6 +255,7 @@ async def get_cost_history(
 ):
     """Paginated query cost history (duration, rows affected)."""
     result = await monitoring_service.get_query_cost_history(
+        actor=actor_for(user),
         limit=limit,
         offset=offset,
         user_name=user_name,
@@ -268,6 +275,7 @@ async def get_cost_aggregation(
 ):
     """Time-bucketed cost aggregation for chart data."""
     return await monitoring_service.get_cost_aggregation(
+        actor=actor_for(user),
         group_by=group_by,
         date_from=date_from,
         date_to=date_to,
@@ -288,7 +296,7 @@ async def get_runtime_health(
     user: dict = require_read,
 ) -> RuntimeHealthResponse:
     """Live health of Redis and Nova's standalone orchestration processes."""
-    return await monitoring_service.get_runtime_health()
+    return await monitoring_service.get_runtime_health(actor=actor_for(user))
 
 
 # ── Data Loads ───────────────────────────────────────────────────────

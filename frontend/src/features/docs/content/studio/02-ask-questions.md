@@ -63,6 +63,10 @@ Under each answer:
 The token count next to the buttons (for example "13,189 tokens") is how much
 AI model work the answer used.
 
+Tool approvals belong to the login and active role that requested them. After
+switching roles or signing in again, start a new request to approve a tool. A
+pending approval cannot be accepted from another login, even for the same account.
+
 ## Limits and errors
 
 - One agent answers each question. Studio does not hand a question from one
@@ -72,4 +76,13 @@ AI model work the answer used.
   want.
 - "The agent run stopped. Review saved steps before retrying." means the run
   was interrupted. Open the conversation again from **History**: anything the
-  agent saved is shown, and you can ask again.
+  agent saved is shown. Check the results of any actions before asking again.
+- "Saved run events are unavailable." means Nova cannot replay all the saved
+  steps for a completed answer. Open the conversation from **History** to
+  review what remains. Check any actions before asking again; this message
+  does not mean an action failed.
+- "The run stopped because its progress could not be saved." means Nova
+  stopped the agent after a storage problem. A partial answer may remain on
+  screen. Pending approvals close, and an unfinished tool is marked **Result
+  not confirmed**. Review **History** and check any actions before trying
+  again; an action may have completed even if its result could not be saved.

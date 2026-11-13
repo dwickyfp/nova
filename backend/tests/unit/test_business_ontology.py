@@ -39,6 +39,11 @@ from tests.unit._ontology import (
 
 class World:
     def __init__(self, monkeypatch) -> None:
+        from app.core import metadata_runtime
+        from tests.unit.metadata_fakes import FakeMetadataDatabase
+
+        self.database = FakeMetadataDatabase()
+        monkeypatch.setattr(metadata_runtime, "_database", self.database)
         self.repository = FakeRepository()
         self.catalog = FakeCatalog()
         self.reads = OntologyService(self.repository, self.catalog)

@@ -1,0 +1,55 @@
+{
+  "observed_at": "2026-11-11T22:52:01.286189+00:00",
+  "scope": "Read-only live aggregates; not a frozen migration export",
+  "checks": {
+    "run_count": {
+      "count": 533
+    },
+    "event_count": {
+      "count": 13621
+    },
+    "orphan_events": {
+      "count": 0
+    },
+    "high_water_mismatch": {
+      "count": 62
+    },
+    "runs_missing_session_or_version": {
+      "count": 0
+    },
+    "legacy_collaboration_rows": {
+      "count": 108
+    },
+    "negative_event_sequence": {
+      "count": 0
+    },
+    "empty_run_scope": {
+      "count": 0
+    },
+    "unsupported_current_status": {
+      "count": 0
+    }
+  },
+  "high_water_review": [
+    {
+      "cohort": "direct",
+      "mismatched_runs": 62,
+      "events_ahead": 0,
+      "head_ahead": 62,
+      "still_running": 0
+    }
+  ],
+  "high_water_parent_review": {
+    "mismatched_runs": 62,
+    "without_events": 62,
+    "without_thread": 0,
+    "updated_more_than_one_day_ago": 62
+  },
+  "head_ahead_of_retained_events_by_status": {
+    "cancelled": 2,
+    "completed": 23,
+    "failed": 37
+  },
+  "source": "read-only live aggregate, no frozen export",
+  "status_review_observed_at": "2026-11-11T23:16:52.861229+00:00"
+}

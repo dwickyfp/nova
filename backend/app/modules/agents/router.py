@@ -38,6 +38,7 @@ from pydantic import BaseModel, Field
 from app.common.audit import write_audit_log
 from app.core.database import configured_timezone
 from app.core.deps import get_current_user
+from app.core.metadata_scope import metadata_transaction
 from app.modules.agents.access import has_verified_access
 from app.modules.agents.automations import AutomationCreate, AutomationUpdate
 from app.modules.agents.dataviz_assistant import (
@@ -95,7 +96,7 @@ from app.modules.agents.versions import (
     revision_id,
     validate_publication_dependencies,
 )
-from app.modules.assistant import events
+from app.modules.assistant import events, read_grants
 from app.modules.assistant.attachments import attachment_prompt
 from app.modules.assistant.consent import ConsentApproval, consent_broker
 from app.modules.assistant.context import ContextManager
@@ -151,6 +152,7 @@ def _run_in_background(coroutine: Coroutine[object, object, object], *, label: s
     task.add_done_callback(finished)
     return task
 _active_run_tasks: set[asyncio.Task[None]] = set()
+RUN_STORAGE_TIMEOUT_SECONDS = 15.0
 
 router = APIRouter()
 
@@ -1310,19 +1312,19 @@ async def publish_agent_version(
 
 @router.delete("/{agent_id}", status_code=204)
 async def delete_agent(agent_id: str, user: dict = Depends(get_current_user)):
-    if not await agent_repository.delete_agent(agent_id, owner_name=user["username"]):
-        raise HTTPException(status_code=404, detail="Agent not found")
-    await memory_repository.delete_agent(user_name=user["username"], agent_id=agent_id)
-    await write_audit_log(
-        event_type="AGENT_MEMORY",
-        user_name=user["username"],
-        action="DELETE_ALL",
-        object_type="AGENT",
-        object_name=agent_id,
-        status="SUCCESS",
-        session_id=user.get("session_id"),
-        active_role=user.get("active_role"),
-    )
+    async with metadata_transaction(session_security(user)):
+        if not await agent_repository.delete_agent(agent_id, owner_name=user["username"]):
+            raise HTTPException(status_code=404, detail="Agent not found")
+        await write_audit_log(
+            event_type="AGENT_MEMORY",
+            user_name=user["username"],
+            action="DELETE_ALL",
+            object_type="AGENT",
+            object_name=agent_id,
+            status="SUCCESS",
+            session_id=user.get("session_id"),
+            active_role=user.get("active_role"),
+        )
     return None
 
 
@@ -1632,7 +1634,7 @@ async def create_agent_automation(
             role_name=session_security(user).active_role, body=body,
         )
     except AutomationError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     await write_audit_log(
         event_type="AGENT_AUTOMATION", user_name=user["username"], action="CREATE",
         object_type="AGENT_AUTOMATION", object_name=created["automation_id"], status="SUCCESS",
@@ -1655,7 +1657,7 @@ async def update_agent_automation(
     try:
         updated = await automation_repository.update(automation, body)
     except AutomationError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     await write_audit_log(
         event_type="AGENT_AUTOMATION", user_name=user["username"], action="ALTER",
         object_type="AGENT_AUTOMATION", object_name=automation_id, status="SUCCESS",
@@ -1760,7 +1762,6 @@ async def agent_improvement_suggestions(
     agent_id: str, user: dict = Depends(get_current_user)
 ) -> dict:
     """Review-only suggestions from disliked answers and the agent's query workload."""
-    from app.core.database import db
     from app.modules.agents.semantic.runtime import (
         SemanticFeedback,
         feedback_suggestions,
@@ -1768,17 +1769,12 @@ async def agent_improvement_suggestions(
     )
 
     agent = await _require_owned_agent(agent_id, user)
-    disliked = await db.execute_system(
-        "SELECT content, steps FROM NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES "
-        "WHERE agent_id = %s AND user_name=%s AND feedback = 'dislike' "
-        "AND get_json_string(CAST(security_context AS VARCHAR),'$.active_role')=%s "
-        "AND get_json_int(CAST(security_context AS VARCHAR),'$.security_context_version')=%s "
-        "ORDER BY created_at DESC LIMIT 200",
-        [agent_id, user["username"], session_security(user).active_role,
-         session_security(user).security_context_version],
+    disliked = await assistant_repository.disliked_agent_messages(
+        agent_id, user_name=user["username"],
     )
     events = []
-    for _content, raw_steps in disliked.get("rows") or []:
+    for row in disliked:
+        raw_steps = row["steps"]
         steps = json.loads(raw_steps) if isinstance(raw_steps, str) else raw_steps or []
         for step in steps:
             trace = step.get("trace_detail") or {} if isinstance(step, dict) else {}
@@ -1791,23 +1787,20 @@ async def agent_improvement_suggestions(
     view_ids = [str(item) for item in bound_view_ids(agent)]
     usage: list[dict] = []
     if view_ids:
-        rows = await db.execute_system(
-            "SELECT semantic_model_id, model_fingerprint, metric_names, dimension_names, "
-            "time_grain, succeeded FROM NOVA_SYSTEM.AUDIT_SEMANTIC_QUERY_USAGE "
-            "WHERE semantic_model_id IN (" + ", ".join(["%s"] * len(view_ids)) + ") "
-            "AND owner_name=%s AND active_role=%s AND security_context_version=%s "
-            "ORDER BY created_at DESC LIMIT 2000",
-            [*view_ids, user["username"], session_security(user).active_role,
-             session_security(user).security_context_version],
+        from app.modules.intelligence.metadata_repository import (
+            intelligence_metadata,
+            user_actor,
         )
-        for model_id, fingerprint, metrics, dimensions, grain, succeeded in rows.get("rows") or []:
+
+        async with intelligence_metadata(user_actor(user), read_only=True) as repo:
+            rows = await repo.semantic_usage_for_models(view_ids, limit=2000)
+        for row in rows:
             usage.append({
-                "semantic_model_id": model_id, "model_fingerprint": fingerprint,
-                "metrics": json.loads(metrics) if isinstance(metrics, str) else metrics or [],
-                "dimensions": (
-                    json.loads(dimensions) if isinstance(dimensions, str) else dimensions or []
-                ),
-                "time_grain": grain, "succeeded": bool(succeeded),
+                "semantic_model_id": row["semantic_model_id"],
+                "model_fingerprint": row["model_fingerprint"],
+                "metrics": row["metric_names"] or [],
+                "dimensions": row["dimension_names"] or [],
+                "time_grain": row["time_grain"], "succeeded": bool(row["succeeded"]),
             })
     return {
         "feedback": feedback_suggestions(events),
@@ -1946,6 +1939,7 @@ async def replay_agent_run(
                 state is not None
                 and state["status"] in {"interrupted", "failed", "cancelled"}
                 and not terminal_seen
+                and (not frames or cursor >= state["last_sequence"])
             ):
                 code = "run_interrupted" if state["status"] == "interrupted" else "run_failed"
                 yield events.format_sse(
@@ -1964,6 +1958,32 @@ async def replay_agent_run(
                         "sequence": cursor + 2,
                         "message_id": "",
                         "finish_reason": state["status"],
+                    },
+                )
+                return
+            if (
+                state is not None
+                and state["status"] == "completed"
+                and not frames
+                and cursor < state["last_sequence"]
+            ):
+                yield events.format_sse(
+                    events.EVENT_ERROR,
+                    {
+                        "run_id": run_id,
+                        "sequence": cursor + 1,
+                        "code": "run_history_unavailable",
+                        "message": "Saved run events are unavailable. "
+                        "Open the conversation to review the result.",
+                    },
+                )
+                yield events.format_sse(
+                    events.EVENT_DONE,
+                    {
+                        "run_id": run_id,
+                        "sequence": cursor + 2,
+                        "message_id": "",
+                        "finish_reason": "error",
                     },
                 )
                 return
@@ -2131,16 +2151,17 @@ async def send_agent_message(
         title=thread_row["title"],
         workspace_file_id=thread_row.get("workspace_file_id"),
     )
+    await read_grants.apply(runtime, user, thread_id)
     # Apply the agent's HITL policy to this conversation's consent holder. An
     # ``auto_read_only`` agent pre-grants read-only tools so a business question
     # does not stall waiting for an approval no client will send; a destructive
     # call is still never covered (the grant is read-only-only), and
     # ``ask_every_tool`` leaves the grant off so every call prompts.
-    # ``auto_read_only`` establishes a grant. ``ask_every_tool`` does not clear
-    # an existing user-issued ``allow_session`` grant; it merely starts without
-    # one. Clearing that grant is an explicit conversation action.
+    # User-issued approval is restored only for this login and security context;
+    # the policy grant is recomputed each turn and is never stored as approval.
     if agent.get("policy") == "auto_read_only":
         runtime.consent.always_allow_read_only = True
+        runtime.consent.granted_under = read_grants.stamp(user)
     history = await assistant_repository.list_messages(thread_id, user_name=user_name)
     from app.modules.agents.personal_skills import SKILL_AUTHORING_PROMPT, is_skill_authoring
     from app.modules.assistant.tools import ToolRegistry
@@ -2420,20 +2441,20 @@ async def send_agent_message(
         guards=GuardChain.from_policy(registry.harness_policy),
     )
 
-    async def resolve_consent(
+    def resolve_consent(
         invocation: ToolInvocation, classification: str
-    ) -> bool | None | ConsentApproval:
+    ) -> asyncio.Future[bool | None | ConsentApproval]:
+        approval_user = dict(context.user or user)
         future = consent_broker.open(
             invocation.tool_call_id,
             thread_id=thread_id,
-            user_name=user_name,
+            user=approval_user,
             classification=classification,
         )
 
-        try:
-            return await future
-        finally:
-            consent_broker.resolve(invocation.tool_call_id, None, user_name=user_name)
+        return future
+
+    interruption_reason: str | None = None
 
     async def generate() -> AsyncGenerator[str, None]:
         reply_parts: list[str] = []
@@ -2446,7 +2467,7 @@ async def send_agent_message(
 
         plain = plain_frames()
         try:
-            async for raw in loop.run(
+            raw_frames = loop.run(
                 thread=runtime,
                 user_content=prompt,
                 context=context,
@@ -2454,22 +2475,24 @@ async def send_agent_message(
                 cancelled=lambda: False,
                 model=body.model,
                 provider_id=body.provider_id,
-            ):
-                for frame in plain(raw):
-                    if frame.startswith(f"event: {events.EVENT_TEXT_DELTA}"):
-                        reply_parts.append(_text_from_frame(frame))
-                    if frame.startswith("event: role_changed\n"):
-                        reply_parts.clear()
-                        reply_stamp = observation_context(
-                            session_security(context.user or {})
-                        )
-                    if frame.startswith(f"event: {events.EVENT_DONE}\n"):
-                        payload = json.loads(frame.split("data: ", 1)[1])
-                        reply_message_id = payload["message_id"]
-                        finish_reason = payload.get("finish_reason")
-                        done_frame = frame
-                        continue
-                    yield frame
+            )
+            async with contextlib.aclosing(raw_frames):
+                async for raw in raw_frames:
+                    for frame in plain(raw):
+                        if frame.startswith(f"event: {events.EVENT_TEXT_DELTA}"):
+                            reply_parts.append(_text_from_frame(frame))
+                        if frame.startswith("event: role_changed\n"):
+                            reply_parts.clear()
+                            reply_stamp = observation_context(
+                                session_security(context.user or {})
+                            )
+                        if frame.startswith(f"event: {events.EVENT_DONE}\n"):
+                            payload = json.loads(frame.split("data: ", 1)[1])
+                            reply_message_id = payload["message_id"]
+                            finish_reason = payload.get("finish_reason")
+                            done_frame = frame
+                            continue
+                        yield frame
             for frame in plain.flush():
                 reply_parts.append(_text_from_frame(frame))
                 yield frame
@@ -2477,7 +2500,7 @@ async def send_agent_message(
             finish_reason = "cancelled"
             done_frame = events.done(reply_message_id, finish_reason="cancelled")
         except GeneratorExit:
-            finish_reason = "cancelled"
+            finish_reason = interruption_reason or "cancelled"
             raise
         except Exception:  # noqa: BLE001 - never leak an internal trace
             finish_reason = "error"
@@ -2508,26 +2531,28 @@ async def send_agent_message(
                             0,
                             {"kind": "context", **context.context_stats},
                         )
-                    await assistant_repository.append_message(
-                        thread_id,
-                        user_name=user_name,
-                        role="assistant",
-                        message_id=reply_message_id,
-                        content="".join(reply_parts),
-                        agent_id=agent_id,
-                        model_name=agent.get("model_name"),
-                        usage=context.usage,
-                        steps=steps,
-                        instructions=context.instructions,
-                        security_context=(
-                            reply_stamp
-                            if reply_stamp
-                            == observation_context(session_security(context.user or {}))
-                            else None
-                        ),
-                    )
-                except Exception:
-                    logger.exception("Could not persist the agent reply")
+                    async with asyncio.timeout(RUN_STORAGE_TIMEOUT_SECONDS):
+                        await assistant_repository.append_message(
+                            thread_id,
+                            user_name=user_name,
+                            role="assistant",
+                            message_id=reply_message_id,
+                            content="".join(reply_parts),
+                            agent_id=agent_id,
+                            model_name=agent.get("model_name"),
+                            usage=context.usage,
+                            steps=steps,
+                            instructions=context.instructions,
+                            security_context=(
+                                reply_stamp
+                                if reply_stamp
+                                == observation_context(session_security(context.user or {}))
+                                else None
+                            ),
+                        )
+                except Exception as exc:
+                    logger.warning("Could not persist the agent reply (%s)", type(exc).__name__)
+                    raise RuntimeError("Agent reply persistence failed") from None
         if done_frame is not None:
             yield done_frame
 
@@ -2559,6 +2584,7 @@ async def send_agent_message(
             stream_queue.put_nowait(None)
 
     async def produce() -> None:
+        nonlocal interruption_reason
         status = "failed"
         batch: list[str] = []
 
@@ -2578,29 +2604,39 @@ async def send_agent_message(
                     if now >= next_heartbeat:
                         await run_journal.heartbeat(run_id)
                         next_heartbeat = now + 15
-                except Exception:
-                    logger.exception("Could not renew agent run lease")
+                except Exception as exc:
+                    logger.warning("Could not renew agent run lease (%s)", type(exc).__name__)
 
         heartbeat_task = asyncio.create_task(keep_alive())
 
-        async def flush() -> None:
-            if batch:
-                await run_journal.append_batch(run_id, list(batch))
-                batch.clear()
-                if context.mission_id:
-                    from app.modules.agents.mission import mission_service
+        async def flush(*, project_mission: bool = True) -> None:
+            async with asyncio.timeout(RUN_STORAGE_TIMEOUT_SECONDS):
+                if batch:
+                    await run_journal.append_batch(run_id, list(batch))
+                    batch.clear()
+                    if project_mission and context.mission_id:
+                        from app.modules.agents.mission import mission_service
 
-                    update = await mission_service.stream_update(run_id, user)
-                    if update:
-                        queue_frame(sequence_frame(update))
+                        update = await mission_service.stream_update(run_id, user)
+                        if update:
+                            update = sequence_frame(update)
+                            await run_journal.append_batch(run_id, [update])
+                            queue_frame(update)
 
         iterator = generate()
         try:
             async for frame in iterator:
+                terminal = frame.startswith(f"event: {events.EVENT_DONE}\n")
+                if terminal:
+                    # Persist the final projection before numbering completion;
+                    # a failed projection must not publish a successful done.
+                    await flush()
                 frame = sequence_frame(frame)
                 if frame.startswith("event: role_changed\n"):
-                    await run_journal.block_replay_after_role_change(run_id)
-                queue_frame(frame)
+                    async with asyncio.timeout(RUN_STORAGE_TIMEOUT_SECONDS):
+                        await run_journal.block_replay_after_role_change(run_id)
+                if not terminal:
+                    queue_frame(frame)
                 batch.append(frame)
                 if len(batch) >= 32 or frame.startswith(
                     (
@@ -2612,44 +2648,68 @@ async def send_agent_message(
                         "event: done\n",
                     )
                 ):
-                    await flush()
-                if frame.startswith(f"event: {events.EVENT_DONE}\n"):
+                    await flush(project_mission=not terminal)
+                if terminal:
+                    queue_frame(frame)
                     payload = json.loads(frame.split("data: ", 1)[1])
                     if payload.get("finish_reason") == "stop":
                         status = "completed"
                     elif payload.get("finish_reason") == "cancelled":
                         status = "cancelled"
+                    elif payload.get("finish_reason") == "interrupted":
+                        status = "interrupted"
         except asyncio.CancelledError:
             status = "cancelled"
-            await iterator.aclose()
+            interruption_reason = "cancelled"
             frame = sequence_frame(events.done("", finish_reason="cancelled"))
             queue_frame(frame)
             batch.append(frame)
-        except Exception:
-            logger.exception("Agent run journal failed")
+        except Exception as exc:
+            logger.warning("Agent run persistence failed (%s)", type(exc).__name__)
+            status = "interrupted"
+            interruption_reason = "interrupted"
+            # An uncertain journal write must stop iteration before another tool
+            # can run. Preserve the error even if storage remains unavailable.
+            batch.clear()
+            for raw in (
+                events.error(
+                    "run_persistence_unavailable",
+                    "The run stopped because its progress could not be saved. "
+                    "Review saved steps and check any actions before trying again.",
+                ),
+                events.done("", finish_reason="interrupted"),
+            ):
+                frame = sequence_frame(raw)
+                queue_frame(frame)
+                batch.append(frame)
         finally:
             heartbeat_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await heartbeat_task
             try:
-                await flush()
-            except Exception:
-                logger.exception("Could not flush agent run events")
-            try:
-                await run_journal.finish(run_id, status)
-                await write_audit_log(
-                    event_type="AGENT_RUN",
-                    user_name=user_name,
-                    action="FINISH",
-                    object_type="AGENT_RUN",
-                    object_name=run_id,
-                    status="SUCCESS" if status == "completed" else "FAILED",
-                    active_role=security.active_role,
-                    session_id=user.get("session_id"),
-                )
-            except Exception:
-                logger.exception("Could not finalize agent run")
-            queue_frame(None)
+                async with asyncio.timeout(RUN_STORAGE_TIMEOUT_SECONDS):
+                    await asyncio.gather(heartbeat_task, return_exceptions=True)
+                    try:
+                        await iterator.aclose()
+                    except Exception as exc:
+                        logger.warning("Could not save closed agent reply (%s)", type(exc).__name__)
+                    try:
+                        await flush(project_mission=False)
+                    except Exception as exc:
+                        logger.warning("Could not flush agent run events (%s)", type(exc).__name__)
+                    await run_journal.finish(run_id, status)
+                    await write_audit_log(
+                        event_type="AGENT_RUN",
+                        user_name=user_name,
+                        action="FINISH",
+                        object_type="AGENT_RUN",
+                        object_name=run_id,
+                        status="SUCCESS" if status == "completed" else "FAILED",
+                        active_role=security.active_role,
+                        session_id=user.get("session_id"),
+                    )
+            except Exception as exc:
+                logger.warning("Could not finalize agent run (%s)", type(exc).__name__)
+            finally:
+                queue_frame(None)
 
     task = asyncio.create_task(produce())
     _active_run_tasks.add(task)
@@ -2688,7 +2748,7 @@ async def resolve_agent_tool_call(
 ):
     """Resolve a pending agent tool call with owner and grant validation."""
     await _require_agent(agent_id, user, platform=True)
-    owner = consent_broker.owner_of(tool_call_id)
+    owner = consent_broker.owner_of(tool_call_id, user=user)
     if owner is None or owner[1] != user["username"]:
         raise HTTPException(status_code=404, detail="Tool call not found")
 
@@ -2698,26 +2758,24 @@ async def resolve_agent_tool_call(
         raise HTTPException(status_code=404, detail="Tool call not found")
 
     if body.decision == "deny":
-        resolved = consent_broker.resolve(tool_call_id, False, user_name=user["username"])
+        resolved = consent_broker.resolve(tool_call_id, False, user=user)
         return ConsentDecisionResponse(
             tool_call_id=tool_call_id,
             status="denied" if resolved else "cancelled",
-            grant_active=False,
+            grant_active=runtime.consent.covers("read_only", user=user),
         )
 
-    grant_active = False
     if body.decision == "allow_session":
         if consent_broker.classification_of(tool_call_id) != "read_only":
             raise HTTPException(
                 status_code=400,
                 detail="allow_session is only valid for a read-only tool call",
             )
-        runtime.consent.always_allow_read_only = True
-        grant_active = True
+        await read_grants.grant(runtime, user, thread_id, True)
 
-    resolved = consent_broker.resolve(tool_call_id, True, user_name=user["username"])
+    resolved = consent_broker.resolve(tool_call_id, True, user=user)
     return ConsentDecisionResponse(
         tool_call_id=tool_call_id,
         status="approved" if resolved else "cancelled",
-        grant_active=grant_active,
+        grant_active=runtime.consent.covers("read_only", user=user),
     )

@@ -23,9 +23,10 @@ gauges from another process cannot hide a stopped scheduler or worker.
 
 ## Start with host application processes
 
-The existing `dev.sh` runs the API, scheduler, task worker, and Studio Auto
-worker on the host. The observability stack scrapes them via
-`host.docker.internal` on ports 8000, 9101, 9102, and 9103. Docker Desktop or
+The existing `dev.sh` runs the API, scheduler and a launcher supervising seven
+workload processes on the host. The observability stack scrapes them via
+`host.docker.internal`: API 8000, scheduler 9101, task 9102, ingestion 9105,
+ML 9106, notebook 9107, automation 9108 and autopilot 9109, maintenance 9110. Docker Desktop or
 OrbStack must make this hostname available inside containers.
 
 1. Set `GRAFANA_ADMIN_PASSWORD` to a unique value in `docker/.env`. Keep the
@@ -68,8 +69,8 @@ docker compose --profile app -f docker-compose-engine.yml \
   -f docker-compose-observability.yml up -d
 ```
 
-This profile starts the API and separate scheduler, task worker, and Studio
-Auto worker containers. Prometheus scrapes their Docker service names. Do not
+This combination starts the API, scheduler and seven separate workload
+containers. The scheduler service comes from the observability override. Prometheus scrapes their Docker service names. Do not
 run `dev.sh` at the same time: both modes use the same engine and can create
 duplicate workers.
 
@@ -118,7 +119,7 @@ python docker/observability/check_stack.py --mode container
 Run only the command matching the selected mode. The checker verifies scrape
 targets, startup, a successful search indexing poll, and dependency metrics,
 Linux runtime CPU, memory, filesystem,
-disk, network, and load metrics, alert rules, and all six provisioned
+disk, network, and load metrics, alert rules, and all seven provisioned
 dashboard URLs. It exits nonzero if a required check fails.
 
 ## Alert thresholds

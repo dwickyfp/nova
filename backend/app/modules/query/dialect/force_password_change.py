@@ -2,7 +2,7 @@
 
 StarRocks has no "must change password at next login" attribute, so Nova models
 it as its own statement: it is **intercepted in Python**, records the flag in
-``NOVA_SYSTEM.CONFIG_USER_PREFERENCES``, and is **never sent to StarRocks**. The
+the preference metadata (PostgreSQL), and is **never sent to StarRocks**. The
 grammar mirrors StarRocks' own ``ALTER USER`` prefix so the statement reads
 naturally next to a real ``CREATE USER``.
 

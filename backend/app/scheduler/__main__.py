@@ -1,16 +1,4 @@
-"""``nova-scheduler`` — the standalone process entrypoint.
-
-The scheduler is a **separate process**, never embedded in the FastAPI lifespan:
-unlike the MySQL proxy, it does not share the web process's lifecycle, and a
-singleton is easier to reason about when it is the only thing in its process.
-
-    uv run python -m app.scheduler
-
-It initialises the system connection pool (the repository reads and writes
-``NOVA_SYSTEM`` through it), connects to Redis, then ticks until ``SIGINT`` or
-``SIGTERM``. It never executes SQL against StarRocks — only ``NOVA_SYSTEM``
-metadata reads/writes.
-"""
+"""Standalone scheduler with PG authority, Redis wakeups and engine observations."""
 
 from __future__ import annotations
 
@@ -25,13 +13,17 @@ from app.common.nova_system import init_task_orchestration
 from app.common.secret_keys import require_configured_secrets
 from app.core.config import settings
 from app.core.database import db
+from app.core.metadata_db import MetadataDatabase
+from app.core.metadata_process import (
+    close_process_metadata,
+    load_runtime_settings,
+    open_process_metadata,
+    watch_metadata,
+)
 from app.modules.task_orchestration.repository import task_orchestration_repository
 from app.modules.task_orchestration.schedule import engine_timezone_matches
 from app.modules.task_orchestration.service import build_scheduler_service
-from app.modules.task_orchestration.transport import (
-    LeaderLock,
-    RedisGraphRunTransport,
-)
+from app.modules.task_orchestration.transport import RedisGraphRunTransport
 from app.observability.metrics import start_metrics_server
 
 logger = logging.getLogger(__name__)
@@ -81,17 +73,22 @@ async def _run() -> None:
     # Fail closed before the first connection: the scheduler signs session
     # tokens with SECRET_KEY, so a missing key must abort boot (NOVA-108).
     require_configured_secrets()
+    metadata_settings = load_runtime_settings()
+    # Fail closed on schema/epoch/login problems; wait only for an outage.
+    metadata = await open_process_metadata("scheduler", settings=metadata_settings)
+    if metadata is None:  # only possible when a stop event is supplied
+        return
+    try:
+        await _run_admitted(metadata, metadata_settings.readiness_interval_seconds)
+    finally:
+        await close_process_metadata(metadata, "scheduler")
+
+
+async def _run_admitted(metadata: MetadataDatabase, readiness_interval: float) -> None:
     await db.init_system_pool()
     try:
         await _assert_engine_timezone()
-        # The scheduler reads CONFIG_TASK_GRAPH_RUNS (including heartbeat_at),
-        # so it must ensure the schema exists and is up to date. Idempotent:
-        # creates the tables when absent and adds late columns to a table an
-        # older release (or init-nova.sql) created without them.
         await init_task_orchestration()
-        from app.modules.query_autopilot.schema import ensure_schema
-
-        await ensure_schema()
     except Exception:
         await db.close_system_pool()
         raise
@@ -112,15 +109,17 @@ async def _run() -> None:
         except NotImplementedError:  # pragma: no cover - Windows
             signal.signal(signal_number, lambda *_: _request_stop())
 
-    service = build_scheduler_service(
-        RedisGraphRunTransport(client),
-        LeaderLock(client),
-    )
+    service = build_scheduler_service(RedisGraphRunTransport(client))
     start_metrics_server("scheduler")
+    readiness = asyncio.create_task(watch_metadata(
+        metadata, "scheduler", stop_event, interval=readiness_interval,
+    ))
 
     try:
         await service.run_forever(stop_event)
     finally:
+        stop_event.set()
+        await readiness
         await client.aclose()
         await db.close_system_pool()
 

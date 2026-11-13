@@ -1,0 +1,188 @@
+{
+  "source": "7eb228332adf4d4c057078735decbc7709759b682bc4165ac3917468d80cf6c8",
+  "system_calls": 875,
+  "re_reviewed_calls": [
+    {
+      "path": "backend/app/modules/query/service.py",
+      "function": "QueryService.get_history",
+      "statement_kind": "SELECT",
+      "callsite_changed": false
+    },
+    {
+      "path": "backend/app/modules/query/service.py",
+      "function": "QueryService.get_history",
+      "statement_kind": "SELECT",
+      "callsite_changed": false
+    },
+    {
+      "path": "backend/app/modules/query/service.py",
+      "function": "QueryService.get_history_stats",
+      "statement_kind": "SELECT",
+      "callsite_changed": false
+    },
+    {
+      "path": "backend/app/modules/query/service.py",
+      "function": "QueryService.get_context",
+      "statement_kind": "SELECT",
+      "callsite_changed": false
+    },
+    {
+      "path": "backend/app/modules/query/service.py",
+      "function": "QueryService.list_schemas",
+      "statement_kind": "SELECT",
+      "callsite_changed": false
+    },
+    {
+      "path": "backend/app/modules/query/service.py",
+      "function": "QueryService._list_stages",
+      "statement_kind": "SELECT",
+      "callsite_changed": false
+    },
+    {
+      "path": "backend/app/modules/query/service.py",
+      "function": "QueryService._list_stage_files",
+      "statement_kind": "SELECT",
+      "callsite_changed": false
+    },
+    {
+      "path": "backend/app/modules/stages/service.py",
+      "function": "StageService.list_stages",
+      "statement_kind": "DYNAMIC",
+      "callsite_changed": false
+    },
+    {
+      "path": "backend/app/modules/stages/service.py",
+      "function": "StageService.list_stages",
+      "statement_kind": "SELECT",
+      "callsite_changed": false
+    },
+    {
+      "path": "backend/app/modules/stages/service.py",
+      "function": "StageService.get_stage",
+      "statement_kind": "DYNAMIC",
+      "callsite_changed": false
+    },
+    {
+      "path": "backend/app/modules/stages/service.py",
+      "function": "StageService.get_stage",
+      "statement_kind": "SELECT",
+      "callsite_changed": false
+    },
+    {
+      "path": "backend/app/modules/stages/service.py",
+      "function": "StageService.create_stage",
+      "statement_kind": "DYNAMIC",
+      "callsite_changed": false
+    },
+    {
+      "path": "backend/app/modules/stages/service.py",
+      "function": "StageService.create_stage",
+      "statement_kind": "INSERT",
+      "callsite_changed": true
+    },
+    {
+      "path": "backend/app/modules/stages/service.py",
+      "function": "StageService.delete_stage",
+      "statement_kind": "DYNAMIC",
+      "callsite_changed": false
+    },
+    {
+      "path": "backend/app/modules/stages/service.py",
+      "function": "StageService.delete_stage",
+      "statement_kind": "DELETE",
+      "callsite_changed": false
+    },
+    {
+      "path": "backend/app/sql_frontend/execution/stages.py",
+      "function": "StageRuntime._resolve_stage_refs",
+      "statement_kind": "SELECT",
+      "callsite_changed": false
+    }
+  ],
+  "live_and_api_preserved": true,
+  "feature_rows": 759,
+  "final_upload_source_included": true,
+  "table_bindings_revalidated": [
+    {
+      "path": "backend/app/modules/query/service.py",
+      "line": "917",
+      "tables": "AUDIT_LOG"
+    },
+    {
+      "path": "backend/app/modules/query/service.py",
+      "line": "923",
+      "tables": "AUDIT_LOG"
+    },
+    {
+      "path": "backend/app/modules/query/service.py",
+      "line": "984",
+      "tables": "AUDIT_LOG"
+    },
+    {
+      "path": "backend/app/modules/query/service.py",
+      "line": "1095",
+      "tables": "CONFIG_USER_PREFERENCES"
+    },
+    {
+      "path": "backend/app/modules/query/service.py",
+      "line": "1193",
+      "tables": "CONFIG_STAGES"
+    },
+    {
+      "path": "backend/app/modules/query/service.py",
+      "line": "1292",
+      "tables": "CONFIG_STAGES"
+    },
+    {
+      "path": "backend/app/modules/query/service.py",
+      "line": "1331",
+      "tables": "CONFIG_STAGES"
+    },
+    {
+      "path": "backend/app/modules/stages/service.py",
+      "line": "47",
+      "tables": "CONFIG_STAGES"
+    },
+    {
+      "path": "backend/app/modules/stages/service.py",
+      "line": "48",
+      "tables": "CONFIG_STAGES"
+    },
+    {
+      "path": "backend/app/modules/stages/service.py",
+      "line": "58",
+      "tables": "CONFIG_STAGES"
+    },
+    {
+      "path": "backend/app/modules/stages/service.py",
+      "line": "59",
+      "tables": "CONFIG_STAGES"
+    },
+    {
+      "path": "backend/app/modules/stages/service.py",
+      "line": "86",
+      "tables": "CONFIG_STAGES"
+    },
+    {
+      "path": "backend/app/modules/stages/service.py",
+      "line": "87",
+      "tables": "CONFIG_STAGES"
+    },
+    {
+      "path": "backend/app/modules/stages/service.py",
+      "line": "106",
+      "tables": "CONFIG_STAGES"
+    },
+    {
+      "path": "backend/app/modules/stages/service.py",
+      "line": "107",
+      "tables": "CONFIG_STAGES"
+    },
+    {
+      "path": "backend/app/sql_frontend/execution/stages.py",
+      "line": "46",
+      "tables": "CONFIG_STAGES"
+    }
+  ],
+  "ai_configuration_lock_included": true
+}

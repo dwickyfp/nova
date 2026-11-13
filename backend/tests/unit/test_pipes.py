@@ -33,7 +33,7 @@ def calls(monkeypatch):
     async def execute(**kwargs):
         recorded.append(kwargs)
         sql = kwargs["sql"]
-        if sql.startswith("SHOW PIPES"):
+        if sql.startswith("SHOW PIPES") or "FROM information_schema.pipes " in sql:
             columns = ["DATABASE_NAME", "PIPE_NAME", "STATE", "CREATED_TIME"]
             rows = [["db", "p", "SUSPENDED", "2026-10-13 12:00:00"]]
         elif sql.startswith("DESCRIBE PIPE"):
@@ -211,3 +211,12 @@ def test_unsafe_pipe_properties_rejected(field, value, http_client, calls):
     )
     assert response.status_code == 422
     assert calls == []
+
+
+async def test_listing_without_a_database_reads_every_visible_pipe(calls):
+    """``SHOW PIPES`` needs a current database; the caller-scoped catalog does not."""
+    result = await PipeService().list_pipes(**CALLER)
+    assert "FROM information_schema.pipes" in calls[0]["sql"]
+    assert calls[0]["database"] is None and calls[0]["role"] == "ANALYST"
+    assert result[0]["name"] == "p" and result[0]["database"] == "db"
+    parse_statement(calls[0]["sql"])

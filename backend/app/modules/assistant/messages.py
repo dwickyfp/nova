@@ -14,7 +14,6 @@ import json
 import logging
 import re
 import string
-from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -180,19 +179,6 @@ BUILTIN: dict[str, dict[str, str]] = {
 #: language -> message id -> text, filled from BUILTIN, the database, or the model.
 _cache: dict[str, dict[str, str]] = {key: dict(value) for key, value in BUILTIN.items()}
 
-MESSAGES_DDL = """
-CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_I18N_MESSAGES (
-    language VARCHAR(16) NOT NULL,
-    message_id VARCHAR(64) NOT NULL,
-    version INT NOT NULL,
-    text VARCHAR(1024) NOT NULL,
-    updated_at DATETIME NOT NULL
-) PRIMARY KEY(language, message_id)
-DISTRIBUTED BY HASH(language) BUCKETS 1
-PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
-"""
-
-
 def base_language(language: str | None) -> str:
     """"pt-BR" -> "pt"; anything unusable -> "en"."""
     value = str(language or "en").split("-")[0].split("_")[0].casefold()
@@ -240,7 +226,7 @@ async def ensure_language(
 ) -> bool:
     """Make every message available in ``language``; True when it is.
 
-    Reads cached translations from NOVA_SYSTEM, then asks the model for the rest
+    Reads cached translations from the metadata store, then asks the model for the rest
     in one call. Failures leave English in place; they never fail a turn.
     """
     lang = base_language(language)
@@ -289,19 +275,19 @@ async def _translate(
 
 
 async def _load(language: str) -> None:
-    try:
-        from app.core.database import db
+    """Read cached translations as the bound caller; the cache is optional."""
+    from app.core.metadata_actor import metadata_transaction
+    from app.modules.assistant.metadata_repository import AssistantMetadataRepository
 
-        await db.execute_system(MESSAGES_DDL)
-        result = await db.execute_system(
-            "SELECT message_id, text FROM NOVA_SYSTEM.CONFIG_I18N_MESSAGES "
-            "WHERE language = %s AND version = %s",
-            [language, VERSION],
-        )
+    try:
+        async with metadata_transaction(read_only=True) as (connection, actor):
+            stored = await AssistantMetadataRepository(connection, actor).translations(
+                language, VERSION
+            )
     except Exception as exc:  # noqa: BLE001 - the cache is optional
         logger.debug("Message cache unavailable: %s", type(exc).__name__)
         return
-    for message_id, text in result.get("rows") or []:
+    for message_id, text in stored.items():
         if message_id in MESSAGES and acceptable(MESSAGES[message_id], text):
             _cache.setdefault(language, {})[message_id] = text
 
@@ -309,15 +295,13 @@ async def _load(language: str) -> None:
 async def _store(language: str, texts: dict[str, str]) -> None:
     if not texts:
         return
-    try:
-        from app.core.database import db
+    from app.core.metadata_actor import metadata_transaction
+    from app.modules.assistant.metadata_repository import AssistantMetadataRepository
 
-        now = datetime.now(UTC).replace(tzinfo=None)
-        for message_id, text in texts.items():
-            await db.execute_system(
-                "INSERT INTO NOVA_SYSTEM.CONFIG_I18N_MESSAGES "
-                "(language, message_id, version, text, updated_at) VALUES (%s, %s, %s, %s, %s)",
-                [language, message_id, VERSION, text, now],
+    try:
+        async with metadata_transaction() as (connection, actor):
+            await AssistantMetadataRepository(connection, actor).store_translations(
+                language, VERSION, texts
             )
     except Exception as exc:  # noqa: BLE001 - the next turn translates again
         logger.debug("Message cache write failed: %s", type(exc).__name__)

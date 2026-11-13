@@ -1,0 +1,175 @@
+{
+  "observed_at": "2026-11-12T17:21:19.965603+00:00",
+  "checkout_branch": "feat/production-control-plane",
+  "base_commit": "c1837b082b93efae7828fd32e9bdf184aa8eb61e",
+  "source_uncommitted": true,
+  "topology": "Existing single-host Docker development project; no application cutover",
+  "application_startup_verified": false,
+  "containers": [
+    {
+      "name": "docker-nova-metadata-db-1",
+      "image_reference": "postgres:17-bookworm",
+      "image_id": "sha256:5025eafe2dc42a558688b9abeed9beb8a66b373d7439f40cfa812bf14037149a",
+      "status": "running"
+    },
+    {
+      "name": "nova-starrocks-fe",
+      "image_reference": "docker-starrocks-fe",
+      "image_id": "sha256:ba74dfa4ff6b5b5beca2bd639ddc9d3bc27164847a7b3650058be31526961c45",
+      "status": "running"
+    },
+    {
+      "name": "nova-starrocks-be",
+      "image_reference": "docker-starrocks-be",
+      "image_id": "sha256:3d1701d5b8cae5fcf24be992304004adbff49b421e75689c534421bcfeb54ea7",
+      "status": "running"
+    },
+    {
+      "name": "nova-ranger-admin",
+      "image_reference": "apache/ranger:2.9.0",
+      "image_id": "sha256:9b1293c6b57ad733227c38d21e64bdd83798354b0884bb864c2d726db2ea66a9",
+      "status": "running"
+    },
+    {
+      "name": "nova-redis",
+      "image_reference": "redis:7-alpine",
+      "image_id": "sha256:c90c016450904cc9c63d38100c04c72554fcc983e257f1637ab451afaf32da7b",
+      "status": "running"
+    },
+    {
+      "name": "nova-superset",
+      "image_reference": "nova-superset:local",
+      "image_id": "sha256:8f86c03d04102c85ae4d198743b6a107c7e7f9f322f9836dbb4039dba24bd93d",
+      "status": "running"
+    },
+    {
+      "name": "nova-opensandbox-server",
+      "image_reference": "opensandbox/server:release-1.2.0@sha256:25bebdcf1cf7724eb923faecbdbbf82d4038c6ab35c736151574726d14006f30",
+      "image_id": "sha256:a687067a931ad202dca08a44d47286b9b911c6666e686080b08bdfa715a04039",
+      "status": "running"
+    }
+  ],
+  "prepared_migrations": [
+    {
+      "file": "backend/metadata_migrations/0001_deployment_state.sql",
+      "sha256": "8b0a3366fa07d4abcaffe87e23ee2f9aeb3fb01e8c3f2c8132b28d6a83aaaff0"
+    },
+    {
+      "file": "backend/metadata_migrations/0002_user_preferences.sql",
+      "sha256": "9c130bf7b1d121d222d145dafd52c0a53ad437e95e0880acda19c924c4f14fcc"
+    },
+    {
+      "file": "backend/metadata_migrations/0003_password_flag_workloads.sql",
+      "sha256": "fa5e8e5484d6e011de3dd9bca11771d41927dc89cacd3b11f4a94d0b03803866"
+    },
+    {
+      "file": "backend/metadata_migrations/0004_ai_registry.sql",
+      "sha256": "647ebc9fbd4b5aa72850041b43dc7cd7b4eb7f4a5bae32f8da9e0f6f229af470"
+    },
+    {
+      "file": "backend/metadata_migrations/0005_durable_jobs.sql",
+      "sha256": "e470d39ddb271f82ea87941cdb1558faeed20902d48686744ac010e7df30e7b5"
+    },
+    {
+      "file": "backend/metadata_migrations/0006_scheduler_fencing.sql",
+      "sha256": "c48b0c39a38c148f1f5d69662e35733130f03179841acffded12c78bb4a66df2"
+    },
+    {
+      "file": "backend/metadata_migrations/0007_model_aliases.sql",
+      "sha256": "72244ddb356e5ee985430066cdbda5e487d818718c100f41f99de19e2c50f6ec"
+    },
+    {
+      "file": "backend/metadata_migrations/0008_ai_function_definitions.sql",
+      "sha256": "d13251477a717edb39a2873b49dd95787eaf4d2ecaf617e59bed63e160b4f334"
+    },
+    {
+      "file": "backend/metadata_migrations/0009_transactional_audit.sql",
+      "sha256": "963f839e965daef13d579da0bace42209cba76f189e13c3bbb35f2f439df854b"
+    },
+    {
+      "file": "backend/metadata_migrations/0010_retained_legacy_metadata.sql",
+      "sha256": "eefbeb888e2805697d243361090b72008698b2d5dbad23e82ab3e676e2342594"
+    },
+    {
+      "file": "backend/metadata_migrations/0011_retired_agent_history.sql",
+      "sha256": "5f894195339f638b905aa82312ef86c5b6a14c3418fa0cf32c63e9f5b85c024f"
+    },
+    {
+      "file": "backend/metadata_migrations/0012_stage_registrations.sql",
+      "sha256": "68683022341453a0d8aa2ab14ca4ad2f64984b84608e1a5ee19e08c35caee4fd"
+    },
+    {
+      "file": "backend/metadata_migrations/0013_workspace_sharing.sql",
+      "sha256": "ba151b8a89dc8ba297d324579c30741d60ceaab0d284d193088f6afa197e3ca4"
+    },
+    {
+      "file": "backend/metadata_migrations/0014_workspace_files.sql",
+      "sha256": "70890ac9c9aea86eb93c2716aac2bce7f5bde26048052a363a876a0e4da9566a"
+    },
+    {
+      "file": "backend/metadata_migrations/0015_notebook_metadata.sql",
+      "sha256": "e02e4cc6be144a34f1786789f8a085927eb062c9d417664d18efbbad20f08f48"
+    },
+    {
+      "file": "backend/metadata_migrations/0016_task_orchestration.sql",
+      "sha256": "518a4801bbc1dda95fb58c9456fb30152e4b6ab72b7312c66465136520bec430"
+    },
+    {
+      "file": "backend/metadata_migrations/0017_stream_control.sql",
+      "sha256": "3f5f83f5a17a212876b9429e1b8469e5d8ec1f2ccc9cb16fd295bf4bc1707b2d"
+    },
+    {
+      "file": "backend/metadata_migrations/0018_ml_engine.sql",
+      "sha256": "9bcd751abe812b9a0340b222958078fa5f902aeba36210bdaaecf88079af64ab"
+    },
+    {
+      "file": "backend/metadata_migrations/0019_catalog.sql",
+      "sha256": "8845186747db0305444785cec5eceec034cfd5303d4dc006e4b1e2f93aa21fd8"
+    },
+    {
+      "file": "backend/metadata_migrations/0020_ontology.sql",
+      "sha256": "812a8ca7f041d37d633c6900b3259414f951b0c98ca50b5e557ae081f31eb357"
+    },
+    {
+      "file": "backend/metadata_migrations/0021_agents.sql",
+      "sha256": "091482b16c18da8fb85084a3e7fecde461b4ea4799a9fea265761e79eb026dc2"
+    },
+    {
+      "file": "backend/metadata_migrations/0022_intelligence.sql",
+      "sha256": "39243fbfa726ae3c580ad6c2e0ef7248a7e3b5231ba5f76946928e83e176969a"
+    },
+    {
+      "file": "backend/metadata_migrations/0023_query_autopilot.sql",
+      "sha256": "626c0314b5b96a1951185f213299814bb1312d7b6fa2725bf21ea093b95836a5"
+    },
+    {
+      "file": "backend/metadata_migrations/0024_assistant_policy_bi.sql",
+      "sha256": "93035a8ec33b7de83a96d4d22115f177ca10559eecff31dac358f5785bd54446"
+    },
+    {
+      "file": "backend/metadata_migrations/0025_intelligence_features.sql",
+      "sha256": "d24c549af38ec5d85d04c1cb2c0bf87587e0081be4beac0a4606291ee878c70d"
+    },
+    {
+      "file": "backend/metadata_migrations/0026_cutover_operations.sql",
+      "sha256": "7fd62adfe4f0a47d066e042d1dfeffe8da0f6e762f0448574650567f10a2f58c"
+    },
+    {
+      "file": "backend/metadata_migrations/0027_task_graph_run_jobs.sql",
+      "sha256": "aa5d136897b7ca31800b4720ddd4c93d8a4c51eeb9c42a4d6eff3f2abb2ce2b3"
+    },
+    {
+      "file": "backend/metadata_migrations/0028_agent_registry_visibility.sql",
+      "sha256": "a7b4d001adadac6a34b13c455fa2fcd2dd9d39a0a94475ffb8f2af9f6198b43c"
+    },
+    {
+      "file": "backend/metadata_migrations/0029_studio_shared_conversations.sql",
+      "sha256": "e5081f4586eea509b131f022d28558f29000ddcb2632ba0a886a160e3e0bd493"
+    },
+    {
+      "file": "backend/metadata_migrations/0030_studio_artifact_projection.sql",
+      "sha256": "55eb91812fa878ca7b9881e5a230f6aae2e52dbbef237ab428c96f83a89e1233"
+    }
+  ],
+  "metadata_test_scope": "Dedicated disposable PostgreSQL fixture on the existing metadata container; its tagged schema and roles are recreated per fixture. No production epoch activated."
+}

@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -7,51 +8,67 @@ from pydantic import ValidationError
 
 from app.modules.agents import router
 from app.modules.assistant import events, repository
+from app.modules.assistant.metadata_repository import AssistantMetadataRepository
 from app.modules.assistant.schemas import AgentMessageRequest, MessageFeedbackRequest
+from tests.unit.test_assistant_repository_isolation import ALICE, message
+
+
+@pytest.fixture
+def feedback_store(monkeypatch):
+    store = AssistantMetadataRepository(None, ALICE)
+    monkeypatch.setattr(store, "_bound", AsyncMock())
+    monkeypatch.setattr(store, "_one", AsyncMock(return_value={"message_id": "m1"}))
+    monkeypatch.setattr(store, "_all", AsyncMock(return_value=[message(feedback="dislike")]))
+
+    @asynccontextmanager
+    async def scoped(user_name, *, read_only=False):
+        assert user_name == "alice"
+        yield store
+
+    monkeypatch.setattr(repository, "_store", scoped)
+    return store
 
 
 @pytest.mark.parametrize("feedback", ["like", "dislike", None])
-async def test_feedback_scopes_read_and_write_to_owner_thread_and_assistant(monkeypatch, feedback):
-    execute = AsyncMock(return_value={"rows": [["m1"]]})
-    monkeypatch.setattr(repository.db, "execute_system", execute)
+async def test_feedback_scopes_read_and_write_to_owner_thread_and_assistant(
+    feedback_store, feedback
+):
     assert await repository.assistant_repository.set_feedback(
-        "t1", "m1", feedback, user_name="alice"
+        "t1",
+        "m1",
+        feedback,
+        user_name="alice",
     )
-    for call in execute.call_args_list:
-        sql, params = call.args
-        assert "message_id = %s AND thread_id = %s AND user_name = %s AND role = 'assistant'" in sql
-        assert params[-3:] == ["m1", "t1", "alice"]
-    assert execute.call_args_list[1].args[1][0] == feedback
+    sql, params = feedback_store._one.call_args.args
+    assert "message_id=%s" in sql and "thread_id=%s" in sql
+    assert "user_name=%s" in sql and "role='assistant'" in sql
+    assert params == (feedback, "m1", "t1", "alice")
 
 
-async def test_missing_or_foreign_message_is_not_updated(monkeypatch):
-    execute = AsyncMock(return_value={"rows": []})
-    monkeypatch.setattr(repository.db, "execute_system", execute)
+async def test_missing_or_foreign_message_is_not_updated(feedback_store):
+    feedback_store._one.return_value = None
     assert not await repository.assistant_repository.set_feedback(
-        "t1", "foreign", "like", user_name="alice"
+        "t1",
+        "foreign",
+        "like",
+        user_name="alice",
     )
-    assert execute.await_count == 1
+    assert feedback_store._one.await_count == 1
 
 
-async def test_replay_includes_stored_feedback(monkeypatch):
-    execute = AsyncMock(
-        return_value={
-            "rows": [
-                [
-                    "m1", "assistant", "Answer", "2026-09-23 00:00:00", "model",
-                    20, 10, 30, [], None, "dislike",
-                ]
-            ]
-        }
-    )
-    monkeypatch.setattr(repository.db, "execute_system", execute)
+async def test_replay_includes_stored_feedback(feedback_store):
     messages = await repository.assistant_repository.list_messages("t1", user_name="alice")
     assert router._message_view(messages[0]).feedback == "dislike"
+    sql, params = feedback_store._all.call_args.args
+    assert "thread_id=%s" in sql and "user_name=%s" in sql
+    assert params == ("t1", "alice")
 
 
 async def test_feedback_endpoint_checks_agent_thread_and_audits(monkeypatch):
     monkeypatch.setattr(
-        router.assistant_repository, "learning_enabled", AsyncMock(return_value=False),
+        router.assistant_repository,
+        "learning_enabled",
+        AsyncMock(return_value=False),
     )
     agent = AsyncMock()
     thread = AsyncMock()
@@ -85,7 +102,9 @@ def test_invalid_feedback_is_rejected():
 
 async def test_stream_persists_the_terminal_message_id_before_sending_done(monkeypatch):
     monkeypatch.setattr(
-        router.assistant_repository, "learning_enabled", AsyncMock(return_value=False),
+        router.assistant_repository,
+        "learning_enabled",
+        AsyncMock(return_value=False),
     )
     from app.modules.assistant.tools import ToolRegistry
 
@@ -135,5 +154,3 @@ async def test_stream_persists_the_terminal_message_id_before_sending_done(monke
             assert append.call_args.kwargs["role"] == "assistant"
             assert append.call_args.kwargs["message_id"] == "persisted-answer"
     assert any(frame.startswith("event: done") for frame in frames)
-
-

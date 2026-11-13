@@ -1,0 +1,25 @@
+{
+  "source_commit": "130c479bc040d31ed6769ddf44b07c35e279dca0",
+  "function_type_advertised": true,
+  "template_available": false,
+  "registration": {
+    "function_name": "EMBED",
+    "function_type": "embed",
+    "alias_name": "synthetic",
+    "provider_name": null,
+    "model_name": null,
+    "registered": false,
+    "error": "Unknown function type: embed"
+  },
+  "placeholder": {
+    "function_name": "EMBED",
+    "function_type": "embed",
+    "alias_name": null,
+    "provider_name": null,
+    "model_name": null,
+    "registered": false,
+    "error": "Unknown function type: embed"
+  },
+  "external_calls": 0,
+  "live_embedding_test": "OWNER_WAIVED"
+}

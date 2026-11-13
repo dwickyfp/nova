@@ -36,7 +36,6 @@ from app.modules.task_orchestration.execution import (
     native_attempt_name,
 )
 from app.modules.task_orchestration.worker import (
-    ABANDONED_NODE_ERROR,
     GraphRunJob,
     GraphRunWorker,
 )
@@ -172,18 +171,63 @@ class FakeRepository:
             row["error_message"] = error_message
         return True
 
-    async def transition_graph_run(self, run_id, from_states, to_state):
+    async def claim_graph_run(self, run_id, from_states, to_state):
         row = self.graph_runs[run_id]
         if row["state"] not in from_states:
+            return None
+        row["state"] = to_state
+        row["lease_generation"] = row.get("lease_generation", 0) + 1
+        return row["lease_generation"]
+
+    async def transition_graph_run(self, run_id, from_states, to_state, *, generation):
+        row = self.graph_runs[run_id]
+        if row["state"] not in from_states or row.get("lease_generation", 0) != generation:
             return False
         row["state"] = to_state
         return True
 
-    async def mark_task_run_heartbeat(self, run_id):
-        self.task_runs[run_id]["heartbeat_at"] = "now"
+    async def claim_task_run(self, run_id, from_states):
+        row = self.task_runs[run_id]
+        if row["state"] not in from_states:
+            return None
+        row["state"] = "running"
+        row["lease_generation"] = row.get("lease_generation", 0) + 1
+        return row["lease_generation"]
 
-    async def mark_graph_run_heartbeat(self, run_id):
-        self.graph_runs[run_id]["heartbeat_at"] = "now"
+    async def finish_task_run(self, run_id, to_state, *, generation,
+                              query_id=None, error_message=None, output=None):
+        row = self.task_runs[run_id]
+        if row["state"] != "running" or row.get("lease_generation", 0) != generation:
+            return False
+        row["state"] = to_state
+        for key, value in [("starrocks_query_id", query_id),
+                           ("error_message", error_message), ("output", output)]:
+            if value is not None:
+                row[key] = value
+        return True
+
+    async def abandon_task_run(self, run_id, *, generation, query_id=None, error_message=None):
+        return await self.finish_task_run(
+            run_id, "abandoned", generation=generation,
+            query_id=query_id, error_message=error_message,
+        )
+
+    async def skip_pending_task_run(self, run_id):
+        return await self.transition_task_run(run_id, ["pending"], "skipped")
+
+    async def heartbeat_task_run(self, run_id, *, generation):
+        row = self.task_runs[run_id]
+        if row["state"] != "running" or row.get("lease_generation", 0) != generation:
+            return False
+        row["heartbeat_at"] = "now"
+        return True
+
+    async def heartbeat_graph_run(self, run_id, *, generation):
+        row = self.graph_runs[run_id]
+        if row["state"] != "running" or row.get("lease_generation", 0) != generation:
+            return False
+        row["heartbeat_at"] = "now"
+        return True
 
     async def list_stale_task_runs(self, older_than_seconds, *, limit=200):
         return [
@@ -495,9 +539,9 @@ class _DenyProvider(OwnerCredentialProvider):
 class TestIdempotency:
     async def test_late_claim_cannot_reset_a_settled_graph(self, audit):
         class RacingRepository(FakeRepository):
-            async def transition_graph_run(self, run_id, from_states, to_state):
+            async def claim_graph_run(self, run_id, from_states, to_state):
                 self.graph_runs[run_id]["state"] = "success"
-                return await super().transition_graph_run(run_id, from_states, to_state)
+                return await super().claim_graph_run(run_id, from_states, to_state)
 
         repo = RacingRepository()
         repo.add_task("A")
@@ -563,13 +607,8 @@ class TestIdempotency:
 
 
 class TestRestartSafety:
-    async def test_abandoned_running_row_fails_without_resubmission(self, audit):
-        """A lost heartbeat cannot prove the native submit did not happen.
-
-        The node is not replayed; it fails with an explanation so the graph
-        settles. Holding it kept the run ``running`` forever, which blocked
-        every later scheduled run and DROP TASK.
-        """
+    async def test_abandoned_running_row_holds_without_resubmission(self, audit):
+        """An unknown external effect must keep the overlap slot occupied."""
         repo = FakeRepository()
         repo.add_task("A")
         repo.add_graph_run("gr1", "id_A", state="running")
@@ -580,9 +619,38 @@ class TestRestartSafety:
         executor = RecordingExecutor()
         await repo.transition_task_run(stale["id"], ["running"], "abandoned")
         state = await GraphRunWorker(repo, executor).handle(GraphRunJob("gr1", "id_A"))
-        assert state == GraphState.FAILED
-        assert repo.task_runs[stale["id"]]["state"] == "failed"
-        assert repo.task_runs[stale["id"]]["error_message"] == ABANDONED_NODE_ERROR
+        assert state == GraphState.RUNNING
+        assert repo.task_runs[stale["id"]]["state"] == "abandoned"
+        assert repo.graph_runs["gr1"]["state"] == "running"
+        repo.add_graph_run("gr2", "id_A", overlap_policy="queue")
+        assert await GraphRunWorker(repo, executor).handle(
+            GraphRunJob("gr2", "id_A")
+        ) == GraphState.PENDING
+        assert executor.submissions == []
+
+    @pytest.mark.parametrize("unknown_node", ["B", "F"])
+    async def test_unknown_effect_is_not_overwritten_by_failure_or_finalizer(
+        self, audit, unknown_node
+    ):
+        repo = FakeRepository()
+        for name in ("A", "B", "F"):
+            repo.add_task(name)
+        repo.add_edge("g1", "A", "B")
+        repo.add_finalize("g1", "A", "F")
+        repo.add_graph_run("gr1", "g1", state="running")
+        failed = await repo.create_task_run_once("gr1", "id_A")
+        failed["state"] = "failed"
+        unknown = await repo.create_task_run_once("gr1", "id_" + unknown_node)
+        unknown["state"] = "abandoned"
+        executor = RecordingExecutor()
+        worker = GraphRunWorker(repo, executor)
+        for _ in range(3):
+            assert await asyncio.wait_for(
+                worker.handle(GraphRunJob("gr1", "g1")), timeout=1
+            ) == GraphState.RUNNING
+        assert unknown["state"] == "abandoned"
+        assert repo.graph_runs["gr1"]["state"] == "running"
+        assert len(repo.task_runs) == 2
         assert executor.submissions == []
 
     async def test_pending_run_with_no_delivery_is_reconcilable(self, audit):
@@ -636,6 +704,8 @@ class TestFinalizeOwnership:
         row = await repo.create_task_run_once("gr1", "id_A")
         row["state"] = "running"
 
+        row["lease_generation"] = 1
+
         class AbandoningExecutor(RecordingExecutor):
             async def execute(self, spec, owner, *, heartbeat=None):
                 # Simulate the reconciler abandoning the node mid-flight.
@@ -644,7 +714,7 @@ class TestFinalizeOwnership:
 
         executor = AbandoningExecutor()
         await GraphRunWorker(repo, executor)._execute_one(
-            GraphRunJob("gr1", "id_A"), repo.tasks["id_A"], row["id"]
+            GraphRunJob("gr1", "id_A"), repo.tasks["id_A"], row["id"], 1
         )
 
         assert repo.task_runs[row["id"]]["state"] == "abandoned"

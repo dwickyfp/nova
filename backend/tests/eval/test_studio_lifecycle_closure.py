@@ -45,7 +45,6 @@ from app.modules.intelligence.contracts import (
     SemanticRef,
     Window,
 )
-from app.modules.intelligence.engine_schema import ENGINE_TABLES
 from app.modules.intelligence.monitor_action import MonitorActionAdapter
 from app.modules.ml_engine.service import ml_engine_service
 from app.modules.query.service import query_service
@@ -375,7 +374,6 @@ async def journey(program, mission_io, monkeypatch):
     )
     monkeypatch.setattr(agent_repository, "get_agent", AsyncMock(return_value=agent))
     monkeypatch.setattr(releases, "load_runtime_manifest", AsyncMock(return_value=None))
-    monkeypatch.setattr(agent_repository, "list_verified_queries", AsyncMock(return_value=[]))
     monkeypatch.setattr(agent_repository, "record_semantic_usage", AsyncMock())
     monkeypatch.setattr(assistant_repository, "learning_enabled", AsyncMock(return_value=True))
     monkeypatch.setattr(
@@ -386,28 +384,15 @@ async def journey(program, mission_io, monkeypatch):
         ),
     )
     monkeypatch.setattr(engine.semantic_view_service, "_readable_version", readable)
-    canonical_tables = {table: kind for kind, table in ENGINE_TABLES.items()}
+    from app.modules.intelligence.engine_repository import intelligence_repository
 
-    async def execute(sql, params=None):
-        if "SELECT payload FROM" in sql and "CONFIG_STUDIO_" not in sql:
-            table = sql.split("NOVA_SYSTEM.", 1)[1].split()[0]
-            if table in canonical_tables:
-                kind = canonical_tables[table]
-                row = repo.history.get((kind, params[0], params[4]))
-                if (
-                    row
-                    and [
-                        row.scope.principal,
-                        row.scope.active_role,
-                        row.scope.security_context_version,
-                    ]
-                    == params[1:4]
-                ):
-                    return {"rows": [[row.model_dump_json()]]}
-                return {"rows": []}
-        return await io.execute(sql, params)
+    async def payload(kind, identifier, scope, *, revision=None):
+        row = repo.history.get((kind, identifier, revision))
+        if row is None or storage_scope(row.scope) != storage_scope(scope):
+            return None
+        return row.model_dump(mode="json")
 
-    monkeypatch.setattr(mission.db, "execute_system", execute)
+    monkeypatch.setattr(intelligence_repository, "get_payload", payload)
     lease, tasks = Lease(), {}
 
     @asynccontextmanager
@@ -438,7 +423,9 @@ async def journey(program, mission_io, monkeypatch):
     monkeypatch.setattr(schedules, "task_orchestration_repository", task_repo)
     monkeypatch.setattr(actions, "metadata_lock", lock)
     monkeypatch.setattr(actions, "write_audit_log", AsyncMock())
-    monkeypatch.setattr(actions, "read_business_policy", AsyncMock(side_effect=lambda: policy))
+    monkeypatch.setattr(
+        actions, "read_business_policy", AsyncMock(side_effect=lambda _user: policy)
+    )
     monkeypatch.setattr(
         actions.session_store,
         "get",
@@ -447,7 +434,7 @@ async def journey(program, mission_io, monkeypatch):
         ),
     )
     repo.action_for_review = AsyncMock(
-        side_effect=lambda ident, model: deepcopy(repo.rows.get(("actions", ident))),
+        side_effect=lambda ident, model, *, actor: deepcopy(repo.rows.get(("actions", ident))),
     )
     action_service = actions.ActionService(
         service,

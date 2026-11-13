@@ -1,18 +1,16 @@
 """Superset bridge: BI handles, data tokens, service auth and the proxy login.
 
-Redis is replaced with a small in-memory fake implementing exactly the
-commands the session store and the token store use, so the tests exercise the
-real key layout and expiry decisions rather than mocks of them.
+Redis commands, including atomic session Lua scripts, run through fakeredis.
+The tests verify key layout, token binding and expiry through the Redis API.
 """
 
 from __future__ import annotations
 
-import fnmatch
-import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import asyncmy
+import fakeredis.aioredis
 import pytest
 from fastapi import HTTPException
 
@@ -29,77 +27,14 @@ from app.proxy.server import MySQLProxyServer
 from app.proxy.session import SessionState
 
 
-class FakeRedis:
-    """The subset of ``redis.asyncio`` the session and token stores use."""
-
-    def __init__(self) -> None:
-        self.data: dict[str, object] = {}
-        self.expiry: dict[str, float] = {}
-
-    def _live(self, key: str):
-        if key in self.expiry and self.expiry[key] <= time.time():
-            self.data.pop(key, None)
-            self.expiry.pop(key, None)
-        return self.data.get(key)
-
-    async def set(self, key, value, ex=None):
-        self.data[key] = str(value)
-        if ex:
-            self.expiry[key] = time.time() + ex
-
-    async def get(self, key):
-        return self._live(key)
-
-    async def hset(self, key, mapping):
-        self.data.setdefault(key, {}).update({k: str(v) for k, v in mapping.items()})
-
-    async def hgetall(self, key):
-        return dict(self._live(key) or {})
-
-    async def expire(self, key, seconds):
-        if key in self.data:
-            self.expiry[key] = time.time() + seconds
-
-    async def delete(self, *keys):
-        for key in keys:
-            self.data.pop(key, None)
-            self.expiry.pop(key, None)
-
-    async def zadd(self, key, mapping):
-        self.data.setdefault(key, {}).update(mapping)
-
-    async def zremrangebyscore(self, key, low, high):
-        zset = self._live(key) or {}
-        high = float(high)
-        for member in [m for m, score in zset.items() if score <= high]:
-            del zset[member]
-
-    async def zcard(self, key):
-        return len(self._live(key) or {})
-
-    async def zpopmin(self, key, count):
-        zset = self._live(key) or {}
-        popped = sorted(zset.items(), key=lambda item: item[1])[:count]
-        for member, _ in popped:
-            del zset[member]
-        return popped
-
-    async def zrangebyscore(self, key, low, high):
-        zset = self._live(key) or {}
-        return [m for m, score in sorted(zset.items(), key=lambda i: i[1]) if score >= float(low)]
-
-    async def zrem(self, key, member):
-        (self._live(key) or {}).pop(member, None)
-
-    def keys_matching(self, pattern: str) -> list[str]:
-        return [key for key in self.data if fnmatch.fnmatch(key, pattern)]
-
-
 @pytest.fixture
-def redis(monkeypatch):
-    fake = FakeRedis()
+async def redis(monkeypatch):
+    fake = fakeredis.aioredis.FakeRedis(decode_responses=True)
     monkeypatch.setattr(session_store, "_redis", fake)
-    return fake
+    try:
+        yield fake
+    finally:
+        await fake.aclose()
 
 
 async def _session(role: str = "finance", *, password: str = "S3cret!pw") -> str:
@@ -122,7 +57,7 @@ async def test_handle_resolves_to_its_session_and_is_stored_hashed(redis):
     resolved = await tokens.session_for_handle(handle)
 
     assert (resolved.username, resolved.active_role) == ("alice", "finance")
-    assert not any(handle in key for key in redis.data)
+    assert not any(handle in key for key in await redis.keys("*"))
 
 
 async def test_handle_dies_with_its_session(redis):
@@ -161,7 +96,7 @@ async def test_data_token_is_reused_while_the_binding_holds(redis):
     second = await tokens.mint_data_token(bi_session)
 
     assert first.token == second.token
-    stored = [redis.data[k] for k in redis.keys_matching("nova:bi:token:*")]
+    stored = [await redis.hgetall(k) for k in await redis.keys("nova:bi:token:*")]
     assert len(stored) == 1
     assert first.token not in stored[0]["token"]
 
@@ -218,7 +153,7 @@ async def test_live_tokens_per_principal_are_bounded(redis, monkeypatch):
         await tokens.mint_data_token(await tokens.resolve_session(await _session()))
 
     assert await redis.zcard("nova:bi:tokens:alice") == 2
-    assert len(redis.keys_matching("nova:bi:token:*")) == 2
+    assert len(await redis.keys("nova:bi:token:*")) == 2
 
 
 # ── Service access and role mapping ──────────────────────────────────────
@@ -270,7 +205,7 @@ async def test_superset_role_follows_the_active_role(monkeypatch):
 
 async def test_author_roles_are_validated_before_any_write(monkeypatch):
     execute = AsyncMock(return_value={"rows": []})
-    monkeypatch.setattr(access.db, "execute_system", execute)
+    monkeypatch.setattr(access, "superset_metadata", execute)
     with pytest.raises(ValueError):
         await access.replace_author_roles(["finance", "x; DROP TABLE t"], changed_by="admin")
     execute.assert_not_called()
@@ -442,7 +377,10 @@ def bridge_app(redis, monkeypatch):
     state: dict = {}
 
     async def current_user():
-        return state["user"]
+        from app.core.metadata_scope import declare_actor
+        user = {"assigned_roles": [state["user"]["active_role"]], **state["user"]}
+        declare_actor(user)
+        return user
 
     application.dependency_overrides[get_current_user] = current_user
     return application, state
@@ -520,6 +458,15 @@ async def test_author_roles_need_an_active_accountadmin(bridge_app, monkeypatch)
     from app.modules.superset import router as bridge
 
     monkeypatch.setattr(bridge, "replace_author_roles", replace)
+    monkeypatch.setattr(bridge, "author_role_set", AsyncMock(return_value=(frozenset(), 3)))
+
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def transaction(actor):
+        yield
+
+    monkeypatch.setattr(bridge, "metadata_transaction", transaction)
     put_metadata = AsyncMock(return_value={"id": 1})
     monkeypatch.setattr(bridge.access_control_service, "put_bi_metadata_access", put_metadata)
     async with await _client(application) as http:
@@ -679,9 +626,8 @@ async def test_delegated_handles_resolve_to_bounded_password_free_sessions(redis
         True,
     )
     assert bi_session.encrypted_password == ""
-    assert redis.expiry[f"nova:bi:delegated:{bi_session.session_id.split(':', 1)[1]}"] <= (
-        time.time() + settings.SUPERSET_DELEGATION_TTL_SECONDS
-    )
+    ttl = await redis.ttl(f"nova:bi:delegated:{bi_session.session_id.split(':', 1)[1]}")
+    assert 0 < ttl <= settings.SUPERSET_DELEGATION_TTL_SECONDS
     issued = await tokens.mint_data_token(bi_session)
     scramble = bytes(20)
     binding = await tokens.match_data_token(

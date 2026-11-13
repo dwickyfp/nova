@@ -1,0 +1,72 @@
+{
+  "observed_at": "2026-11-11T20:37:01.747432+00:00",
+  "source_commit": "033ed8d3a9afc94202d65003f3bcdbb99ca6cac5",
+  "run": 43089852697,
+  "url": "https://github.com/dwickyfp/nova/actions/runs/43089852697",
+  "run_status": "in_progress",
+  "run_conclusion": "",
+  "successful_jobs": [
+    "Grammar drift (ANTLR regenerate-and-diff)",
+    "Backend unit (L1)",
+    "Superset integration (image build, unit tests)",
+    "Backend static (ruff, mypy)",
+    "Frontend (lint, build, vitest)",
+    "Notebook runtime image (build, kernel tests)",
+    "PostgreSQL 17 metadata boundaries"
+  ],
+  "engine": {
+    "job": 130768645913,
+    "status": "in_progress",
+    "conclusion": "",
+    "steps": [
+      {
+        "name": "Run integration suite against real StarRocks/Redis/MinIO",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-11-11T19:55:07Z",
+        "completedAt": "2026-11-11T20:19:45Z"
+      },
+      {
+        "name": "Upload integration report",
+        "status": "completed",
+        "conclusion": "failure",
+        "startedAt": "2026-11-11T20:19:45Z",
+        "completedAt": "2026-11-11T20:30:16Z"
+      },
+      {
+        "name": "Tear down the engine stack",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-11-11T20:30:16Z",
+        "completedAt": "2026-11-11T20:30:20Z"
+      }
+    ]
+  },
+  "artifact_retrieval": "No backend-integration artifact available; direct job log API returned HTTP 502",
+  "engine_case_counts_and_skips": "UNVERIFIED for this run; do not substitute predecessor results",
+  "pg": {
+    "passed": 333,
+    "skipped": 0,
+    "junit_seconds": 207.241,
+    "log_scan": {
+      "lines": 76,
+      "matches": {
+        "credential_canary": 0,
+        "encrypted_credential": 0
+      },
+      "passed": true
+    }
+  },
+  "frontend": {
+    "passed": 1601,
+    "files": 193,
+    "evidence": "Completed frontend job 130763714849 log retrieved through the jobs API"
+  },
+  "release_result": "NOT_PASS: failed report upload and missing engine artifact; subsequent complete CI remains required",
+  "status_page": {
+    "url": "https://www.githubstatus.com/api/v2/summary.json",
+    "page_updated_at": "2026-11-11T20:29:11.880Z",
+    "reported": "All Systems Operational",
+    "interpretation": "No announced platform incident establishes the cause of this run failure"
+  }
+}

@@ -10,8 +10,8 @@ def validate_tool_invocation(tool, invocation, schema=None):
     return validate_json_arguments(schema or tool.parameters, invocation.arguments)
 
 
-def needs_tool_consent(tool, classification, thread) -> bool:
-    return requires_consent(tool) and not thread.consent.covers(classification)
+def needs_tool_consent(tool, classification, thread, *, user=None) -> bool:
+    return requires_consent(tool) and not thread.consent.covers(classification, user=user)
 
 
 async def resolve_tool_consent(
@@ -22,8 +22,9 @@ async def resolve_tool_consent(
     resolve_consent,
     *,
     timeout_seconds=300,
+    user=None,
 ):
-    if not needs_tool_consent(tool, classification, thread):
+    if not needs_tool_consent(tool, classification, thread, user=user):
         return True
     return await asyncio.wait_for(
         resolve_consent(invocation, classification),

@@ -71,7 +71,7 @@ def service(monkeypatch):
     """StageService whose stage lookup and S3 client are stubbed."""
     s3 = RecordingS3()
 
-    async def get_stage(_self, stage_id):
+    async def get_stage(_self, stage_id, actor, *, action="read"):
         return STAGE if stage_id == "stage-1" else None
 
     monkeypatch.setattr(StageService, "get_stage", get_stage)
@@ -95,7 +95,7 @@ class TestUploadCannotEscape:
     async def test_traversal_is_rejected_before_a_key_is_built(self, service):
         svc, s3 = service
         with pytest.raises(StagePathError):
-            await svc.upload_file("stage-1", "../other_stage/secret.csv", b"x")
+            await svc.upload_file(STAGE, "../other_stage/secret.csv", b"x")
 
         # No partial key reached the client.
         assert s3.put_keys == []
@@ -104,12 +104,12 @@ class TestUploadCannotEscape:
     async def test_every_escaping_form_is_rejected(self, service, path):
         svc, s3 = service
         with pytest.raises(StagePathError):
-            await svc.upload_file("stage-1", path, b"x")
+            await svc.upload_file(STAGE, path, b"x")
         assert s3.put_keys == []
 
     async def test_legitimate_subpath_still_works(self, service):
         svc, s3 = service
-        await svc.upload_file("stage-1", "folder/data.csv", b"x")
+        await svc.upload_file(STAGE, "folder/data.csv", b"x")
         assert s3.put_keys == [f"{PREFIX}/folder/data.csv"]
 
 
@@ -117,19 +117,19 @@ class TestDownloadCannotEscape:
     async def test_traversal_is_rejected_before_a_key_is_built(self, service):
         svc, s3 = service
         with pytest.raises(StagePathError):
-            await svc.download_file("stage-1", "../other_stage/secret.csv")
+            await svc.download_file(STAGE, "../other_stage/secret.csv")
         assert s3.get_keys == []
 
     @pytest.mark.parametrize("path", ESCAPING_PATHS)
     async def test_every_escaping_form_is_rejected(self, service, path):
         svc, s3 = service
         with pytest.raises(StagePathError):
-            await svc.download_file("stage-1", path)
+            await svc.download_file(STAGE, path)
         assert s3.get_keys == []
 
     async def test_legitimate_subpath_still_works(self, service):
         svc, s3 = service
-        content = await svc.download_file("stage-1", "folder/data.csv")
+        content = await svc.download_file(STAGE, "folder/data.csv")
         assert content == b"data"
         assert s3.get_keys == [f"{PREFIX}/folder/data.csv"]
 
@@ -138,19 +138,19 @@ class TestDeleteCannotEscape:
     async def test_traversal_is_rejected_before_a_key_is_built(self, service):
         svc, s3 = service
         with pytest.raises(StagePathError):
-            await svc.delete_file("stage-1", "../other_stage/secret.csv")
+            await svc.delete_file(STAGE, "../other_stage/secret.csv")
         assert s3.delete_keys == []
 
     @pytest.mark.parametrize("path", ESCAPING_PATHS)
     async def test_every_escaping_form_is_rejected(self, service, path):
         svc, s3 = service
         with pytest.raises(StagePathError):
-            await svc.delete_file("stage-1", path)
+            await svc.delete_file(STAGE, path)
         assert s3.delete_keys == []
 
     async def test_legitimate_subpath_still_works(self, service):
         svc, s3 = service
-        await svc.delete_file("stage-1", "folder/data.csv")
+        await svc.delete_file(STAGE, "folder/data.csv")
         assert s3.delete_keys == [f"{PREFIX}/folder/data.csv"]
 
 
@@ -158,17 +158,17 @@ class TestListPrefixCannotEscape:
     async def test_traversal_prefix_is_rejected(self, service):
         svc, s3 = service
         with pytest.raises(StagePathError):
-            await svc.list_files("stage-1", prefix="../other_stage")
+            await svc.list_files(STAGE, prefix="../other_stage")
         assert s3.list_prefixes == []
 
     async def test_legitimate_prefix_still_works(self, service):
         svc, s3 = service
-        await svc.list_files("stage-1", prefix="folder")
+        await svc.list_files(STAGE, prefix="folder")
         assert s3.list_prefixes == [f"{PREFIX}/folder/"]
 
     async def test_empty_prefix_uses_stage_root(self, service):
         svc, s3 = service
-        await svc.list_files("stage-1", prefix="")
+        await svc.list_files(STAGE, prefix="")
         assert s3.list_prefixes == [f"{PREFIX}/"]
 
 
@@ -209,8 +209,8 @@ class TestRouterMapsEscapeToBadRequest:
             return {
                 "username": "analyst",
                 "session_id": "s",
-                "roles": [],
-                "active_role": None,
+                "assigned_roles": ["loader"],
+                "active_role": "loader",
                 "encrypted_password": "enc",
             }
 
@@ -219,7 +219,7 @@ class TestRouterMapsEscapeToBadRequest:
         app.dependency_overrides[deps_module.get_current_user] = caller
         return TestClient(app, raise_server_exceptions=False)
 
-    async def _service_get_stage(self, stage_id):
+    async def _service_get_stage(self, stage_id, actor, *, action="read"):
         return STAGE if stage_id == "stage-1" else None
 
     def test_download_traversal_is_400(self, client, monkeypatch):

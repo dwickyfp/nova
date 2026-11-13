@@ -5,7 +5,6 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
-from app.core.database import db
 from app.modules.agents.harness_repository import harness_repository
 from app.modules.agents.mission import MissionService
 from app.modules.agents.mission_schema import DeliverableCreate, MissionCreate, StageKind
@@ -33,13 +32,6 @@ async def studio_metadata(intelligence_db, monkeypatch):
     try:
         yield user, thread["thread_id"]
     finally:
-        for table in (
-            "CONFIG_STUDIO_DELIVERABLES",
-            "CONFIG_STUDIO_MISSIONS",
-        ):
-            await db.execute_system(
-                f"DELETE FROM NOVA_SYSTEM.{table} WHERE owner_name=%s", [scope.principal]
-            )
         await run_journal.delete_thread(thread["thread_id"], owner_name=scope.principal)
         await assistant_repository.delete_thread(thread["thread_id"], user_name=scope.principal)
 

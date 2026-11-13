@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.modules.assistant.read_grants import stamp
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import AssistantThread
 from app.modules.assistant.tools import ToolInvocation, ToolRegistry
@@ -115,6 +116,7 @@ async def test_role_switch_trajectory(monkeypatch, approved, granted):
     runtime = AssistantThread("thread", "alice", "Role test")
     runtime.consent.always_allow_read_only = True
     ctx = context()
+    runtime.consent.granted_under = stamp(ctx.user)
     prompts = []
 
     async def consent(invocation, classification):

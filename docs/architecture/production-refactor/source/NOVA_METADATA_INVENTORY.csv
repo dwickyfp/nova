@@ -1,0 +1,162 @@
+table,ddl_files,reference_count,referenced_files
+AI_SEARCH_EVAL_RUNS,backend/app/modules/intelligence/search_schema.py; backend/migrations/20260923_ai_search.sql,3,backend/app/modules/intelligence/search.py; backend/app/modules/intelligence/search_schema.py; backend/migrations/20260923_ai_search.sql
+AI_SEARCH_QUERY_LOG,backend/app/modules/intelligence/search_schema.py; backend/migrations/20260923_ai_search.sql,3,backend/app/modules/intelligence/search.py; backend/app/modules/intelligence/search_schema.py; backend/migrations/20260923_ai_search.sql
+AUDIT_LOG,docker/init-nova.sql,16,backend/app/common/audit.py; backend/app/common/sql_guard.py; backend/app/modules/agents/repository.py; backend/app/modules/backup/service.py; backend/app/modules/catalog/lineage.py; backend/app/modules/migration/service.py; backend/app/modules/monitoring/ai_usage.py; backend/app/modules/monitoring/repository.py; backend/app/modules/query/repository.py; backend/app/modules/query/service.py; backend/app/modules/query_autopilot/schema.py; backend/app/modules/users/service.py; backend/app/modules/variables/service.py; backend/migrations/20260922_ranger_access_control.sql; backend/migrations/20260923_dynamic_system_partitions.sql; docker/init-nova.sql
+AUDIT_SEMANTIC_QUERY_USAGE,backend/app/modules/agents/repository.py; backend/migrations/20260921_agent_semantic_intelligence.sql; backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql,6,backend/app/modules/agents/repository.py; backend/app/modules/agents/router.py; backend/migrations/20260921_agent_semantic_intelligence.sql; backend/migrations/20261003_governed_studio.sql; backend/migrations/20261003_governed_studio_columns.sql; docker/init-nova.sql
+AUDIT_STREAM_CLAIMS,backend/app/modules/streams/claims.py; backend/migrations/20261005_stream_namespace.sql; docker/init-nova.sql,3,backend/app/modules/streams/claims.py; backend/migrations/20261005_stream_namespace.sql; docker/init-nova.sql
+AUDIT_STREAM_CONSUMPTIONS,backend/app/modules/streams/journal.py; backend/migrations/20261005_stream_namespace_recovery.sql; docker/init-nova.sql,3,backend/app/modules/streams/journal.py; backend/migrations/20261005_stream_namespace_recovery.sql; docker/init-nova.sql
+AUDIT_STREAM_CONSUMPTION_OPERATIONS,backend/app/modules/streams/journal.py; backend/migrations/20261005_stream_namespace_recovery.sql; docker/init-nova.sql,3,backend/app/modules/streams/journal.py; backend/migrations/20261005_stream_namespace_recovery.sql; docker/init-nova.sql
+AUDIT_STREAM_NAMESPACE_OPERATIONS,backend/app/modules/streams/repository.py; backend/migrations/20261005_stream_namespace_recovery.sql; docker/init-nova.sql,3,backend/app/modules/streams/repository.py; backend/migrations/20261005_stream_namespace_recovery.sql; docker/init-nova.sql
+CATALOG_,,2,backend/app/modules/catalog/repository.py; backend/app/modules/catalog/schemas.py
+CATALOG_ANNOTATIONS,backend/app/modules/catalog/metadata.py; docker/init-nova.sql,2,backend/app/modules/catalog/metadata.py; docker/init-nova.sql
+CATALOG_CATALOGS,backend/app/modules/catalog/repository.py; docker/init-nova.sql,2,backend/app/modules/catalog/repository.py; docker/init-nova.sql
+CATALOG_COLUMNS,backend/app/modules/catalog/repository.py; docker/init-nova.sql,3,backend/app/modules/catalog/metadata.py; backend/app/modules/catalog/repository.py; docker/init-nova.sql
+CATALOG_CONNECTIONS,backend/app/modules/catalog/repository.py; docker/init-nova.sql,3,backend/app/modules/catalog/connections.py; backend/app/modules/catalog/repository.py; docker/init-nova.sql
+CATALOG_CONNECTION_CREDENTIALS,backend/app/modules/catalog/repository.py; docker/init-nova.sql,3,backend/app/modules/catalog/connections.py; backend/app/modules/catalog/repository.py; docker/init-nova.sql
+CATALOG_CONNECTION_WRITE_CREDENTIALS,backend/app/modules/catalog/repository.py; docker/init-nova.sql,3,backend/app/modules/catalog/connections.py; backend/app/modules/catalog/repository.py; docker/init-nova.sql
+CATALOG_LINEAGE,backend/app/modules/catalog/lineage.py; docker/init-nova.sql,2,backend/app/modules/catalog/lineage.py; docker/init-nova.sql
+CATALOG_OBJECTS,backend/app/modules/catalog/repository.py; docker/init-nova.sql,3,backend/app/modules/catalog/metadata.py; backend/app/modules/catalog/repository.py; docker/init-nova.sql
+CATALOG_SECURABLES,backend/app/modules/catalog/securables.py; docker/init-nova.sql,2,backend/app/modules/catalog/securables.py; docker/init-nova.sql
+CATALOG_SECURABLE_LINKS,backend/app/modules/catalog/links.py; docker/init-nova.sql,2,backend/app/modules/catalog/links.py; docker/init-nova.sql
+CATALOG_SYNC_RUNS,backend/app/modules/catalog/repository.py; docker/init-nova.sql,3,backend/app/modules/catalog/lineage.py; backend/app/modules/catalog/repository.py; docker/init-nova.sql
+CONFIG_AGENTS,backend/app/modules/agents/repository.py; backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql,6,backend/app/modules/agents/repository.py; backend/migrations/20260921_agent_semantic_intelligence.sql; backend/migrations/20260924_agent_semantic_view_binding.sql; backend/migrations/20261003_governed_studio.sql; backend/migrations/20261003_governed_studio_columns.sql; docker/init-nova.sql
+CONFIG_AGENT_AUTOMATIONS,backend/app/modules/agents/automations.py,1,backend/app/modules/agents/automations.py
+CONFIG_AGENT_HARNESS_LESSONS,backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql,2,backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql
+CONFIG_AGENT_IMPROVEMENT_PROPOSALS,backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql,2,backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql
+CONFIG_AGENT_MEMORIES,backend/app/modules/agents/memory.py; backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql,4,backend/app/modules/agents/knowledge.py; backend/app/modules/agents/memory.py; backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql
+CONFIG_AGENT_MEMORY_EVIDENCE,backend/app/modules/agents/knowledge.py; backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql,5,backend/app/modules/agents/knowledge.py; backend/app/modules/agents/knowledge_router.py; backend/app/modules/agents/memory.py; backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql
+CONFIG_AGENT_MEMORY_REVISIONS,backend/app/modules/agents/knowledge.py; backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql,4,backend/app/modules/agents/knowledge.py; backend/app/modules/agents/memory.py; backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql
+CONFIG_AGENT_QUALITY_CASES,backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql,2,backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql
+CONFIG_AGENT_QUALITY_MONITORING,backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql,3,backend/app/modules/agents/quality_monitoring.py; backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql
+CONFIG_AGENT_QUALITY_RUNS,backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql,2,backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql
+CONFIG_AGENT_RELEASE_MANIFESTS,backend/app/modules/agents/releases.py; backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql,3,backend/app/modules/agents/releases.py; backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql
+CONFIG_AGENT_ROLES,backend/app/modules/agents/repository.py,2,backend/app/modules/agents/repository.py; backend/migrations/20260923_agent_role_verification.sql
+CONFIG_AGENT_RULE_PROPOSALS,backend/app/modules/agents/rule_proposals.py; backend/migrations/20260923_agent_rule_proposals.sql; backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql,4,backend/app/modules/agents/rule_proposals.py; backend/migrations/20260923_agent_rule_proposals.sql; backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql
+CONFIG_AGENT_RUNS,backend/app/modules/agents/run_journal.py; backend/migrations/20260923_agent_run_journal.sql; backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql,7,backend/app/modules/agents/harness_repository.py; backend/app/modules/agents/mission.py; backend/app/modules/agents/run_journal.py; backend/migrations/20260923_agent_run_journal.sql; backend/migrations/20261003_governed_studio.sql; backend/migrations/20261003_governed_studio_columns.sql; docker/init-nova.sql
+CONFIG_AGENT_RUN_EVENTS,backend/app/modules/agents/run_journal.py; backend/migrations/20260923_agent_run_journal.sql; backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql,5,backend/app/modules/agents/mission.py; backend/app/modules/agents/run_journal.py; backend/migrations/20260923_agent_run_journal.sql; backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql
+CONFIG_AGENT_SKILLS,backend/app/modules/agents/repository.py,1,backend/app/modules/agents/repository.py
+CONFIG_AGENT_VERSIONS,backend/app/modules/agents/versions.py,1,backend/app/modules/agents/versions.py
+CONFIG_AI_MODELS,docker/init-nova.sql,6,backend/app/common/nova_system.py; backend/app/modules/ai_ml/service.py; backend/app/modules/llm_functions/service.py; backend/migrations/20260923_ai_embedding_models.sql; backend/migrations/20261021_remove_system_one.sql; docker/init-nova.sql
+CONFIG_AI_PROVIDERS,docker/init-nova.sql,6,backend/app/modules/ai_ml/router.py; backend/app/modules/ai_ml/service.py; backend/app/modules/assistant/provider.py; backend/app/modules/llm_functions/service.py; backend/migrations/20261021_remove_system_one.sql; docker/init-nova.sql
+CONFIG_AI_SEARCH_INDEXES,backend/app/modules/intelligence/search_schema.py; backend/migrations/20260923_ai_search.sql,3,backend/app/modules/intelligence/search.py; backend/app/modules/intelligence/search_schema.py; backend/migrations/20260923_ai_search.sql
+CONFIG_AI_SEARCH_SYNC_STATE,backend/app/modules/intelligence/search_schema.py; backend/migrations/20260923_ai_search.sql,3,backend/app/modules/intelligence/search.py; backend/app/modules/intelligence/search_schema.py; backend/migrations/20260923_ai_search.sql
+CONFIG_AI_SEARCH_VERSIONS,backend/app/modules/intelligence/search_schema.py; backend/migrations/20260923_ai_search.sql,3,backend/app/modules/intelligence/search.py; backend/app/modules/intelligence/search_schema.py; backend/migrations/20260923_ai_search.sql
+CONFIG_ASSISTANT_,,2,backend/app/modules/assistant/repository.py; backend/app/modules/assistant/state.py
+CONFIG_ASSISTANT_MESSAGES,backend/app/modules/assistant/repository.py; docker/init-nova.sql,8,backend/app/modules/agents/observability.py; backend/app/modules/agents/quality_monitoring.py; backend/app/modules/agents/router.py; backend/app/modules/assistant/history.py; backend/app/modules/assistant/repository.py; backend/app/modules/monitoring/ai_usage.py; backend/app/modules/superset/previews.py; docker/init-nova.sql
+CONFIG_ASSISTANT_THREADS,backend/app/modules/assistant/repository.py; docker/init-nova.sql,6,backend/app/modules/agents/observability.py; backend/app/modules/assistant/history.py; backend/app/modules/assistant/repository.py; backend/app/modules/monitoring/ai_usage.py; backend/app/modules/superset/previews.py; docker/init-nova.sql
+CONFIG_ASSISTANT_UI_STATE,backend/app/modules/assistant/repository.py; backend/migrations/20261013_studio_intelligent_ui.sql; docker/init-nova.sql,3,backend/app/modules/assistant/repository.py; backend/migrations/20261013_studio_intelligent_ui.sql; docker/init-nova.sql
+CONFIG_BI_AUTHOR_ROLES,backend/app/modules/superset/access.py,1,backend/app/modules/superset/access.py
+CONFIG_BUSINESS_POLICIES,backend/app/modules/access_control/business_policy.py; backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql,3,backend/app/modules/access_control/business_policy.py; backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql
+CONFIG_CONTEXT_EDGES,backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql,2,backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql
+CONFIG_CONTEXT_NODES,backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql,2,backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql
+CONFIG_CUSTOM_TOOLS,backend/app/modules/agents/repository.py,1,backend/app/modules/agents/repository.py
+CONFIG_DASHBOARDS,docker/init-nova.sql,1,docker/init-nova.sql
+CONFIG_DASHBOARD_WIDGETS,docker/init-nova.sql,1,docker/init-nova.sql
+CONFIG_DATAVIZ_PUBLICATIONS,,2,backend/app/modules/superset/dashboard_context.py; backend/app/modules/superset/publication.py
+CONFIG_DATA_SCOPE_ASSIGNMENTS,backend/app/common/nova_system.py; backend/migrations/20260922_ranger_access_control.sql,3,backend/app/common/nova_system.py; backend/app/modules/access_control/service.py; backend/migrations/20260922_ranger_access_control.sql
+CONFIG_DECISION_EVENTS,backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql,2,backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql
+CONFIG_DECISION_OUTCOMES,backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql,2,backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql
+CONFIG_DEEP_RESEARCH_RUNS,backend/app/modules/agents/deep_research.py,1,backend/app/modules/agents/deep_research.py
+CONFIG_ENTITIES,backend/app/common/nova_system.py; backend/migrations/20260923_intelligence_entities.sql; docker/init-nova.sql,5,backend/app/common/nova_system.py; backend/app/modules/catalog/links.py; backend/app/modules/intelligence/entities.py; backend/migrations/20260923_intelligence_entities.sql; docker/init-nova.sql
+CONFIG_EXTERNAL_CATALOGS,,1,backend/app/modules/catalog/repository.py
+CONFIG_FEATURE_GROUPS,backend/app/modules/intelligence/feature_schema.py; backend/migrations/20260923_feature_store.sql,3,backend/app/modules/intelligence/feature_schema.py; backend/app/modules/intelligence/feature_store.py; backend/migrations/20260923_feature_store.sql
+CONFIG_FEATURE_GROUP_VERSIONS,backend/app/modules/intelligence/feature_schema.py; backend/migrations/20260923_feature_store.sql,3,backend/app/modules/intelligence/feature_schema.py; backend/app/modules/intelligence/feature_store.py; backend/migrations/20260923_feature_store.sql
+CONFIG_FEATURE_ML_LINKS,backend/app/modules/intelligence/feature_schema.py; backend/migrations/20260923_feature_store.sql,3,backend/app/modules/intelligence/feature_schema.py; backend/app/modules/intelligence/feature_store.py; backend/migrations/20260923_feature_store.sql
+CONFIG_FEATURE_TRAINING_SETS,backend/app/modules/intelligence/feature_schema.py; backend/migrations/20260923_feature_store.sql,4,backend/app/modules/intelligence/examples/seed_intelligence.py; backend/app/modules/intelligence/feature_schema.py; backend/app/modules/intelligence/feature_store.py; backend/migrations/20260923_feature_store.sql
+CONFIG_FEATURE_VIEWS,backend/app/modules/intelligence/feature_schema.py; backend/migrations/20260923_feature_store.sql,3,backend/app/modules/intelligence/feature_schema.py; backend/app/modules/intelligence/feature_store.py; backend/migrations/20260923_feature_store.sql
+CONFIG_FEATURE_VIEW_VERSIONS,backend/app/modules/intelligence/feature_schema.py; backend/migrations/20260923_feature_store.sql,3,backend/app/modules/intelligence/feature_schema.py; backend/app/modules/intelligence/feature_store.py; backend/migrations/20260923_feature_store.sql
+CONFIG_I18N_MESSAGES,backend/app/modules/assistant/messages.py,1,backend/app/modules/assistant/messages.py
+CONFIG_INTELLIGENCE_ACTIONS,backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql,2,backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql
+CONFIG_INTELLIGENCE_ACTION_EVENTS,backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql,2,backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql
+CONFIG_INTELLIGENCE_COMPARISONS,backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql,2,backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql
+CONFIG_INTELLIGENCE_DECISIONS,backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql,2,backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql
+CONFIG_INTELLIGENCE_EDITIONS,backend/migrations/20261006_newsroom.sql; docker/init-nova.sql,2,backend/migrations/20261006_newsroom.sql; docker/init-nova.sql
+CONFIG_INTELLIGENCE_INCIDENTS,backend/migrations/20261106_business_event_hub.sql; docker/init-nova.sql,2,backend/migrations/20261106_business_event_hub.sql; docker/init-nova.sql
+CONFIG_INTELLIGENCE_INVESTIGATIONS,backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql,2,backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql
+CONFIG_INTELLIGENCE_INVESTIGATION_UPDATES,backend/migrations/20261106_business_event_hub.sql; docker/init-nova.sql,2,backend/migrations/20261106_business_event_hub.sql; docker/init-nova.sql
+CONFIG_INTELLIGENCE_MONITORS,backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql,2,backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql
+CONFIG_INTELLIGENCE_NEWS,backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql,2,backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql
+CONFIG_INTELLIGENCE_OBSERVATIONS,backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql,2,backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql
+CONFIG_INTELLIGENCE_SIGNALS,backend/migrations/20261106_business_event_hub.sql; docker/init-nova.sql,2,backend/migrations/20261106_business_event_hub.sql; docker/init-nova.sql
+CONFIG_INTELLIGENCE_STORIES,backend/migrations/20261006_newsroom.sql; docker/init-nova.sql,2,backend/migrations/20261006_newsroom.sql; docker/init-nova.sql
+CONFIG_INTELLIGENCE_STORY_FEEDBACK,backend/migrations/20261007_news_feedback.sql; docker/init-nova.sql,3,backend/app/modules/intelligence/newsroom_feedback.py; backend/migrations/20261007_news_feedback.sql; docker/init-nova.sql
+CONFIG_MCP_SERVERS,backend/app/modules/agents/repository.py,1,backend/app/modules/agents/repository.py
+CONFIG_MIGRATION_JOBS,backend/app/modules/migration/repository.py,2,backend/app/modules/migration/jobs.py; backend/app/modules/migration/repository.py
+CONFIG_MIGRATION_SOURCES,backend/app/modules/migration/repository.py,1,backend/app/modules/migration/repository.py
+CONFIG_ML_JOBS,backend/app/modules/ml_engine/jobs.py; docker/init-nova.sql,2,backend/app/modules/ml_engine/jobs.py; docker/init-nova.sql
+CONFIG_MODEL_ALIASES,docker/init-nova.sql,2,backend/app/modules/llm_functions/service.py; docker/init-nova.sql
+CONFIG_NOTEBOOK_EXECUTIONS,backend/app/modules/notebooks/repository.py,1,backend/app/modules/notebooks/repository.py
+CONFIG_NOTEBOOK_PACKAGES,backend/app/modules/notebooks/repository.py,1,backend/app/modules/notebooks/repository.py
+CONFIG_NOTEBOOK_RUNTIMES,backend/app/modules/notebooks/repository.py,1,backend/app/modules/notebooks/repository.py
+CONFIG_OBJECT_TAGS,backend/app/modules/catalog/metadata.py; docker/init-nova.sql,2,backend/app/modules/catalog/metadata.py; docker/init-nova.sql
+CONFIG_ONTOLOGY_,,1,backend/app/modules/ontology/grounding.py
+CONFIG_ONTOLOGY_ALIASES,backend/migrations/20261106_business_ontology.sql; docker/init-nova.sql,2,backend/migrations/20261106_business_ontology.sql; docker/init-nova.sql
+CONFIG_ONTOLOGY_COMPILATIONS,backend/migrations/20261107_ontology_derived_layer.sql; docker/init-nova.sql,2,backend/migrations/20261107_ontology_derived_layer.sql; docker/init-nova.sql
+CONFIG_ONTOLOGY_CONCEPTS,backend/migrations/20261106_business_ontology.sql; docker/init-nova.sql,2,backend/migrations/20261106_business_ontology.sql; docker/init-nova.sql
+CONFIG_ONTOLOGY_DERIVED,backend/migrations/20261107_ontology_derived_layer.sql; docker/init-nova.sql,2,backend/migrations/20261107_ontology_derived_layer.sql; docker/init-nova.sql
+CONFIG_ONTOLOGY_DOMAINS,backend/migrations/20261106_business_ontology.sql; docker/init-nova.sql,2,backend/migrations/20261106_business_ontology.sql; docker/init-nova.sql
+CONFIG_ONTOLOGY_EVAL_CASES,backend/migrations/20261108_ontology_evaluation.sql; docker/init-nova.sql,2,backend/migrations/20261108_ontology_evaluation.sql; docker/init-nova.sql
+CONFIG_ONTOLOGY_EVAL_RESULTS,backend/migrations/20261108_ontology_evaluation.sql; docker/init-nova.sql,2,backend/migrations/20261108_ontology_evaluation.sql; docker/init-nova.sql
+CONFIG_ONTOLOGY_EVAL_RUNS,backend/migrations/20261108_ontology_evaluation.sql; docker/init-nova.sql,2,backend/migrations/20261108_ontology_evaluation.sql; docker/init-nova.sql
+CONFIG_ONTOLOGY_PROPOSALS,backend/migrations/20261106_business_ontology.sql; docker/init-nova.sql,2,backend/migrations/20261106_business_ontology.sql; docker/init-nova.sql
+CONFIG_ONTOLOGY_RELATIONS,backend/migrations/20261106_business_ontology.sql; docker/init-nova.sql,2,backend/migrations/20261106_business_ontology.sql; docker/init-nova.sql
+CONFIG_ONTOLOGY_RELEASES,backend/migrations/20261106_business_ontology.sql; docker/init-nova.sql,2,backend/migrations/20261106_business_ontology.sql; docker/init-nova.sql
+CONFIG_ONTOLOGY_REPRESENTATIONS,backend/migrations/20261106_business_ontology.sql; docker/init-nova.sql,2,backend/migrations/20261106_business_ontology.sql; docker/init-nova.sql
+CONFIG_PINNED_QUERIES,docker/init-nova.sql,1,docker/init-nova.sql
+CONFIG_SECURITY_POLICIES,backend/app/common/nova_system.py; backend/migrations/20260922_ranger_access_control.sql,3,backend/app/common/nova_system.py; backend/app/modules/access_control/service.py; backend/migrations/20260922_ranger_access_control.sql
+CONFIG_SECURITY_ROLE_PROJECTIONS,backend/app/common/nova_system.py; backend/migrations/20260922_ranger_access_control.sql,3,backend/app/common/nova_system.py; backend/app/modules/access_control/service.py; backend/migrations/20260922_ranger_access_control.sql
+CONFIG_SEMANTIC_BI_DATASETS,,2,backend/app/modules/superset/dashboard_context.py; backend/app/modules/superset/semantic.py
+CONFIG_SEMANTIC_MODELS,backend/app/modules/agents/repository.py,2,backend/app/modules/agents/repository.py; backend/app/modules/intelligence/semantic_migration.py
+CONFIG_SEMANTIC_MODEL_VERSIONS,backend/app/modules/agents/rule_proposals.py; backend/migrations/20260923_agent_rule_proposals.sql; backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql,4,backend/app/modules/agents/rule_proposals.py; backend/migrations/20260923_agent_rule_proposals.sql; backend/migrations/20261001_intelligence_engine.sql; docker/init-nova.sql
+CONFIG_SEMANTIC_VERIFIED_QUERIES,backend/app/modules/agents/repository.py; backend/migrations/20260921_agent_semantic_intelligence.sql,3,backend/app/modules/agents/repository.py; backend/app/modules/intelligence/semantic_migration.py; backend/migrations/20260921_agent_semantic_intelligence.sql
+CONFIG_SEMANTIC_VIEWS,backend/app/modules/intelligence/semantic_view_schema.py; backend/migrations/20260923_semantic_views.sql,7,backend/app/modules/catalog/links.py; backend/app/modules/intelligence/semantic_migration.py; backend/app/modules/intelligence/semantic_view_schema.py; backend/app/modules/intelligence/semantic_views.py; backend/app/modules/superset/dashboard_context.py; backend/migrations/20260923_semantic_views.sql; backend/migrations/20261006_newsroom.sql
+CONFIG_SEMANTIC_VIEW_VERSIONS,backend/app/modules/intelligence/semantic_view_schema.py; backend/migrations/20260923_semantic_views.sql,5,backend/app/modules/catalog/links.py; backend/app/modules/intelligence/semantic_migration.py; backend/app/modules/intelligence/semantic_view_schema.py; backend/app/modules/intelligence/semantic_views.py; backend/migrations/20260923_semantic_views.sql
+CONFIG_SKILL_BODY_CHUNKS,backend/app/modules/agents/repository.py,1,backend/app/modules/agents/repository.py
+CONFIG_STAGES,docker/init-nova.sql,7,backend/app/modules/explorer/repository.py; backend/app/modules/explorer/service.py; backend/app/modules/objects/service.py; backend/app/modules/query/service.py; backend/app/modules/stages/service.py; backend/app/sql_frontend/execution/stages.py; docker/init-nova.sql
+CONFIG_STREAMS,backend/app/modules/streams/repository.py; backend/migrations/20261005_stream_namespace.sql; docker/init-nova.sql,3,backend/app/modules/streams/repository.py; backend/migrations/20261005_stream_namespace.sql; docker/init-nova.sql
+CONFIG_STUDIO_ARTIFACTS,backend/app/modules/agents/artifact_repository.py,2,backend/app/modules/agents/artifact_repository.py; backend/app/modules/viz/migration.py
+CONFIG_STUDIO_DASHBOARDS,,1,backend/app/modules/viz/migration.py
+CONFIG_STUDIO_DELIVERABLES,backend/app/modules/agents/mission_schema.py; backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql,4,backend/app/modules/agents/mission.py; backend/app/modules/agents/mission_schema.py; backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql
+CONFIG_STUDIO_MISSIONS,backend/app/modules/agents/mission_schema.py; backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql,4,backend/app/modules/agents/mission.py; backend/app/modules/agents/mission_schema.py; backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql
+CONFIG_STUDIO_RESOURCES,backend/app/modules/agents/resource_delegation.py; backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql,3,backend/app/modules/agents/resource_delegation.py; backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql
+CONFIG_STUDIO_RESOURCE_GRANTS,backend/app/modules/agents/resource_delegation.py; backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql,3,backend/app/modules/agents/resource_delegation.py; backend/migrations/20261003_governed_studio.sql; docker/init-nova.sql
+CONFIG_STUDIO_SHARES,backend/app/modules/agents/sharing.py,1,backend/app/modules/agents/sharing.py
+CONFIG_TASKS,backend/app/common/nova_system.py; docker/init-nova.sql,5,backend/app/common/nova_system.py; backend/app/modules/explorer/repository.py; backend/app/modules/objects/service.py; backend/app/modules/task_orchestration/repository.py; docker/init-nova.sql
+CONFIG_TASK_EDGES,backend/app/common/nova_system.py; docker/init-nova.sql,3,backend/app/common/nova_system.py; backend/app/modules/task_orchestration/repository.py; docker/init-nova.sql
+CONFIG_TASK_GRAPH_RUNS,backend/app/common/nova_system.py; docker/init-nova.sql,3,backend/app/common/nova_system.py; backend/app/modules/task_orchestration/repository.py; docker/init-nova.sql
+CONFIG_TASK_ROLE_BINDINGS,backend/app/common/nova_system.py; docker/init-nova.sql,3,backend/app/common/nova_system.py; backend/app/modules/task_orchestration/repository.py; docker/init-nova.sql
+CONFIG_TASK_RUNS,backend/app/common/nova_system.py; docker/init-nova.sql,3,backend/app/common/nova_system.py; backend/app/modules/task_orchestration/repository.py; docker/init-nova.sql
+CONFIG_TOOLS,backend/app/modules/agents/repository.py,1,backend/app/modules/agents/repository.py
+CONFIG_USER_PREFERENCES,docker/init-nova.sql,14,backend/app/common/news_entitlement.py; backend/app/common/nova_system.py; backend/app/common/user_flags.py; backend/app/modules/agents/studio_schemas.py; backend/app/modules/agents/studio_service.py; backend/app/modules/ai_ml/default_model.py; backend/app/modules/ai_ml/web_search_settings.py; backend/app/modules/auth/profile.py; backend/app/modules/query/dialect/force_password_change.py; backend/app/modules/query/service.py; backend/app/modules/workspaces/repository.py; backend/app/sql_frontend/execution/adapters.py; backend/migrations/20261021_remove_system_one.sql; docker/init-nova.sql
+CONFIG_VERIFIED_QUERY_CANDIDATES,backend/app/modules/agents/verified_candidates.py,1,backend/app/modules/agents/verified_candidates.py
+CONFIG_WORKSPACES,backend/app/common/nova_system.py; docker/init-nova.sql,3,backend/app/common/nova_system.py; backend/app/modules/workspaces/spaces.py; docker/init-nova.sql
+CONFIG_WORKSPACE_ENTRIES,backend/app/common/nova_system.py; docker/init-nova.sql,3,backend/app/common/nova_system.py; backend/app/modules/workspaces/repository.py; docker/init-nova.sql
+CONFIG_WORKSPACE_FILE_VERSIONS,backend/app/common/nova_system.py; docker/init-nova.sql,3,backend/app/common/nova_system.py; backend/app/modules/workspaces/repository.py; docker/init-nova.sql
+CONFIG_WORKSPACE_SHARES,backend/app/common/nova_system.py; docker/init-nova.sql,3,backend/app/common/nova_system.py; backend/app/modules/workspaces/spaces.py; docker/init-nova.sql
+LINEAGE_LOAD_HISTORY,docker/init-nova.sql,2,backend/migrations/20260923_dynamic_system_partitions.sql; docker/init-nova.sql
+MIGRATE_TASK_ORCHESTRATION_COLUMNS,,1,backend/app/modules/migration/repository.py
+ML_EPHEMERAL_RUNS,backend/app/modules/ml_engine/ephemeral/repository.py; backend/migrations/20260922_ml_ephemeral_runs.sql; docker/init-nova.sql,3,backend/app/modules/ml_engine/ephemeral/repository.py; backend/migrations/20260922_ml_ephemeral_runs.sql; docker/init-nova.sql
+ML_MODELS,docker/init-nova.sql,6,backend/app/common/nova_system.py; backend/app/modules/ml_engine/registry/repository.py; backend/app/modules/ml_engine/service.py; backend/migrations/20260921_native_ml.sql; backend/migrations/20260922_ml_ephemeral_runs.sql; docker/init-nova.sql
+ML_MODELS_PK,backend/app/common/nova_system.py; backend/migrations/20260921_native_ml.sql,2,backend/app/common/nova_system.py; backend/migrations/20260921_native_ml.sql
+ML_MODEL_ALIASES,docker/init-nova.sql,5,backend/app/common/nova_system.py; backend/app/modules/ml_engine/registry/repository.py; backend/app/modules/ml_engine/service.py; backend/migrations/20260921_native_ml.sql; docker/init-nova.sql
+ML_MODEL_ALIASES_PK,backend/app/common/nova_system.py; backend/migrations/20260921_native_ml.sql,2,backend/app/common/nova_system.py; backend/migrations/20260921_native_ml.sql
+ML_MODEL_VERSIONS,docker/init-nova.sql,5,backend/app/common/nova_system.py; backend/app/modules/ml_engine/registry/repository.py; backend/app/modules/ml_engine/service.py; backend/migrations/20260921_native_ml.sql; docker/init-nova.sql
+ML_MODEL_VERSIONS_PK,backend/app/common/nova_system.py; backend/migrations/20260921_native_ml.sql,2,backend/app/common/nova_system.py; backend/migrations/20260921_native_ml.sql
+ML_RUNS,backend/app/common/nova_system.py; backend/migrations/20260921_native_ml.sql; docker/init-nova.sql,4,backend/app/common/nova_system.py; backend/app/modules/ml_engine/registry/repository.py; backend/migrations/20260921_native_ml.sql; docker/init-nova.sql
+QUALITY_TABLE_STATS,docker/init-nova.sql,1,docker/init-nova.sql
+QUERY_AUTOPILOT_ACTIONS,docker/init-nova.sql,1,docker/init-nova.sql
+QUERY_AUTOPILOT_BASELINES,docker/init-nova.sql,1,docker/init-nova.sql
+QUERY_AUTOPILOT_ENROLLMENTS,docker/init-nova.sql,1,docker/init-nova.sql
+QUERY_AUTOPILOT_EVIDENCE,docker/init-nova.sql,1,docker/init-nova.sql
+QUERY_AUTOPILOT_EXPERIMENTS,docker/init-nova.sql,1,docker/init-nova.sql
+QUERY_AUTOPILOT_FAMILIES,docker/init-nova.sql,1,docker/init-nova.sql
+QUERY_AUTOPILOT_INCIDENTS,docker/init-nova.sql,1,docker/init-nova.sql
+QUERY_AUTOPILOT_JOBS,docker/init-nova.sql,1,docker/init-nova.sql
+QUERY_AUTOPILOT_OBSERVATIONS,docker/init-nova.sql,1,docker/init-nova.sql
+QUERY_AUTOPILOT_OPPORTUNITIES,docker/init-nova.sql,1,docker/init-nova.sql
+QUERY_AUTOPILOT_OUTCOMES,docker/init-nova.sql,1,docker/init-nova.sql
+QUERY_AUTOPILOT_POLICIES,docker/init-nova.sql,1,docker/init-nova.sql
+QUERY_AUTOPILOT_ROLLUPS,docker/init-nova.sql,1,docker/init-nova.sql
+STAGE_FILE_MANIFEST,docker/init-nova.sql,1,docker/init-nova.sql
+USAGE_LLM_FUNCTIONS,backend/app/modules/llm_functions/gateway.py; docker/init-nova.sql,3,backend/app/modules/llm_functions/gateway.py; backend/app/modules/monitoring/ai_usage.py; docker/init-nova.sql
+USAGE_QUERY_STATS,docker/init-nova.sql,2,backend/migrations/20260923_dynamic_system_partitions.sql; docker/init-nova.sql

@@ -1,0 +1,53 @@
+{
+  "mode": "after",
+  "cases": [
+    {
+      "id": "upload",
+      "status": 200,
+      "pass": true
+    },
+    {
+      "id": "selected_folder_honored",
+      "status": 200,
+      "pass": true
+    },
+    {
+      "id": "no_root_file",
+      "status": 200,
+      "pass": true
+    },
+    {
+      "id": "nested_download",
+      "status": 200,
+      "pass": true
+    },
+    {
+      "id": "invalid_folder_../outside",
+      "status": 400,
+      "pass": true
+    },
+    {
+      "id": "invalid_folder_/absolute",
+      "status": 400,
+      "pass": true
+    },
+    {
+      "id": "invalid_folder_a\\outside",
+      "status": 400,
+      "pass": true
+    }
+  ],
+  "cleanup": [
+    {
+      "file": "incoming/folder_canary.csv",
+      "status": 200,
+      "pass": true
+    },
+    {
+      "registration": "2cd9a326-78e7-4c6f-9b45-244ce04fd47b",
+      "status": 200,
+      "pass": true
+    }
+  ],
+  "stage_id": "2cd9a326-78e7-4c6f-9b45-244ce04fd47b"
+}

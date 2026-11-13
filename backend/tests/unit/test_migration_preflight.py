@@ -414,3 +414,18 @@ class TestPreflightEndpoint:
         assert body["storage_checked"] is True
         assert body["storage_ok"] is False
         assert body["ok"] is False
+
+
+@pytest.fixture(autouse=True)
+def metadata_source_registry(monkeypatch, fake_metadata_db):
+    from app.modules.migration import service as module
+
+    class Registry:
+        def __init__(self, connection, actor):
+            self.actor = actor
+
+        async def get_source(self, name):
+            row = await module.migration_repo.get_source(name)
+            return [row] if row else []
+
+    monkeypatch.setattr(module, "MigrationMetadataRepository", Registry)

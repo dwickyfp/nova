@@ -24,9 +24,11 @@ import logging
 import re
 from typing import Any, Literal
 
-from app.core.database import db
+from app.core.metadata_scope import actor_for
+from app.modules.access_control.security_context import SecurityContext
 
 from .client import BiError, SupersetClient
+from .metadata_repository import superset_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -117,53 +119,32 @@ async def _filter_state(
     return "verified", mask
 
 
-async def _semantic_views(dataset_ids: list[int]) -> dict[int, dict[str, Any]]:
-    if not dataset_ids:
-        return {}
-    marks = ", ".join(["%s"] * len(dataset_ids))
-    try:
-        result = await db.execute_system(
-            "SELECT m.bi_dataset_id, m.view_id, m.version, m.status, v.name "
-            "FROM NOVA_SYSTEM.CONFIG_SEMANTIC_BI_DATASETS m "
-            "LEFT JOIN NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS v ON v.id = m.view_id "
-            f"WHERE m.bi_dataset_id IN ({marks})",
-            dataset_ids,
-        )
-    except Exception as exc:  # noqa: BLE001 - no sync table yet means no synced views
-        logger.info("Semantic dataset map unavailable: %s", type(exc).__name__)
-        return {}
+async def _semantic_views(
+    dataset_ids: list[int],
+    *,
+    actor: SecurityContext,
+) -> dict[int, dict[str, Any]]:
+    async with superset_metadata(actor, read_only=True) as repository:
+        rows = await repository.semantic_views_for(dataset_ids)
     return {
-        int(row[0]): {
-            "view_id": row[1],
-            "version": row[2],
-            "status": row[3],
-            "name": row[4] if len(row) > 4 else None,
+        int(row["bi_dataset_id"]): {
+            "view_id": row["view_id"],
+            "version": row["version"],
+            "status": row["status"],
+            "name": row["name"],
         }
-        for row in result.get("rows") or []
-        if row[0] is not None
+        for row in rows
+        if row["bi_dataset_id"] is not None
     }
 
 
-async def _published_contexts(chart_ids: list[int]) -> dict[int, dict[str, Any]]:
-    """The ontology context Nova recorded when it published each chart."""
-    if not chart_ids:
-        return {}
-    marks = ", ".join(["%s"] * len(chart_ids))
-    try:
-        result = await db.execute_system(
-            "SELECT chart_id, business_context FROM NOVA_SYSTEM.CONFIG_DATAVIZ_PUBLICATIONS "
-            f"WHERE status = 'SUCCEEDED' AND chart_id IN ({marks}) ORDER BY updated_at",
-            chart_ids,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.info("Publication journal unavailable: %s", type(exc).__name__)
-        return {}
-    out = {}
-    for chart_id, business in result.get("rows") or []:
-        parsed = _json(business, None)
-        if isinstance(parsed, dict):
-            out[int(chart_id)] = parsed
-    return out
+async def _published_contexts(
+    chart_ids: list[int],
+    *,
+    actor: SecurityContext,
+) -> dict[int, dict[str, Any]]:
+    async with superset_metadata(actor, read_only=True) as repository:
+        return await repository.published_contexts(chart_ids)
 
 
 class _Ontology:
@@ -175,10 +156,12 @@ class _Ontology:
         self.available = True
 
     async def load(self) -> None:
+        from app.core.metadata_scope import acting_as, actor_for
         from app.modules.ontology.service import ontology_service
 
         try:
-            self.snapshot = await ontology_service.snapshot("current")
+            async with acting_as(actor_for(self.user)):
+                self.snapshot = await ontology_service.snapshot("current")
         except Exception as exc:  # noqa: BLE001 - the context still describes the BI side
             logger.info("Ontology unavailable for Dataviz context: %s", type(exc).__name__)
             self.available = False
@@ -279,7 +262,9 @@ async def dashboard_context(
     from .access import superset_role_for
     from .publication import can_edit, me, read_dashboard, revision
 
-    superset_role = await superset_role_for(str(user.get("active_role") or ""))
+    superset_role = await superset_role_for(
+        str(user.get("active_role") or ""), actor=actor_for(user)
+    )
     async with SupersetClient.for_user(user, author=False) as bi:
         try:
             dashboard = await read_dashboard(bi, int(dashboard_id))
@@ -313,8 +298,11 @@ async def dashboard_context(
     )
     order = {chart_id: index for index, chart_id in enumerate(ordered)}
     dataset_by_id = {int(d["id"]): d for d in datasets if d.get("id") is not None}
-    semantic = await _semantic_views(list(dataset_by_id))
-    published = await _published_contexts([int(c["id"]) for c in charts if c.get("id") is not None])
+    semantic = await _semantic_views(list(dataset_by_id), actor=actor_for(user))
+    published = await _published_contexts(
+        [int(c["id"]) for c in charts if c.get("id") is not None],
+        actor=actor_for(user),
+    )
     ontology = _Ontology(user)
     await ontology.load()
     author = superset_role != "NovaViewer"
@@ -433,7 +421,9 @@ async def chart_source(user: dict[str, Any], chart_id: int) -> dict[str, Any]:
     """Where one chart's numbers come from, as far as the caller may see."""
     from .access import superset_role_for
 
-    superset_role = await superset_role_for(str(user.get("active_role") or ""))
+    superset_role = await superset_role_for(
+        str(user.get("active_role") or ""), actor=actor_for(user)
+    )
     async with SupersetClient.for_user(user, author=False) as bi:
         try:
             chart = (await bi.request("GET", f"/api/v1/chart/{int(chart_id)}")).get("result") or {}
@@ -458,8 +448,12 @@ async def chart_source(user: dict[str, Any], chart_id: int) -> dict[str, Any]:
                 ) or {}
             except BiError:
                 dataset = {}
-    view = (await _semantic_views([dataset_id] if dataset_id else [])).get(dataset_id or -1)
-    published = (await _published_contexts([int(chart_id)])).get(int(chart_id))
+    view = (await _semantic_views([dataset_id] if dataset_id else [], actor=actor_for(user))).get(
+        dataset_id or -1
+    )
+    published = (await _published_contexts([int(chart_id)], actor=actor_for(user))).get(
+        int(chart_id)
+    )
     ontology = _Ontology(user)
     await ontology.load()
     metrics = _metric_names(form)

@@ -26,10 +26,6 @@ import asyncmy
 import pytest
 import pytest_asyncio
 
-from app.common.nova_system import (
-    TASK_ORCHESTRATION_DDL,
-    migrate_task_orchestration_columns,
-)
 from app.core.config import settings
 from app.core.database import db
 from app.modules.task_orchestration.native import (
@@ -43,11 +39,11 @@ from app.modules.task_orchestration.repository import (
     task_orchestration_repository as repo,
 )
 from tests.conftest import root_password
-from tests.integration._nova_system_ddl import ensure_audit_log
 from tests.integration._stack import (
     engine_port,
     require_shared_stack,
 )
+from tests.integration._task_runs import create_graph_run, create_task_run
 
 _EXPLICIT_PORT = os.getenv("NOVA_ORCH_SR_PORT")
 SR_HOST = os.getenv("NOVA_ORCH_SR_HOST", "127.0.0.1")
@@ -59,12 +55,16 @@ _USE_SHARED_STACK = _EXPLICIT_PORT is None
 pytestmark = pytest.mark.engine
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def task_metadata_login(engine_workload):
+    async with engine_workload("task"):
+        yield
+
+
 async def _sr_reachable() -> bool:
     try:
         conn = await asyncio.wait_for(
-            asyncmy.connect(
-                host=SR_HOST, port=SR_PORT, user=SR_USER, password=SR_PASSWORD
-            ),
+            asyncmy.connect(host=SR_HOST, port=SR_PORT, user=SR_USER, password=SR_PASSWORD),
             timeout=5,
         )
     except Exception:
@@ -75,9 +75,7 @@ async def _sr_reachable() -> bool:
 
 async def _has_live_backend() -> bool:
     try:
-        conn = await asyncmy.connect(
-            host=SR_HOST, port=SR_PORT, user=SR_USER, password=SR_PASSWORD
-        )
+        conn = await asyncmy.connect(host=SR_HOST, port=SR_PORT, user=SR_USER, password=SR_PASSWORD)
     except Exception:
         return False
     try:
@@ -104,24 +102,12 @@ async def engine_infra(request):
 
     await db.init_system_pool()
     await db.execute_system("CREATE DATABASE IF NOT EXISTS NOVA_SYSTEM")
-    for ddl in TASK_ORCHESTRATION_DDL:
-        await db.execute_system(ddl)
-    # The reconciler audits every node transition (NOVA-37 AC #6), so it writes
-    # NOVA_SYSTEM.AUDIT_LOG. ``TASK_ORCHESTRATION_DDL`` does not create that
-    # table (it lives in init-nova.sql, which the dev/test engine omits), and
-    # CI only passes because seed_engine.sh happens to create it first. Create
-    # it here so the suite is self-contained on a clean engine.
-    await ensure_audit_log(SR_HOST, SR_PORT, SR_USER, SR_PASSWORD)
-    # A pre-existing test volume predates the consecutive-failure column, which
-    # ``CREATE TABLE IF NOT EXISTS`` cannot add; run the same idempotent
-    # migration the worker runs at startup.
-    await migrate_task_orchestration_columns()
     yield
     await db.close_system_pool()
 
 
 @pytest_asyncio.fixture
-async def cleanup_runs(engine_infra):
+async def cleanup_runs(engine_infra, task_definitions):
     created: dict[str, list[str]] = {"graph": [], "task": []}
     await db.execute_system(
         "CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.NOVA_RECONCILE_PROBE ("
@@ -132,10 +118,10 @@ async def cleanup_runs(engine_infra):
     yield created
     for run in created["graph"]:
         for node in await repo.list_task_runs(run):
-            await repo.delete_task_run(node["id"])
-        await repo.delete_graph_run(run)
+            await repo.get_task_run(node["id"])
+        await repo.get_graph_run(run)
     for task in created["task"]:
-        await repo.delete_task(task)
+        await task_definitions.delete_task(task)
     await db.execute_system("DROP TABLE IF EXISTS NOVA_SYSTEM.NOVA_RECONCILE_PROBE")
 
 
@@ -153,9 +139,7 @@ async def audit_records(monkeypatch, engine_infra):
         entries.append(kwargs)
         return "audit-id"
 
-    monkeypatch.setattr(
-        "app.modules.task_orchestration.reconciler.write_audit_log", fake_audit
-    )
+    monkeypatch.setattr("app.modules.task_orchestration.reconciler.write_audit_log", fake_audit)
     return {"entries": entries}
 
 
@@ -175,7 +159,7 @@ class TestLostTraceAgainstEngine:
     """
 
     async def test_lost_trace_is_abandoned_with_audit(
-        self, engine_infra, cleanup_runs, audit_records
+        self, engine_infra, cleanup_runs, audit_records, task_definitions
     ):
         """AC #2/#3: the heartbeat path settles the node and audits it.
 
@@ -188,7 +172,7 @@ class TestLostTraceAgainstEngine:
         """
         suffix = uuid4().hex[:8]
         name = f"lost_{suffix}"
-        task = await repo.create_task(
+        task = await task_definitions.create_task(
             {
                 "name": name,
                 "timezone": "UTC",
@@ -199,17 +183,18 @@ class TestLostTraceAgainstEngine:
             created_by=SR_USER,
         )
         cleanup_runs["task"].append(task["id"])
-        run = await repo.create_graph_run(
-            {"graph_id": f"g_{suffix}", "trigger_type": "manual", "state": "running"}
+        run = await create_graph_run(
+            repo, {"graph_id": f"g_{suffix}", "trigger_type": "manual", "state": "running"}
         )
         cleanup_runs["graph"].append(run["id"])
-        node = await repo.create_task_run(
+        node = await create_task_run(
+            repo,
             {
                 "graph_run_id": run["id"],
                 "task_id": task["id"],
                 "state": "running",
                 "delegated": True,
-            }
+            },
         )
         reconciler = Reconciler(repo, heartbeat_timeout_seconds=-1)
 
@@ -227,12 +212,12 @@ class TestLostTraceAgainstEngine:
         assert "NODE_ABANDONED" in _node_actions(audit_records)
 
     async def test_settling_a_lost_trace_is_idempotent(
-        self, engine_infra, cleanup_runs, audit_records
+        self, engine_infra, cleanup_runs, audit_records, task_definitions
     ):
         """Criterion 5: a second pass on the settled row writes nothing."""
         suffix = uuid4().hex[:8]
         name = f"idem_{suffix}"
-        task = await repo.create_task(
+        task = await task_definitions.create_task(
             {
                 "name": name,
                 "timezone": "UTC",
@@ -243,17 +228,18 @@ class TestLostTraceAgainstEngine:
             created_by=SR_USER,
         )
         cleanup_runs["task"].append(task["id"])
-        run = await repo.create_graph_run(
-            {"graph_id": f"g_{suffix}", "trigger_type": "manual", "state": "running"}
+        run = await create_graph_run(
+            repo, {"graph_id": f"g_{suffix}", "trigger_type": "manual", "state": "running"}
         )
         cleanup_runs["graph"].append(run["id"])
-        node = await repo.create_task_run(
+        node = await create_task_run(
+            repo,
             {
                 "graph_run_id": run["id"],
                 "task_id": task["id"],
                 "state": "running",
                 "delegated": True,
-            }
+            },
         )
         reconciler = Reconciler(repo, heartbeat_timeout_seconds=-1)
 
@@ -268,7 +254,7 @@ class TestLostTraceAgainstEngine:
         assert refreshed is not None and refreshed["state"] == "abandoned"
 
     async def test_healthy_node_is_never_reported_as_lost(
-        self, engine_infra, cleanup_runs, audit_records
+        self, engine_infra, cleanup_runs, audit_records, task_definitions
     ):
         """A node whose worker is alive must not be declared lost.
 
@@ -277,7 +263,7 @@ class TestLostTraceAgainstEngine:
         """
         suffix = uuid4().hex[:8]
         name = f"live_{suffix}"
-        task = await repo.create_task(
+        task = await task_definitions.create_task(
             {
                 "name": name,
                 "timezone": "UTC",
@@ -288,17 +274,18 @@ class TestLostTraceAgainstEngine:
             created_by=SR_USER,
         )
         cleanup_runs["task"].append(task["id"])
-        run = await repo.create_graph_run(
-            {"graph_id": f"g_{suffix}", "trigger_type": "manual", "state": "running"}
+        run = await create_graph_run(
+            repo, {"graph_id": f"g_{suffix}", "trigger_type": "manual", "state": "running"}
         )
         cleanup_runs["graph"].append(run["id"])
-        node = await repo.create_task_run(
+        node = await create_task_run(
+            repo,
             {
                 "graph_run_id": run["id"],
                 "task_id": task["id"],
                 "state": "running",
                 "delegated": True,
-            }
+            },
         )
 
         reconciler = Reconciler(repo, heartbeat_timeout_seconds=3600)
@@ -313,7 +300,7 @@ class TestLostTraceAgainstEngine:
         assert _node_actions(audit_records) == []
 
     async def test_reconcile_native_never_settles_a_fresh_node_without_a_native_row(
-        self, engine_infra, cleanup_runs, audit_records
+        self, engine_infra, cleanup_runs, audit_records, task_definitions
     ):
         """NOVA-52: a fresh node with no ``task_runs`` row is not abandoned.
 
@@ -326,7 +313,7 @@ class TestLostTraceAgainstEngine:
         """
         suffix = uuid4().hex[:8]
         name = f"qa_healthy_{suffix}"
-        task = await repo.create_task(
+        task = await task_definitions.create_task(
             {
                 "name": name,
                 "timezone": "UTC",
@@ -337,17 +324,18 @@ class TestLostTraceAgainstEngine:
             created_by=SR_USER,
         )
         cleanup_runs["task"].append(task["id"])
-        run = await repo.create_graph_run(
-            {"graph_id": f"g_{suffix}", "trigger_type": "manual", "state": "running"}
+        run = await create_graph_run(
+            repo, {"graph_id": f"g_{suffix}", "trigger_type": "manual", "state": "running"}
         )
         cleanup_runs["graph"].append(run["id"])
-        node = await repo.create_task_run(
+        node = await create_task_run(
+            repo,
             {
                 "graph_run_id": run["id"],
                 "task_id": task["id"],
                 "state": "running",
                 "delegated": True,
-            }
+            },
         )
         reconciler = Reconciler(repo, heartbeat_timeout_seconds=3600)
 
@@ -410,11 +398,11 @@ class TestEngineReadFaultTolerance:
     """
 
     async def test_unreadable_task_runs_never_abandons_a_node(
-        self, engine_infra, cleanup_runs
+        self, engine_infra, cleanup_runs, task_definitions
     ):
         suffix = uuid4().hex[:8]
         name = f"unreadable_{suffix}"
-        task = await repo.create_task(
+        task = await task_definitions.create_task(
             {
                 "name": name,
                 "timezone": "UTC",
@@ -425,17 +413,18 @@ class TestEngineReadFaultTolerance:
             created_by=SR_USER,
         )
         cleanup_runs["task"].append(task["id"])
-        run = await repo.create_graph_run(
-            {"graph_id": f"g_{suffix}", "trigger_type": "manual", "state": "running"}
+        run = await create_graph_run(
+            repo, {"graph_id": f"g_{suffix}", "trigger_type": "manual", "state": "running"}
         )
         cleanup_runs["graph"].append(run["id"])
-        node = await repo.create_task_run(
+        node = await create_task_run(
+            repo,
             {
                 "graph_run_id": run["id"],
                 "task_id": task["id"],
                 "state": "running",
                 "delegated": True,
-            }
+            },
         )
 
         # An unreadable surface is UNKNOWN, not MISSING.
@@ -453,7 +442,7 @@ class TestEngineReadFaultTolerance:
         assert refreshed is not None and refreshed["state"] == "running"
 
     async def test_archive_refusal_on_a_live_engine_stays_unknown(
-        self, engine_infra, cleanup_runs
+        self, engine_infra, cleanup_runs, task_definitions
     ):
         """The CI signature: a live engine's archive 1064 must not settle a node.
 
@@ -464,7 +453,7 @@ class TestEngineReadFaultTolerance:
         """
         suffix = uuid4().hex[:8]
         name = f"refused_{suffix}"
-        task = await repo.create_task(
+        task = await task_definitions.create_task(
             {
                 "name": name,
                 "timezone": "UTC",
@@ -475,17 +464,18 @@ class TestEngineReadFaultTolerance:
             created_by=SR_USER,
         )
         cleanup_runs["task"].append(task["id"])
-        run = await repo.create_graph_run(
-            {"graph_id": f"g_{suffix}", "trigger_type": "manual", "state": "running"}
+        run = await create_graph_run(
+            repo, {"graph_id": f"g_{suffix}", "trigger_type": "manual", "state": "running"}
         )
         cleanup_runs["graph"].append(run["id"])
-        node = await repo.create_task_run(
+        node = await create_task_run(
+            repo,
             {
                 "graph_run_id": run["id"],
                 "task_id": task["id"],
                 "state": "running",
                 "delegated": True,
-            }
+            },
         )
 
         report = await Reconciler(
@@ -517,10 +507,7 @@ class _UnknownObserver:
         return await read_native_config()
 
     async def read_runs(self, task_names: list[str]) -> dict[str, NativeRun]:
-        return {
-            name: NativeRun(task_name=name, state=NativeState.UNKNOWN)
-            for name in task_names
-        }
+        return {name: NativeRun(task_name=name, state=NativeState.UNKNOWN) for name in task_names}
 
     async def read_schedules(self, task_names: list[str]) -> dict[str, str]:
         return {name: "" for name in task_names}
@@ -589,13 +576,13 @@ class TestArchiveSurfaceFailureThroughTheEngine:
     """
 
     async def test_archive_1064_on_a_live_engine_reads_unknown(
-        self, engine_infra, cleanup_runs
+        self, engine_infra, cleanup_runs, task_definitions
     ):
         import app.modules.task_orchestration.native as native_module
 
         suffix = uuid4().hex[:8]
         name = f"lost1064_{suffix}"
-        task = await repo.create_task(
+        task = await task_definitions.create_task(
             {
                 "name": name,
                 "timezone": "UTC",
@@ -606,17 +593,18 @@ class TestArchiveSurfaceFailureThroughTheEngine:
             created_by=SR_USER,
         )
         cleanup_runs["task"].append(task["id"])
-        run = await repo.create_graph_run(
-            {"graph_id": f"g_{suffix}", "trigger_type": "manual", "state": "running"}
+        run = await create_graph_run(
+            repo, {"graph_id": f"g_{suffix}", "trigger_type": "manual", "state": "running"}
         )
         cleanup_runs["graph"].append(run["id"])
-        node = await repo.create_task_run(
+        node = await create_task_run(
+            repo,
             {
                 "graph_run_id": run["id"],
                 "task_id": task["id"],
                 "state": "running",
                 "delegated": True,
-            }
+            },
         )
 
         # The reader, not a stub, classifies the archive 1064.
@@ -648,7 +636,9 @@ class TestAutoPauseThresholdAgainstEngine:
     still comes from the live engine — proving the gate uses the engine's value.
     """
 
-    async def test_engine_config_is_the_threshold(self, engine_infra, cleanup_runs):
+    async def test_engine_config_is_the_threshold(
+        self, engine_infra, cleanup_runs, task_definitions
+    ):
         from app.modules.task_orchestration.native import NativeRun, NativeState
 
         real_config = await read_native_config()
@@ -660,16 +650,14 @@ class TestAutoPauseThresholdAgainstEngine:
                 return real_config
 
             async def read_runs(self, names):
-                return {
-                    n: NativeRun(task_name=n, state=NativeState.FAILED) for n in names
-                }
+                return {n: NativeRun(task_name=n, state=NativeState.FAILED) for n in names}
 
             async def read_schedules(self, names):
                 return {n: "MANUAL" for n in names}
 
         suffix = uuid4().hex[:8]
         name = f"thresh_{suffix}"
-        task = await repo.create_task(
+        task = await task_definitions.create_task(
             {
                 "name": name,
                 "timezone": "UTC",
@@ -680,8 +668,8 @@ class TestAutoPauseThresholdAgainstEngine:
             created_by=SR_USER,
         )
         cleanup_runs["task"].append(task["id"])
-        run = await repo.create_graph_run(
-            {"graph_id": f"g_{suffix}", "trigger_type": "manual", "state": "running"}
+        run = await create_graph_run(
+            repo, {"graph_id": f"g_{suffix}", "trigger_type": "manual", "state": "running"}
         )
         cleanup_runs["graph"].append(run["id"])
         reconciler = Reconciler(repo, observer=_Observer())
@@ -690,25 +678,27 @@ class TestAutoPauseThresholdAgainstEngine:
         # covers every running node in the system, so assert on *this* task,
         # not on the whole report.
         for attempt in range(1, ceiling):
-            await repo.create_task_run(
+            await create_task_run(
+                repo,
                 {
                     "graph_run_id": run["id"],
                     "task_id": task["id"],
                     "state": "running",
                     "delegated": True,
-                }
+                },
             )
             report = await reconciler.reconcile_native()
             assert name not in report.auto_paused, f"alarmed at attempt {attempt}/{ceiling}"
 
         # The ceiling-th consecutive failure raises the alarm.
-        await repo.create_task_run(
+        await create_task_run(
+            repo,
             {
                 "graph_run_id": run["id"],
                 "task_id": task["id"],
                 "state": "running",
                 "delegated": True,
-            }
+            },
         )
         report = await reconciler.reconcile_native()
         assert name in report.auto_paused
@@ -718,7 +708,7 @@ class TestLostTraceIsHeldByWorkerService:
     """A lost execution trace remains visible without replaying an uncertain write."""
 
     async def test_lost_trace_is_abandoned_without_replay(
-        self, engine_infra, cleanup_runs, audit_records
+        self, engine_infra, cleanup_runs, audit_records, task_definitions
     ):
         """A stale node is audited and held until its execution is resolved."""
         from app.modules.task_orchestration.credentials import StaticCredentialProvider
@@ -727,7 +717,7 @@ class TestLostTraceIsHeldByWorkerService:
 
         suffix = uuid4().hex[:8]
         name = f"settle_{suffix}"
-        task = await repo.create_task(
+        task = await task_definitions.create_task(
             {
                 "name": name,
                 "timezone": "UTC",
@@ -742,17 +732,18 @@ class TestLostTraceIsHeldByWorkerService:
         # ``scheduler.build_graphs``), not the name. Using the name here would
         # let the graph settle via "graph has no nodes" and mask whether the
         # heartbeat path actually drove the node.
-        run = await repo.create_graph_run(
-            {"graph_id": task["id"], "trigger_type": "manual", "state": "running"}
+        run = await create_graph_run(
+            repo, {"graph_id": task["id"], "trigger_type": "manual", "state": "running"}
         )
         cleanup_runs["graph"].append(run["id"])
-        node = await repo.create_task_run(
+        node = await create_task_run(
+            repo,
             {
                 "graph_run_id": run["id"],
                 "task_id": task["id"],
                 "state": "running",
                 "delegated": True,
-            }
+            },
         )
 
         executor = DelegateExecutor(
@@ -781,7 +772,7 @@ class TestLostTraceIsHeldByWorkerService:
         assert settled["state"] == "running"
 
     async def test_fresh_heartbeat_running_node_does_not_hang_reconcile(
-        self, engine_infra, cleanup_runs
+        self, engine_infra, cleanup_runs, task_definitions
     ):
         """NOVA-53: a running node with a *fresh* heartbeat must not hang.
 
@@ -807,32 +798,31 @@ class TestLostTraceIsHeldByWorkerService:
 
         suffix = uuid4().hex[:8]
         name = f"fresh_{suffix}"
-        task = await repo.create_task(
+        task = await task_definitions.create_task(
             {
                 "name": name,
                 "timezone": "UTC",
                 # A per-test table so a regression that lets the node execute
                 # cannot race the sibling test's shared probe table.
-                "definition": (
-                    f"INSERT INTO NOVA_SYSTEM.nova_fresh_probe_{suffix} SELECT 1"
-                ),
+                "definition": (f"INSERT INTO NOVA_SYSTEM.nova_fresh_probe_{suffix} SELECT 1"),
                 "database_name": "NOVA_SYSTEM",
                 "schedule_kind": "manual",
             },
             created_by=SR_USER,
         )
         cleanup_runs["task"].append(task["id"])
-        run = await repo.create_graph_run(
-            {"graph_id": task["id"], "trigger_type": "manual", "state": "running"}
+        run = await create_graph_run(
+            repo, {"graph_id": task["id"], "trigger_type": "manual", "state": "running"}
         )
         cleanup_runs["graph"].append(run["id"])
-        node = await repo.create_task_run(
+        node = await create_task_run(
+            repo,
             {
                 "graph_run_id": run["id"],
                 "task_id": task["id"],
                 "state": "running",
                 "delegated": True,
-            }
+            },
         )
 
         executor = DelegateExecutor(

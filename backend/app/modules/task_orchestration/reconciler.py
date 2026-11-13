@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, tzinfo
 from typing import Any, Protocol
 from uuid import UUID
 
@@ -56,6 +56,7 @@ from app.modules.task_orchestration.native import (
     schedule_is_paused,
 )
 from app.modules.task_orchestration.repository import TaskOrchestrationRepository
+from app.modules.task_orchestration.schedule import resolve_timezone
 
 logger = logging.getLogger(__name__)
 
@@ -173,6 +174,18 @@ class Reconciler:
             else settings.WORKER_MAX_CONSECUTIVE_FAIL_COUNT
         )
 
+    async def _engine_zone(self) -> tzinfo | None:
+        """The engine's session zone, read once; native trace times use it."""
+        if not hasattr(self, "_zone_loaded"):
+            self._zone: tzinfo | None = None
+            try:
+                name = await self._repository.get_engine_timezone()
+                self._zone = resolve_timezone(name) if name else None
+            except Exception:  # noqa: BLE001 - an unknown zone keeps the naive comparison
+                logger.warning("engine timezone unavailable; comparing native times as read")
+            self._zone_loaded = True
+        return self._zone
+
     async def scan(self) -> ReconcileReport:
         """Find work the stream may have lost. Pure reads, no writes.
 
@@ -232,8 +245,9 @@ class Reconciler:
         abandoned: list[dict[str, Any]] = []
         tasks: dict[str, dict[str, Any]] | None = None
         for node in stale:
-            moved = await self._repository.transition_task_run(
-                str(node["id"]), list(_RUNNING), NodeState.ABANDONED.value
+            # Fenced on the generation read: a node retaken since is not ours to end.
+            moved = await self._repository.abandon_task_run(
+                str(node["id"]), generation=int(node.get("lease_generation") or 0)
             )
             if not moved:
                 continue
@@ -329,7 +343,7 @@ class Reconciler:
                 report.unknown.append(name)
             return
 
-        if _is_stale_native_row(row, observed):
+        if _is_stale_native_row(row, observed, await self._engine_zone()):
             # The newest native row predates this node's submission, so it is a
             # leftover from a previous attempt — not this run's outcome. Two
             # workers share the stream, so a reconciler must not settle a node
@@ -337,10 +351,13 @@ class Reconciler:
             # real row (NOVA-42 second finding).
             return
 
-        moved = await self._repository.transition_task_run(
+        # The native trace is the participant's verified outcome. Record it
+        # against the lease generation observed with the row, so a node retaken
+        # in between is never settled by a stale observation.
+        moved = await self._repository.finish_task_run(
             str(row["id"]),
-            list(_RUNNING),
             node_state.value,
+            generation=int(row.get("lease_generation") or 0),
             query_id=observed.query_id,
             error_message=observed.error_message,
         )
@@ -440,7 +457,9 @@ class Reconciler:
         )
 
 
-def _is_stale_native_row(row: dict[str, Any], observed: NativeRun) -> bool:
+def _is_stale_native_row(
+    row: dict[str, Any], observed: NativeRun, engine_zone: tzinfo | None = None,
+) -> bool:
     """Whether ``observed`` is a leftover from a previous attempt.
 
     The engine's newest row for a task can predate this node's submission when
@@ -457,6 +476,9 @@ def _is_stale_native_row(row: dict[str, Any], observed: NativeRun) -> bool:
     created = observed.create_time
     if not isinstance(started, datetime) or not isinstance(created, datetime):
         return False
+    # Metadata stamps are timezone-aware; native times are engine-local naive.
+    if started.tzinfo is not None and created.tzinfo is None and engine_zone is not None:
+        started = started.astimezone(engine_zone)
     started_naive = started.replace(tzinfo=None) if started.tzinfo else started
     created_naive = created.replace(tzinfo=None) if created.tzinfo else created
     return created_naive < started_naive

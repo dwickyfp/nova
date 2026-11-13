@@ -1,0 +1,31 @@
+{
+  "scope": "Running Neva grant API, two real logins, existing Redis, controlled helper restoration; no model or tool invocation",
+  "source_commit": "02195d1903c2af515a0dba2c5b0f7f202908bc21",
+  "started_at": "2026-11-11T23:59:56.920518+00:00",
+  "cases": [
+    {
+      "id": "independent_real_logins",
+      "passed": true
+    }
+  ],
+  "cleanup": [
+    {
+      "resource": "owned_grant_keys",
+      "remaining": 0
+    },
+    {
+      "resource": "owned_login",
+      "http_status": 200
+    },
+    {
+      "resource": "owned_login",
+      "http_status": 200
+    }
+  ],
+  "application_tree_sha256": "4b21917a5ab23c7d68b9a9e9010c9a24d27bdafa0d37a60652d36b4c5df0b159",
+  "ended_at": "2026-11-12T00:01:09.752765+00:00",
+  "attempt_note": "FAIL: creating the synthetic conversation timed out after the first assertion; one committed fixture was subsequently reconciled and deleted.",
+  "attempt_result": "FAIL",
+  "error_type": "ReadTimeout",
+  "failed_operation": "create_synthetic_thread"
+}

@@ -31,7 +31,7 @@ class StudioIdentity(BaseModel):
 
 
 class StudioPreferences(BaseModel):
-    """Studio-local UI settings. Stored in NOVA_SYSTEM.CONFIG_USER_PREFERENCES."""
+    """Studio-local UI settings. Stored in the preference metadata (PostgreSQL)."""
 
     theme: StudioTheme = "system"
     language: str = "en"

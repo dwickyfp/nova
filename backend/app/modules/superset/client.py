@@ -18,6 +18,7 @@ from typing import Any
 import httpx
 
 from app.core.config import settings
+from app.core.metadata_scope import actor_for
 
 from . import tokens
 from .router import BI_COOKIE, BI_PATH
@@ -79,7 +80,10 @@ class SupersetClient:
         if author:
             from .access import SUPERSET_VIEWER, superset_role_for
 
-            if await superset_role_for(str(user.get("active_role") or "")) == SUPERSET_VIEWER:
+            if (
+                await superset_role_for(str(user.get("active_role") or ""), actor=actor_for(user))
+                == SUPERSET_VIEWER
+            ):
                 raise BiError(_NOT_AUTHOR, status=403)
         try:
             handle = await tokens.issue_handle(session_id)

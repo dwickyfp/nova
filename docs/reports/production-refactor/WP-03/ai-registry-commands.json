@@ -1,0 +1,220 @@
+{
+  "source_parent_commit": "1d79c40aa8bc301be31f3f3b96b3fa4bc6d0caaa",
+  "application_tree_sha256": "445f1a4ec315c4a4e666e6a343a56a4efd5d3e961cf4422ee3ccff521d946f98",
+  "schema_revisions": {
+    "0001_deployment_state.sql": "8b0a3366fa07d4abcaffe87e23ee2f9aeb3fb01e8c3f2c8132b28d6a83aaaff0",
+    "0002_user_preferences.sql": "9c130bf7b1d121d222d145dafd52c0a53ad437e95e0880acda19c924c4f14fcc",
+    "0003_password_flag_workloads.sql": "fa5e8e5484d6e011de3dd9bca11771d41927dc89cacd3b11f4a94d0b03803866",
+    "0004_ai_registry.sql": "647ebc9fbd4b5aa72850041b43dc7cd7b4eb7f4a5bae32f8da9e0f6f229af470"
+  },
+  "runtime_authority": "StarRocks; no live caller or epoch has switched",
+  "local_topology": "Existing docker project PG17.11 with verify-full TLS; native PgBouncer1.26.1; no new database/engine containers",
+  "current_checks": {
+    "combined_pg": {
+      "result": "PASS",
+      "passed": 132,
+      "skipped": 0,
+      "seconds": 119.63,
+      "artifact": "ai-registry-pg-final.xml",
+      "test_selection": [
+        "test_metadata_ai_registry.py",
+        "test_metadata_preferences.py",
+        "test_metadata_migrator.py",
+        "test_metadata_pg_foundation.py",
+        "test_metadata_pgbouncer.py",
+        "test_metadata_bootstrap.py"
+      ],
+      "pytest_options": [
+        "-q",
+        "--tb=short",
+        "--maxfail=3",
+        "--junit-xml=/tmp/nova-ai-registry-pg-4.xml"
+      ]
+    },
+    "full_unit_coverage": {
+      "result": "PASS",
+      "passed": 10664,
+      "warnings": 4,
+      "seconds": 620.57,
+      "coverage_percent_rounded": 65,
+      "argv": [
+        "uv",
+        "run",
+        "pytest",
+        "tests/unit",
+        "--cov=app",
+        "--cov-branch",
+        "--cov-report=term-missing",
+        "--cov-report=xml:/tmp/nova-refactor-coverage-22.xml"
+      ]
+    },
+    "mypy": {
+      "result": "PASS",
+      "command": "uv run mypy app --no-error-summary"
+    },
+    "agent_scorecard": {
+      "result": "PASS",
+      "command": "uv run python -m tests.eval.report",
+      "scenarios": 54,
+      "checks": 189
+    },
+    "changed_python_ruff": {
+      "result": "PASS",
+      "argv": [
+        "uv",
+        "run",
+        "ruff",
+        "check",
+        "--force-exclude",
+        "app/common/preferences.py",
+        "app/core/config.py",
+        "app/core/deps.py",
+        "app/core/metadata_bootstrap.py",
+        "app/core/metadata_db.py",
+        "app/core/metadata_import.py",
+        "app/core/metadata_migrations.py",
+        "app/core/metadata_schema.py",
+        "app/core/redis.py",
+        "app/main.py",
+        "app/modules/agents/router.py",
+        "app/modules/agents/studio_router.py",
+        "app/modules/ai_ml/router.py",
+        "app/modules/assistant/consent.py",
+        "app/modules/assistant/router.py",
+        "app/modules/assistant/service.py",
+        "app/modules/auth/service.py",
+        "app/modules/llm_functions/router.py",
+        "app/modules/task_orchestration/execution.py",
+        "app/modules/task_orchestration/worker.py",
+        "app/observability/http.py",
+        "scripts/inventory_control_plane.py",
+        "scripts/profile_metadata_constraints.py",
+        "tests/eval/semantic_execution.py",
+        "tests/eval/test_business_ontology_trajectory.py",
+        "tests/eval/test_evidence_health_trajectory.py",
+        "tests/eval/test_mcp_consent_trajectory.py",
+        "tests/eval/test_semantic_clarification_trajectory.py",
+        "tests/eval/test_semantic_latest_month.py",
+        "tests/integration/build_metadata_pooler.py",
+        "tests/integration/prepare_metadata_fixture.py",
+        "tests/integration/test_metadata_bootstrap.py",
+        "tests/integration/test_metadata_migrator.py",
+        "tests/integration/test_metadata_pg_foundation.py",
+        "tests/integration/test_metadata_pgbouncer.py",
+        "tests/integration/test_metadata_preferences.py",
+        "tests/integration/test_task_outcome_uncertainty.py",
+        "tests/unit/test_agent_run_storage_failure.py",
+        "tests/unit/test_ai_ml_ssrf_guard.py",
+        "tests/unit/test_api_auth_inventory.py",
+        "tests/unit/test_assistant_stage_b.py",
+        "tests/unit/test_control_plane_inventory.py",
+        "tests/unit/test_control_plane_session_boundaries.py",
+        "tests/unit/test_llm_alias_authorization.py",
+        "tests/unit/test_mcp_registry_access.py",
+        "tests/unit/test_metadata_bootstrap_config.py",
+        "tests/unit/test_metadata_db_config.py",
+        "tests/unit/test_metadata_import.py",
+        "tests/unit/test_metadata_preferences.py",
+        "tests/unit/test_metadata_schema.py",
+        "tests/unit/test_notebook_data_tokens.py",
+        "tests/unit/test_nova119_assistant_ssrf_and_provider_gate.py",
+        "tests/unit/test_observability_metrics.py",
+        "tests/unit/test_process_role.py",
+        "tests/unit/test_superset_bridge.py",
+        "tests/unit/test_task_orchestration_worker.py",
+        "tests/unit/test_task_outcome_uncertainty.py",
+        "tests/unit/test_web_search_tool.py",
+        "app/modules/ai_ml/repository.py",
+        "tests/unit/test_metadata_ai_registry.py",
+        "tests/integration/test_metadata_ai_registry.py"
+      ],
+      "exit_code": 0,
+      "python_files": 61
+    },
+    "docs_and_workflow": {
+      "result": "PASS",
+      "local_links": 26,
+      "jobs": 8,
+      "shell_steps_syntax_checked": 38
+    }
+  },
+  "earlier_pg_attempts": [
+    {
+      "artifact": "ai-registry-pg-attempt-1.xml",
+      "tests": "32",
+      "failures": "1",
+      "errors": "0",
+      "skipped": "0",
+      "time": "14.121"
+    },
+    {
+      "artifact": "ai-registry-pg-attempt-2.xml",
+      "tests": "32",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "17.335"
+    },
+    {
+      "artifact": "ai-registry-pg-attempt-3.xml",
+      "tests": "132",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "72.295"
+    }
+  ],
+  "earlier_attempt_notes": [
+    "First PG attempt: uniqueness correctly raised the existing MetadataConflict (409); test expected MetadataIntegrityViolation. Corrected the expected type, retaining the one-winner assertion.",
+    "Second PG attempt: 32 passes before adding inactive-provider credential preservation.",
+    "Third PG attempt: 132 passes before final qualified import-type override and recursive JSON parameter validation.",
+    "Full unit run 21 was intentionally interrupted after 6,505 passes/3 warnings/375.81 seconds because import and JSON validation changed after collection; not counted as a full pass.",
+    "First read-only source probe used the default port 9030 and could not connect. Corrected to the observed existing port 29030; no source rows were changed."
+  ],
+  "focused_units": {
+    "passed": 128,
+    "seconds": 5.63,
+    "command": "uv run pytest tests/unit/test_metadata_import.py tests/unit/test_metadata_ai_registry.py -q --tb=short"
+  },
+  "source_profile": {
+    "mode": "READ_ONLY_AGGREGATES",
+    "row_values_exported": false,
+    "consistent_snapshot": false,
+    "checks": {
+      "provider_storage": {
+        "provider_rows": 1,
+        "non_encrypted_keys": 0,
+        "null_active_flags": 0
+      },
+      "model_references": {
+        "orphan_models": 0
+      },
+      "model_shape": {
+        "model_rows": 2,
+        "unsupported_types": 0,
+        "null_active_flags": 0
+      }
+    }
+  },
+  "ci": "PENDING for registry edits; parent 1d79c40a passed all eight jobs in CI43049859127, with 99 PG tests and 217 engine tests/24 skips",
+  "limits": [
+    "No runtime provider/model caller port",
+    "No function-alias store, native UDF job or effect receipt",
+    "No atomic audit/default-model integration",
+    "No historical timestamp provenance or import rehearsal",
+    "R32 remains open in the legacy runtime until its port",
+    "No live provider call in this storage suite",
+    "Embedding provider tests OWNER_WAIVED; metadata constraints do not prove live retrieval quality"
+  ],
+  "cleanup": {
+    "remaining_test_schemas": 0,
+    "remaining_test_roles": 0,
+    "log_scan": {
+      "window_minutes": 90,
+      "lines": 2509,
+      "encrypted_envelope_marker_lines": 0,
+      "registry_secret_canary_lines": 0,
+      "raw_logs_exported": false
+    }
+  }
+}

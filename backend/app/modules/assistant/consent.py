@@ -14,7 +14,10 @@ from __future__ import annotations
 import asyncio
 import threading
 from dataclasses import dataclass
-from typing import IO
+from typing import IO, Any
+
+from app.core.exceptions import InvalidCredentialsError
+from app.modules.assistant.read_grants import stamp
 
 
 @dataclass(repr=False)
@@ -30,7 +33,7 @@ class _PendingConsent:
     future: asyncio.Future[bool | None | ConsentApproval]
     loop: asyncio.AbstractEventLoop
     thread_id: str
-    user_name: str
+    identity: dict[str, Any]
     classification: str = "read_only"
     secure_fields: tuple[str, ...] = ()
     upload_required: bool = False
@@ -54,11 +57,11 @@ class ConsentConflictError(RuntimeError):
 class ConsentBroker:
     """Per-tool-call futures, created by the loop and resolved by the router.
 
-    The pending entry records the owning ``thread_id`` **and** ``user_name``:
+    The pending entry records the thread and the complete login identity:
 
     * ``thread_id`` lets an ``allow_session`` decision set the grant on exactly
       the conversation that asked — never on every thread the user owns (E2b).
-    * ``user_name`` makes resolution an **owner-scoped** operation. A caller who
+    * The principal, login, active role and security version must all match. A caller who
       is not the thread's owner must not be able to approve or deny someone
       else's pending call (NOVA-70: the route previously resolved on
       ``tool_call_id`` alone, which is an IDOR — the id is model-supplied and
@@ -77,7 +80,7 @@ class ConsentBroker:
         tool_call_id: str,
         *,
         thread_id: str,
-        user_name: str,
+        user: dict[str, Any],
         classification: str = "read_only",
         secure_fields: tuple[str, ...] = (),
         upload_required: bool = False,
@@ -90,6 +93,9 @@ class ConsentBroker:
                 it; the colliding caller is told to stop rather than silently
                 orphaning the first stream.
         """
+        identity = stamp(user)
+        if identity is None:
+            raise InvalidCredentialsError("Sign in again before requesting tool approval")
         loop = asyncio.get_running_loop()
         future: asyncio.Future[bool | None | ConsentApproval] = loop.create_future()
         with self._lock:
@@ -99,18 +105,29 @@ class ConsentBroker:
                 future=future,
                 loop=loop,
                 thread_id=thread_id,
-                user_name=user_name,
+                identity=identity,
                 classification=classification,
                 secure_fields=secure_fields,
                 upload_required=upload_required,
             )
+        future.add_done_callback(lambda completed: self._forget_completed(tool_call_id, completed))
         return future
 
-    def owner_of(self, tool_call_id: str) -> tuple[str, str] | None:
+    def _forget_completed(
+        self, tool_call_id: str, future: asyncio.Future[bool | None | ConsentApproval]
+    ) -> None:
+        with self._lock:
+            pending = self._pending.get(tool_call_id)
+            if pending is not None and pending.future is future:
+                self._pending.pop(tool_call_id)
+
+    def owner_of(self, tool_call_id: str, *, user: dict[str, Any]) -> tuple[str, str] | None:
         """``(thread_id, user_name)`` of a still-pending call, or ``None``."""
         with self._lock:
             pending = self._pending.get(tool_call_id)
-        return (pending.thread_id, pending.user_name) if pending is not None else None
+        if pending is None or pending.identity != stamp(user):
+            return None
+        return pending.thread_id, pending.identity["principal"]
 
     def classification_of(self, tool_call_id: str) -> str | None:
         """The classification of a still-pending call, or ``None``."""
@@ -128,9 +145,9 @@ class ConsentBroker:
             pending = self._pending.get(tool_call_id)
         return bool(pending and pending.upload_required)
 
-    def thread_for(self, tool_call_id: str) -> str | None:
+    def thread_for(self, tool_call_id: str, *, user: dict[str, Any]) -> str | None:
         """The conversation that owns a still-pending call, if any."""
-        owner = self.owner_of(tool_call_id)
+        owner = self.owner_of(tool_call_id, user=user)
         return owner[0] if owner is not None else None
 
     def resolve(
@@ -138,9 +155,9 @@ class ConsentBroker:
         tool_call_id: str,
         allowed: bool | None | ConsentApproval,
         *,
-        user_name: str,
+        user: dict[str, Any],
     ) -> bool:
-        """Resolve a pending decision, but only for its owner.
+        """Resolve a pending decision only within its original login and security context.
 
         Returns ``False`` when nothing was waiting **or** the caller is not the
         owner. A foreign caller does not consume the entry: it is left for the
@@ -149,7 +166,7 @@ class ConsentBroker:
         """
         with self._lock:
             pending = self._pending.get(tool_call_id)
-            if pending is None or pending.user_name != user_name:
+            if pending is None or pending.identity != stamp(user):
                 return False
             self._pending.pop(tool_call_id, None)
         if pending.future.done():

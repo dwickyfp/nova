@@ -21,7 +21,8 @@ without a runtime, but executing Python or SQL needs one.
 2. Open **More things to create**, beside **SQL file**, and choose **Notebook**.
 3. Click **Start runtime** and wait until it is ready.
 4. Use **Add cell** or **+ Python**, **+ SQL**, and **+ Markdown** between cells.
-5. Click a cell's editor to enter code. Use **Run this cell** to execute it.
+5. Click a cell's editor to enter code. Use **Run this cell** or **Ctrl+Enter**
+   to execute it. **Cmd+Enter** also works on macOS.
 6. Use **Run all** to run the document in order. It stops on an error; the
    adjacent **More ways to run** menu offers **Run all, continue after errors**.
 
@@ -32,14 +33,21 @@ import duckdb
 duckdb.sql('SELECT 41 + 1').fetchall()
 ```
 
-Markdown cells contain explanations, headings and lists. Click **Edit Markdown
-cell** to change one. A cell's optional **Cell title** helps identify it in
-the outline.
+Markdown cells contain explanations, headings and lists. Double-click a Markdown
+cell to edit it, or select the cell and press **Enter**. Press **Ctrl+Enter** or **Cmd+Enter** to render the text;
+Markdown does not need a running runtime. It uses its own headings and has no title field.
+Python and SQL cells have an optional **Cell title** to identify them in the outline.
+
+Use the **Cell type** dropdown above each cell to choose **Python**, **SQL** or
+**Markdown**. It shows the current type even when the cell is not selected.
+SQL and Python syntax is highlighted as soon as the notebook opens.
+Syntax colors follow your theme before and during editing.
 
 ## Save and organize
 
 Changes save automatically; check that the toolbar says **Saved** before
-leaving. Use **Move up**, **Move down**, or the drag handle to reorder a cell.
+leaving. Open **Cell actions** for **Move up** and **Move down**, or use the
+drag handle to reorder a cell.
 **Undo the last cell change** restores the last supported document edit.
 
 Open **Outline, variables and packages** to inspect the notebook outline,
@@ -62,7 +70,10 @@ the document is not a substitute for stopping a runtime you no longer need.
   for the failed start to finish before trying **Start runtime** again.
 - A Python exception appears with its traceback under the cell. Fix the code
   and run it again.
+- If another tab saves a newer version, your stale edit is refused. Reload the
+  notebook to see the latest version before editing again.
 - If the connection ends before a result arrives, the code may already have
   run. Check any writes before repeating the cell.
 - A notebook's saved code and its running state are separate. Saving does
-  not preserve live Python variables across runtime restarts.
+  not preserve live Python variables across runtime restarts. Saved outputs
+  remain visible until you run or clear them; editing code does not refresh them.

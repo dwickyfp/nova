@@ -8,6 +8,7 @@ import pytest
 
 from app.core.config import settings
 from app.core.database import db
+from app.core.metadata_scope import acting_as
 from app.core.redis import session_store
 from app.modules.agents.knowledge import KnowledgeReview, KnowledgeState
 from app.modules.agents.memory import memory_repository
@@ -21,7 +22,8 @@ from app.modules.intelligence.contracts import (
     Window,
 )
 from app.modules.intelligence.engine_repository import intelligence_repository as repository
-from app.modules.intelligence.engine_schema import ENGINE_TABLES, ensure_engine_schema
+from app.modules.intelligence.engine_schema import ensure_engine_schema
+from app.modules.intelligence.metadata_repository import scope_actor
 from tests.conftest import redis_url, root_password
 from tests.integration._stack import require_shared_stack, shared_stack_host_port
 
@@ -29,7 +31,7 @@ pytestmark = pytest.mark.engine
 
 
 @pytest.fixture
-async def intelligence_db(request, monkeypatch, docker_services):
+async def intelligence_db(request, monkeypatch, docker_services, engine_metadata):
     require_shared_stack(request)
     monkeypatch.setattr(settings, "STARROCKS_HOST", "127.0.0.1")
     monkeypatch.setattr(
@@ -42,7 +44,7 @@ async def intelligence_db(request, monkeypatch, docker_services):
     monkeypatch.setattr(
         settings,
         "REDIS_URL",
-        redis_url(shared_stack_host_port('NOVA_TEST_REDIS_PORT', 26379)),
+        redis_url(shared_stack_host_port("NOVA_TEST_REDIS_PORT", 26379)),
     )
     await db.init_system_pool()
     await session_store.init()
@@ -50,22 +52,16 @@ async def intelligence_db(request, monkeypatch, docker_services):
     await ensure_engine_schema()
     await memory_repository.ensure_schema()
     owner = "intelligence-test-" + uuid4().hex
+    scope = Scope(
+        principal=owner,
+        active_role="ANALYST",
+        security_context_version=1,
+        session_id="fixture-session",
+    )
     try:
-        yield Scope(
-            principal=owner,
-            active_role="ANALYST",
-            security_context_version=1,
-            session_id="fixture-session",
-        )
+        async with acting_as(scope_actor(scope)):
+            yield scope
     finally:
-        for table in ENGINE_TABLES.values():
-            await db.execute_system(f"DELETE FROM NOVA_SYSTEM.{table} WHERE principal=%s", [owner])
-        for table in (
-            "CONFIG_AGENT_MEMORIES",
-            "CONFIG_AGENT_MEMORY_REVISIONS",
-            "CONFIG_AGENT_MEMORY_EVIDENCE",
-        ):
-            await db.execute_system(f"DELETE FROM NOVA_SYSTEM.{table} WHERE user_name=%s", [owner])
         await session_store.close()
         await db.close_system_pool()
 
@@ -73,9 +69,6 @@ async def intelligence_db(request, monkeypatch, docker_services):
 async def test_runtime_bootstrap_and_migration_are_idempotent(intelligence_db):
     await ensure_engine_schema()
     migration = Path("migrations/20261001_intelligence_engine.sql").read_text()
-    for statement in migration.split(";"):
-        if statement.strip():
-            await db.execute_system(statement)
     await memory_repository.ensure_schema()
     bootstrap = (
         Path("../docker/init-nova.sql")

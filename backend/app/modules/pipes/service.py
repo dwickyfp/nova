@@ -74,9 +74,15 @@ class PipeService:
         ]
 
     async def list_pipes(self, database: str | None = None, **caller) -> list[dict]:
-        sql = "SHOW PIPES"
         if database:
-            sql += f" FROM `{check_identifier(database, field='database')}`"
+            sql = f"SHOW PIPES FROM `{check_identifier(database, field='database')}`"
+        else:
+            # ``SHOW PIPES`` needs a current database; the catalog table lists
+            # every pipe the caller's role can see.
+            sql = (
+                "SELECT DATABASE_NAME, PIPE_NAME, STATE, PROPERTIES, CREATED_TIME "
+                "FROM information_schema.pipes ORDER BY DATABASE_NAME, PIPE_NAME"
+            )
         return [_pipe(row) for row in await self._query(sql, database=database, **caller)]
 
     async def get_pipe(self, name: str, database: str | None = None, **caller) -> dict | None:

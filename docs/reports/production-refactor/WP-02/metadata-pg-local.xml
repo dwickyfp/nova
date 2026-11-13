@@ -1,0 +1,36 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="0" skipped="0" tests="31" time="18.352" timestamp="2026-11-11T18:43:33.244385+07:00">
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_fresh_schema_has_restricted_grants_and_no_active_epoch" time="1.688" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_reapply_is_unchanged_and_does_not_rewrite_ledger" time="0.959" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_changed_applied_bytes_refuse_migrator_and_application" time="3.683" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_two_migrators_publish_one_schema_revision" time="0.464" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_partial_ddl_and_transaction_escape_roll_back[SELECT missing_column FROM nova_meta.deployment_state;]" time="0.512" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_partial_ddl_and_transaction_escape_roll_back[COMMIT;]" time="0.761" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_partial_ddl_and_transaction_escape_roll_back[EXECUTE 'COMMIT';]" time="0.735" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_lost_migration_connection_rolls_back_and_resumes" time="0.741" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_schema_upgrade_requires_maintenance_and_preserves_epoch" time="1.485" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_migration_waits_for_readers_and_lock_wait_is_bounded" time="0.518" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_privileged_runtime_role_refuses_schema_install[nova_meta_app]" time="0.607" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_privileged_runtime_role_refuses_schema_install[nova_meta_readonly]" time="0.252" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_application_identity_cannot_run_migrator" time="0.114" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_failed_fresh_install_leaves_no_partial_schema" time="0.981" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_missing_ledger_never_overwrites_existing_objects" time="0.199" />
+    <testcase classname="tests.integration.test_metadata_migrator" name="test_one_shot_entrypoint_installs_without_publishing_epoch" time="0.949" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_actor_context_is_transaction_local_and_rls_is_fail_closed" time="0.188" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_concurrent_revision_update_has_one_winner" time="0.112" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_unique_conflict_and_application_exception_rollback" time="0.101" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_wrong_epoch_refuses_startup" time="0.136" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_schema_create_privilege_refuses_application_startup" time="0.087" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_broad_inherited_database_privileges_refuse_startup[pg_read_all_data]" time="0.085" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_broad_inherited_database_privileges_refuse_startup[pg_write_all_data]" time="0.185" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_database_create_grant_refuses_startup" time="0.172" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_statement_timeout_rolls_back_and_pool_recovers" time="0.227" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_lost_connection_is_uncertain_and_never_retried" time="0.169" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_database_diagnostics_do_not_expose_secret_bind_values" time="0.284" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_epoch_change_rejects_a_running_process" time="0.213" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_read_only_transaction_cannot_mutate_and_resets_context" time="0.279" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_maintenance_waits_for_writers_and_admits_only_reads" time="0.342" />
+    <testcase classname="tests.integration.test_metadata_pg_foundation" name="test_typed_values_keep_precision_timezone_unicode_and_null_distinctions" time="0.186" />
+  </testsuite>
+</testsuites>

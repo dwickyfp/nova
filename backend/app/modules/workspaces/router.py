@@ -48,9 +48,9 @@ def _space(space: Space) -> WorkspaceSpace:
 @router.get("/tree", response_model=WorkspaceTreeResponse)
 async def get_workspace_tree(user: dict = Depends(get_current_user)):
     """The personal workspace, with the person's saved tabs and layout."""
+    space = space_service.personal(user)
     tree = await workspace_service.get_tree(user["username"])
-    return {**tree, "root_name": "Personal Workspace",
-            "space": _space(space_service.personal(user))}
+    return {**tree, "root_name": "Personal Workspace", "space": _space(space)}
 
 
 @router.get("/spaces")
@@ -115,7 +115,7 @@ async def create_workspace_file(
     user: dict = Depends(get_current_user),
 ):
     space = await space_service.resolve(user, body.space, edit=True)
-    with acting_as(user["username"]):
+    with acting_as(user):
         entry = await workspace_service.create_file(
             space.namespace, body.parent_path, body.name, body.content
         )
@@ -140,7 +140,7 @@ async def update_workspace_file(
     user: dict = Depends(get_current_user),
 ):
     space = await space_service.for_entry(user, entry_id, edit=True)
-    with acting_as(user["username"]):
+    with acting_as(user):
         entry = await workspace_service.update_file(space.namespace, entry_id, body.content)
     return WorkspaceFileResponse(
         entry=WorkspaceEntry.model_validate(entry), content=body.content, space=_space(space)
@@ -150,7 +150,7 @@ async def update_workspace_file(
 @router.delete("/files/{entry_id}")
 async def delete_workspace_file(entry_id: str, user: dict = Depends(get_current_user)):
     space = await space_service.for_entry(user, entry_id, edit=True)
-    with acting_as(user["username"]):
+    with acting_as(user):
         await workspace_service.delete_entry(space.namespace, entry_id)
     return {"success": True}
 
@@ -188,7 +188,7 @@ async def create_workspace_folder(
     user: dict = Depends(get_current_user),
 ):
     space = await space_service.resolve(user, body.space, edit=True)
-    with acting_as(user["username"]):
+    with acting_as(user):
         entry = await workspace_service.create_folder(space.namespace, body.parent_path, body.name)
     return {"entry": entry, "space": _space(space)}
 
@@ -200,7 +200,7 @@ async def rename_workspace_entry(
 ):
     """Rename an entry, or move it to another folder of the same workspace."""
     space = await space_service.for_entry(user, body.id, edit=True)
-    with acting_as(user["username"]):
+    with acting_as(user):
         entry = await workspace_service.rename_entry(
             space.namespace, body.id, body.name, body.parent_path
         )
@@ -212,6 +212,12 @@ async def save_workspace_state(
     body: WorkspaceStateRequest,
     user: dict = Depends(get_current_user),
 ):
+    with acting_as(user):
+        await _save_state(user, body)
+    return {"success": True}
+
+
+async def _save_state(user: dict, body: WorkspaceStateRequest) -> None:
     await workspace_service.save_state(
         user["username"],
         open_tabs=body.open_tabs,
@@ -222,4 +228,3 @@ async def save_workspace_state(
         last_schema=body.last_schema,
         last_role=body.last_role,
     )
-    return {"success": True}

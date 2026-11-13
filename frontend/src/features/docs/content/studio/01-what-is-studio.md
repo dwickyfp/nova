@@ -59,7 +59,9 @@ the icons stay, which gives charts and editors more room.
 Click your name at the bottom of the rail to open the account menu:
 
 - **Switch role**: choose which of your roles is active. Answers, artifacts and
-  dashboards follow the active role.
+  dashboards follow the active role. Role-based shares appear only while that
+  role is active; a share addressed directly to you stays visible across role
+  switches. Shared results still use your own data permissions.
 - **Appearance**: light, dark, or follow your system.
 - **Memory**: see the facts the selected agent remembers about your work
   (see [Conversations and history](/docs/studio/conversations-and-history)).

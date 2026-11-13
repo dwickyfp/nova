@@ -94,3 +94,10 @@ Open a dashboard to view it. Use **Edit dashboard** to change its layout, and
   under **Artifacts**. Find them on the [Dataviz](/docs/dataviz/what-is-dataviz)
   tab or the [BI](/docs/dataviz/bi-workspace) page.
 - A chart's query must be a single read-only statement.
+
+If a chart changes while you are editing it, reload the latest version before
+applying your change. Nova refuses an update based on an older version.
+
+For a shared legacy dashboard, only the charts in its saved layout are available.
+Each chart runs with your current data access. Switching roles or losing the
+share can make the dashboard unavailable.

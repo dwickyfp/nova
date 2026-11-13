@@ -1,0 +1,238 @@
+{
+  "application_tree_sha256": "5442781494ba008256bcd7ab0f531aa922772f2ce48ec4538d079b95fc9d1ef8",
+  "source_parent_commit": "08a91e0e2e6f461de4a1be03c16f986117952a7f",
+  "source_files_sha256": {
+    "backend/app/modules/agents/router.py": "61bc48dec79f07cde9712f8b1757d02648bee276b302c75fa763ae25e5eb397f",
+    "backend/tests/unit/test_agent_replay_completion.py": "9268ad10478736888b7959f5fcd3dcffc5bea643dac06a579b6be4464b14f1d7",
+    "backend/tests/unit/test_agent_mission_journal.py": "d3db7ae05c7736e82d54cee5dcca632f5d938813384945b7d27676a5a3159054",
+    "frontend/src/features/docs/content/studio/02-ask-questions.md": "1e849a9ef690915d1a431031245e53bbd59e5a0e96c113d4e19d218ac1185a37"
+  },
+  "attempts": [
+    {
+      "attempt": "missing-history-before",
+      "result": {
+        "tests": 2,
+        "failures": 2,
+        "errors": 0,
+        "skipped": 0,
+        "time_seconds": 1.985
+      },
+      "note": "Initial completed-history regression on the parent router: both timed out."
+    },
+    {
+      "attempt": "mission-initial",
+      "result": {
+        "tests": 6,
+        "failures": 6,
+        "errors": 0,
+        "skipped": 0,
+        "time_seconds": 1.538
+      },
+      "note": "Initial Mission fixtures failed; later fixture corrections supply a complete public Mission and distinguish best-effort interruption from successful completion."
+    },
+    {
+      "attempt": "focused-initial",
+      "result": {
+        "tests": 27,
+        "failures": 6,
+        "errors": 0,
+        "skipped": 0,
+        "time_seconds": 3.605
+      },
+      "note": "The first implementation fixed the two hangs; six Mission fixture assertions still failed."
+    },
+    {
+      "attempt": "focused-corrected",
+      "result": {
+        "tests": 91,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "time_seconds": 5.051
+      },
+      "note": "Corrected fixture validates Mission persistence and storage faults."
+    },
+    {
+      "attempt": "paging-before",
+      "result": {
+        "tests": 12,
+        "failures": 6,
+        "errors": 0,
+        "skipped": 0,
+        "time_seconds": 1.721
+      },
+      "note": "Six failed/interrupted/cancelled pagination cases reproduced truncation after the first 100 events."
+    },
+    {
+      "attempt": "baseline-final-fixtures",
+      "result": {
+        "tests": 18,
+        "failures": 15,
+        "errors": 0,
+        "skipped": 0,
+        "time_seconds": 4.241
+      },
+      "note": "Final 18 regression cases with the parent router executed only inside an isolated test process: 15 failed, three passed. Running server/source was not replaced."
+    },
+    {
+      "attempt": "focused-final",
+      "result": {
+        "tests": 97,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "time_seconds": 4.929
+      },
+      "note": "All final replay, Mission, journal, storage-failure and Mission-service tests."
+    }
+  ],
+  "interrupted_unit_attempt": {
+    "passed_before_interrupt": 6531,
+    "complete": false,
+    "reason": "Stopped after six additional pagination regressions were reproduced; final unit/coverage run started after the fix."
+  },
+  "gates": {
+    "mypy": {
+      "command": [
+        "uv",
+        "run",
+        "mypy",
+        "app",
+        "--no-error-summary"
+      ],
+      "working_directory": "backend",
+      "started_at": "2026-11-11T23:19:00.013092+00:00",
+      "exit_code": 0,
+      "ended_at": "2026-11-11T23:19:13.531268+00:00"
+    },
+    "scorecard": {
+      "command": [
+        "uv",
+        "run",
+        "python",
+        "-m",
+        "tests.eval.report"
+      ],
+      "working_directory": "backend",
+      "started_at": "2026-11-11T23:19:13.532476+00:00",
+      "exit_code": 0,
+      "ended_at": "2026-11-11T23:19:15.894714+00:00"
+    },
+    "evals": {
+      "command": [
+        "uv",
+        "run",
+        "python",
+        "-c",
+        "import os,secrets; from cryptography.fernet import Fernet; import pytest; os.environ['FERNET_KEY']=Fernet.generate_key().decode(); os.environ['SECRET_KEY']=secrets.token_urlsafe(32); raise SystemExit(pytest.main(['tests/eval','-q','--junit-xml=/tmp/nova-replay-final-evals.xml']))"
+      ],
+      "working_directory": "backend",
+      "started_at": "2026-11-11T23:19:15.895741+00:00",
+      "exit_code": 0,
+      "ended_at": "2026-11-11T23:19:37.686511+00:00"
+    },
+    "frontend-lint": {
+      "command": [
+        "pnpm",
+        "lint"
+      ],
+      "working_directory": "frontend",
+      "started_at": "2026-11-11T23:19:37.688627+00:00",
+      "exit_code": 0,
+      "ended_at": "2026-11-11T23:20:05.619052+00:00"
+    },
+    "frontend-build": {
+      "command": [
+        "pnpm",
+        "build"
+      ],
+      "working_directory": "frontend",
+      "started_at": "2026-11-11T23:20:05.620637+00:00",
+      "exit_code": 0,
+      "ended_at": "2026-11-11T23:20:58.704353+00:00"
+    },
+    "frontend-coverage": {
+      "command": [
+        "pnpm",
+        "test:coverage"
+      ],
+      "working_directory": "frontend",
+      "started_at": "2026-11-11T23:20:58.706441+00:00",
+      "exit_code": 0,
+      "ended_at": "2026-11-11T23:23:49.687884+00:00"
+    }
+  },
+  "frontend": {
+    "test_files_passed": 194,
+    "tests_passed": 1605,
+    "skipped": 0,
+    "lint_errors": 0,
+    "existing_lint_warnings": 32,
+    "duration_seconds": 161.08
+  },
+  "mypy": {
+    "passed": true,
+    "existing_notes": 3
+  },
+  "ruff": {
+    "passed": true,
+    "changed_python_files": 96
+  },
+  "agent_scorecard": {
+    "scenarios_passed": 54,
+    "scenarios_total": 54,
+    "checks_passed": 189,
+    "checks_total": 189
+  },
+  "agent_trajectories": {
+    "tests": "349",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "17.714"
+  },
+  "docs": {
+    "browser_tests_passed": 15,
+    "viewed": "/docs/studio/ask-questions",
+    "examples_added_or_changed": false
+  },
+  "data_access_boundary": {
+    "passed": true,
+    "command": "uv run python scripts/check_user_data_system_access.py"
+  },
+  "parent_ci": {
+    "evidence": "../ci-08a91e0e.json",
+    "jobs_passed": 8,
+    "pg_passed": 486,
+    "pg_skipped": 0,
+    "engine_passed": 217,
+    "engine_skipped": 24
+  },
+  "inventory": {
+    "system_calls_reviewed": 875,
+    "feature_rows_preserved": 759,
+    "source_bindings_rechecked": 2,
+    "release_acceptance_status_changed": false
+  },
+  "unit": {
+    "tests": "10818",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "835.092",
+    "command": "uv run pytest tests/unit --cov=app --cov-branch --cov-report=term-missing --cov-report=xml:/tmp/nova-agent-replay-coverage-final.xml --junit-xml=/tmp/nova-agent-replay-unit-final.xml"
+  },
+  "coverage": {
+    "line-rate": "0.666",
+    "branch-rate": "0.6004",
+    "lines-covered": "87579",
+    "lines-valid": "131493",
+    "branches-covered": "19801",
+    "branches-valid": "32982"
+  },
+  "secret_scan": {
+    "files_scanned": 22,
+    "configured_secret_values": 12,
+    "matches": []
+  }
+}

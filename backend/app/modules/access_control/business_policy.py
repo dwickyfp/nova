@@ -9,10 +9,15 @@ from fastapi import HTTPException
 from pydantic import Field
 
 from app.common.audit import write_audit_log
-from app.core.database import db
+from app.core.metadata_db import MetadataConflict
+from app.core.metadata_runtime import metadata_db
+from app.modules.access_control.metadata_repository import AccessControlMetadataRepository
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.intelligence.contracts import Contract, PolicyResult, fingerprint
-from app.modules.intelligence.engine_repository import metadata_lock
 
+#: Legacy StarRocks DDL. Runtime reads and writes PostgreSQL only; this text is
+#: kept solely because ``intelligence.engine_schema.ensure_engine_schema`` still
+#: imports it, and goes when that bootstrap drops the table.
 BUSINESS_POLICY_DDL = """
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_BUSINESS_POLICIES (
     id VARCHAR(64) NOT NULL,
@@ -35,24 +40,30 @@ class BusinessPolicy(Contract):
     allow_high_risk: bool = False
 
 
-async def read_business_policy() -> BusinessPolicy:
-    result = await db.execute_system(
-        "SELECT definition FROM NOVA_SYSTEM.CONFIG_BUSINESS_POLICIES "
-        "WHERE id='default' OR id LIKE 'default:%' ORDER BY revision DESC LIMIT 2"
-    )
-    if not result["rows"]:
+def _actor(user: dict | SecurityContext) -> SecurityContext:
+    if isinstance(user, SecurityContext):
+        return user
+    return user.get("security") or SecurityContext.from_session(user)
+
+
+async def _current(repo: AccessControlMetadataRepository) -> BusinessPolicy:
+    try:
+        row = await repo.current_business_policy()
+    except MetadataConflict as exc:
+        raise HTTPException(
+            status_code=409, detail="Concurrent policies require reconciliation"
+        ) from exc
+    if row is None:
         return BusinessPolicy()
-    if len(result["rows"]) > 1:
-        records = [
-            BusinessPolicy.model_validate(json.loads(row[0]) if isinstance(row[0], str) else row[0])
-            for row in result["rows"]
-        ]
-        if records[0].revision == records[1].revision:
-            raise HTTPException(
-                status_code=409, detail="Concurrent policies require reconciliation"
-            )
-    value = result["rows"][0][0]
+    value = row["definition"]
     return BusinessPolicy.model_validate(json.loads(value) if isinstance(value, str) else value)
+
+
+async def read_business_policy(user: dict | SecurityContext) -> BusinessPolicy:
+    """The business policy in force, read as ``user`` (a session or its context)."""
+    actor = _actor(user)
+    async with metadata_db().transaction(actor, read_only=True) as conn:
+        return await _current(AccessControlMetadataRepository(conn, actor))
 
 
 async def save_business_policy(value: BusinessPolicy, user: dict) -> BusinessPolicy:
@@ -60,24 +71,18 @@ async def save_business_policy(value: BusinessPolicy, user: dict) -> BusinessPol
         raise HTTPException(status_code=403, detail="ACCOUNTADMIN is required to configure policy")
     if value.automatic_cost_limit > value.maximum_cost:
         raise HTTPException(status_code=422, detail="Automatic limit exceeds the maximum cost")
-    async with metadata_lock("business-policy:default") as lock:
-        current = await read_business_policy()
+    actor = _actor(user)
+    async with metadata_db().transaction(actor) as conn:
+        repo = AccessControlMetadataRepository(conn, actor)
+        current = await _current(repo)
         if current.model_dump(exclude={"revision"}) == value.model_dump(exclude={"revision"}):
             return current
         if current.revision != value.revision:
             raise HTTPException(status_code=409, detail="Policy changed; reload before editing")
-        value = value.model_copy(update={"revision": value.revision + 1})
-        if not await lock.renew():
-            raise HTTPException(status_code=409, detail="Policy lease expired; retry")
-        await db.execute_system(
-            "INSERT INTO NOVA_SYSTEM.CONFIG_BUSINESS_POLICIES "
-            "(id,revision,definition,created_at) VALUES (%s,%s,%s,NOW())",
-            [
-                "default:" + fingerprint(value.model_dump(mode="json"))[:32],
-                value.revision,
-                value.model_dump_json(),
-            ],
-        )
+        # One winner per revision: a concurrent save from the same revision is
+        # refused by the store (409), never overwritten.
+        row = await repo.save_business_policy(value.model_dump(mode="json"))
+    saved = BusinessPolicy.model_validate(row["definition"])
     await write_audit_log(
         event_type="BUSINESS_POLICY",
         user_name=user["username"],
@@ -88,7 +93,7 @@ async def save_business_policy(value: BusinessPolicy, user: dict) -> BusinessPol
         session_id=user.get("session_id"),
         active_role=user.get("active_role"),
     )
-    return value
+    return saved
 
 
 class BusinessPolicyInput(Protocol):

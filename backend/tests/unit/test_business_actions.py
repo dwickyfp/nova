@@ -52,7 +52,7 @@ async def wait_for_action_consent(service, action):
     for _ in range(100):
         await asyncio.sleep(0)
         pending = await service.get(action.id, USER)
-        if pending.consent_call_id and consent_broker.owner_of(pending.consent_call_id):
+        if pending.consent_call_id and consent_broker.owner_of(pending.consent_call_id, user=USER):
             return pending
     raise AssertionError("Action did not open its consent request")
 
@@ -146,11 +146,13 @@ async def action_program(program, monkeypatch):
         yield lease
 
     monkeypatch.setattr(actions, "metadata_lock", lock)
-    monkeypatch.setattr(actions, "read_business_policy", AsyncMock(side_effect=lambda: policy))
+    monkeypatch.setattr(
+        actions, "read_business_policy", AsyncMock(side_effect=lambda *_args, **_kwargs: policy)
+    )
     monkeypatch.setattr(actions, "write_audit_log", AsyncMock())
     monkeypatch.setattr(actions.session_store, "get", AsyncMock(return_value=deepcopy(USER)))
     repo.action_for_review = AsyncMock(
-        side_effect=lambda ident, model: deepcopy(repo.rows.get(("actions", ident)))
+        side_effect=lambda ident, model, *, actor: deepcopy(repo.rows.get(("actions", ident)))
     )
     action_service = actions.ActionService(service, {"monitor-v1": fake})
     monkeypatch.setattr(actions, "action_service", action_service)
@@ -444,13 +446,15 @@ async def test_supervised_api_uses_shared_gate_and_owned_broker(
     for _ in range(100):
         await asyncio.sleep(0)
         pending = await service.get(action.id, USER)
-        if pending.consent_call_id and consent_broker.owner_of(pending.consent_call_id):
+        if pending.consent_call_id and consent_broker.owner_of(pending.consent_call_id, user=USER):
             break
     assert pending.status == "awaiting_consent"
     assert not fake.effects
-    assert not consent_broker.resolve(pending.consent_call_id, True, user_name="bob")
+    assert not consent_broker.resolve(
+        pending.consent_call_id, True, user={**USER, "username": "bob"}
+    )
     assert consent_broker.classification_of(pending.consent_call_id) == "destructive"
-    assert consent_broker.resolve(pending.consent_call_id, allowed, user_name="alice")
+    assert consent_broker.resolve(pending.consent_call_id, allowed, user=USER)
     result = await task
     assert result.status == expected
     assert len(fake.effects) == (1 if allowed else 0)
@@ -470,7 +474,7 @@ async def test_cancellation_while_consent_pending_fences_mutation(action_program
     for _ in range(100):
         await asyncio.sleep(0)
         pending = await service.get(action.id, USER)
-        if pending.consent_call_id and consent_broker.owner_of(pending.consent_call_id):
+        if pending.consent_call_id and consent_broker.owner_of(pending.consent_call_id, user=USER):
             break
     cancelled = await service.cancel(action.id, operation(pending, "cancel-pending"), USER)
     assert cancelled.status == "cancelled"
@@ -490,10 +494,10 @@ async def test_expired_scope_after_consent_cannot_dispatch(action_program, monke
     for _ in range(100):
         await asyncio.sleep(0)
         pending = await service.get(action.id, USER)
-        if pending.consent_call_id and consent_broker.owner_of(pending.consent_call_id):
+        if pending.consent_call_id and consent_broker.owner_of(pending.consent_call_id, user=USER):
             break
     monkeypatch.setattr(actions.session_store, "get", AsyncMock(return_value=None))
-    consent_broker.resolve(pending.consent_call_id, True, user_name="alice")
+    consent_broker.resolve(pending.consent_call_id, True, user=USER)
     with pytest.raises(HTTPException):
         await task
     assert not fake.effects
@@ -533,11 +537,11 @@ async def test_abandoned_consent_reopens_prompt_without_reusing_approval(
     for _ in range(100):
         await asyncio.sleep(0)
         pending = await service.get(action.id, USER)
-        if pending.consent_call_id and consent_broker.owner_of(pending.consent_call_id):
+        if pending.consent_call_id and consent_broker.owner_of(pending.consent_call_id, user=USER):
             break
     assert not fake.effects
     assert pending.consent_call_id != "orphaned-prompt"
-    consent_broker.resolve(pending.consent_call_id, True, user_name="alice")
+    consent_broker.resolve(pending.consent_call_id, True, user=USER)
     assert (await task).status == "verified"
     assert len(fake.effects) == 1
 
@@ -829,7 +833,7 @@ async def test_compensation_consent_denial_or_cancellation_preserves_original_ef
     elif choice == "disconnect":
         task.cancel()
     else:
-        assert consent_broker.resolve(pending.consent_call_id, choice, user_name="alice")
+        assert consent_broker.resolve(pending.consent_call_id, choice, user=USER)
     if choice == "disconnect":
         with pytest.raises(asyncio.CancelledError):
             await task
@@ -840,7 +844,7 @@ async def test_compensation_consent_denial_or_cancellation_preserves_original_ef
     assert result.receipt == verified.receipt
     assert result.consent_call_id is None
     assert not fake.compensations and len(fake.effects) == 1
-    assert consent_broker.owner_of(pending.consent_call_id) is None
+    assert consent_broker.owner_of(pending.consent_call_id, user=USER) is None
 
 
 @pytest.mark.asyncio
@@ -865,7 +869,7 @@ async def test_verified_readback_cannot_consume_pending_compensation_consent(
         assert error.value.status_code == 409
         assert not fake.compensations
     finally:
-        consent_broker.resolve(pending.consent_call_id, False, user_name="alice")
+        consent_broker.resolve(pending.consent_call_id, False, user=USER)
         await task
 
 
@@ -1063,7 +1067,7 @@ async def test_declined_compensation_can_request_new_consent_and_finish(
         )
     )
     pending = await wait_for_action_consent(service, action)
-    consent_broker.resolve(pending.consent_call_id, False, user_name="alice")
+    consent_broker.resolve(pending.consent_call_id, False, user=USER)
     declined = await task
     task = asyncio.create_task(
         actions.supervised_action(
@@ -1071,7 +1075,7 @@ async def test_declined_compensation_can_request_new_consent_and_finish(
         )
     )
     pending = await wait_for_action_consent(service, action)
-    consent_broker.resolve(pending.consent_call_id, True, user_name="alice")
+    consent_broker.resolve(pending.consent_call_id, True, user=USER)
     result = await task
     assert result.status == "compensated" and result.compensation.complete
     assert result.receipt == verified.receipt and result.receipt.schedule_enabled

@@ -15,12 +15,15 @@ Values are placeholders. No real credential appears in this file.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 import pytest
 
 from app.modules.catalog import service as catalog_service_module
 from app.modules.catalog.connectors import CatalogError, connector_for
 from app.modules.catalog.schemas import ExternalCatalogAlter, is_secret_property
 from app.modules.catalog.service import CatalogService
+from tests.unit.test_catalog_store import MemoryRepo
 
 
 class TestSecretPropertyDetection:
@@ -247,32 +250,24 @@ def _async_return(value):
     return _fake
 
 
-class FakeRepo:
-    """In-memory catalog store recording every row written."""
-
+class FakeRepo(MemoryRepo):
     def __init__(self, catalogs=None):
-        self.catalogs = {row["name"]: row for row in catalogs or []}
-        self.written: list[dict] = []
-        self.retired: list[str] = []
+        super().__init__(catalogs)
+        self.retired = []
 
-    async def get_catalog(self, name):
-        return self.catalogs.get(name)
-
-    async def list_catalogs(self, *, include_dropped=False):
-        return list(self.catalogs.values())
-
-    async def upsert_catalog(self, row):
-        self.written.append(dict(row))
-        self.catalogs[row["name"]] = dict(row)
-
-    async def list_objects(self, *args, **kwargs):
-        return []
-
-    async def retire_catalog_objects(self, catalog, at):
+    async def retire_catalog_objects(self, catalog, *, generation):
+        await super().retire_catalog_objects(catalog, generation=generation)
         self.retired.append(catalog)
 
-    async def write_sync_run(self, run):
-        return None
+
+def catalog_service(repo, monkeypatch):
+    @asynccontextmanager
+    async def transaction(actor, *, read_only=False):
+        assert actor.principal == USER["username"]
+        assert actor.active_role == USER["active_role"]
+        yield repo
+    monkeypatch.setattr(catalog_service_module, "catalog_transaction", transaction)
+    return CatalogService()
 
 
 USER = {
@@ -318,7 +313,7 @@ class TestServiceReadPathRedacts:
 
         monkeypatch.setattr(catalog_service_module.db, "execute_system", fake_execute_system)
 
-        response = await CatalogService(FakeRepo()).get_catalog("lake", USER)
+        response = await catalog_service(FakeRepo(), monkeypatch).get_catalog("lake", USER)
         assert response is not None and response.create_statement is not None
         assert "SESSION_SENTINEL" not in response.create_statement
         assert "PW_SENTINEL" not in response.create_statement
@@ -344,7 +339,7 @@ class TestServiceReadPathRedacts:
             catalog_service_module.db, "execute_system", _async_return({"rows": []})
         )
 
-        response = await CatalogService(repo).get_catalog("lake", USER)
+        response = await catalog_service(repo, monkeypatch).get_catalog("lake", USER)
         assert response is not None
         assert "azure.account.key" not in response.properties
         assert "aws.s3.session.token" not in response.properties
@@ -359,7 +354,7 @@ class TestServiceReadPathRedacts:
             return {"rows": []}
 
         monkeypatch.setattr(catalog_service_module.db, "execute_system", fake_execute_system)
-        assert await CatalogService(FakeRepo()).get_catalog("hidden", USER) is None
+        assert await catalog_service(FakeRepo(), monkeypatch).get_catalog("hidden", USER) is None
         assert executed == []
 
 
@@ -370,7 +365,7 @@ class TestServiceDrop:
         recording = RecordingQueryService()
         monkeypatch.setattr(catalog_service_module, "query_service", recording)
         repo = FakeRepo([{"name": "lake", "catalog_type": "iceberg", "dropped_at": None}])
-        await CatalogService(repo).drop("lake", USER)
+        await catalog_service(repo, monkeypatch).drop("lake", USER)
         assert recording.calls == ["DROP CATALOG lake"]
         assert repo.catalogs["lake"]["dropped_at"] is not None
         assert repo.retired == ["lake"]

@@ -119,3 +119,51 @@ async def test_without_redis_every_call_asks_the_engine(engine, monkeypatch):
     await repo.get_data_loads()
     await repo.get_data_loads()
     assert len(engine) == 2
+
+
+async def test_load_stats_scan_once_then_serve_from_cache(monkeypatch, redis):
+    calls: list[str] = []
+
+    async def execute_system(sql: str, params: list[Any] | None = None) -> dict[str, Any]:
+        calls.append(sql)
+        return {"rows": [(10, 7, 2, 1, 0)]}
+
+    monkeypatch.setattr(repo_module.db, "execute_system", execute_system)
+    repo = MonitoringRepository()
+    first = await repo.get_load_stats()
+    second = await repo.get_load_stats()
+    assert first == second == {"total": 10, "finished": 7, "cancelled": 2, "loading": 1, "other": 0}
+    assert len(calls) == 1 and "information_schema.loads" in calls[0]
+    assert repo_module._STATS_CACHE_KEY in redis.data
+
+
+async def test_stale_load_stats_are_returned_while_one_scan_refreshes(monkeypatch, redis):
+    async def execute_system(sql: str, params: list[Any] | None = None) -> dict[str, Any]:
+        return {"rows": [(3, 3, 0, 0, 0)]}
+
+    monkeypatch.setattr(repo_module.db, "execute_system", execute_system)
+    old = {"total": 1, "finished": 1, "cancelled": 0, "loading": 0, "other": 0}
+    redis.data[repo_module._STATS_CACHE_KEY] = json.dumps({"at": 0, "items": old})
+    repo = MonitoringRepository()
+    assert await repo.get_load_stats() == old
+    await asyncio.gather(*list(repo_module._BACKGROUND))
+    assert json.loads(redis.data[repo_module._STATS_CACHE_KEY])["items"]["total"] == 3
+    assert repo_module._STATS_REFRESH_LOCK not in redis.data
+
+
+async def test_alert_probes_run_concurrently_and_keep_their_failures_apart(monkeypatch):
+    started = asyncio.Barrier(2)
+
+    async def execute_system(sql: str, params: list[Any] | None = None) -> dict[str, Any]:
+        if sql in {"SHOW FRONTENDS", "SHOW BACKENDS"}:
+            await asyncio.wait_for(started.wait(), 1)  # both must be in flight at once
+            return {"columns": ["Alive"], "rows": [("true",)]}
+        raise RuntimeError("probe unavailable")
+
+    monkeypatch.setattr(repo_module.db, "execute_system", execute_system)
+    repo = MonitoringRepository()
+    monkeypatch.setattr(repo, "_rows_to_maps", lambda result: [{"Alive": "true"}])
+    metrics = await repo.collect_alert_metrics()
+    assert metrics.engine_reachable is True
+    assert metrics.fe_total == metrics.be_total == 1
+    assert metrics.max_compaction_score is None and metrics.be_compaction_failures is None

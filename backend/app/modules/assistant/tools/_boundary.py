@@ -27,6 +27,7 @@ class ToolInvocation:
     tool_call_id: str
     tool_name: str
     arguments: dict[str, Any]
+    provider_call_id: str | None = None
 
 
 @dataclass(frozen=True)

@@ -19,17 +19,18 @@ import hmac
 import logging
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from app.common.metadata_actors import metadata_scope, service_actor
 from app.common.ssrf_guard import BlockedEndpointError, guarded_async_client
 from app.core.config import settings
-from app.core.database import db
+from app.core.metadata_db import MetadataOutcomeUnknown
 from app.modules.ai_ml.service import ai_service
+from app.modules.llm_functions.metadata_repository import LLMUsageMetadataRepository
 from app.observability.metrics import LLM_FUNCTION_REQUESTS, LLM_FUNCTION_TOKENS
 
 logger = logging.getLogger(__name__)
@@ -42,23 +43,8 @@ TOKEN_PREFIX = "nvf1"
 FORWARDED_PARAMETERS = ("temperature", "max_tokens", "top_p")
 _RESOLUTION_TTL_SECONDS = 30.0
 
-USAGE_SCHEMA = """
-CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.USAGE_LLM_FUNCTIONS (
-  usage_id          BIGINT NOT NULL AUTO_INCREMENT,
-  recorded_at       DATETIME NOT NULL,
-  function_name     VARCHAR(64) NOT NULL,
-  alias_name        VARCHAR(128),
-  model_name        VARCHAR(256),
-  status            VARCHAR(32) NOT NULL,
-  request_count     BIGINT NOT NULL,
-  prompt_tokens     BIGINT,
-  completion_tokens BIGINT,
-  total_tokens      BIGINT,
-  duration_ms       BIGINT
-) DUPLICATE KEY(usage_id, recorded_at)
-DISTRIBUTED BY HASH(usage_id) BUCKETS 1
-PROPERTIES("replication_num"="1")
-"""
+#: The SERVICE actor that appends gateway usage totals.
+USAGE_WRITER = service_actor("llm_gateway")
 
 
 def alias_token(alias_id: str) -> str:
@@ -142,19 +128,20 @@ class UsageMeter:
         pending, self._totals = self._totals, {}
         if not pending:
             return 0
-        now = datetime.now(UTC).replace(tzinfo=None)
-        rows = [(now, *key, *totals) for key, totals in pending.items()]
+        rows: list[tuple[str, str | None, str | None, str, int, int, int, int, int]] = [
+            (*key, totals[0], totals[1], totals[2], totals[3], totals[4])
+            for key, totals in pending.items()
+        ]
         try:
-            async with db.system_conn() as conn, conn.cursor() as cursor:
-                await cursor.executemany(
-                    "INSERT INTO NOVA_SYSTEM.USAGE_LLM_FUNCTIONS (recorded_at, function_name, "
-                    "alias_name, model_name, status, request_count, prompt_tokens, "
-                    "completion_tokens, total_tokens, duration_ms) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                    rows,
-                )
+            async with metadata_scope(USAGE_WRITER) as connection:
+                await LLMUsageMetadataRepository(connection, USAGE_WRITER).record(rows)
+        except MetadataOutcomeUnknown:
+            # The append may have committed; re-adding the totals could count
+            # them twice. Usage is metering, so the batch is dropped and logged.
+            logger.warning("AI function usage batch outcome unknown; not re-sent")
+            raise
         except Exception:
-            # Keep the totals for the next flush rather than lose the usage.
+            # Nothing was written: keep the totals for the next flush.
             for key, totals in pending.items():
                 merged = self._totals.setdefault(key, [0, 0, 0, 0, 0])
                 for index, value in enumerate(totals):
@@ -184,7 +171,7 @@ class LLMGateway:
         self._slots: asyncio.Semaphore | None = None
 
     async def ensure_schema(self) -> None:
-        await db.execute_system(USAGE_SCHEMA)
+        """No-op: usage storage is created by the metadata migrator, not at startup."""
 
     def forget(self, alias_id: str | None = None) -> None:
         """Drop cached alias resolutions after an alias or provider changes."""

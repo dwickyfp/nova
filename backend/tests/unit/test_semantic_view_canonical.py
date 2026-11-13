@@ -71,16 +71,20 @@ def test_rule_proposal_routes_alias_existing_agent_handlers():
         if "rule-proposals" in route.path
     }
     assert routes == {
-        ("POST", "/{model_id}/rule-proposals"):
-            agent_router_module.create_rule_proposal,
-        ("GET", "/{model_id}/rule-proposals"):
-            agent_router_module.list_rule_proposals,
-        ("POST", "/{model_id}/rule-proposals/{proposal_id}/preview"):
-            agent_router_module.preview_rule_proposal,
-        ("POST", "/{model_id}/rule-proposals/{proposal_id}/approve"):
-            agent_router_module.approve_rule_proposal,
-        ("POST", "/{model_id}/rule-proposals/{proposal_id}/reject"):
-            agent_router_module.reject_rule_proposal,
+        ("POST", "/{model_id}/rule-proposals"): agent_router_module.create_rule_proposal,
+        ("GET", "/{model_id}/rule-proposals"): agent_router_module.list_rule_proposals,
+        (
+            "POST",
+            "/{model_id}/rule-proposals/{proposal_id}/preview",
+        ): agent_router_module.preview_rule_proposal,
+        (
+            "POST",
+            "/{model_id}/rule-proposals/{proposal_id}/approve",
+        ): agent_router_module.approve_rule_proposal,
+        (
+            "POST",
+            "/{model_id}/rule-proposals/{proposal_id}/reject",
+        ): agent_router_module.reject_rule_proposal,
     }
 
 
@@ -230,12 +234,9 @@ async def test_unsupported_private_draft_can_be_inspected_and_replaced(monkeypat
     monkeypatch.setattr(service, "_entity_access", AsyncMock(return_value=True))
     monkeypatch.setattr(service, "_audit", AsyncMock())
 
-    async def execute(sql: str, params: list):
-        if "MAX(version)" in sql or "SELECT version" in sql:
-            return {"rows": [[1]]}
-        raise AssertionError(sql)
-
-    monkeypatch.setattr(module.db, "execute_system", execute)
+    monkeypatch.setattr(service, "_versions", AsyncMock(return_value=[version]))
+    monkeypatch.setattr(service, "_latest", AsyncMock(return_value=1))
+    monkeypatch.setattr(module, "_relink", AsyncMock())
     detail = await service.describe("view-1", _user("owner"))
     assert detail["versions"][0]["validation"]["migration"]["raw_definition"] == raw
     assert (await service.quality("view-1", 1, _user("owner")))["valid"] is False
@@ -264,19 +265,20 @@ async def test_unsupported_private_draft_can_be_inspected_and_replaced(monkeypat
 
 @pytest.mark.asyncio
 async def test_verified_query_save_creates_new_draft_without_mutating_active(monkeypatch):
-    import app.modules.intelligence.semantic_views as module
 
     service = SemanticViewService()
     base = _version()
     view = _view()
     monkeypatch.setattr(service, "_owned", AsyncMock(return_value=view))
     monkeypatch.setattr(service, "_readable_version", AsyncMock(return_value=(view, base)))
-    monkeypatch.setattr(service, "_insert_version", AsyncMock())
+    monkeypatch.setattr(
+        service, "_insert_version", AsyncMock(return_value={"version": 2, "status": "DRAFT"})
+    )
     monkeypatch.setattr(
         service, "_version", AsyncMock(return_value={"version": 2, "status": "DRAFT"})
     )
     monkeypatch.setattr(service, "_audit", AsyncMock())
-    monkeypatch.setattr(module.db, "execute_system", AsyncMock(return_value={"rows": [[1]]}))
+    monkeypatch.setattr(service, "_latest", AsyncMock(return_value=1))
     plan = SemanticPlan(metrics=("total_revenue",))
     sql = SemanticCompiler().compile(SemanticModelIR.from_ossie(base["definition"]), plan).sql
     body = SemanticViewVerifiedQueryCreate(
@@ -293,9 +295,11 @@ async def test_verified_query_save_creates_new_draft_without_mutating_active(mon
     service._insert_version.reset_mock()
     with pytest.raises(HTTPException) as exc:
         await service.add_verified_query(
-            "view-1", 1,
+            "view-1",
+            1,
             SemanticViewVerifiedQueryCreate(
-                question="Remove data", semantic_plan=plan.as_dict(),
+                question="Remove data",
+                semantic_plan=plan.as_dict(),
                 verified_sql="DELETE FROM NOVA_DEMO.orders",
             ),
             _user("owner"),
@@ -313,7 +317,9 @@ async def test_query_route_reports_invalid_dimension_as_client_error(monkeypatch
     monkeypatch.setattr(module.semantic_view_service, "query", query)
     with pytest.raises(HTTPException) as failure:
         await module.query_semantic_view(
-            "view-1", module.SemanticViewQuery(dimensions=["missing"]), _user(),
+            "view-1",
+            module.SemanticViewQuery(dimensions=["missing"]),
+            _user(),
         )
     assert failure.value.status_code == 422
     assert failure.value.detail == "Unknown dimension 'missing'."

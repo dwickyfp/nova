@@ -30,13 +30,7 @@ def test_multibyte_characters_are_never_split():
     assert set(fitted.split(" /*")[0]) == {"é"}
 
 
-async def test_audit_row_carries_fitted_and_redacted_text(monkeypatch):
-    captured = {}
-
-    async def execute_system(statement, parameters):
-        captured["parameters"] = parameters
-
-    monkeypatch.setattr(audit.db, "execute_system", execute_system)
+async def test_audit_row_carries_fitted_and_redacted_text(audit_events):
     long_sql = (
         "SELECT * FROM FILES('aws.s3.secret_key'='SECRET_TESTVALUE') WHERE note = '"
         + "x" * 70_000
@@ -54,6 +48,7 @@ async def test_audit_row_carries_fitted_and_redacted_text(monkeypatch):
         rewritten_sql=long_sql,
     )
 
-    persisted = [value for value in captured["parameters"] if isinstance(value, str)]
+    _, event, _ = audit_events[0]
+    persisted = [event.sql_text, event.rewritten_sql]
     assert all(len(value.encode("utf-8")) <= AUDIT_TEXT_MAX_BYTES for value in persisted)
     assert not any("SECRET_TESTVALUE" in value for value in persisted)

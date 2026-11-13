@@ -188,8 +188,10 @@ class Warehouse:
     async def news_views(self):
         return [deepcopy(self.view)] if self.view["news_enabled"] else []
 
-    async def save_news(self, view_id, *, enabled, config, username):
-        self.view.update(news_enabled=enabled, news_config=config, news_updated_by=username)
+    async def save_news(self, view_id, *, enabled, config, user, expected_revision=None):
+        self.view.update(
+            news_enabled=enabled, news_config=config, news_updated_by=user["username"]
+        )
 
     async def _readable_version(self, view_id, version, user):
         principal = self.principals.get(user["username"])
@@ -323,7 +325,9 @@ class Journal:
         self.saves += 1
         return record
 
-    async def latest_edition(self, view_id, scope, model):
+    async def latest_edition(self, view_id, scope, model, *, actor=None):
+        if actor is not None:
+            assert actor.principal and actor.active_role
         editions = [
             row for (kind, _), row in self.rows.items()
             if kind == "editions" and row.semantic.view_id == view_id
@@ -332,14 +336,18 @@ class Journal:
         ]
         return deepcopy(max(editions, key=lambda row: row.edition_date)) if editions else None
 
-    async def edition_stories(self, story_ids, scope, model):
+    async def edition_stories(self, story_ids, scope, model, *, actor=None):
+        if actor is not None:
+            assert actor.principal and actor.active_role
         return [
             deepcopy(row)
             for story_id in story_ids
             if (row := await self.get("stories", story_id, scope, model))
         ]
 
-    async def shared_story(self, record_id, model):
+    async def shared_story(self, record_id, model, *, actor=None):
+        if actor is not None:
+            assert actor.principal and actor.active_role
         return deepcopy(self.rows.get(("stories", record_id)))
 
 
@@ -358,6 +366,7 @@ class Reactions:
         self.saved: dict[tuple[str, str], dict] = {}
 
     async def set(self, user_name, story, reaction):
+        user_name = user_name["username"] if isinstance(user_name, dict) else user_name
         from app.modules.intelligence.newsroom_feedback import features
 
         if reaction is None:
@@ -368,4 +377,5 @@ class Reactions:
         }
 
     async def rows(self, user_name):
+        user_name = user_name["username"] if isinstance(user_name, dict) else user_name
         return [row for (owner, _), row in self.saved.items() if owner == user_name]

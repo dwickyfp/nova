@@ -11,6 +11,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.common.responses import SanitizingJSONResponse
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.migration import job_worker, jobs, router
 from app.modules.migration.schemas import (
     DatabasesRequest,
@@ -43,14 +45,14 @@ class FakeJobRepo:
     def __init__(self) -> None:
         self.rows: dict[str, dict[str, Any]] = {}
 
-    async def create(self, **kwargs: Any) -> None:
+    async def create(self, actor, **kwargs: Any) -> None:
         self.rows[kwargs["job_id"]] = {
             "id": kwargs["job_id"],
             "operation": kwargs["operation"],
-            "actor": kwargs["actor"],
+            "actor": actor.principal,
             "session_fingerprint": kwargs["session_fingerprint"],
-            "active_role": kwargs["role"],
-            "security_context_version": kwargs["security_context_version"],
+            "active_role": actor.active_role,
+            "security_context_version": actor.security_context_version,
             "source_name": kwargs["source"],
             "request_json": json.dumps(kwargs["request"]),
             "status": "queued",
@@ -63,8 +65,9 @@ class FakeJobRepo:
             "finished_at": None,
         }
 
-    async def get(self, job_id: str) -> dict[str, Any] | None:
-        return self.rows.get(job_id)
+    async def get(self, actor, job_id: str) -> dict[str, Any] | None:
+        row = self.rows.get(job_id)
+        return row if row and row.get("actor", actor.principal) == actor.principal else None
 
     async def queued(self, limit: int = 4) -> list[dict[str, Any]]:
         return sorted(
@@ -72,37 +75,46 @@ class FakeJobRepo:
             key=lambda row: row["operation"] in {"execute", "execute_batch"},
         )[:limit]
 
-    async def claim(self, job_id: str) -> bool:
+    async def claim(self, job_id: str) -> int | None:
         row = self.rows[job_id]
         if row["status"] != "queued":
-            return False
+            return None
         row["status"] = "running"
-        return True
+        row["lease_generation"] = row.get("lease_generation", 0) + 1
+        return row["lease_generation"]
 
-    async def progress(self, job_id: str, *, current_database: str | None, result: dict) -> None:
+    async def progress(
+        self, job_id: str, *, generation, current_database: str | None, result: dict
+    ):
         row = self.rows[job_id]
+        if row.get("lease_generation") != generation:
+            return False
         row["current_database"] = current_database
-        row["result_json"] = json.dumps(jobs.SanitizingJSONResponse._sanitize(result))
+        row["result_json"] = json.dumps(SanitizingJSONResponse._sanitize(result))
+        return True
 
     async def finish(
         self,
         job_id: str,
         *,
         status: str,
+        generation: int,
         result: dict | None = None,
         error_code: str | None = None,
     ) -> None:
         row = self.rows[job_id]
+        if row.get("lease_generation") != generation:
+            return False
         row["status"] = status
         row["result_json"] = (
-            json.dumps(jobs.SanitizingJSONResponse._sanitize(result))
-            if result is not None
-            else None
+            json.dumps(SanitizingJSONResponse._sanitize(result)) if result is not None else None
         )
         row["error_code"] = error_code
+        return True
 
-    async def heartbeat(self, job_id: str) -> None:
-        pass
+    async def heartbeat(self, job_id: str, *, generation) -> bool:
+        row = self.rows.get(job_id)
+        return bool(row and row.get("lease_generation") == generation)
 
     async def interrupt_stale(self) -> None:
         pass
@@ -110,7 +122,7 @@ class FakeJobRepo:
     async def prune_completed_reads(self) -> None:
         pass
 
-    async def delete(self, job_id: str) -> None:
+    async def delete(self, actor, job_id: str) -> None:
         del self.rows[job_id]
 
 
@@ -128,6 +140,7 @@ class FakeSessions:
             "username": "alice",
             "encrypted_password": "ENCRYPTED_ONLY_IN_REDIS_SESSION",
             "active_role": "ACCOUNTADMIN",
+            "assigned_roles": ["ACCOUNTADMIN"],
             "security_context_version": 1,
         }
 
@@ -164,6 +177,7 @@ def environment(monkeypatch):
         "username": "alice",
         "session_id": "session-1",
         "active_role": "ACCOUNTADMIN",
+        "assigned_roles": ["ACCOUNTADMIN"],
         "security_context_version": 1,
         "encrypted_password": "ENCRYPTED_ONLY_IN_REDIS_SESSION",
     }
@@ -233,6 +247,7 @@ def test_api_only_queues_and_worker_reports_partial_per_database(environment, mo
         "username": "bob",
         "session_id": "session-2",
         "active_role": "ACCOUNTADMIN",
+        "assigned_roles": ["ACCOUNTADMIN"],
     }
     assert client.get(f"/api/v1/migration/jobs/{job_id}").status_code == 404
     app.dependency_overrides[router.get_current_user] = lambda: {
@@ -289,6 +304,7 @@ def test_read_job_completes_while_execute_waits(environment, monkeypatch):
         "username": "alice",
         "session_id": "session-1",
         "active_role": "ACCOUNTADMIN",
+        "assigned_roles": ["ACCOUNTADMIN"],
         "security_context_version": 1,
     }
 
@@ -314,7 +330,8 @@ def test_read_job_completes_while_execute_waits(environment, monkeypatch):
 
 
 def test_heartbeat_keeps_live_session_fresh(environment, monkeypatch):
-    _, _, redis, sessions, _ = environment
+    _, store, redis, sessions, _ = environment
+    store.rows["job-id"] = {"lease_generation": 1}
 
     async def scenario():
         worker = job_worker.MigrationJobWorker(redis, heartbeat_interval=0.001)
@@ -327,7 +344,7 @@ def test_heartbeat_keeps_live_session_fresh(environment, monkeypatch):
             refreshed.set()
 
         monkeypatch.setattr(sessions, "refresh", refresh)
-        task = asyncio.create_task(worker._heartbeat("job-id", "session-1", stop))
+        task = asyncio.create_task(worker._heartbeat("job-id", "session-1", stop, generation=1))
         try:
             await asyncio.wait_for(refreshed.wait(), timeout=2)
         finally:
@@ -380,6 +397,7 @@ def test_worker_logs_exception_class_without_error_message(environment, monkeypa
         "username": "alice",
         "session_id": "session-1",
         "active_role": "ACCOUNTADMIN",
+        "assigned_roles": ["ACCOUNTADMIN"],
         "security_context_version": 1,
     }
 
@@ -405,12 +423,80 @@ def test_numeric_errno_only_logs_integer_code():
     assert job_worker._numeric_errno(RuntimeError("SECRET_SENTINEL")) is None
 
 
+@pytest.mark.parametrize("failure", ["lease_lost", "pg_outage", "logout", "session_outage"])
+async def test_lost_lease_or_session_cancels_in_flight_work_without_recording_success(
+    environment,
+    monkeypatch,
+    caplog,
+    failure,
+):
+    from unittest.mock import AsyncMock
+
+    _, store, redis, sessions, _ = environment
+    started, cancelled = asyncio.Event(), asyncio.Event()
+
+    async def read(self, job, payload, session_id, session):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    monkeypatch.setattr(job_worker.MigrationJobWorker, "_read", read)
+    user = {
+        "username": "alice",
+        "session_id": "session-1",
+        "active_role": "ACCOUNTADMIN",
+        "assigned_roles": ["ACCOUNTADMIN"],
+    }
+    accepted = await jobs.submit_job("databases", DatabasesRequest(source="source_one"), user)
+    worker = job_worker.MigrationJobWorker(redis, heartbeat_interval=0.001)
+    assert await worker.run_once() == 1
+    active = list(worker._active.values())
+    await asyncio.wait_for(started.wait(), 1)
+    if failure == "lease_lost":
+        monkeypatch.setattr(store, "heartbeat", AsyncMock(return_value=False))
+    elif failure == "pg_outage":
+        monkeypatch.setattr(store, "heartbeat", AsyncMock(side_effect=RuntimeError("CANARY")))
+    elif failure == "logout":
+        sessions.active = False
+    else:
+        monkeypatch.setattr(sessions, "refresh", AsyncMock(side_effect=RuntimeError("CANARY")))
+    await asyncio.wait_for(asyncio.gather(*active), 1)
+    assert cancelled.is_set()
+    assert store.rows[accepted.job_id]["status"] == "running"
+    assert store.rows[accepted.job_id]["result_json"] is None
+    assert "CANARY" not in caplog.text
+
+
+async def test_worker_refuses_a_replaced_login_even_for_the_same_owner_and_role(
+    environment,
+    monkeypatch,
+):
+    from unittest.mock import AsyncMock
+
+    _, store, redis, sessions, _ = environment
+    user = {
+        "username": "alice",
+        "session_id": "session-1",
+        "active_role": "ACCOUNTADMIN",
+        "assigned_roles": ["ACCOUNTADMIN"],
+    }
+    accepted = await jobs.submit_job("databases", DatabasesRequest(source="source_one"), user)
+    redis.values[f"nova:migration:job-session:{accepted.job_id}"] = "replacement-login"
+    get_session = AsyncMock(return_value={**user, "encrypted_password": "synthetic"})
+    monkeypatch.setattr(sessions, "get", get_session)
+    with pytest.raises(job_worker.MigrationSessionExpired):
+        await job_worker.MigrationJobWorker(redis)._session(store.rows[accepted.job_id])
+    get_session.assert_not_awaited()
+
+
 def test_job_status_reads_return_safe_503_when_system_database_fails(
     environment, monkeypatch, caplog
 ):
     client, store, _, _, _ = environment
 
-    async def fail_get(job_id: str):
+    async def fail_get(actor, job_id: str):
         raise RuntimeError("SECRET_SENTINEL in database failure")
 
     monkeypatch.setattr(store, "get", fail_get)
@@ -434,11 +520,13 @@ def test_successful_read_result_survives_cleanup_failure(environment, monkeypatc
         "result_json": json.dumps({"database": "db_one", "count": 2}),
     }
 
-    async def fail_delete(job_id: str):
+    async def fail_delete(actor, job_id: str):
         raise RuntimeError("SECRET_SENTINEL in cleanup failure")
 
     monkeypatch.setattr(store, "delete", fail_delete)
-    result = asyncio.run(jobs.wait_for_job("read-job"))
+    result = asyncio.run(
+        jobs.wait_for_job("read-job", SecurityContext("alice", "ACCOUNTADMIN", session_id="s1"))
+    )
 
     assert result == {"database": "db_one", "count": 2}
     assert store.rows["read-job"]["status"] == "succeeded"

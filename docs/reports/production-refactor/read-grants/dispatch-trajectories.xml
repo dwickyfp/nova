@@ -1,0 +1,62 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="0" skipped="0" tests="57" time="3.754">
+    <testcase classname="tests.eval.test_read_grant_context" name="test_dispatch_and_prefetch_require_the_approving_context[changed0]" time="1.069" />
+    <testcase classname="tests.eval.test_read_grant_context" name="test_dispatch_and_prefetch_require_the_approving_context[changed1]" time="0.007" />
+    <testcase classname="tests.eval.test_read_grant_context" name="test_dispatch_and_prefetch_require_the_approving_context[changed2]" time="0.007" />
+    <testcase classname="tests.eval.test_read_grant_context" name="test_dispatch_and_prefetch_require_the_approving_context[changed3]" time="0.008" />
+    <testcase classname="tests.eval.test_read_grant_context" name="test_dispatch_and_prefetch_require_the_approving_context[changed4]" time="0.007" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_role_change_requires_separate_approval[USE ROLE marketing]" time="0.038" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_role_change_requires_separate_approval[SET ROLE 'marketing']" time="0.001" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_role_change_requires_separate_approval[/* role */ USE ROLE `marketing`;]" time="0.001" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_invalid_role_changes_remain_denied[SET ROLE ALL]" time="0.001" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_invalid_role_changes_remain_denied[SET ROLE NONE]" time="0.002" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_invalid_role_changes_remain_denied[USE ROLE finance,marketing]" time="0.000" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_invalid_role_changes_remain_denied[USE ROLE marketing; SELECT 1]" time="0.000" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_invalid_role_changes_remain_denied[USE ROLE marketing; DROP TABLE x]" time="0.000" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_invalid_role_changes_remain_denied[SET ROLE marketing garbage]" time="0.000" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_invalid_role_changes_remain_denied[SET sql_mode = 'x']" time="0.000" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_role_switch_trajectory[True-True]" time="0.250" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_role_switch_trajectory[False-True]" time="0.015" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_role_switch_trajectory[True-False]" time="0.016" />
+    <testcase classname="tests.eval.test_assistant_role_switch" name="test_neva_relists_readable_views_for_the_new_role" time="0.016" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_custom_sql_tool_dispatches_supported_sql_with_caller_context[INSERT INTO t (value) VALUES ({{value}})]" time="0.007" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_custom_sql_tool_dispatches_supported_sql_with_caller_context[SELECT value FROM t WHERE value = {{value}}]" time="0.007" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_custom_sql_tool_dispatches_supported_sql_with_caller_context[UPDATE t SET value = {{value}} WHERE id = 1]" time="0.003" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_custom_sql_tool_dispatches_supported_sql_with_caller_context[DELETE FROM t WHERE value = {{value}}]" time="0.003" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_custom_sql_tool_dispatches_supported_sql_with_caller_context[SELECT * FROM @stage1.data.csv WHERE value = {{value}}]" time="0.002" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_custom_sql_tool_dispatches_supported_sql_with_caller_context[INSERT INTO t SELECT * FROM @stage1.data.csv WHERE value = {{value}}]" time="0.003" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_insert_then_select_tools_run_in_one_agent_turn" time="0.011" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_denied_write_never_reaches_query_service" time="0.006" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_stage_export_custom_tool_requires_consent_and_reaches_pipeline" time="0.010" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_default_guard_and_query_tool_still_block_stage_exports" time="0.003" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_identifier_parameter_cannot_downgrade_stage_export_consent" time="0.009" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_stage_export_permission_does_not_bypass_accountadmin_guard" time="0.002" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_function_parameters_are_rendered_in_advertised_order" time="0.001" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_function_legacy_args_and_missing_argument" time="0.001" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_typed_parameters_render_as_safe_sql[integer-7-7]" time="0.001" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_typed_parameters_render_as_safe_sql[int--7--7]" time="0.002" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_typed_parameters_render_as_safe_sql[number-1.25-1.25]" time="0.001" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_typed_parameters_render_as_safe_sql[float-1.25-1.25]" time="0.001" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_typed_parameters_render_as_safe_sql[boolean-True-TRUE]" time="0.002" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_typed_parameters_render_as_safe_sql[boolean-False-FALSE]" time="0.001" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_typed_parameters_render_as_safe_sql[array-value6-[1, 'O''Brien', FALSE, NULL]]" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_typed_parameters_render_as_safe_sql[identifier-safe_table-safe_table]" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_invalid_typed_parameters_return_tool_errors[integer-True]" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_invalid_typed_parameters_return_tool_errors[integer-7; DROP TABLE t]" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_invalid_typed_parameters_return_tool_errors[number-1; DROP TABLE t]" time="0.001" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_invalid_typed_parameters_return_tool_errors[number-nan]" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_invalid_typed_parameters_return_tool_errors[number-inf]" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_invalid_typed_parameters_return_tool_errors[boolean-true]" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_invalid_typed_parameters_return_tool_errors[array-value6]" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_invalid_typed_parameters_return_tool_errors[array-value7]" time="0.001" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_invalid_typed_parameters_return_tool_errors[identifier-t; DROP TABLE users]" time="0.001" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_optional_parameter_is_null_when_omitted" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_preview_hides_credential_shaped_arguments" time="0.001" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_result_mode_redacts_secret_columns_and_credential_values" time="0.004" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_parameter_value_cannot_add_a_second_statement" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_invalid_identifier_argument_returns_a_tool_error" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_comment_placeholder_is_not_required_or_substituted" time="0.000" />
+    <testcase classname="tests.eval.test_custom_sql_tools_trajectory" name="test_partial_failure_does_not_report_success" time="0.003" />
+  </testsuite>
+</testsuites>

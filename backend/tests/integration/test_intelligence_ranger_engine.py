@@ -12,7 +12,6 @@ from zoneinfo import ZoneInfo
 import httpx
 import pytest
 
-from app.common.news_entitlement import NEWS_ENABLED
 from app.core.config import settings
 from app.core.database import db
 from app.core.redis import session_store
@@ -49,7 +48,9 @@ async def browser_checkpoint(stage, **resources):
         completed.unlink(missing_ok=True)
 
 
-async def test_lifecycle_rechecks_same_role_principals_masks_and_revocation(monkeypatch):
+async def test_lifecycle_rechecks_same_role_principals_masks_and_revocation(
+    monkeypatch, enable_news
+):
     from app.common.nova_system import init_task_orchestration
     from app.modules.intelligence import decisions, engine
     from app.modules.intelligence.engine_schema import ensure_engine_schema
@@ -112,11 +113,7 @@ async def test_lifecycle_rechecks_same_role_principals_masks_and_revocation(monk
             alice, bob = StudioClient(ah), StudioClient(bh)
             # News is off for every account until an administrator enables it.
             for reader in ("alice", "bob"):
-                await db.execute_system(
-                    "INSERT INTO NOVA_SYSTEM.CONFIG_USER_PREFERENCES "
-                    "(user_name, pref_key, pref_value, updated_at) VALUES (%s, %s, 'true', NOW())",
-                    [reader, NEWS_ENABLED],
-                )
+                await enable_news(reader)
             await alice.login("alice", "NovaAlice2026!", "marketing")
             await bob.login("bob", "NovaBob2026!", "marketing")
 
