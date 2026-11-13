@@ -82,10 +82,9 @@ export default defineConfig(({ command }) => ({
   server: {
     watch: { ignored: ["**/coverage/**", "**/__screenshots__/**"] },
     proxy: {
-      // SQL, ML and agent execution can run in a separate query process
-      // (`./dev.sh`). Listed first because the first match wins; the
-      // path boundary keeps /api/v1/query-autopilot on the web process.
-      "^/api/v1/(query|ml|assistant|agents|intelligence/actions)(/|$)": {
+      // Query and ML use their workload grants. Studio and assistant metadata
+      // remain owned by web until the dedicated Agent runtime is delivered.
+      "^/api/v1/(query|ml)(/|$)": {
         target: process.env.NOVA_QUERY_API_URL ?? process.env.NOVA_WEB_API_URL ?? "http://localhost:8000",
         changeOrigin: true,
       },
@@ -142,7 +141,7 @@ export default defineConfig(({ command }) => ({
         test: {
           name: "node",
           environment: "node",
-          include: ["src/**/*.rule.test.ts"],
+          include: ["src/**/*.rule.test.ts", "tests/**/*.rule.test.ts"],
         },
       },
     ],

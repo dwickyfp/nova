@@ -740,6 +740,136 @@ async def runtime_registry(agents):
         await database.close()
 
 
+@pytest.mark.parametrize("admission", ["api", "worker"])
+async def test_knowledge_consolidation_admits_one_durable_run_for_its_source(
+    agents, runtime_registry, monkeypatch, admission,
+):
+    from copy import deepcopy
+    from unittest.mock import AsyncMock
+
+    from fakeredis.aioredis import FakeRedis
+
+    from app.core.metadata_actor import acting_as
+    from app.core.metadata_runtime import install_metadata_db, metadata_db, uninstall_metadata_db
+    from app.core.redis import session_store
+    from app.modules.agents import router
+    from app.modules.agents.knowledge_router import consolidate_knowledge
+    from app.modules.agents.learning_work import enqueue_pending_learning
+    from app.modules.assistant.repository import assistant_repository
+    from app.modules.assistant.security import observation_context, session_security
+    from app.modules.task_orchestration import access
+    from app.modules.task_orchestration.internal_handlers import InternalTaskConfiguration, run_once
+    from app.modules.task_orchestration.repository import task_orchestration_repository
+    from tests.benchmark.business_intelligence.scripted_provider import ScriptedBoundary
+
+    user = session("agent-owner", active="ANALYST")
+    actor = SecurityContext.from_session(user)
+    transport = FakeRedis(decode_responses=True)
+    monkeypatch.setattr(session_store, "_redis", transport)
+    monkeypatch.setattr(session_store, "get", AsyncMock(return_value=user))
+    monkeypatch.setattr(router, "has_verified_access", AsyncMock(return_value=True))
+    monkeypatch.setattr(access, "verify_active_role", AsyncMock())
+    statement = "Revenue excludes cancelled orders."
+    ScriptedBoundary(statements={statement: "revenue_definition"}).install(monkeypatch)
+
+    @asynccontextmanager
+    async def task_runtime():
+        current = metadata_db()
+        worker = MetadataDatabase(agents.environment.role_config("nova_meta_task"))
+        await worker.open(schema_version=len(load_migrations()), metadata_epoch=agents.epoch)
+        uninstall_metadata_db(current)
+        install_metadata_db(worker)
+        try:
+            yield
+        finally:
+            uninstall_metadata_db(worker)
+            install_metadata_db(current)
+            await worker.close()
+
+    try:
+        with acting_as(actor):
+            agent = await runtime_registry.create_agent(
+                owner_name=actor.principal, fields={"name": "Learning"},
+            )
+            thread = await assistant_repository.create_thread(
+                user_name=actor.principal, agent_id=agent["agent_id"],
+            )
+            await assistant_repository.append_message(
+                thread["thread_id"], user_name=actor.principal, agent_id=agent["agent_id"],
+                role="user", content=statement,
+                security_context=observation_context(session_security(user)),
+                learning_enabled=True,
+            )
+            if admission == "api":
+                assert await consolidate_knowledge(agent["agent_id"], user) == {"queued": 1}
+                assert await consolidate_knowledge(agent["agent_id"], user) == {"queued": 0}
+            else:
+                async with task_runtime():
+                    assert await enqueue_pending_learning() == 1
+                    assert await enqueue_pending_learning() == 0
+            pending = await assistant_repository.pending_learning(user_name=actor.principal)
+        rows = await agents.admin("SELECT handler,handler_config FROM nova_meta.config_tasks")
+        assert len(rows) == 1 and rows[0]["handler"] == "intelligence.consolidate"
+        config = rows[0]["handler_config"]
+        assert config["source_message_id"] == pending[0]["message_id"]
+        assert config["scope"]["principal"] == actor.principal
+        assert config["scope"]["session_id"] == actor.session_id
+        runs = await agents.admin("SELECT execution_user,execution_role,execution_session_id,"
+                                  "job_id,state FROM nova_meta.config_task_graph_runs")
+        assert len(runs) == 1 and runs[0]["state"] == "pending"
+        assert runs[0]["execution_user"] == actor.principal
+        assert runs[0]["execution_role"] == actor.active_role
+        assert runs[0]["execution_session_id"] == actor.session_id
+        assert runs[0]["job_id"] is not None
+        configuration = InternalTaskConfiguration.model_validate(config)
+        async with task_runtime():
+            definition = {
+                "name": "intelligence_learning_" + uuid4().hex,
+                "handler": "intelligence.consolidate", "definition": "",
+                "schedule_kind": "manual", "timezone": "UTC", "owner_role": actor.active_role,
+                "handler_config": config,
+            }
+            for changes in ({"handler": "sql"}, {"schedule_kind": "interval"},
+                            {"owner_role": "VIEWER"}):
+                with pytest.raises(MetadataPermissionDenied):
+                    await task_orchestration_repository.create_task(
+                        {**definition, **changes}, actor.principal,
+                    )
+            for field, value in (("source_message_id", "missing"), ("agent_id", "other"),
+                                 ("scope", {**config["scope"], "session_id": "other"})):
+                forged = deepcopy(config)
+                forged[field] = value
+                with pytest.raises(MetadataPermissionDenied):
+                    await task_orchestration_repository.create_task(
+                        {**definition, "handler_config": forged}, actor.principal,
+                    )
+            with pytest.raises(MetadataPermissionDenied):
+                await task_orchestration_repository.for_actor(actor).create_task(
+                    definition, actor.principal,
+                )
+            with pytest.raises(MetadataPermissionDenied):
+                await task_orchestration_repository.for_actor(SecurityContext(
+                    "another-service", "NOVA_WORKER", principal_type="SERVICE",
+                )).create_task(definition, actor.principal)
+            with pytest.raises(MetadataPermissionDenied):
+                await task_orchestration_repository.create_task(definition, "another-owner")
+            assert await run_once("intelligence.consolidate", configuration, user) == {
+                "status": "complete", "extracted": 1,
+            }
+            assert await run_once("intelligence.consolidate", configuration, user) == {
+                "status": "excluded", "extracted": 0,
+            }
+            with pytest.raises(MetadataPermissionDenied):
+                await task_orchestration_repository.create_task(definition, actor.principal)
+        memories = await agents.admin(
+            "SELECT user_name,role_name,fact FROM nova_meta.config_agent_memories",
+        )
+        assert memories == [{"user_name": actor.principal, "role_name": actor.active_role,
+                             "fact": statement}]
+    finally:
+        await transport.aclose()
+
+
 async def test_access_verification_preserves_session_assignments_for_real_semantic_metadata(
     agents, runtime_registry, monkeypatch,
 ):

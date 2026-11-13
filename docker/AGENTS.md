@@ -20,8 +20,8 @@ commands run from the repository root unless stated otherwise. Read
   and epoch for each workload; it never migrates metadata at application
   startup. The historical split manifests are not a completed production
   deployment or proof that every caller has been cut over.
-  Assistant and agent routes are pinned to one query replica per session
-  because their consent and cancel state is process-local; do not replace that
+  Assistant and agent routes use the web metadata owner and are pinned to one
+  web replica per session because their consent and cancel state is process-local; do not replace that
   rule with round robin or with `hash ... consistent`, which does not pin
   replicas that share one DNS name. `/api/v1/internal/` is never routed publicly.
   `gateway/tls/` holds deployment-local certificates and is git-ignored.

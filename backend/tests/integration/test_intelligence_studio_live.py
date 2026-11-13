@@ -244,7 +244,7 @@ async def test_randomized_analysis_uses_complete_assignment_cohort(studio_engine
 
 
 async def test_bootstrap_and_review_use_production_api_with_restricted_identity(
-    studio_engine, monkeypatch
+    studio_engine, monkeypatch, engine_workload,
 ):
     client, suffix, fixture_directory = studio_engine
     resources = await bootstrap(client, namespace=f"api_{suffix}")
@@ -286,12 +286,13 @@ async def test_bootstrap_and_review_use_production_api_with_restricted_identity(
     )
     queued = await client.request("POST", f"agents/{finance}/knowledge/consolidate")
     assert queued["queued"] == 1
-    result = await run_once("intelligence.consolidate", config, user)
-    assert result == {"status": "complete", "extracted": 1}
-    assert await run_once("intelligence.consolidate", config, user) == {
-        "status": "excluded",
-        "extracted": 0,
-    }
+    async with engine_workload("task"):
+        result = await run_once("intelligence.consolidate", config, user)
+        assert result == {"status": "complete", "extracted": 1}
+        assert await run_once("intelligence.consolidate", config, user) == {
+            "status": "excluded",
+            "extracted": 0,
+        }
     history = await client.request("GET", f"agents/{finance}/threads/{taught.thread_id}")
     source_message = next(
         row for row in history["messages"] if row["message_id"] == config.source_message_id

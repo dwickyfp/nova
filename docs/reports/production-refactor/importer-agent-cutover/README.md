@@ -10,8 +10,11 @@ passed seven jobs but failed the engine job: 203 passed, 24 skipped, 12 failed
 and two setup errors. The earlier 91 setup errors are gone. Commit `5d2091e8`
 then passed seven jobs in [CI 43319470127](https://github.com/dwickyfp/nova/actions/runs/43319470127),
 including all 969 PG17 cases without skips. Engine integration reached 214
-passes, 24 skips, three failures and zero setup errors. The remaining fixes
-are under validation; schema 0039 and the importer remain unchanged.
+passes, 24 skips, three failures and zero setup errors. Commit `ebd229bb`
+passed seven jobs in [CI 43325948539](https://github.com/dwickyfp/nova/actions/runs/43325948539),
+including 970 PG17 cases without skips. Engine integration reached 216 passes,
+24 skips, one failure and zero setup errors. The remaining Studio consolidation
+failure requires schema 0040 and recovery admission in 0041; validation is recorded below.
 No development cutover or backend/workload startup has occurred. A frontend-only
 preview reached the login screen; authenticated docs inspection awaits cutover. Existing StarRocks
 metadata and payloads have not been modified by import rehearsal.
@@ -234,3 +237,76 @@ diff and credential checks passed. Seeded integration remains delegated to CI
 under the owner's authorization; cutover awaits its final result.
 These observations must be confirmed against the final frozen export; they do
 not authorize replay of an uncertain external effect.
+
+## Internal task handler repair
+
+CI 43325948539 progressed through Agent access verification and exposed a
+`409` while queuing knowledge consolidation. The task row guard still allowed
+only `sql` and `python`. Migration 0040 adds the five existing internal handlers
+from the task worker's finite allowlist. Applied revisions remain unchanged;
+unknown handlers, handler mutation and stale definition revisions remain refused.
+
+Focused PG attempt 01 reproduced the constraint refusal and retained an
+incomplete Agent access fixture. Attempt 02 admitted consolidation once, but
+the handler-mutation assertion expected the row guard instead of the earlier
+column-grant refusal. The corrected Task/Agent/migrator suite passed all 108
+cases in 128.12 seconds (attempt 03). Extending the consolidation regression to
+execution then exposed a fixture workload mismatch: a task handler ran with
+the web PG login (attempt 04). Both the PG regression and Studio engine fixture
+now execute the handler with the actual task workload login. No application
+grant is widened to make that fixture pass.
+
+Focused attempt 05 passed both cases. The controlled provider path verifies
+durable admission, source/session binding, one pending graph job, persisted
+memory and exclusion on a repeated consolidation. Governed engine access is a
+separate CI gate. The final schema-0041 results are recorded below.
+
+Audit of automatic learning admission then found the task login could scan
+pending messages but lacked the right to reconstruct their task definitions.
+Migration 0041 grants insertion only for the canonical task orchestration
+service, the consolidation handler and its exact pending source identity,
+thread, Agent, owner, active role and security context. It grants no general
+SQL/Python definition authority. Focused attempt 06 passed both API and worker
+admission and the handler guard (three cases), including persisted learning
+and duplicate exclusion. Negative cases cover a missing/foreign source, changed
+session/role, other handler/schedule and a user actor. The final expanded run
+also checks a different service principal and owner. Rehearsal 09 was stopped
+on its owned disposable target when this additional fix was found; it is not
+a pass. Cleanup completed and source data was untouched. Attempt 10 never ran.
+
+Full unit run 11 passed 11,141 cases (64%, 440.51 seconds) on schema 0040.
+Final schema-0041 run 12 passed 11,141 cases (64%, 455.58 seconds). Mypy 14, eval 10 (358 cases), scorecard 08
+(54 scenarios/189 checks) and the boundary scan passed on unchanged application
+source. Metadata image builds 09–11 passed; final build 12 includes schema 0041.
+
+Expanded PG attempt 07 passed all 109 Task/Agent/migrator cases in 115.99
+seconds. Final rehearsals 11/12 each validated all 1,009,174 rows, 163 inventory
+entries and 453 payload references, including committed-chunk interruption and
+resume, full row/key digests, semantic checks and zero blocking conflicts.
+Their schema-0041 validation SHA-256 values are
+`c99e5b3f6a244c616623cd937a460523d1c4c52a7b0a457d9338927e96a45b32` and
+`dbd48c1429296b77641ef4ea579cc3b9fa78c0540249a9d44bc5a8dc88b4bdb1`.
+These supersede the schema-0039 rehearsal receipts for cutover acceptance.
+
+The launcher audit also found the old frontend/gateway routing sent all Agent,
+assistant and Intelligence action requests to the query workload, which has no
+Agent metadata grants. Those routes now use their web metadata owner; query/ML
+retain their separate query process. Gateway session hashing is preserved on
+the web upstream. Interactive Agent process separation remains unfinished;
+this correction does not establish horizontal Agent scaling. Nine HTTP proxy
+regressions verify destinations, path boundaries and preserved authorization.
+
+Frontend install/browser setup, lint (zero errors, 31 existing warnings), build
+and coverage passed: 195 files, 1,623 tests, 58.64% line coverage. The first build
+attempt retained a Node/browser timer type collision when the new server test
+lived in the application source tree; it now belongs to the separately typed
+Node test project. Gateway syntax passed in its disposable nginx helper. The
+first helper attempt lacked the capability to initialize its cache ownership;
+the second passed with only CHOWN added. The existing split Compose validates
+with the original Docker project directory and private development environment.
+No gateway service was started and no shared infrastructure was recreated.
+
+Changed-file Ruff, boundary scan, diff and local links passed. Final image build
+12 passed. CI on this final source, actual epoch publication and development
+startup remain pending. The owner-authorized CI execution must retain its
+separate seeded/destructive environment.

@@ -74,6 +74,31 @@ async def create_task(tasks, **changes):
         return await repo.create_task(task(**changes))
 
 
+async def test_internal_handler_allowlist_preserves_definition_and_version_guards(tasks):
+    from app.modules.task_orchestration.internal_handlers import HANDLERS
+
+    for handler in sorted(HANDLERS):
+        row = await create_task(tasks, name=handler, handler=handler, definition="")
+        assert row["handler"] == handler and row["provenance"] == "runtime"
+        async with tasks.transaction() as (repo, _):
+            updated = await repo.update_task(
+                row["id"], {"handler_config": {"revision": 2}}, expected_version=1,
+            )
+        assert updated["version"] == 2 and updated["handler"] == handler
+        with pytest.raises(MetadataConflict):
+            async with tasks.transaction() as (repo, _):
+                await repo.update_task(row["id"], {"handler_config": {}}, expected_version=1)
+        with pytest.raises(MetadataPermissionDenied):
+            async with tasks.transaction() as (_, conn):
+                await conn.execute(
+                    "UPDATE nova_meta.config_tasks SET handler='sql',version=version+1 "
+                    "WHERE id=%s", (row["id"],),
+                )
+    for handler in ("intelligence.unknown", "agents.unknown", "python.exec"):
+        with pytest.raises(MetadataIntegrityViolation):
+            await create_task(tasks, name=handler, handler=handler)
+
+
 async def test_definition_changes_need_the_version_they_read(tasks):
     row = await create_task(tasks)
     assert row["version"] == 1 and row["created_by"] == "task-owner"
