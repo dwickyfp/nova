@@ -242,6 +242,11 @@ suite pass: **1,639 tests in 195 files**, 58.84% line coverage, 87.50 seconds.
 Final lint has zero errors and the same 31 warnings; the production build passes.
 Earlier failed, interrupted and superseded runs remain retained.
 
+The contrast fixture was then tightened to sample browser-rendered sRGB pixels,
+so computed OKLCH colors are measured correctly as well as RGB/hex colors.
+Full frontend run 03 again passes all 1,639 cases in 195 files, with 58.85% line
+coverage in 124.84 seconds; lint and build pass on that final test source.
+
 The design keeps Nova's existing theme and monospace editor, with energy 1,
 rhythm 1 and motion 1: compact controls keep code/results dominant, the repeated
 orange edge separates cells, and Markdown headings replace redundant titles.

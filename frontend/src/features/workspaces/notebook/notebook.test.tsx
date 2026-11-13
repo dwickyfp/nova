@@ -200,9 +200,12 @@ describe("cell outputs", () => {
 describe("cell", () => {
   function contrast(text: string, background: string) {
     const luminance = (color: string) => {
-      const channels = color.startsWith("#")
-        ? color.slice(1).match(/../g)!.map((value) => Number.parseInt(value, 16))
-        : color.match(/[\d.]+/g)!.slice(0, 3).map(Number);
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 1;
+      const context = canvas.getContext("2d")!;
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+      const channels = Array.from(context.getImageData(0, 0, 1, 1).data).slice(0, 3);
       const [r, g, b] = channels.map((value) => {
         const channel = value / 255;
         return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
