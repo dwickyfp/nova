@@ -224,6 +224,32 @@ schema-0045 backend repair and earlier Notebook UI. The later UI changes have th
 separate local frontend evidence above. Schema activation is recorded at the top
 of this report; the final delivery commit requires its own CI result.
 
+## Final contrast and fixture isolation follow-up
+
+Two rendered-browser regressions found that code comments had only 2.90:1
+contrast in light mode and 4.15:1 in dark mode. Comments now use Nova's existing
+muted-foreground token; light-mode attributes use its strong warning token.
+Notebook Monaco reads the same code tokens as the static preview. Both modes
+now pass the 4.5:1 minimum for the tested comment, keyword, string and number
+tokens, before and after activation. All 35 Notebook cases pass.
+
+The first full rerun stopped with 191 cases in nine files passed and one iframe
+error: an unmocked Studio request reached the active dev API and navigated the
+test frame to sign-in. The fixture now rejects unexpected API requests between
+its per-case mocks and asserts that none occurred, in addition to cancelling
+and clearing its QueryClients. Its 29 focused cases and the final complete
+suite pass: **1,639 tests in 195 files**, 58.84% line coverage, 87.50 seconds.
+Final lint has zero errors and the same 31 warnings; the production build passes.
+Earlier failed, interrupted and superseded runs remain retained.
+
+The design keeps Nova's existing theme and monospace editor, with energy 1,
+rhythm 1 and motion 1: compact controls keep code/results dominant, the repeated
+orange edge separates cells, and Markdown headings replace redundant titles.
+Desktop/narrow layouts, both themes, dropdown/keyboard interactions and error,
+cancelled and saved-output states were inspected as recorded above. The temporary
+implementation worktree was removed after integration; its coverage evidence was
+retained and the other worktrees were preserved.
+
 ## Earlier checkpoints and retained failures
 
 Updated 2026-11-13, Asia/Jakarta. Branch `feat/production-control-plane`, based on

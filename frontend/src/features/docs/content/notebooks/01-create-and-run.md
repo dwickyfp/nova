@@ -41,6 +41,7 @@ Python and SQL cells have an optional **Cell title** to identify them in the out
 Use the **Cell type** dropdown above each cell to choose **Python**, **SQL** or
 **Markdown**. It shows the current type even when the cell is not selected.
 SQL and Python syntax is highlighted as soon as the notebook opens.
+Syntax colors follow your theme before and during editing.
 
 ## Save and organize
 

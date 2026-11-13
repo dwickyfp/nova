@@ -4,6 +4,7 @@ import { render } from "vitest-browser-react";
 import { DndContext } from "@dnd-kit/core";
 import { SortableContext } from "@dnd-kit/sortable";
 import { NotebookCellView } from "./cell";
+import { readToken } from "@/lib/read-token";
 import { cellForFile, columnKind, formatCell, formatDuration, INTERACTIVE_POLICY, needsScripts } from "./helpers";
 import { isEditableName, isNotebookName, nextNotebookName } from "./names";
 import { CellOutputs } from "./outputs";
@@ -197,6 +198,21 @@ describe("cell outputs", () => {
 });
 
 describe("cell", () => {
+  function contrast(text: string, background: string) {
+    const luminance = (color: string) => {
+      const channels = color.startsWith("#")
+        ? color.slice(1).match(/../g)!.map((value) => Number.parseInt(value, 16))
+        : color.match(/[\d.]+/g)!.slice(0, 3).map(Number);
+      const [r, g, b] = channels.map((value) => {
+        const channel = value / 255;
+        return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+      });
+      return r * 0.2126 + g * 0.7152 + b * 0.0722;
+    };
+    const levels = [luminance(text), luminance(background)].sort((a, b) => b - a);
+    return (levels[0] + 0.05) / (levels[1] + 0.05);
+  }
+
   async function renderCell(props: Partial<Parameters<typeof NotebookCellView>[0]> = {}) {
     const onCommand = vi.fn();
     const screen = await render(
@@ -234,6 +250,35 @@ describe("cell", () => {
     expect(preview?.textContent).toContain(source);
     expect(preview?.querySelector("img")).toBeNull();
     expect(screen.container.querySelector(".monaco-editor")).toBeNull();
+  });
+
+  it.each([false, true])("keeps preview and editor syntax legible in dark=%s", async (dark) => {
+    const wasDark = document.documentElement.classList.contains("dark");
+    document.documentElement.classList.toggle("dark", dark);
+    try {
+      const source = "-- notebook comment\nSELECT 'value', 42";
+      const { screen } = await renderCell({ cell: cell({ source }) });
+      const background = readToken("--card", "#ffffff");
+      const preview = screen.container.querySelector("[data-cell-preview]")!;
+      const syntax = Array.from(preview.querySelectorAll<HTMLElement>(".hljs > span"));
+      expect(syntax.length).toBeGreaterThanOrEqual(4);
+      for (const token of syntax) {
+        expect(contrast(getComputedStyle(token).color, background), token.textContent ?? "").toBeGreaterThanOrEqual(4.5);
+      }
+      await screen.unmount();
+      const editorScreen = await renderCell({ cell: cell({ source }), active: true, editing: true });
+      await expect.element(editorScreen.screen.getByRole("textbox", { name: "SQL cell editor" })).toBeVisible();
+      await expect.poll(() => editorScreen.screen.container.querySelectorAll(".view-line span span").length).toBeGreaterThanOrEqual(4);
+      for (const token of editorScreen.screen.container.querySelectorAll<HTMLElement>(".view-line span span")) {
+        if (token.textContent?.trim()) {
+          expect(contrast(getComputedStyle(token).color, background), token.textContent).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await editorScreen.screen.unmount();
+    } finally {
+      document.documentElement.classList.toggle("dark", wasDark);
+    }
   });
 
   it.each(["Control", "Meta"])("runs exactly once with %s+Enter inside the code editor", async (modifier) => {

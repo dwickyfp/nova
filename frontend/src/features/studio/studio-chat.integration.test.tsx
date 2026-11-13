@@ -1,6 +1,6 @@
 import { page, userEvent } from "vitest/browser";
 import { StrictMode, useEffect, useState } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render } from "vitest-browser-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -26,6 +26,25 @@ import "@/styles/index.css";
  */
 
 const clients: QueryClient[] = [];
+const unmockedRequests: string[] = [];
+const originalFetch = globalThis.fetch;
+
+beforeAll(() => {
+  globalThis.fetch = ((input, init) => {
+    const url = input instanceof Request ? input.url : String(input);
+    if (new URL(url, location.href).pathname.startsWith("/api/")) {
+      const message = `Unmocked Studio request: ${url}\n${new Error().stack}`;
+      unmockedRequests.push(message);
+      return Promise.reject(new Error(message));
+    }
+    return originalFetch(input, init);
+  }) as typeof fetch;
+});
+
+afterAll(() => {
+  globalThis.fetch = originalFetch;
+  expect(unmockedRequests).toEqual([]);
+});
 
 function createTestClient(options?: ConstructorParameters<typeof QueryClient>[0]) {
   const client = new QueryClient(options);
@@ -264,6 +283,7 @@ afterEach(async () => {
     client.clear();
   }
   vi.restoreAllMocks();
+  expect(unmockedRequests).toEqual([]);
 });
 
 it.each([false, true])("reconnects a direct run after reload and supports server stop: %s", async (cancel) => {

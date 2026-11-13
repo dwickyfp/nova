@@ -72,7 +72,7 @@ export function applyNovaSqlTheme(monaco: Monaco, dark: boolean) {
 }
 
 /**
- * Notebook cell themes: the SQL theme's syntax colors on a transparent editor,
+ * Notebook cell themes: the preview's syntax tokens on a transparent editor,
  * so the cell's own surface shows through in
  * either mode. Only the current mode is (re)defined, from the live page: read
  * per mode, a light theme built while the page is dark would get dark values.
@@ -80,9 +80,24 @@ export function applyNovaSqlTheme(monaco: Monaco, dark: boolean) {
  */
 let cellThemeVersion = 0
 
+const CELL_TOKEN_COLORS: Record<string, string> = {
+  keyword: '--code-keyword',
+  'keyword.sql': '--code-keyword',
+  'predefined.sql': '--code-keyword',
+  'operator.sql': '--code-keyword',
+  string: '--code-string',
+  'string.sql': '--code-string',
+  number: '--code-number',
+  comment: '--code-comment',
+  type: '--code-type',
+  identifier: '--foreground',
+  predefined: '--code-keyword',
+}
+
 export function applyNovaCellTheme(monaco: Monaco, dark: boolean): string {
   const mode = dark ? 'dark' : 'light'
   const clear = readToken('--editor-surface-clear', '#00000000')
+  const foreground = readToken('--foreground', '#2c3e50')
   // A new name each time: Monaco does not repaint when the active theme is
   // redefined under the same name.
   cellThemeVersion += 1
@@ -90,7 +105,10 @@ export function applyNovaCellTheme(monaco: Monaco, dark: boolean): string {
   monaco.editor.defineTheme(name, {
     base: dark ? 'vs-dark' : 'vs',
     inherit: true,
-    rules: dark ? DARK_RULES : LIGHT_RULES,
+    rules: (dark ? DARK_RULES : LIGHT_RULES).map((rule) => ({
+      ...rule,
+      foreground: readToken(CELL_TOKEN_COLORS[rule.token], foreground).replace(/^#/, ''),
+    })),
     colors: {
       'editor.background': clear,
       'editorGutter.background': clear,
