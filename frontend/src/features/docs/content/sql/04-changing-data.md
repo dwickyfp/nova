@@ -16,6 +16,9 @@ These statements change the data in a table:
 | `DELETE` | Removes rows. | Yes |
 | `MERGE INTO` | Updates, inserts, or deletes rows by matching them to another table. | Yes |
 | `TRUNCATE TABLE` | Removes every row. | Yes |
+| `ALTER TABLE ... TRUNCATE PARTITION` | Removes every row in the named partitions. | Yes |
+| `ALTER TABLE ... REPLACE PARTITION` | Replaces partitions with temporary partitions. | Yes |
+| `ALTER TABLE ... SWAP WITH` | Exchanges the rows of two tables. | Yes |
 
 "Asks to confirm" means the worksheet shows **Run destructive query?** and
 runs nothing until you click **Run query**. See
@@ -175,3 +178,22 @@ order_id  customer_id  order_date  amount  status
   until you confirm.
 - Statements are not wrapped in one transaction in the worksheet. If a script
   stops halfway, the statements before the failure have already been applied.
+- Each statement commits when it runs, so the worksheet refuses `BEGIN`,
+  `START TRANSACTION`, `COMMIT`, and `ROLLBACK`, and nothing in the script runs:
+
+  ```text
+  Transactions are not available in the SQL worksheet: each statement commits when it runs, so ROLLBACK cannot undo it. Run BEGIN, COMMIT and ROLLBACK from a MySQL client.
+  ```
+
+  To group changes and undo them, use a
+  [MySQL client](/docs/sql/mysql-clients), where transactions work.
+- Session settings such as `SET query_timeout = 600`, `SET @name = ...`, and
+  `SET NAMES ...` are refused the same way, because the next statement would
+  not see them. Put the setting in the query instead:
+
+  ```sql
+  SELECT /*+ SET_VAR(query_timeout = 600) */ COUNT(*) FROM orders;
+  ```
+
+  `SET GLOBAL ...` is still allowed for administrators; it changes the value
+  for everyone.

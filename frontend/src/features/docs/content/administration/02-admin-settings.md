@@ -48,10 +48,11 @@ The new value applies to queries that start after the change.
 ## Limits and errors
 
 - **Session changes do not carry over.** Nova runs each statement on its own
-  connection, so a value set on the **Session variables** tab (or with
-  `SET query_timeout = ...` in a worksheet) does not reach your later queries,
-  even though Nova reports it as updated. Use this tab to look values up, and
-  change the **Global variables** tab when you need a lasting change.
+  connection, so a value set on the **Session variables** tab does not reach
+  your later queries, even though Nova reports it as updated. Use this tab to
+  look values up, and change the **Global variables** tab when you need a
+  lasting change. In a worksheet, `SET query_timeout = ...` is refused for the
+  same reason; see [Add, change, and delete rows](/docs/sql/changing-data#limits-and-errors).
 - A name the engine does not know is refused, for example: *Unknown system
   variable 'no_such_variable_docsqa', the most similar variables are ...*.
 - Many variables do not report a **Default**, so they show **-** there and

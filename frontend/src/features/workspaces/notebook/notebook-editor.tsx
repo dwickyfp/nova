@@ -653,7 +653,7 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
         >
           {model.viewOnly ? "View only, you can run it" : SAVE_LABEL[model.saveState]}
         </span>
-        <div className="ml-auto flex min-w-0 items-center gap-1">
+        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
           <RuntimeControl
             notebookId={notebookId}
             runtime={runtime}
@@ -772,6 +772,7 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
                         index={index}
                         count={cells.length}
                         run={runs[cell.id]}
+                        stale={stale.has(cell.id)}
                         active={activeId === cell.id}
                         editing={activeId === cell.id && editing}
                         canEdit={canEdit}

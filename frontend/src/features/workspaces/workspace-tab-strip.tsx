@@ -5,6 +5,13 @@ import {
   useState,
 } from "react";
 import { Download, MoreVertical, Pencil, Plus, X } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { WorkspaceTabState } from "./types";
@@ -70,6 +77,27 @@ export function WorkspaceTabStrip({
   const [renameValue, setRenameValue] = useState("");
   const [renameWidth, setRenameWidth] = useState<number | null>(null);
   const visibleTabIds = openTabIds.filter((id) => tabs[id]);
+  const scroller = useRef<HTMLDivElement>(null);
+
+  // Bring the active tab into view inside the strip, also when the strip
+  // narrows (a smaller window or the file panel opening).
+  useEffect(() => {
+    const strip = scroller.current;
+    if (!strip) return;
+    const reveal = () => {
+      const tab = activeTabId ? tabElements.current.get(activeTabId) : null;
+      if (!tab) return;
+      const left = tab.offsetLeft;
+      if (left < strip.scrollLeft) strip.scrollLeft = left;
+      else if (left + tab.offsetWidth > strip.scrollLeft + strip.clientWidth)
+        strip.scrollLeft = left + tab.offsetWidth - strip.clientWidth;
+    };
+    reveal();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(reveal);
+    observer.observe(strip);
+    return () => observer.disconnect();
+  }, [activeTabId, visibleTabIds.length]);
 
   useEffect(
     () => () => {
@@ -203,162 +231,172 @@ export function WorkspaceTabStrip({
 
   return (
     <div className="flex min-w-0 flex-1 items-end gap-0">
-      {visibleTabIds.map((id, index) => {
-        const tab = tabs[id];
-        if (!tab) return null;
-        const isActive = activeTabId === id;
-        const isRenaming = renamingId === id;
-        const isDragging = preview?.id === id;
-        const shifted =
-          preview &&
-          !isDragging &&
-          (preview.targetIndex > preview.fromIndex &&
-          index > preview.fromIndex &&
-          index <= preview.targetIndex
-            ? -preview.width
-            : preview.targetIndex < preview.fromIndex &&
-                index >= preview.targetIndex &&
-                index < preview.fromIndex
-              ? preview.width
-              : 0);
-        const offsetX = isDragging ? preview.offsetX : shifted || 0;
-        const tabStyle = {
-          ...(isRenaming && renameWidth ? { width: renameWidth } : {}),
-          ...(offsetX ? { transform: `translate3d(${offsetX}px, 0, 0)` } : {}),
-        };
-        const tabClass = cn(
-          "flex min-w-0 flex-1 items-center rounded-t-md py-1.5 text-sm",
-          isActive
-            ? "-mb-px border-x border-t-2 border-x-border border-t-primary border-b-0 bg-background text-primary"
-            : "border border-border/80 bg-muted/40 text-muted-foreground hover:bg-muted/60",
-        );
-        return (
-          <div
-            key={id}
-            ref={(element) => {
-              if (element) tabElements.current.set(id, element);
-              else tabElements.current.delete(id);
-            }}
-            style={tabStyle}
-            className={cn(
-              "group relative flex min-w-[120px] max-w-[260px] shrink-0 items-center",
-              // Neighbours share one outline instead of doubling it.
-              index > 0 && "-ml-px",
-              isActive && "z-10",
-              preview && "will-change-transform",
-              preview &&
-                (!isDragging || preview.settling) &&
-                "transition-transform duration-150 ease-out",
-              isDragging && "z-30 shadow-md",
-            )}
-          >
-            {isRenaming ? (
-              <div className={cn(tabClass, "w-full px-3")}>
-                <Input
-                  ref={renameInput}
-                  autoFocus
-                  aria-label={`Rename ${tab.title}`}
-                  value={renameValue}
-                  onChange={(event) => setRenameValue(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      if (event.nativeEvent.isComposing) return;
-                      event.preventDefault();
-                      event.stopPropagation();
-                      void finishRename(event.currentTarget.value);
-                    }
-                    if (event.key === "Escape") {
-                      event.stopPropagation();
-                      cancelRename.current = true;
-                      setRenamingId(null);
-                    }
-                  }}
-                  onBlur={(event) => {
-                    if (!cancelRename.current)
-                      void finishRename(event.currentTarget.value);
-                  }}
-                  onFocus={(event) => {
-                    const dot = renameValue.lastIndexOf(".");
-                    event.target.setSelectionRange(
-                      0,
-                      dot > 0 ? dot : renameValue.length,
-                    );
-                  }}
-                  className="h-5 min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-inherit shadow-none outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
-                />
-              </div>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onPointerDown={(event) => startDrag(event, id)}
-                  onPointerMove={moveDrag}
-                  onPointerUp={finishDrag}
-                  onPointerCancel={cancelDrag}
-                  onClick={() => {
-                    if (!suppressClick.current) onActivate(id);
-                  }}
-                  onKeyDown={(event) => {
-                    if (
-                      !event.altKey ||
-                      !["ArrowLeft", "ArrowRight"].includes(event.key)
-                    )
-                      return;
-                    const neighbor =
-                      visibleTabIds[
-                        index + (event.key === "ArrowLeft" ? -1 : 1)
-                      ];
-                    if (!neighbor) return;
-                    event.preventDefault();
-                    onReorder(id, neighbor);
-                  }}
-                  className={cn(
-                    tabClass,
-                    "w-full cursor-grab touch-none select-none gap-2 pr-14 pl-3 transition-colors active:cursor-grabbing",
-                  )}
-                >
-                  <span className="truncate">{tab.title}</span>
-                </button>
-                <div
-                  className={cn(
-                    "absolute right-1 z-20 flex items-center gap-0.5 rounded-sm transition-opacity",
-                    isActive
-                      ? "opacity-100"
-                      : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
-                  )}
-                >
-                  <TabMenuButton
-                    title={tab.title}
-                    onRename={() => startRename(id, tab.title)}
-                    onDownload={() => {
-                      const blob = new Blob([tab.content], {
-                        type: "text/sql",
-                      });
-                      const url = URL.createObjectURL(blob);
-                      const link = document.createElement("a");
-                      link.href = url;
-                      link.download = tab.title.endsWith(".sql")
-                        ? tab.title
-                        : `${tab.title}.sql`;
-                      link.click();
-                      URL.revokeObjectURL(url);
+      {/* Tabs scroll here, not the workspace: an overflowing strip would push
+          the whole layout sideways when a tab is focused. pb-px/-mb-px keep the
+          active tab's overlap with the bottom border. */}
+      <div
+        ref={scroller}
+        className="relative -mb-px flex min-w-0 items-end overflow-x-auto overflow-y-hidden pb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {visibleTabIds.map((id, index) => {
+          const tab = tabs[id];
+          if (!tab) return null;
+          const isActive = activeTabId === id;
+          const isRenaming = renamingId === id;
+          const isDragging = preview?.id === id;
+          const shifted =
+            preview &&
+            !isDragging &&
+            (preview.targetIndex > preview.fromIndex &&
+            index > preview.fromIndex &&
+            index <= preview.targetIndex
+              ? -preview.width
+              : preview.targetIndex < preview.fromIndex &&
+                  index >= preview.targetIndex &&
+                  index < preview.fromIndex
+                ? preview.width
+                : 0);
+          const offsetX = isDragging ? preview.offsetX : shifted || 0;
+          const tabStyle = {
+            ...(isRenaming && renameWidth ? { width: renameWidth } : {}),
+            ...(offsetX
+              ? { transform: `translate3d(${offsetX}px, 0, 0)` }
+              : {}),
+          };
+          const tabClass = cn(
+            "flex min-w-0 flex-1 items-center rounded-t-md py-1.5 text-sm",
+            isActive
+              ? "-mb-px border-x border-t-2 border-x-border border-t-primary border-b-0 bg-background text-primary"
+              : "border border-border/80 bg-muted/40 text-muted-foreground hover:bg-muted/60",
+          );
+          return (
+            <div
+              key={id}
+              ref={(element) => {
+                if (element) tabElements.current.set(id, element);
+                else tabElements.current.delete(id);
+              }}
+              style={tabStyle}
+              className={cn(
+                "group relative flex min-w-[120px] max-w-[260px] shrink-0 items-center",
+                // Neighbours share one outline instead of doubling it.
+                index > 0 && "-ml-px",
+                isActive && "z-10",
+                preview && "will-change-transform",
+                preview &&
+                  (!isDragging || preview.settling) &&
+                  "transition-transform duration-150 ease-out",
+                isDragging && "z-30 shadow-md",
+              )}
+            >
+              {isRenaming ? (
+                <div className={cn(tabClass, "w-full px-3")}>
+                  <Input
+                    ref={renameInput}
+                    autoFocus
+                    aria-label={`Rename ${tab.title}`}
+                    value={renameValue}
+                    onChange={(event) => setRenameValue(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        if (event.nativeEvent.isComposing) return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        void finishRename(event.currentTarget.value);
+                      }
+                      if (event.key === "Escape") {
+                        event.stopPropagation();
+                        cancelRename.current = true;
+                        setRenamingId(null);
+                      }
                     }}
-                    onClose={() => onClose(id)}
+                    onBlur={(event) => {
+                      if (!cancelRename.current)
+                        void finishRename(event.currentTarget.value);
+                    }}
+                    onFocus={(event) => {
+                      const dot = renameValue.lastIndexOf(".");
+                      event.target.setSelectionRange(
+                        0,
+                        dot > 0 ? dot : renameValue.length,
+                      );
+                    }}
+                    className="h-5 min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-inherit shadow-none outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
+                </div>
+              ) : (
+                <>
                   <button
                     type="button"
-                    aria-label={`Close ${tab.title}`}
-                    className="flex size-5 items-center justify-center rounded-sm hover:bg-muted-foreground/20"
-                    onClick={() => onClose(id)}
+                    onPointerDown={(event) => startDrag(event, id)}
+                    onPointerMove={moveDrag}
+                    onPointerUp={finishDrag}
+                    onPointerCancel={cancelDrag}
+                    onClick={() => {
+                      if (!suppressClick.current) onActivate(id);
+                    }}
+                    onKeyDown={(event) => {
+                      if (
+                        !event.altKey ||
+                        !["ArrowLeft", "ArrowRight"].includes(event.key)
+                      )
+                        return;
+                      const neighbor =
+                        visibleTabIds[
+                          index + (event.key === "ArrowLeft" ? -1 : 1)
+                        ];
+                      if (!neighbor) return;
+                      event.preventDefault();
+                      onReorder(id, neighbor);
+                    }}
+                    className={cn(
+                      tabClass,
+                      "w-full cursor-grab touch-none select-none gap-2 pr-14 pl-3 transition-colors active:cursor-grabbing",
+                    )}
                   >
-                    <X className="size-3.5" />
+                    <span className="truncate">{tab.title}</span>
                   </button>
-                </div>
-              </>
-            )}
-          </div>
-        );
-      })}
+                  <div
+                    className={cn(
+                      "absolute right-1 z-20 flex items-center gap-0.5 rounded-sm transition-opacity",
+                      isActive
+                        ? "opacity-100"
+                        : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+                    )}
+                  >
+                    <TabMenuButton
+                      title={tab.title}
+                      onRename={() => startRename(id, tab.title)}
+                      onDownload={() => {
+                        const blob = new Blob([tab.content], {
+                          type: "text/sql",
+                        });
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement("a");
+                        link.href = url;
+                        link.download = tab.title.endsWith(".sql")
+                          ? tab.title
+                          : `${tab.title}.sql`;
+                        link.click();
+                        URL.revokeObjectURL(url);
+                      }}
+                      onClose={() => onClose(id)}
+                    />
+                    <button
+                      type="button"
+                      aria-label={`Close ${tab.title}`}
+                      className="flex size-5 items-center justify-center rounded-sm hover:bg-muted-foreground/20"
+                      onClick={() => onClose(id)}
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
       <button
         type="button"
         className="mb-0.5 ml-0.5 shrink-0 rounded-t-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -382,65 +420,35 @@ function TabMenuButton({
   onDownload: () => void;
   onClose: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (event: MouseEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node))
-        setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
+  // A portaled menu: the tab strip scrolls horizontally and would clip it.
   return (
-    <div ref={ref} className="relative flex items-center">
-      <button
-        type="button"
-        aria-label={`Options for ${title}`}
-        aria-expanded={open}
-        className="flex size-5 items-center justify-center rounded-sm hover:bg-muted-foreground/20"
-        onClick={() => setOpen((value) => !value)}
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={`Options for ${title}`}
+          className="flex size-5 items-center justify-center rounded-sm hover:bg-muted-foreground/20"
+        >
+          <MoreVertical className="size-3.5" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        className="w-36"
+        // Rename moves focus into the tab's name field; keep it there.
+        onCloseAutoFocus={(event) => event.preventDefault()}
       >
-        <MoreVertical className="size-3.5" />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 w-36 rounded-md border bg-popover py-1 shadow-md">
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted"
-            onClick={() => {
-              onRename();
-              setOpen(false);
-            }}
-          >
-            <Pencil className="size-3.5" /> Rename
-          </button>
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted"
-            onClick={() => {
-              onDownload();
-              setOpen(false);
-            }}
-          >
-            <Download className="size-3.5" /> Download SQL
-          </button>
-          <div className="my-1 border-t" />
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-destructive hover:bg-muted"
-            onClick={() => {
-              onClose();
-              setOpen(false);
-            }}
-          >
-            <X className="size-3.5" /> Close
-          </button>
-        </div>
-      )}
-    </div>
+        <DropdownMenuItem onSelect={onRename}>
+          <Pencil className="size-3.5" /> Rename
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onDownload}>
+          <Download className="size-3.5" /> Download SQL
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem variant="destructive" onSelect={onClose}>
+          <X className="size-3.5" /> Close
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

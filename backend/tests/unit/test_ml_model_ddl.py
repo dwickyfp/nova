@@ -253,7 +253,9 @@ async def test_query_service_records_password_change_requirement(monkeypatch):
     assert isinstance(result, QueryResult)
     assert written == {"username": "dwicky.f.putra", "required": True}
     assert result.rows == [["dwicky.f.putra", True]]
-    assert any("Nova metadata" in w for w in result.warnings)
+    assert result.warnings == [
+        "The user will be asked to choose a new password the next time they sign in."
+    ]
 
 
 @pytest.mark.asyncio

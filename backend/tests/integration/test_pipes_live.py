@@ -54,7 +54,7 @@ async def test_legacy_pipe_metadata_and_governed_execution_refusal(
         client.headers["Authorization"] = "Bearer " + admin_token
         created = await client.post("/api/v1/pipes", json=body)
         assert created.status_code == 400, created.text
-        assert "Pipe execution is unavailable with Ranger" in created.json()["detail"]
+        assert "Pipes run in the background without your sign-in" in created.json()["detail"]
         assert s3_credentials()[1] not in created.text
         absent = await client.get("/api/v1/pipes", params={"database": database})
         assert absent.status_code == 200 and absent.json()["pipes"] == []
@@ -82,7 +82,7 @@ async def test_legacy_pipe_metadata_and_governed_execution_refusal(
         assert suspended.status_code == 200, suspended.text
         resumed = await client.patch(url + "/resume", params={"database": database})
         assert resumed.status_code == 400, resumed.text
-        assert "Pipe execution is unavailable with Ranger" in resumed.json()["detail"]
+        assert "Pipes run in the background without your sign-in" in resumed.json()["detail"]
 
         client.headers["Authorization"] = "Bearer " + analyst_token
         refused = await client.post("/api/v1/pipes", json={**body, "name": "forbidden_pipe"})
@@ -127,5 +127,5 @@ async def test_ranger_pipe_gate_precedes_engine_execution(app, monkeypatch, sql)
         role="test_analyst",
         security_context_version=3,
     )
-    assert "Pipe execution is unavailable with Ranger" in result.error
+    assert "Pipes run in the background without your sign-in" in result.error
     assert result.engine_query_ids == []

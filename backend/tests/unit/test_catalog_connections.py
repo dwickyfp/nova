@@ -453,6 +453,15 @@ async def test_executor_hands_the_payload_to_the_connection_service(monkeypatch)
     create.side_effect = service.CatalogAccessDenied("not authorized")
     result = await adapters.catalog(plan, context)
     assert result.error == "not authorized"
+    assert result.error_code == "catalog_error"
+
+    create.side_effect = connections.CatalogConnectionError("Connection 'pg_shop' does not exist")
+    result = await adapters.catalog(plan, context)
+    assert result.error_code == "catalog_error"
+
+    create.side_effect = RuntimeError("engine unavailable")
+    result = await adapters.catalog(plan, context)
+    assert result.error_code == "execution_error"
 
 
 # ── Catalog-aware GRANT/REVOKE ────────────────────────────────────────────

@@ -283,6 +283,12 @@ class QueryRepository:
             raise StarRocksError("User-data execution requires exactly one explicit active role")
         start = time.monotonic()
         if connected is not None:
+            # Suspend before touching the shared socket. Planning first drives
+            # its coroutine without an event loop and abandons it at the first
+            # suspension (``run_without_awaiting``); a request already written
+            # by then would leave its reply unread on the client's engine
+            # session, and every later statement would read the wrong packets.
+            await asyncio.sleep(0)
             return await self._execute_on(
                 connected,
                 sql,

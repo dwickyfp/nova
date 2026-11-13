@@ -86,7 +86,7 @@ describe("WorkspaceTabStrip", () => {
       Math.abs((dots.top + dots.bottom) / 2 - (close.top + close.bottom) / 2),
     ).toBeLessThan(0.5);
     await userEvent.click(options);
-    await userEvent.click(screen.getByRole("button", { name: "Rename" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
 
     const input = screen.getByRole("textbox", { name: "Rename a.sql" });
     await expect.element(input).toBeVisible();
@@ -154,6 +154,40 @@ describe("WorkspaceTabStrip", () => {
       }),
     );
     await vi.waitFor(() => expect(onReorder).toHaveBeenCalledWith("a", "c"));
+  });
+
+  it("scrolls overflowing tabs inside the strip, not the page around it", async () => {
+    const ids = Array.from({ length: 12 }, (_, i) => `file-${i}`);
+    const screen = await render(
+      <div data-testid="frame" style={{ width: 600, overflow: "hidden", display: "flex" }}>
+        <WorkspaceTabStrip
+          tabs={Object.fromEntries(ids.map((id) => [id, tab(id)]))}
+          openTabIds={ids}
+          activeTabId="file-11"
+          onActivate={() => {}}
+          onClose={() => {}}
+          onReorder={() => {}}
+          onRename={async () => true}
+          onNewFile={() => {}}
+        />
+      </div>,
+    );
+    const frame = screen.getByTestId("frame").element();
+    const active = screen
+      .getByRole("button", { name: "file-11.sql", exact: true })
+      .element();
+    await vi.waitFor(() => {
+      const box = active.getBoundingClientRect();
+      const bounds = frame.getBoundingClientRect();
+      expect(box.right).toBeLessThanOrEqual(bounds.right + 1);
+      expect(box.left).toBeGreaterThanOrEqual(bounds.left - 1);
+    });
+    expect(frame.scrollWidth).toBeLessThanOrEqual(frame.clientWidth);
+    expect(frame.scrollLeft).toBe(0);
+    // "New file" stays outside the scrolling tabs, inside the frame.
+    const add = screen.getByTitle("New file").element().getBoundingClientRect();
+    expect(add.width).toBeGreaterThan(0);
+    expect(add.right).toBeLessThanOrEqual(frame.getBoundingClientRect().right + 1);
   });
 
   it("supports keyboard reordering", async () => {

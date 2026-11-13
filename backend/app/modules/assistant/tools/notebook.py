@@ -150,15 +150,16 @@ class NotebookContextTool:
             },
             "variables": (latest.get("variables") or [])[:60],
             "how_it_works": (
-                "SQL cells run in the notebook's DuckDB. con = novaduck.connect() (also `db`) "
-                "has every catalog the role sees attached: nova.<database>.<table> for Nova, "
-                "then each external catalog by its name (pg_shop.public.orders). Files "
-                "under /workspace, and earlier results as {{name}}, work too. Writes run as "
-                "the person: SQL INSERT/CREATE TABLE on nova.*, con.write(data, "
-                "'catalog.schema.table'), con.merge_into(target, data, on=[...]) for Nova, "
-                "Postgres and Snowflake tables, con.put(data, '@stage/path/file.parquet') "
-                "for stages, con.nova(sql) for Nova-only SQL. A named SQL result is a "
-                "DuckDB relation in Python."
+                "SQL cells run in the notebook's DuckDB 2.0. con = novaduck.connect() (also "
+                "`db`) is that connection with every catalog the role sees attached: "
+                "nova.<database>.<table> for Nova, then each external catalog by its name "
+                "(pg_shop.public.orders). After connect() everything is plain DuckDB: "
+                "INSERT/UPDATE/DELETE ... WHERE/CREATE TABLE AS on nova.* run as the person "
+                "(INSERT on a primary-key table upserts; no MERGE, no TRUNCATE, no ROLLBACK), "
+                "mysql_query('nova', sql) for Nova-only SQL. Postgres/Snowflake writes and "
+                "stage files only through the older con.write / con.merge_into / con.put. "
+                "Files under /workspace and earlier results as {{name}} work too. A named "
+                "SQL result is a DuckDB relation in Python."
             ),
         }
         return ToolOutcome(

@@ -70,6 +70,8 @@ DISPLAY_FILE = re.compile(r"/tmp/nova/displays/[0-9a-f]{32}\.json")
 MAX_ATTACHED_CATALOGS = 20
 #: How long a runtime start waits for one external catalog to answer.
 CATALOG_CHECK_SECONDS = 20
+#: Deadline for a trusted kernel call (begin, end, rotate) that should take moments.
+KERNEL_CALL_SECONDS = 60.0
 
 
 async def visible_catalogs(session: data_tokens.BiSession) -> list[dict[str, str]]:
@@ -275,11 +277,16 @@ class NotebookRuntimeWorker:
         runtime: state.RuntimeState,
         code: str,
         on_stream: Callable[[KernelEvent], Awaitable[None]] | None = None,
+        *,
+        timeout: float | None = None,
     ) -> dict[str, Any]:
         """Run a trusted ``nova_runtime`` call and return its payload.
 
         ``on_stream`` receives stdout/stderr that arrives during the call: the
         kernel can flush a cell's last output after the cell reports done.
+        A call that does not finish within ``timeout`` raises ProviderError: a
+        stalled stream would otherwise hold the runtime's queue for good, so
+        neither the cell timeout nor a stop request could reach it.
         """
         payload: dict[str, Any] = {}
         error: dict[str, Any] = {}
@@ -295,7 +302,13 @@ class NotebookRuntimeWorker:
             elif event.type == "error":
                 error.update(event.error)
 
-        await self._provider.run(self.handle_of(runtime), code, sink)
+        try:
+            await asyncio.wait_for(
+                self._provider.run(self.handle_of(runtime), code, sink),
+                timeout=KERNEL_CALL_SECONDS if timeout is None else timeout,
+            )
+        except TimeoutError as exc:
+            raise ProviderError("The notebook runtime did not answer in time") from exc
         if error and not payload:
             raise ProviderError(f"Runtime setup failed: {error.get('name')}")
         return payload
@@ -359,6 +372,7 @@ class NotebookRuntimeWorker:
                     "credential_path": path,
                 }
             ),
+            timeout=settings.NOTEBOOK_START_TIMEOUT_SECONDS,
         )
         if not result.get("ready"):
             raise ProviderError("The runtime's DuckDB did not start")

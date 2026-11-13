@@ -145,7 +145,9 @@ def translate_stage_query(
             file_format = detect_format_from_filename(ref.file_name)
         else:
             file_format = "csv"  # default
-            warnings.append(f"⚠️ No file extension for @{stage_name}, defaulting to CSV")
+            # A listing reads no file content, so the format does not apply.
+            if parsed.command_type != CommandType.STAGE_BROWSE:
+                warnings.append(f"⚠️ No file extension for @{stage_name}, defaulting to CSV")
 
         # Build FILES() function
         is_destination = parsed.command_type == CommandType.STAGE_EXPORT and index == 0

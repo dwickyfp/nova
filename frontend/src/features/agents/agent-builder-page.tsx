@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { ArrowUpRight, MessageSquarePlus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
 import { StateBadge } from "@/components/ui/status-badge";
@@ -33,6 +34,7 @@ export function AgentBuilderPage() {
   const [tab, setTab] = useState("overview");
   const [draftVersion, setDraftVersion] = useState<string | null>(null);
   const [hasUnsavedEdits, setHasUnsavedEdits] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const agentQuery = useQuery({
     queryKey: ["agents", "detail", agentId],
@@ -124,11 +126,24 @@ export function AgentBuilderPage() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => remove.mutate()}
+              onClick={() => setConfirmDelete(true)}
               aria-label="Delete agent"
             >
               <Trash2 className="size-4" />
             </Button>
+            <ConfirmDialog
+              open={confirmDelete}
+              onOpenChange={setConfirmDelete}
+              title={`Delete ${agent.name}?`}
+              desc="The agent and its active memories are removed for everyone it is shared with. This cannot be undone."
+              confirmText="Delete agent"
+              destructive
+              isLoading={remove.isPending}
+              handleConfirm={() => {
+                setConfirmDelete(false);
+                remove.mutate();
+              }}
+            />
           </div>
         </div>
 

@@ -9,6 +9,8 @@ import {
   Database,
   FileCode2,
   FileSearch,
+  FileSpreadsheet,
+  NotebookPen,
   Plus,
   Search,
   ShieldCheck,
@@ -34,11 +36,15 @@ import {
 } from "@/components/ui/table";
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
+import {
+  isEditableName,
+  isNotebookName,
+} from "@/features/workspaces/notebook/names";
 import { starterTemplates } from "@/features/workspaces/starter-templates";
 import { DocsMatches } from "./docs-matches";
 
-type RecentType = "query";
-type RecentTab = "all" | RecentType;
+type RecentType = "query" | "notebook" | "file";
+type RecentTab = "all" | "query";
 
 type RecentWorkItem = {
   id: string;
@@ -124,6 +130,8 @@ const recentTypeMeta: Record<
   { label: string; icon: typeof FileCode2 }
 > = {
   query: { label: "SQL query", icon: FileCode2 },
+  notebook: { label: "Notebook", icon: NotebookPen },
+  file: { label: "Data file", icon: FileSpreadsheet },
 };
 
 export function Dashboard() {
@@ -138,7 +146,7 @@ export function Dashboard() {
 
   const queryHistoryQuery = useQuery<QueryHistoryResponse>({
     queryKey: ["dashboard", "query-history"],
-    queryFn: () => api.get<QueryHistoryResponse>("/query/history?limit=10"),
+    queryFn: () => api.get<QueryHistoryResponse>("/query/history?limit=10&files_only=true"),
   });
 
   const recentWork = useMemo(
@@ -355,7 +363,7 @@ function buildRecentWorkItems({
         return {
           id: `workspace:${entry.id}`,
           title: entry.name,
-          type: "query" as const,
+          type: workspaceEntryType(entry.name),
           location: entry.path || "WORKSHEETS",
           viewed: formatRelativeTime(updatedAt),
           updated: formatRelativeTime(updatedAt),
@@ -387,6 +395,12 @@ function buildRecentWorkItems({
   return [...workspaceItems, ...queryItems]
     .sort((a, b) => b.sortTime - a.sortTime || a.title.localeCompare(b.title))
     .slice(0, RECENT_WORK_LIMIT);
+}
+
+/** Notebooks and uploaded data are not queries; label them as what they are. */
+function workspaceEntryType(name: string): RecentType {
+  if (isNotebookName(name)) return "notebook";
+  return isEditableName(name) ? "query" : "file";
 }
 
 function toTime(value: string | null | undefined) {

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Awaitable, Callable
+import logging
+from collections.abc import Awaitable, Callable, Iterable
 
 import boto3
 from botocore.client import Config as BotoConfig
@@ -23,6 +24,8 @@ from app.modules.workspaces.metadata_service import (
     acting_transaction,
 )
 from app.modules.workspaces.storage_errors import classify_storage_error
+
+logger = logging.getLogger(__name__)
 
 
 class WorkspaceService:
@@ -274,3 +277,26 @@ async def _audit_file_action(action: str, object_type: str, object_name: str) ->
 
 
 workspace_service = WorkspaceService()
+
+
+def subtree_ids(entries: list[dict], entry_id: str) -> list[str]:
+    """The entry and, for a folder, everything below it."""
+    target = next((entry for entry in entries if str(entry["id"]) == entry_id), None)
+    if target is None:
+        return [entry_id]
+    path = str(target.get("path") or "").strip("/")
+    below = [
+        str(entry["id"]) for entry in entries
+        if path and str(entry.get("path") or "").strip("/").startswith(path + "/")
+    ]
+    return [entry_id, *below]
+
+
+async def stop_deleted_notebooks(entry_ids: Iterable[str]) -> None:
+    """Stop the runtimes of deleted notebooks; the delete itself already succeeded."""
+    from app.modules.notebooks.runtime.service import notebook_runtime_service
+
+    try:
+        await notebook_runtime_service.stop_for_deleted(entry_ids)
+    except Exception:  # noqa: BLE001 - the idle sweep still stops them
+        logger.warning("Could not stop the runtimes of deleted notebooks")

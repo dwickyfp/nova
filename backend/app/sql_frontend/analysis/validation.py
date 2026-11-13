@@ -112,6 +112,7 @@ def _native_statement_checks(statement: ast.Statement, context: Any = None) -> N
     _copy_names_a_stage(statement)
     _native_session_settings(statement)
     _native_pipe_execution(statement)
+    _native_background_jobs(statement)
     return None
 
 
@@ -147,10 +148,48 @@ def _native_pipe_execution(statement: ast.Statement) -> None:
         from app.sql_frontend.errors import CapabilityUnsupportedError
 
         raise CapabilityUnsupportedError(
-            "Pipe execution is unavailable with Ranger: background pipe tasks do not "
-            "preserve the caller's principal and active role. Use caller-scoped COPY "
-            "or scheduled Nova tasks instead."
+            "Pipes run in the background without your sign-in and active role. "
+            "Load files with COPY INTO, or schedule a load with CREATE TASK."
         )
+
+
+#: Engine statements that start work the engine runs later in the background,
+#: as a stored job rather than as the caller's session. Like pipes, that work
+#: does not carry the caller's sign-in and active role, so access policies are
+#: not applied to it as they are to the caller.
+_BACKGROUND_JOB_REFUSALS = {
+    "SubmitTaskStatementContext": (
+        "SUBMIT TASK runs in the background without your sign-in and active role. "
+        "Use CREATE TASK, which runs as you."
+    ),
+    "CreateRoutineLoadStatementContext": (
+        "Routine loads run in the background without your sign-in and active role. "
+        "Load files with COPY INTO, or schedule a load with CREATE TASK."
+    ),
+    "ResumeRoutineLoadStatementContext": (
+        "Routine loads run in the background without your sign-in and active role. "
+        "Load files with COPY INTO, or schedule a load with CREATE TASK."
+    ),
+}
+
+
+def _native_background_jobs(statement: ast.Statement) -> None:
+    """Refuse engine background jobs that would not run as the caller.
+
+    Stopping, pausing, showing and dropping existing jobs stays available.
+    Nova's ``CREATE TASK`` shares the grammar rule of ``SUBMIT TASK`` and is
+    told apart by its first keyword, as the AST builder does.
+    """
+    parsed = statement.parsed
+    kind = type(parsed.statement_context).__name__
+    message = _BACKGROUND_JOB_REFUSALS.get(kind)
+    if message is None:
+        return
+    if kind == "SubmitTaskStatementContext" and parsed.visible_tokens[0].text.upper() == "CREATE":
+        return
+    from app.sql_frontend.errors import CapabilityUnsupportedError
+
+    raise CapabilityUnsupportedError(message)
 
 
 def _stage_paths_end_cleanly(statement: ast.Statement) -> None:
@@ -204,6 +243,56 @@ def _native_session_settings(statement: ast.Statement, context: Any = None) -> N
                 "Nova parses StarRocks SQL only; sql_dialect must remain StarRocks"
             )
     return None
+
+
+_TRANSACTION_STATEMENTS = frozenset(
+    {"BeginStatementContext", "CommitStatementContext", "RollbackStatementContext"}
+)
+TRANSACTIONS_UNAVAILABLE = (
+    "Transactions are not available in the SQL worksheet: each statement commits when it "
+    "runs, so ROLLBACK cannot undo it. Run BEGIN, COMMIT and ROLLBACK from a MySQL client."
+)
+SESSION_SETTINGS_UNAVAILABLE = (
+    "Session settings are not kept in the SQL worksheet: each statement runs separately, "
+    "so the setting would not reach the next statement. Set it in the query instead, "
+    "for example SELECT /*+ SET_VAR(query_timeout = 600) */ ..."
+)
+
+
+def _session_scoped_setting(variable: Any) -> bool:
+    kind = type(variable).__name__
+    if kind != "SetSystemVarContext":
+        # User variables, SET NAMES and SET TRANSACTION live in the session.
+        return kind in {"SetUserVarContext", "SetNamesContext", "SetTransactionContext"}
+    scope = variable.varType()
+    if scope is None and variable.systemVariable() is not None:
+        scope = variable.systemVariable().varType()
+    return scope is None or scope.GLOBAL() is None
+
+
+def refuse_per_statement_session(statement: ast.Statement) -> None:
+    """Refuse statements whose only effect is session state a pooled run loses.
+
+    The worksheet runs every statement on its own pooled connection. A
+    transaction opened there is never the one a later ``INSERT`` or
+    ``ROLLBACK`` runs in, and a session ``SET`` is gone before the next
+    statement. Reporting either as successful would be false, so callers that
+    run without a held connection refuse them before anything runs. A held
+    connection (the MySQL proxy, a task run) keeps its own session and is
+    not checked here.
+    """
+    root = statement.parsed.statement_context
+    kind = type(root).__name__
+    if kind in _TRANSACTION_STATEMENTS:
+        from app.sql_frontend.errors import CapabilityUnsupportedError
+
+        raise CapabilityUnsupportedError(TRANSACTIONS_UNAVAILABLE)
+    if kind == "SetStatementContext" and any(
+        _session_scoped_setting(variable) for variable in root.setVar()
+    ):
+        from app.sql_frontend.errors import CapabilityUnsupportedError
+
+        raise CapabilityUnsupportedError(SESSION_SETTINGS_UNAVAILABLE)
 
 
 def _security_context(statement: ast.Statement, context: Any) -> Any:

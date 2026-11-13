@@ -1,0 +1,71 @@
+.nova-splash-wing-left {
+  clip-path: polygon(0 0, 38% 0, 38% 46%, 40% 50%, 46% 56%, 49% 63%, 0 63%);
+  transform-origin: 45% 56%;
+}
+
+.nova-splash-wing-right {
+  clip-path: polygon(66% 0, 100% 0, 100% 65%, 61% 65%, 61% 48%, 66% 40%);
+  transform-origin: 62% 56%;
+}
+
+.nova-splash-body {
+  clip-path: polygon(
+    38% 0,
+    66% 0,
+    66% 40%,
+    61% 48%,
+    61% 65%,
+    100% 65%,
+    100% 100%,
+    0 100%,
+    0 63%,
+    49% 63%,
+    46% 56%,
+    40% 50%,
+    38% 46%
+  );
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .nova-splash-wing-left {
+    animation: nova-wing-left 800ms ease-in-out 2;
+  }
+
+  .nova-splash-wing-right {
+    animation: nova-wing-right 800ms ease-in-out 2;
+  }
+
+  .nova-splash-phoenix {
+    animation: nova-phoenix-lift 800ms ease-in-out 2;
+  }
+}
+
+@keyframes nova-wing-left {
+  0%,
+  100% {
+    transform: rotate(0) scaleX(1);
+  }
+  45% {
+    transform: rotate(-16deg) scaleX(0.76);
+  }
+}
+
+@keyframes nova-wing-right {
+  0%,
+  100% {
+    transform: rotate(0) scaleX(1);
+  }
+  45% {
+    transform: rotate(16deg) scaleX(0.76);
+  }
+}
+
+@keyframes nova-phoenix-lift {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  45% {
+    transform: translateY(-6px);
+  }
+}

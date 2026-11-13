@@ -61,14 +61,25 @@ export function QueryHistory({
           <div className='flex flex-1 flex-col gap-1 overflow-hidden'>
             <div className='flex items-center gap-2'>
               <span
+                title={
+                  item.status === 'CONFIRMATION_REQUIRED'
+                    ? 'Asked for confirmation and did not run'
+                    : undefined
+                }
                 className={cn(
                   'inline-flex h-5 items-center rounded px-1.5 text-xs font-medium',
                   item.status === 'SUCCESS'
                     ? 'bg-success/10 text-success-strong'
-                    : 'bg-destructive/10 text-destructive'
+                    : item.status === 'CONFIRMATION_REQUIRED'
+                      ? 'bg-muted text-muted-foreground'
+                      : 'bg-destructive/10 text-destructive'
                 )}
               >
-                {item.status === 'SUCCESS' ? 'OK' : 'ERR'}
+                {item.status === 'SUCCESS'
+                  ? 'OK'
+                  : item.status === 'CONFIRMATION_REQUIRED'
+                    ? 'NOT RUN'
+                    : 'ERR'}
               </span>
               <span className='text-xs text-muted-foreground'>
                 {formatTime(item.event_time)}

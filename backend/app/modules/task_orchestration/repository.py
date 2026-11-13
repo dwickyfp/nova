@@ -556,6 +556,24 @@ class TaskOrchestrationRepository:
                 run_id, generation=generation, query_id=query_id, error_message=error_message,
             )
 
+    async def list_unsettled_abandoned_task_runs(
+        self, *, limit: int = 200
+    ) -> list[dict[str, Any]]:
+        """Abandoned nodes of graph runs that have not ended yet."""
+        async with self._store(read_only=True) as store:
+            return await store.list_unsettled_abandoned_task_runs(limit=limit)
+
+    async def settle_abandoned_task_run(
+        self, run_id: str, to_state: str, *, generation: int, query_id: str | None = None,
+        error_message: str | None = None,
+    ) -> bool:
+        """Record a verified outcome or an explanation on an abandoned node."""
+        async with self._store() as store:
+            return await store.settle_abandoned_task_run(
+                run_id, to_state, generation=generation, query_id=query_id,
+                error_message=error_message,
+            )
+
     async def heartbeat_task_run(self, run_id: str, *, generation: int) -> bool:
         async with self._store() as store:
             return await store.heartbeat_task_run(run_id, generation=generation)

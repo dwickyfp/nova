@@ -121,7 +121,8 @@ class TestGuardRejectionIsAudited:
                 encrypted_password="enc",
             )
 
-        assert sink.statuses == ["ERROR"]
+        # Still recorded, but as asked rather than failed: history shows NOT RUN.
+        assert sink.statuses == ["CONFIRMATION_REQUIRED"]
         assert "confirmation" in sink.entries[0]["error_message"].lower()
 
     async def test_audit_failure_does_not_replace_the_refusal(self, wired, monkeypatch):

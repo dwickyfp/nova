@@ -18,6 +18,7 @@ import pytest
 
 from app.modules.query.repository import QueryResult
 from app.modules.query.service import QueryService
+from app.sql_frontend.execution.adapters import TASK_SAVED_NOTE
 
 MISSING = object()
 
@@ -164,9 +165,10 @@ class TestRawCreateTaskNeverReachesEngine:
             schema="default",
         )
         # `executed_sql` is the Nova statement, not an engine statement; the
-        # warning says as much so the surface does not imply the engine ran it.
+        # note says the task was saved and has not run, in the user's terms.
         assert not result.executed_sql.upper().startswith("SUBMIT TASK")
-        assert any("no statement was sent to StarRocks" in w for w in result.warnings)
+        assert result.warnings == [TASK_SAVED_NOTE]
+        assert not any("StarRocks" in w or "SUBMIT" in w for w in result.warnings)
 
     async def test_body_is_stored_verbatim(self, wired):
         service, _, tasks, _ = wired
@@ -371,11 +373,12 @@ class TestValidationFailureIsReported:
             schema="default",
         )
         assert result.error is not None
-        assert "timezone" in result.error.lower()
+        assert "time zone" in result.error.lower()
 
 
 class TestNonTaskStatementsAreUnaffected:
-    async def test_submit_task_still_goes_to_the_engine(self, wired):
+    async def test_native_submit_task_is_refused_before_the_engine(self, wired):
+        """The engine's background task would not run as the caller and role."""
         service, engine, tasks, _ = wired
         result = await service.execute(
             sql="SUBMIT TASK x AS INSERT INTO t SELECT 1",
@@ -385,8 +388,10 @@ class TestNonTaskStatementsAreUnaffected:
             database="db1",
             schema="default",
         )
-        assert result.success
-        assert engine.calls, "a real engine statement must still be executed"
+        assert not result.success
+        assert result.error_code == "capability_unsupported"
+        assert "Use CREATE TASK" in (result.error or "")
+        assert not engine.calls, "the engine must not receive SUBMIT TASK"
         assert tasks.tasks == {}, "SUBMIT TASK must not create Nova metadata"
 
     async def test_plain_select_still_goes_to_the_engine(self, wired):

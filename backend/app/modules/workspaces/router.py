@@ -32,7 +32,11 @@ from app.modules.workspaces.schemas import (
     WorkspaceStateRequest,
     WorkspaceTreeResponse,
 )
-from app.modules.workspaces.service import workspace_service
+from app.modules.workspaces.service import (
+    stop_deleted_notebooks,
+    subtree_ids,
+    workspace_service,
+)
 from app.modules.workspaces.spaces import Space, space_service
 
 router = APIRouter()
@@ -151,7 +155,9 @@ async def update_workspace_file(
 async def delete_workspace_file(entry_id: str, user: dict = Depends(get_current_user)):
     space = await space_service.for_entry(user, entry_id, edit=True)
     with acting_as(user):
+        removed = subtree_ids(await workspace_service.list_entries(space.namespace), entry_id)
         await workspace_service.delete_entry(space.namespace, entry_id)
+    await stop_deleted_notebooks(removed)
     return {"success": True}
 
 

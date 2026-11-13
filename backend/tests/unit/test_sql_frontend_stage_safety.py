@@ -134,12 +134,12 @@ def test_engine_response_names_stages_not_buckets_or_endpoints():
     context = SimpleNamespace(
         username="u", encrypted_password="e", database="db", schema=None, role="r",
         max_rows=10, connection=None, session_id=None, file_id=None, row_sink=None,
-        engine_session_prepared=False, transaction_active=False,
+        engine_session_prepared=False, transaction_active=False, statements={},
     )
     result = asyncio.run(
         adapters._run_on_engine(
-            None, context, sql="SELECT * FROM @raw/x.csv", executed_sql=physical,
-            audit_sql=physical, warnings=[],
+            SimpleNamespace(source_key=0), context, sql="SELECT * FROM @raw/x.csv",
+            executed_sql=physical, audit_sql=physical, warnings=[],
             location_map=[("s3://lake/tenants/a", "@raw"),
                           ("http://minio.internal:9000", "<storage endpoint>")],
             parsed=SimpleNamespace(command_type=CommandType.STAGE_QUERY),
@@ -162,3 +162,70 @@ def test_copy_without_a_stage_is_refused_with_its_alternative(sql):
 @pytest.mark.parametrize("sql", ["COPY INTO t FROM @raw/x.csv", "COPY INTO t FROM @raw.*.csv"])
 def test_copy_from_a_stage_still_validates(sql):
     _validate(sql)
+
+
+class _NoEngine:
+    async def execute_as_user(self, sql, **kwargs):  # pragma: no cover - not reached
+        raise AssertionError("an unresolved stage must not reach the engine")
+
+
+def _stage_service(monkeypatch, rows):
+    from app.modules.query import service as service_module
+    from app.modules.query.service import QueryService
+    from tests.unit.stage_metadata_fakes import install_stages
+
+    async def audit(**kwargs):
+        return "qid"
+
+    async def allowed(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service_module, "write_audit_log", audit)
+    monkeypatch.setattr(service_module, "decrypt_password", lambda value: "pw")
+    monkeypatch.setattr(service_module, "check_stage_access", allowed)
+    install_stages(monkeypatch, rows)
+    service = QueryService()
+    service._repo = _NoEngine()
+    return service
+
+
+def _row(identity, schema):
+    return {
+        "id": identity, "name": "raw", "database_name": "db", "schema_name": schema,
+        "storage_connection": "production", "base_prefix": "db/raw",
+    }
+
+
+@pytest.mark.usefixtures("fake_metadata_db")
+async def test_a_missing_stage_is_named_as_written(monkeypatch):
+    service = _stage_service(monkeypatch, [_row("s1", "default")])
+    [result] = await service.execute_statements(
+        sql="SELECT * FROM @nostage_here/x.csv", username="alice", encrypted_password="enc",
+        role="analyst", database="db",
+    )
+    assert result.error == "Stage 'nostage_here' not found in db"
+    assert result.error_code == "stage_not_found"
+    assert "__nova_stage_" not in str(result.warnings)
+
+
+@pytest.mark.usefixtures("fake_metadata_db")
+async def test_a_missing_stage_without_a_database_says_so(monkeypatch):
+    service = _stage_service(monkeypatch, [_row("s1", "default")])
+    [result] = await service.execute_statements(
+        sql="SELECT * FROM @nostage_here/x.csv", username="alice", encrypted_password="enc",
+        role="analyst",
+    )
+    assert result.error == "Stage 'nostage_here' not found (no database is selected)"
+    assert result.error_code == "stage_not_found"
+
+
+@pytest.mark.usefixtures("fake_metadata_db")
+async def test_an_ambiguous_stage_is_named_as_written(monkeypatch):
+    service = _stage_service(monkeypatch, [_row("s1", "default"), _row("s2", "other")])
+    [result] = await service.execute_statements(
+        sql="SELECT * FROM @raw/x.csv", username="alice", encrypted_password="enc",
+        role="analyst", database="db",
+    )
+    assert result.error.startswith("Stage 'raw' matches more than one stage in db")
+    assert result.error_code == "stage_ambiguous"
+    assert "__nova_stage_" not in result.error

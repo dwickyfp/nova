@@ -76,7 +76,7 @@ describe("UserAuthForm", () => {
       .toBeInTheDocument();
   });
 
-  it("authenticates and navigates to the default route", async () => {
+  it("shows the splash after authentication, then opens the default route", async () => {
     await userEvent.fill(usernameInput, "analyst");
     await userEvent.fill(passwordInput, "secret");
     await userEvent.click(signInButton);
@@ -98,7 +98,14 @@ describe("UserAuthForm", () => {
       activeRole: "analyst",
       securityContextVersion: 1,
     });
-    expect(navigate).toHaveBeenCalledWith({ to: "/", replace: true });
+    await expect
+      .element(screen.getByRole("status", { name: "Opening Nova" }))
+      .toBeVisible();
+    expect(navigate).not.toHaveBeenCalled();
+    await vi.waitFor(
+      () => expect(navigate).toHaveBeenCalledWith({ to: "/", replace: true }),
+      { timeout: 3000 },
+    );
   });
 
   it("shows the forced change-password form when the admin requires it", async () => {
@@ -130,6 +137,9 @@ describe("UserAuthForm", () => {
         screen.getByRole("button", { name: /Change Password & Continue/i }),
       )
       .toBeInTheDocument();
+    expect(setAccessTokenMock).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+    await expect.element(screen.getByRole("status")).not.toBeInTheDocument();
   });
 
   it("changes the password and logs in with the new one", async () => {
@@ -187,6 +197,10 @@ describe("UserAuthForm", () => {
     await vi.waitFor(() =>
       expect(setAccessTokenMock).toHaveBeenCalledWith("new-token"),
     );
+    await expect
+      .element(screen.getByRole("status", { name: "Opening Nova" }))
+      .toBeVisible();
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it("navigates to a safe internal redirect path", async () => {
@@ -204,11 +218,67 @@ describe("UserAuthForm", () => {
     await userEvent.fill(passwordInput, "secret");
     await userEvent.click(signInButton);
 
-    await vi.waitFor(() =>
-      expect(navigate).toHaveBeenCalledWith({
-        to: "/users?tab=account",
-        replace: true,
-      }),
+    await vi.waitFor(
+      () =>
+        expect(navigate).toHaveBeenCalledWith({
+          to: "/users?tab=account",
+          replace: true,
+        }),
+      { timeout: 3000 },
     );
+  });
+
+  it.each([401, 503])(
+    "keeps the form available after a %s response",
+    async (status) => {
+      fetchMock.mockResolvedValue({
+        status,
+        ok: false,
+        json: async () => ({ detail: "Sign-in unavailable" }),
+      });
+      await userEvent.fill(usernameInput, "analyst");
+      await userEvent.fill(passwordInput, "secret");
+      await userEvent.click(signInButton);
+
+      await expect.element(signInButton).toBeEnabled();
+      await expect.element(screen.getByRole("status")).not.toBeInTheDocument();
+      expect(setAccessTokenMock).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+    },
+  );
+
+  it("shows the splash only after first-time setup authenticates", async () => {
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          status: "SETUP_REQUIRED",
+          access_token: "setup-token",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ status: "SETUP_COMPLETE" }),
+      });
+    await userEvent.fill(usernameInput, "analyst");
+    await userEvent.fill(passwordInput, "secret");
+    await userEvent.click(signInButton);
+    await expect.element(screen.getByRole("status")).not.toBeInTheDocument();
+    await userEvent.fill(
+      screen.getByLabelText(/^New Password$/i),
+      "NewPass123!",
+    );
+    await userEvent.fill(
+      screen.getByLabelText(/^Confirm Password$/i),
+      "NewPass123!",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: /Set Password & Continue/i }),
+    );
+    await expect
+      .element(screen.getByRole("status", { name: "Opening Nova" }))
+      .toBeVisible();
+    expect(setAccessTokenMock).toHaveBeenCalledWith("mock-access-token");
+    expect(navigate).not.toHaveBeenCalled();
   });
 });

@@ -295,3 +295,39 @@ class TestGuaranteesPreserved:
         assert split_sql_statements("   ") == []
         assert split_sql_statements(";") == []
         assert split_sql_statements(";;;") == []
+
+
+class TestCommentOnlyFragmentsAreNotStatements:
+    """A comment after the last ``;`` is not a statement of its own.
+
+    The engine ignores it; as a statement it failed to parse ("at end of
+    input") and stopped the whole script before anything ran.
+    """
+
+    @pytest.mark.parametrize(
+        ("sql", "expected"),
+        [
+            (
+                "SHOW ALTER TABLE COLUMN;  -- progress of column changes",
+                ["SHOW ALTER TABLE COLUMN"],
+            ),
+            ("SELECT 1; /* done */", ["SELECT 1"]),
+            ("SELECT 1; /* a */ -- b\n", ["SELECT 1"]),
+            ("SELECT 1; -- note\n; SELECT 2", ["SELECT 1", "SELECT 2"]),
+            ("-- only a comment", []),
+            ("/* only */ /* comments */;", []),
+        ],
+    )
+    def test_comment_only_fragments_are_dropped(self, sql, expected):
+        assert split_sql_statements(sql) == expected
+
+    @pytest.mark.parametrize(
+        ("sql", "expected"),
+        [
+            ("SELECT 1; -- next\nSELECT 2", ["SELECT 1", "-- next\nSELECT 2"]),
+            ("/* lead */ SELECT 1; SELECT 2 -- tail", ["/* lead */ SELECT 1", "SELECT 2 -- tail"]),
+            ("SELECT '-- not a comment'", ["SELECT '-- not a comment'"]),
+        ],
+    )
+    def test_statement_text_keeps_its_comments(self, sql, expected):
+        assert split_sql_statements(sql) == expected

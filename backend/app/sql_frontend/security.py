@@ -93,7 +93,9 @@ def decode_security(parsed: ParsedStatement) -> SecurityOperation | None:
     if kind == "ShowRolesStatementContext" and len(words) == 2:
         return SecurityOperation("list_roles")
     if kind == "NovaSecurityShowStatementContext":
-        return SecurityOperation("list_roles" if words[1] == "AVAILABLE" else "current_access")
+        return SecurityOperation(
+            "available_roles" if words[1] == "AVAILABLE" else "current_access"
+        )
     if kind == "ShowGrantsStatementContext":
         if words[:4] == ["SHOW", "GRANTS", "FOR", "ROLE"] and len(identifiers) == 1:
             return SecurityOperation("role_grants", identifiers)
@@ -104,7 +106,11 @@ def decode_security(parsed: ParsedStatement) -> SecurityOperation | None:
 
 
 async def execute_security_operation(
-    operation: SecurityOperation, security: SecurityContext, original_sql: str = ""
+    operation: SecurityOperation,
+    security: SecurityContext,
+    original_sql: str = "",
+    *,
+    connection: object | None = None,
 ) -> QueryResult:
     identifiers = operation.identifiers
     service = access_control_service
@@ -134,9 +140,12 @@ async def execute_security_operation(
             table=identifiers[2],
             accesses=[identifiers[3]],
         )
-    elif operation.kind == "list_roles":
-        roles = await service.list_roles()
-        rows = [[item.get("name"), "Ranger"] for item in roles]
+    elif operation.kind in {"list_roles", "available_roles"}:
+        if operation.kind == "available_roles":
+            names = await service.available_roles(security, connection=connection)
+            rows: list[list[Any]] = [[name, "Ranger"] for name in names]
+        else:
+            rows = [[item.get("name"), "Ranger"] for item in await service.list_roles()]
         return QueryResult(
             columns=["Role", "Authorization"],
             rows=rows,

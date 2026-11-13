@@ -38,15 +38,16 @@ your Nova databases appear under the catalog name `nova`, so write
 `nova.<database>.<table>`. You see only data your active role can read.
 
 After you create the example table from
-[Read and write with novaduck](/docs/notebooks/novaduck) and add one row, this
-SQL cell returns that row, with `id` 1 and `amount` 100:
+[Query and change Nova data with novaduck](/docs/notebooks/novaduck) and insert
+its first two rows, this SQL cell returns `id` 1 with `amount` 100 and `id` 2
+with `amount` 200:
 
 ```sql
 SELECT * FROM nova.notebook_examples.orders
 ```
 
 The output says **Computed in DuckDB**. To run a query with Nova's own SQL
-syntax, use `con.nova(...)` from a Python cell, as described on that page.
+syntax, use DuckDB's `mysql_query('nova', ...)`, as described on that page.
 Use the SQL worksheet for database creation and administration.
 
 ## Display a chart

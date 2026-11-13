@@ -89,7 +89,7 @@ The results panel has three tabs:
 | Tab | What it shows |
 | --- | --- |
 | **Results** | The rows returned, with the total row count and time. Click a column header to sort. Right-click a cell to copy it. **Export** downloads the results as an Excel file. |
-| **History** | Queries you ran, newest first. **Current file** shows this file's queries; **All files** shows everything. Each entry can be copied (**Copy SQL**) or run again (**Re-run query**). |
+| **History** | Queries you ran, newest first. **Current file** shows this file's queries; **All files** shows the queries you ran from any of your SQL files. A statement you did not confirm is marked **NOT RUN**. Each entry can be copied (**Copy SQL**) or run again (**Re-run query**). |
 | **Chart** | A quick chart of the current result. |
 
 The worksheet returns at most **500 rows** per statement. When a query returns
@@ -136,8 +136,8 @@ reports what actually happened.
 
 ## Format and version history
 
-- **Format SQL** (the braces icon, or **Ctrl+Shift+F**) tidies the layout of
-  the SQL in the editor.
+- **Format SQL** (the braces icon, or **Ctrl+Shift+F**, **Cmd+Shift+F** on a
+  Mac) tidies the layout of the SQL in the editor.
 - **Version history** (the clock icon) lists earlier saved versions of the
   file. Click a version to read it.
 
@@ -151,8 +151,10 @@ you to confirm. A dialog titled **Run destructive query?** appears. Click
 **Run query** to go ahead or **Cancel** to run nothing.
 
 Statements that need confirmation include `UPDATE`, `DELETE`, `MERGE INTO`,
-`TRUNCATE TABLE`, `DROP ...`, and `ALTER TABLE ... DROP COLUMN`. Adding data
-with `INSERT` or creating objects does not ask.
+`TRUNCATE TABLE`, `DROP ...`, `ALTER TABLE ... DROP COLUMN`, and the partition
+changes `ALTER TABLE ... TRUNCATE PARTITION`, `ALTER TABLE ... REPLACE PARTITION`
+and `ALTER TABLE ... SWAP WITH`. Adding data with `INSERT` or creating objects
+does not ask.
 
 When you run a script, Nova checks the whole script first. If any statement
 needs confirmation, nothing runs until you confirm.

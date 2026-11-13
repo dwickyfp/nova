@@ -416,6 +416,7 @@ async def get_query_history(
     date_to: str | None = None,
     min_duration_ms: int | None = None,
     user_name: str | None = None,
+    files_only: bool = False,
 ):
     """Get query execution history for the current user.
 
@@ -435,6 +436,7 @@ async def get_query_history(
         date_from=date_from,
         date_to=date_to,
         min_duration_ms=min_duration_ms,
+        files_only=files_only,
     )
     return HistoryResponse(**result)
 

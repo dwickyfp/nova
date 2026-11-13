@@ -935,7 +935,9 @@ submitTaskStatement
     ;
 
 alterTaskStatement
-    : ALTER TASK (IF EXISTS)? qualifiedName (RESUME | SUSPEND | SET propertyList)
+    // NOVA-BEGIN (task-names): `database.default.task`, as CREATE/EXECUTE TASK accept
+    : ALTER TASK (IF EXISTS)? novaQualifiedTaskName (RESUME | SUSPEND | SET propertyList)
+    // NOVA-END
     ;
 
 taskClause
@@ -960,7 +962,9 @@ taskClause
     ;
 
 dropTaskStatement
-    : DROP TASK (IF EXISTS)? qualifiedName FORCE?
+    // NOVA-BEGIN (task-names): `database.default.task`, as CREATE/EXECUTE TASK accept
+    : DROP TASK (IF EXISTS)? novaQualifiedTaskName FORCE?
+    // NOVA-END
     ;
 
 taskScheduleDesc

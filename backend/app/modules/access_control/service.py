@@ -630,6 +630,31 @@ class AccessControlService:
     async def list_roles(self) -> list[dict]:
         return await self._ranger.list_roles()
 
+    async def available_roles(
+        self, security: SecurityContext, *, connection: object | None = None
+    ) -> list[str]:
+        """Roles this session can switch to, as ``USE ROLE`` decides.
+
+        A held connection (the MySQL proxy) is asked for its grants, as role
+        activation does; a web session uses the roles recorded for it at sign-in,
+        which the role switch checks first. Either way a role must also exist in
+        Ranger, because activation refuses one that does not.
+        """
+        assigned: set[str] = set()
+        if connection is not None:
+            from .role_activation import role_activation_service
+
+            assignments = await role_activation_service.assignments(connection)  # type: ignore[arg-type]
+            assigned.update(assignments.assigned_roles)
+        elif security.session_id:
+            from app.core.redis import session_store
+
+            session = await session_store.get(security.session_id) or {}
+            assigned.update(session.get("assigned_roles") or [])
+        assigned.add(security.active_role)
+        healthy = {str(role.get("name")) for role in await self.list_roles()}
+        return sorted(assigned & healthy)
+
     async def role_privileges(self, role: str) -> list[dict]:
         privileges: list[dict] = []
         for policy in await self.list_managed_policies():

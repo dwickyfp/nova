@@ -1,7 +1,14 @@
 ---
-title: Read and write with novaduck
-description: Use the notebook's shared connection to query governed data, append rows, and merge updates.
+title: Query and change Nova data with novaduck
+description: Connect the notebook's DuckDB to Nova with one call, then use ordinary DuckDB SQL and Python.
 ---
+
+## What it is
+
+A notebook runs DuckDB 2.0. `novaduck.connect()` returns that DuckDB
+connection, already signed in to Nova as you, under your active role. It is the
+only Nova-specific call: everything after it is ordinary DuckDB SQL and the
+DuckDB Python API, as described in the [DuckDB 2.0 documentation](https://duckdb.org/docs/2.0/).
 
 ## Connect
 
@@ -13,25 +20,22 @@ con = novaduck.connect()
 con.sql('SELECT 42').fetchall()
 ```
 
-It returns `[(42,)]`. This is the same local connection used by SQL cells.
-`con.catalogs()` lists the catalogs available to it and whether each attached
-successfully. Nova's own catalog uses the name `nova`.
+It returns `[(42,)]`. SQL cells and `duckdb.sql(...)` use the same connection.
 
-To run SQL in Nova itself:
+Nova's own tables are attached under the catalog name `nova`. Connected
+sources appear under their connection names. DuckDB lists them:
 
 ```python
-con.nova('SELECT CURRENT_ROLE()').fetchall()
+con.sql("SELECT database_name FROM duckdb_databases() WHERE type = 'mysql' ORDER BY 1").fetchall()
 ```
 
-The result contains your active role. `con.nova(...)` returns a relation, so
-use `.fetchall()` for rows or `.df()` for a DataFrame. Relations do not support
-`.fetchone()` in the notebook runtime; use `.limit(1).fetchall()` instead.
+The result includes `('nova',)`.
 
-## Before writing
+## Before you start
 
-Your active role needs permission to change the target table. Create a
-separate example database and this table in the SQL worksheet first. Replace
-`notebook_examples` consistently if that database name is already in use.
+Your active role needs permission on the tables you use. Create an example
+database and table in the SQL worksheet first. Replace `notebook_examples`
+consistently if that name is already in use.
 
 ```sql
 CREATE DATABASE notebook_examples;
@@ -41,63 +45,88 @@ DISTRIBUTED BY HASH(id) BUCKETS 1
 PROPERTIES ('replication_num'='1');
 ```
 
-The target must exist. The examples use a primary-key table so matching rows
-can be updated by `merge_into`.
+## Read tables
 
-## Append rows
-
-```python
-con.write('SELECT 1 AS id, 100 AS amount', 'nova.notebook_examples.orders')
-```
-
-The default mode is `append`. This example returns a result reporting one
-inserted row. Check the stored values:
+Name a table in full, as `catalog.database.table`:
 
 ```python
-con.nova('SELECT * FROM notebook_examples.orders').fetchall()
+con.sql("INSERT INTO nova.notebook_examples.orders VALUES (1, 100), (2, 200)")
+con.sql("SELECT * FROM nova.notebook_examples.orders ORDER BY id").fetchall()
 ```
 
-The result is `[(1, 100)]`.
+This returns `[(1, 100), (2, 200)]`. Filters run in Nova, so a `WHERE` clause
+reads only the matching rows.
 
-## Merge changes
+Everything else DuckDB offers works on these tables: joins with local files and
+DataFrames, `FROM`-first queries, `GROUP BY ALL`, `PIVOT`, window functions with
+`QUALIFY`, macros, `SUMMARIZE`, the relational API and `COPY ... TO` a local
+file. For example:
 
 ```python
-con.merge_into(
-    'nova.notebook_examples.orders',
-    'SELECT * FROM (VALUES (1,120),(2,200)) t(id,amount)',
-    on=['id'],
-)
+con.sql("FROM nova.notebook_examples.orders SELECT sum(amount) AS total").fetchall()
 ```
 
-Matching keys are updated and new keys are inserted. Verify the result:
+returns `[(300,)]`, and `con.table("nova.notebook_examples.orders").df()` gives a
+pandas DataFrame. `SHOW TABLES FROM nova.notebook_examples` and
+`DESCRIBE nova.notebook_examples.orders` list tables and columns.
+
+To run a statement in Nova itself, such as a stage read or a Nova function, use
+DuckDB's `mysql_query` on the `nova` catalog:
 
 ```python
-con.nova('SELECT * FROM notebook_examples.orders ORDER BY id').fetchall()
+con.sql("SELECT * FROM mysql_query('nova', 'SELECT CURRENT_ROLE()')").fetchall()
 ```
 
-This returns `[(1, 120), (2, 200)]`.
+The result contains your active role.
 
-## Replace the table's rows
+## Change tables
 
-> **Warning:** `overwrite` replaces the target's existing rows. Use it only
-> when that is the intended change.
+`INSERT`, `UPDATE`, `DELETE` and `CREATE TABLE ... AS` work on Nova tables and
+run as you. A readable table is not necessarily writable: your role decides.
 
 ```python
-con.write(
-    'SELECT 3 AS id, 300 AS amount',
-    'nova.notebook_examples.orders',
-    mode='overwrite',
-)
+con.sql("UPDATE nova.notebook_examples.orders SET amount = 120 WHERE id = 1")
+con.sql("DELETE FROM nova.notebook_examples.orders WHERE id = 2")
+con.sql("SELECT * FROM nova.notebook_examples.orders ORDER BY id").fetchall()
 ```
 
-The same read now returns `[(3, 300)]`.
+This returns `[(1, 120)]`.
+
+On a table with a primary key, `INSERT` of an existing key replaces that row,
+so an `INSERT` is also an upsert:
+
+```python
+con.sql("INSERT INTO nova.notebook_examples.orders VALUES (1, 150), (3, 300)")
+con.sql("SELECT * FROM nova.notebook_examples.orders ORDER BY id").fetchall()
+```
+
+This returns `[(1, 150), (3, 300)]`.
+
+To keep a result as a new Nova table:
+
+```python
+con.sql("CREATE TABLE nova.notebook_examples.big_orders AS SELECT * FROM nova.notebook_examples.orders WHERE amount >= 200")
+```
 
 ## Limits and errors
 
-- Use `catalog.database.table` to name a target; `nova` selects Nova's catalog.
-- Write calls use your permissions. A readable catalog does not imply that
-  every table in it is writable.
-- If a write times out or the result connection ends, its outcome is uncertain.
-  Query the target before repeating it; repeating an append can duplicate data.
-- Restarting the kernel clears the connection's local state. Run the import
-  and connection cell again.
+- Each statement takes effect when it runs. `BEGIN` and `ROLLBACK` do not undo
+  changes to Nova tables.
+- `MERGE INTO` is not available on Nova tables. Use `INSERT` into a table with
+  a primary key (an upsert, as above), or `UPDATE` followed by `INSERT`.
+- `TRUNCATE nova.<database>.<table>` (or `DELETE ... WHERE true`) empties a
+  table. Any other `DELETE` needs a `WHERE` condition.
+- `CREATE OR REPLACE TABLE` is not available on Nova tables. Run `DROP TABLE`,
+  then `CREATE TABLE ... AS`.
+- `USE` and `SET search_path` cannot point at a Nova catalog. Write full table
+  names. If you ran one, restart the kernel.
+- DuckDB 2.0 relations have no `fetchone()`; use `.limit(1).fetchall()`. A
+  result you started reading must be read to the end before the connection runs
+  another query: `.arrow()` returns a reader, so use `.arrow().read_all()`.
+- Connected Postgres and Snowflake sources are read-only through this
+  connection.
+- If a write times out or the connection ends, its outcome is uncertain. Query
+  the table before repeating it; repeating an `INSERT` into a table without a
+  primary key can duplicate rows.
+- Restarting the kernel clears local tables and variables. Run the import and
+  `novaduck.connect()` again.

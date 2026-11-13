@@ -49,6 +49,7 @@ from app.modules.ml_engine.registry.repository import (
 )
 from app.modules.ml_engine.runtime.model_runtime import ModelRuntime
 from app.modules.ml_engine.spec import (
+    InvalidMLSpec,
     MLExecutionSpec,
     MLExecutionTimeout,
     MLMode,
@@ -571,7 +572,28 @@ class MLEngineService:
         A caller that passes its ``session_id`` lets ``nova-worker`` do the
         training, bound to that session. Callers without one (agent tools, the
         feature store) train in this process, as before.
+
+        Columns named by the statement are checked against the training query
+        first, so a misnamed one is refused before a job or model record exists.
         """
+        if username is not None and password is not None and not as_system:
+            await self._check_named_columns(
+                training_sql,
+                MLSecurityContext(
+                    username=username,
+                    password=password,
+                    database=database_name,
+                    role=role,
+                    tenant=tenant,
+                    security_context_version=security_context_version,
+                ),
+                (
+                    ("TARGET", target_column),
+                    ("TIMESTAMP", timestamp_column),
+                    ("SERIES", series_column),
+                    *(("FEATURES", column) for column in feature_columns or ()),
+                ),
+            )
         if settings.ML_TRAINING_EXECUTOR == "worker" and session_id and not as_system:
             from app.modules.ml_engine.jobs import submit_training, wait_for_training
 
@@ -632,6 +654,51 @@ class MLEngineService:
             tenant=tenant,
             security_context_version=security_context_version,
         )
+
+    async def _training_columns(
+        self, training_sql: str, security: MLSecurityContext
+    ) -> list[str] | None:
+        """The training query's output columns, read as the caller without any row.
+
+        ``None`` when the configured data source cannot describe a query.
+        """
+        describe = getattr(self.data_source, "columns", None)
+        if describe is None:
+            return None
+        engine_sql = await self._prepare_user_sql(training_sql, security)
+        return list(await describe(engine_sql, security))
+
+    async def _check_named_columns(
+        self,
+        training_sql: str,
+        security: MLSecurityContext,
+        named: tuple[tuple[str, str | None], ...],
+    ) -> None:
+        """Refuse a TARGET, TIMESTAMP, SERIES or FEATURES column the query does not return.
+
+        The check is advisory: when the columns cannot be read here (the query
+        itself is invalid, or the engine is unavailable), training reports the
+        failure as before.
+        """
+        wanted = [(clause, column) for clause, column in named if column]
+        if not wanted:
+            return
+        try:
+            columns = await self._training_columns(training_sql, security)
+        except Exception as exc:
+            logger.info("Training columns could not be checked: %s", type(exc).__name__)
+            return
+        if not columns:
+            return
+        # Training matches names exactly, so the check does too.
+        available = set(columns)
+        for clause, column in wanted:
+            if column not in available:
+                raise InvalidMLSpec(
+                    f"{clause} column '{column}' is not returned by the training query. "
+                    f"Its columns are: {', '.join(columns)}. Add '{column}' to the "
+                    "SELECT list, or name one of these columns."
+                )
 
     async def train_model_locally(
         self,

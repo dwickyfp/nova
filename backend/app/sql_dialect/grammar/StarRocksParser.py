@@ -1745,8 +1745,8 @@ def serializedATN():
         1,0,0,0,2608,2604,1,0,0,0,2608,2605,1,0,0,0,2608,2606,1,0,0,0,2608,
         2607,1,0,0,0,2609,173,1,0,0,0,2610,2611,5,19,0,0,2611,2614,5,452,
         0,0,2612,2613,5,208,0,0,2613,2615,5,157,0,0,2614,2612,1,0,0,0,2614,
-        2615,1,0,0,0,2615,2616,1,0,0,0,2616,2621,3,1184,592,0,2617,2622,
-        5,384,0,0,2618,2622,5,441,0,0,2619,2620,5,417,0,0,2620,2622,3,1126,
+        2615,1,0,0,0,2615,2616,1,0,0,0,2616,2621,3,182,91,0,2617,2622,5,
+        384,0,0,2618,2622,5,441,0,0,2619,2620,5,417,0,0,2620,2622,3,1126,
         563,0,2621,2617,1,0,0,0,2621,2618,1,0,0,0,2621,2619,1,0,0,0,2622,
         175,1,0,0,0,2623,2634,3,1122,561,0,2624,2634,3,180,90,0,2625,2634,
         3,184,92,0,2626,2634,3,188,94,0,2627,2634,3,190,95,0,2628,2634,3,
@@ -1756,8 +1756,8 @@ def serializedATN():
         1,0,0,0,2633,2629,1,0,0,0,2633,2630,1,0,0,0,2633,2631,1,0,0,0,2633,
         2632,1,0,0,0,2634,177,1,0,0,0,2635,2636,5,141,0,0,2636,2639,5,452,
         0,0,2637,2638,5,208,0,0,2638,2640,5,157,0,0,2639,2637,1,0,0,0,2639,
-        2640,1,0,0,0,2640,2641,1,0,0,0,2641,2643,3,1184,592,0,2642,2644,
-        5,179,0,0,2643,2642,1,0,0,0,2643,2644,1,0,0,0,2644,179,1,0,0,0,2645,
+        2640,1,0,0,0,2640,2641,1,0,0,0,2641,2643,3,182,91,0,2642,2644,5,
+        179,0,0,2643,2642,1,0,0,0,2643,2644,1,0,0,0,2644,179,1,0,0,0,2645,
         2651,5,406,0,0,2646,2647,5,431,0,0,2647,2648,5,3,0,0,2648,2649,3,
         1144,572,0,2649,2650,5,4,0,0,2650,2652,1,0,0,0,2651,2646,1,0,0,0,
         2651,2652,1,0,0,0,2652,2653,1,0,0,0,2653,2654,5,162,0,0,2654,2655,
@@ -16329,8 +16329,8 @@ class StarRocksParser ( Parser ):
         def TASK(self):
             return self.getToken(StarRocksParser.TASK, 0)
 
-        def qualifiedName(self):
-            return self.getTypedRuleContext(StarRocksParser.QualifiedNameContext,0)
+        def novaQualifiedTaskName(self):
+            return self.getTypedRuleContext(StarRocksParser.NovaQualifiedTaskNameContext,0)
 
 
         def RESUME(self):
@@ -16386,7 +16386,7 @@ class StarRocksParser ( Parser ):
 
 
             self.state = 2616
-            self.qualifiedName()
+            self.novaQualifiedTaskName()
             self.state = 2621
             self._errHandler.sync(self)
             token = self._input.LA(1)
@@ -16566,8 +16566,8 @@ class StarRocksParser ( Parser ):
         def TASK(self):
             return self.getToken(StarRocksParser.TASK, 0)
 
-        def qualifiedName(self):
-            return self.getTypedRuleContext(StarRocksParser.QualifiedNameContext,0)
+        def novaQualifiedTaskName(self):
+            return self.getTypedRuleContext(StarRocksParser.NovaQualifiedTaskNameContext,0)
 
 
         def IF(self):
@@ -16613,7 +16613,7 @@ class StarRocksParser ( Parser ):
 
 
             self.state = 2641
-            self.qualifiedName()
+            self.novaQualifiedTaskName()
             self.state = 2643
             self._errHandler.sync(self)
             _la = self._input.LA(1)

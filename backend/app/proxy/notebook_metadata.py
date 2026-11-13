@@ -135,3 +135,24 @@ def column_row(described: dict[str, object]) -> list[object]:
         None,
         described.get("Comment") or None,
     ]
+
+
+_NAME = r"(?:`(?:[^`]|``)+`|[A-Za-z_][\w$]*)"
+_DELETE_ALL = re.compile(
+    rf"^\s*DELETE\s+FROM\s+({_NAME}(?:\s*\.\s*{_NAME}){{0,2}})"
+    r"(?:\s+WHERE\s+(?:TRUE|1\s*=\s*1))?\s*;?\s*$",
+    re.IGNORECASE,
+)
+
+
+def delete_all_as_truncate(statement: str) -> str | None:
+    """``TRUNCATE TABLE t`` for DuckDB's unconditional ``DELETE FROM t``, else None.
+
+    DuckDB sends ``TRUNCATE t`` and ``DELETE FROM t [WHERE true]`` to MySQL as a
+    ``DELETE`` without a usable condition, which the engine refuses ("Delete must
+    specify where clause"). Removing every row is what ``TRUNCATE TABLE`` does;
+    it still runs through the governed pipeline as the user.
+    """
+    match = _DELETE_ALL.match(statement)
+    return f"TRUNCATE TABLE {match.group(1)}" if match else None
+

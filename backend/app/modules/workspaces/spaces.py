@@ -215,9 +215,13 @@ class SpaceService:
         # Files are retired first, through their owning command, so their
         # objects are drained after each metadata commit.
         with acting_as(user):
-            for entry in await workspace_service.list_entries(space.namespace):
+            entries = await workspace_service.list_entries(space.namespace)
+            for entry in entries:
                 if not entry["parent_path"]:
                     await workspace_service.delete_entry(space.namespace, entry["id"])
+        from app.modules.workspaces.service import stop_deleted_notebooks
+
+        await stop_deleted_notebooks(str(entry["id"]) for entry in entries)
         async with _sharing(user) as repository:
             row = await self._current(repository, space_id)
             await repository.delete(space_id, expected_revision=row["metadata_revision"])

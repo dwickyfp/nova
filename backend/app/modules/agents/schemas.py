@@ -13,10 +13,10 @@ read only after migration.
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Literal
+from datetime import UTC, datetime
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field
 
 from app.modules.agents.harness import HarnessPolicy
 from app.modules.agents.resources import ResourceBindings
@@ -35,6 +35,14 @@ AgentPolicy = Literal["auto_read_only", "ask_every_tool"]
 BudgetProfile = Literal["fast", "analyst", "deep"]
 
 Visibility = Literal["private", "shared"]
+
+
+def _as_utc(value: datetime) -> datetime:
+    # Metadata stores naive UTC; without a zone the browser reads it as local time.
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+UtcDatetime = Annotated[datetime, AfterValidator(_as_utc)]
 
 
 class AgentView(BaseModel):
@@ -66,8 +74,8 @@ class AgentView(BaseModel):
     semantic_model_ids: list[str] = Field(default_factory=list)
     semantic_view_ids: list[str] = Field(default_factory=list)
     visibility: Visibility = "private"
-    created_at: datetime
-    updated_at: datetime
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
     resource_bindings: ResourceBindings = Field(default_factory=ResourceBindings)
     config_revision: str | None = None
     release_manifest_id: str | None = None
@@ -160,8 +168,8 @@ class SemanticModelView(BaseModel):
     ossie_version: str
     definition: dict = Field(default_factory=dict)
     source_file_id: str | None = None
-    created_at: datetime
-    updated_at: datetime
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
 
 
 class SemanticModelListResponse(BaseModel):
@@ -242,7 +250,7 @@ class VerifiedQueryView(BaseModel):
     verified_sql: str
     expected_result_signature: str | None = None
     verified_by: str
-    verified_at: datetime
+    verified_at: UtcDatetime
     tags: list[str] = Field(default_factory=list)
     usage_count: int = 0
     success_count: int = 0
@@ -290,10 +298,10 @@ class RuleProposalView(BaseModel):
     proposal_kind: Literal["metric", "autopilot"] = "metric"
     details: dict | None = None
     status: Literal["pending", "approved", "rejected"]
-    previewed_at: datetime | None = None
+    previewed_at: UtcDatetime | None = None
     reviewed_by: str | None = None
-    created_at: datetime
-    updated_at: datetime
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
 
 
 class RuleProposalListResponse(BaseModel):
@@ -323,8 +331,8 @@ class SkillView(BaseModel):
     #: Whether Studio agents may select it; platform skills for the Console
     #: assistant only (SQL authoring, administration) are False.
     for_agents: bool = True
-    created_at: datetime
-    updated_at: datetime
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
 
 
 class SkillListResponse(BaseModel):
@@ -355,8 +363,8 @@ class McpServerView(BaseModel):
     args: list[str] = Field(default_factory=list)
     is_active: bool = True
     last_status: str | None = None
-    created_at: datetime
-    updated_at: datetime
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
 
 
 class McpServerListResponse(BaseModel):
@@ -401,8 +409,8 @@ class ToolView(BaseModel):
     source: str
     input_schema: dict = Field(default_factory=dict)
     is_enabled: bool = True
-    created_at: datetime
-    updated_at: datetime
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
 
 
 class ToolListResponse(BaseModel):
@@ -431,7 +439,7 @@ class AgentRoleView(BaseModel):
     role_name: str
     grant_type: str = "USAGE"
     verified: bool = False
-    verified_at: datetime | None = None
+    verified_at: UtcDatetime | None = None
 
 
 class AgentRoleListResponse(BaseModel):
@@ -457,7 +465,7 @@ class AccessCheckResponse(BaseModel):
     role_name: str
     all_granted: bool
     items: list[AccessCheckItem]
-    checked_at: datetime
+    checked_at: UtcDatetime
 
 
 # ── Custom tools ───────────────────────────────────────────────
@@ -474,8 +482,8 @@ class CustomToolView(BaseModel):
     database_name: str | None = None
     function_name: str | None = None
     definition: dict = Field(default_factory=dict)
-    created_at: datetime
-    updated_at: datetime
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
 
 
 class CustomToolListResponse(BaseModel):

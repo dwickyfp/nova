@@ -96,7 +96,12 @@ class WorkerService:
            never inferred from the engine's (engine-wide, uninformative) archive
            failure (NOVA-46). Without this the row stays ``running`` and the DAG
            cannot re-evaluate it.
-        3. **Lost-delivery re-enqueue** — covers a run persisted but never
+        3. **Abandoned-node settlement** — an abandoned node holds its run
+           ``running``. A native attempt with a verified trace takes that
+           outcome and its run is driven again; otherwise, once no effect of
+           the attempt can still be in flight, the run is settled ``failed``
+           without repeating the node.
+        4. **Lost-delivery re-enqueue** — covers a run persisted but never
            published (Redis flushed before the push, or the scheduler died
            between the two), and a run a worker abandoned mid-node.
 
@@ -105,8 +110,10 @@ class WorkerService:
         """
         native_ok = await self._reconcile_native()
         heartbeat_ok = await self._abandon_stale_nodes()
+        settled_ok, verified = await self._settle_abandoned_runs()
         report = await self._reconciler.scan()
-        for graph_run_id in [*report.pending_graph_runs, *report.abandoned_graph_runs]:
+        candidates = [*report.pending_graph_runs, *report.abandoned_graph_runs, *verified]
+        for graph_run_id in dict.fromkeys(candidates):
             run = await self._repository.get_graph_run(graph_run_id)
             if run is None:
                 continue
@@ -121,7 +128,7 @@ class WorkerService:
             logger.warning(
                 "Learning admission is unavailable; pending source messages are retained"
             )
-        return native_ok and heartbeat_ok
+        return native_ok and heartbeat_ok and settled_ok
 
     async def _reconcile_native(self) -> bool:
         """Advance running nodes from the engine's native task state.
@@ -160,6 +167,25 @@ class WorkerService:
         if abandoned:
             logger.info("abandoned %d stale node(s)", len(abandoned))
         return True
+
+    async def _settle_abandoned_runs(self) -> tuple[bool, list[str]]:
+        """End or continue runs held by abandoned nodes; isolated like the others.
+
+        Returns whether the pass completed and the graph runs to drive again
+        because a node now has a verified outcome.
+        """
+        try:
+            report = await self._reconciler.settle_abandoned_runs()
+        except Exception:
+            logger.exception("abandoned-node settlement failed; continuing")
+            return False, []
+        if report.verified or report.settled:
+            logger.info(
+                "abandoned nodes: %d verified, %d run(s) settled with an unknown outcome",
+                len(report.verified),
+                len(report.settled),
+            )
+        return True, list(report.requeue)
 
     async def run_forever(self, stop_event: asyncio.Event) -> None:
         logger.info("nova-worker started; waiting for graph runs")

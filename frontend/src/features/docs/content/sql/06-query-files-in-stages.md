@@ -53,11 +53,13 @@ LIST @docs_qa_sql_files;
 
 ```text
 PATH                                           SIZE  IS_DIR  MODIFICATION_TIME
-@docs_qa_sql_files                             0     1       2026-11-11 09:43:47
-@docs_qa_sql_files/incoming                    0     1       ...
+@docs_qa_sql_files                             0     1       NULL
+@docs_qa_sql_files/incoming                    0     1       NULL
 @docs_qa_sql_files/incoming/more_orders.csv    73    0       2026-11-11 09:43:34
 @docs_qa_sql_files/new_orders.csv              131   0       2026-11-11 09:43:24
 ```
+
+Folders have no modification time, so `MODIFICATION_TIME` is `NULL` for them.
 
 List one folder (`FILES` is optional):
 
