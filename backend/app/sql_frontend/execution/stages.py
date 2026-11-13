@@ -18,6 +18,19 @@ from app.modules.stages.access import check_stage_access
 logger = logging.getLogger(__name__)
 
 
+def _stage_reference_error(name: str, database: str | None, *, ambiguous: bool = False):
+    from app.sql_frontend.errors import StageReferenceError
+
+    where = f" in {database}" if database else " (no database is selected)"
+    if ambiguous:
+        return StageReferenceError(
+            f"Stage '{name}' matches more than one stage{where}; "
+            "write it as @<database>.<schema>.<stage>",
+            "stage_ambiguous",
+        )
+    return StageReferenceError(f"Stage '{name}' not found{where}")
+
+
 class StageRuntime:
     def __init__(
         self,
@@ -76,10 +89,9 @@ class StageRuntime:
                     if found:
                         matches = [(row, consumed) for row in found]
                 if len(matches) != 1:
-                    raise ValueError(
-                        f"Stage reference {ref.full_match!r} is "
-                        + ("ambiguous" if matches else "not found")
-                    )
+                    # Name the stage as written: ``full_match`` is the planner's
+                    # private placeholder by now, never the user's text.
+                    raise _stage_reference_error(ref.stage_name, database, ambiguous=bool(matches))
                 row, consumed = matches[0]
                 action = (
                     "write"
@@ -92,10 +104,10 @@ class StageRuntime:
                 selected.append((ref, row, consumed, action))
 
             # All scopes are authorized before any payload or secret is used.
-            for _, row, _, action in selected:
+            for ref, row, _, action in selected:
                 payload = await registrations.get_stage(row["id"], action=action)
                 if payload is None:
-                    raise ValueError("Stage reference is not found")
+                    raise _stage_reference_error(ref.stage_name, database)
                 payloads.append(payload)
 
         configs: dict[int, StorageConfig] = {}

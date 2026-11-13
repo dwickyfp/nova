@@ -84,7 +84,11 @@ no menu item). It shows each stage's **Scope** (database and schema),
 
 - JSON files can be uploaded but not queried. Use CSV, TSV, or Parquet.
 - `Stage '<name>' not found in <database>` means the stage belongs to another
-  database or was deleted.
+  database or was deleted. Without a selected database the message ends with
+  `(no database is selected)`; choose the database in the worksheet first.
+- `Stage '<name>' matches more than one stage in <database>` means stages with
+  that name exist in more than one schema. Write the full name,
+  `@<database>.<schema>.<stage>`.
 - `Access denied` means your active role may not use the stage's database.
 - `Storage connection is not configured` means the connection name is unknown.
   Ask your administrator for the configured name.

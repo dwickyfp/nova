@@ -50,6 +50,8 @@ class FakeProvider:
         self.live: set[str] = set()
         self._interrupt = asyncio.Event()
         self.hang_forever = False
+        #: Trusted calls whose stream stalls: no result, no end.
+        self.stall: set[str] = set()
 
     async def create(self, spec: SandboxSpec) -> SandboxHandle:
         self.created.append(spec)
@@ -65,6 +67,8 @@ class FakeProvider:
         if "__nova__." in code:
             call = re.search(r"__nova__\.(\w+)\((.*)\)$", code, re.S)
             name = call.group(1)
+            if name in self.stall:
+                await asyncio.Event().wait()
             arg = json.loads(eval(call.group(2))) if call.group(2) else {}  # noqa: S307
             payload = self._trusted(name, arg)
             await sink(KernelEvent(type="result", bundle={PAYLOAD: json.dumps(payload)}))
@@ -440,6 +444,30 @@ async def test_a_cell_that_ignores_interrupts_restarts_the_kernel(env, monkeypat
     runtime = await state.active_runtime(CH)
     assert runtime.status == "READY" and runtime.generation == 2
     assert "runtime.restarted" in [name for name, _ in await events_of(env["redis"])]
+
+
+async def test_a_stalled_trusted_call_does_not_wedge_the_runtime(env, monkeypatch):
+    # Seen live: the stream of a cell's trusted `end` call never finished, so
+    # the runtime stayed BUSY, the cell timeout never fired, Stop queued behind
+    # it, and the runtime held the user's quota after the notebook was gone.
+    monkeypatch.setattr(worker_module, "KERNEL_CALL_SECONDS", 0.2)
+    await started(env)
+    env["provider"].stall.add("end")
+    await env["service"].run(env["user"], "nb-1", mode="cell", cell_id="c1",
+                             base_revision=5, on_error="stop", idempotency_key=None)
+    await asyncio.wait_for(drain(env["worker"]), timeout=10)
+    assert env["store"].executions[0]["status"] == "succeeded"
+    runtime = await state.active_runtime(CH)
+    assert runtime.status == "READY" and not runtime.current_execution
+
+    env["provider"].stall.add("begin")
+    await env["service"].run(env["user"], "nb-1", mode="cell", cell_id="c1",
+                             base_revision=5, on_error="stop", idempotency_key=None)
+    await asyncio.wait_for(drain(env["worker"]), timeout=10)
+    assert env["store"].executions[1]["status"] == "failed"
+    await env["service"].stop(env["user"], "nb-1")
+    await asyncio.wait_for(drain(env["worker"]), timeout=10)
+    assert await state.active_runtime(CH) is None
 
 
 async def test_a_kernel_that_died_is_restarted_with_nova_bootstrapped(env):

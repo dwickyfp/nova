@@ -151,8 +151,10 @@ you to confirm. A dialog titled **Run destructive query?** appears. Click
 **Run query** to go ahead or **Cancel** to run nothing.
 
 Statements that need confirmation include `UPDATE`, `DELETE`, `MERGE INTO`,
-`TRUNCATE TABLE`, `DROP ...`, and `ALTER TABLE ... DROP COLUMN`. Adding data
-with `INSERT` or creating objects does not ask.
+`TRUNCATE TABLE`, `DROP ...`, `ALTER TABLE ... DROP COLUMN`, and the partition
+changes `ALTER TABLE ... TRUNCATE PARTITION`, `ALTER TABLE ... REPLACE PARTITION`
+and `ALTER TABLE ... SWAP WITH`. Adding data with `INSERT` or creating objects
+does not ask.
 
 When you run a script, Nova checks the whole script first. If any statement
 needs confirmation, nothing runs until you confirm.

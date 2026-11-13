@@ -847,9 +847,9 @@ class TestMySQLClientCompatibility:
         fake = _patch_service(monkeypatch, FakeQueryService())
         executor = ProxyQueryExecutor(SessionState())
 
-        await executor.execute('SELECT "a;b", \'c\\\';d\'', username="u", connection=object())
+        await executor.execute("SELECT \"a;b\", 'c\\';d'", username="u", connection=object())
 
-        assert fake.last_sql == 'SELECT "a;b", \'c\\\';d\''
+        assert fake.last_sql == "SELECT \"a;b\", 'c\\';d'"
 
     async def test_a_trailing_line_comment_cannot_swallow_the_next_statement(self, monkeypatch):
         fake = _patch_service(monkeypatch, FakeQueryService([QueryResult(), QueryResult()]))
@@ -1139,3 +1139,103 @@ class TestClientTransactions:
         )
         assert result.error_code == 1235
         assert fake.calls == []
+
+
+async def test_statements_run_with_the_connection_users_metadata_actor(monkeypatch):
+    # Seen live: SHOW/CREATE/DESCRIBE TASK through a MySQL client failed with
+    # "Metadata operation is not authorized": nothing bound the proxy user.
+    from app.core import metadata_scope
+
+    seen = []
+
+    async def capture(self, sql, sink, **kwargs):
+        seen.append(metadata_scope.acting_actor())
+
+    monkeypatch.setattr(ProxyQueryExecutor, "_execute", capture)
+    session = SessionState(
+        active_role="reader", assigned_roles=("reader",), security_context_version=3
+    )
+    await ProxyQueryExecutor(session).execute(
+        "SHOW TASKS", username="alice", connection=object(), session_id="s1"
+    )
+    actor = seen[0]
+    assert (actor.principal, actor.active_role, actor.security_context_version) == (
+        "alice",
+        "reader",
+        3,
+    )
+    assert metadata_scope.acting_actor() is None  # not left bound after the statement
+
+    await ProxyQueryExecutor(SessionState(active_role="ghost")).execute(
+        "SHOW TASKS", username="alice", connection=object()
+    )
+    assert seen[1] is None  # no valid role: nothing bound, metadata fails closed
+
+
+async def test_planning_without_an_event_loop_sends_nothing_on_the_clients_socket(monkeypatch):
+    # Seen live: MERGE through a MySQL client bound its target on the proxy's
+    # engine session from a coroutine that planning abandoned mid-read, so the
+    # reply was left on the socket ("Table does not exist", then "Packet
+    # sequence number wrong" for every later statement).
+    from app.modules.query.repository import QueryRepository
+    from app.sql_frontend.parser import NeedsEventLoop, run_without_awaiting
+
+    sent = []
+
+    async def execute_on(self, connected, sql, **kwargs):
+        sent.append(sql)
+        return QueryResult()
+
+    monkeypatch.setattr(QueryRepository, "_execute_on", execute_on)
+    repository = QueryRepository()
+    with pytest.raises(NeedsEventLoop):
+        run_without_awaiting(
+            lambda: repository.execute_as_user(
+                sql="SHOW CREATE TABLE db.t",
+                username="alice",
+                password="",
+                role="reader",
+                connected=object(),
+            )
+        )
+    assert sent == []
+    await repository.execute_as_user(
+        sql="SHOW CREATE TABLE db.t",
+        username="alice",
+        password="",
+        role="reader",
+        connected=object(),
+    )
+    assert sent == ["SHOW CREATE TABLE db.t"]
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SHOW TASKS",
+        "show tasks in sales",
+        "CREATE TASK t AS INSERT INTO a SELECT 1",
+        "/* note */ EXECUTE TASK t",
+        "DESCRIBE TASK t",
+        "ALTER TASK t SUSPEND",
+        "DROP TASK t",
+    ],
+)
+async def test_task_statements_are_refused_with_where_to_manage_them(monkeypatch, sql):
+    from app.proxy.executor import TASKS_ELSEWHERE
+
+    fake = FakeQueryService([])
+    _patch_service(monkeypatch, fake)
+    session = SessionState(active_role="reader", assigned_roles=("reader",))
+    result = await ProxyQueryExecutor(session).execute(sql, username="alice", connection=object())
+    assert result.error == TASKS_ELSEWHERE and not fake.calls
+
+
+async def test_a_table_named_tasks_is_not_a_task_statement(monkeypatch):
+    fake = FakeQueryService([QueryResult(columns=["n"], rows=[[1]])])
+    _patch_service(monkeypatch, fake)
+    session = SessionState(active_role="reader", assigned_roles=("reader",))
+    result = await ProxyQueryExecutor(session).execute(
+        "SELECT * FROM tasks", username="alice", connection=object()
+    )
+    assert result.error is None and fake.calls

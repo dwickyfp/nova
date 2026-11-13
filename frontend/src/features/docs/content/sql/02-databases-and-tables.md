@@ -139,7 +139,14 @@ CREATE TABLE events (
 DUPLICATE KEY (event_time)
 PARTITION BY date_trunc('day', event_time)
 DISTRIBUTED BY RANDOM;
+
+INSERT INTO events VALUES
+  ('2026-05-01 09:00:00', 'login', '{"user": "ana"}'),
+  ('2026-05-01 09:15:00', 'purchase', '{"user": "budi", "amount": 120}');
 ```
+
+Each row lands in the partition for its day. The JSON example in
+[Query data with SELECT](/docs/sql/querying-data) reads these two rows.
 
 A table with fixed date ranges, a set number of buckets, and a table property:
 

@@ -1,22 +1,19 @@
 """novaduck: this notebook's DuckDB, connected to Nova.
 
-``con = novaduck.connect()`` is the kernel's DuckDB connection (the same one
-SQL cells and ``duckdb.sql`` use) with every catalog your role sees attached
-under its Nova name: ``nova`` for Nova's own tables, then ``pg_shop``,
-``sf_sales`` and so on. Everything DuckDB does works on it; it adds:
+``con = novaduck.connect()`` is the only Nova call. It returns the kernel's
+DuckDB 2.0 connection (the same one SQL cells and ``duckdb.sql`` use) with
+every catalog your role sees attached under its Nova name: ``nova`` for Nova's
+own tables, then ``pg_shop``, ``sf_sales`` and so on. From there everything is
+ordinary DuckDB: ``con.sql("SELECT * FROM nova.sales.orders")``,
+``INSERT``/``UPDATE``/``DELETE`` on ``nova.*`` tables, and DuckDB's
+``mysql_query('nova', ...)`` / ``mysql_execute('nova', ...)`` for Nova SQL.
+Reads and writes run as you, under your active role: Ranger decides what you
+may see and change, and every write is audited.
 
-* ``con.nova(sql)``: run Nova SQL where the data lives (``@stage`` reads,
-  Nova functions) and get a DuckDB relation back;
-* ``con.write(data, "catalog.schema.table", mode="append")``: append or
-  overwrite a table in Nova, Postgres or Snowflake;
-* ``con.merge_into("catalog.schema.table", data, on=["id"])``: upsert;
-* ``con.put(data, "@stage/path/file.parquet")``: save data (or a local file)
-  into a Nova stage;
-* ``con.catalogs()``: what is attached.
-
-``data`` is a DuckDB relation, SQL text, a pandas/polars/Arrow frame, or a
-path to a local file. Writes run as you, under your active role: Ranger
-decides what you may change, and every write is audited.
+For notebooks written before this, the connection still accepts the older
+calls ``write``, ``merge_into``, ``put``, ``nova`` and ``catalogs``. They are
+the only route for writes to Postgres or Snowflake (which refuse SQL writes
+through this connection) and for saving files into a Nova stage.
 """
 
 from __future__ import annotations

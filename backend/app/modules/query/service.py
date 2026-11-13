@@ -776,11 +776,15 @@ class QueryService:
         if not statements:
             return [QueryResult(original_sql=sql, warnings=["Empty SQL"], error="Empty SQL")]
 
+        # Without a held connection each statement gets its own pooled one, so a
+        # transaction or session setting cannot reach the statements after it.
+        per_statement_session = connection is None and delegated_connection_for(username) is None
         with parsing_scope():
             analyses: list[Analysis] = []
             analysis = None
             try:
                 from app.sql_frontend.analysis.effects import PlanEffects
+                from app.sql_frontend.analysis.validation import refuse_per_statement_session
 
                 script_effects = PlanEffects()
                 confirmation_statement = None
@@ -806,6 +810,8 @@ class QueryService:
                         statement,
                         PlanningContext(database=database, schema=schema),
                     )
+                    if per_statement_session:
+                        refuse_per_statement_session(statement)
                     script_effects |= analysis.effects
                     if analysis.requires_confirmation and confirmation_statement is None:
                         confirmation_statement = (stmt_sql, analysis.statement_kind)

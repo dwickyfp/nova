@@ -159,8 +159,10 @@ class SecurityStatementRouter:
             )
 
         if _SHOW_AVAILABLE.match(sql) or _SHOW_ROLES.match(sql):
-            roles = await self._service.list_roles()
-            rows = [[item.get("name"), "Ranger"] for item in roles]
+            if _SHOW_AVAILABLE.match(sql):
+                rows = [[name, "Ranger"] for name in await self._service.available_roles(security)]
+            else:
+                rows = [[item.get("name"), "Ranger"] for item in await self._service.list_roles()]
             return RoutedSecurityStatement(
                 True,
                 QueryResult(

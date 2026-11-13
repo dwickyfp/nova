@@ -36,6 +36,14 @@ class BindingError(SemanticError):
     code = "binding_error"
 
 
+class StageReferenceError(BindingError):
+    """A ``@stage`` reference names no stage, or more than one, in scope."""
+
+    def __init__(self, message: str, code: str = "stage_not_found") -> None:
+        super().__init__(message)
+        self.code = code
+
+
 class CapabilityUnsupportedError(SemanticError):
     code = "capability_unsupported"
 

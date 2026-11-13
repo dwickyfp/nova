@@ -11,7 +11,12 @@ import pytest
 
 from app.modules.query.repository import QueryResult
 from app.proxy.executor import CollectingSink, ProxyQueryExecutor
-from app.proxy.notebook_metadata import ScannerQuery, column_row, scanner_query
+from app.proxy.notebook_metadata import (
+    ScannerQuery,
+    column_row,
+    delete_all_as_truncate,
+    scanner_query,
+)
 from app.proxy.session import SessionState
 
 SCHEMATA = "\nSELECT schema_name\nFROM information_schema.schemata\n"
@@ -151,3 +156,31 @@ async def test_other_clients_keep_the_engine_answer(catalog):
     result = await _run(SCHEMATA, notebook=False)
     assert result.error is not None
     assert len(catalog.calls) == 1 and "information_schema" in catalog.calls[0]
+
+
+@pytest.mark.parametrize(
+    ("sql", "expected"),
+    [
+        ("DELETE FROM `sales`.`orders`", "TRUNCATE TABLE `sales`.`orders`"),
+        ("DELETE FROM `sales`.`orders` WHERE TRUE", "TRUNCATE TABLE `sales`.`orders`"),
+        ("delete from sales.orders where 1 = 1;", "TRUNCATE TABLE sales.orders"),
+        ("DELETE FROM `odd``name`", "TRUNCATE TABLE `odd``name`"),
+    ],
+)
+def test_duckdb_delete_of_every_row_becomes_truncate(sql, expected):
+    # DuckDB sends TRUNCATE and DELETE ... WHERE true as a DELETE the engine refuses.
+    assert delete_all_as_truncate(sql) == expected
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "DELETE FROM `sales`.`orders` WHERE id = 2",
+        "DELETE FROM `sales`.`orders` WHERE TRUE OR id = 2",
+        "DELETE FROM `sales`.`orders` WHERE 1 = 1 AND id > 3",
+        "DELETE FROM a; DROP TABLE b",
+        "SELECT 1",
+    ],
+)
+def test_a_conditional_delete_is_left_alone(sql):
+    assert delete_all_as_truncate(sql) is None

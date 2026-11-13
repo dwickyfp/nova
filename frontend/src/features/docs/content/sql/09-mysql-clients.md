@@ -79,6 +79,7 @@ SELECT COUNT(*) FROM orders WHERE order_id = 301;   -- 0
 | Row limit | The worksheet's 500-row limit does not apply. |
 | Transactions | `BEGIN`, `COMMIT`, and `ROLLBACK` work. Run `SET ROLE` outside a transaction. |
 | Refused statements | The same statements are refused, for example `DROP USER root` returns `root user cannot be dropped`. |
+| Tasks | Create, change, run and list tasks in the SQL worksheet or on the **Tasks** page. A MySQL client gets `Tasks are managed in Nova, from the SQL worksheet or the Tasks page`. |
 
 > **Warning:** Because there is no confirmation step, double-check `UPDATE`
 > and `DELETE` statements, and always include a `WHERE` clause.

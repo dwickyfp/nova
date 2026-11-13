@@ -121,7 +121,7 @@ described in [AI SQL functions](/docs/ai-ml/ai-sql-functions).
 | Statement | Message |
 | --- | --- |
 | `DROP USER root` | `root user cannot be dropped` |
-| `ALTER ROLE ACCOUNTADMIN ...`, `DROP ROLE ACCOUNTADMIN`, `GRANT ACCOUNTADMIN ...`, `REVOKE ... FROM ACCOUNTADMIN` | The protected administrator role cannot be changed. |
+| `ALTER ROLE ACCOUNTADMIN ...`, `DROP ROLE ACCOUNTADMIN`, `GRANT ACCOUNTADMIN TO ROLE ...`, `REVOKE ... FROM ACCOUNTADMIN` | The protected administrator role cannot be changed. |
 | `SELECT ... INTO OUTFILE ...` | `INTO OUTFILE exports query results to a file and is not read-only.` |
 | `INSERT INTO FILES(...) ...` | `INTO FILES writes to a file path and is not read-only.` |
 | `COPY INTO @stage ...`, `INSERT INTO @stage ...` | `INTO @stage exports query results and is not read-only.` |

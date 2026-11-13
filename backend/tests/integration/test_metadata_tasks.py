@@ -94,9 +94,21 @@ async def test_internal_handler_allowlist_preserves_definition_and_version_guard
                     "UPDATE nova_meta.config_tasks SET handler='sql',version=version+1 "
                     "WHERE id=%s", (row["id"],),
                 )
-    for handler in ("intelligence.unknown", "agents.unknown", "python.exec"):
+    for handler in ("intelligence.unknown", "agents.unknown", "python.exec", "sql_scripts"):
         with pytest.raises(MetadataIntegrityViolation):
             await create_task(tasks, name=handler, handler=handler)
+
+
+async def test_every_user_task_handler_is_accepted(tasks):
+    """CREATE TASK writes each user handler, including a BEGIN ... END script."""
+    from app.modules.task_orchestration.ddl import USER_HANDLERS
+
+    for handler in sorted(USER_HANDLERS):
+        config = {"statements": ["INSERT INTO t SELECT 1"]} if handler == "sql_script" else {}
+        row = await create_task(
+            tasks, name="user_" + handler, handler=handler, handler_config=config,
+        )
+        assert row["handler"] == handler and row["version"] == 1
 
 
 async def test_definition_changes_need_the_version_they_read(tasks):
@@ -197,6 +209,19 @@ async def test_graph_runs_are_created_once_and_never_reset(tasks):
     with pytest.raises(MetadataConflict):
         async with tasks.transaction("scheduler") as (repo, _):
             await repo.create_graph_run_once({"id": "run-1", "graph_id": "other"})
+
+
+async def test_the_query_workload_records_a_manual_run_but_cannot_move_it(tasks):
+    """EXECUTE TASK from a SQL worksheet runs in the query workload (revision 47)."""
+    async with tasks.transaction("query") as (repo, _):
+        run, created = await repo.create_graph_run_once(
+            {"id": "run-q", "graph_id": "g1", "trigger_type": "manual",
+             "execution_user": "task-owner", "execution_role": "ANALYST"},
+        )
+    assert created and run["state"] == "pending"
+    with pytest.raises(MetadataPermissionDenied):
+        async with tasks.transaction("query") as (repo, _):
+            await repo.claim_graph_run("run-q", ["pending"], "running")
 
 
 async def test_a_stale_graph_worker_cannot_move_or_heartbeat_the_run(tasks):

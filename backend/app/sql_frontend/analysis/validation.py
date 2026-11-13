@@ -206,6 +206,56 @@ def _native_session_settings(statement: ast.Statement, context: Any = None) -> N
     return None
 
 
+_TRANSACTION_STATEMENTS = frozenset(
+    {"BeginStatementContext", "CommitStatementContext", "RollbackStatementContext"}
+)
+TRANSACTIONS_UNAVAILABLE = (
+    "Transactions are not available in the SQL worksheet: each statement commits when it "
+    "runs, so ROLLBACK cannot undo it. Run BEGIN, COMMIT and ROLLBACK from a MySQL client."
+)
+SESSION_SETTINGS_UNAVAILABLE = (
+    "Session settings are not kept in the SQL worksheet: each statement runs separately, "
+    "so the setting would not reach the next statement. Set it in the query instead, "
+    "for example SELECT /*+ SET_VAR(query_timeout = 600) */ ..."
+)
+
+
+def _session_scoped_setting(variable: Any) -> bool:
+    kind = type(variable).__name__
+    if kind != "SetSystemVarContext":
+        # User variables, SET NAMES and SET TRANSACTION live in the session.
+        return kind in {"SetUserVarContext", "SetNamesContext", "SetTransactionContext"}
+    scope = variable.varType()
+    if scope is None and variable.systemVariable() is not None:
+        scope = variable.systemVariable().varType()
+    return scope is None or scope.GLOBAL() is None
+
+
+def refuse_per_statement_session(statement: ast.Statement) -> None:
+    """Refuse statements whose only effect is session state a pooled run loses.
+
+    The worksheet runs every statement on its own pooled connection. A
+    transaction opened there is never the one a later ``INSERT`` or
+    ``ROLLBACK`` runs in, and a session ``SET`` is gone before the next
+    statement. Reporting either as successful would be false, so callers that
+    run without a held connection refuse them before anything runs. A held
+    connection (the MySQL proxy, a task run) keeps its own session and is
+    not checked here.
+    """
+    root = statement.parsed.statement_context
+    kind = type(root).__name__
+    if kind in _TRANSACTION_STATEMENTS:
+        from app.sql_frontend.errors import CapabilityUnsupportedError
+
+        raise CapabilityUnsupportedError(TRANSACTIONS_UNAVAILABLE)
+    if kind == "SetStatementContext" and any(
+        _session_scoped_setting(variable) for variable in root.setVar()
+    ):
+        from app.sql_frontend.errors import CapabilityUnsupportedError
+
+        raise CapabilityUnsupportedError(SESSION_SETTINGS_UNAVAILABLE)
+
+
 def _security_context(statement: ast.Statement, context: Any) -> Any:
     del context
     root = statement.parsed.statement_context

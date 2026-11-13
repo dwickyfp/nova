@@ -21,6 +21,7 @@ System settings and database selection run on the authenticated engine connectio
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import decimal
 import logging
@@ -34,11 +35,13 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from app.common.sql_guard import redact_sql_credentials, strip_sql_comments
+from app.core import metadata_scope
 from app.core.config import settings
 from app.modules.access_control.role_activation import (
     RoleActivationError,
     role_activation_service,
 )
+from app.modules.access_control.security_context import SecurityContext, SecurityContextError
 from app.modules.assistant.tools.policy import is_allowed_statement
 from app.modules.query.admission import (
     REFUSAL,
@@ -53,6 +56,7 @@ from app.proxy.notebook_metadata import (
     MAX_DESCRIBED_TABLES,
     ScannerQuery,
     column_row,
+    delete_all_as_truncate,
     quote_identifier,
     scanner_query,
 )
@@ -98,6 +102,18 @@ from app.sql_frontend.parser import run_sql_cpu
 from app.sql_frontend.session_functions import CORRELATION_SESSION
 
 logger = logging.getLogger(__name__)
+
+#: Nova task statements. Tasks live in Nova's control metadata, which this
+#: process's least-privilege login cannot change; they are managed from Nova.
+_TASK_STATEMENT = re.compile(
+    r"^\s*(?:CREATE\s+(?:OR\s+REPLACE\s+)?TASK|ALTER\s+TASK|DROP\s+TASK|EXECUTE\s+TASK"
+    r"|DESC(?:RIBE)?\s+TASK|SHOW\s+TASKS)\b",
+    re.IGNORECASE,
+)
+TASKS_ELSEWHERE = (
+    "Tasks are managed in Nova, from the SQL worksheet or the Tasks page; a MySQL "
+    "client cannot create, change, run or list them"
+)
 
 #: A statement whose result columns a prepare can announce: a query, with or
 #: without a CTE or parentheses (``describe_columns``).
@@ -447,10 +463,30 @@ class ProxyQueryExecutor:
         """Run one ``COM_QUERY`` payload, writing each response to ``sink``."""
         from app.sql_frontend.parser import parsing_scope
 
-        with parsing_scope():
+        # Metadata-backed statements (tasks, streams) run as this connection's
+        # user, as an HTTP request does; without one valid role nothing is bound
+        # and they fail closed.
+        actor = self._metadata_actor(username, session_id)
+        with parsing_scope(), (
+            metadata_scope.acting_as_sync(actor) if actor else contextlib.nullcontext()
+        ):
             await self._execute(
                 sql, sink, username=username, connection=connection, session_id=session_id
             )
+
+    def _metadata_actor(self, username: str, session_id: str | None) -> SecurityContext | None:
+        try:
+            return SecurityContext.from_session(
+                {
+                    "username": username,
+                    "active_role": self._session.active_role,
+                    "assigned_roles": list(self._session.assigned_roles or []),
+                    "session_id": session_id,
+                    "security_context_version": self._session.security_context_version,
+                }
+            )
+        except (SecurityContextError, TypeError, ValueError):
+            return None
 
     async def _execute(
         self,
@@ -567,7 +603,13 @@ class ProxyQueryExecutor:
         if read_only is not None:
             return await self._emit(sink, read_only, more)
 
+        if _TASK_STATEMENT.match(strip_sql_comments(statement)):
+            return await self._emit(
+                sink, WireResult(error=TASKS_ELSEWHERE, error_code=1235), more
+            )
+
         if self._session.notebook_connection:
+            statement = delete_all_as_truncate(statement) or statement
             answered = await self._notebook_statement(
                 statement, username=username, session_id=session_id
             )

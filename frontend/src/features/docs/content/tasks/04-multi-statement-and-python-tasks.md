@@ -90,10 +90,12 @@ $$;
 
 ### Write results back
 
-`con.write(dataframe, "nova.<database>.<table>", mode="overwrite")` writes a
-pandas DataFrame into a Nova table (`mode="append"` adds rows instead). The
-table must already exist. The write uses the run's permissions, like a
-statement you type yourself.
+After `con = novaduck.connect()` the script writes with ordinary SQL:
+`con.sql("INSERT INTO nova.<database>.<table> SELECT * FROM df")` inserts the
+rows of a pandas DataFrame named `df`. On a table with a primary key, a row
+whose key already exists is replaced, so running the task again updates the
+rows instead of adding copies. The table must already exist. The write uses the
+run's permissions, like a statement you type yourself.
 
 ### Packages and Python version
 
@@ -107,7 +109,7 @@ them as a table with the `tabulate` package:
 
 ```sql
 CREATE TABLE step_counts (step VARCHAR(30), runs BIGINT)
-  DUPLICATE KEY(step) DISTRIBUTED BY HASH(step) BUCKETS 1
+  PRIMARY KEY(step) DISTRIBUTED BY HASH(step) BUCKETS 1
   PROPERTIES('replication_num'='1');
 
 CREATE TASK py_write
@@ -119,7 +121,7 @@ import novaduck
 from tabulate import tabulate
 con = novaduck.connect()
 df = con.sql("SELECT step, COUNT(*) AS runs FROM nova.DOCS_QA_TASK.step_log GROUP BY step ORDER BY step").df()
-con.write(df, "nova.DOCS_QA_TASK.step_counts", mode="overwrite")
+con.sql("INSERT INTO nova.DOCS_QA_TASK.step_counts SELECT * FROM df")
 print(tabulate(df, headers='keys', showindex=False))
 $$;
 
@@ -138,8 +140,8 @@ dollar_1       1
 ```
 
 If the target table does not exist, the run fails with an error such as
-`NovaError: SQL error: ... Table step_counts is not found.` followed by the
-Python traceback.
+`CatalogException: Catalog Error: Table with name step_counts does not exist!`
+followed by the Python traceback.
 
 ### Who the script runs as
 

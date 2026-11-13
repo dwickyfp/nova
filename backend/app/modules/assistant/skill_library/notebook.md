@@ -2,7 +2,7 @@
 name: notebook
 title: Work in a notebook
 summary: Help with a Nova Notebook - read its cells, explain results and errors, write Python, SQL or Markdown cells for review, read and write Nova, Postgres and Snowflake data with novaduck, and run cells only with approval.
-triggers: notebook, ipynb, cell, python, pandas, polars, duckdb, novaduck, con.write, merge_into, con.put, con.nova, mysql_execute, catalogs, dataframe, plot, chart in python, matplotlib, pygwalker, jupyter, sel, kernel, runtime, package, install, pip, read_csv, parquet, merge into, upsert, write back, stage
+triggers: notebook, ipynb, cell, python, pandas, polars, duckdb, novaduck, con.write, merge_into, con.put, con.nova, mysql_execute, mysql_query, catalogs, dataframe, plot, chart in python, matplotlib, pygwalker, jupyter, sel, kernel, runtime, package, install, pip, read_csv, parquet, merge into, upsert, write back, stage
 source: docs/arch-20-nova-notebook.md
 audience: assistant
 ---
@@ -40,40 +40,43 @@ Everything runs as the person under their active role: Ranger decides what
 they may read and change, ACCOUNTADMIN protections apply, and every write is
 audited.
 
+- **Only `novaduck.connect()` is Nova's.** `con = novaduck.connect()` is the
+  notebook's DuckDB 2.0 connection, signed in as the person. Everything else
+  is ordinary DuckDB SQL and DuckDB in Python; write code a DuckDB user
+  would recognise and do not invent helpers.
 - **Catalogs.** Every catalog the role sees is attached by its Nova name:
   `nova` for Nova's own tables (`nova.<database>.<table>`), and each external
   catalog by its name (`pg_shop.public.orders`; Snowflake keeps its upper-case
-  names, `sf_cat.SALES.ORDERS`). `con.catalogs()` lists them with `attached`
-  and `error`; a catalog that could not be reached is listed, not attached.
-  Find tables with the catalog search before naming them.
+  names, `sf_cat.SALES.ORDERS`). `SELECT database_name FROM duckdb_databases()`
+  lists what is attached. Find tables with the catalog search before naming
+  them, and always write full names: `USE` and `SET search_path` cannot point
+  at a Nova catalog.
 - **Read and transform.** Plain DuckDB SQL across catalogs in one query: joins,
-  `UNION ALL`, window functions, `GROUP BY`. Simple filters run in the source.
-  `con.nova(sql)` runs Nova SQL in Nova itself, for Nova-only syntax such as a
-  stage file (`SELECT * FROM @stage/folder/name.parquet`) or Nova functions.
-- **Nova DDL.** `con.execute("CALL mysql_execute('nova', 'CREATE TABLE IF NOT
+  `UNION ALL`, window functions, `QUALIFY`, `PIVOT`, `GROUP BY ALL`. Simple
+  filters run in the source. For Nova-only syntax (a stage file
+  `@stage/folder/name.parquet`, Nova functions) use DuckDB's
+  `mysql_query('nova', '<Nova SQL>')`. DuckDB 2.0 relations have no
+  `fetchone()` (use `.limit(1).fetchall()`), and `.arrow()` returns a reader:
+  read it fully (`.arrow().read_all()`) before the next query.
+- **Nova DDL.** `con.sql("CALL mysql_execute('nova', 'CREATE TABLE IF NOT
   EXISTS db.t (...) PRIMARY KEY (id) DISTRIBUTED BY HASH(id)')")` runs a
-  statement in Nova. Use it to create a primary-key table before upserting.
-  DuckDB SQL can also write Nova directly (`INSERT INTO nova.db.t SELECT ...`,
-  `CREATE TABLE nova.db.t AS ...`), fine for small results.
-- **Write** `con.write(data, "catalog.schema.table", mode="append")`;
-  `mode="overwrite"` replaces the rows. Two-part names mean Nova
-  (`"sales.t"` is `nova.sales.t`).
-- **Upsert** `con.merge_into(target, data, on=["key", ...],
-  when_matched="update", when_not_matched="insert")`. `when_matched` can be
-  `"update"`, `"delete"` or `"ignore"`; `when_not_matched` `"insert"` or
-  `"ignore"`. The target table must exist with those key columns. It returns
-  the counts (`inserted`, `updated`, `deleted`, `rows`; Nova reports `rows`),
-  and running it again with the same data updates instead of duplicating.
-- **Postgres and Snowflake writes** go only through `con.write` and
-  `con.merge_into`, through the catalog's write connection that an
-  administrator adds in Catalog. A plain SQL INSERT into those catalogs is
-  refused; without a write connection the call says so. Never suggest a
-  workaround.
-- **Stages** `con.put(data, "@stage/folder/name.parquet")` saves data (or a
-  local file) into a Nova stage as `.parquet`, `.csv` or `.json`.
-- `data` is a SQL string, a DuckDB relation (such as a SQL cell's result), a
-  pandas, Polars or Arrow frame, or a local file path. One write takes at most
-  1,000,000 rows and 200 MB; aggregate or split larger data.
+  statement in Nova, for example a primary-key table before upserting.
+- **Write Nova tables with SQL.** `INSERT INTO nova.db.t SELECT ...` (also from
+  a pandas frame by name), `UPDATE`, `DELETE ... WHERE ...` and
+  `CREATE TABLE nova.db.t AS ...`. On a primary-key table `INSERT` of an
+  existing key replaces the row, which is the upsert; `MERGE INTO` is not
+  available on Nova tables. `DELETE` needs a `WHERE` (`WHERE true` empties a
+  table); `TRUNCATE` is refused. Each statement takes effect as it runs:
+  `ROLLBACK` does not undo it.
+- **Postgres and Snowflake writes** are refused through SQL. Only when the
+  person needs one, the connection still accepts the older calls
+  `con.write(data, "catalog.schema.table", mode="append")` and
+  `con.merge_into(target, data, on=["key"])`, through the catalog's write
+  connection an administrator adds in Catalog; without it the call says so.
+  Never suggest another workaround.
+- **Stage files.** To save data into a Nova stage, the connection still accepts
+  `con.put(data, "@stage/folder/name.parquet")` (`.csv` and `.json` too).
+- One older write call takes at most 1,000,000 rows and 200 MB.
 - A worked example covering all of this (read Nova, Postgres and Snowflake,
   transform, upsert into Nova and Postgres, check) is the "novaduck tour"
   notebook; offer to build the same steps for someone getting started.

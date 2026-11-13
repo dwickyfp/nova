@@ -152,8 +152,15 @@ def _native_effects(statement: ast.Statement) -> PlanEffects:
                 token.text.upper() == "OVERWRITE" for token in statement.parsed.visible_tokens[:3]
             )
         )
-    if root == "AlterTableStatementContext":
+    if root in {"AlterTableStatementContext", "AlterMaterializedViewStatementContext"}:
         effects |= PlanEffects(drops_objects=any(name.startswith("Drop") for name in nodes))
+        # TRUNCATE PARTITION empties partitions; REPLACE PARTITION and SWAP WITH
+        # put other rows in place of the existing ones. Each removes the rows a
+        # reader sees now, so each is confirmed like DELETE or TRUNCATE TABLE.
+        if "TruncatePartitionClauseContext" in nodes:
+            effects |= PlanEffects(writes_data=True, deletes_rows=True)
+        if nodes & {"ReplacePartitionClauseContext", "SwapTableClauseContext"}:
+            effects |= PlanEffects(writes_data=True, deletes_rows=True, replaces_data=True)
     if root == "NovaCopyStatementContext":
         effects |= PlanEffects(writes_data=True)
     return effects

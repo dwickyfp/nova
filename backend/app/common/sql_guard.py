@@ -863,7 +863,7 @@ def split_sql_statements(sql: str) -> list[str]:
 
         if ch == ";" and not in_task_block:
             stmt = "".join(current).strip()
-            if stmt:
+            if _has_sql(stmt):
                 statements.append(stmt)
             current = []
             previous_word = ""
@@ -875,6 +875,17 @@ def split_sql_statements(sql: str) -> list[str]:
 
     # Last statement (no trailing semicolon)
     stmt = "".join(current).strip()
-    if stmt:
+    if _has_sql(stmt):
         statements.append(stmt)
     return statements
+
+
+def _has_sql(fragment: str) -> bool:
+    """Whether a split fragment holds a statement, not only comments.
+
+    ``SHOW TABLES;  -- note`` leaves ``-- note`` after the last ``;``. The
+    engine ignores it; as a statement of its own it would fail to parse and
+    stop the whole script. A comment before a statement stays with that
+    statement's text.
+    """
+    return bool(fragment) and bool(strip_sql_comments(fragment).strip())

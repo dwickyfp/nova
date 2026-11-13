@@ -128,8 +128,8 @@ EXECUTE TASK sales.etl.close_day;
   name is unique within its schema; `DROP TASK <name>` removes it (refused while
   other tasks run after it or while it is running) before creating it again.
 
-- Nova returns a warning stating no statement was sent to StarRocks. Say so
-  rather than implying the engine accepted DDL.
+- Nova notes that the task was saved and has not run yet. Say so rather than
+  implying a run happened.
 - A manual run (Run, or EXECUTE TASK) uses the session of the person who
   started it and fails if they sign out or switch roles first. Scheduled runs
   use the service account bound to the task's role.

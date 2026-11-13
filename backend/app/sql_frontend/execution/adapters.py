@@ -53,6 +53,12 @@ from app.storage.secrets import SecretResolutionError
 
 logger = logging.getLogger(__name__)
 
+#: The note under a successful CREATE TASK. Saving a task runs nothing.
+TASK_SAVED_NOTE = (
+    "Task saved. It has not run yet: run it with EXECUTE TASK, or it runs when its "
+    "schedule or trigger starts it."
+)
+
 
 def _redact_error_message(message: str) -> str:
     try:
@@ -623,6 +629,7 @@ class FeatureAdapters:
                     executed_sql=normalized_sql,
                     warnings=[f"❌ {e}"],
                     error=str(e),
+                    error_code=getattr(e, "code", None),
                 )
 
             executed_sql = prepared.engine_sql
@@ -1379,17 +1386,7 @@ class FeatureAdapters:
                 # normalized statement here is honest about what Nova did with it
                 # and never implies the engine saw it.
                 executed_sql=normalized_sql,
-                warnings=[
-                    "CREATE TASK is Nova metadata; no statement was sent to StarRocks. "
-                    + {
-                        "sql": "The task's SUBMIT TASK is issued by the worker when the "
-                        "graph runs.",
-                        "sql_script": "The worker runs the task's statements in order, as "
-                        "the run's user, when the graph runs.",
-                        "python": "The worker runs the task's Python in a runtime with "
-                        "novaduck when the graph runs.",
-                    }[task.handler]
-                ],
+                warnings=[TASK_SAVED_NOTE],
             )
         except (TaskDDLError, TaskLoweringError) as exc:
             elapsed_ms = round((time.monotonic() - start) * 1000, 2)
@@ -1622,6 +1619,7 @@ class FeatureAdapters:
                 SecurityOperation(plan.payload.operation, plan.payload.identifiers),
                 security,
                 parsed.original_sql,
+                connection=context.connection,
             )
         except Exception as exc:
             await self._audit(

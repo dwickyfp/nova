@@ -18,6 +18,7 @@ import pytest
 
 from app.modules.query.repository import QueryResult
 from app.modules.query.service import QueryService
+from app.sql_frontend.execution.adapters import TASK_SAVED_NOTE
 
 MISSING = object()
 
@@ -164,9 +165,10 @@ class TestRawCreateTaskNeverReachesEngine:
             schema="default",
         )
         # `executed_sql` is the Nova statement, not an engine statement; the
-        # warning says as much so the surface does not imply the engine ran it.
+        # note says the task was saved and has not run, in the user's terms.
         assert not result.executed_sql.upper().startswith("SUBMIT TASK")
-        assert any("no statement was sent to StarRocks" in w for w in result.warnings)
+        assert result.warnings == [TASK_SAVED_NOTE]
+        assert not any("StarRocks" in w or "SUBMIT" in w for w in result.warnings)
 
     async def test_body_is_stored_verbatim(self, wired):
         service, _, tasks, _ = wired
