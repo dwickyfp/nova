@@ -168,6 +168,7 @@ export function WorkspaceExplorer({
   onNewSqlFile,
   onNewNotebook,
   onDeleted,
+  onRenamed,
 }: {
   personal: WorkspaceSpace;
   personalEntries: WorkspaceEntry[];
@@ -178,6 +179,8 @@ export function WorkspaceExplorer({
   onNewSqlFile: (place: Place) => void;
   onNewNotebook: (place: Place) => void;
   onDeleted: (entryIds: string[]) => void;
+  /** A file kept its id under a new name: open tabs show the new name. */
+  onRenamed?: (entryId: string, name: string) => void;
 }) {
   const queryClient = useQueryClient();
   const spacesQuery = useQuery({
@@ -383,6 +386,7 @@ export function WorkspaceExplorer({
         refresh={refresh}
         onExpand={(key) => setExpanded((current) => new Set(current).add(key))}
         onDeleted={onDeleted}
+        onRenamed={onRenamed}
       />
     </>
   );
@@ -459,12 +463,14 @@ function ExplorerDialogs({
   refresh,
   onExpand,
   onDeleted,
+  onRenamed,
 }: {
   controller: ExplorerController;
   entriesOf: (space: WorkspaceSpace) => WorkspaceEntry[];
   refresh: (space: WorkspaceSpace) => Promise<void>;
   onExpand: (key: string) => void;
   onDeleted: (entryIds: string[]) => void;
+  onRenamed?: (entryId: string, name: string) => void;
 }) {
   const queryClient = useQueryClient();
   const { dialog, close } = controller;
@@ -526,7 +532,8 @@ function ExplorerDialogs({
         onOpenChange={onOpenChange}
         onSubmit={async (name) => {
           if (dialog?.kind !== "rename") return;
-          await workspaceApi.move(dialog.entry.id, name, dialog.entry.parent_path);
+          const { entry } = await workspaceApi.move(dialog.entry.id, name, dialog.entry.parent_path);
+          onRenamed?.(entry.id, entry.name);
           await refresh(dialog.space);
         }}
       />

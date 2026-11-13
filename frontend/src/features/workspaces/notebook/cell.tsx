@@ -56,8 +56,12 @@ function Elapsed({ since }: { since: number }) {
   return <span className="tabular-nums">{((now - since) / 1000).toFixed(1)}s</span>;
 }
 
-function statusLine(run: CellRun | undefined) {
+function statusLine(run: CellRun | undefined, stale: boolean) {
   if (!run) return null;
+  // Saved output no longer matches the code or the live runtime.
+  if (stale && (run.status === "succeeded" || run.status === "failed")) {
+    return <span className="text-warning-strong">Out of date, run again to update</span>;
+  }
   switch (run.status) {
     case "queued":
       return <span>Queued</span>;
@@ -103,6 +107,8 @@ type CellProps = {
   index: number;
   count: number;
   run: CellRun | undefined;
+  /** The output no longer shows what this cell would produce now. */
+  stale?: boolean;
   active: boolean;
   editing: boolean;
   canEdit: boolean;
@@ -208,6 +214,7 @@ export const NotebookCellView = memo(function NotebookCellView({
   index,
   count,
   run,
+  stale = false,
   active,
   editing,
   canEdit,
@@ -228,7 +235,7 @@ export const NotebookCellView = memo(function NotebookCellView({
   const executable = cell.kind !== "markdown";
   const showEditor = cell.kind !== "markdown" || editing;
   const label = KIND_LABEL[cell.kind];
-  const status = executable ? statusLine(run) : null;
+  const status = executable ? statusLine(run, stale) : null;
   const first = index === 0;
   const last = index === count - 1;
 
@@ -497,7 +504,7 @@ export const NotebookCellView = memo(function NotebookCellView({
         ) : null}
 
         {executable && run && run.outputs.length > 0 ? (
-          <div className="px-2 pt-2">
+          <div className={cn("px-2 pt-2", stale && "opacity-70")}>
             <CellOutputs
               outputs={run.outputs}
               tableActions={tableActions ? (output) => tableActions(cell, output) : undefined}

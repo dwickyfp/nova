@@ -152,11 +152,14 @@ export function errorDetail(detail: unknown, fallback = 'Request failed'): strin
 
 export class ApiError extends Error {
   readonly status: number
+  /** The parsed response body, for callers whose errors carry structured results. */
+  readonly body: unknown
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, body?: unknown) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.body = body
   }
 }
 
@@ -185,7 +188,7 @@ async function request<T>(
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new ApiError(res.status, errorDetail(err.detail))
+    throw new ApiError(res.status, errorDetail(err?.detail), err)
   }
 
   if (res.status === 204) {

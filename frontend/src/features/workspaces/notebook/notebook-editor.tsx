@@ -772,6 +772,7 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
                         index={index}
                         count={cells.length}
                         run={runs[cell.id]}
+                        stale={stale.has(cell.id)}
                         active={activeId === cell.id}
                         editing={activeId === cell.id && editing}
                         canEdit={canEdit}

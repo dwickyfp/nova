@@ -72,5 +72,6 @@ or **BLOCKED**, ask your administrator to check its outcome before creating a
 replacement schedule. Nova does not automatically repeat an external delivery
 whose outcome is unknown.
 
-Deleting an agent also removes its active memories. If cleanup fails, the agent
+Click the trash icon and confirm **Delete agent** to delete an agent; this
+cannot be undone. Deleting an agent also removes its active memories. If cleanup fails, the agent
 and its memories stay available so you can resolve the error before trying again.

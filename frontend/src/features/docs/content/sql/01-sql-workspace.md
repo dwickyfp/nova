@@ -136,8 +136,8 @@ reports what actually happened.
 
 ## Format and version history
 
-- **Format SQL** (the braces icon, or **Ctrl+Shift+F**) tidies the layout of
-  the SQL in the editor.
+- **Format SQL** (the braces icon, or **Ctrl+Shift+F**, **Cmd+Shift+F** on a
+  Mac) tidies the layout of the SQL in the editor.
 - **Version history** (the clock icon) lists earlier saved versions of the
   file. Click a version to read it.
 

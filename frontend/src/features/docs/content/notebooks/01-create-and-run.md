@@ -77,3 +77,5 @@ the document is not a substitute for stopping a runtime you no longer need.
 - A notebook's saved code and its running state are separate. Saving does
   not preserve live Python variables across runtime restarts. Saved outputs
   remain visible until you run or clear them; editing code does not refresh them.
+  After you edit a cell or restart the runtime, its output is dimmed and marked
+  **Out of date, run again to update**.

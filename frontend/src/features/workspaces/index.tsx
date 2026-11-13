@@ -128,6 +128,7 @@ import type {
   WorkspaceTabState,
   WorkspaceTreeResponse,
 } from "./types";
+import { queryErrorMessages, refusedQueryResults } from "./query-messages";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -2017,25 +2018,28 @@ export function WorkspacesPage() {
         });
         return "cancelled";
       } else {
-        const failedResult: QueryResponse = {
-          success: false,
-          columns: [],
-          rows: [],
-          row_count: 0,
-          affected_rows: 0,
-          elapsed_ms: 0,
-          original_sql: sql,
-          executed_sql: "",
-          warnings: [error instanceof Error ? error.message : "Query failed"],
-          destructive: false,
-          needs_confirmation: false,
-        };
-        showResults([failedResult]);
+        // A refused statement still returns its results: show why it was refused.
+        const failedResults: QueryResponse[] = refusedQueryResults(error) ?? [
+          {
+            success: false,
+            columns: [],
+            rows: [],
+            row_count: 0,
+            affected_rows: 0,
+            elapsed_ms: 0,
+            original_sql: sql,
+            executed_sql: "",
+            warnings: [error instanceof Error ? error.message : "Query failed"],
+            destructive: false,
+            needs_confirmation: false,
+          },
+        ];
+        showResults(failedResults);
         recordQueryFeedback(
           activeTab.id,
           executionId,
           sql,
-          [failedResult],
+          failedResults,
           Date.now() - startTime,
           correlationId,
         );
@@ -2516,6 +2520,13 @@ export function WorkspacesPage() {
                       onNewSqlFile={(place) => void createNewFile(place)}
                       onNewNotebook={(place) => void createNewNotebook(place)}
                       onDeleted={closeDeletedTabs}
+                      onRenamed={(entryId, name) =>
+                        setTabs((prev) =>
+                          prev[entryId]
+                            ? { ...prev, [entryId]: { ...prev[entryId], title: name } }
+                            : prev,
+                        )
+                      }
                       onOpenFile={(entry) => {
                         if (entry.entry_type !== "file") return;
                         if (!isEditableName(entry.name)) {
@@ -3424,12 +3435,9 @@ const QueryResults = memo(function QueryResults({
   }
 
   if (!queryResult.success) {
-    const errors = [queryResult.error, ...(queryResult.warnings ?? [])].filter(
-      Boolean,
-    );
     return (
       <div className="p-4 text-sm text-destructive">
-        {(errors.length ? errors : ["Query failed."]).map((message, i) => (
+        {queryErrorMessages(queryResult).map((message, i) => (
           <div key={i}>{message}</div>
         ))}
       </div>

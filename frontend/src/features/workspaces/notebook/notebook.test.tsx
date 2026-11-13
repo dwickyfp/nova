@@ -245,6 +245,17 @@ describe("cell", () => {
     return { screen, onCommand };
   }
 
+  it("marks a saved output out of date instead of showing its run time", async () => {
+    const fresh = await renderCell();
+    expect(fresh.screen.container.querySelector('[aria-label="Last run duration"]')).not.toBeNull();
+    expect(fresh.screen.container.textContent).not.toContain("Out of date");
+    await fresh.screen.unmount();
+
+    const { screen } = await renderCell({ stale: true });
+    expect(screen.container.textContent).toContain("Out of date, run again to update");
+    expect(screen.container.querySelector('[aria-label="Last run duration"]')).toBeNull();
+  });
+
   it.each(["sql", "python"] as const)("highlights %s before editing and escapes code markup", async (kind) => {
     const source = kind === "sql" ? "SELECT '<img src=x onerror=alert(1)>' AS value" : "print('<img src=x onerror=alert(1)>')";
     const { screen } = await renderCell({ cell: cell({ kind, source }) });
