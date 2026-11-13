@@ -348,3 +348,70 @@ routing, default split `dev.sh` startup and operator-provisioned schema/epoch.
 Notebook live queues/leases, interactive consent and production Compose remain
 explicit unfinished boundaries. No runtime application process or cutover epoch
 has been started by this follow-up at this checkpoint.
+
+## Outbound AI credential follow-up
+
+The post-commit live-smoke preparation found a remaining caller/grant mismatch:
+`AIService.get_provider_api_key` used the canonical `nova-ai` SERVICE actor,
+while the raw credential policy accepted web administrators or the agent login.
+The real-PG facade regression reproduced a missing key on web before the fix;
+query and background inference owners also lacked direct table grants.
+
+Migration 0043 adds a fixed `ai_runtime_credential(text)` projection for the
+reviewed invocation workloads under exactly that SERVICE identity. The function
+requires an active, non-deleted provider and a matching credential revision.
+It returns ciphertext to the existing internal decryptor. Direct-table grants
+remain unchanged, public execution is revoked, and USER actors plus unrelated
+workloads are refused. API provider/model projections still contain no stored
+key. This restores existing invocation paths; standalone Agent execution and
+ML isolation remain separate unfinished architecture work.
+
+| Follow-up check | Result |
+| --- | --- |
+| Provider PG 01 | Reproduced web SERVICE resolution returning no key; retained failed attempt |
+| Provider registry/migrator PG 02 | 60 passed, 50.41 seconds; nine runtime workloads, inactive/missing providers, wrong actors, unrelated workloads and existing direct-table refusals |
+| Provider focused unit 01 | 155 passed |
+| Full application mypy 17 | PASS, 733 files |
+| Agent eval 13 / scorecard 11 | 358 passed / 54 scenarios and 189 checks passed |
+| Docs browser 03 | 15 passed |
+| Full unit 15 | 11,143 passed, 64% combined coverage, 465.05 seconds; CI branch-coverage command |
+| Schema 0043 rehearsals 15/16 | Both VALIDATED: 1,009,174 rows and 453 payload references, with committed-chunk interruption/resume |
+
+Schema 0042 rehearsals 13/14 both validated before this follow-up. Their receipt
+SHA-256 values are `2ddb81b135c4e9855e1c5078058fd8d1ae10061bfd914fd4e2a7d0c07cdddf53`
+and `3b3189e940a3c8cf2b3846b8899676a9faaed2d67bb81c899172b1fdda411c47`.
+Commit `0d37d227` is pushed; its CI is
+[43336883729](https://github.com/dwickyfp/nova/actions/runs/43336883729).
+The preceding `39f5c47a` run was cancelled by supersession, not passed.
+No actual development cutover has occurred at this checkpoint.
+
+Final schema 0043 validation receipt hashes: `d010e903115d1304f1f113944e7c466a56e7bae31e534fec3ba487709984026f`, `febef80c0835bf60dc005e1e5d95299469d71782f8a32338953436142fb04503`.
+
+CI `0d37d227` PG executed 975 cases: 973 passed, two failed because the test image lacked `fakeredis`. The two Agent consolidation cases remain mandatory. Moving the already locked `fakeredis[lua]` dependency into the `test` group fixes image installation; all 149 package versions and the runtime/host-dev dependency graphs are unchanged. Image build 15 and the exact image regression passed: 47 cases in 50.90 seconds.
+
+
+## Scheduled Agent dependency follow-up
+
+CI `0d37d227` engine finished with 216 passes, 24 skips and one failure
+(no setup errors). Task-owned consolidation reached real Agent verification,
+which could not read custom-tool definitions. Its previous focused PG case
+mocked that verification and therefore missed the workload grant boundary.
+The improved case reproduced the same 503 locally before the fix.
+
+Migration 0044 gives Task read-only access under the existing custom-tool RLS
+and selected release-manifest policy. Owner and active shared-role membership
+still determine visibility; unrelated tools/manifests and definition writes
+remain refused. Consolidation now exercises actual grant/fingerprint checking
+in its real-PG regression. Three focused cases pass, including revocation and
+cross-user scope. No permission assertion or integration case was removed.
+The first expanded domain invocation used a nonexistent test filename and
+collected no tests; the corrected invocation is recorded separately.
+
+Final follow-up checks: Agent/provider/migrator real-PG domain 02 passed 122
+cases in 144.22 seconds; schema/import unit 01 passed 124 cases. Full application
+mypy 18 and changed-file Ruff pass. Image build 16 includes schema 0044. The
+11,143-case unit/coverage run, 358 eval cases and 54/189 scorecard results above
+cover unchanged application source and resolved host dependencies. The complete
+seeded engine suite is delegated to CI under the owner's existing authorization.
+A read-only source check at 01:00:46 UTC found all 157 source tables unchanged.
+Schema 0044 import rehearsals and actual cutover remain pending.

@@ -51,10 +51,10 @@ dev = [
     "boto3-stubs[s3,secretsmanager]>=1.43.113",
     "pandas-stubs>=3.0.5.260914",
     "scipy-stubs==1.15.3.*",
-    "fakeredis[lua]>=2.32",
     { include-group = "test" },
 ]
 test = [
+    "fakeredis[lua]>=2.32",
     "pytest>=8.3.0",
     "pytest-asyncio>=0.25.0",
     "pytest-cov>=6.0.0",

@@ -104,12 +104,16 @@ class AIService:
     ) -> str | None:
         """The decrypted key for an outbound provider request. Internal use only.
 
-        The database decides who may read ciphertext (agent workload for active
-        providers, an administrator in the web workload). Anyone else gets
-        ``None`` and the caller refuses the request.
+        Outbound invocation uses the canonical AI SERVICE projection for active
+        providers. Explicit configuration actors retain the existing admin read
+        boundary. Neither path is a public credential-read endpoint.
         """
         async with metadata_scope(actor or REGISTRY_READER, read_only=True) as connection:
-            credential = await AIRegistryRepository(connection).credential(provider_id)
+            repository = AIRegistryRepository(connection)
+            credential = await (
+                repository.runtime_credential(provider_id) if actor is None
+                else repository.credential(provider_id)
+            )
         if credential is None or not credential.ciphertext:
             return None
         try:

@@ -1,20 +1,23 @@
 # Studio agent metadata port
 
-Revision 0021 prepares the 30 agent-owned tables that were `NOT_STARTED` in
-the [ownership matrix](METADATA_OWNERSHIP.csv), with `AgentMetadataRepository`
-(`backend/app/modules/agents/metadata_repository.py`) as the prepared
-replacement for the `NOVA_SYSTEM` paths of the agent repositories, run
-journal, Missions, automations, memory, quality, sharing and Studio stores.
-Running API, agent and automation code still uses `NOVA_SYSTEM`; nothing
-imports the repository. The three retired agent stores stay as revision 0011
-defined them ([retired history](PG_RETIRED_AGENT_HISTORY.md)).
+Revision 0021 defines the 30 Agent-owned tables through `AgentMetadataRepository`
+(`backend/app/modules/agents/metadata_repository.py`). Runtime callers now use
+actor-bound PG transactions for the registry, run journal, Missions, automations,
+memory, quality, sharing and Studio stores. The three retired Agent stores stay
+as revision 0011 defined them ([retired history](PG_RETIRED_AGENT_HISTORY.md)).
+The [delivery record](../../reports/production-refactor/importer-agent-cutover/README.md)
+distinguishes tested ports from actual epoch activation; development processes
+remain stopped pending final CI and cutover at this checkpoint.
 
 ## Workloads
 
-Only the web API, the interactive agent workload and the automation worker use
-these tables, each through a bound actor (principal, one active role, login,
-security-context version and its own workload identity). Every other workload
-in `WORKLOAD_ROLES` has no grant. Columns the database owns (provenance,
+Web owns interactive Agent requests; the standalone Agent process remains target
+work. Automation and scheduled Task handlers use their own logins and a bound
+actor (principal, one active role, login, security-context version and workload
+identity). Revision 0034 grants Task handlers scoped learning/quality access;
+0044 adds read-only custom-tool and selected release-manifest access so their
+normal Agent verification can run. It preserves owner/shared-role RLS and grants
+no definition writes. Columns the database owns (provenance,
 timestamps, revisions, bound login and version) are not writable by any
 workload; row guards set them.
 
@@ -113,9 +116,10 @@ in the same transaction. Runs, events, Missions, knowledge and bookkeeping
 - **Run visibility** is owner-wide because thread deletion spans roles; replay
   and claims filter the active role in the repository and through the
   role-change marker.
-- **Timestamps:** agent, assistant, artifact and run writers used Python
+- **Timestamps:** Agent, assistant, artifact and run writers used Python
   UTC-naive values; quality/memory revision rows used engine `NOW()`. The
-  import converts each by its producer; that converter is not built yet.
+  implemented importer converts each by its reviewed producer. The operator
+  confirmed Asia/Jakarta for historical engine timestamps; UTC writers stay UTC.
 - **Heartbeat cadence:** every heartbeat is a row update; batching or a Redis
   liveness signal may be preferable at cutover.
 - **Delegated resources** have no current writer and are import-only; a future
@@ -123,12 +127,11 @@ in the same transaction. Runs, events, Missions, knowledge and bookkeeping
 
 ## Remaining agent work
 
-- Wire the repository into the services at cutover (API, agent workload,
-  automation worker), with each producer holding the claim generation it
-  received; remove Redis run-write coordination once PG fencing is active.
-- Build and rehearse the import (timestamp provenance, JSON text, duplicate and
-  fork manifests, missing-event runs) and the semantic-model/verified-query
-  tables owned elsewhere.
+- Activate the verified PG epoch and validate normal runtime ownership.
+- Complete standalone interactive Agent execution and durable consent;
+  Redis admission and process-local consent currently require session affinity.
+- Complete external effect recovery and whole-feature governed/live AI QA.
+  Interrupted/resumed imports have passed; they do not prove these runtime gates.
 
 Validation is recorded in
 [the Agent metadata checkpoint](../../reports/production-refactor/agents-metadata/README.md).

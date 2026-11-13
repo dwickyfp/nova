@@ -373,3 +373,59 @@ async def test_caught_duplicate_does_not_rollback_unrelated_outer_work(registry)
         assert len(await repo.models()) == 2
     with pytest.raises(ValueError, match="active metadata transaction"):
         await repo.providers()
+
+
+@pytest.mark.parametrize("workload", [
+    "web", "agent", "query", "proxy", "task", "ingestion", "ml", "automation", "maintenance",
+])
+async def test_outbound_provider_service_resolves_active_key_without_raw_table_grants(
+    registry, workload, monkeypatch,
+):
+    from app.common.metadata_actors import service_actor
+    from app.modules.ai_ml import service as service_module
+
+    definition = provider("synthetic-outbound-key")
+    await create(registry, definition=definition)
+
+    @asynccontextmanager
+    async def scope(actor, *, read_only=False):
+        assert actor == service_actor("ai") and read_only
+        async with registry(workload, actor, read_only=True) as (_, connection):
+            yield connection
+
+    monkeypatch.setattr(service_module, "metadata_scope", scope)
+    service = service_module.AIService()
+    assert await service.get_provider_api_key("provider-1") == "synthetic-outbound-key"
+    assert await service.get_provider_api_key("missing-provider") is None
+    async with registry() as (repo, _):
+        await repo.replace_provider(
+            "provider-1", replace(definition, is_active=False), expected_revision=1,
+        )
+    assert await service.get_provider_api_key("provider-1") is None
+
+
+async def test_runtime_projection_refuses_user_and_noncanonical_service_actors(registry):
+    from app.common.metadata_actors import service_actor
+
+    await create(registry)
+    denied = [
+        ADMIN, READER, service_actor("other"),
+        SecurityContext("nova-ai", "ACCOUNTADMIN", principal_type="SERVICE"),
+        SecurityContext("nova-ai", "NOVA_WORKER"),
+    ]
+    for actor in denied:
+        with pytest.raises(MetadataPermissionDenied):
+            async with registry("web", actor, read_only=True) as (repo, _):
+                await repo.runtime_credential("provider-1")
+    for workload in ("scheduler", "notebook", "outbox", "readonly"):
+        with pytest.raises(MetadataPermissionDenied):
+            async with registry(workload, service_actor("ai"), read_only=True) as (_, connection):
+                await connection.execute(
+                    "SELECT nova_meta.ai_runtime_credential('provider-1')",
+                )
+    async with registry("web", service_actor("ai"), read_only=True) as (repo, _):
+        assert await repo.credential("provider-1") is None
+        credential = await repo.runtime_credential("provider-1")
+        assert credential and credential.ciphertext
+        assert credential.ciphertext not in repr(credential)
+        assert "ciphertext" not in credential.provider

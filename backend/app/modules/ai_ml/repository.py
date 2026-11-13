@@ -237,6 +237,20 @@ class AIRegistryRepository:
         ciphertext = row.pop("ciphertext")
         return ProviderCredential(row, ciphertext)
 
+    async def runtime_credential(self, identity: str) -> ProviderCredential | None:
+        """Resolve an active provider only under the canonical outbound SERVICE actor."""
+        self._require_transaction()
+        _text(identity, 64)
+        cursor = await self._connection.execute(
+            f"SELECT {_PROVIDER_COLUMNS}, nova_meta.ai_runtime_credential(id) AS ciphertext "
+            "FROM nova_meta.config_ai_providers "
+            "WHERE id=%s AND is_active AND NOT is_deleted", (identity,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return ProviderCredential(row, row.pop("ciphertext"))
+
     async def create_provider(
         self, identity: str, definition: ProviderDefinition,
     ) -> dict[str, Any]:

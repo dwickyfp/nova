@@ -124,6 +124,42 @@ async def test_agent_changes_need_the_revision_they_read_and_keep_snapshots_atom
     assert [(a["action"], a["metadata_revision"]) for a in audit] == [("CREATE", 1), ("UPDATE", 2)]
 
 
+async def test_task_dependency_reads_follow_agent_role_grants_without_write_authority(agents):
+    agent = await create_agent(agents)
+    async with agents.transaction() as (repo, _):
+        await repo.create_custom_tool({"name": "margin", "kind": "function"})
+        await repo.create_custom_tool({"name": "payroll", "kind": "function"})
+        await repo.store_version("task-version", agent["agent_id"], {}, "Saved")
+        await repo.store_manifest("task-selected", agent["agent_id"], "task-version", {})
+        await repo.store_manifest("task-private", agent["agent_id"], "task-version", {})
+        await repo.update_agent(
+            agent["agent_id"], {"release_manifest_id": "task-selected"},
+            expected_config_revision=agent["config_revision"],
+        )
+        await repo.replace_agent_roles(agent["agent_id"], {"VIEWER": "USAGE"})
+    async with agents.transaction("task", name="colleague", active="VIEWER",
+                                  read_only=True) as (repo, conn):
+        assert [row["name"] for row in await repo.list_custom_tools("agent-owner")] == ["margin"]
+        cursor = await conn.execute(
+            "SELECT manifest_id FROM nova_meta.config_agent_release_manifests",
+        )
+        assert await cursor.fetchall() == [{"manifest_id": "task-selected"}]
+    with pytest.raises(MetadataPermissionDenied):
+        async with agents.transaction("task") as (repo, _):
+            await repo.create_custom_tool({"name": "forbidden", "kind": "function"})
+    for active in ("ANALYST", "VIEWER"):
+        if active == "VIEWER":
+            async with agents.transaction() as (repo, _):
+                await repo.replace_agent_roles(agent["agent_id"], {})
+        async with agents.transaction("task", name="colleague", active=active,
+                                      read_only=True) as (repo, conn):
+            assert await repo.list_custom_tools("agent-owner") == []
+            cursor = await conn.execute(
+                "SELECT manifest_id FROM nova_meta.config_agent_release_manifests",
+            )
+            assert await cursor.fetchall() == []
+
+
 async def test_snapshots_and_manifests_are_immutable(agents):
     agent = await create_agent(agents)
     async with agents.transaction() as (repo, _):
@@ -752,7 +788,7 @@ async def test_knowledge_consolidation_admits_one_durable_run_for_its_source(
     from app.core.metadata_actor import acting_as
     from app.core.metadata_runtime import install_metadata_db, metadata_db, uninstall_metadata_db
     from app.core.redis import session_store
-    from app.modules.agents import router
+    from app.modules.agents.access import access_fingerprint
     from app.modules.agents.knowledge_router import consolidate_knowledge
     from app.modules.agents.learning_work import enqueue_pending_learning
     from app.modules.assistant.repository import assistant_repository
@@ -767,7 +803,6 @@ async def test_knowledge_consolidation_admits_one_durable_run_for_its_source(
     transport = FakeRedis(decode_responses=True)
     monkeypatch.setattr(session_store, "_redis", transport)
     monkeypatch.setattr(session_store, "get", AsyncMock(return_value=user))
-    monkeypatch.setattr(router, "has_verified_access", AsyncMock(return_value=True))
     monkeypatch.setattr(access, "verify_active_role", AsyncMock())
     statement = "Revenue excludes cancelled orders."
     ScriptedBoundary(statements={statement: "revenue_definition"}).install(monkeypatch)
@@ -790,6 +825,13 @@ async def test_knowledge_consolidation_admits_one_durable_run_for_its_source(
         with acting_as(actor):
             agent = await runtime_registry.create_agent(
                 owner_name=actor.principal, fields={"name": "Learning"},
+            )
+            await runtime_registry.add_agent_role(
+                agent["agent_id"], owner_name=actor.principal, role_name=actor.active_role,
+            )
+            await runtime_registry.set_agent_role_verification(
+                agent["agent_id"], owner_name=actor.principal, role_name=actor.active_role,
+                fingerprint=await access_fingerprint(agent),
             )
             thread = await assistant_repository.create_thread(
                 user_name=actor.principal, agent_id=agent["agent_id"],

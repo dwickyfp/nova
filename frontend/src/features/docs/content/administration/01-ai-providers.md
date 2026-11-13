@@ -95,6 +95,9 @@ the presence of a function alone does not confirm that the latest update succeed
 
 ## Limits
 
+- Chat and background AI work use active providers. A saved key is used only
+  when Nova calls that provider; the provider list does not reveal it.
+
 - Changing the default model or a provider affects every user and agent that
   relies on it. Test a new provider with **Test connection** first.
 - Removing the **Tavily API key** turns off web search for every agent that

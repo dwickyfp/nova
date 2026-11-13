@@ -1910,6 +1910,7 @@ dev = [
     { name = "types-pyyaml" },
 ]
 test = [
+    { name = "fakeredis", extra = ["lua"] },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -1969,6 +1970,7 @@ dev = [
     { name = "types-pyyaml", specifier = ">=6.0.12.20260906" },
 ]
 test = [
+    { name = "fakeredis", extras = ["lua"], specifier = ">=2.32" },
     { name = "pytest", specifier = ">=8.3.0" },
     { name = "pytest-asyncio", specifier = ">=0.25.0" },
     { name = "pytest-cov", specifier = ">=6.0.0" },

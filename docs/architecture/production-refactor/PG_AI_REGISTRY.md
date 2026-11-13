@@ -1,10 +1,10 @@
-# AI registry storage before cutover
+# AI registry and outbound credential resolution
 
-Revision `0004_ai_registry.sql` and `ai_ml.repository.AIRegistryRepository`
-prepare provider/model storage for the PG cutover. The running product still
-uses the legacy AI services and StarRocks. No caller, credential resolver or
-SQL function registration has switched authority. This is not a completed
-provider/alias migration or live AI acceptance.
+The runtime AI service uses `ai_ml.repository.AIRegistryRepository` and PG
+actor-bound transactions. Import preserves the configured provider/model IDs
+and encrypted keys. Actual activation and live AI results belong to the
+[delivery report](../../reports/production-refactor/importer-agent-cutover/README.md);
+passing registry storage tests does not establish live provider acceptance.
 
 ## Identities, values and credentials
 
@@ -29,8 +29,7 @@ a 512-character ASCII key produces 784 ciphertext characters, and UTF-8 keys
 can require more. The new repository validates authenticated ciphertext and a
 nonempty plaintext of at most 512 characters before database I/O. A synthetic
 512-character Unicode key round-trips through PG without API secret readback.
-The legacy runtime remains affected until its caller/schema migration; R32 is
-still open. The unbounded legacy key-rotation request also needs alignment.
+Provider creation, update and key replacement use this shared validation boundary.
 
 ## Transaction and access contract
 
@@ -55,7 +54,20 @@ existing account-administration contract. Workload credentials are trusted
 backend credentials, never credentials for user SQL. An unscoped connection
 sees no rows. These policies do not replace caller-data authorization in Ranger.
 
-Provider invocation reads metadata and ciphertext together in one query. An
+Revision 0043 adds `ai_runtime_credential(text)`, a fixed SECURITY DEFINER
+projection for the current outbound invocation owners: web, agent, query, proxy,
+task, ingestion, ML, automation and maintenance. It requires a valid SERVICE
+actor with principal `nova-ai` and active role `NOVA_WORKER`. It returns only the
+requested active, non-deleted provider's ciphertext at its matching metadata
+revision. The owner policies are restricted to that same runtime identity and
+login allowlist; public execution is revoked. Scheduler, notebook, outbox and
+readonly receive no execute grant. USER actors, including administrators, cannot
+invoke this projection. Existing direct-table grants in the table above remain
+unchanged.
+
+The AI service uses that projection for outbound calls; explicit configuration
+actors retain the administrator reader. Provider invocation reads metadata and
+ciphertext together in one query. An
 agent cannot resolve an inactive provider; an administrator can preserve its
 key while editing configuration. The credential object suppresses its contents
 in representations and is not an API response model. Endpoint resolution and
@@ -75,11 +87,13 @@ embedding descriptor fields. These are metadata tests, not live embeddings.
 
 ## Remaining work
 
-Port all callers in [WAVE_I_REVIEW.md](WAVE_I_REVIEW.md) with their authenticated
-actor and expected revision. Inference callers currently running in query,
-ingestion or automation must use the agent service's credential-resolution path;
-the new grants deliberately do not give those workers provider keys. Web
-configuration edits must preserve omitted keys and use the private administrator
+The current runtime still invokes providers from several backend owners.
+The restricted projection makes their existing encrypted resolver work without
+adding raw credential-table grants. It does not deliver the target standalone
+Agent runtime or isolate ML execution. Those boundaries remain tracked in the
+[delivery backlog](DELIVERY_STATUS_AND_QA_BACKLOG.md); future process moves must
+move invocation ownership and revoke obsolete projection callers together.
+Web configuration edits preserve omitted keys and use the private administrator
 projection for inactive providers.
 
 Function-alias storage and reference guards are now prepared separately in

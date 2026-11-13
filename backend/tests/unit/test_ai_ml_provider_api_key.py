@@ -19,7 +19,7 @@ def service_with_row(monkeypatch, fake_metadata_db):
         service = AIService()
 
         registry = AsyncMock()
-        registry.credential.return_value = ProviderCredential(
+        registry.runtime_credential.return_value = ProviderCredential(
             provider={"id": row["id"]}, ciphertext=row["api_key"],
         )
         monkeypatch.setattr(service_module, "AIRegistryRepository", lambda connection: registry)
