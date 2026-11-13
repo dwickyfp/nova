@@ -1,5 +1,54 @@
 # Importer and Agent writer repair checkpoint
 
+## Current cutover state
+
+Commit `72eea5cfcb5c9fce32d05eca85e3920acfd77fec` passed all eight jobs in
+[CI 43347124544](https://github.com/dwickyfp/nova/actions/runs/43347124544):
+11,146 unit tests (64% coverage), 358 eval cases, 54/189 scorecard checks,
+987 PG17 cases without skips, 217 engine cases with 24 explicit skips, and
+1,623 frontend tests across 195 files. Static, grammar, Notebook and Superset
+image gates passed. Skipped governed/fault prerequisites remain open acceptance.
+
+On 2026-11-13 the existing PG service was recreated on the same
+`docker_nova_control_pg` volume using the pinned PostgreSQL 17.11 image,
+verified TLS 1.3 and persistent private provisioning files. Schema 0044 was
+installed and all writers remained stopped. The final frozen export/import
+validated all 1,009,174 rows across 163 inventory entries (157 source tables),
+453 managed payload references, complete row/key digests and semantic checks,
+with zero blocking conflicts. Source partition versions remained unchanged
+through import. Original StarRocks metadata and payloads were retained.
+
+- Final snapshot: `1bcf2c78-2852-4463-ab5c-e27a86b5a0b9`.
+- Export SHA-256: `dbbdbd40c0858b0052b4670a666efe73812b3fee64b70bee5c79319ed8b3244b`.
+- Validation receipt SHA-256: `a0587503edeaffe1c4b16df0adc71d15b6a92c22e1ff80adee4db2b7b4474c6b`.
+- Published epoch: `1ce02529-9bb8-4895-b4f6-942a6152109d`; **maintenance remains enabled**.
+
+The first fresh-process smoke failed before connecting: application `Settings`
+rejected valid PG runtime fields in the shared development `.env`. Seven focused
+regressions reproduced the failure. Application dotenv loading now excludes
+only known fields owned by `MetadataRuntimeSettings`; unknown fields, metadata
+typos and operator settings remain forbidden. Errors hide input values. A
+fresh-process regression also checks environment precedence and that metadata
+credentials do not enter application settings. The focused configuration suite
+passes 66 cases. All 13 process mappings pass the real published-epoch smoke,
+including readonly transactions and refusal of writes during maintenance.
+
+A local physical backup with streamed WAL passed `pg_verifybackup` and copied
+file/WAL SHA-256 checks (2,314 files). Its manifest SHA-256 is
+`63adc1c431e9cd5f74848e47a8d6c38d5ef29dd0efb37f425215528c68df40f5`.
+This remains a local copy; restore/PITR and off-host recovery are unproven.
+
+Full unit/coverage run 18 passes 11,153 cases with 64% combined coverage in
+442.79 seconds. Full mypy 20, changed-file Ruff, 358 eval cases, the 54/189
+scorecard, 33 local documentation links and staged secret checks pass.
+The repaired configuration awaits its new CI run before writes reopen and
+normal dev startup. The active PG volume is no longer
+a disposable test fixture. Never run schema/role reset or reseed fixtures on it.
+Four historical Agent runs without active producers retain their original
+`running` status; startup must not replay their effects.
+
+## Earlier checkpoints and retained failures
+
 Updated 2026-11-13, Asia/Jakarta. Branch `feat/production-control-plane`, based on
 `e0b5599448b26065bf84815ca07e0ead724d2d48`. The repository commit containing
 this checkpoint identifies the delivered repair source. Commit `e83aa09a`
@@ -15,7 +64,7 @@ passed seven jobs in [CI 43325948539](https://github.com/dwickyfp/nova/actions/r
 including 970 PG17 cases without skips. Engine integration reached 216 passes,
 24 skips, one failure and zero setup errors. The remaining Studio consolidation
 failure requires schema 0040 and recovery admission in 0041; validation is recorded below.
-No development cutover or backend/workload startup has occurred. A frontend-only
+At that earlier checkpoint, no development cutover or backend/workload startup had occurred. A frontend-only
 preview reached the login screen; authenticated docs inspection awaits cutover. Existing StarRocks
 metadata and payloads have not been modified by import rehearsal.
 

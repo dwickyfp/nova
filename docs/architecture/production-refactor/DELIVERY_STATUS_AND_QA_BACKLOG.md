@@ -10,19 +10,20 @@ The stopped worktree ports were integrated and published in checkpoint
 `01209dbbd58bf6690fb865169aa85244a6a9647b` on `feat/production-control-plane`.
 See the [takeover checkpoint](../../reports/production-refactor/worktree-takeover/README.md)
 for baseline results, failed integration attempts and remaining work. The source
-is not yet a deployable cutover. The attempted development startup refused
-incomplete metadata configuration before starting any application process;
-the existing infrastructure and source data remain in place.
+now has a validated final import and published schema 0044 epoch, with writes
+still frozen. A fresh-process check found and repaired shared dotenv ownership;
+its final gates and normal dev startup remain pending. The existing source
+metadata and payloads remain in place.
 
 ## Completion decision
 
-**Neither the metadata migration nor application scaling is complete. The
-production refactor is not ready for release.** Passing foundation tests and AI
-checks do not establish a migrated or scalable production deployment.
+**Final metadata import and epoch publication are complete; writes remain
+frozen pending the runtime configuration repair gates and startup. Application
+scaling and the full production refactor are not ready for release.**
 
 | Area | Verified state | Remaining implementation |
 | --- | --- | --- |
-| Metadata authority | Existing development data remains authoritative in `NOVA_SYSTEM`; prepared runtime callers use PG and application processes remain stopped. Two final schema 0044 rehearsals matched all 1,009,174 rows and 453 payload references across the 163-entry inventory, including interruption/resume | Finish CI on the reply serialization repair, freeze all writers, validate the final snapshot, activate the PG epoch and start the migrated runtime |
+| Metadata authority | Both schema 0044 rehearsals and the final frozen import matched 1,009,174 rows and 453 payload references. PG epoch is published under maintenance; application processes remain stopped | Finish gates on the shared dotenv repair, verify backup, reopen writes and start the migrated runtime |
 | Ownership inventory | 163 source-table entries and 875 reviewed system call sites | The matrix retains historical pre-cutover labels: 153 tested storage entries and ten import-only entries. Runtime callers have been ported, but no entry records completed cutover; update activation and workload grants from the final receipt |
 | PG schema | Revisions 0001–0044 define deployment state, preferences, password flags, AI registry/aliases/definitions, jobs/outbox, scheduler fencing, audit, retained history, Stages, Workspace ownership/shares, Workspace file entries/version receipts per-person Notebook runtime/execution/package metadata, Task definitions/edges/runs with version CAS and lease fencing, Stream control claims/receipt chains, and ML jobs/models/versions with leased jobs and immutable versions; Catalog inventory with sync-generation fencing and ciphertext-only credentials, business Ontology with append-only revisions, Agent definitions with CAS and a fenced run journal, Intelligence (Semantic Views, revision stores, Search, entities and feature store), cutover-operation journals and Task graph job links, Query autopilot approvals, leases and fenced results, and assistant threads, access-control policies, BI/Dataviz publications, migration jobs and LLM usage metering | Final CI and normal-runtime activation; whole-feature authorization/refusal and fault acceptance remain separate |
 | Durable jobs | Queue, outbox, leases/fencing and receipts pass real-PG fixture tests; AI function registration is wired to maintenance; the standalone outbox publisher commits claims before Redis notifications and fenced acknowledgment, with recovery cases tested on PG | Remaining producers/consumers, participant verification and recovery; Redis must cease being authoritative for work |
@@ -59,7 +60,8 @@ repositories are not proof that their runtime callers use PostgreSQL.
 
 ## Remaining implementation with concrete owners
 
-The current source remains stopped pending final CI and verified epoch activation.
+The current source remains stopped pending final CI on the shared dotenv repair;
+the verified epoch is published with maintenance enabled.
 The table distinguishes completed caller ports from remaining runtime boundaries:
 
 | Component | Required change before cutover | Owning source |
@@ -69,7 +71,7 @@ The table distinguishes completed caller ports from remaining runtime boundaries
 | Automations and scheduled Quality | Implemented with immutable occurrences, PG jobs, fencing, exact MCP delivery intent/receipt and scoped grants; complete live delivery and interruption acceptance | `backend/app/modules/agents/automations.py`, `backend/app/modules/task_orchestration/internal_handlers.py` |
 | Historical Agent helpers | Removed obsolete StarRocks writers. Import preserves original IDs and bindings, including explicit empty bindings; historical delegation remains a bounded PG read | `backend/app/modules/agents/repository.py`, `resource_delegation.py` |
 | Durable runtime ownership | Standalone interactive agent using the existing loop; PG consent/read grants; Notebook queue replacement; durable workspace cleanup and remaining consumers | `backend/app/worker/`, `backend/app/modules/assistant/consent.py`, Notebook/workspace owners |
-| Import/cutover | Contract/provenance package, resumable chunks, full row/key validation, payload receipts and import-bound epoch publication are implemented. Two final interrupted/resumed rehearsals passed. Final cutover awaits green CI on the follow-up caller repairs | `backend/app/core/metadata_import*.py`, `metadata_export.py`, `backend/metadata_import/` |
+| Import/cutover | Contract/provenance package, resumable chunks, full row/key validation, payload receipts and import-bound epoch publication are implemented. Two final interrupted/resumed rehearsals passed. Final import and receipt-bound epoch publication passed; runtime activation awaits the shared dotenv repair gates | `backend/app/core/metadata_import*.py`, `metadata_export.py`, `backend/metadata_import/` |
 | Production operations | One complete production Compose, scoped stable secrets, separate Redis workloads, TLS/private ports, ML/sandbox isolation and provenance, coordinated off-host backup/restore | `docker/`, ML/Notebook/backup owners |
 | Integration harness | Replace pre-cutover metadata setup/cleanup and bind actual PG processes without reseeding development; validate final CI, live providers and governed engine | `.github/workflows/ci.yml`, `backend/tests/integration/` |
 

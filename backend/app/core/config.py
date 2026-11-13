@@ -13,7 +13,12 @@ from uuid import UUID
 
 import yaml
 from pydantic import Field, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    DotEnvSettingsSource,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 
 
 class MetadataMigratorSettings(BaseSettings):
@@ -473,7 +478,30 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     LOG_LEVEL: str = "INFO"
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", hide_input_in_errors=True,
+    )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        if isinstance(dotenv_settings, DotEnvSettingsSource):
+            # The shared dev file has two owners. Keep unknown keys forbidden,
+            # including operator credentials and misspelled metadata settings.
+            metadata_keys = {
+                f"nova_metadata_{name}" for name in MetadataRuntimeSettings.model_fields
+            }
+            dotenv_settings.env_vars = {
+                key: value for key, value in dotenv_settings.env_vars.items()
+                if key.casefold() not in metadata_keys
+            }
+        return init_settings, env_settings, dotenv_settings, file_secret_settings
 
 
 settings = Settings()

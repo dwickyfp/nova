@@ -950,7 +950,10 @@ Setelah cutover tervalidasi, konfigurasi runtime host juga memerlukan
 `NOVA_METADATA_SCHEMA_VERSION`, dan `NOVA_METADATA_EPOCH`. Gunakan tepat satu
 `NOVA_METADATA_PASSWORDS` atau `NOVA_METADATA_PASSWORDS_FILE`; isinya JSON
 login workload ke password. File harus milik user proses dengan izin `600`,
-bukan symlink. Jangan masukkan login owner/migrator. `dev.sh` memeriksa
+bukan symlink. Field runtime PG yang dikenal boleh berada di `backend/.env`
+bersama konfigurasi aplikasi; masing-masing dibaca dan divalidasi oleh pemiliknya.
+Field yang tidak dikenal tetap ditolak tanpa menampilkan nilainya. Jangan masukkan
+login owner/migrator. `dev.sh` memeriksa
 konfigurasi seluruh role sebelum memulai aplikasi; `--no-infra-check` hanya
 melewati probe infrastructure, bukan validasi metadata atau readiness.
 
