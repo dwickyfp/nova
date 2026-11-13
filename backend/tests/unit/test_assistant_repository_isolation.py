@@ -244,6 +244,15 @@ async def test_append_cannot_insert_into_an_absent_or_foreign_thread(sql_store):
     assert all("INSERT" not in call.args[0] for call in sql_store._one.await_args_list)
 
 
+@pytest.mark.parametrize("value", [object(), float("nan"), float("inf")])
+async def test_reply_rejects_unserializable_content_before_allocating_a_sequence(sql_store, value):
+    with pytest.raises((TypeError, ValueError)):
+        await sql_store.append_message(
+            "t1", role="assistant", content="Result", steps=[{"value": value}],
+        )
+    sql_store._one.assert_not_awaited()
+
+
 async def test_runtime_does_not_install_legacy_schema():
     await AssistantRepository().ensure_schema()
     assert not hasattr(repo_module, "THREADS_DDL")

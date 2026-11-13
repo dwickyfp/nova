@@ -367,8 +367,8 @@ class AssistantRepository:
     ) -> dict:
         """Append one turn; the store numbers it under the thread's row lock.
 
-        ``steps`` is the assistant turn's trace (reasoning, tool calls with their
-        redacted SQL and status, the final answer), never rows or credentials.
+        ``steps`` contains the redacted trace and visible structured content,
+        including governed result grids. It must never contain credentials.
         ``usage`` is the provider's token report for the turn, if any. Retrying
         with the same ``message_id`` and the same turn returns the stored turn.
         """

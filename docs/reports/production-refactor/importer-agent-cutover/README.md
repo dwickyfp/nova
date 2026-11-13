@@ -415,3 +415,39 @@ cover unchanged application source and resolved host dependencies. The complete
 seeded engine suite is delegated to CI under the owner's existing authorization.
 A read-only source check at 01:00:46 UTC found all 157 source tables unchanged.
 Schema 0044 import rehearsals and actual cutover remain pending.
+
+
+## Structured reply persistence follow-up
+
+Commit `de0750d4` was pushed. [CI 43341718113](https://github.com/dwickyfp/nova/actions/runs/43341718113)
+passed seven jobs, including all 986 real-PG cases without skips in 1,657.27
+seconds, 11,143 unit cases (64% coverage), 358 eval cases and the 54/189 Agent
+scorecard. Frontend's 195 test files also passed. Engine integration retained
+216 passes, 24 skips and one failure, with no setup errors. Consolidation,
+review, sharing and context graph assertions now pass; the later semantic-query
+answer failed to persist its structured content.
+
+A new real-PG regression reproduced `Decimal` serialization failing at the
+JSONB boundary. Replies now normalize structured fields with the existing SSE
+serializer before both idempotency comparison and storage. Exact decimal
+precision, ISO dates/times, bytes and nested JSON arrays match the visible
+stream; identical native/wire retries return the same immutable message.
+Unknown objects and non-finite numbers are refused before sequence allocation.
+No arbitrary object representation is persisted.
+
+Focused checks: 40 unit cases, one exact PG reproduction/fix case, then all
+47 assistant/policy/BI PG domain cases passed. Full mypy 19, 358 eval cases,
+54/189 scorecard, 15 docs browser cases and image build 17 pass. Full unit 17 passed 11,146 cases with 64% combined coverage in 418.91 seconds;
+the exact image regression passed 49 cases in 51.20 seconds. Schema 0044 and the importer are
+unchanged, so both final rehearsal receipts below remain applicable.
+
+| Schema 0044 rehearsal | Result | Receipt SHA-256 |
+| --- | --- | --- |
+| 17 | VALIDATED, 1,009,174 rows and 453 payload references; interruption/resume | `221689c482cc74c9e078d3da857415dc72fe4d5eb991b4156869f995c87d79da` |
+| 18 | VALIDATED, same complete checks and interruption/resume | `a5bd568f550d9fa80ba05d797b797a36ab5567964da6e86aefed4a803b0ced78` |
+
+The PG CI job's successful run approached its 30-minute outer deadline. Its
+budget is now 45 minutes; test selection, assertions, individual operation
+timeouts and the refusal of skipped cases are unchanged. Product skill text
+also no longer instructs the assistant to write historical internal metadata
+through user SQL. Actual development cutover remains pending green final CI.

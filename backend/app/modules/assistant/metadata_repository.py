@@ -19,6 +19,7 @@ Pending tool decisions still use the process-local ``consent.py`` broker.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from typing import Any
 from uuid import uuid4
@@ -29,6 +30,7 @@ from psycopg.types.json import Jsonb
 
 from app.core.metadata_db import MetadataConflict, MetadataPermissionDenied
 from app.modules.access_control.security_context import SecurityContext
+from app.modules.assistant.events import _json_default
 
 #: Fields that define a turn; a retry must repeat them exactly.
 _TURN = (
@@ -266,6 +268,13 @@ class AssistantMetadataRepository:
             "learning_state": "pending" if learning_enabled and role == "user" and agent_id
             else None,
         }
+        # Persist the same exact decimal/date representation the client receives.
+        # Normalize before retry comparison as well as before the JSONB write.
+        for field in _JSON:
+            if turn[field] is not None:
+                turn[field] = json.loads(json.dumps(
+                    turn[field], default=_json_default, allow_nan=False,
+                ))
         message_id = message_id or str(uuid4())
         existing = await self._one(
             "SELECT * FROM nova_meta.config_assistant_messages WHERE message_id=%s",

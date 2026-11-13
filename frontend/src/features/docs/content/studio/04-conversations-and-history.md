@@ -8,6 +8,8 @@ description: Find past conversations, rename or delete them, and see what an age
 Every question you send starts or continues a **conversation** (also called a
 chat). Nova keeps your conversations so you can come back to an answer, its
 charts, and the steps behind it later. Only you see your conversations.
+Saved result data preserves decimal precision and dates when you reopen a
+conversation.
 
 ## Find a past conversation
 

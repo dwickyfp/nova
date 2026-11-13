@@ -116,6 +116,40 @@ async def thread_with_answer(meta, *, name="alice"):
 # ── Assistant ─────────────────────────────────────────────────────────────
 
 
+async def test_structured_reply_roundtrips_engine_values_and_retries_without_precision_loss(meta):
+    import json
+    from datetime import UTC, date, datetime
+    from decimal import Decimal
+
+    from app.modules.assistant.events import format_sse
+
+    steps = [{"kind": "table", "rows": [[
+        Decimal("12345678901234567890.1200"), date(2026, 11, 13),
+        datetime(2026, 11, 13, 1, 2, 3, tzinfo=UTC), b"synthetic", (1, 2),
+    ]]}]
+    wire = json.loads(format_sse("content", {"steps": steps}).split("data: ", 1)[1])["steps"]
+    async with meta.transaction() as (repo, _):
+        thread = await repo.create_thread(title="Synthetic engine values")
+        saved, created = await repo.append_message(
+            thread["thread_id"], role="assistant", content="Result", message_id="engine-reply",
+            steps=steps,
+        )
+        assert created and saved["steps"] == wire
+        assert saved["steps"][0]["rows"][0][0] == "12345678901234567890.1200"
+        for retry in (steps, wire):
+            same, created = await repo.append_message(
+                thread["thread_id"], role="assistant", content="Result",
+                message_id="engine-reply", steps=retry,
+            )
+            assert not created and same == saved
+        assert len(await repo.list_messages(thread["thread_id"])) == 1
+        with pytest.raises(MetadataConflict):
+            await repo.append_message(
+                thread["thread_id"], role="assistant", content="Result",
+                message_id="engine-reply", steps=[{"kind": "table", "rows": [[1]]}],
+            )
+
+
 async def test_people_see_and_change_only_their_own_conversations(meta):
     thread, _ = await thread_with_answer(meta)
     async with meta.transaction(name="bob") as (repo, conn):
