@@ -1,5 +1,61 @@
 # Importer, cutover and runtime repair evidence
 
+## Schema 0045 activated and runtime verified
+
+The schema-0045 repair passed all eight jobs of
+[CI 43364121410](https://github.com/dwickyfp/nova/actions/runs/43364121410) at
+`06b4142069f5de7375db02dd4e3a68af68134d1b`: 11,163 unit cases, 995 PG17
+cases without skips, and 217 engine cases with 24 explicit prerequisite skips.
+The later compact Notebook UI was integrated as `b380f0ef` after its separate
+1,637-case frontend validation below. The original delivery checkout now contains
+both changes; the unrelated generated coverage file was preserved.
+
+During the controlled upgrade, all application writers were stopped and the
+published PG epoch was frozen. Only revision 0045 was applied; no import,
+credential rotation or epoch replacement occurred. Before/after verification
+found exactly **160 domain tables and 1,009,938 rows unchanged**. All 13 workload
+configuration paths passed frozen read probes and refused writes. A first private
+configuration edit assumed an unquoted value and was refused; the old-version
+probe correctly rejected schema 45. The corrected private setting passed.
+Maintenance then cleared and the original `dev.sh` restarted at 04:50:19 UTC
+with schema 45 and the same epoch. Web, query, proxy, scheduler, eight workload
+processes and Vite all passed readiness.
+
+The final integrated checkout also passed the production frontend build and all
+13 docs-content checks. All 15 existing Compose services were running at the
+final check, including healthy Superset web, worker, beat and database services;
+the existing containers were resumed without recreation or reseeding. A fresh
+`scripts/dev_readiness.py` check passed for web, query, frontend and their required
+runtime dependencies. These checks used the original delivery checkout.
+
+Live checks passed for imported Agent/Workspace/Catalog/Superset metadata,
+the retained synthetic Notebook, governed SQL result 42 and telemetry persistence
+matched by the returned execution ID, retaining caller, active role and security
+version. The first telemetry smoke incorrectly searched normalized SQL for a
+literal alias; that failed fixture remains recorded separately. Normal API cleanup
+removed three owned Agents, nine threads and their synthetic tool. The earlier
+partially deleted empty Agent remains recorded as already absent, not a new pass.
+After final UI checks, only the owned QA Notebook was removed, with its runtime
+confirmed stopped. Final cleanup targeted only the recorded QA IDs; no shared
+volume was reset.
+All 157 retained StarRocks source metadata versions still matched the frozen
+snapshot at 04:51:45 UTC. The final bounded secret scan checked 36 artifacts
+against 32 configured values, including the decryptable live provider credential,
+with zero findings. This does not replace whole-sandbox/canary acceptance.
+
+Resource-pressure attempts are retained. FE logs identify the 5 GiB free-disk
+safeguard refusing journal writes and startup; PG also performed automatic WAL
+recovery. Its exact crash cause was not established. Full frontend checks were
+separated from runtime recovery and then passed with one test worker. No safety
+threshold, volume or data was reset. Old test artifacts were compressed only
+after checksum verification; both existing base-backup directories were archived
+losslessly and every archived file hash was compared before removing redundant
+uncompressed copies. Backup manifests, WAL and original receipts remain retained.
+A fresh schema-0045 base backup with streamed WAL then passed `pg_verifybackup`
+and all copied file/WAL hashes (2,317 manifest files), manifest SHA-256
+`0081386595a8169b91e2a497ad9448ba525c0829287976d14b10d9e0c28782fb`.
+These local copies do not establish off-host recovery or tested restore/PITR.
+
 ## Active cutover
 
 Commit `fdc5895ac436c02ebbfb31255bcb440357af1220` passed all eight jobs in
@@ -86,11 +142,10 @@ checkout (356 passed, two failed); the configured rerun is retained separately.
 Notebook UI also rendered saved SQL/Python tables, error and cancelled outputs
 with the runtime stopped.
 
-The schema-0045 candidate is isolated in a temporary checkout so development
-continues on schema 0044 while its full checks and CI run. It is not activated
-or release-complete. Integration remains CI-only under the owner's existing
-authorization because the local PG and engine now contain development state.
-Owned QA fixtures awaiting repaired cleanup remain identified in private receipts.
+The repair was validated in a temporary checkout while development stayed on
+schema 0044, then integrated and activated as recorded above. Integration remained
+CI-only under the owner's authorization because local PG and engine contain
+development state. Owned QA fixture cleanup is now verified in separate receipts.
 
 The broader production refactor is still incomplete: standalone interactive
 Agent ownership, durable consent and Notebook queues, one production Compose,
@@ -130,7 +185,7 @@ StarRocks FE also exited with code 255 without a container OOM flag. The same
 FE container and original development checkout were restarted without reset.
 All dev roles became ready again. The separate Python Command+Enter retry
 returned the expected one-row value 42 in 2.0 seconds. The interrupted attempt
-remains retained. Schema-0045 activation is still pending CI.
+remains retained. The later schema-0045 activation is recorded above.
 
 ## Compact cell design and final frontend checks
 
@@ -166,8 +221,8 @@ work had stopped, its source was reviewed and run 07 validated the combined resu
 CI [43364121410](https://github.com/dwickyfp/nova/actions/runs/43364121410) passed
 all eight jobs for `06b4142069f5de7375db02dd4e3a68af68134d1b`, covering the
 schema-0045 backend repair and earlier Notebook UI. The later UI changes have the
-separate local frontend evidence above. Activation and final delivery are recorded
-in the next operational update rather than inferred from this CI result.
+separate local frontend evidence above. Schema activation is recorded at the top
+of this report; the final delivery commit requires its own CI result.
 
 ## Earlier checkpoints and retained failures
 

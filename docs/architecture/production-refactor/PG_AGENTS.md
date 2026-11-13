@@ -6,9 +6,10 @@ actor-bound PG transactions for the registry, run journal, Missions, automations
 memory, quality, sharing and Studio stores. The three retired Agent stores stay
 as revision 0011 defined them ([retired history](PG_RETIRED_AGENT_HISTORY.md)).
 The [delivery record](../../reports/production-refactor/importer-agent-cutover/README.md)
-records the active schema-0044 epoch, running development processes and bounded
+records the active schema-0045 epoch, running development processes and bounded
 live Studio evidence. Revision 0045 repairs owner-scoped memory cleanup and
-atomic Agent deletion; its activation is pending the candidate gates.
+atomic Agent deletion; activation and three normal API cleanup flows passed after
+all eight CI jobs, including 995 real-PG cases, succeeded.
 
 ## Workloads
 
@@ -135,7 +136,6 @@ success audit share a transaction; immutable memory revisions are retained.
 
 ## Remaining agent work
 
-- Activate and verify the revision-0045 deletion repair after its final gates.
 - Complete standalone interactive Agent execution and durable consent;
   Redis admission and process-local consent currently require session affinity.
 - Complete external effect recovery and whole-feature governed/live AI QA.
