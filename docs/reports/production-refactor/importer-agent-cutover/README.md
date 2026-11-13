@@ -1,51 +1,102 @@
-# Importer and Agent writer repair checkpoint
+# Importer, cutover and runtime repair evidence
 
-## Current cutover state
+## Active cutover
 
-Commit `72eea5cfcb5c9fce32d05eca85e3920acfd77fec` passed all eight jobs in
-[CI 43347124544](https://github.com/dwickyfp/nova/actions/runs/43347124544):
-11,146 unit tests (64% coverage), 358 eval cases, 54/189 scorecard checks,
-987 PG17 cases without skips, 217 engine cases with 24 explicit skips, and
-1,623 frontend tests across 195 files. Static, grammar, Notebook and Superset
-image gates passed. Skipped governed/fault prerequisites remain open acceptance.
+Commit `fdc5895ac436c02ebbfb31255bcb440357af1220` passed all eight jobs in
+[CI 43354095782](https://github.com/dwickyfp/nova/actions/runs/43354095782):
+11,153 unit tests (64% coverage), 358 eval cases, 987 PG17 cases without skips,
+and 217 engine cases with 24 explicit skips. Static, grammar, frontend, Notebook
+and Superset image gates passed. Missing governed/fault prerequisites remain
+open acceptance; the skips are not passes.
 
-On 2026-11-13 the existing PG service was recreated on the same
-`docker_nova_control_pg` volume using the pinned PostgreSQL 17.11 image,
-verified TLS 1.3 and persistent private provisioning files. Schema 0044 was
-installed and all writers remained stopped. The final frozen export/import
-validated all 1,009,174 rows across 163 inventory entries (157 source tables),
-453 managed payload references, complete row/key digests and semantic checks,
-with zero blocking conflicts. Source partition versions remained unchanged
-through import. Original StarRocks metadata and payloads were retained.
+**Scorecard means 54/54 scenarios and 189/189 checks passed.** Each scenario has
+several checks; 54 is not the number of checks passed out of 189. This scorecard
+uses controlled providers. Live-provider evidence is recorded separately below.
 
-- Final snapshot: `1bcf2c78-2852-4463-ab5c-e27a86b5a0b9`.
+On 2026-11-13 the existing PG service was provisioned on the same
+`docker_nova_control_pg` volume with pinned PostgreSQL 17.11 and verified TLS 1.3.
+After two interrupted/resumed schema-0044 rehearsals, the final frozen import
+validated 1,009,174 rows across 163 inventory entries (157 present source tables),
+453 managed payload references, full row/key digests and semantic checks, with
+zero blocking conflicts. Historical engine timestamps use owner-confirmed
+Asia/Jakarta; reviewed Python UTC writers retain UTC. Original StarRocks
+metadata and payloads remain in place.
+
+- Snapshot: `1bcf2c78-2852-4463-ab5c-e27a86b5a0b9`.
 - Export SHA-256: `dbbdbd40c0858b0052b4670a666efe73812b3fee64b70bee5c79319ed8b3244b`.
 - Validation receipt SHA-256: `a0587503edeaffe1c4b16df0adc71d15b6a92c22e1ff80adee4db2b7b4474c6b`.
-- Published epoch: `1ce02529-9bb8-4895-b4f6-942a6152109d`; **maintenance remains enabled**.
+- Epoch: `1ce02529-9bb8-4895-b4f6-942a6152109d`.
+- Maintenance was cleared at 03:22 UTC after the shared dotenv repair passed CI.
+  `dev.sh` started at 03:22:47 UTC in the original checkout. Web, query, proxy,
+  scheduler, eight supervised workload processes and Vite passed readiness.
+- At 03:46:09 UTC all 157 source metadata tables still matched the frozen source
+  versions after live QA. No StarRocks metadata fallback was used.
 
-The first fresh-process smoke failed before connecting: application `Settings`
-rejected valid PG runtime fields in the shared development `.env`. Seven focused
-regressions reproduced the failure. Application dotenv loading now excludes
-only known fields owned by `MetadataRuntimeSettings`; unknown fields, metadata
-typos and operator settings remain forbidden. Errors hide input values. A
-fresh-process regression also checks environment precedence and that metadata
-credentials do not enter application settings. The focused configuration suite
-passes 66 cases. All 13 process mappings pass the real published-epoch smoke,
-including readonly transactions and refusal of writes during maintenance.
+The first fresh-process check rejected valid PG settings in the shared dotenv.
+The configuration repair keeps metadata fields with `MetadataRuntimeSettings`,
+retains unknown-field refusal and hides input values in errors. Its seven red
+regressions, 66-case focused pass, 13 process-mapping checks and full unit run 18
+(11,153 passed, 64%) remain retained. Operator credentials never enter application
+settings; workload passwords and stable provisioning files remain outside Git.
 
-A local physical backup with streamed WAL passed `pg_verifybackup` and copied
-file/WAL SHA-256 checks (2,314 files). Its manifest SHA-256 is
+A local base backup with streamed WAL passed `pg_verifybackup` and copied file/WAL
+SHA-256 checks (2,314 files), manifest
 `63adc1c431e9cd5f74848e47a8d6c38d5ef29dd0efb37f425215528c68df40f5`.
-This remains a local copy; restore/PITR and off-host recovery are unproven.
+This is a local recovery copy, not proof of restore/PITR or off-host recovery.
+The live PG volume is no longer a disposable fixture. Never reset its schema or
+roles. Recovery after new writes uses PG and receipts, never the old StarRocks copy.
 
-Full unit/coverage run 18 passes 11,153 cases with 64% combined coverage in
-442.79 seconds. Full mypy 20, changed-file Ruff, 358 eval cases, the 54/189
-scorecard, 33 local documentation links and staged secret checks pass.
-The repaired configuration awaits its new CI run before writes reopen and
-normal dev startup. The active PG volume is no longer
-a disposable test fixture. Never run schema/role reset or reseed fixtures on it.
-Four historical Agent runs without active producers retain their original
-`running` status; startup must not replay their effects.
+## Runtime QA and follow-up repair
+
+Private evidence is retained under the operator's restricted Nova migration
+directory outside Git. No credentials or source rows are included here.
+
+| Check | Observed result |
+| --- | --- |
+| API and MySQL smoke | Login, assigned active role, proxy/query result 42, imported Agent threads and a 55-cell Notebook, Workspace create/edit/read/versions/delete, Catalog listing, Superset author-role listing and runtime health passed |
+| Refusals | Anonymous/invalid tokens, invalid SQL and user SQL against PG metadata refused. The initial fixture incorrectly expected ACCOUNTADMIN to be denied access to the retained historical StarRocks copy; that expectation was corrected, with the failed attempt retained |
+| Documented SQL | SHOW FRONTENDS/BACKENDS passed. Synthetic INSERT SELECT returned the expected row; scheduled lineage harvesting exposed the expected edge after 261.83 seconds. The owned database was removed |
+| Notebook | Create/edit initially failed because two routes passed a username instead of the session to Workspace. Eight regressions reproduced this; the fix passed 44 focused tests and full unit run 19: 11,161 passed, 64%, 510.62 seconds. A subsequent runtime start failed while Docker timed out pulling the pinned egress image; after the exact image was downloaded, duplicate admission, stale edit 409, SQL/Python/named results, governed role, Python error, cancellation, restart and retained outputs passed |
+| Live chat | Three fresh standard-context trials on `cx/gpt-6.1-sol` returned exact count 3, sum 60 and mean 20, with terminal replies persisted. The earlier fixture attempted an ACCOUNTADMIN Agent binding, which the existing guard refused; three later trials with a 3,000-token context budget terminated as context_overflow. All attempts remain recorded |
+| Live configured SQL tool | Three fresh trials on the same real model called the synthetic read-only tool once and persisted exact decimal `12345678901234567890.1200` and date `2026-11-13`. Studio rendered the retained table with those exact values. No embeddings were tested |
+| Docs UI | Notebook docs rendered, search returned notebook pages, and Escape closed the search dialog. Full desktop/mobile/focus acceptance remains open |
+| Secret scan | 36 new log/smoke artifacts checked against 32 configured secret values, including the decryptable provider credential; zero exact-value findings. This is not the full sandbox/canary acceptance gate |
+
+Cleanup exposed an Agent deletion defect: the definition could commit before
+memory cleanup failed. The owner-scoped SECURITY DEFINER cleanup was also refused
+by its statement trigger. The candidate repair adds revision 0045, admitting
+only that web-login, owner-context memory DELETE through the existing maintenance
+lock. It leaves RLS, principal filtering and other workload/operation refusals
+intact. The facade now deletes active memories and the definition in one UoW;
+the HTTP audit joins it. Immutable memory revisions remain retained.
+
+Normal runtime logs also exposed unbound Autopilot telemetry flushes. The
+collector now binds the existing TELEMETRY_ACTOR during policy refresh, flush
+and shutdown drain, while observations retain the original query principal,
+role and security version. Two red regressions reproduced the gap; 19 focused
+Notebook/telemetry cases pass. Real-PG regressions cover deletion rollback,
+foreign ownership, maintenance/workload refusal and telemetry from web/query/proxy.
+
+Final local candidate gates passed: unit run 20 has 11,163 passes and 64%
+coverage; schema/bootstrap follow-up has 22 passes, mypy 22 and pinned Ruff
+pass, eval 19 has 358 passes, scorecard 17 has 54/54 scenarios and 189/189
+checks, and docs browser run 09 has 15 passes. All 28 local documentation
+links resolve. Eval 18 lacked disposable test encryption keys in the isolated
+checkout (356 passed, two failed); the configured rerun is retained separately.
+Notebook UI also rendered saved SQL/Python tables, error and cancelled outputs
+with the runtime stopped.
+
+The schema-0045 candidate is isolated in a temporary checkout so development
+continues on schema 0044 while its full checks and CI run. It is not activated
+or release-complete. Integration remains CI-only under the owner's existing
+authorization because the local PG and engine now contain development state.
+Owned QA fixtures awaiting repaired cleanup remain identified in private receipts.
+
+The broader production refactor is still incomplete: standalone interactive
+Agent ownership, durable consent and Notebook queues, one production Compose,
+separate Redis workloads, ML/sandbox isolation and provenance, off-host recovery,
+and the full feature/fault matrix remain open. Four historical Agent runs with
+no producer retain their original running status and were not replayed.
 
 ## Earlier checkpoints and retained failures
 
@@ -459,7 +510,7 @@ collected no tests; the corrected invocation is recorded separately.
 Final follow-up checks: Agent/provider/migrator real-PG domain 02 passed 122
 cases in 144.22 seconds; schema/import unit 01 passed 124 cases. Full application
 mypy 18 and changed-file Ruff pass. Image build 16 includes schema 0044. The
-11,143-case unit/coverage run, 358 eval cases and 54/189 scorecard results above
+11,143-case unit/coverage run, 358 eval cases and scorecard (54/54 scenarios, 189/189 checks) results above
 cover unchanged application source and resolved host dependencies. The complete
 seeded engine suite is delegated to CI under the owner's existing authorization.
 A read-only source check at 01:00:46 UTC found all 157 source tables unchanged.
@@ -470,8 +521,7 @@ Schema 0044 import rehearsals and actual cutover remain pending.
 
 Commit `de0750d4` was pushed. [CI 43341718113](https://github.com/dwickyfp/nova/actions/runs/43341718113)
 passed seven jobs, including all 986 real-PG cases without skips in 1,657.27
-seconds, 11,143 unit cases (64% coverage), 358 eval cases and the 54/189 Agent
-scorecard. Frontend's 195 test files also passed. Engine integration retained
+seconds, 11,143 unit cases (64% coverage), 358 eval cases and the Agent scorecard (54/54 scenarios, 189/189 checks). Frontend's 195 test files also passed. Engine integration retained
 216 passes, 24 skips and one failure, with no setup errors. Consolidation,
 review, sharing and context graph assertions now pass; the later semantic-query
 answer failed to persist its structured content.
@@ -486,7 +536,7 @@ No arbitrary object representation is persisted.
 
 Focused checks: 40 unit cases, one exact PG reproduction/fix case, then all
 47 assistant/policy/BI PG domain cases passed. Full mypy 19, 358 eval cases,
-54/189 scorecard, 15 docs browser cases and image build 17 pass. Full unit 17 passed 11,146 cases with 64% combined coverage in 418.91 seconds;
+scorecard (54/54 scenarios, 189/189 checks), 15 docs browser cases and image build 17 pass. Full unit 17 passed 11,146 cases with 64% combined coverage in 418.91 seconds;
 the exact image regression passed 49 cases in 51.20 seconds. Schema 0044 and the importer are
 unchanged, so both final rehearsal receipts below remain applicable.
 

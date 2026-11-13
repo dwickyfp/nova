@@ -81,3 +81,7 @@ usual, and can test and apply improvements such as refreshing table statistics.
 
 Autopilot needs enough history before it reports a slowdown: it compares
 30-minute windows against up to 14 days of past runs.
+
+Workload observations arrive asynchronously. If recording is unavailable, a
+query can still succeed, but Autopilot may have gaps in its evidence. Query
+success alone does not confirm that an observation was recorded.

@@ -596,6 +596,11 @@ class AgentRepository:
 
     async def delete_agent(self, agent_id: str, *, owner_name: str) -> bool:
         async with agent_metadata(owner_name) as store:
+            prior = await store.get_agent(agent_id)
+            if prior is None or prior["owner_name"] != owner_name:
+                return False
+            await store.lock_agent(agent_id)
+            await store.delete_agent_memories(agent_id)
             return await store.delete_agent(agent_id)
 
     # ── Semantic usage ─────────────────────────────────────────

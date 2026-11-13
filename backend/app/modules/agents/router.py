@@ -38,6 +38,7 @@ from pydantic import BaseModel, Field
 from app.common.audit import write_audit_log
 from app.core.database import configured_timezone
 from app.core.deps import get_current_user
+from app.core.metadata_scope import metadata_transaction
 from app.modules.agents.access import has_verified_access
 from app.modules.agents.automations import AutomationCreate, AutomationUpdate
 from app.modules.agents.dataviz_assistant import (
@@ -1311,19 +1312,19 @@ async def publish_agent_version(
 
 @router.delete("/{agent_id}", status_code=204)
 async def delete_agent(agent_id: str, user: dict = Depends(get_current_user)):
-    if not await agent_repository.delete_agent(agent_id, owner_name=user["username"]):
-        raise HTTPException(status_code=404, detail="Agent not found")
-    await memory_repository.delete_agent(user_name=user["username"], agent_id=agent_id)
-    await write_audit_log(
-        event_type="AGENT_MEMORY",
-        user_name=user["username"],
-        action="DELETE_ALL",
-        object_type="AGENT",
-        object_name=agent_id,
-        status="SUCCESS",
-        session_id=user.get("session_id"),
-        active_role=user.get("active_role"),
-    )
+    async with metadata_transaction(session_security(user)):
+        if not await agent_repository.delete_agent(agent_id, owner_name=user["username"]):
+            raise HTTPException(status_code=404, detail="Agent not found")
+        await write_audit_log(
+            event_type="AGENT_MEMORY",
+            user_name=user["username"],
+            action="DELETE_ALL",
+            object_type="AGENT",
+            object_name=agent_id,
+            status="SUCCESS",
+            session_id=user.get("session_id"),
+            active_role=user.get("active_role"),
+        )
     return None
 
 

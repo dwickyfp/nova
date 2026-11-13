@@ -10,28 +10,28 @@ The stopped worktree ports were integrated and published in checkpoint
 `01209dbbd58bf6690fb865169aa85244a6a9647b` on `feat/production-control-plane`.
 See the [takeover checkpoint](../../reports/production-refactor/worktree-takeover/README.md)
 for baseline results, failed integration attempts and remaining work. The source
-now has a validated final import and published schema 0044 epoch, with writes
-still frozen. A fresh-process check found and repaired shared dotenv ownership;
-its final gates and normal dev startup remain pending. The existing source
-metadata and payloads remain in place.
+now has a validated final import and active schema 0044 epoch. The shared dotenv
+repair passed all eight CI jobs; normal dev processes are running. Runtime QA
+found Notebook, Agent deletion and telemetry defects; their follow-up repair is
+being validated in an isolated checkout. Source metadata and payloads remain in place.
 
 ## Completion decision
 
-**Final metadata import and epoch publication are complete; writes remain
-frozen pending the runtime configuration repair gates and startup. Application
-scaling and the full production refactor are not ready for release.**
+**Final metadata import, epoch activation and normal dev startup are complete.
+Follow-up runtime repairs, application scaling and the full production refactor
+are not ready for release.**
 
 | Area | Verified state | Remaining implementation |
 | --- | --- | --- |
-| Metadata authority | Both schema 0044 rehearsals and the final frozen import matched 1,009,174 rows and 453 payload references. PG epoch is published under maintenance; application processes remain stopped | Finish gates on the shared dotenv repair, verify backup, reopen writes and start the migrated runtime |
-| Ownership inventory | 163 source-table entries and 875 reviewed system call sites | The matrix retains historical pre-cutover labels: 153 tested storage entries and ten import-only entries. Runtime callers have been ported, but no entry records completed cutover; update activation and workload grants from the final receipt |
-| PG schema | Revisions 0001–0044 define deployment state, preferences, password flags, AI registry/aliases/definitions, jobs/outbox, scheduler fencing, audit, retained history, Stages, Workspace ownership/shares, Workspace file entries/version receipts per-person Notebook runtime/execution/package metadata, Task definitions/edges/runs with version CAS and lease fencing, Stream control claims/receipt chains, and ML jobs/models/versions with leased jobs and immutable versions; Catalog inventory with sync-generation fencing and ciphertext-only credentials, business Ontology with append-only revisions, Agent definitions with CAS and a fenced run journal, Intelligence (Semantic Views, revision stores, Search, entities and feature store), cutover-operation journals and Task graph job links, Query autopilot approvals, leases and fenced results, and assistant threads, access-control policies, BI/Dataviz publications, migration jobs and LLM usage metering | Final CI and normal-runtime activation; whole-feature authorization/refusal and fault acceptance remain separate |
+| Metadata authority | Both schema 0044 rehearsals and the final frozen import matched 1,009,174 rows and 453 payload references. PG epoch is active; normal dev readiness and bounded API/SQL/Notebook/live AI smoke tests pass | Complete the revision-0045 follow-up repair and remaining feature/fault acceptance |
+| Ownership inventory | 163 source-table entries and 875 reviewed system call sites | The matrix now records activation, retained/import-only and source-absent states from the final receipt, with actual direct table/column grants; dynamic whole-feature caller coverage remains |
+| PG schema | Revisions 0001–0044 define deployment state, preferences, password flags, AI registry/aliases/definitions, jobs/outbox, scheduler fencing, audit, retained history, Stages, Workspace ownership/shares, Workspace file entries/version receipts per-person Notebook runtime/execution/package metadata, Task definitions/edges/runs with version CAS and lease fencing, Stream control claims/receipt chains, and ML jobs/models/versions with leased jobs and immutable versions; Catalog inventory with sync-generation fencing and ciphertext-only credentials, business Ontology with append-only revisions, Agent definitions with CAS and a fenced run journal, Intelligence (Semantic Views, revision stores, Search, entities and feature store), cutover-operation journals and Task graph job links, Query autopilot approvals, leases and fenced results, and assistant threads, access-control policies, BI/Dataviz publications, migration jobs and LLM usage metering | Schema 0044 is active; revision 0045 repairs memory cleanup and awaits final gates. Whole-feature authorization/refusal and fault acceptance remain separate |
 | Durable jobs | Queue, outbox, leases/fencing and receipts pass real-PG fixture tests; AI function registration is wired to maintenance; the standalone outbox publisher commits claims before Redis notifications and fenced acknowledgment, with recovery cases tested on PG | Remaining producers/consumers, participant verification and recovery; Redis must cease being authoritative for work |
 | Agent runtime | Conversations and fenced run/event journals are ported to PG; process-local approvals now bind principal, login, active role and security version. Registry/version/release, research, rule proposals, candidates and sharing callers use PG and pass facade/concurrency fixtures; Quality Lab and owner-scoped usage/session observability use PG and pass facade tests. Artifact/tile readers and BI pointer updates use PG/CAS; shared dashboards use a bounded member projection. Shared conversations use a restricted projection under the viewer identity | Memory, Missions and automation facades now use PG. Durable occurrences, exact MCP delivery intent/receipt, scheduled Quality grants and tombstone/relearning are implemented and tested on PG; broader durable consent/read grants, standalone interactive agent process and reconnect/restart acceptance remain |
 | Workload processes | API supports `all`, `web`, `query`; eight workload roles now have separate processes and supervised default startup; maintenance owns Search builds, Catalog/News refresh, ML retention and durable AI function registration; a starting role now waits up to 180 s for an unavailable engine, Redis or held metrics port instead of exiting and taking every sibling down with it, and supervised roles stop when their launcher exits | Remaining interactive agent separation; per-role admission, dependency readiness, fenced claims, isolation and validated limits across the full deployment |
 | Execution security | Existing delegated SQL and Ranger path retained | Isolated ML execution/provenance, notebook/Python/MCP credential and network isolation, atomic role changes and revocation boundaries |
 | Production deployment | Existing engine/development/split Compose files remain | One production Compose with all required services active, scoped inline environment anchors, stable private secrets, pinned images, TLS/private management ports and adjustable resources |
-| Recovery | No production recovery acceptance established | PG base backup/WAL, off-host copy, coordinated recovery manifest, restore/PITR and dependency recovery tests |
+| Recovery | Local PG base backup/WAL and file verification passed; no production recovery acceptance established | Off-host copy, coordinated external recovery manifest, restore/PITR and dependency recovery tests |
 
 Source evidence: [ownership](METADATA_OWNERSHIP.csv),
 [call inventory](SYSTEM_CALLS.csv), [entrypoints](ENTRYPOINTS.csv),
@@ -60,38 +60,36 @@ repositories are not proof that their runtime callers use PostgreSQL.
 
 ## Remaining implementation with concrete owners
 
-The current source remains stopped pending final CI on the shared dotenv repair;
-the verified epoch is published with maintenance enabled.
+The original checkout runs the active schema-0044 epoch. Candidate schema 0045
+and the deletion/telemetry repair are isolated until their checks pass.
 The table distinguishes completed caller ports from remaining runtime boundaries:
 
-| Component | Required change before cutover | Owning source |
+| Component | Verified port and remaining change | Owning source |
 | --- | --- | --- |
 | Agent memory and learning | Implemented with actor-bound transactions, historical restoration, scoped shared projection and PG concurrency tests; verify the migrated UI/live flow | `backend/app/modules/agents/memory.py`, `knowledge_router.py`, `metadata_repository.py` |
 | Missions | Implemented with atomic audit and separate storage/public revisions; PG concurrent cursor and stale revision tests pass; verify the migrated runtime | `backend/app/modules/agents/mission.py` |
 | Automations and scheduled Quality | Implemented with immutable occurrences, PG jobs, fencing, exact MCP delivery intent/receipt and scoped grants; complete live delivery and interruption acceptance | `backend/app/modules/agents/automations.py`, `backend/app/modules/task_orchestration/internal_handlers.py` |
 | Historical Agent helpers | Removed obsolete StarRocks writers. Import preserves original IDs and bindings, including explicit empty bindings; historical delegation remains a bounded PG read | `backend/app/modules/agents/repository.py`, `resource_delegation.py` |
 | Durable runtime ownership | Standalone interactive agent using the existing loop; PG consent/read grants; Notebook queue replacement; durable workspace cleanup and remaining consumers | `backend/app/worker/`, `backend/app/modules/assistant/consent.py`, Notebook/workspace owners |
-| Import/cutover | Contract/provenance package, resumable chunks, full row/key validation, payload receipts and import-bound epoch publication are implemented. Two final interrupted/resumed rehearsals passed. Final import and receipt-bound epoch publication passed; runtime activation awaits the shared dotenv repair gates | `backend/app/core/metadata_import*.py`, `metadata_export.py`, `backend/metadata_import/` |
+| Import/cutover | Contract/provenance package, resumable chunks, full row/key validation, payload receipts and import-bound epoch publication are implemented. Two final interrupted/resumed rehearsals passed. Final import, receipt-bound epoch activation and dev startup passed; follow-up runtime repair is tracked in the delivery report | `backend/app/core/metadata_import*.py`, `metadata_export.py`, `backend/metadata_import/` |
 | Production operations | One complete production Compose, scoped stable secrets, separate Redis workloads, TLS/private ports, ML/sandbox isolation and provenance, coordinated off-host backup/restore | `docker/`, ML/Notebook/backup owners |
 | Integration harness | Replace pre-cutover metadata setup/cleanup and bind actual PG processes without reseeding development; validate final CI, live providers and governed engine | `.github/workflows/ci.yml`, `backend/tests/integration/` |
 
 Memory restoration now retains the deterministic ID, tombstone and prior evidence,
 then advances the revision when the fact is learned again. Migration 0031 and
-real-PG facade tests cover this path. The active source has not yet cut over;
-this result establishes the replacement writer, not live UI acceptance.
+real-PG facade tests cover this path. The active source has cut over; broader memory and learning UI acceptance
+remains distinct from the bounded chat/tool smoke tests.
 
 ## Whole-feature QA still outstanding
 
 The [759-row feature matrix](FEATURE_QA.csv) remains the detailed worklist.
 Its current results are separate from unit-test counts:
 
-- Happy paths: 731 `NOT_RUN`; remaining entries include bounded pre-cutover
-  passes, failures and one owner waiver.
-- Invalid input: 754 `NOT_RUN`, four `PASS`, one owner waiver.
-- Authorization: 129 `NOT_RUN`, 626 partial entries, three `PASS`, one waiver.
-  An authenticated-route inventory does not prove object/role isolation.
-- Dependency failure: 753 `NOT_RUN`; the remaining non-waived entries contain
-  partial checks, retained timeouts/stalls and unresolved failures.
+The matrix records 33 bounded cutover smoke entries and the retained Agent
+deletion failure separately. These partial results cover only their listed
+fixtures; they are not full feature passes. The remaining NOT_RUN counts are
+happy_path 697, invalid_input 752, authorization 129, dependency_failure 752.
+Anonymous-route refusal does not establish cross-user or role isolation.
 
 | QA area | Required remaining evidence |
 | --- | --- |
@@ -138,20 +136,20 @@ findings. In particular:
 ## Existing validation to reuse only when applicable
 
 The Workspace files checkpoint passes 571 real-PG tests (40 new Workspace file
-cases), 10,909 unit/coverage tests, 358 evals, the 54/189 scorecard, mypy,
+cases), 10,909 unit/coverage tests, 358 evals, the scorecard (54/54 scenarios, 189/189 checks), mypy,
 changed-file Ruff and the user-data boundary check. It prepares two more stores;
 Workspace/Notebook runtime callers still use StarRocks. Today's PG log window is
 clean, but the full fixture log retains 26 credential-canary matches from
 2026-11-11 whose source test is not yet identified.
 
 The Workspace sharing checkpoint passes 531 real-PG tests (42 Workspace cases),
-10,909 unit/coverage tests, 358 evals, the 54/189 scorecard, mypy, changed-file
+10,909 unit/coverage tests, 358 evals, the scorecard (54/54 scenarios, 189/189 checks), mypy, changed-file
 Ruff and the user-data boundary check. The initial eval failure and its corrected
 text-versus-UUID assertion are retained in the linked evidence. This prepares
 two additional stores; it does not migrate Workspace/Notebook runtime callers.
 
 The maintenance checkpoint passes 10,909 unit/coverage tests (zero skips),
-358 evals, the 54/189 scorecard, 84 focused tests, mypy, Ruff on 129 changed
+358 evals, the scorecard (54/54 scenarios, 189/189 checks), 84 focused tests, mypy, Ruff on 129 changed
 Python files and 12 monitoring tests. Local metrics confirm Search polling in
 maintenance and none in the API. Seven worker roles each report one fresh
 instance; API readiness/frontend return 200 and the proxy listens. The first
@@ -159,7 +157,7 @@ probe's missing host-service prerequisite and its restoration remain recorded.
 See the maintenance evidence linked above. Delivered-commit CI is still required.
 
 The workload-separation checkpoint passes 10,895 unit/coverage tests (zero
-skips), 358 evals, the 54/189 scorecard, mypy, Ruff on 125 changed Python paths,
+skips), 358 evals, the scorecard (54/54 scenarios, 189/189 checks), mypy, Ruff on 125 changed Python paths,
 55 focused lifecycle tests and 12 monitoring checks. Six dedicated host worker
 processes each report one healthy instance on the existing stack. Both affected
 Compose configurations validate. Container image startup, complete dependency

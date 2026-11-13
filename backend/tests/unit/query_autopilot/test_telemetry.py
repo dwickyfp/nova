@@ -211,3 +211,50 @@ def test_policy_epoch_is_frozen_at_query_start_and_isolates_cohorts():
     assert later.scope.policy_revision == "3:59:2"
     assert earlier.family_id == later.family_id
     assert earlier.scope.cohort_id != later.scope.cohort_id
+
+
+@pytest.mark.parametrize("shutdown_drain", [False, True])
+async def test_process_collector_binds_service_identity_and_preserves_user_scope(
+    monkeypatch, shutdown_drain,
+):
+    import asyncio
+
+    from app.core.metadata_actor import acting_as, current_actor
+    from app.modules.access_control.security_context import SecurityContext
+    from app.modules.query_autopilot import runtime
+    from app.modules.query_autopilot.repository import TELEMETRY_ACTOR
+
+    caller = SecurityContext("caller", "ANALYST", session_id="login", security_context_version=8)
+    collector = Collector()
+    collector.observe(identity=ExecutionIdentity(), sql="SELECT 42", source="web",
+                      status="success", elapsed_ms=1,
+                      kwargs={"username": "caller", "role": "ANALYST",
+                              "security_context_version": 8})
+    stop = asyncio.Event()
+    if shutdown_drain:
+        stop.set()
+    observed = []
+
+    async def get_policy(*args):
+        assert current_actor() == TELEMETRY_ACTOR
+        return {}
+
+    async def save(batch):
+        assert current_actor() == TELEMETRY_ACTOR
+        observed.extend(batch)
+        stop.set()
+
+    repo = AsyncMock()
+    repo.get.side_effect = get_policy
+    repo.page.return_value = []
+    repo.observations.side_effect = save
+    monkeypatch.setattr(runtime, "current_policy_revision", AsyncMock(return_value="revision"))
+    with acting_as(caller):
+        async with asyncio.timeout(1):
+            await collector.run(stop, repo)
+        assert current_actor() == caller
+    assert collector.persisted == 1 and collector.failed_batches == 0
+    assert len(observed) == 1
+    assert observed[0].scope.principal == "caller"
+    assert observed[0].scope.active_role == "ANALYST"
+    assert observed[0].scope.security_context_version == 8

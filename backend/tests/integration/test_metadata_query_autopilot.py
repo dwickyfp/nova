@@ -638,3 +638,33 @@ async def test_import_is_maintenance_only_and_keeps_legacy_rows(autopilot):
     async with autopilot.transaction(read_only=True) as (repo, _):
         legacy = await repo.get("opportunities", "legacy-cand")
     assert legacy["approved_by"] is None and legacy["payload"]["approved_by"] == "old-admin"
+
+
+@pytest.mark.parametrize("workload", ["web", "query", "proxy"])
+async def test_process_telemetry_shutdown_drain_persists_as_bound_service(autopilot, workload):
+    from app.core.metadata_runtime import install_metadata_db, uninstall_metadata_db
+    from app.modules.query_autopilot.repository import AutopilotRepository
+    from app.modules.query_autopilot.telemetry import Collector, ExecutionIdentity
+
+    database = MetadataDatabase(autopilot.environment.role_config("nova_meta_" + workload))
+    try:
+        await database.open(schema_version=len(load_migrations()), metadata_epoch=autopilot.epoch)
+        install_metadata_db(database)
+        collector = Collector()
+        collector.observe(identity=ExecutionIdentity(), sql="SELECT 42", source=workload,
+                          status="success", elapsed_ms=1,
+                          kwargs={"username": "alice", "role": "ANALYST",
+                                  "security_context_version": 8})
+        stop = asyncio.Event()
+        stop.set()
+        await collector.run(stop, AutopilotRepository())
+        assert collector.persisted == 1 and collector.failed_batches == 0
+        rows = await autopilot.admin("SELECT payload::jsonb->'scope' AS scope "
+                                     "FROM nova_meta.query_autopilot_observations")
+        assert len(rows) == 1
+        assert rows[0]["scope"]["principal"] == "alice"
+        assert rows[0]["scope"]["active_role"] == "ANALYST"
+        assert rows[0]["scope"]["security_context_version"] == 8
+    finally:
+        uninstall_metadata_db(database)
+        await database.close()

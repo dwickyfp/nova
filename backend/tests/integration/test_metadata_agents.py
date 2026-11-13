@@ -2059,3 +2059,68 @@ async def test_external_delivery_has_exact_durable_intent_before_call_and_receip
         assert current == [{"last_status": "VERIFYING", "next_run_at": automation["next_run_at"]}]
     else:
         assert len(receipt[0]["response_digest"]) == 64 and receipt[0]["is_error"] is False
+
+
+@pytest.mark.parametrize("failure", [None, "cleanup", "definition", "audit"])
+async def test_agent_delete_cleans_own_role_projections_atomically(
+    agents, runtime_registry, monkeypatch, failure,
+):
+    from unittest.mock import AsyncMock
+
+    from app.core.metadata_actor import acting_as
+    from app.modules.agents import router
+
+    user = session("agent-owner", active="ANALYST")
+    actor = SecurityContext.from_session(user)
+    monkeypatch.setattr(router, "agent_repository", runtime_registry)
+    with acting_as(actor):
+        agent = await runtime_registry.create_agent(owner_name=actor.principal,
+                                                    fields={"name": "Deletion fixture"})
+    for role in ("ANALYST", "VIEWER"):
+        async with agents.transaction(active=role) as (repo, _):
+            await repo.create_memory(agent["agent_id"], {
+                "fact_key": "synthetic", "fact": "Total is 42", "source_quote": "Total is 42",
+                "source_thread_id": "fixture",
+            }, {"fact": "Total is 42"})
+    async with agents.transaction(name="other-owner") as (repo, _):
+        await repo.delete_agent_memories(agent["agent_id"])
+    assert len(await agents.admin("SELECT memory_id FROM nova_meta.config_agent_memories")) == 2
+    method = {"cleanup": "delete_agent_memories", "definition": "delete_agent"}.get(failure)
+    if method:
+        original = getattr(AgentMetadataRepository, method)
+
+        async def failed_after_write(self, identifier):
+            await original(self, identifier)
+            raise RuntimeError("Synthetic cleanup interruption")
+
+        monkeypatch.setattr(AgentMetadataRepository, method, failed_after_write)
+    elif failure == "audit":
+        monkeypatch.setattr(router, "write_audit_log", AsyncMock(
+            side_effect=RuntimeError("Synthetic audit interruption")))
+    with acting_as(actor):
+        if failure:
+            with pytest.raises(RuntimeError, match="Synthetic"):
+                await router.delete_agent(agent["agent_id"], user)
+        else:
+            assert await router.delete_agent(agent["agent_id"], user) is None
+        retained = await runtime_registry.get_agent(agent["agent_id"], owner_name=actor.principal)
+        assert bool(retained) == bool(failure)
+    assert len(await agents.admin("SELECT memory_id FROM nova_meta.config_agent_memories")) == (
+        2 if failure else 0
+    )
+    assert len(await agents.admin(
+        "SELECT memory_id FROM nova_meta.config_agent_memory_revisions")) == 2
+    audit = await agents.admin("SELECT action FROM nova_meta.audit_log "
+                               "WHERE metadata_table='config_agents' AND action='DELETE'")
+    assert len(audit) == (0 if failure else 1)
+
+
+async def test_agent_memory_cleanup_retains_maintenance_and_workload_guards(agents):
+    for workload in ("agent", "automation"):
+        with pytest.raises(MetadataPermissionDenied):
+            async with agents.transaction(workload) as (repo, _):
+                await repo.delete_agent_memories("unused")
+    await agents.admin("UPDATE nova_meta.deployment_state SET maintenance=true WHERE singleton")
+    with pytest.raises(MetadataReadOnlyMaintenance):
+        async with agents.transaction() as (repo, _):
+            await repo.delete_agent_memories("unused")

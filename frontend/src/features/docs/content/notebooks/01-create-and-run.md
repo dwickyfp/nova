@@ -62,6 +62,8 @@ the document is not a substitute for stopping a runtime you no longer need.
   for the failed start to finish before trying **Start runtime** again.
 - A Python exception appears with its traceback under the cell. Fix the code
   and run it again.
+- If another tab saves a newer version, your stale edit is refused. Reload the
+  notebook to see the latest version before editing again.
 - If the connection ends before a result arrives, the code may already have
   run. Check any writes before repeating the cell.
 - A notebook's saved code and its running state are separate. Saving does

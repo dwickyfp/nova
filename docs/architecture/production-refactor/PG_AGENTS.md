@@ -6,8 +6,9 @@ actor-bound PG transactions for the registry, run journal, Missions, automations
 memory, quality, sharing and Studio stores. The three retired Agent stores stay
 as revision 0011 defined them ([retired history](PG_RETIRED_AGENT_HISTORY.md)).
 The [delivery record](../../reports/production-refactor/importer-agent-cutover/README.md)
-distinguishes tested ports from actual epoch activation; development processes
-remain stopped pending final CI and cutover at this checkpoint.
+records the active schema-0044 epoch, running development processes and bounded
+live Studio evidence. Revision 0045 repairs owner-scoped memory cleanup and
+atomic Agent deletion; its activation is pending the candidate gates.
 
 ## Workloads
 
@@ -102,9 +103,11 @@ in the same transaction. Runs, events, Missions, knowledge and bookkeeping
   a dashboard projection contains only charts named by its stored layout.
   Client edits to a layout cannot widen that membership. Direct cross-owner
   SELECT remains refused, and queries run through the viewer's governed session.
-- **Shared domain memory** and remaining learning scans still need narrow
-  cross-owner projections. Usage/session observability now uses PG with the
-  bound owner; usage totals and series cover the same UTC calendar-day window.
+- **Shared domain memory** uses the restricted `shared_agent_memories` projection
+  from revision 0031, with owner/active-role membership and reference checks.
+  Usage/session observability uses PG with the bound owner; usage totals and
+  series cover the same UTC calendar-day window. Live sharing/revocation and
+  full learning acceptance remain separate gates.
 - **Artifact conversion:** runtime no longer changes schema or scans another
   owner's artifacts. The CLI discovers owner names through a maintenance-only
   projection, then explicitly authorizes delegation and binds each owner's
@@ -125,9 +128,14 @@ in the same transaction. Runs, events, Missions, knowledge and bookkeeping
 - **Delegated resources** have no current writer and are import-only; a future
   writer needs its own grant and guard.
 
+Revision 0045 preserves the scheduled Task grant introduced in 0034 while
+admitting only the web caller's owner-scoped memory cleanup through the
+maintenance guard. Definition deletion, active-memory cleanup and the HTTP
+success audit share a transaction; immutable memory revisions are retained.
+
 ## Remaining agent work
 
-- Activate the verified PG epoch and validate normal runtime ownership.
+- Activate and verify the revision-0045 deletion repair after its final gates.
 - Complete standalone interactive Agent execution and durable consent;
   Redis admission and process-local consent currently require session affinity.
 - Complete external effect recovery and whole-feature governed/live AI QA.
