@@ -33,8 +33,8 @@ import duckdb
 duckdb.sql('SELECT 41 + 1').fetchall()
 ```
 
-Markdown cells contain explanations, headings and lists. Click **Edit Markdown
-cell** to change one. Press **Ctrl+Enter** or **Cmd+Enter** to render the text;
+Markdown cells contain explanations, headings and lists. Double-click a Markdown
+cell to edit it, or select the cell and press **Enter**. Press **Ctrl+Enter** or **Cmd+Enter** to render the text;
 Markdown does not need a running runtime. It uses its own headings and has no title field.
 Python and SQL cells have an optional **Cell title** to identify them in the outline.
 
