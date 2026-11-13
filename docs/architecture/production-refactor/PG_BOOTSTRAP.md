@@ -8,7 +8,7 @@ an epoch, rotate existing passwords or connect to StarRocks.
 
 This command is implemented and tested on the existing disposable PG fixture.
 The production Compose and its private credential configuration are still to be
-delivered; current Nova domains continue to use StarRocks.
+delivered. Runtime callers require PG; the [delivery record](../../reports/production-refactor/importer-agent-cutover/README.md) tracks each deployment's cutover separately from provisioning.
 
 ## Private configuration
 

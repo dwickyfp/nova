@@ -296,7 +296,7 @@ async def get_runtime_health(
     user: dict = require_read,
 ) -> RuntimeHealthResponse:
     """Live health of Redis and Nova's standalone orchestration processes."""
-    return await monitoring_service.get_runtime_health()
+    return await monitoring_service.get_runtime_health(actor=actor_for(user))
 
 
 # ── Data Loads ───────────────────────────────────────────────────────

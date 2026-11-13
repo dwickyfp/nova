@@ -1,16 +1,4 @@
-"""``nova-scheduler`` — the standalone process entrypoint.
-
-The scheduler is a **separate process**, never embedded in the FastAPI lifespan:
-unlike the MySQL proxy, it does not share the web process's lifecycle, and a
-singleton is easier to reason about when it is the only thing in its process.
-
-    uv run python -m app.scheduler
-
-It initialises the system connection pool (the repository reads and writes
-``NOVA_SYSTEM`` through it), connects to Redis, then ticks until ``SIGINT`` or
-``SIGTERM``. It never executes SQL against StarRocks — only ``NOVA_SYSTEM``
-metadata reads/writes.
-"""
+"""Standalone scheduler with PG authority, Redis wakeups and engine observations."""
 
 from __future__ import annotations
 
@@ -35,10 +23,7 @@ from app.core.metadata_process import (
 from app.modules.task_orchestration.repository import task_orchestration_repository
 from app.modules.task_orchestration.schedule import engine_timezone_matches
 from app.modules.task_orchestration.service import build_scheduler_service
-from app.modules.task_orchestration.transport import (
-    LeaderLock,
-    RedisGraphRunTransport,
-)
+from app.modules.task_orchestration.transport import RedisGraphRunTransport
 from app.observability.metrics import start_metrics_server
 
 logger = logging.getLogger(__name__)
@@ -103,10 +88,6 @@ async def _run_admitted(metadata: MetadataDatabase, readiness_interval: float) -
     await db.init_system_pool()
     try:
         await _assert_engine_timezone()
-        # The scheduler reads CONFIG_TASK_GRAPH_RUNS (including heartbeat_at),
-        # so it must ensure the schema exists and is up to date. Idempotent:
-        # creates the tables when absent and adds late columns to a table an
-        # older release (or init-nova.sql) created without them.
         await init_task_orchestration()
     except Exception:
         await db.close_system_pool()
@@ -128,10 +109,7 @@ async def _run_admitted(metadata: MetadataDatabase, readiness_interval: float) -
         except NotImplementedError:  # pragma: no cover - Windows
             signal.signal(signal_number, lambda *_: _request_stop())
 
-    service = build_scheduler_service(
-        RedisGraphRunTransport(client),
-        LeaderLock(client),
-    )
+    service = build_scheduler_service(RedisGraphRunTransport(client))
     start_metrics_server("scheduler")
     readiness = asyncio.create_task(watch_metadata(
         metadata, "scheduler", stop_event, interval=readiness_interval,

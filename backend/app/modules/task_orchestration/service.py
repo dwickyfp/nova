@@ -1,10 +1,4 @@
-"""The long-running scheduler loop: leader-gated ticks over an interval.
-
-The scheduler is a singleton guarded by a Redis leader lock. Only the lock
-holder runs ticks; a non-holder stays idle and retries acquisition, so two
-instances never enqueue the same due-time. Losing the lock mid-run stops the
-loop from firing without crashing the process — it simply waits to win again.
-"""
+"""Run scheduler ticks under the PG lease used to reserve due occurrences."""
 
 from __future__ import annotations
 
@@ -14,9 +8,10 @@ import logging
 import time
 
 from app.core.config import settings
+from app.modules.task_orchestration.leadership import MetadataLeaderLock
 from app.modules.task_orchestration.repository import task_orchestration_repository
 from app.modules.task_orchestration.scheduler import SchedulerTick
-from app.modules.task_orchestration.transport import GraphRunTransport, LeaderLock
+from app.modules.task_orchestration.transport import GraphRunTransport
 from app.observability.metrics import (
     SCHEDULER_LEADER,
     SCHEDULER_TICK_DURATION,
@@ -33,7 +28,7 @@ class SchedulerService:
     def __init__(
         self,
         tick: SchedulerTick,
-        leader_lock: LeaderLock,
+        leader_lock: MetadataLeaderLock,
         poll_interval: float | None = None,
         after_tick=None,
     ) -> None:
@@ -139,10 +134,10 @@ class SchedulerService:
 
 def build_scheduler_service(
     transport: GraphRunTransport,
-    leader_lock: LeaderLock,
 ) -> SchedulerService:
-    """Wire the default service from a transport and a leader lock."""
-    tick = SchedulerTick(task_orchestration_repository, transport)
+    """Use the same fenced lease for polling and occurrence reservations."""
+    leader_lock = MetadataLeaderLock()
+    tick = SchedulerTick(task_orchestration_repository, transport, leader=leader_lock)
     from app.modules.query_autopilot.jobs import schedule_due_jobs
 
     return SchedulerService(tick, leader_lock, after_tick=schedule_due_jobs)

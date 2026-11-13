@@ -27,7 +27,8 @@ stream. It uses the outbox PG login, opens no engine/session pools and never
 executes a job effect. Unknown publication acknowledgments may repeat a wakeup;
 consumers still claim work in PG. Interactive agent separation and full dependency
 readiness remain target work, not implied by worker-role names. Current
-process-local consent/cancel ownership constrains agent routing. Preserve the
+process-local consent/cancel ownership constrains agent routing. Interactive
+Agent and assistant routes use the web metadata login. Preserve the
 gateway's affinity until durable recovery and cross-replica ownership are tested.
 An agent workload process runs the shared bounded engine; it does not restore
 historical Smart/Auto multi-agent product behavior.

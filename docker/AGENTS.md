@@ -36,9 +36,11 @@ commands run from the repository root unless stated otherwise. Read
   [StarRocks patch guide](../patches/starrocks/AGENTS.md). Replacing the patched
   FE with a stock image can remove role/filter/mask enforcement even when it
   starts successfully. Keep FE/BE/grammar capability assumptions aligned.
-- `docker/init-nova.sql` and `backend/app/common/nova_system.py` own bootstrap
-  and schema initialization for existing StarRocks domains. Preserve compatible
-  changes, role guards/defaults and bootstrap order until verified cutover.
+- `docker/init-nova.sql` retains engine initialization and the historical
+  metadata schema needed by source exports and engine fixtures. Runtime
+  `init_nova_system` and task initialization only probe the installed PG
+  authority; they do not create metadata tables. Preserve engine role guards,
+  authentication defaults and Stream journals that commit with analytical data.
   PG provisioning and installation belong to the separate restricted bootstrap
   and one-shot migrator, as specified in the
   [metadata guide](../backend/metadata_migrations/AGENTS.md).

@@ -175,3 +175,31 @@ async def test_repository_cannot_open_its_own_transaction_after_service_exit(job
         repo = SchedulerRepository(connection)
     with pytest.raises(ValueError):
         await repo.acquire("tasks", uuid4())
+
+
+async def test_monitoring_reads_only_the_task_lease_deadline_with_admin_context(jobs):  # noqa: F811
+    lease = await control(jobs, "acquire", "task.scheduler", uuid4())
+    await control(jobs, "acquire", "private.scheduler", uuid4())
+    query = "SELECT name,expires_at>clock_timestamp() AS active FROM nova_meta.scheduler_leases"
+    for role in ("ACCOUNTADMIN", "SECURITYADMIN", "user_admin", "security_admin"):
+        async with jobs("web", user(role=role)) as connection:
+            rows = await (await connection.execute(query)).fetchall()
+            assert rows == [{"name": "task.scheduler", "active": True}]
+    async with jobs("web", user()) as connection:
+        assert not await (await connection.execute(query)).fetchall()
+    with pytest.raises(MetadataPermissionDenied):
+        async with jobs("web", user(role="ACCOUNTADMIN")) as connection:
+            await connection.execute("SELECT holder,token FROM nova_meta.scheduler_leases")
+    with pytest.raises(MetadataPermissionDenied):
+        async with jobs("web", user(role="ACCOUNTADMIN")) as connection:
+            await connection.execute(
+                "UPDATE nova_meta.scheduler_leases SET expires_at=clock_timestamp()",
+            )
+    with pytest.raises(MetadataPermissionDenied):
+        async with jobs("query", user(role="ACCOUNTADMIN")) as connection:
+            await connection.execute(query)
+    await control(jobs, "release", lease)
+    async with jobs("web", user(role="ACCOUNTADMIN")) as connection:
+        assert await (await connection.execute(query)).fetchall() == [
+            {"name": "task.scheduler", "active": False},
+        ]

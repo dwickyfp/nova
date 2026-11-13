@@ -357,3 +357,46 @@ async def test_import_keeps_legacy_rows_including_ambiguous_names(tasks):
         # An imported running node has no live lease: it must be retaken first.
         assert await repo.finish_task_run("legacy-node", "success", generation=1) is False
         assert await repo.claim_task_run("legacy-node", ["running"]) == 1
+
+
+async def test_process_factory_reserves_due_tasks_under_its_live_pg_lease(tasks, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from app.core.metadata_runtime import install_metadata_db, uninstall_metadata_db
+    from app.modules.query_autopilot import jobs as autopilot_jobs
+    from app.modules.task_orchestration import stream_triggers
+    from app.modules.task_orchestration.repository import task_orchestration_repository
+    from app.modules.task_orchestration.scheduler import SchedulerTick
+    from app.modules.task_orchestration.service import build_scheduler_service
+
+    await create_task(tasks, schedule_expr="EVERY(INTERVAL 1 SECOND)")
+    await asyncio.sleep(1.05)
+    monkeypatch.setattr(
+        task_orchestration_repository, "get_engine_timezone", AsyncMock(return_value="UTC"),
+    )
+    monkeypatch.setattr(stream_triggers, "plan_stream_triggers", AsyncMock(return_value=[]))
+    monkeypatch.setattr(SchedulerTick, "_maintain_streams", AsyncMock())
+    monkeypatch.setattr(autopilot_jobs, "schedule_due_jobs", AsyncMock())
+    transport = AsyncMock()
+    database = MetadataDatabase(tasks.environment.role_config("nova_meta_scheduler"))
+    await database.open(schema_version=len(load_migrations()), metadata_epoch=tasks.epoch)
+    install_metadata_db(database)
+    first, second = build_scheduler_service(transport), build_scheduler_service(transport)
+    try:
+        assert await first.run_once() is True
+        assert await second.run_once() is False
+        assert await first.run_once() is True
+        runs = await tasks.admin("SELECT id,job_id,state FROM nova_meta.config_task_graph_runs")
+        assert len(runs) == 1 and runs[0]["state"] == "pending" and runs[0]["job_id"]
+        assert len(await tasks.admin("SELECT id FROM nova_meta.job_queue")) == 1
+        assert len(await tasks.admin("SELECT id FROM nova_meta.outbox_events")) == 1
+        transport.publish_graph_run.assert_awaited_once()
+        await first._leader_lock.release()
+        assert await second.run_once() is True
+        assert len(await tasks.admin("SELECT id FROM nova_meta.config_task_graph_runs")) == 1
+        transport.publish_graph_run.assert_awaited_once()
+    finally:
+        await first._leader_lock.release()
+        await second._leader_lock.release()
+        uninstall_metadata_db(database)
+        await database.close()

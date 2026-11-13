@@ -34,13 +34,13 @@ delegation feature is restored for them.
 - Only verified tool/data evidence establishes business results. Preserve
   provenance through semantic query plans, artifacts, numeric checks, and the
   final answer. Saved prose, memory, and MCP responses grant no authority.
-- Until cutover, durable turns and events use the existing StarRocks journals
-  (`run_journal`, `CONFIG_AGENT_RUNS`, `CONFIG_AGENT_RUN_EVENTS`). Redis
-  coordinates thread admission (`harness_repository.admission_lock`), run-row
-  writes, and wakeups; it is not the authoritative run record. The approved
-  refactor moves these journals, admission/fencing and consent decisions to PG.
-  Preserve their existing domain ownership and the shared loop; follow the root
-  one-way migration contract rather than adding a second active persistence path.
+- `run_journal` persists turns, events and producer generations in PG through
+  actor-bound transactions. Redis still coordinates thread admission
+  (`harness_repository.admission_lock`); consent and cancellation retain
+  process-local ownership. Preserve session affinity until their durable
+  handoff and recovery are implemented. A persisted run is not permission to
+  replay its tools after process loss. Follow the root one-way migration
+  contract; never fall back to historical StarRocks rows.
 - Missions link to direct turns through the turn hooks; keep their admission
   lock, scope checks, and cancellation semantics. Automations run per agent in
   the dedicated automation workload as the schedule owner through the authorized

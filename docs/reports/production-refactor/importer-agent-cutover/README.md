@@ -310,3 +310,41 @@ Changed-file Ruff, boundary scan, diff and local links passed. Final image build
 12 passed. CI on this final source, actual epoch publication and development
 startup remain pending. The owner-authorized CI execution must retain its
 separate seeded/destructive environment.
+
+## Scheduler startup and monitoring follow-up
+
+A source review after `39f5c47a` found that the standalone scheduler factory
+still passed the historical Redis lock to its polling loop and no PG lease to
+`SchedulerTick`. Due reservations would be refused despite a live process.
+The factory now constructs one PG lease and shares it with both owners. The
+real-PG factory regression proves one winner across two scheduler instances,
+one graph/job/outbox across repeated ticks, and handover without duplication.
+
+Cluster Monitor now reads the task scheduler's PG lease under the requesting
+admin identity. Migration 0042 grants web only the lease name/deadline columns;
+forced RLS excludes other leases and non-admin/SERVICE actors. Holder IDs,
+fencing tokens and writes remain unavailable. PG failure reports an unknown
+scheduler signal even when Redis responds; Redis failure does not hide a live
+PG lease. Worker heartbeat behavior is unchanged.
+
+| Follow-up check | Result |
+| --- | --- |
+| Scheduler unit 01 | 90 passed |
+| Scheduler PG 01 | 15 passed, one fixture failure: its attempt to rewrite a creation timestamp was correctly refused. The test now waits for a real short interval |
+| Scheduler PG 02 | 16 passed, including production factory contention/handover |
+| Scheduler PG 03 | 17 passed, including admin projection and forbidden holder/token/write access |
+| Scheduler/monitoring focused unit 01 | 156 passed |
+| Tasks/scheduler/migrator PG domain 01 | 65 passed, 66.45 seconds |
+| Full application mypy 16 | PASS, 733 files |
+| Agent eval 12 / scorecard 10 | 358 passed / 54 scenarios and 189 checks passed |
+| Docs browser 02 | 15 passed across two files |
+| Metadata image build 13 | PASS, schema 0042 included |
+| Full unit 13 | Interrupted after 6,368 passes to include the monitoring correction; not a completed gate |
+| Full unit 14 | 11,143 passed, 64% combined coverage, 460.98 seconds; branch measurement is enabled in `pyproject.toml` |
+| Schema 0042 rehearsal 13/14 | 13 VALIDATED with interruption/resume; 14 running on the disposable PG target. Schema 0041 receipts remain historical |
+
+Root/scoped operations guides now describe the actual PG owners, web Agent
+routing, default split `dev.sh` startup and operator-provisioned schema/epoch.
+Notebook live queues/leases, interactive consent and production Compose remain
+explicit unfinished boundaries. No runtime application process or cutover epoch
+has been started by this follow-up at this checkpoint.

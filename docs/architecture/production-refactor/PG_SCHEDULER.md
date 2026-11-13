@@ -1,9 +1,11 @@
 # PostgreSQL scheduler leadership and occurrences
 
-Revision 0006 and `task_orchestration/metadata_scheduler.py` add leadership and
-due-occurrence storage. They do not switch the running Task scheduler, import
-graph history or execute a Task body. The existing cron, interval, stream-WHEN,
-overlap, DAG and finalizer behavior still needs its complete PG runtime port.
+Revision 0006 introduced leadership and due-occurrence storage. Task metadata
+and job links now use the same PG authority. The standalone process factory
+passes one `MetadataLeaderLock` to both its polling service and `SchedulerTick`;
+reservations use that live lease. Runtime and migration evidence is recorded in
+the [delivery report](../../reports/production-refactor/importer-agent-cutover/README.md).
+This source wiring does not establish whole-feature or replica acceptance.
 
 The scheduler login acquires a named lease with a holder UUID, database deadline
 and increasing token. Acquisition is atomic; renew and release require the live
@@ -28,10 +30,9 @@ own occurrence, while a changed digest or graph-run ID under the old version
 returns a conflict. Existing root and graph-run IDs are accepted unchanged.
 
 The repository reserves an occurrence, orchestration job and outbox event in one
-transaction. The owning Task service must insert the matching immutable graph
-definition and graph-run record in that same transaction when its port is wired.
-Those domain tables and their final foreign keys are not supplied by this
-storage checkpoint. A failed domain write rolls the reservation and wakeup back.
+transaction. `TaskOrchestrationRepository.create_scheduled_graph_run` inserts
+the graph run with its durable job link in that transaction. A failed domain
+write rolls the reservation and wakeup back.
 
 Both an immediate and a deferred trigger validate the leader holder, token and
 deadline. The shared row lock prevents takeover while the transaction is open;
@@ -52,10 +53,15 @@ active role and security version. Task and scheduler SERVICE workers may read
 occurrences for orchestration. Other workloads receive no table grant. The
 [PG ownership matrix](PG_STORAGE_OWNERSHIP.csv) records these boundaries.
 
-The focused real-PG suite passes fifteen cases, including concurrent leadership,
-token reuse, duplicate due times, timezone normalization, definition drift,
-future/expired refusal, transaction rollback, actor isolation and late-commit
-refusal. Its initial failure exposed the shared-lock policy issue described
-above. The combined PG suite passes 179 cases without skips. Full unit validation
-passes 10,705 cases with 65% combined coverage; evidence is recorded under
-[WP-08](../../reports/production-refactor/WP-08/README.md).
+Revision 0042 permits the web login to read only `name` and `expires_at` for
+`task.scheduler`. Forced RLS requires a valid USER actor with an administrator
+role accepted by the monitoring API. Other lease names, holder IDs, tokens and
+mutations remain unavailable to web. The monitor reports an unreadable PG
+signal as unknown, independently of Redis availability.
+
+The production-factory PG regression exercises two competing schedulers,
+idempotent polling, a committed graph/job/outbox, and leadership handover.
+Separate PG cases cover lease expiry, late commit refusal, actor isolation and
+the monitoring projection. See the current delivery report for final results.
+The original fifteen-case storage checkpoint and its broader test counts remain
+historical evidence under [WP-08](../../reports/production-refactor/WP-08/README.md).

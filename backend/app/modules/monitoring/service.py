@@ -4,6 +4,7 @@ Thin wrapper that delegates to the repository layer.
 Add data transformation or cross-cutting concerns here as the module evolves.
 """
 
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.monitoring.repository import monitoring_repo
 from app.modules.monitoring.runtime_health import RuntimeHealthResponse, runtime_health_probe
 
@@ -51,9 +52,9 @@ class MonitoringService:
     async def get_fe_metrics_summary(self) -> dict:
         return await monitoring_repo.get_fe_metrics_summary()
 
-    async def get_runtime_health(self) -> RuntimeHealthResponse:
+    async def get_runtime_health(self, *, actor: SecurityContext) -> RuntimeHealthResponse:
         """Read live Redis, scheduler, and worker process health."""
-        return await runtime_health_probe.collect()
+        return await runtime_health_probe.collect(actor)
 
     # ── Data Loads ───────────────────────────────────────────────────
 

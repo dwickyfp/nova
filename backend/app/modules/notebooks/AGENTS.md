@@ -9,10 +9,10 @@ Also read the [Workspace guide](../workspaces/AGENTS.md) for file changes,
 - A notebook is a Workspace file. `WorkspaceService` stays the only writer of
   its content; `documents.py` owns the format and revisioned edits. Never save
   outputs into the `.ipynb`.
-- Current live runtime state lives in Redis (`runtime/state.py`); durable rows
-  are still in `NOVA_SYSTEM` (`repository.py`) until the approved PG cutover.
-  The target moves durable generations, claims and execution state to PG;
-  Redis becomes a wakeup/cache transport. Follow the root migration contract,
+- `repository.py` persists lifecycle records, finished executions and package
+  metadata in PG. Live sessions, queues, leases and running execution state
+  still live in Redis (`runtime/state.py`). Moving that authority to PG remains
+  target work; existing Redis queues are not merely wakeups. Follow the root migration contract,
   preserve per-person runtime identity, and do not add dual-write or a fallback.
   The worker holding a runtime's lease is the
   only writer of that runtime's status and of execution rows. The API records
