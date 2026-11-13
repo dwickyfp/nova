@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import { DndContext } from "@dnd-kit/core";
 import { SortableContext } from "@dnd-kit/sortable";
@@ -9,6 +10,7 @@ import { CellOutputs } from "./outputs";
 import { parseSseBlock } from "./stream";
 import type { CellOutput, NotebookCell } from "./types";
 import { isStale, type CellRun } from "./use-notebook";
+import "@/styles/index.css";
 
 const cell = (overrides: Partial<NotebookCell> = {}): NotebookCell => ({
   id: "c1",
@@ -208,7 +210,6 @@ describe("cell", () => {
             stale={false}
             active={false}
             editing={false}
-            runtimeReady
             canEdit
             canRun
             onSelect={vi.fn()}
@@ -225,6 +226,63 @@ describe("cell", () => {
     );
     return { screen, onCommand };
   }
+
+  it.each(["sql", "python"] as const)("highlights %s before editing and escapes code markup", async (kind) => {
+    const source = kind === "sql" ? "SELECT '<img src=x onerror=alert(1)>' AS value" : "print('<img src=x onerror=alert(1)>')";
+    const { screen } = await renderCell({ cell: cell({ kind, source }) });
+    const preview = screen.container.querySelector("[data-cell-preview]");
+    expect(preview?.querySelector(".hljs-keyword, .hljs-built_in")).not.toBeNull();
+    expect(preview?.textContent).toContain(source);
+    expect(preview?.querySelector("img")).toBeNull();
+    expect(screen.container.querySelector(".monaco-editor")).toBeNull();
+  });
+
+  it.each(["Control", "Meta"])("runs exactly once with %s+Enter inside the code editor", async (modifier) => {
+    const onKey = vi.fn();
+    const onSource = vi.fn();
+    const { screen } = await renderCell({ active: true, editing: true, onKey, onSource });
+    const editor = screen.getByRole("textbox", { name: "SQL cell editor" });
+    await expect.element(editor).toBeVisible();
+    await expect.element(editor).toHaveFocus();
+    await userEvent.keyboard(`{${modifier}>}{Enter}{/${modifier}}`);
+    expect(onKey).toHaveBeenCalledExactlyOnceWith("c1", "run");
+    await userEvent.keyboard("{Enter}");
+    expect(onKey).toHaveBeenCalledTimes(1);
+    expect(onSource).toHaveBeenCalledWith("c1", expect.stringContaining("\n"));
+    // Let Monaco's 50 ms word-highlight task finish before disposing its model.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  });
+
+  it.each([{ canRun: false }, { run: run({ status: "running" }) }])("refuses keyboard execution while unavailable", async (props) => {
+    const onKey = vi.fn();
+    const { screen } = await renderCell({ ...props, onKey });
+    const preview = screen.container.querySelector("[data-cell-preview]")!;
+    preview.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true }));
+    expect(onKey).not.toHaveBeenCalled();
+  });
+
+  it("changes type directly from its labelled dropdown using the keyboard", async () => {
+    const onKind = vi.fn();
+    const { screen } = await renderCell({ onKind });
+    const type = screen.getByRole("combobox", { name: "Cell type" });
+    await expect.element(type).toHaveTextContent("SQL");
+    await type.click();
+    await userEvent.keyboard("{Home}");
+    await expect.element(page.getByRole("option", { name: "Python", exact: true })).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    expect(onKind).toHaveBeenCalledExactlyOnceWith("c1", "python");
+    await expect.element(type).toHaveFocus();
+    await type.click();
+    await page.getByRole("option", { name: "Markdown", exact: true }).click();
+    expect(onKind).toHaveBeenLastCalledWith("c1", "markdown");
+  });
+
+  it.each([{ canEdit: false }, { run: run({ status: "running" }) }])("keeps the type visible but refuses changing it when locked", async (props) => {
+    const { screen } = await renderCell(props);
+    const type = screen.getByRole("combobox", { name: "Cell type" });
+    await expect.element(type).toHaveTextContent("SQL");
+    await expect.element(type).toBeDisabled();
+  });
 
   it("moves with the keyboard from its handle", async () => {
     const { screen, onCommand } = await renderCell();

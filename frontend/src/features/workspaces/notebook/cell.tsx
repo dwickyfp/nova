@@ -22,13 +22,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { CellEditor, type CellKeyAction } from "./cell-editor";
 import { formatDuration } from "./helpers";
@@ -58,8 +56,8 @@ function Elapsed({ since }: { since: number }) {
   return <span className="tabular-nums">{((now - since) / 1000).toFixed(1)}s</span>;
 }
 
-function statusLine(run: CellRun | undefined, stale: boolean, runtimeReady: boolean) {
-  if (!run) return runtimeReady ? null : null;
+function statusLine(run: CellRun | undefined, stale: boolean) {
+  if (!run) return null;
   switch (run.status) {
     case "queued":
       return <span>Queued</span>;
@@ -70,11 +68,7 @@ function statusLine(run: CellRun | undefined, stale: boolean, runtimeReady: bool
         </span>
       );
     case "succeeded":
-      return (
-        <span className={stale ? "text-warning-strong" : undefined}>
-          {stale ? "Out of date, run again to update" : `Ran in ${formatDuration(run.durationMs)}`}
-        </span>
-      );
+      return <span>Ran in {formatDuration(run.durationMs)}</span>;
     case "failed":
       return <span className="text-destructive">Failed{stale ? ", code changed since" : ""}</span>;
     case "timeout":
@@ -112,7 +106,6 @@ type CellProps = {
   stale: boolean;
   active: boolean;
   editing: boolean;
-  runtimeReady: boolean;
   canEdit: boolean;
   canRun: boolean;
   onSelect: (cellId: string, edit: boolean) => void;
@@ -201,6 +194,7 @@ function ToolbarButton({
       variant="ghost"
       className="size-7 text-muted-foreground hover:text-foreground"
       aria-label={label}
+      aria-keyshortcuts={shortcut === "Ctrl+Enter" ? "Control+Enter Meta+Enter" : undefined}
       title={shortcut ? `${label} (${shortcut})` : label}
       disabled={disabled}
       onClick={onClick}
@@ -218,7 +212,6 @@ export const NotebookCellView = memo(function NotebookCellView({
   stale,
   active,
   editing,
-  runtimeReady,
   canEdit,
   canRun,
   onSelect,
@@ -239,7 +232,7 @@ export const NotebookCellView = memo(function NotebookCellView({
   const showEditor = cell.kind !== "markdown" || editing;
   const label = KIND_LABEL[cell.kind];
   const pinned = active || running || failed;
-  const status = statusLine(run, stale, runtimeReady);
+  const status = statusLine(run, stale);
   const first = index === 0;
   const last = index === count - 1;
 
@@ -247,6 +240,15 @@ export const NotebookCellView = memo(function NotebookCellView({
     <div
       ref={setNodeRef}
       data-cell-id={cell.id}
+      onKeyDownCapture={(event) => {
+        if (event.key !== "Enter" || !(event.ctrlKey || event.metaKey) ||
+            event.shiftKey || event.altKey || event.nativeEvent.isComposing) return;
+        const target = event.target as HTMLElement;
+        if (target.closest('[role="menu"], [role="listbox"], [role="combobox"]')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (canRun && !running) onKey(cell.id, "run");
+      }}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn("group/cell relative flex gap-2", isDragging && "z-20 opacity-60")}
     >
@@ -306,12 +308,23 @@ export const NotebookCellView = memo(function NotebookCellView({
       >
         <span
           aria-hidden
-          className={cn(
-            "absolute top-1 bottom-2 left-0 w-0.5 rounded-full transition-colors",
-            failed ? "bg-destructive/70" : active ? "bg-ring" : "bg-transparent",
-          )}
+          className="absolute top-1 bottom-2 left-0 w-0.5 rounded-full bg-ring"
         />
-        <div className="@container/cellhead relative flex h-8 min-w-0 items-center gap-2">
+        <div className="@container/cellhead relative flex min-h-8 min-w-0 flex-wrap items-center gap-x-2">
+          <Select
+            value={cell.kind}
+            disabled={!canEdit || running}
+            onValueChange={(kind) => onKind(cell.id, kind as CellKind)}
+          >
+            <SelectTrigger size="sm" aria-label="Cell type" className="h-7 shrink-0 border-0 px-1.5 text-xs shadow-none">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(["python", "sql", "markdown"] as const).map((kind) => (
+                <SelectItem key={kind} value={kind}>{KIND_LABEL[kind]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           {onTitle ? (
             <InlineField
               value={cell.title ?? null}
@@ -320,7 +333,7 @@ export const NotebookCellView = memo(function NotebookCellView({
               disabled={!canEdit}
               onCommit={(title) => onTitle(cell.id, title)}
               className={cn(
-                "h-7 w-full max-w-md flex-1 px-1 text-sm font-medium text-foreground",
+                "h-7 w-24 max-w-md flex-1 px-1 text-sm font-medium text-foreground",
                 !cell.title && !active && "opacity-0 group-hover/cell:opacity-100 focus:opacity-100",
               )}
             />
@@ -335,7 +348,7 @@ export const NotebookCellView = memo(function NotebookCellView({
               "flex shrink-0 items-center gap-0.5 transition-opacity",
               pinned
                 ? "opacity-100"
-                : "absolute top-0 right-0 h-8 bg-background pl-2 opacity-0 group-focus-within/cell:opacity-100 group-hover/cell:opacity-100",
+                : "@lg/cellbody:opacity-0 group-focus-within/cell:opacity-100 group-hover/cell:opacity-100",
             )}
           >
             {run?.status === "failed" && !running ? (
@@ -392,20 +405,6 @@ export const NotebookCellView = memo(function NotebookCellView({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-                  Cell type
-                </DropdownMenuLabel>
-                <DropdownMenuRadioGroup
-                  value={cell.kind}
-                  onValueChange={(kind) => onKind(cell.id, kind as CellKind)}
-                >
-                  {(["python", "sql", "markdown"] as const).map((kind) => (
-                    <DropdownMenuRadioItem key={kind} value={kind} disabled={!canEdit}>
-                      {KIND_LABEL[kind]}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-                <DropdownMenuSeparator />
                 {executable ? (
                   <>
                     <DropdownMenuItem disabled={!canRun} onSelect={() => onCommand(cell.id, "run-above")}>

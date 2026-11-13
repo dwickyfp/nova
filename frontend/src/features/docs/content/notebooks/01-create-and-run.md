@@ -21,7 +21,8 @@ without a runtime, but executing Python or SQL needs one.
 2. Open **More things to create**, beside **SQL file**, and choose **Notebook**.
 3. Click **Start runtime** and wait until it is ready.
 4. Use **Add cell** or **+ Python**, **+ SQL**, and **+ Markdown** between cells.
-5. Click a cell's editor to enter code. Use **Run this cell** to execute it.
+5. Click a cell's editor to enter code. Use **Run this cell** or **Ctrl+Enter**
+   to execute it. **Cmd+Enter** also works on macOS.
 6. Use **Run all** to run the document in order. It stops on an error; the
    adjacent **More ways to run** menu offers **Run all, continue after errors**.
 
@@ -35,6 +36,10 @@ duckdb.sql('SELECT 41 + 1').fetchall()
 Markdown cells contain explanations, headings and lists. Click **Edit Markdown
 cell** to change one. A cell's optional **Cell title** helps identify it in
 the outline.
+
+Use the **Cell type** dropdown above each cell to choose **Python**, **SQL** or
+**Markdown**. It shows the current type even when the cell is not selected.
+SQL and Python syntax is highlighted as soon as the notebook opens.
 
 ## Save and organize
 
@@ -67,4 +72,5 @@ the document is not a substitute for stopping a runtime you no longer need.
 - If the connection ends before a result arrives, the code may already have
   run. Check any writes before repeating the cell.
 - A notebook's saved code and its running state are separate. Saving does
-  not preserve live Python variables across runtime restarts.
+  not preserve live Python variables across runtime restarts. Saved outputs
+  remain visible until you run or clear them; editing code does not refresh them.

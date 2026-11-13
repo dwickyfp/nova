@@ -98,6 +98,40 @@ separate Redis workloads, ML/sandbox isolation and provenance, off-host recovery
 and the full feature/fault matrix remain open. Four historical Agent runs with
 no producer retain their original running status and were not replayed.
 
+## Notebook interaction follow-up
+
+The requested Notebook UI now highlights SQL/Python before editor activation,
+keeps the orange cell edge visible, exposes the current cell type in a direct
+dropdown, removes the old-output warning label, and handles Control+Enter and
+Command+Enter once per cell. Monaco remains lazy; preview highlighting escapes
+code markup. The type selector is locked for running/read-only cells. Existing
+stale-output state still protects result-dependent operations.
+
+Local frontend gates passed: lint (zero errors, 31 existing warnings), build,
+195 browser/node files with 1,632 tests and 58.82% line coverage. The focused
+Notebook/docs suite has 43 passes, including real-Monaco shortcuts, normal
+Enter editing, locked controls, keyboard dropdown selection and escaped preview
+content. Initial interaction fixtures clicked Monaco's covered native input and
+raced Radix's deferred focus; the corrected fixtures wait for actual focus.
+The intermediate passing assertions exposed two Monaco teardown cancellations;
+waiting for its existing 50 ms word-highlight task removed those errors without
+suppressing them. All attempts remain in private evidence.
+
+Live UI checks observed first-load highlighting, persistent borders, direct
+Python/Markdown conversion, saved type, and SQL Control+Enter returning 42.
+Both themes and 390/768 px layouts were inspected and restored. A later Python
+Command+Enter attempt was interrupted during a local dependency outage; it is
+retained as interrupted, not passed. During full frontend QA and backup 02,
+PG lost a server process and performed WAL recovery; the backup failed and
+workload readiness dropped. Serial backup 03 subsequently passed verification
+for 2,316 files, manifest
+`2c67e1f30f33b71591b13b990f79efcf0841f30ef009aaad48354d1207227db8`.
+StarRocks FE also exited with code 255 without a container OOM flag. The same
+FE container and original development checkout were restarted without reset.
+All dev roles became ready again. The separate Python Command+Enter retry
+returned the expected one-row value 42 in 2.0 seconds. The interrupted attempt
+remains retained. Schema-0045 activation is still pending CI.
+
 ## Earlier checkpoints and retained failures
 
 Updated 2026-11-13, Asia/Jakarta. Branch `feat/production-control-plane`, based on

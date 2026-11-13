@@ -1,11 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Editor, { type Monaco, type OnMount } from "@monaco-editor/react";
+import hljs from "highlight.js/lib/core";
+import sql from "highlight.js/lib/languages/sql";
+import python from "highlight.js/lib/languages/python";
 import { useTheme } from "@/context/theme-provider";
 import { cn } from "@/lib/utils";
 import { applyNovaCellTheme } from "../monaco-theme";
 import type { CellKind } from "./types";
 
 type MonacoEditor = Parameters<OnMount>[0];
+
+hljs.registerLanguage("sql", sql);
+hljs.registerLanguage("python", python);
 
 const LINE_HEIGHT = 20;
 const PADDING = 8;
@@ -23,7 +29,7 @@ function heightFor(source: string): number {
 /**
  * One cell's code editor. Monaco mounts only once the cell is opened for
  * editing, so a notebook with hundreds of cells stays fast; until then the
- * source is shown as text at the same size, and a click or Enter opens it.
+ * source is syntax-highlighted at the same size; a click or Enter opens it.
  */
 export function CellEditor({
   cellId,
@@ -83,6 +89,11 @@ export function CellEditor({
 
   const language = kind === "python" ? "python" : kind === "sql" ? "sql" : "markdown";
 
+  const highlighted = useMemo(() => {
+    if (mounted || !value || kind === "markdown") return null;
+    return hljs.highlight(value, { language }).value;
+  }, [mounted, value, kind, language]);
+
   const handleMount: OnMount = (editor, monaco: Monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
@@ -93,7 +104,6 @@ export function CellEditor({
     });
     const { KeyMod, KeyCode } = monaco;
     editor.addCommand(KeyMod.Shift | KeyCode.Enter, () => keyHandler.current("run-next"));
-    editor.addCommand(KeyMod.CtrlCmd | KeyCode.Enter, () => keyHandler.current("run"));
     editor.addCommand(KeyMod.Alt | KeyCode.Enter, () => keyHandler.current("run-insert"));
     editor.addCommand(
       KeyCode.Escape,
@@ -129,13 +139,18 @@ export function CellEditor({
             </span>
           ))}
         </span>
-        <span className="min-w-0 pr-3 break-words whitespace-pre-wrap text-foreground">
-          {lines.map((line, index) => (
-            <span key={index} className="block min-h-5">
-              {line}
-            </span>
-          ))}
-        </span>
+        {highlighted !== null ? (
+          <span
+            className="hljs min-w-0 pr-3 break-words whitespace-pre-wrap text-foreground"
+            dangerouslySetInnerHTML={{ __html: highlighted }}
+          />
+        ) : (
+          <span className="min-w-0 pr-3 break-words whitespace-pre-wrap text-foreground">
+            {lines.map((line, index) => (
+              <span key={index} className="block min-h-5">{line}</span>
+            ))}
+          </span>
+        )}
       </button>
     );
   }

@@ -244,7 +244,7 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
   const onCanvasKey = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement;
-      if (target.closest(".monaco-editor") || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
+      if (target.closest('.monaco-editor, [role="combobox"], [role="listbox"]') || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
         return;
       }
       const meta = event.metaKey || event.ctrlKey;
@@ -762,7 +762,6 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
                         stale={stale.has(cell.id)}
                         active={activeId === cell.id}
                         editing={activeId === cell.id && editing}
-                        runtimeReady={ready}
                         canEdit={canEdit}
                         canRun={canRun}
                         onSelect={select}
