@@ -1,0 +1,77 @@
+E501 Line too long (101 > 100)
+   --> app/modules/viz/document_service.py:174:101
+    |
+173 |     async def history(
+174 |         self, user: Mapping[str, Any], identity: UUID, *, before: int | None = None, limit: int = 50,
+    |                                                                                                     ^
+175 |     ) -> list[dict[str, Any]]:
+176 |         async with document_transaction(
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> tests/integration/test_metadata_viz.py:3:1
+   |
+ 1 |   """Native document isolation, immutable publications and atomic revision races on PG17."""
+ 2 |
+ 3 | / from __future__ import annotations
+ 4 | |
+ 5 | | import asyncio
+ 6 | | from contextlib import asynccontextmanager
+ 7 | | from datetime import UTC, datetime, timedelta
+ 8 | | from uuid import uuid4
+ 9 | |
+10 | | import pytest
+11 | | import pytest_asyncio
+12 | | from pydantic import ValidationError
+13 | |
+14 | | from app.core.exceptions import NovaException
+15 | | from app.core import metadata_scope
+16 | | from app.core.metadata_db import (
+17 | |     MetadataConflict,
+18 | |     MetadataDatabase,
+19 | |     MetadataIntegrityViolation,
+20 | |     MetadataOperationFailed,
+21 | |     MetadataPermissionDenied,
+22 | | )
+23 | | from app.core.metadata_migrations import migrate
+24 | | from app.core.metadata_schema import load_migrations
+25 | | from app.modules.access_control.security_context import SecurityContext
+26 | | from app.modules.viz.contracts.commands import GrantsReplace, PublicationRequest, RestoreRequest
+27 | | from app.modules.viz.contracts.dashboards import DashboardDefinition, Page
+28 | | from app.modules.viz.contracts.filters import FilterDefinition
+29 | | from app.modules.viz.documents import VizDocumentRepository
+30 | | from app.modules.viz.document_service import NativeDocumentService
+31 | | from app.modules.viz import document_service
+32 | | from app.modules.workspaces.metadata_sharing import WorkspaceSharingRepository
+33 | | from tests.integration.test_metadata_bootstrap import environment  # noqa: F401
+34 | | from tests.integration.test_metadata_workspaces import session
+35 | | from tests.unit.test_native_viz_bindings import chart, dataset
+   | |______________________________________________________________^
+36 |
+37 |   pytestmark = pytest.mark.metadata_pg
+   |
+help: Organize imports
+
+E501 Line too long (102 > 100)
+   --> tests/integration/test_metadata_viz.py:225:101
+    |
+223 |         own = dashboard("Reader's personal document")
+224 |         await repository.create("personal", own, operation_id=uuid4())
+225 |         assert (await repository.browse("personal", draft=True))[0]["resource_id"] == own.dashboard_id
+    |                                                                                                     ^^
+226 |     async with viz.transaction() as (repository, _):
+227 |         rows = await repository.browse("personal", draft=True)
+    |
+
+E501 Line too long (104 > 100)
+   --> tests/integration/test_metadata_viz.py:241:101
+    |
+239 |     with pytest.raises(NovaException, match="Document not found"):
+240 |         async with viz.transaction(session("reader", active="VIEWER")) as (repository, _):
+241 |             await repository.create("personal", chart(source, dataset_revision=1), operation_id=uuid4())
+    |                                                                                                     ^^^^
+242 |     assert await viz.inspect("SELECT count(*) AS n FROM nova_meta.viz_resources") == [{"n": 1}]
+    |
+
+Found 4 errors.
+[*] 1 fixable with the `--fix` option.

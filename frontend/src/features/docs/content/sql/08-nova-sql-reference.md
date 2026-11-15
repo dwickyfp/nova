@@ -19,6 +19,12 @@ role, and goes through the same checks in the worksheet and in MySQL clients.
 - `<name>` is a value you choose.
 - `[ ... ]` is optional. `a | b` means one or the other.
 
+## Query schema
+
+| Statement | What it does | More |
+| --- | --- | --- |
+| `EXPLAIN SCHEMA <query>` | Returns column names, SQL types and nullability after checking your source access, without reading result rows. | [Inspect a result schema](/docs/sql/querying-data#inspect-a-result-schema) |
+
 ## Files in stages
 
 | Statement | What it does | More |

@@ -1,0 +1,17 @@
+{
+  "result": "PASS",
+  "scope": "Changed native document page only; desktop 1920x1080 dark theme",
+  "route": "/docs/dataviz/native-documents",
+  "observations": [
+    "Table and view datasets anchor navigated to new content",
+    "Schema/read permissions and supported type limits rendered without clipping",
+    "Current limits explicitly retain SQL/semantic datasets, previews and editor as unavailable"
+  ],
+  "surface": "Authenticated Google Chrome app, existing Nova QA tab",
+  "screenshots": "Captured inline in this Codex conversation",
+  "not_verified": [
+    "mobile",
+    "light theme",
+    "native editor UI"
+  ]
+}

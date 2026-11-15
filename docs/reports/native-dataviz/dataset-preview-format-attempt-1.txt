@@ -1,0 +1,21 @@
+E501 Line too long (103 > 100)
+  --> app/modules/viz/dataset_service.py:66:101
+   |
+64 |             session_id=user.get("session_id"),
+65 |         )
+66 |         raise NovaException("Dataset query capacity reached; retry shortly", status_code=429) from None
+   |                                                                                                     ^^^
+   |
+
+E501 Line too long (110 > 100)
+   --> app/modules/viz/dataset_service.py:277:101
+    |
+275 |         async with document_admission(user, action="INSPECT_SOURCE", identity=request.dataset_id):
+276 |             try:
+277 |                 async with source_capacity(user, request.dataset_id), asyncio.timeout(SOURCE_TIMEOUT_SECONDS):
+    |                                                                                                     ^^^^^^^^^^
+278 |                     return await self._inspect(user, request)
+279 |             except TimeoutError:
+    |
+
+Found 5 errors (3 fixed, 2 remaining).

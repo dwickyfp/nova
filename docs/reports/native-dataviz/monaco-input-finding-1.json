@@ -1,0 +1,12 @@
+{
+  "recorded_at": "2026-11-14T17:48:51.494663+00:00",
+  "result": "FIX_VERIFIED_IN_BROWSER",
+  "finding": "Rapid real-Monaco input SELECT amount FROM Orders arrived at inspection/save as SECT amount FROM Orders during authoring browser attempt 5.",
+  "correction": "Use the scratch Monaco model as the live text owner; notify draft state of edits without replaying each React value into the model. Role/source-kind remount still disposes the model.",
+  "verification": [
+    "dataset-authoring-browser-attempt-6.txt: 100 passed",
+    "dataset-index-browser-attempt-1.txt: 109 passed",
+    "frontend-coverage-attempt-24.txt: 1779 passed, including three rapid SQL input variants and pending-save role change"
+  ],
+  "limits": "Component browser requests use fixtures; this is not native editor E2E acceptance."
+}

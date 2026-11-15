@@ -1,0 +1,5 @@
+{
+  "reason": "Review found native session admission falls back to legacy roles when assigned_roles is empty; stop to add fail-closed malformed-session coverage before final full run",
+  "signal": "SIGINT",
+  "owned_pytest_pid": 46735
+}

@@ -1,0 +1,2 @@
+$ uv run python scripts/generate_viz_contracts.py --check
+Native Viz contracts match the backend schema

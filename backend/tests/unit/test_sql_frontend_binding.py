@@ -2,10 +2,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.core.exceptions import StarRocksError
 from app.modules.query.repository import QueryResult
 from app.sql_frontend.binding.catalog import Binder
 from app.sql_frontend.binding.models import BoundColumn, BoundTable, TableName
 from app.sql_frontend.binding.starrocks import StarRocksCatalogProvider
+from app.sql_frontend.binding.types import SqlType, UnknownType, parse_sql_type
 from app.sql_frontend.capabilities.starrocks import EngineCapabilities, StarRocksCapabilityProvider
 from app.sql_frontend.context import ExecutionContext
 from app.sql_frontend.errors import SemanticError
@@ -114,6 +116,122 @@ async def test_metadata_failure_does_not_echo_engine_sql():
     with pytest.raises(SemanticError) as error:
         await provider.resolve_table(TableName("t"))
     assert "sensitive" not in str(error.value)
+
+
+async def test_driver_metadata_failure_is_redacted():
+    repo = AsyncMock()
+    repo.execute_as_user.side_effect = StarRocksError("sensitive engine SQL")
+    provider = StarRocksCatalogProvider(
+        repo, ExecutionContext("alice", database="db", role="analyst"), lambda: "pw",
+    )
+    with pytest.raises(SemanticError, match="not accessible") as error:
+        await provider.get_source_identity(TableName("t"))
+    assert "sensitive" not in str(error.value)
+
+
+@pytest.mark.parametrize("raw,bits", [
+    ("tinyint(4)", 8), ("smallint(6)", 16), ("int(11)", 32),
+    ("bigint(20)", 64), ("largeint(40)", 128), ("tinyint(1)", 8),
+])
+def test_integer_catalog_display_width_does_not_change_storage_type(raw, bits):
+    assert parse_sql_type(raw) == SqlType("INTEGER", bits=bits)
+
+
+@pytest.mark.parametrize("raw", ["int(0)", "int(256)", "int(11,2)", "int(-1)"])
+def test_invalid_integer_width_is_not_treated_as_precision(raw):
+    assert isinstance(parse_sql_type(raw), UnknownType)
+
+
+async def test_source_schema_uses_physical_identity_not_names_or_sampled_rows():
+    repo = AsyncMock()
+    async def metadata(**kwargs):
+        if "tables_config" in kwargs["sql"]:
+            return QueryResult(rows=[[9007199254740993, "VIEW"]])
+        return QueryResult(rows=[["amount", "decimal(38,12)", 1, "YES", None, ""]])
+    repo.execute_as_user.side_effect = metadata
+    provider = StarRocksCatalogProvider(
+        repo, ExecutionContext("alice", database="db", role="analyst"), lambda: "pw",
+    )
+    schema = await provider.get_source_schema(TableName("v"))
+    assert schema.physical_id == "9007199254740993"
+    assert schema.name.database == "db" and schema.table_type == "VIEW"
+    assert schema.columns == (BoundColumn("amount", "decimal(38,12)", 1, True),)
+    assert len(schema.schema_version) == 64
+    assert await provider.get_source_schema(TableName("v")) == schema
+    for call in repo.execute_as_user.await_args_list:
+        assert call.kwargs["username"] == "alice" and call.kwargs["role"] == "analyst"
+        assert "information_schema." in call.kwargs["sql"]
+        assert "SELECT *" not in call.kwargs["sql"]
+
+
+@pytest.mark.parametrize("identity", [None, 0, -1, True, "123", 1.5])
+async def test_unverified_source_ids_are_refused(identity):
+    repo = AsyncMock()
+    repo.execute_as_user.return_value = QueryResult(rows=[[identity, "VIEW"]])
+    provider = StarRocksCatalogProvider(
+        repo, ExecutionContext("alice", database="db", role="analyst"), lambda: "pw",
+    )
+    with pytest.raises(SemanticError, match="physical identity"):
+        await provider.get_source_identity(TableName("v"))
+
+
+@pytest.mark.parametrize("name", [TableName("t", catalog="jdbc"), TableName("t", schema="s")])
+async def test_unverified_connectors_fail_without_execution(name):
+    repo = AsyncMock()
+    provider = StarRocksCatalogProvider(
+        repo, ExecutionContext("alice", database="db", role="analyst"), lambda: "pw",
+    )
+    with pytest.raises(SemanticError, match="physical identity"):
+        await provider.get_source_schema(name)
+    repo.execute_as_user.assert_not_awaited()
+
+
+async def test_drop_recreate_during_schema_capture_is_refused():
+    repo = AsyncMock()
+    repo.execute_as_user.side_effect = [
+        QueryResult(rows=[[101, "BASE TABLE"]]),
+        QueryResult(rows=[["id", "BIGINT", 1, "NO", None, ""]]),
+        QueryResult(rows=[[102, "BASE TABLE"]]),
+    ]
+    provider = StarRocksCatalogProvider(
+        repo, ExecutionContext("alice", database="db", role="analyst"), lambda: "pw",
+    )
+    with pytest.raises(SemanticError, match="Source changed"):
+        await provider.get_source_schema(TableName("t"))
+
+
+@pytest.mark.parametrize("columns", [
+    [], [["id", "INT", 1, "UNKNOWN", None, ""]],
+    [["id", "INT", 2, "NO", None, ""]],
+    [["id", "INT", 1, "NO", None, ""], ["ID", "INT", 2, "NO", None, ""]],
+])
+async def test_incomplete_catalog_schema_is_not_inferred(columns):
+    repo = AsyncMock()
+    repo.execute_as_user.side_effect = [QueryResult(rows=[[101, "VIEW"]]),
+        QueryResult(rows=columns), QueryResult(rows=[[101, "VIEW"]])]
+    provider = StarRocksCatalogProvider(
+        repo, ExecutionContext("alice", database="db", role="analyst"), lambda: "pw",
+    )
+    with pytest.raises(SemanticError):
+        await provider.get_source_schema(TableName("t"))
+
+
+async def test_schema_digest_changes_for_name_type_nullability_and_identity():
+    repo = AsyncMock()
+    provider = StarRocksCatalogProvider(
+        repo, ExecutionContext("alice", database="db", role="analyst"), lambda: "pw",
+    )
+    digests = set()
+    for identity, name, data_type, nullable in [
+        (101, "id", "BIGINT", "NO"), (101, "renamed", "BIGINT", "NO"),
+        (101, "id", "DECIMAL(38,0)", "NO"), (101, "id", "BIGINT", "YES"),
+        (102, "id", "BIGINT", "NO"),
+    ]:
+        repo.execute_as_user.side_effect = [QueryResult(rows=[[identity, "BASE TABLE"]]),
+            QueryResult(rows=[[name, data_type, 1, nullable, None, ""]]),
+            QueryResult(rows=[[identity, "BASE TABLE"]])]
+        digests.add((await provider.get_source_schema(TableName("t"))).schema_version)
+    assert len(digests) == 5
 
 
 @pytest.mark.parametrize("version", ["4.1.4", "unknown", "4.99.0"])

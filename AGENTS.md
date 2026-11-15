@@ -1,20 +1,3 @@
-<!-- DEVMESH:START version="1" -->
-
-## DevMesh Collaboration
-
-This repository is attached to DevMesh. For substantial work in a DevMesh session:
-- Retrieve the current handoff and preserve its goal, constraints, non-goals, and acceptance criteria.
-- Answer repository-local questions using source, tests, documentation, and runtime evidence.
-- Request ChatGPT research only for consequential external uncertainty or architecture reasoning.
-- Report conflicts with the handoff; provide concrete evidence for code investigations.
-- Preserve the session and Codex thread across collaboration round-trips.
-- Checkpoint before blocking collaboration and satisfy the Definition of Done before completion.
-
-Skills provide the workflow; DevMesh MCP provides dynamic state.
-Project configuration: `.devmesh/project.json`.
-
-<!-- DEVMESH:END -->
-
 # Nova engineering contract
 
 Nova shares governed data access across Console, Studio, notebooks, HTTP and
@@ -193,6 +176,7 @@ Read cross-scope guides even when the edited file is outside their directory.
 | Query Autopilot and recommendation/apply lifecycle | [Autopilot](backend/app/modules/query_autopilot/AGENTS.md) |
 | Superset, saved charts/dashboards, `/bi`, BI tokens, legacy artifacts | [Superset](docs/arch-17-superset.md), [Access control](backend/app/modules/access_control/AGENTS.md), `superset/`, `backend/app/modules/superset/` |
 | Studio Dataviz, publication/repair, assistant and role-scoped dashboards | [Dataviz](docs/arch-19-studio-dataviz.md), [Superset](docs/arch-17-superset.md), `frontend/src/features/studio/dataviz/` |
+| Native datasets, chart/dashboard definitions, source authoring, preview or native document API | [Native visualization](backend/app/modules/viz/AGENTS.md), [implementation boundary](docs/architecture/native-dataviz/IMPLEMENTATION.md), [Access control](backend/app/modules/access_control/AGENTS.md) |
 | Inline charts, ShowMe, presentation models, legacy views | [Viz](docs/arch-16-viz-core.md), `backend/app/modules/viz/` |
 | Ontology domains, concepts, relations, metrics, releases | [Ontology](docs/arch-18-business-ontology.md), [Access control](backend/app/modules/access_control/AGENTS.md), `backend/app/modules/ontology/` |
 | Frontend routes, components, labels or layout | [Frontend](frontend/AGENTS.md), [Design](DESIGN.md) |

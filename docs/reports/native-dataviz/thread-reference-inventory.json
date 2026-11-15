@@ -1,0 +1,7 @@
+{
+  "messages_scanned": 885,
+  "link_candidates": 0,
+  "referencing_threads": 0,
+  "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+  "scope": "Recognized dashboard numeric URLs and slice_id URLs in persisted assistant content, steps and attachments. Candidates are not proven authorization or conversion mappings. Raw conversation text was not exported."
+}

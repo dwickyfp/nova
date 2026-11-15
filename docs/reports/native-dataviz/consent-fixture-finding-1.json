@@ -1,0 +1,11 @@
+{
+  "recorded_at": "2026-11-14T18:08:36.417419+00:00",
+  "result": "FOCUSED_FIX_VERIFIED",
+  "finding": "Frontend gate 25 consent test used a closed response without a terminal event while waiting for approval. The UI showed an interrupted run and folded the process rail before its approval text assertion.",
+  "correction": "Use an open cancellable response while the simulated server waits for a decision. Preserve approval visibility assertions and verify exactly one allow_once request.",
+  "evidence": [
+    "frontend-coverage-attempt-25.txt",
+    "consent-fixture-regression-attempt-1.txt"
+  ],
+  "limits": "66 focused checks pass. Full frontend gates 26 and 27 were cancelled during host pressure and browser timeouts; neither is a pass. No application consent behavior changed."
+}

@@ -1,0 +1,25 @@
+{
+  "branch": "feat/dataviz-native",
+  "files": {
+    "frontend/package.json": "057f58d3a72f23bebfd8f27d8bafac7dfe20b2148113503bb5a15dbe8461b54f",
+    "frontend/pnpm-lock.yaml": "feeb7f31a3125104e08648b7f5952107f054dc33f25098236176ace0731ab72d",
+    "frontend/pnpm-workspace.yaml": "eeadc42f7da0e814e8389f6c195e0494060f07d5c0600435bb6038a528f97f24",
+    "frontend/src/features/docs/content/dataviz/01-what-is-dataviz.md": "f8897a0e0dc2cd9ffdaed5b02a1da542bf1dc3a1a4059363189c220f5af9ee66",
+    "frontend/src/features/docs/content/dataviz/07-native-documents.md": "ab5ba2d1f1744b3ac14dd292e0a0706f73d21849bd7d56f1ede8546af1b0ea33",
+    "frontend/src/features/docs/content/studio/06-add-to-dataviz.md": "28a313548f1338062fb856f1d21634e37328435aad0e13634d102a2f18613924",
+    "frontend/src/features/native-dataviz/contracts/contracts.test.ts": "788ea46aabf89e8925d2162cb3128f73356b3c4e70d2a995287c878f7b2d9fc7",
+    "frontend/src/features/native-dataviz/contracts/index.ts": "2c0519cb544e7de3a351006130ba8e1b338cc7e7ef3b9be78891bcf059e900b8",
+    "frontend/src/features/native-dataviz/contracts/schema.json": "1cf0cfef3c18f56b725237a7b555bd782da4cf97c9edba32936f47863a42d8c2",
+    "frontend/src/features/native-dataviz/contracts/schema.ts": "ae29da185b2556fd52199fe5870926411f91c2ccb2183d13dcd52816075dd3f2",
+    "frontend/src/features/native-dataviz/contracts/types.ts": "6b9de1666bb0a2b5be8754c24c6a63774b290cdaacc523ba6379cd119a35a42e",
+    "frontend/src/features/native-dataviz/documents.test.ts": "4b7e4dcb919854866bc0a1ea5aa42d0336c63f8abe5a9c5563dd0465fcc4a3b8",
+    "frontend/src/features/native-dataviz/documents.ts": "1a7e2a8e3b939e50b26fea652f1f2b7f626684c86f79d0e63b14dbec45635db2",
+    "frontend/src/features/native-dataviz/gridstack/compatibility.test.tsx": "da4268857571a86d93f4804204b1163613d3341e09ee5be32863692ae4cc6348",
+    "frontend/src/features/studio/dataviz/use-dataviz-capability.test.tsx": "d1615e3431312273f47470125a46ed4d8a885e56d32074fef366ff0fe88e59b5",
+    "frontend/src/features/studio/dataviz/use-dataviz-capability.ts": "320bd4936b736544ee0d77bc8408f7cc35873238e2e83997c9c0fcc6fffd421b",
+    "frontend/src/features/studio/intelligent-ui/renderer.test.tsx": "3e54ed179d7f503b4ec09cb0a1a6153e83d25c2d01f22f11d9e20faebb453044",
+    "frontend/src/features/workspaces/workbook-export.test.ts": "92fe2cc060995f6d2c8e66a8b341b36c10d9a95b5fac1023b66d5dc4dc6db17f",
+    "frontend/src/lib/api-client.test.ts": "94ae360c286bd422618e6c0f7105e6adee4a9d1f6a472810ea40734e5fb4a2c3",
+    "frontend/src/lib/api-client.ts": "24bdf1bbb1268b0abf52e9d44b120f12d379f55d4fa10f81104f5a0c2b9fa805"
+  }
+}

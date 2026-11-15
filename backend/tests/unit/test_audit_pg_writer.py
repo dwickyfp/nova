@@ -7,6 +7,8 @@ so it survives the rollback of the refused change.
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 import pytest
 
 from app.common import audit
@@ -14,6 +16,7 @@ from app.common.audit import _persist as real_persist
 from app.common.audit import audit_actor
 from app.core.metadata_scope import metadata_transaction
 from app.modules.access_control.security_context import SecurityContext
+from app.modules.query.provenance import DatasetQuery, dataset_query
 
 
 class Appended:
@@ -40,6 +43,42 @@ def appended(monkeypatch, fake_metadata_db):
 
 
 ALICE = SecurityContext(principal="alice", active_role="ANALYST", security_context_version=3)
+
+
+@pytest.mark.parametrize("status", ["SUCCESS", "ERROR", "CANCELLED", "DENIED"])
+async def test_dataset_query_audit_keeps_actor_and_provenance_without_source(
+    appended, fake_metadata_db, status,
+):
+    provenance = DatasetQuery(uuid4(), "preview", 9)
+    query_id, engine_id = str(uuid4()), str(uuid4())
+    with dataset_query(provenance):
+        await _write(
+            status, event_type="query", object_type="TABLE", object_name="private_source",
+            action="SELECT", sql_text="SELECT secret_formula FROM private_source",
+            rewritten_sql="SELECT secret_formula FROM private_source LIMIT 1",
+            error_message="Rejected secret_formula", query_id=query_id,
+            engine_query_ids=[engine_id], session_id="login-a", duration_ms=4,
+        )
+    event = appended.calls[0][2]
+    assert event.sql_text == provenance.label
+    assert event.rewritten_sql is None
+    assert event.error_message == "Dataset query failed or was refused"
+    assert event.object_type == "DATASET"
+    assert event.object_name == str(provenance.dataset_id)
+    assert (event.action, event.status, event.duration_ms) == ("SELECT", status, 4)
+    assert (event.query_id, event.engine_query_ids) == (query_id, (engine_id,))
+    assert event.session_id == "login-a"
+    actor = fake_metadata_db.transactions[0].actor
+    assert (actor.principal, actor.active_role, actor.security_context_version) == (
+        "alice", "ANALYST", 3,
+    )
+
+
+async def test_dataset_provenance_does_not_rewrite_other_audit_domains(appended, fake_metadata_db):
+    with dataset_query(DatasetQuery(uuid4(), "inspect")):
+        await _write(sql_text="SELECT visible", object_name="sales")
+    assert appended.calls[0][2].sql_text == "SELECT visible"
+    assert appended.calls[0][2].object_name == "sales"
 
 
 async def _write(status="SUCCESS", **changes):

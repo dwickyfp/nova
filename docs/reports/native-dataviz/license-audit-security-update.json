@@ -1,0 +1,25 @@
+{
+  "scope": "Exact-version declared OSS license inventory; distribution notices remain WP16",
+  "sbom": "frontend-sbom-security-update.cdx.json",
+  "sha256": "3dad63f103e8c103ce4f455778aa9b2aa3644adb72b598304f6b9488e6700ef4",
+  "component_count": 736,
+  "license_counts": {
+    "MIT": 611,
+    "Apache-2.0": 24,
+    "ISC": 45,
+    "BSD-2-Clause": 8,
+    "BSD-3-Clause": 14,
+    "MIT OR Apache-2.0": 1,
+    "Python-2.0": 1,
+    "CC-BY-4.0": 1,
+    "MPL-2.0 OR Apache-2.0": 1,
+    "Unlicense": 1,
+    "MPL-2.0": 24,
+    "BlueOak-1.0.0": 1,
+    "CC0-1.0": 1,
+    "0BSD": 2,
+    "MIT AND ISC": 1
+  },
+  "missing_or_unreviewed_license_metadata": [],
+  "enrichment": "license-metadata-security-update.json"
+}

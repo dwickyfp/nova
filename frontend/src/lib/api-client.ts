@@ -64,7 +64,8 @@ let renewing: Promise<boolean> | null = null
  * activity: an idle session still ends, and then this resolves false.
  */
 export function renewAccessToken(): Promise<boolean> {
-  const token = useAuthStore.getState().auth.accessToken
+  const initial = useAuthStore.getState()
+  const token = initial.auth.accessToken
   if (!token) return Promise.resolve(false)
   renewing ??= fetch(`${API_BASE}/auth/renew`, {
     method: 'POST',
@@ -74,6 +75,8 @@ export function renewAccessToken(): Promise<boolean> {
       if (!res.ok) return false
       const body = (await res.json()) as { access_token?: string }
       if (!body.access_token) return false
+      const current = useAuthStore.getState()
+      if (current.securityEpoch !== initial.securityEpoch || current.auth.accessToken !== token) return false
       useAuthStore.getState().auth.setAccessToken(body.access_token)
       return true
     })
@@ -163,11 +166,24 @@ export class ApiError extends Error {
   }
 }
 
+type RequestOptions = Omit<RequestInit, 'headers'> & {
+  headers?: Record<string, string>
+  securityEpoch?: number
+}
+
 async function request<T>(
   path: string,
-  options: RequestInit & { signal?: AbortSignal } = {},
+  options: RequestOptions = {},
   renewed = false,
 ): Promise<T> {
+  const { securityEpoch, ...fetchOptions } = options
+  const assertCurrent = () => {
+    if (securityEpoch !== undefined && securityEpoch !== useAuthStore.getState().securityEpoch) {
+      throw new DOMException('Security context changed', 'AbortError')
+    }
+    options.signal?.throwIfAborted()
+  }
+  assertCurrent()
   const token = useAuthStore.getState().auth.accessToken
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -177,17 +193,29 @@ async function request<T>(
     headers['Authorization'] = `Bearer ${token}`
   }
   const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
+    ...fetchOptions,
     headers,
     signal: options.signal,
   })
+  assertCurrent()
   if (res.status === 401) {
-    if (token && !renewed && (await renewAccessToken())) return request<T>(path, options, true)
+    if (useAuthStore.getState().auth.accessToken !== token) {
+      throw new DOMException('Security context changed', 'AbortError')
+    }
+    if (token && !renewed) {
+      const renewedToken = await renewAccessToken()
+      assertCurrent()
+      if (renewedToken) return request<T>(path, options, true)
+      if (useAuthStore.getState().auth.accessToken !== token) {
+        throw new DOMException('Security context changed', 'AbortError')
+      }
+    }
     signInAgain()
     throw new Error('Session expired')
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
+    assertCurrent()
     throw new ApiError(res.status, errorDetail(err?.detail), err)
   }
 
@@ -198,13 +226,17 @@ async function request<T>(
   const contentType = res.headers.get('content-type') ?? ''
   if (!contentType.includes('application/json')) {
     const text = await res.text()
+    assertCurrent()
     return (text ? text : undefined) as T
   }
 
-  return res.json()
+  const body = await res.json()
+  assertCurrent()
+  return body
 }
 
 export const api = {
+  request: <T>(path: string, options: RequestOptions) => request<T>(path, options),
   get: <T>(path: string, signal?: AbortSignal) => request<T>(path, { signal }),
   post: <T>(path: string, body?: unknown, signal?: AbortSignal) =>
     request<T>(path, {

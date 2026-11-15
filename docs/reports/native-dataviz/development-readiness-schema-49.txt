@@ -1,0 +1,2 @@
+usage: dev_readiness.py [-h] --web WEB --query QUERY [--frontend FRONTEND]
+dev_readiness.py: error: the following arguments are required: --web, --query

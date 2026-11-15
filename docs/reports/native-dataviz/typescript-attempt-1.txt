@@ -1,0 +1,5 @@
+src/features/native-dataviz/contracts/index.ts(17,5): error TS2322: Type '{ ActionsReplace: { additionalProperties: boolean; properties: { actions: { items: { $ref: string; }; maxItems: number; title: string; type: string; }; op: { const: string; default: string; title: string; type: string; }; }; required: string[]; title: string; type: string; }; ... 66 more ...; WidgetReplace: { ...; }...' is not assignable to type 'Record<string, JSONSchema>'.
+  Property '"ActionsReplace"' is incompatible with index signature.
+    Type '{ additionalProperties: boolean; properties: { actions: { items: { $ref: string; }; maxItems: number; title: string; type: string; }; op: { const: string; default: string; title: string; type: string; }; }; required: string[]; title: string; type: string; }' is not assignable to type 'JSONSchema'.
+      Types of property 'type' are incompatible.
+        Type 'string' is not assignable to type 'SchemaType | SchemaType[] | undefined'.

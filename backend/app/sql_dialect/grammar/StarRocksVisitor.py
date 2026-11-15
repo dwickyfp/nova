@@ -3019,6 +3019,11 @@ class StarRocksVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by StarRocksParser#namedParameter.
+    def visitNamedParameter(self, ctx:StarRocksParser.NamedParameterContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by StarRocksParser#generalLiteralExpression.
     def visitGeneralLiteralExpression(self, ctx:StarRocksParser.GeneralLiteralExpressionContext):
         return self.visitChildren(ctx)

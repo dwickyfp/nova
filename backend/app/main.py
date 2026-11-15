@@ -77,6 +77,7 @@ from app.modules.tasks.router import router as tasks_router
 from app.modules.users.router import router as users_router
 from app.modules.variables.router import router as variables_router
 from app.modules.views.router import router as views_router
+from app.modules.viz.router import router as native_viz_router
 from app.modules.workspaces.router import router as workspaces_router
 from app.observability.http import HTTPMetricsMiddleware, metrics_response
 from app.observability.metrics import PROXY_EXPECTED, SERVICE_UP
@@ -258,7 +259,7 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
-        expose_headers=["X-Nova-Run-ID"],
+        expose_headers=["X-Nova-Run-ID", "ETag"],
     )
     app.add_middleware(HTTPMetricsMiddleware)
 
@@ -309,6 +310,7 @@ def create_app() -> FastAPI:
         superset_internal_router, prefix=f"{prefix}/internal/superset", tags=["internal"]
     )
     app.include_router(workspaces_router, prefix=f"{prefix}/workspaces", tags=["workspaces"])
+    app.include_router(native_viz_router, prefix=f"{prefix}/viz", tags=["native-dataviz"])
     app.include_router(notebooks_router, prefix=f"{prefix}/notebooks", tags=["notebooks"])
     app.include_router(monitoring_router, prefix=f"{prefix}/monitoring", tags=["monitoring"])
     app.include_router(functions_router, prefix=f"{prefix}/functions", tags=["functions"])

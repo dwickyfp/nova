@@ -1,0 +1,7 @@
+app/modules/viz/dataset_service.py:613:101: E501 Line too long (102 > 100)
+app/modules/viz/documents.py:349:101: E501 Line too long (105 > 100)
+tests/integration/test_metadata_viz.py:388:101: E501 Line too long (104 > 100)
+tests/integration/test_metadata_viz.py:429:101: E501 Line too long (102 > 100)
+tests/integration/test_metadata_viz.py:432:101: E501 Line too long (102 > 100)
+tests/integration/test_metadata_viz.py:477:101: E501 Line too long (101 > 100)
+Found 6 errors.

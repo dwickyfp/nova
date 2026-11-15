@@ -1,0 +1,230 @@
+........................................................................ [ 74%]
+......................FFF                                                [100%]
+=================================== FAILURES ===================================
+__ test_authenticated_driver_binding_failure_redaction_and_cancellation[None] __
+
+failure = None
+
+    @pytest.mark.parametrize("failure", [None, "database", "cancel"])
+    async def test_authenticated_driver_binding_failure_redaction_and_cancellation(failure):
+        import asyncio
+    
+        import asyncmy
+    
+        from app.core.exceptions import StarRocksError
+        from app.modules.query.repository import QueryRepository
+    
+        calls = []
+        secret = "private-canary'; SELECT sleep(99); --"
+    
+        class Cursor:
+            description = [("n", 253, None, None, None, None, True)]
+    
+            async def __aenter__(self):
+                return self
+    
+            async def __aexit__(self, *_):
+                return None
+    
+            async def execute(self, sql, args=None):
+                calls.append((sql, args))
+                if args is not None:
+                    if failure == "database":
+                        raise asyncmy.errors.DatabaseError(1064, f"bad {secret}")
+                    if failure == "cancel":
+                        raise asyncio.CancelledError
+    
+            async def fetchmany(self, _):
+                return [{"n": 1}]
+    
+        class Connection:
+            closed = False
+    
+            def cursor(self, *_):
+                return Cursor()
+    
+            def close(self):
+                self.closed = True
+    
+            async def select_db(self, database):
+                calls.append(("database", database))
+    
+        conn = Connection()
+        pending = QueryRepository._execute_on(
+            conn, "SELECT :value AS n", role="analyst", database="sales", max_rows=1,
+            parameters=bound(secret), start=0,
+        )
+        if failure == "database":
+            with pytest.raises(StarRocksError) as error:
+                await pending
+            assert secret not in str(error.value) and error.value.engine_code == 1064
+            assert error.value.__suppress_context__
+        elif failure == "cancel":
+            with pytest.raises(asyncio.CancelledError):
+                await pending
+            assert conn.closed
+        else:
+            result = await pending
+            assert result.rows == [[1]] and result.executed_sql == "SELECT :value AS n"
+>       assert calls == [
+            ("SET ROLE `analyst`", None), ("database", "sales"), ("SELECT %s AS n", (secret,)),
+        ]
+E       AssertionError: assert [('SET ROLE a...p(99); --',))] == [('SET ROLE `...p(99); --',))]
+E         
+E         At index 0 diff: ('SET ROLE analyst', None) != ('SET ROLE `analyst`', None)
+E         Use -v to get more diff
+
+tests/unit/test_sql_frontend_parameters.py:395: AssertionError
+_ test_authenticated_driver_binding_failure_redaction_and_cancellation[database] _
+
+failure = 'database'
+
+    @pytest.mark.parametrize("failure", [None, "database", "cancel"])
+    async def test_authenticated_driver_binding_failure_redaction_and_cancellation(failure):
+        import asyncio
+    
+        import asyncmy
+    
+        from app.core.exceptions import StarRocksError
+        from app.modules.query.repository import QueryRepository
+    
+        calls = []
+        secret = "private-canary'; SELECT sleep(99); --"
+    
+        class Cursor:
+            description = [("n", 253, None, None, None, None, True)]
+    
+            async def __aenter__(self):
+                return self
+    
+            async def __aexit__(self, *_):
+                return None
+    
+            async def execute(self, sql, args=None):
+                calls.append((sql, args))
+                if args is not None:
+                    if failure == "database":
+                        raise asyncmy.errors.DatabaseError(1064, f"bad {secret}")
+                    if failure == "cancel":
+                        raise asyncio.CancelledError
+    
+            async def fetchmany(self, _):
+                return [{"n": 1}]
+    
+        class Connection:
+            closed = False
+    
+            def cursor(self, *_):
+                return Cursor()
+    
+            def close(self):
+                self.closed = True
+    
+            async def select_db(self, database):
+                calls.append(("database", database))
+    
+        conn = Connection()
+        pending = QueryRepository._execute_on(
+            conn, "SELECT :value AS n", role="analyst", database="sales", max_rows=1,
+            parameters=bound(secret), start=0,
+        )
+        if failure == "database":
+            with pytest.raises(StarRocksError) as error:
+                await pending
+            assert secret not in str(error.value) and error.value.engine_code == 1064
+            assert error.value.__suppress_context__
+        elif failure == "cancel":
+            with pytest.raises(asyncio.CancelledError):
+                await pending
+            assert conn.closed
+        else:
+            result = await pending
+            assert result.rows == [[1]] and result.executed_sql == "SELECT :value AS n"
+>       assert calls == [
+            ("SET ROLE `analyst`", None), ("database", "sales"), ("SELECT %s AS n", (secret,)),
+        ]
+E       AssertionError: assert [('SET ROLE a...p(99); --',))] == [('SET ROLE `...p(99); --',))]
+E         
+E         At index 0 diff: ('SET ROLE analyst', None) != ('SET ROLE `analyst`', None)
+E         Use -v to get more diff
+
+tests/unit/test_sql_frontend_parameters.py:395: AssertionError
+_ test_authenticated_driver_binding_failure_redaction_and_cancellation[cancel] _
+
+failure = 'cancel'
+
+    @pytest.mark.parametrize("failure", [None, "database", "cancel"])
+    async def test_authenticated_driver_binding_failure_redaction_and_cancellation(failure):
+        import asyncio
+    
+        import asyncmy
+    
+        from app.core.exceptions import StarRocksError
+        from app.modules.query.repository import QueryRepository
+    
+        calls = []
+        secret = "private-canary'; SELECT sleep(99); --"
+    
+        class Cursor:
+            description = [("n", 253, None, None, None, None, True)]
+    
+            async def __aenter__(self):
+                return self
+    
+            async def __aexit__(self, *_):
+                return None
+    
+            async def execute(self, sql, args=None):
+                calls.append((sql, args))
+                if args is not None:
+                    if failure == "database":
+                        raise asyncmy.errors.DatabaseError(1064, f"bad {secret}")
+                    if failure == "cancel":
+                        raise asyncio.CancelledError
+    
+            async def fetchmany(self, _):
+                return [{"n": 1}]
+    
+        class Connection:
+            closed = False
+    
+            def cursor(self, *_):
+                return Cursor()
+    
+            def close(self):
+                self.closed = True
+    
+            async def select_db(self, database):
+                calls.append(("database", database))
+    
+        conn = Connection()
+        pending = QueryRepository._execute_on(
+            conn, "SELECT :value AS n", role="analyst", database="sales", max_rows=1,
+            parameters=bound(secret), start=0,
+        )
+        if failure == "database":
+            with pytest.raises(StarRocksError) as error:
+                await pending
+            assert secret not in str(error.value) and error.value.engine_code == 1064
+            assert error.value.__suppress_context__
+        elif failure == "cancel":
+            with pytest.raises(asyncio.CancelledError):
+                await pending
+            assert conn.closed
+        else:
+            result = await pending
+            assert result.rows == [[1]] and result.executed_sql == "SELECT :value AS n"
+>       assert calls == [
+            ("SET ROLE `analyst`", None), ("database", "sales"), ("SELECT %s AS n", (secret,)),
+        ]
+E       AssertionError: assert [('SET ROLE a...p(99); --',))] == [('SET ROLE `...p(99); --',))]
+E         
+E         At index 0 diff: ('SET ROLE analyst', None) != ('SET ROLE `analyst`', None)
+E         Use -v to get more diff
+
+tests/unit/test_sql_frontend_parameters.py:395: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/test_sql_frontend_parameters.py::test_authenticated_driver_binding_failure_redaction_and_cancellation[None]
+FAILED tests/unit/test_sql_frontend_parameters.py::test_authenticated_driver_binding_failure_redaction_and_cancellation[database]
+FAILED tests/unit/test_sql_frontend_parameters.py::test_authenticated_driver_binding_failure_redaction_and_cancellation[cancel]
+3 failed, 94 passed in 2.50s

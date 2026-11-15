@@ -1,0 +1,63 @@
+? Verifying lockfile against supply-chain policies (739 entries)...
+Progress: resolved 1, reused 0, downloaded 0, added 0
+Progress: resolved 88, reused 88, downloaded 0, added 0
+Progress: resolved 89, reused 89, downloaded 0, added 0
+Progress: resolved 90, reused 89, downloaded 0, added 0
+Progress: resolved 90, reused 90, downloaded 0, added 0
+[WARN] Request took 10719ms: https://registry.npmjs.org/typescript
+Progress: resolved 91, reused 90, downloaded 0, added 0
+✓ Lockfile passes supply-chain policies (739 entries in 12s)
+Progress: resolved 91, reused 91, downloaded 0, added 0
+[WARN] Request took 15226ms: https://registry.npmjs.org/playwright
+Progress: resolved 92, reused 91, downloaded 0, added 0
+Progress: resolved 301, reused 292, downloaded 0, added 0
+Progress: resolved 304, reused 294, downloaded 0, added 0
+Progress: resolved 309, reused 294, downloaded 0, added 0
+Progress: resolved 312, reused 295, downloaded 0, added 0
+Progress: resolved 315, reused 296, downloaded 0, added 0
+Progress: resolved 316, reused 296, downloaded 0, added 0
+Progress: resolved 317, reused 296, downloaded 0, added 0
+Progress: resolved 320, reused 297, downloaded 0, added 0
+[WARN] Request took 11313ms: https://registry.npmjs.org/playwright-core
+Progress: resolved 321, reused 297, downloaded 0, added 0
+Progress: resolved 321, reused 298, downloaded 0, added 0
+[WARN] Request took 15201ms: https://registry.npmjs.org/@esbuild%2Ffreebsd-x64
+Progress: resolved 322, reused 298, downloaded 0, added 0
+[WARN] GET https://registry.npmjs.org/@esbuild%2Fandroid-x64 error (23). Will retry in 10 seconds. 2 retries left.
+Progress: resolved 323, reused 298, downloaded 0, added 0
+Progress: resolved 529, reused 488, downloaded 0, added 0
+Progress: resolved 534, reused 488, downloaded 0, added 0
+Progress: resolved 546, reused 490, downloaded 0, added 0
+Progress: resolved 557, reused 492, downloaded 0, added 0
+Progress: resolved 562, reused 492, downloaded 0, added 0
+Progress: resolved 565, reused 492, downloaded 0, added 0
+Progress: resolved 572, reused 493, downloaded 0, added 0
+Progress: resolved 574, reused 493, downloaded 0, added 0
+Progress: resolved 580, reused 493, downloaded 0, added 0
+Progress: resolved 584, reused 494, downloaded 0, added 0
+[WARN] Request took 10312ms: https://registry.npmjs.org/@tailwindcss%2Foxide-linux-x64-musl
+[WARN] Request took 10337ms: https://registry.npmjs.org/@rolldown%2Fbinding-openharmony-arm64
+Progress: resolved 586, reused 494, downloaded 0, added 0
+[WARN] Request took 11341ms: https://registry.npmjs.org/@tailwindcss%2Foxide-darwin-x64
+Progress: resolved 587, reused 494, downloaded 0, added 0
+[WARN] Request took 14551ms: https://registry.npmjs.org/@oxc-resolver%2Fbinding-android-arm64
+Progress: resolved 588, reused 494, downloaded 0, added 0
+[WARN] Request took 20345ms: https://registry.npmjs.org/@rolldown%2Fbinding-linux-arm64-musl
+Progress: resolved 589, reused 494, downloaded 0, added 0
+[WARN] Request took 26471ms: https://registry.npmjs.org/@rolldown%2Fbinding-linux-arm64-gnu
+Progress: resolved 590, reused 494, downloaded 0, added 0
+Progress: resolved 728, reused 622, downloaded 0, added 0
+Progress: resolved 739, reused 633, downloaded 0, added 0
+Progress: resolved 740, reused 633, downloaded 0, added 0
+Progress: resolved 740, reused 634, downloaded 0, added 0
+Packages: +7 -6
++++++++------
+Progress: resolved 740, reused 634, downloaded 0, added 1
+Progress: resolved 740, reused 634, downloaded 0, added 7, done
+
+dependencies:
++ gridstack 14.1.0
+- zod 4.6.5
++ zod 4.6.6 (4.6.7 is available)
+
+Done in 1m 59.9s using pnpm v11.8.0

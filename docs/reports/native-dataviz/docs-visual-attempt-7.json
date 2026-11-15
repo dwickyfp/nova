@@ -1,0 +1,18 @@
+{
+  "result": "PASS",
+  "checked_at": "2026-11-13T21:17:35.645139+00:00",
+  "surface": "Authenticated existing Chrome Nova QA tab; native app control",
+  "viewport": [
+    1920,
+    1080
+  ],
+  "theme": "dark",
+  "page": "/docs/dataviz/native-documents#drafts-and-publications",
+  "checks": [
+    "Publication response privacy paragraph visible and readable",
+    "Source SQL and metric formulas described as draft-only, including owner publication reads",
+    "Section navigation and adjacent permission guidance remain visible"
+  ],
+  "evidence": "Screenshot emitted in Codex conversation; no local image claimed",
+  "limits": "Documentation only"
+}

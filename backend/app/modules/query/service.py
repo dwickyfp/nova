@@ -33,6 +33,7 @@ from app.modules.access_control.security_context import (
 )
 from app.modules.access_control.service import AccessControlError
 from app.modules.query.dialect.injector import resolve_storage_credentials
+from app.modules.query.provenance import current_dataset_query
 from app.modules.query.repository import QueryRepository, QueryResult
 from app.modules.query.sql_pipeline import (
     guard_user_statement,
@@ -49,6 +50,7 @@ from app.sql_frontend.capabilities.starrocks import EngineCapabilities, resolve_
 from app.sql_frontend.context import ExecutionContext, PlanningContext
 from app.sql_frontend.errors import ConfirmationRequiredError, SemanticError
 from app.sql_frontend.execution.adapters import FeatureAdapters
+from app.sql_frontend.parameters import BoundParameters
 from app.sql_frontend.parser import (
     NeedsEventLoop,
     parse_statement_async,
@@ -74,7 +76,9 @@ def _observe_sql_execution(
     async def observed(*args: _P.args, **kwargs: _P.kwargs) -> QueryResult:
         from app.modules.query_autopilot.telemetry import EXECUTION, ExecutionIdentity, collector
 
-        bound = parameters.bind(*args, **kwargs).arguments
+        bound = dict(parameters.bind(*args, **kwargs).arguments)
+        has_parameters = bound.pop("parameters", None) is not None
+        provenance = current_dataset_query()
         started = time.perf_counter()
         status = "error"
         source = SQL_SOURCE.get()
@@ -85,11 +89,21 @@ def _observe_sql_execution(
         try:
             with parsing_scope():
                 if parent is None:
-                    identity.capture_profile = collector.request_profile(
-                        identity, str(bound.get("sql", "")), bound
+                    identity.policy_revision = collector.policy_revision
+                    identity.capture_profile = (
+                        provenance is None and not has_parameters
+                        and collector.request_profile(identity, str(bound.get("sql", "")), bound)
                     )
                 try:
                     result = await execute(*args, **kwargs)
+                    if provenance is not None:
+                        result.original_sql = provenance.label
+                        result.executed_sql = ""
+                        if result.error:
+                            result.error = "Dataset query failed or was refused"
+                        if result.warnings:
+                            result.warnings = ["Dataset query returned an execution notice"]
+                        result.execution_failure = None
                     status = "error" if result.error else "success"
                     return result
                 except asyncio.CancelledError:
@@ -107,7 +121,7 @@ def _observe_sql_execution(
                                 result.fetch_ms = identity.fetch_ms
                             result.nova_ms = max(0, elapsed - (result.engine_roundtrip_ms or 0))
                         observed_sql = str(bound.get("sql", ""))
-                        if collector.observes(observed_sql):
+                        if provenance is None and collector.observes(observed_sql):
                             from app.sql_frontend.fingerprint import fingerprint
 
                             collector.observe(
@@ -386,6 +400,7 @@ class QueryService:
         allow_stage_export: bool = False,
         row_sink: Any = None,
         client_transaction: bool = False,
+        parameters: BoundParameters | None = None,
     ) -> QueryResult:
         """Execute SQL with full @stage dialect pipeline.
 
@@ -475,6 +490,7 @@ class QueryService:
                 # and statements are audited as executed, not yet committed.
                 engine_session_prepared=client_transaction,
                 transaction_active=client_transaction,
+                parameters=parameters,
             )
             try:
                 size = len(normalized_sql)
@@ -491,6 +507,14 @@ class QueryService:
                 parsed = await self._frontend(normalized_sql, original_sql=sql)
                 statement = await run_sql_cpu(size, self._builders.build, parsed)
                 context.statements[0] = statement
+                if parameters is not None:
+                    from app.sql_frontend.parameters import parameter_slots
+
+                    if client_transaction or connection is not None:
+                        raise SemanticError("Bound queries require a managed session")
+                    if type(max_rows) is not int or not 1 <= max_rows <= 100_000:
+                        raise SemanticError("Bound queries require a bounded result limit")
+                    await run_sql_cpu(size, parameter_slots, parsed, parameters.specs)
                 binder = Binder(
                     self._catalog_provider_factory(
                         self._repo, context, lambda: decrypt_password(encrypted_password)
@@ -502,6 +526,7 @@ class QueryService:
                     binder=binder,
                     capabilities=await self._capability_resolver(),
                     confirm_destructive=confirm_destructive,
+                    parameter_specs=parameters.specs if parameters is not None else (),
                 )
                 from app.sql_frontend.binding.relations import RelationBinder
 
@@ -887,7 +912,7 @@ class QueryService:
                         file_id=file_id,
                         connection=connection,
                         **({"row_sink": row_sink} if row_sink is not None else {}),
-                        **({"client_transaction": True} if client_transaction else {}),
+                        client_transaction=client_transaction,
                     )
                     results.append(result)
                     if result.error:

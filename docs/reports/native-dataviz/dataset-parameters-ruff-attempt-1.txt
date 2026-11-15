@@ -1,0 +1,12 @@
+E501 Line too long (101 > 100)
+   --> app/modules/viz/dataset_service.py:452:101
+    |
+450 |             len(request.source.sql), parameter_schema_query, parsed,
+451 |             tuple(item.specification() for item in request.parameters),
+452 |         ) if request.parameters else await run_sql_cpu(len(request.source.sql), schema_query, parsed)
+    |                                                                                                     ^
+453 |         names = await run_sql_cpu(
+454 |             len(request.source.sql), read_query_sources, parsed, database=request.source.database
+    |
+
+Found 2 errors (1 fixed, 1 remaining).

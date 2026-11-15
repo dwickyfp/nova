@@ -1,0 +1,3 @@
+tests/integration/test_metadata_viz.py:970:101: E501 Line too long (102 > 100)
+tests/integration/test_metadata_viz.py:980:101: E501 Line too long (108 > 100)
+Found 2 errors.

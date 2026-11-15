@@ -1,0 +1,27 @@
+[
+  {
+    "file": "contract-drift-attempt-4.txt",
+    "exit_code": 0,
+    "seconds": 0.63
+  },
+  {
+    "file": "mypy-attempt-21.txt",
+    "exit_code": 0,
+    "seconds": 1.96
+  },
+  {
+    "file": "backend-unit-attempt-5.txt",
+    "exit_code": 0,
+    "seconds": 692.64
+  },
+  {
+    "file": "scorecard-attempt-3.txt",
+    "exit_code": 0,
+    "seconds": 1.79
+  },
+  {
+    "file": "user-data-boundary-attempt-2.txt",
+    "exit_code": 0,
+    "seconds": 0.11
+  }
+]

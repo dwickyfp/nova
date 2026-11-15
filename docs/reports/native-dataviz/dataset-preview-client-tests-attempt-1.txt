@@ -1,0 +1,15 @@
+
+> shadcn-admin@2.2.1 test /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+> vitest run --browser.headless src/features/native-dataviz/documents.test.ts src/features/native-dataviz/contracts/contracts.test.ts src/features/docs
+
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+
+3:20:54 AM [vite] (client) Re-optimizing dependencies because vite config has changed
+3:20:55 AM [vite] (client) [optimizer] bundling dependencies...
+
+ Test Files  4 passed (4)
+      Tests  62 passed (62)
+   Start at  03:20:54
+   Duration  4.63s (transform 0ms, setup 0ms, import 3.16s, tests 418ms, environment 0ms)
+

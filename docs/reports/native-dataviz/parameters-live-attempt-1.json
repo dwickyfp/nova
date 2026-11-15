@@ -1,0 +1,24 @@
+{
+  "result": "FAIL",
+  "principal": "alice",
+  "steps": [],
+  "error_type": "OperationalError",
+  "error_location": [
+    {
+      "file": "pool.pyx",
+      "line": 145,
+      "function": "fill_free_pool"
+    },
+    {
+      "file": "connection.pyx",
+      "line": 1349,
+      "function": "_connect"
+    },
+    {
+      "file": "connection.pyx",
+      "line": 594,
+      "function": "connect"
+    }
+  ],
+  "scope": "Direct QueryService with existing caller credentials and active roles; read-only data. Nova history checked. Engine audit/profile redaction is not established by this test."
+}

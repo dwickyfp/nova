@@ -1,0 +1,11 @@
+$ node scripts/build-ui-validator.mjs --check
+file:///Users/dwickyferiansyahputra/Public/Research/nova/frontend/scripts/build-ui-validator.mjs:40
+    throw new Error("UI validator bundle drift. Run pnpm ui:bundle.");
+          ^
+
+Error: UI validator bundle drift. Run pnpm ui:bundle.
+    at file:///Users/dwickyferiansyahputra/Public/Research/nova/frontend/scripts/build-ui-validator.mjs:40:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+
+Node.js v22.22.0
+[ELIFECYCLE] Command failed with exit code 1.

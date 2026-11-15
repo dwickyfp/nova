@@ -1,0 +1,15 @@
+{
+  "recorded_at": "2026-11-14T17:42:24.601514+00:00",
+  "result": "PASS",
+  "surface": "Existing Chrome Nova QA tab, native application control",
+  "path": "/docs/dataviz/native-documents#drafts-and-publications",
+  "observations": [
+    "Exact historical draft read requires current edit access and refuses missing revision fallback",
+    "Dataset index preserves pinned order/references and hides names without child edit access",
+    "Publication source-SQL/formula redaction remains visible",
+    "Dark desktop documentation screenshot has readable content and working section navigation"
+  ],
+  "source_sha256": "7f522a03ca2ec5a32bed75cf4cd5edafe719c144aac96f97347948870ae8c1d1",
+  "evidence": "Accessibility and screenshot observed in conversation; no saved image artifact claimed",
+  "limits": "Documentation visual check only; not native product UI acceptance"
+}

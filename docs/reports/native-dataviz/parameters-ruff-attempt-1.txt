@@ -1,0 +1,30 @@
+E501 Line too long (102 > 100)
+  --> app/sql_frontend/parameters.py:56:101
+   |
+54 |         valid = type(value) is date
+55 |     elif spec.type == "timestamp":
+56 |         valid = type(value) is datetime and value.tzinfo is not None and value.utcoffset() is not None
+   |                                                                                                     ^^
+57 |     if not valid:
+58 |         raise SemanticError("Parameter value does not match its declared type or bounds")
+   |
+
+E501 Line too long (108 > 100)
+   --> app/sql_frontend/parameters.py:104:101
+    |
+104 | def parameter_slots(parsed: ParsedStatement, specs: tuple[ParameterSpec, ...]) -> tuple[ParameterSlot, ...]:
+    |                                                                                                     ^^^^^^^^
+105 |     """Bind source spans, including sole IN-list operands, without examining values."""
+106 |     declared = {spec.name: spec for spec in specs}
+    |
+
+E501 Line too long (106 > 100)
+   --> app/sql_frontend/parameters.py:153:101
+    |
+153 | def driver_parameters(sql: str, bound: BoundParameters, zone: str) -> tuple[str, tuple[ScalarValue, ...]]:
+    |                                                                                                     ^^^^^^
+154 |     """Lower after session-function rewrites; the driver alone quotes input values."""
+155 |     parsed = parse_statement(sql)
+    |
+
+Found 5 errors (2 fixed, 3 remaining).

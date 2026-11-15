@@ -1,0 +1,12 @@
+$ vitest run --browser.headless src/features/studio/studio-chat.integration.test.tsx --browser.fileParallelism=false --no-file-parallelism --maxWorkers=1
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+
+10:55:45 PM [vite] (client) Re-optimizing dependencies because vite config has changed
+10:55:47 PM [vite] (client) [optimizer] bundling dependencies...
+
+ Test Files  1 passed (1)
+      Tests  29 passed (29)
+   Start at  22:55:45
+   Duration  14.81s (transform 0ms, setup 0ms, import 2.64s, tests 8.66s, environment 0ms)
+

@@ -1,0 +1,43 @@
+$ vitest run --browser.headless src/features/studio/studio-chat.integration.test.tsx --coverage --browser.fileParallelism=false --no-file-parallelism --maxWorkers=1 --silent=false
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+      Coverage enabled with v8
+
+ ❯ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx (29 tests) 11795ms
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx [ src/features/studio/studio-chat.integration.test.tsx ]
+AssertionError: expected [ Array(1) ] to deeply equal []
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- [][39m
+[31m+ [[39m
+[31m+   "Unmocked Studio request: /api/v1/agents/studio/dataviz/capabilities/check[39m
+[31m+ Error[39m
+[31m+     at http://localhost:63315/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/features/studio/studio-chat.integration.test.tsx?import&browserv=1794585682573:32:56[39m
+[31m+     at request (http://localhost:63315/src/lib/api-client.ts:138:20)[39m
+[31m+     at Object.post (http://localhost:63315/src/lib/api-client.ts:164:32)[39m
+[31m+     at Object.check (http://localhost:63315/src/features/studio/dataviz/api.ts:12:32)[39m
+[31m+     at flush (http://localhost:63315/src/features/studio/dataviz/use-dataviz-capability.ts:13:13)",[39m
+[31m+ ][39m
+
+ ❯ src/features/studio/studio-chat.integration.test.tsx:52:27
+     50|     return originalFetch(input, init);
+     51|   }) as typeof fetch;
+     52|   expect(unmockedRequests).toEqual([]);
+       |                           ^
+     53| });
+     54|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  29 passed (29)
+   Start at  23:01:20
+   Duration  20.12s (transform 0ms, setup 0ms, import 2.57s, tests 11.80s, environment 0ms)
+
+[ELIFECYCLE] Test failed. See above for more details.

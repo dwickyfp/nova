@@ -1,0 +1,342 @@
+{
+  "started_at": "2026-11-15T20:10:22.194808+00:00",
+  "resource_id": "8c46c72e-4c0f-4f58-b578-f0ad8ed5ad48",
+  "owner": "alice",
+  "scope": "parameterized SQL dataset HTTP API, real StarRocks/Ranger and PG17 metadata",
+  "result": "PASS",
+  "cleanup": "SOFT_DELETED",
+  "steps": [
+    {
+      "check": "QA login",
+      "passed": true
+    },
+    {
+      "check": "QA admitted",
+      "passed": true
+    },
+    {
+      "check": "non-admin role",
+      "passed": true
+    },
+    {
+      "check": "QA login",
+      "passed": true
+    },
+    {
+      "check": "QA admitted",
+      "passed": true
+    },
+    {
+      "check": "non-admin role",
+      "passed": true
+    },
+    {
+      "request": "activate fixture role",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "activate fixture role",
+      "passed": true
+    },
+    {
+      "check": "exact active role",
+      "passed": true
+    },
+    {
+      "request": "undeclared named parameter refused",
+      "status": 422,
+      "expected_status": 422
+    },
+    {
+      "check": "undeclared named parameter refused",
+      "passed": true
+    },
+    {
+      "request": "inspect with declarations",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "inspect with declarations",
+      "passed": true
+    },
+    {
+      "check": "schema from analyzer without data rows",
+      "passed": true
+    },
+    {
+      "check": "declarations echoed exactly",
+      "passed": true
+    },
+    {
+      "request": "changed declarations need a new inspection",
+      "status": 409,
+      "expected_status": 409
+    },
+    {
+      "check": "changed declarations need a new inspection",
+      "passed": true
+    },
+    {
+      "request": "create",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "create",
+      "passed": true
+    },
+    {
+      "request": "draft",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "draft",
+      "passed": true
+    },
+    {
+      "check": "stored declarations",
+      "passed": true
+    },
+    {
+      "request": "required value missing",
+      "status": 422,
+      "expected_status": 422
+    },
+    {
+      "check": "required value missing",
+      "passed": true
+    },
+    {
+      "check": "required value missing: no stored value echoed",
+      "passed": true
+    },
+    {
+      "request": "wrong value type",
+      "status": 422,
+      "expected_status": 422
+    },
+    {
+      "check": "wrong value type",
+      "passed": true
+    },
+    {
+      "check": "wrong value type: no stored value echoed",
+      "passed": true
+    },
+    {
+      "request": "below declared minimum",
+      "status": 422,
+      "expected_status": 422
+    },
+    {
+      "check": "below declared minimum",
+      "passed": true
+    },
+    {
+      "check": "below declared minimum: no stored value echoed",
+      "passed": true
+    },
+    {
+      "request": "unknown parameter",
+      "status": 422,
+      "expected_status": 422
+    },
+    {
+      "check": "unknown parameter",
+      "passed": true
+    },
+    {
+      "check": "unknown parameter: no stored value echoed",
+      "passed": true
+    },
+    {
+      "request": "scalar list value with default minimum",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "scalar list value with default minimum",
+      "passed": true
+    },
+    {
+      "check": "scalar list value with default minimum: no stored value echoed",
+      "passed": true
+    },
+    {
+      "check": "one list value selects only matching rows",
+      "passed": true
+    },
+    {
+      "request": "list value with default minimum",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "list value with default minimum",
+      "passed": true
+    },
+    {
+      "check": "list value with default minimum: no stored value echoed",
+      "passed": true
+    },
+    {
+      "check": "multiple list values select exactly their rows",
+      "passed": true
+    },
+    {
+      "check": "decimal values keep their declared scale",
+      "passed": true
+    },
+    {
+      "check": "date values keep their calendar day",
+      "passed": true
+    },
+    {
+      "request": "explicit leap-day date",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "explicit leap-day date",
+      "passed": true
+    },
+    {
+      "check": "explicit leap-day date: no stored value echoed",
+      "passed": true
+    },
+    {
+      "check": "inclusive typed date comparison",
+      "passed": true
+    },
+    {
+      "request": "invalid calendar date",
+      "status": 422,
+      "expected_status": 422
+    },
+    {
+      "check": "invalid calendar date",
+      "passed": true
+    },
+    {
+      "check": "invalid calendar date: no stored value echoed",
+      "passed": true
+    },
+    {
+      "request": "explicit decimal value",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "explicit decimal value",
+      "passed": true
+    },
+    {
+      "check": "explicit decimal value: no stored value echoed",
+      "passed": true
+    },
+    {
+      "check": "inclusive decimal comparison",
+      "passed": true
+    },
+    {
+      "request": "explicit minimum",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "explicit minimum",
+      "passed": true
+    },
+    {
+      "check": "explicit minimum: no stored value echoed",
+      "passed": true
+    },
+    {
+      "check": "explicit value overrides default",
+      "passed": true
+    },
+    {
+      "request": "injection-shaped text",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "injection-shaped text",
+      "passed": true
+    },
+    {
+      "check": "injection-shaped text: no stored value echoed",
+      "passed": true
+    },
+    {
+      "check": "injection-shaped text stays a value",
+      "passed": true
+    },
+    {
+      "request": "personal dataset hidden from outsider",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "personal dataset hidden from outsider",
+      "passed": true
+    },
+    {
+      "check": "personal dataset hidden from outsider: no stored value echoed",
+      "passed": true
+    },
+    {
+      "request": "caller query history",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "caller query history",
+      "passed": true
+    },
+    {
+      "check": "parameter values absent from history",
+      "passed": true
+    },
+    {
+      "request": "delete owned dataset",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "delete owned dataset",
+      "passed": true
+    },
+    {
+      "request": "deleted dataset hidden",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "deleted dataset hidden",
+      "passed": true
+    },
+    {
+      "request": "logout",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "logout",
+      "passed": true
+    },
+    {
+      "request": "logout",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "logout",
+      "passed": true
+    }
+  ],
+  "finished_at": "2026-11-15T20:10:28.975627+00:00"
+}

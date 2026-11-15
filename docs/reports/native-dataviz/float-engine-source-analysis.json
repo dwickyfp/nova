@@ -1,0 +1,14 @@
+{
+  "result": "OBSERVED_PINNED_BEHAVIOR",
+  "scope": "Read-only source investigation of numeric literal underflow; no engine patch or production SQL rewrite",
+  "file": "fe/fe-core/src/main/java/com/starrocks/sql/parser/AstBuilder.java",
+  "file_sha256": "2345e7c0f9e51d52596ed9f64f2bffee4b0f508c3604e7eb4b9259cfdce042a0",
+  "entry": "visitDoubleValue",
+  "observations": [
+    "Without MODE_DOUBLE_LITERAL, scientific notation is parsed as BigDecimal unless integer part exceeds 38 digits.",
+    "DecimalLiteral.init bounds decimal scale to at most 76 and rounds; values below that scale can become zero before an outer DOUBLE cast.",
+    "A text-to-DOUBLE cast retains the intended floating-point input in live comparison."
+  ],
+  "implication": "Typed floating filter/compiler lowering must retain DOUBLE semantics before engine literal rounding. Do not globally enable double literals because exact decimal expressions also depend on this mode.",
+  "remaining": "Validate typed filter lowering and document semantic literal policy before numeric query acceptance."
+}

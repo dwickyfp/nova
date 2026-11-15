@@ -1,0 +1,30 @@
+{
+  "scope": "Public copies redacted immediately; originals restricted outside Git",
+  "artifacts": [
+    {
+      "file": "backend-unit-attempt-11.txt",
+      "sha256": "5319c7873884ccc04ce50946c1f7460d477f4fed69a5a69927ee92d0d7e42ff3",
+      "configured_values_removed": 0
+    },
+    {
+      "file": "scorecard-attempt-9.txt",
+      "sha256": "490e22263aea4e3effda7f2f45375afd0e39afe9ed94d0422a918d2d614ec7b2",
+      "configured_values_removed": 0
+    },
+    {
+      "file": "user-data-boundary-attempt-8.txt",
+      "sha256": "9d34429ae6f676eb0d44a8e27c078cc7b4c82413cdafe7283b5063dbec36f78a",
+      "configured_values_removed": 0
+    },
+    {
+      "file": "backend-unit-attempt-11.xml.gz",
+      "sha256": "6f21c0097a060b2df591d3b6b68d4b9c3cc09442df24446f86c894170387dd33",
+      "configured_values_removed": 7
+    },
+    {
+      "file": "backend-coverage-attempt-11.xml.gz",
+      "sha256": "330472bda7d8860811f9653ca69dae0f5c15cad52c805c3c8188bee4a9537d84",
+      "configured_values_removed": 0
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+E501 Line too long (101 > 100)
+  --> scripts/verify_query_schema_live.py:88:101
+   |
+86 |                 "EXPLAIN SCHEMA WITH x AS "
+87 |                 "(SELECT id, amount FROM source_view) SELECT CAST(id + 1 AS BIGINT) AS next_id, "
+88 |                 "CAST(amount * 2 AS DECIMAL(38,12)) AS doubled, id > 0 AS positive FROM x WHERE 1=0",
+   |                                                                                                     ^
+89 |             )
+90 |             probe.check(
+   |
+
+E501 Line too long (104 > 100)
+   --> tests/unit/test_sql_frontend_query_schema.py:166:101
+    |
+164 |         ),
+165 |         (
+166 |             "WITH x AS (SELECT * FROM t) SELECT * FROM (WITH x AS (SELECT * FROM u) SELECT * FROM x) q",
+    |                                                                                                     ^^^^
+167 |             [("analytics", "t"), ("analytics", "u")],
+168 |         ),
+    |
+
+Found 2 errors.

@@ -1,0 +1,40 @@
+{
+  "basis": "Exact installed package versions; original SBOM attempt retained in its generation log",
+  "components": [
+    {
+      "name": "@typescript-eslint/eslint-plugin",
+      "version": "8.70.0",
+      "license": "MIT",
+      "evidence": "frontend/node_modules/.pnpm/@typescript-eslint+eslint-plugin@8.70.0_@typescript-eslint+parser@8.70.0_eslint@10.10.0_bf101dcbef6cc7d685a531ee7a6ea06f/node_modules/@typescript-eslint/eslint-plugin/package.json",
+      "sha256": "3d3c0a43de87bc027362b4036f220f9c157eb865ff9ffde64a01e8e4d97a90d0"
+    },
+    {
+      "name": "@typescript-eslint/parser",
+      "version": "8.70.0",
+      "license": "MIT",
+      "evidence": "frontend/node_modules/.pnpm/@typescript-eslint+parser@8.70.0_eslint@10.10.0_jiti@2.7.0_supports-color@7.2.0__supports-color@7.2.0_typescript@6.0.3/node_modules/@typescript-eslint/parser/package.json",
+      "sha256": "9014359bd3559258a208da9861d3b40881b5e2632681c4c4656c16e0d6048322"
+    },
+    {
+      "name": "@typescript-eslint/type-utils",
+      "version": "8.70.0",
+      "license": "MIT",
+      "evidence": "frontend/node_modules/.pnpm/@typescript-eslint+type-utils@8.70.0_eslint@10.10.0_jiti@2.7.0_supports-color@7.2.0__su_da364fb9c018573b94fee8ad215d869a/node_modules/@typescript-eslint/type-utils/package.json",
+      "sha256": "74e1cc61c659451e233fd814b9ec49b351bf6d075d51aff27d8ef390d479c0c4"
+    },
+    {
+      "name": "@typescript-eslint/typescript-estree",
+      "version": "8.70.0",
+      "license": "MIT",
+      "evidence": "frontend/node_modules/.pnpm/@typescript-eslint+typescript-estree@8.70.0_typescript@6.0.3/node_modules/@typescript-eslint/typescript-estree/package.json",
+      "sha256": "f0c73a40722c78e2df3bb27e91bb8cfa8549c67112fab6585c244a47a576b028"
+    },
+    {
+      "name": "@typescript-eslint/utils",
+      "version": "8.70.0",
+      "license": "MIT",
+      "evidence": "frontend/node_modules/.pnpm/@typescript-eslint+utils@8.70.0_eslint@10.10.0_jiti@2.7.0_supports-color@7.2.0__typescript@6.0.3/node_modules/@typescript-eslint/utils/package.json",
+      "sha256": "11925e4f520ba2d9e723fc7da7ea1e98ef08b86c643b011e9ddef5489b8320ad"
+    }
+  ]
+}

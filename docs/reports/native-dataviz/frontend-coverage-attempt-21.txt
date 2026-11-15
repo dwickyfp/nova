@@ -1,0 +1,63 @@
+$ vitest run --coverage --browser.headless
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+      Coverage enabled with v8
+
+ ❯ |browser (chromium)| src/features/agents/agent-detail/version-history.test.tsx (11 tests | 1 failed) 23528ms
+     × selects a resource and a typed fixed filter without granting other indexes 15761ms
+ ❯ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx (36 tests | 1 failed) 11761ms
+     × keeps preview and editor syntax legible in dark=false 3625ms
+10:52:30 PM [vite] (client) [console.error] You seem to have overlapping act() calls, this is not supported. Be sure to await previous act() calls before making a new one. 
+10:52:30 PM [vite] (client) [console.error] You seem to have overlapping act() calls, this is not supported. Be sure to await previous act() calls before making a new one. 
+10:52:43 PM [vite] (client) [console.error] Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["bi","session",0]
+10:52:44 PM [vite] (client) [console.error] Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["bi","session",0]
+10:52:44 PM [vite] (client) [console.error] Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["bi","session",0]
+10:52:45 PM [vite] (client) [console.error] Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["bi","session",0]
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |browser (chromium)| src/features/agents/agent-detail/version-history.test.tsx > Agent resource bindings > selects a resource and a typed fixed filter without granting other indexes
+TimeoutError: locator.click: Timeout 1279ms exceeded.
+Call log:
+[2m  - waiting for locator('[data-vitest="true"]').contentFrame().getByTestId('__vitest_0__').getByRole('combobox', { name: 'sales_docs region value' })[22m
+
+
+Failure screenshot:
+  - src/features/agents/agent-detail/__screenshots__/version-history.test.tsx/Agent-resource-bindings-selects-a-resource-and-a-typed-fixed-filter-without-granting-other-indexes-1.png
+
+ ❯ src/features/agents/agent-detail/version-history.test.tsx:283:76
+    281|     await screen.getByRole("combobox", { name: "sales_docs region type…
+    282|     await screen.getByRole("option", { name: "Boolean", exact: true })…
+    283|     await screen.getByRole("combobox", { name: "sales_docs region valu…
+       |                                                                            ^
+    284|     await screen.getByRole("option", { name: "True", exact: true }).cl…
+    285|     expect(current!.search_indexes[0].filters.region).toBe(true);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell > keeps preview and editor syntax legible in dark=false
+AssertionError: expected 2 to be greater than or equal to 4
+
+Failure screenshot:
+  - src/features/workspaces/notebook/__screenshots__/notebook.test.tsx/cell-keeps-preview-and-editor-syntax-legible-in-dark-false-1.png
+
+ ❯ src/features/workspaces/notebook/notebook.test.tsx:285:109
+    283|       const editorScreen = await renderCell({ cell: cell({ source }), …
+    284|       await expect.element(editorScreen.screen.getByRole("textbox", { …
+    285|       await expect.poll(() => editorScreen.screen.container.querySelec…
+       |                                                                                                             ^
+    286|       for (const token of editorScreen.screen.container.querySelectorA…
+    287|         if (token.textContent?.trim()) {
+
+Caused by: Error: Matcher did not succeed in time.
+ ❯ src/features/workspaces/notebook/notebook.test.tsx:285:6
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed | 201 passed (203)
+      Tests  2 failed | 1733 passed (1735)
+   Start at  22:50:54
+   Duration  117.36s (transform 620ms, setup 0ms, import 166.45s, tests 466.06s, environment 1ms)
+
+[ELIFECYCLE] Command failed with exit code 1.

@@ -1,0 +1,41 @@
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+
+ ❯ |browser (chromium)| src/features/native-dataviz/dataset-create.test.tsx (9 tests | 1 failed) 13555ms
+     × uses the real Monaco SQL editor and saves the query only after successful inspection 4967ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |browser (chromium)| src/features/native-dataviz/dataset-create.test.tsx > dashboard dataset authoring > uses the real Monaco SQL editor and saves the query only after successful inspection
+AssertionError: expected { catalog: 'default_catalog', …(4) } to match object { Object (kind, database, ...) }
+(2 matching properties omitted from actual)
+
+Failure screenshot:
+  - src/features/native-dataviz/__screenshots__/dataset-create.test.tsx/dashboard-dataset-authoring-uses-the-real-Monaco-SQL-editor-and-saves-the-query-only-after-successful-inspection-1.png
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[2m  {[22m
+[2m    "database": "Sales",[22m
+[2m    "kind": "sql",[22m
+[32m-   "sql": "SELECT amount FROM Orders",[39m
+[31m+   "sql": "SECT amount FROM Orders",[39m
+[2m  }[22m
+
+ ❯ src/features/native-dataviz/dataset-create.test.tsx:211:58
+    209|     await screen.getByRole('button', { name: 'Save dataset' }).click()
+    210|     await expect.poll(() => saved.mock.calls.length).toBe(1)
+    211|     expect(JSON.parse(saves()[0][1].body).dataset.source).toMatchObjec…
+       |                                                          ^
+    212|       kind: 'sql', database: 'Sales', sql: 'SELECT amount FROM Orders',
+    213|     })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 7 passed (8)
+      Tests  1 failed | 99 passed (100)
+   Start at  00:30:43
+   Duration  19.20s (transform 0ms, setup 0ms, import 11.96s, tests 22.57s, environment 0ms)
+

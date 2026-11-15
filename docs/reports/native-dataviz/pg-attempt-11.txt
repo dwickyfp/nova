@@ -1,0 +1,1143 @@
+$ uv run pytest tests/integration/test_metadata_viz.py tests/integration/test_metadata_migrator.py -q --junit-xml=/Users/dwickyferiansyahputra/Public/Research/nova/docs/reports/native-dataviz/pg-attempt-11.xml
+...F...FFFFF..................F......F...FF...................           [100%]
+=================================== FAILURES ===================================
+___________________ test_http_permission_and_kind_boundaries ___________________
+
+native_http = (<httpx.AsyncClient object at 0x11cfdec10>, {'login-owner': {'username': 'owner', 'active_role': 'ANALYST', 'assigned_...er': {'username': 'reader', 'active_role': 'VIEWER', 'assigned_roles': ['VIEWER'], 'session_id': 'login-reader', ...}})
+native_service = (<app.modules.viz.document_service.NativeDocumentService object at 0x11d04ee10>, {'login-owner': {'username': 'owner',...er': {'username': 'reader', 'active_role': 'VIEWER', 'assigned_roles': ['VIEWER'], 'session_id': 'login-reader', ...}})
+viz = <tests.integration.test_metadata_viz.VizFixture object at 0x11bf0a3d0>
+
+    async def test_http_permission_and_kind_boundaries(native_http, native_service, viz):
+        client, records = native_http
+        service, _ = native_service
+        owner, reader = records["login-owner"], records["login-reader"]
+        document = dashboard()
+        assert (await http_create(client, owner, document, viz.workspace_id)).status_code == 201
+        path = f"/api/v1/viz/dashboards/{document.dashboard_id}"
+        hidden = await client.get(path + "?draft=true", headers=http_headers(reader))
+        assert hidden.status_code == 404
+        wrong_kind = await client.get(f"/api/v1/viz/charts/{document.dashboard_id}?draft=true",
+                                       headers=http_headers(owner))
+        assert wrong_kind.status_code == 404
+        async with viz.transaction() as (repository, _):
+            await repository.replace_grants(document.dashboard_id, GrantsReplace.model_validate({
+                "operation_id": uuid4(), "expected_revision": 1, "grants": [
+                    {"subject_type": "user", "subject_id": "reader", "permissions": ["view"]},
+                ],
+            }))
+        await service.publish(owner, document.dashboard_id, PublicationRequest(
+            operation_id=uuid4(), expected_revision=1,
+        ))
+        viewed = await client.get(path, headers=http_headers(reader))
+        assert viewed.status_code == 200
+        for suffix in ("?draft=true", "/revisions", "/grants"):
+            assert (await client.get(path + suffix, headers=http_headers(reader))).status_code == 403
+        key = uuid4()
+        refused = await client.post(
+            path + "/publish", headers=http_headers(reader, key=key, revision=1),
+            json={"operation_id": str(key), "expected_revision": 1},
+        )
+>       assert refused.status_code == 403
+E       assert 404 == 403
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/integration/test_metadata_viz.py:269: AssertionError
+_______ test_dependency_delete_is_blocked_without_dropping_shared_charts _______
+
+viz = <tests.integration.test_metadata_viz.VizFixture object at 0x11cffdbd0>
+
+    async def test_dependency_delete_is_blocked_without_dropping_shared_charts(viz):
+>       source, figure, board = await graph(viz)
+                                ^^^^^^^^^^^^^^^^
+
+tests/integration/test_metadata_viz.py:347: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/integration/test_metadata_viz.py:1009: in graph
+    async with viz.transaction() as (repo, _):
+../../../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/contextlib.py:231: in __aexit__
+    await self.gen.athrow(typ, value, traceback)
+tests/integration/test_metadata_viz.py:89: in transaction
+    async with (
+../../../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/contextlib.py:231: in __aexit__
+    await self.gen.athrow(typ, value, traceback)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <app.core.metadata_db.MetadataDatabase object at 0x11d3790d0>
+actor = SecurityContext(principal='owner', active_role='ANALYST', principal_type='USER', database=None, session_id='login-owner', security_context_version=5)
+read_only = False, request_id = ''
+
+    @asynccontextmanager
+    async def transaction(
+        self,
+        actor: SecurityContext,
+        *,
+        read_only: bool = False,
+        request_id: str = "",
+    ) -> AsyncIterator[psycopg.AsyncConnection[dict[str, Any]]]:
+        if not isinstance(actor, SecurityContext):
+            raise ValueError("An explicit metadata actor is required")
+        session_id = actor.session_id
+        if session_id is not None and (
+            not isinstance(session_id, str)
+            or not session_id.strip()
+            or len(session_id) > 64
+            or "\0" in session_id
+        ):
+            raise ValueError("Invalid metadata login context")
+        if not self._ready:
+            raise MetadataUnavailable()
+        try:
+            async with self._pool.connection() as conn, conn.transaction():
+                if read_only:
+                    await conn.execute("SET TRANSACTION READ ONLY")
+                # A transaction pooler can select a different backend after
+                # readiness. Check before sending any actor or domain values.
+                if not await logging_is_private(conn):
+                    raise MetadataSchemaMismatch()
+                await conn.execute(
+                    "SELECT set_config('nova.principal', %s, true), "
+                    "set_config('nova.active_role', %s, true), "
+                    "set_config('nova.security_context_version', %s, true), "
+                    "set_config('nova.principal_type', %s, true), "
+                    "set_config('nova.session_id', %s, true), "
+                    "set_config('nova.request_id', %s, true), "
+                    "set_config('nova.service_identity', current_user, true), "
+                    "set_config('synchronous_commit', 'on', true), "
+                    "set_config('TimeZone', 'UTC', true), "
+                    "set_config('statement_timeout', %s, true), "
+                    "set_config('lock_timeout', %s, true), "
+                    "set_config('idle_in_transaction_session_timeout', %s, true)",
+                    (
+                        actor.principal,
+                        actor.active_role,
+                        str(actor.security_context_version),
+                        actor.principal_type,
+                        session_id or "",
+                        request_id,
+                        str(self._config.statement_timeout_ms),
+                        str(self._config.lock_timeout_ms),
+                        str(self._config.idle_transaction_timeout_ms),
+                    ),
+                )
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock_shared(%s)", (METADATA_DEPLOYMENT_LOCK,)
+                )
+                cursor = await conn.execute(
+                    "SELECT schema_version, metadata_epoch, maintenance "
+                    "FROM nova_meta.deployment_state WHERE singleton = TRUE"
+                )
+                state = await cursor.fetchone()
+                if (
+                    not state
+                    or state["schema_version"] != self._schema_version
+                    or str(state["metadata_epoch"]) != self._metadata_epoch
+                ):
+                    raise MetadataSchemaMismatch()
+                if not read_only and state["maintenance"]:
+                    raise MetadataReadOnlyMaintenance()
+                yield conn
+        except (
+            psycopg.errors.UniqueViolation,
+            psycopg.errors.SerializationFailure,
+            psycopg.errors.DeadlockDetected,
+        ) as exc:
+            _log_database_failure("conflict", exc)
+            raise MetadataConflict() from None
+        except (PoolTimeout, psycopg.errors.QueryCanceled, psycopg.errors.LockNotAvailable) as exc:
+            _log_database_failure("timeout", exc)
+            raise MetadataTimeout() from None
+        except (TooManyRequests, PoolClosed) as exc:
+            _log_database_failure("unavailable", exc)
+            raise MetadataUnavailable() from None
+        except psycopg.OperationalError as exc:
+            _log_database_failure("outcome_unknown", exc)
+            # A connection lost during COMMIT cannot be retried without a receipt.
+            raise MetadataOutcomeUnknown() from None
+        except psycopg.errors.InsufficientPrivilege as exc:
+            _log_database_failure("permission", exc)
+>           raise MetadataPermissionDenied() from None
+E           app.core.metadata_db.MetadataPermissionDenied: Metadata operation is not authorized
+
+app/core/metadata_db.py:378: MetadataPermissionDenied
+------------------------------ Captured log call -------------------------------
+WARNING  app.core.metadata_db:metadata_db.py:43 Metadata transaction failed: category=permission sqlstate=42501
+________ test_transitive_draft_pin_protects_old_chart_dataset_revision _________
+
+viz = <tests.integration.test_metadata_viz.VizFixture object at 0x11ba7cf90>
+
+    async def test_transitive_draft_pin_protects_old_chart_dataset_revision(viz):
+>       source, figure, _ = await graph(viz)
+                            ^^^^^^^^^^^^^^^^
+
+tests/integration/test_metadata_viz.py:373: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/integration/test_metadata_viz.py:1009: in graph
+    async with viz.transaction() as (repo, _):
+../../../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/contextlib.py:231: in __aexit__
+    await self.gen.athrow(typ, value, traceback)
+tests/integration/test_metadata_viz.py:89: in transaction
+    async with (
+../../../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/contextlib.py:231: in __aexit__
+    await self.gen.athrow(typ, value, traceback)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <app.core.metadata_db.MetadataDatabase object at 0x11be6f5d0>
+actor = SecurityContext(principal='owner', active_role='ANALYST', principal_type='USER', database=None, session_id='login-owner', security_context_version=5)
+read_only = False, request_id = ''
+
+    @asynccontextmanager
+    async def transaction(
+        self,
+        actor: SecurityContext,
+        *,
+        read_only: bool = False,
+        request_id: str = "",
+    ) -> AsyncIterator[psycopg.AsyncConnection[dict[str, Any]]]:
+        if not isinstance(actor, SecurityContext):
+            raise ValueError("An explicit metadata actor is required")
+        session_id = actor.session_id
+        if session_id is not None and (
+            not isinstance(session_id, str)
+            or not session_id.strip()
+            or len(session_id) > 64
+            or "\0" in session_id
+        ):
+            raise ValueError("Invalid metadata login context")
+        if not self._ready:
+            raise MetadataUnavailable()
+        try:
+            async with self._pool.connection() as conn, conn.transaction():
+                if read_only:
+                    await conn.execute("SET TRANSACTION READ ONLY")
+                # A transaction pooler can select a different backend after
+                # readiness. Check before sending any actor or domain values.
+                if not await logging_is_private(conn):
+                    raise MetadataSchemaMismatch()
+                await conn.execute(
+                    "SELECT set_config('nova.principal', %s, true), "
+                    "set_config('nova.active_role', %s, true), "
+                    "set_config('nova.security_context_version', %s, true), "
+                    "set_config('nova.principal_type', %s, true), "
+                    "set_config('nova.session_id', %s, true), "
+                    "set_config('nova.request_id', %s, true), "
+                    "set_config('nova.service_identity', current_user, true), "
+                    "set_config('synchronous_commit', 'on', true), "
+                    "set_config('TimeZone', 'UTC', true), "
+                    "set_config('statement_timeout', %s, true), "
+                    "set_config('lock_timeout', %s, true), "
+                    "set_config('idle_in_transaction_session_timeout', %s, true)",
+                    (
+                        actor.principal,
+                        actor.active_role,
+                        str(actor.security_context_version),
+                        actor.principal_type,
+                        session_id or "",
+                        request_id,
+                        str(self._config.statement_timeout_ms),
+                        str(self._config.lock_timeout_ms),
+                        str(self._config.idle_transaction_timeout_ms),
+                    ),
+                )
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock_shared(%s)", (METADATA_DEPLOYMENT_LOCK,)
+                )
+                cursor = await conn.execute(
+                    "SELECT schema_version, metadata_epoch, maintenance "
+                    "FROM nova_meta.deployment_state WHERE singleton = TRUE"
+                )
+                state = await cursor.fetchone()
+                if (
+                    not state
+                    or state["schema_version"] != self._schema_version
+                    or str(state["metadata_epoch"]) != self._metadata_epoch
+                ):
+                    raise MetadataSchemaMismatch()
+                if not read_only and state["maintenance"]:
+                    raise MetadataReadOnlyMaintenance()
+                yield conn
+        except (
+            psycopg.errors.UniqueViolation,
+            psycopg.errors.SerializationFailure,
+            psycopg.errors.DeadlockDetected,
+        ) as exc:
+            _log_database_failure("conflict", exc)
+            raise MetadataConflict() from None
+        except (PoolTimeout, psycopg.errors.QueryCanceled, psycopg.errors.LockNotAvailable) as exc:
+            _log_database_failure("timeout", exc)
+            raise MetadataTimeout() from None
+        except (TooManyRequests, PoolClosed) as exc:
+            _log_database_failure("unavailable", exc)
+            raise MetadataUnavailable() from None
+        except psycopg.OperationalError as exc:
+            _log_database_failure("outcome_unknown", exc)
+            # A connection lost during COMMIT cannot be retried without a receipt.
+            raise MetadataOutcomeUnknown() from None
+        except psycopg.errors.InsufficientPrivilege as exc:
+            _log_database_failure("permission", exc)
+>           raise MetadataPermissionDenied() from None
+E           app.core.metadata_db.MetadataPermissionDenied: Metadata operation is not authorized
+
+app/core/metadata_db.py:378: MetadataPermissionDenied
+------------------------------ Captured log call -------------------------------
+WARNING  app.core.metadata_db:metadata_db.py:43 Metadata transaction failed: category=permission sqlstate=42501
+_____ test_retained_publication_protects_dependencies_after_draft_removal ______
+
+viz = <tests.integration.test_metadata_viz.VizFixture object at 0x11cffd790>
+
+    async def test_retained_publication_protects_dependencies_after_draft_removal(viz):
+>       _, figure, board = await graph(viz)
+                           ^^^^^^^^^^^^^^^^
+
+tests/integration/test_metadata_viz.py:389: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/integration/test_metadata_viz.py:1009: in graph
+    async with viz.transaction() as (repo, _):
+../../../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/contextlib.py:231: in __aexit__
+    await self.gen.athrow(typ, value, traceback)
+tests/integration/test_metadata_viz.py:89: in transaction
+    async with (
+../../../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/contextlib.py:231: in __aexit__
+    await self.gen.athrow(typ, value, traceback)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <app.core.metadata_db.MetadataDatabase object at 0x11c0d3b90>
+actor = SecurityContext(principal='owner', active_role='ANALYST', principal_type='USER', database=None, session_id='login-owner', security_context_version=5)
+read_only = False, request_id = ''
+
+    @asynccontextmanager
+    async def transaction(
+        self,
+        actor: SecurityContext,
+        *,
+        read_only: bool = False,
+        request_id: str = "",
+    ) -> AsyncIterator[psycopg.AsyncConnection[dict[str, Any]]]:
+        if not isinstance(actor, SecurityContext):
+            raise ValueError("An explicit metadata actor is required")
+        session_id = actor.session_id
+        if session_id is not None and (
+            not isinstance(session_id, str)
+            or not session_id.strip()
+            or len(session_id) > 64
+            or "\0" in session_id
+        ):
+            raise ValueError("Invalid metadata login context")
+        if not self._ready:
+            raise MetadataUnavailable()
+        try:
+            async with self._pool.connection() as conn, conn.transaction():
+                if read_only:
+                    await conn.execute("SET TRANSACTION READ ONLY")
+                # A transaction pooler can select a different backend after
+                # readiness. Check before sending any actor or domain values.
+                if not await logging_is_private(conn):
+                    raise MetadataSchemaMismatch()
+                await conn.execute(
+                    "SELECT set_config('nova.principal', %s, true), "
+                    "set_config('nova.active_role', %s, true), "
+                    "set_config('nova.security_context_version', %s, true), "
+                    "set_config('nova.principal_type', %s, true), "
+                    "set_config('nova.session_id', %s, true), "
+                    "set_config('nova.request_id', %s, true), "
+                    "set_config('nova.service_identity', current_user, true), "
+                    "set_config('synchronous_commit', 'on', true), "
+                    "set_config('TimeZone', 'UTC', true), "
+                    "set_config('statement_timeout', %s, true), "
+                    "set_config('lock_timeout', %s, true), "
+                    "set_config('idle_in_transaction_session_timeout', %s, true)",
+                    (
+                        actor.principal,
+                        actor.active_role,
+                        str(actor.security_context_version),
+                        actor.principal_type,
+                        session_id or "",
+                        request_id,
+                        str(self._config.statement_timeout_ms),
+                        str(self._config.lock_timeout_ms),
+                        str(self._config.idle_transaction_timeout_ms),
+                    ),
+                )
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock_shared(%s)", (METADATA_DEPLOYMENT_LOCK,)
+                )
+                cursor = await conn.execute(
+                    "SELECT schema_version, metadata_epoch, maintenance "
+                    "FROM nova_meta.deployment_state WHERE singleton = TRUE"
+                )
+                state = await cursor.fetchone()
+                if (
+                    not state
+                    or state["schema_version"] != self._schema_version
+                    or str(state["metadata_epoch"]) != self._metadata_epoch
+                ):
+                    raise MetadataSchemaMismatch()
+                if not read_only and state["maintenance"]:
+                    raise MetadataReadOnlyMaintenance()
+                yield conn
+        except (
+            psycopg.errors.UniqueViolation,
+            psycopg.errors.SerializationFailure,
+            psycopg.errors.DeadlockDetected,
+        ) as exc:
+            _log_database_failure("conflict", exc)
+            raise MetadataConflict() from None
+        except (PoolTimeout, psycopg.errors.QueryCanceled, psycopg.errors.LockNotAvailable) as exc:
+            _log_database_failure("timeout", exc)
+            raise MetadataTimeout() from None
+        except (TooManyRequests, PoolClosed) as exc:
+            _log_database_failure("unavailable", exc)
+            raise MetadataUnavailable() from None
+        except psycopg.OperationalError as exc:
+            _log_database_failure("outcome_unknown", exc)
+            # A connection lost during COMMIT cannot be retried without a receipt.
+            raise MetadataOutcomeUnknown() from None
+        except psycopg.errors.InsufficientPrivilege as exc:
+            _log_database_failure("permission", exc)
+>           raise MetadataPermissionDenied() from None
+E           app.core.metadata_db.MetadataPermissionDenied: Metadata operation is not authorized
+
+app/core/metadata_db.py:378: MetadataPermissionDenied
+------------------------------ Captured log call -------------------------------
+WARNING  app.core.metadata_db:metadata_db.py:43 Metadata transaction failed: category=permission sqlstate=42501
+_____________ test_reference_commit_wins_against_concurrent_delete _____________
+
+viz = <tests.integration.test_metadata_viz.VizFixture object at 0x11b941c50>
+
+    async def test_reference_commit_wins_against_concurrent_delete(viz):
+        source = dataset()
+        async with viz.transaction() as (repository, _):
+            await repository.create(viz.workspace_id, source, operation_id=uuid4())
+        entered = asyncio.Event()
+    
+        async def delete():
+            try:
+                async with viz.transaction() as (repository, _):
+                    entered.set()
+                    await repository.delete(source.dataset_id, "dataset", DeleteRequest(
+                        operation_id=uuid4(), expected_revision=1,
+                    ))
+            except MetadataIntegrityViolation:
+                return "dependency_conflict"
+    
+>       async with viz.transaction() as (repository, _):
+
+tests/integration/test_metadata_viz.py:419: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/contextlib.py:231: in __aexit__
+    await self.gen.athrow(typ, value, traceback)
+tests/integration/test_metadata_viz.py:89: in transaction
+    async with (
+../../../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/contextlib.py:231: in __aexit__
+    await self.gen.athrow(typ, value, traceback)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <app.core.metadata_db.MetadataDatabase object at 0x11d135b50>
+actor = SecurityContext(principal='owner', active_role='ANALYST', principal_type='USER', database=None, session_id='login-owner', security_context_version=5)
+read_only = False, request_id = ''
+
+    @asynccontextmanager
+    async def transaction(
+        self,
+        actor: SecurityContext,
+        *,
+        read_only: bool = False,
+        request_id: str = "",
+    ) -> AsyncIterator[psycopg.AsyncConnection[dict[str, Any]]]:
+        if not isinstance(actor, SecurityContext):
+            raise ValueError("An explicit metadata actor is required")
+        session_id = actor.session_id
+        if session_id is not None and (
+            not isinstance(session_id, str)
+            or not session_id.strip()
+            or len(session_id) > 64
+            or "\0" in session_id
+        ):
+            raise ValueError("Invalid metadata login context")
+        if not self._ready:
+            raise MetadataUnavailable()
+        try:
+            async with self._pool.connection() as conn, conn.transaction():
+                if read_only:
+                    await conn.execute("SET TRANSACTION READ ONLY")
+                # A transaction pooler can select a different backend after
+                # readiness. Check before sending any actor or domain values.
+                if not await logging_is_private(conn):
+                    raise MetadataSchemaMismatch()
+                await conn.execute(
+                    "SELECT set_config('nova.principal', %s, true), "
+                    "set_config('nova.active_role', %s, true), "
+                    "set_config('nova.security_context_version', %s, true), "
+                    "set_config('nova.principal_type', %s, true), "
+                    "set_config('nova.session_id', %s, true), "
+                    "set_config('nova.request_id', %s, true), "
+                    "set_config('nova.service_identity', current_user, true), "
+                    "set_config('synchronous_commit', 'on', true), "
+                    "set_config('TimeZone', 'UTC', true), "
+                    "set_config('statement_timeout', %s, true), "
+                    "set_config('lock_timeout', %s, true), "
+                    "set_config('idle_in_transaction_session_timeout', %s, true)",
+                    (
+                        actor.principal,
+                        actor.active_role,
+                        str(actor.security_context_version),
+                        actor.principal_type,
+                        session_id or "",
+                        request_id,
+                        str(self._config.statement_timeout_ms),
+                        str(self._config.lock_timeout_ms),
+                        str(self._config.idle_transaction_timeout_ms),
+                    ),
+                )
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock_shared(%s)", (METADATA_DEPLOYMENT_LOCK,)
+                )
+                cursor = await conn.execute(
+                    "SELECT schema_version, metadata_epoch, maintenance "
+                    "FROM nova_meta.deployment_state WHERE singleton = TRUE"
+                )
+                state = await cursor.fetchone()
+                if (
+                    not state
+                    or state["schema_version"] != self._schema_version
+                    or str(state["metadata_epoch"]) != self._metadata_epoch
+                ):
+                    raise MetadataSchemaMismatch()
+                if not read_only and state["maintenance"]:
+                    raise MetadataReadOnlyMaintenance()
+                yield conn
+        except (
+            psycopg.errors.UniqueViolation,
+            psycopg.errors.SerializationFailure,
+            psycopg.errors.DeadlockDetected,
+        ) as exc:
+            _log_database_failure("conflict", exc)
+            raise MetadataConflict() from None
+        except (PoolTimeout, psycopg.errors.QueryCanceled, psycopg.errors.LockNotAvailable) as exc:
+            _log_database_failure("timeout", exc)
+            raise MetadataTimeout() from None
+        except (TooManyRequests, PoolClosed) as exc:
+            _log_database_failure("unavailable", exc)
+            raise MetadataUnavailable() from None
+        except psycopg.OperationalError as exc:
+            _log_database_failure("outcome_unknown", exc)
+            # A connection lost during COMMIT cannot be retried without a receipt.
+            raise MetadataOutcomeUnknown() from None
+        except psycopg.errors.InsufficientPrivilege as exc:
+            _log_database_failure("permission", exc)
+>           raise MetadataPermissionDenied() from None
+E           app.core.metadata_db.MetadataPermissionDenied: Metadata operation is not authorized
+
+app/core/metadata_db.py:378: MetadataPermissionDenied
+------------------------------ Captured log call -------------------------------
+WARNING  app.core.metadata_db:metadata_db.py:43 Metadata transaction failed: category=permission sqlstate=42501
+_________ test_dependency_edges_cannot_be_removed_by_application_login _________
+
+viz = <tests.integration.test_metadata_viz.VizFixture object at 0x11c006450>
+
+    async def test_dependency_edges_cannot_be_removed_by_application_login(viz):
+>       await graph(viz)
+
+tests/integration/test_metadata_viz.py:431: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/integration/test_metadata_viz.py:1009: in graph
+    async with viz.transaction() as (repo, _):
+../../../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/contextlib.py:231: in __aexit__
+    await self.gen.athrow(typ, value, traceback)
+tests/integration/test_metadata_viz.py:89: in transaction
+    async with (
+../../../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/contextlib.py:231: in __aexit__
+    await self.gen.athrow(typ, value, traceback)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <app.core.metadata_db.MetadataDatabase object at 0x11d083b10>
+actor = SecurityContext(principal='owner', active_role='ANALYST', principal_type='USER', database=None, session_id='login-owner', security_context_version=5)
+read_only = False, request_id = ''
+
+    @asynccontextmanager
+    async def transaction(
+        self,
+        actor: SecurityContext,
+        *,
+        read_only: bool = False,
+        request_id: str = "",
+    ) -> AsyncIterator[psycopg.AsyncConnection[dict[str, Any]]]:
+        if not isinstance(actor, SecurityContext):
+            raise ValueError("An explicit metadata actor is required")
+        session_id = actor.session_id
+        if session_id is not None and (
+            not isinstance(session_id, str)
+            or not session_id.strip()
+            or len(session_id) > 64
+            or "\0" in session_id
+        ):
+            raise ValueError("Invalid metadata login context")
+        if not self._ready:
+            raise MetadataUnavailable()
+        try:
+            async with self._pool.connection() as conn, conn.transaction():
+                if read_only:
+                    await conn.execute("SET TRANSACTION READ ONLY")
+                # A transaction pooler can select a different backend after
+                # readiness. Check before sending any actor or domain values.
+                if not await logging_is_private(conn):
+                    raise MetadataSchemaMismatch()
+                await conn.execute(
+                    "SELECT set_config('nova.principal', %s, true), "
+                    "set_config('nova.active_role', %s, true), "
+                    "set_config('nova.security_context_version', %s, true), "
+                    "set_config('nova.principal_type', %s, true), "
+                    "set_config('nova.session_id', %s, true), "
+                    "set_config('nova.request_id', %s, true), "
+                    "set_config('nova.service_identity', current_user, true), "
+                    "set_config('synchronous_commit', 'on', true), "
+                    "set_config('TimeZone', 'UTC', true), "
+                    "set_config('statement_timeout', %s, true), "
+                    "set_config('lock_timeout', %s, true), "
+                    "set_config('idle_in_transaction_session_timeout', %s, true)",
+                    (
+                        actor.principal,
+                        actor.active_role,
+                        str(actor.security_context_version),
+                        actor.principal_type,
+                        session_id or "",
+                        request_id,
+                        str(self._config.statement_timeout_ms),
+                        str(self._config.lock_timeout_ms),
+                        str(self._config.idle_transaction_timeout_ms),
+                    ),
+                )
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock_shared(%s)", (METADATA_DEPLOYMENT_LOCK,)
+                )
+                cursor = await conn.execute(
+                    "SELECT schema_version, metadata_epoch, maintenance "
+                    "FROM nova_meta.deployment_state WHERE singleton = TRUE"
+                )
+                state = await cursor.fetchone()
+                if (
+                    not state
+                    or state["schema_version"] != self._schema_version
+                    or str(state["metadata_epoch"]) != self._metadata_epoch
+                ):
+                    raise MetadataSchemaMismatch()
+                if not read_only and state["maintenance"]:
+                    raise MetadataReadOnlyMaintenance()
+                yield conn
+        except (
+            psycopg.errors.UniqueViolation,
+            psycopg.errors.SerializationFailure,
+            psycopg.errors.DeadlockDetected,
+        ) as exc:
+            _log_database_failure("conflict", exc)
+            raise MetadataConflict() from None
+        except (PoolTimeout, psycopg.errors.QueryCanceled, psycopg.errors.LockNotAvailable) as exc:
+            _log_database_failure("timeout", exc)
+            raise MetadataTimeout() from None
+        except (TooManyRequests, PoolClosed) as exc:
+            _log_database_failure("unavailable", exc)
+            raise MetadataUnavailable() from None
+        except psycopg.OperationalError as exc:
+            _log_database_failure("outcome_unknown", exc)
+            # A connection lost during COMMIT cannot be retried without a receipt.
+            raise MetadataOutcomeUnknown() from None
+        except psycopg.errors.InsufficientPrivilege as exc:
+            _log_database_failure("permission", exc)
+>           raise MetadataPermissionDenied() from None
+E           app.core.metadata_db.MetadataPermissionDenied: Metadata operation is not authorized
+
+app/core/metadata_db.py:378: MetadataPermissionDenied
+------------------------------ Captured log call -------------------------------
+WARNING  app.core.metadata_db:metadata_db.py:43 Metadata transaction failed: category=permission sqlstate=42501
+_____ test_widget_filter_cannot_borrow_another_accessible_dataset_binding ______
+
+viz = <tests.integration.test_metadata_viz.VizFixture object at 0x11c095550>
+
+    async def test_widget_filter_cannot_borrow_another_accessible_dataset_binding(viz):
+>       source, _, board = await graph(viz)
+                           ^^^^^^^^^^^^^^^^
+
+tests/integration/test_metadata_viz.py:844: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/integration/test_metadata_viz.py:1009: in graph
+    async with viz.transaction() as (repo, _):
+../../../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/contextlib.py:231: in __aexit__
+    await self.gen.athrow(typ, value, traceback)
+tests/integration/test_metadata_viz.py:89: in transaction
+    async with (
+../../../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/contextlib.py:231: in __aexit__
+    await self.gen.athrow(typ, value, traceback)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <app.core.metadata_db.MetadataDatabase object at 0x11c010610>
+actor = SecurityContext(principal='owner', active_role='ANALYST', principal_type='USER', database=None, session_id='login-owner', security_context_version=5)
+read_only = False, request_id = ''
+
+    @asynccontextmanager
+    async def transaction(
+        self,
+        actor: SecurityContext,
+        *,
+        read_only: bool = False,
+        request_id: str = "",
+    ) -> AsyncIterator[psycopg.AsyncConnection[dict[str, Any]]]:
+        if not isinstance(actor, SecurityContext):
+            raise ValueError("An explicit metadata actor is required")
+        session_id = actor.session_id
+        if session_id is not None and (
+            not isinstance(session_id, str)
+            or not session_id.strip()
+            or len(session_id) > 64
+            or "\0" in session_id
+        ):
+            raise ValueError("Invalid metadata login context")
+        if not self._ready:
+            raise MetadataUnavailable()
+        try:
+            async with self._pool.connection() as conn, conn.transaction():
+                if read_only:
+                    await conn.execute("SET TRANSACTION READ ONLY")
+                # A transaction pooler can select a different backend after
+                # readiness. Check before sending any actor or domain values.
+                if not await logging_is_private(conn):
+                    raise MetadataSchemaMismatch()
+                await conn.execute(
+                    "SELECT set_config('nova.principal', %s, true), "
+                    "set_config('nova.active_role', %s, true), "
+                    "set_config('nova.security_context_version', %s, true), "
+                    "set_config('nova.principal_type', %s, true), "
+                    "set_config('nova.session_id', %s, true), "
+                    "set_config('nova.request_id', %s, true), "
+                    "set_config('nova.service_identity', current_user, true), "
+                    "set_config('synchronous_commit', 'on', true), "
+                    "set_config('TimeZone', 'UTC', true), "
+                    "set_config('statement_timeout', %s, true), "
+                    "set_config('lock_timeout', %s, true), "
+                    "set_config('idle_in_transaction_session_timeout', %s, true)",
+                    (
+                        actor.principal,
+                        actor.active_role,
+                        str(actor.security_context_version),
+                        actor.principal_type,
+                        session_id or "",
+                        request_id,
+                        str(self._config.statement_timeout_ms),
+                        str(self._config.lock_timeout_ms),
+                        str(self._config.idle_transaction_timeout_ms),
+                    ),
+                )
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock_shared(%s)", (METADATA_DEPLOYMENT_LOCK,)
+                )
+                cursor = await conn.execute(
+                    "SELECT schema_version, metadata_epoch, maintenance "
+                    "FROM nova_meta.deployment_state WHERE singleton = TRUE"
+                )
+                state = await cursor.fetchone()
+                if (
+                    not state
+                    or state["schema_version"] != self._schema_version
+                    or str(state["metadata_epoch"]) != self._metadata_epoch
+                ):
+                    raise MetadataSchemaMismatch()
+                if not read_only and state["maintenance"]:
+                    raise MetadataReadOnlyMaintenance()
+                yield conn
+        except (
+            psycopg.errors.UniqueViolation,
+            psycopg.errors.SerializationFailure,
+            psycopg.errors.DeadlockDetected,
+        ) as exc:
+            _log_database_failure("conflict", exc)
+            raise MetadataConflict() from None
+        except (PoolTimeout, psycopg.errors.QueryCanceled, psycopg.errors.LockNotAvailable) as exc:
+            _log_database_failure("timeout", exc)
+            raise MetadataTimeout() from None
+        except (TooManyRequests, PoolClosed) as exc:
+            _log_database_failure("unavailable", exc)
+            raise MetadataUnavailable() from None
+        except psycopg.OperationalError as exc:
+            _log_database_failure("outcome_unknown", exc)
+            # A connection lost during COMMIT cannot be retried without a receipt.
+            raise MetadataOutcomeUnknown() from None
+        except psycopg.errors.InsufficientPrivilege as exc:
+            _log_database_failure("permission", exc)
+>           raise MetadataPermissionDenied() from None
+E           app.core.metadata_db.MetadataPermissionDenied: Metadata operation is not authorized
+
+app/core/metadata_db.py:378: MetadataPermissionDenied
+------------------------------ Captured log call -------------------------------
+WARNING  app.core.metadata_db:metadata_db.py:43 Metadata transaction failed: category=permission sqlstate=42501
+_____ test_published_references_cannot_be_appended_in_a_later_transaction ______
+
+viz = <tests.integration.test_metadata_viz.VizFixture object at 0x11d54b710>
+
+    async def test_published_references_cannot_be_appended_in_a_later_transaction(viz):
+        document, _, _ = await create(viz)
+        other, _, _ = await create(viz)
+        async with viz.transaction() as (repo, _):
+            await repo.publish(document.dashboard_id,
+                               PublicationRequest(operation_id=uuid4(), expected_revision=1))
+        async with viz.transaction() as (repo, _):
+            publication_id = (await repo.read(document.dashboard_id))["publication_id"]
+        with pytest.raises(MetadataIntegrityViolation):
+>           async with viz.transaction() as (_, connection):
+
+tests/integration/test_metadata_viz.py:964: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/contextlib.py:231: in __aexit__
+    await self.gen.athrow(typ, value, traceback)
+tests/integration/test_metadata_viz.py:89: in transaction
+    async with (
+../../../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/contextlib.py:231: in __aexit__
+    await self.gen.athrow(typ, value, traceback)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <app.core.metadata_db.MetadataDatabase object at 0x11d0f9f50>
+actor = SecurityContext(principal='owner', active_role='ANALYST', principal_type='USER', database=None, session_id='login-owner', security_context_version=5)
+read_only = False, request_id = ''
+
+    @asynccontextmanager
+    async def transaction(
+        self,
+        actor: SecurityContext,
+        *,
+        read_only: bool = False,
+        request_id: str = "",
+    ) -> AsyncIterator[psycopg.AsyncConnection[dict[str, Any]]]:
+        if not isinstance(actor, SecurityContext):
+            raise ValueError("An explicit metadata actor is required")
+        session_id = actor.session_id
+        if session_id is not None and (
+            not isinstance(session_id, str)
+            or not session_id.strip()
+            or len(session_id) > 64
+            or "\0" in session_id
+        ):
+            raise ValueError("Invalid metadata login context")
+        if not self._ready:
+            raise MetadataUnavailable()
+        try:
+            async with self._pool.connection() as conn, conn.transaction():
+                if read_only:
+                    await conn.execute("SET TRANSACTION READ ONLY")
+                # A transaction pooler can select a different backend after
+                # readiness. Check before sending any actor or domain values.
+                if not await logging_is_private(conn):
+                    raise MetadataSchemaMismatch()
+                await conn.execute(
+                    "SELECT set_config('nova.principal', %s, true), "
+                    "set_config('nova.active_role', %s, true), "
+                    "set_config('nova.security_context_version', %s, true), "
+                    "set_config('nova.principal_type', %s, true), "
+                    "set_config('nova.session_id', %s, true), "
+                    "set_config('nova.request_id', %s, true), "
+                    "set_config('nova.service_identity', current_user, true), "
+                    "set_config('synchronous_commit', 'on', true), "
+                    "set_config('TimeZone', 'UTC', true), "
+                    "set_config('statement_timeout', %s, true), "
+                    "set_config('lock_timeout', %s, true), "
+                    "set_config('idle_in_transaction_session_timeout', %s, true)",
+                    (
+                        actor.principal,
+                        actor.active_role,
+                        str(actor.security_context_version),
+                        actor.principal_type,
+                        session_id or "",
+                        request_id,
+                        str(self._config.statement_timeout_ms),
+                        str(self._config.lock_timeout_ms),
+                        str(self._config.idle_transaction_timeout_ms),
+                    ),
+                )
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock_shared(%s)", (METADATA_DEPLOYMENT_LOCK,)
+                )
+                cursor = await conn.execute(
+                    "SELECT schema_version, metadata_epoch, maintenance "
+                    "FROM nova_meta.deployment_state WHERE singleton = TRUE"
+                )
+                state = await cursor.fetchone()
+                if (
+                    not state
+                    or state["schema_version"] != self._schema_version
+                    or str(state["metadata_epoch"]) != self._metadata_epoch
+                ):
+                    raise MetadataSchemaMismatch()
+                if not read_only and state["maintenance"]:
+                    raise MetadataReadOnlyMaintenance()
+                yield conn
+        except (
+            psycopg.errors.UniqueViolation,
+            psycopg.errors.SerializationFailure,
+            psycopg.errors.DeadlockDetected,
+        ) as exc:
+            _log_database_failure("conflict", exc)
+            raise MetadataConflict() from None
+        except (PoolTimeout, psycopg.errors.QueryCanceled, psycopg.errors.LockNotAvailable) as exc:
+            _log_database_failure("timeout", exc)
+            raise MetadataTimeout() from None
+        except (TooManyRequests, PoolClosed) as exc:
+            _log_database_failure("unavailable", exc)
+            raise MetadataUnavailable() from None
+        except psycopg.OperationalError as exc:
+            _log_database_failure("outcome_unknown", exc)
+            # A connection lost during COMMIT cannot be retried without a receipt.
+            raise MetadataOutcomeUnknown() from None
+        except psycopg.errors.InsufficientPrivilege as exc:
+            _log_database_failure("permission", exc)
+>           raise MetadataPermissionDenied() from None
+E           app.core.metadata_db.MetadataPermissionDenied: Metadata operation is not authorized
+
+app/core/metadata_db.py:378: MetadataPermissionDenied
+------------------------------ Captured log call -------------------------------
+WARNING  app.core.metadata_db:metadata_db.py:43 Metadata transaction failed: category=permission sqlstate=42501
+_______ test_publication_pins_transitive_definitions_while_drafts_change _______
+
+viz = <tests.integration.test_metadata_viz.VizFixture object at 0x11d048bd0>
+
+    async def test_publication_pins_transitive_definitions_while_drafts_change(viz):
+>       source, figure, board = await graph(viz)
+                                ^^^^^^^^^^^^^^^^
+
+tests/integration/test_metadata_viz.py:1015: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/integration/test_metadata_viz.py:1009: in graph
+    async with viz.transaction() as (repo, _):
+../../../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/contextlib.py:231: in __aexit__
+    await self.gen.athrow(typ, value, traceback)
+tests/integration/test_metadata_viz.py:89: in transaction
+    async with (
+../../../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/contextlib.py:231: in __aexit__
+    await self.gen.athrow(typ, value, traceback)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <app.core.metadata_db.MetadataDatabase object at 0x11d2a1710>
+actor = SecurityContext(principal='owner', active_role='ANALYST', principal_type='USER', database=None, session_id='login-owner', security_context_version=5)
+read_only = False, request_id = ''
+
+    @asynccontextmanager
+    async def transaction(
+        self,
+        actor: SecurityContext,
+        *,
+        read_only: bool = False,
+        request_id: str = "",
+    ) -> AsyncIterator[psycopg.AsyncConnection[dict[str, Any]]]:
+        if not isinstance(actor, SecurityContext):
+            raise ValueError("An explicit metadata actor is required")
+        session_id = actor.session_id
+        if session_id is not None and (
+            not isinstance(session_id, str)
+            or not session_id.strip()
+            or len(session_id) > 64
+            or "\0" in session_id
+        ):
+            raise ValueError("Invalid metadata login context")
+        if not self._ready:
+            raise MetadataUnavailable()
+        try:
+            async with self._pool.connection() as conn, conn.transaction():
+                if read_only:
+                    await conn.execute("SET TRANSACTION READ ONLY")
+                # A transaction pooler can select a different backend after
+                # readiness. Check before sending any actor or domain values.
+                if not await logging_is_private(conn):
+                    raise MetadataSchemaMismatch()
+                await conn.execute(
+                    "SELECT set_config('nova.principal', %s, true), "
+                    "set_config('nova.active_role', %s, true), "
+                    "set_config('nova.security_context_version', %s, true), "
+                    "set_config('nova.principal_type', %s, true), "
+                    "set_config('nova.session_id', %s, true), "
+                    "set_config('nova.request_id', %s, true), "
+                    "set_config('nova.service_identity', current_user, true), "
+                    "set_config('synchronous_commit', 'on', true), "
+                    "set_config('TimeZone', 'UTC', true), "
+                    "set_config('statement_timeout', %s, true), "
+                    "set_config('lock_timeout', %s, true), "
+                    "set_config('idle_in_transaction_session_timeout', %s, true)",
+                    (
+                        actor.principal,
+                        actor.active_role,
+                        str(actor.security_context_version),
+                        actor.principal_type,
+                        session_id or "",
+                        request_id,
+                        str(self._config.statement_timeout_ms),
+                        str(self._config.lock_timeout_ms),
+                        str(self._config.idle_transaction_timeout_ms),
+                    ),
+                )
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock_shared(%s)", (METADATA_DEPLOYMENT_LOCK,)
+                )
+                cursor = await conn.execute(
+                    "SELECT schema_version, metadata_epoch, maintenance "
+                    "FROM nova_meta.deployment_state WHERE singleton = TRUE"
+                )
+                state = await cursor.fetchone()
+                if (
+                    not state
+                    or state["schema_version"] != self._schema_version
+                    or str(state["metadata_epoch"]) != self._metadata_epoch
+                ):
+                    raise MetadataSchemaMismatch()
+                if not read_only and state["maintenance"]:
+                    raise MetadataReadOnlyMaintenance()
+                yield conn
+        except (
+            psycopg.errors.UniqueViolation,
+            psycopg.errors.SerializationFailure,
+            psycopg.errors.DeadlockDetected,
+        ) as exc:
+            _log_database_failure("conflict", exc)
+            raise MetadataConflict() from None
+        except (PoolTimeout, psycopg.errors.QueryCanceled, psycopg.errors.LockNotAvailable) as exc:
+            _log_database_failure("timeout", exc)
+            raise MetadataTimeout() from None
+        except (TooManyRequests, PoolClosed) as exc:
+            _log_database_failure("unavailable", exc)
+            raise MetadataUnavailable() from None
+        except psycopg.OperationalError as exc:
+            _log_database_failure("outcome_unknown", exc)
+            # A connection lost during COMMIT cannot be retried without a receipt.
+            raise MetadataOutcomeUnknown() from None
+        except psycopg.errors.InsufficientPrivilege as exc:
+            _log_database_failure("permission", exc)
+>           raise MetadataPermissionDenied() from None
+E           app.core.metadata_db.MetadataPermissionDenied: Metadata operation is not authorized
+
+app/core/metadata_db.py:378: MetadataPermissionDenied
+------------------------------ Captured log call -------------------------------
+WARNING  app.core.metadata_db:metadata_db.py:43 Metadata transaction failed: category=permission sqlstate=42501
+_________ test_chart_cannot_bind_fields_absent_from_the_pinned_dataset _________
+
+viz = <tests.integration.test_metadata_viz.VizFixture object at 0x11d10aad0>
+
+    async def test_chart_cannot_bind_fields_absent_from_the_pinned_dataset(viz):
+>       source, figure, _ = await graph(viz)
+                            ^^^^^^^^^^^^^^^^
+
+tests/integration/test_metadata_viz.py:1044: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/integration/test_metadata_viz.py:1009: in graph
+    async with viz.transaction() as (repo, _):
+../../../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/contextlib.py:231: in __aexit__
+    await self.gen.athrow(typ, value, traceback)
+tests/integration/test_metadata_viz.py:89: in transaction
+    async with (
+../../../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/contextlib.py:231: in __aexit__
+    await self.gen.athrow(typ, value, traceback)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <app.core.metadata_db.MetadataDatabase object at 0x11d1dacd0>
+actor = SecurityContext(principal='owner', active_role='ANALYST', principal_type='USER', database=None, session_id='login-owner', security_context_version=5)
+read_only = False, request_id = ''
+
+    @asynccontextmanager
+    async def transaction(
+        self,
+        actor: SecurityContext,
+        *,
+        read_only: bool = False,
+        request_id: str = "",
+    ) -> AsyncIterator[psycopg.AsyncConnection[dict[str, Any]]]:
+        if not isinstance(actor, SecurityContext):
+            raise ValueError("An explicit metadata actor is required")
+        session_id = actor.session_id
+        if session_id is not None and (
+            not isinstance(session_id, str)
+            or not session_id.strip()
+            or len(session_id) > 64
+            or "\0" in session_id
+        ):
+            raise ValueError("Invalid metadata login context")
+        if not self._ready:
+            raise MetadataUnavailable()
+        try:
+            async with self._pool.connection() as conn, conn.transaction():
+                if read_only:
+                    await conn.execute("SET TRANSACTION READ ONLY")
+                # A transaction pooler can select a different backend after
+                # readiness. Check before sending any actor or domain values.
+                if not await logging_is_private(conn):
+                    raise MetadataSchemaMismatch()
+                await conn.execute(
+                    "SELECT set_config('nova.principal', %s, true), "
+                    "set_config('nova.active_role', %s, true), "
+                    "set_config('nova.security_context_version', %s, true), "
+                    "set_config('nova.principal_type', %s, true), "
+                    "set_config('nova.session_id', %s, true), "
+                    "set_config('nova.request_id', %s, true), "
+                    "set_config('nova.service_identity', current_user, true), "
+                    "set_config('synchronous_commit', 'on', true), "
+                    "set_config('TimeZone', 'UTC', true), "
+                    "set_config('statement_timeout', %s, true), "
+                    "set_config('lock_timeout', %s, true), "
+                    "set_config('idle_in_transaction_session_timeout', %s, true)",
+                    (
+                        actor.principal,
+                        actor.active_role,
+                        str(actor.security_context_version),
+                        actor.principal_type,
+                        session_id or "",
+                        request_id,
+                        str(self._config.statement_timeout_ms),
+                        str(self._config.lock_timeout_ms),
+                        str(self._config.idle_transaction_timeout_ms),
+                    ),
+                )
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock_shared(%s)", (METADATA_DEPLOYMENT_LOCK,)
+                )
+                cursor = await conn.execute(
+                    "SELECT schema_version, metadata_epoch, maintenance "
+                    "FROM nova_meta.deployment_state WHERE singleton = TRUE"
+                )
+                state = await cursor.fetchone()
+                if (
+                    not state
+                    or state["schema_version"] != self._schema_version
+                    or str(state["metadata_epoch"]) != self._metadata_epoch
+                ):
+                    raise MetadataSchemaMismatch()
+                if not read_only and state["maintenance"]:
+                    raise MetadataReadOnlyMaintenance()
+                yield conn
+        except (
+            psycopg.errors.UniqueViolation,
+            psycopg.errors.SerializationFailure,
+            psycopg.errors.DeadlockDetected,
+        ) as exc:
+            _log_database_failure("conflict", exc)
+            raise MetadataConflict() from None
+        except (PoolTimeout, psycopg.errors.QueryCanceled, psycopg.errors.LockNotAvailable) as exc:
+            _log_database_failure("timeout", exc)
+            raise MetadataTimeout() from None
+        except (TooManyRequests, PoolClosed) as exc:
+            _log_database_failure("unavailable", exc)
+            raise MetadataUnavailable() from None
+        except psycopg.OperationalError as exc:
+            _log_database_failure("outcome_unknown", exc)
+            # A connection lost during COMMIT cannot be retried without a receipt.
+            raise MetadataOutcomeUnknown() from None
+        except psycopg.errors.InsufficientPrivilege as exc:
+            _log_database_failure("permission", exc)
+>           raise MetadataPermissionDenied() from None
+E           app.core.metadata_db.MetadataPermissionDenied: Metadata operation is not authorized
+
+app/core/metadata_db.py:378: MetadataPermissionDenied
+------------------------------ Captured log call -------------------------------
+WARNING  app.core.metadata_db:metadata_db.py:43 Metadata transaction failed: category=permission sqlstate=42501
+=========================== short test summary info ============================
+FAILED tests/integration/test_metadata_viz.py::test_http_permission_and_kind_boundaries
+FAILED tests/integration/test_metadata_viz.py::test_dependency_delete_is_blocked_without_dropping_shared_charts
+FAILED tests/integration/test_metadata_viz.py::test_transitive_draft_pin_protects_old_chart_dataset_revision
+FAILED tests/integration/test_metadata_viz.py::test_retained_publication_protects_dependencies_after_draft_removal
+FAILED tests/integration/test_metadata_viz.py::test_reference_commit_wins_against_concurrent_delete
+FAILED tests/integration/test_metadata_viz.py::test_dependency_edges_cannot_be_removed_by_application_login
+FAILED tests/integration/test_metadata_viz.py::test_widget_filter_cannot_borrow_another_accessible_dataset_binding
+FAILED tests/integration/test_metadata_viz.py::test_published_references_cannot_be_appended_in_a_later_transaction
+FAILED tests/integration/test_metadata_viz.py::test_publication_pins_transitive_definitions_while_drafts_change
+FAILED tests/integration/test_metadata_viz.py::test_chart_cannot_bind_fields_absent_from_the_pinned_dataset
+10 failed, 52 passed in 65.66s (0:01:05)

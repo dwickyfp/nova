@@ -1,0 +1,7 @@
+{
+  "command": "pnpm install",
+  "node": "22.22.0",
+  "pnpm": "11.8.0",
+  "returncode": 0,
+  "seconds": 280.24
+}

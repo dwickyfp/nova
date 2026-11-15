@@ -1,0 +1,39 @@
+{
+  "result": "FAIL",
+  "owned_database": "ndv_src_f7693ad13174",
+  "owned_roles": [
+    "ndv_read_f7693ad13174",
+    "ndv_none_f7693ad13174"
+  ],
+  "steps": [
+    {
+      "check": "QA attributes unchanged",
+      "passed": true
+    },
+    {
+      "check": "QA grants unchanged",
+      "passed": true
+    }
+  ],
+  "cleanup_errors": [],
+  "error_type": "RangerError",
+  "error_location": [
+    {
+      "file": "verify_native_source_identity_live.py",
+      "line": 109,
+      "function": "run"
+    },
+    {
+      "file": "client.py",
+      "line": 372,
+      "function": "put_policy"
+    },
+    {
+      "file": "client.py",
+      "line": 136,
+      "function": "_request"
+    }
+  ],
+  "engine_version": "4.1.4",
+  "ranger_service": "nova_starrocks"
+}

@@ -1,0 +1,1 @@
+$ npx --yes --package=node@22.22.0 --package=pnpm@11.8.0 -c pnpm exec eslint src/lib/api-client.ts src/lib/api-client.test.ts src/features/native-dataviz/documents.ts src/features/native-dataviz/documents.test.ts src/features/native-dataviz/contracts/index.ts

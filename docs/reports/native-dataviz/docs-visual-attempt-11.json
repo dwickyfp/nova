@@ -1,0 +1,17 @@
+{
+  "recorded_at": "2026-11-14T16:40:49.382563+00:00",
+  "result": "PASS",
+  "surface": "Existing Chrome Nova QA tab, native application control",
+  "path": "/docs/dataviz/native-documents",
+  "sections": [
+    "dashboard-datasets",
+    "edit-or-repair-a-dataset-source"
+  ],
+  "observations": [
+    "Both anchors open their corresponding section",
+    "Pinned dataset references and retained-publication deletion guard are visible",
+    "Exact retry, original login/role, edit permission and changed-intent copy render without clipping"
+  ],
+  "evidence": "Accessibility content and screenshots observed in conversation; no saved image artifact claimed",
+  "limits": "Visual documentation check only; no native product editor or feature acceptance claim"
+}

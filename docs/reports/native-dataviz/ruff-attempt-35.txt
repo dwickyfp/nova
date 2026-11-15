@@ -1,0 +1,149 @@
+I001 [*] Import block is un-sorted or un-formatted
+  --> app/modules/viz/dataset_service.py:3:1
+   |
+ 1 |   """Author datasets from verified caller-visible sources before opening PG work."""
+ 2 |
+ 3 | / from __future__ import annotations
+ 4 | |
+ 5 | | import asyncio
+ 6 | | import json
+ 7 | | from collections.abc import AsyncIterator, Mapping
+ 8 | | from contextlib import asynccontextmanager
+ 9 | | from hashlib import sha256
+10 | | from typing import Any, Literal
+11 | | from uuid import UUID, uuid5
+12 | |
+13 | | from fastapi import HTTPException
+14 | |
+15 | | from app.core.database import configured_timezone
+16 | | from app.core.exceptions import NovaException, SessionExpiredError, StarRocksError
+17 | | from app.core.security import decrypt_password
+18 | | from app.modules.agents.semantic.compiler import SemanticCompiler
+19 | | from app.modules.agents.semantic.ir import SemanticModelIR
+20 | | from app.modules.agents.semantic.planning import SemanticPlan, SemanticPlanError
+21 | | from app.modules.intelligence.semantic_views import semantic_view_service
+22 | | from app.modules.query.admission import QueryCapacityError, audit_refusal, query_admission
+23 | | from app.modules.query.repository import QueryRepository
+24 | | from app.modules.query.service import query_service
+25 | | from app.sql_frontend.analysis.lineage import read_query_sources
+26 | | from app.sql_frontend.binding.models import BoundColumn, BoundTable, TableName
+27 | | from app.sql_frontend.binding.starrocks import (
+28 | |     StarRocksCatalogProvider,
+29 | |     query_output_schema,
+30 | |     source_projection,
+31 | | )
+32 | | from app.sql_frontend.context import ExecutionContext
+33 | | from app.sql_frontend.errors import SemanticError, SQLFrontendError
+34 | | from app.sql_frontend.parser import parse_statement_async, run_sql_cpu
+35 | | from app.sql_frontend.read_queries import preview_query, schema_query
+36 | |
+37 | | from .contracts.authoring import (
+38 | |     DatasetCreate,
+39 | |     DatasetInspect,
+40 | |     DatasetInspection,
+41 | |     DatasetPreview,
+42 | |     DatasetPreviewRequest,
+43 | |     DatasetUpdate,
+44 | |     ObjectDatasetUpdate,
+45 | |     ObjectInspect,
+46 | |     ObjectInspection,
+47 | |     ObjectSelection,
+48 | |     SemanticInspect,
+49 | |     SemanticInspection,
+50 | |     SqlInspect,
+51 | |     SqlInspection,
+52 | |     SqlSelection,
+53 | | )
+54 | | from .contracts.common import LogicalType
+55 | | from .contracts.datasets import (
+56 | |     DatasetDefinition, DatasetField, ObjectSource, SemanticSelection, SemanticSource, SqlSource,
+57 | | )
+58 | | from .document_service import (
+59 | |     current_session,
+60 | |     document_admission,
+61 | |     document_transaction,
+62 | |     document_workspace,
+63 | | )
+64 | | from .preview import PreviewRows
+   | |________________________________^
+65 |
+66 |   SOURCE_TIMEOUT_SECONDS = 30
+   |
+help: Organize imports
+
+E501 Line too long (101 > 100)
+  --> scripts/verify_native_semantic_live.py:59:101
+   |
+57 |             inspect_body = {"dataset_id": str(uuid4()), "source": selection}
+58 |             await probe.request("draft model cannot author dataset", "POST",
+59 |                                 "/api/v1/viz/datasets/inspect", token, status=404, body=inspect_body)
+   |                                                                                                     ^
+60 |             checked = await probe.request("validate semantic model", "POST",
+61 |                                           path + "/versions/1/validate", token)
+   |
+
+E501 Line too long (104 > 100)
+  --> scripts/verify_native_semantic_live.py:83:101
+   |
+81 |                                                    "POST", dataset_path + "/preview", caller,
+82 |                                                    body={"revision": 1, "draft": False})
+83 |                 probe.check("pinned semantic result unchanged", old.json()["rows"] == args.preview_rows)
+   |                                                                                                     ^^^^
+84 |
+85 |             result = await verify_dataset(argparse.Namespace(
+   |
+
+E501 Line too long (101 > 100)
+  --> scripts/verify_native_semantic_live.py:96:101
+   |
+94 |                                 token, status=204)
+95 |             await probe.request("deprecated model refuses new dataset inspection", "POST",
+96 |                                 "/api/v1/viz/datasets/inspect", token, status=404, body=inspect_body)
+   |                                                                                                     ^
+97 |             report["result"] = "PASS"
+98 |         except Exception as error:
+   |
+
+E501 Line too long (104 > 100)
+   --> scripts/verify_native_semantic_live.py:113:101
+    |
+111 |             if token:
+112 |                 try:
+113 |                     await probe.request("semantic fixture logout", "POST", "/api/v1/auth/logout", token)
+    |                                                                                                     ^^^^
+114 |                 except Exception as error:
+115 |                     report.update(result="FAIL", logout_error_type=type(error).__name__)
+    |
+
+E501 Line too long (104 > 100)
+   --> scripts/verify_native_source_identity_live.py:381:101
+    |
+379 |             ))
+380 |             semantic_output.write_text(json.dumps(semantic_report, indent=2) + "\n")
+381 |             check("semantic dataset uses published governed model", semantic_report["result"] == "PASS")
+    |                                                                                                     ^^^^
+382 |         if sql_dataset_output is not None:
+383 |             from scripts.verify_native_datasets_live import run as verify_dataset
+    |
+
+E501 Line too long (102 > 100)
+   --> tests/unit/test_native_viz_semantic.py:125:101
+    |
+125 | async def test_create_keeps_semantic_io_outside_pg_and_persists_declared_grain(semantic, monkeypatch):
+    |                                                                                                     ^^
+126 |     case = semantic
+127 |     inspected = await case.service.inspect(case.user, case.request)
+    |
+
+E501 Line too long (106 > 100)
+   --> tests/unit/test_native_viz_semantic.py:145:101
+    |
+144 |     monkeypatch.setattr(module, "document_transaction", transaction)
+145 |     monkeypatch.setattr(module, "document_workspace", AsyncMock(return_value=SimpleNamespace(id="space")))
+    |                                                                                                     ^^^^^^
+146 |     request = SemanticDatasetCreate(**case.request.model_dump(), title="Totals",
+147 |                                    workspace_id="space",
+    |
+
+Found 8 errors.
+[*] 1 fixable with the `--fix` option.

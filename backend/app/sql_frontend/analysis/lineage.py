@@ -18,9 +18,63 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.sql_frontend.antlr_utils import walk_nodes
+from app.sql_frontend.binding.models import TableName
 from app.sql_frontend.binding.relations import identifier, table_name
-from app.sql_frontend.errors import SQLFrontendError
-from app.sql_frontend.parser import parse_statement
+from app.sql_frontend.errors import SemanticError, SQLFrontendError
+from app.sql_frontend.parser import ParsedStatement, parse_statement
+
+
+def read_query_sources(parsed: ParsedStatement, *, database: str) -> tuple[TableName, ...]:
+    """Resolve lexical table references without treating scoped CTEs as physical sources.
+
+    These names still need caller-bound catalog identity and engine authorization.
+    A view remains a view dependency; the engine governs its underlying reads.
+    """
+    from app.sql_frontend.read_queries import validate_read_query
+
+    validate_read_query(parsed)
+    found: dict[tuple[str, str, str], TableName] = {}
+    stack: list[tuple[Any, frozenset[str], int]] = [
+        (parsed.statement_context.queryRelation(), frozenset(), 0)
+    ]
+    visited = 0
+    while stack:
+        node, ctes, depth = stack.pop()
+        visited += 1
+        if visited > 100_000 or depth > 32:
+            raise SemanticError("Query dependency analysis exceeds its complexity limit")
+        kind = type(node).__name__
+        if kind == "QueryRelationContext":
+            local = set(ctes)
+            definitions = []
+            clause = node.withClause()
+            for cte in clause.commonTableExpression() if clause else ():
+                definitions.append((cte.queryRelation(), frozenset(local), depth + 1))
+                local.add(identifier(cte.identifier()).casefold())
+            stack.append((node.queryNoWith(), frozenset(local), depth + 1))
+            stack.extend(reversed(definitions))
+            continue
+        if kind == "TableAtomContext":
+            qualified = node.qualifiedName()
+            if qualified is None:
+                raise SemanticError("Unsupported dataset source relation")
+            parts = qualified.identifier()
+            if len(parts) == 1 and identifier(parts[0]).casefold() in ctes:
+                continue
+            name = table_name(qualified, database)
+            if name.catalog != "default_catalog" or not name.database:
+                raise SemanticError("Dataset source has no supported physical identity")
+            key = (name.catalog.casefold(), name.database.casefold(), name.table.casefold())
+            found.setdefault(key, name)
+            if len(found) > 64:
+                raise SemanticError("Dataset exceeds the source dependency limit")
+        stack.extend(
+            (child, ctes, depth)
+            for child in reversed(node.children or ())
+            if hasattr(child, "children")
+        )
+    return tuple(found.values())
+
 
 _WRITES = {
     "InsertStatementContext": "insert",

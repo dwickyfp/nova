@@ -1,0 +1,11 @@
+$ npx --yes --package=node@22.22.0 --package=pnpm@11.8.0 -c pnpm test src/features/native-dataviz/documents.test.ts src/lib/api-client.test.ts src/features/docs/docs-markdown.test.tsx --browser.fileParallelism=false --no-file-parallelism --maxWorkers=1
+$ vitest run --browser.headless src/features/native-dataviz/documents.test.ts src/lib/api-client.test.ts src/features/docs/docs-markdown.test.tsx --browser.fileParallelism=false --no-file-parallelism --maxWorkers=1
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+
+
+ Test Files  3 passed (3)
+      Tests  45 passed (45)
+   Start at  00:29:30
+   Duration  4.42s (transform 0ms, setup 0ms, import 1.23s, tests 596ms, environment 0ms)
+

@@ -1,0 +1,21 @@
+{
+  "changed_since_start": [],
+  "scope": "Full backend gates for analyzed object types, float transport, stream cleanup and explicit dataset source updates",
+  "counts": {
+    "tests": 11860,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "coverage": {
+    "version": "7.14.1",
+    "timestamp": "1794604269795",
+    "lines-valid": "140624",
+    "lines-covered": "94148",
+    "line-rate": "0.6695",
+    "branches-valid": "35256",
+    "branches-covered": "21049",
+    "branch-rate": "0.597",
+    "complexity": "0"
+  }
+}

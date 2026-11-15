@@ -1,0 +1,204 @@
+{
+  "started_at": "2026-11-15T20:08:20.815430+00:00",
+  "resource_id": "d7065618-d2a9-4587-bd47-fed232b4b647",
+  "owner": "alice",
+  "scope": "parameterized SQL dataset HTTP API, real StarRocks/Ranger and PG17 metadata",
+  "result": "FAIL",
+  "cleanup": "SOFT_DELETED",
+  "error_type": "AssertionError",
+  "error": "scalar list value with default minimum",
+  "steps": [
+    {
+      "check": "QA login",
+      "passed": true
+    },
+    {
+      "check": "QA admitted",
+      "passed": true
+    },
+    {
+      "check": "non-admin role",
+      "passed": true
+    },
+    {
+      "check": "QA login",
+      "passed": true
+    },
+    {
+      "check": "QA admitted",
+      "passed": true
+    },
+    {
+      "check": "non-admin role",
+      "passed": true
+    },
+    {
+      "request": "activate fixture role",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "activate fixture role",
+      "passed": true
+    },
+    {
+      "check": "exact active role",
+      "passed": true
+    },
+    {
+      "request": "undeclared named parameter refused",
+      "status": 422,
+      "expected_status": 422
+    },
+    {
+      "check": "undeclared named parameter refused",
+      "passed": true
+    },
+    {
+      "request": "inspect with declarations",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "inspect with declarations",
+      "passed": true
+    },
+    {
+      "check": "schema from analyzer without data rows",
+      "passed": true
+    },
+    {
+      "check": "declarations echoed exactly",
+      "passed": true
+    },
+    {
+      "request": "changed declarations need a new inspection",
+      "status": 409,
+      "expected_status": 409
+    },
+    {
+      "check": "changed declarations need a new inspection",
+      "passed": true
+    },
+    {
+      "request": "create",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "create",
+      "passed": true
+    },
+    {
+      "request": "draft",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "draft",
+      "passed": true
+    },
+    {
+      "check": "stored declarations",
+      "passed": true
+    },
+    {
+      "request": "required value missing",
+      "status": 422,
+      "expected_status": 422
+    },
+    {
+      "check": "required value missing",
+      "passed": true
+    },
+    {
+      "check": "required value missing: no stored value echoed",
+      "passed": true
+    },
+    {
+      "request": "wrong value type",
+      "status": 422,
+      "expected_status": 422
+    },
+    {
+      "check": "wrong value type",
+      "passed": true
+    },
+    {
+      "check": "wrong value type: no stored value echoed",
+      "passed": true
+    },
+    {
+      "request": "below declared minimum",
+      "status": 422,
+      "expected_status": 422
+    },
+    {
+      "check": "below declared minimum",
+      "passed": true
+    },
+    {
+      "check": "below declared minimum: no stored value echoed",
+      "passed": true
+    },
+    {
+      "request": "unknown parameter",
+      "status": 422,
+      "expected_status": 422
+    },
+    {
+      "check": "unknown parameter",
+      "passed": true
+    },
+    {
+      "check": "unknown parameter: no stored value echoed",
+      "passed": true
+    },
+    {
+      "request": "scalar list value with default minimum",
+      "status": 504,
+      "expected_status": 200
+    },
+    {
+      "check": "scalar list value with default minimum",
+      "passed": false
+    },
+    {
+      "request": "delete owned dataset",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "delete owned dataset",
+      "passed": true
+    },
+    {
+      "request": "deleted dataset hidden",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "deleted dataset hidden",
+      "passed": true
+    },
+    {
+      "request": "logout",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "logout",
+      "passed": true
+    },
+    {
+      "request": "logout",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "logout",
+      "passed": true
+    }
+  ],
+  "finished_at": "2026-11-15T20:09:21.863734+00:00"
+}

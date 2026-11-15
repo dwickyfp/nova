@@ -1,0 +1,570 @@
+{
+  "result": "PASS",
+  "cleanup": "REMOVED",
+  "dataset": {
+    "started_at": "2026-11-13T22:02:04.735531+00:00",
+    "resource_id": "1763899e-27fa-452e-bf41-12694488b402",
+    "scope": "semantic_model dataset API, real StarRocks/Ranger and PG17 metadata",
+    "result": "PASS",
+    "cleanup": "SOFT_DELETED",
+    "preview_field_types": [
+      {
+        "source_column": "id",
+        "logical_type": "integer",
+        "physical_type": "bigint(20)",
+        "nullable": false
+      },
+      {
+        "source_column": "total",
+        "logical_type": "decimal",
+        "physical_type": "decimal(38, 12)",
+        "nullable": true
+      }
+    ],
+    "preview_mismatches": [],
+    "steps": [
+      {
+        "check": "QA login",
+        "passed": true
+      },
+      {
+        "check": "QA admitted",
+        "passed": true
+      },
+      {
+        "check": "non-admin role",
+        "passed": true
+      },
+      {
+        "check": "QA login",
+        "passed": true
+      },
+      {
+        "check": "QA admitted",
+        "passed": true
+      },
+      {
+        "check": "non-admin role",
+        "passed": true
+      },
+      {
+        "request": "inactive fixture role cannot inspect source",
+        "status": 404,
+        "expected_status": 404
+      },
+      {
+        "check": "inactive fixture role cannot inspect source",
+        "passed": true
+      },
+      {
+        "check": "source refusal has no private name",
+        "passed": true
+      },
+      {
+        "request": "inactive role cannot create source dataset",
+        "status": 404,
+        "expected_status": 404
+      },
+      {
+        "check": "inactive role cannot create source dataset",
+        "passed": true
+      },
+      {
+        "check": "create refusal has no private name",
+        "passed": true
+      },
+      {
+        "request": "activate fixture role",
+        "status": 200,
+        "expected_status": 200
+      },
+      {
+        "check": "activate fixture role",
+        "passed": true
+      },
+      {
+        "check": "exact active role",
+        "passed": true
+      },
+      {
+        "request": "denied create left no dataset",
+        "status": 404,
+        "expected_status": 404
+      },
+      {
+        "check": "denied create left no dataset",
+        "passed": true
+      },
+      {
+        "request": "inspect",
+        "status": 200,
+        "expected_status": 200
+      },
+      {
+        "check": "inspect",
+        "passed": true
+      },
+      {
+        "check": "schema without data",
+        "passed": true
+      },
+      {
+        "check": "physical identity",
+        "passed": true
+      },
+      {
+        "check": "authoritative fields",
+        "passed": true
+      },
+      {
+        "check": "no browser cache",
+        "passed": true
+      },
+      {
+        "request": "stale binding refused",
+        "status": 409,
+        "expected_status": 409
+      },
+      {
+        "check": "stale binding refused",
+        "passed": true
+      },
+      {
+        "request": "spoofed schema refused",
+        "status": 422,
+        "expected_status": 422
+      },
+      {
+        "check": "spoofed schema refused",
+        "passed": true
+      },
+      {
+        "request": "create",
+        "status": 201,
+        "expected_status": 201
+      },
+      {
+        "check": "create",
+        "passed": true
+      },
+      {
+        "request": "replay",
+        "status": 201,
+        "expected_status": 201
+      },
+      {
+        "check": "replay",
+        "passed": true
+      },
+      {
+        "check": "same receipt",
+        "passed": true
+      },
+      {
+        "request": "draft",
+        "status": 200,
+        "expected_status": 200
+      },
+      {
+        "check": "draft",
+        "passed": true
+      },
+      {
+        "check": "stored server schema",
+        "passed": true
+      },
+      {
+        "request": "personal isolation",
+        "status": 404,
+        "expected_status": 404
+      },
+      {
+        "check": "personal isolation",
+        "passed": true
+      },
+      {
+        "request": "preview draft",
+        "status": 200,
+        "expected_status": 200
+      },
+      {
+        "check": "preview draft",
+        "passed": true
+      },
+      {
+        "check": "bounded typed preview without fabricated total",
+        "passed": true
+      },
+      {
+        "check": "preview cache disabled",
+        "passed": true
+      },
+      {
+        "check": "exact typed preview pages",
+        "passed": true
+      },
+      {
+        "request": "preview isolation",
+        "status": 404,
+        "expected_status": 404
+      },
+      {
+        "check": "preview isolation",
+        "passed": true
+      },
+      {
+        "request": "preview stale revision",
+        "status": 409,
+        "expected_status": 409
+      },
+      {
+        "check": "preview stale revision",
+        "passed": true
+      },
+      {
+        "request": "preview bounded input",
+        "status": 422,
+        "expected_status": 422
+      },
+      {
+        "check": "preview bounded input",
+        "passed": true
+      },
+      {
+        "request": "publish",
+        "status": 200,
+        "expected_status": 200
+      },
+      {
+        "check": "publish",
+        "passed": true
+      },
+      {
+        "request": "read publication",
+        "status": 200,
+        "expected_status": 200
+      },
+      {
+        "check": "read publication",
+        "passed": true
+      },
+      {
+        "check": "publication retains public schema without source definitions",
+        "passed": true
+      },
+      {
+        "request": "publication isolation",
+        "status": 404,
+        "expected_status": 404
+      },
+      {
+        "check": "publication isolation",
+        "passed": true
+      },
+      {
+        "request": "preview publication",
+        "status": 200,
+        "expected_status": 200
+      },
+      {
+        "check": "preview publication",
+        "passed": true
+      },
+      {
+        "request": "native dataset keeps pinned semantic version",
+        "status": 200,
+        "expected_status": 200
+      },
+      {
+        "check": "native dataset keeps pinned semantic version",
+        "passed": true
+      },
+      {
+        "request": "inspect edited source",
+        "status": 200,
+        "expected_status": 200
+      },
+      {
+        "check": "inspect edited source",
+        "passed": true
+      },
+      {
+        "request": "source edit isolation",
+        "status": 404,
+        "expected_status": 404
+      },
+      {
+        "check": "source edit isolation",
+        "passed": true
+      },
+      {
+        "request": "explicit source edit",
+        "status": 200,
+        "expected_status": 200
+      },
+      {
+        "check": "explicit source edit",
+        "passed": true
+      },
+      {
+        "request": "source edit replay",
+        "status": 200,
+        "expected_status": 200
+      },
+      {
+        "check": "source edit replay",
+        "passed": true
+      },
+      {
+        "check": "source edit receipt is stable",
+        "passed": true
+      },
+      {
+        "request": "source edit stale revision",
+        "status": 409,
+        "expected_status": 409
+      },
+      {
+        "check": "source edit stale revision",
+        "passed": true
+      },
+      {
+        "request": "source edit changed idempotent intent",
+        "status": 409,
+        "expected_status": 409
+      },
+      {
+        "check": "source edit changed idempotent intent",
+        "passed": true
+      },
+      {
+        "request": "edited draft",
+        "status": 200,
+        "expected_status": 200
+      },
+      {
+        "check": "edited draft",
+        "passed": true
+      },
+      {
+        "check": "source edit creates a second server-derived revision",
+        "passed": true
+      },
+      {
+        "request": "publication after edit",
+        "status": 200,
+        "expected_status": 200
+      },
+      {
+        "check": "publication after edit",
+        "passed": true
+      },
+      {
+        "check": "source edit preserves original publication",
+        "passed": true
+      },
+      {
+        "request": "edited source preview",
+        "status": 200,
+        "expected_status": 200
+      },
+      {
+        "check": "edited source preview",
+        "passed": true
+      },
+      {
+        "request": "delete owned dataset",
+        "status": 200,
+        "expected_status": 200
+      },
+      {
+        "check": "delete owned dataset",
+        "passed": true
+      },
+      {
+        "request": "deleted dataset hidden",
+        "status": 404,
+        "expected_status": 404
+      },
+      {
+        "check": "deleted dataset hidden",
+        "passed": true
+      },
+      {
+        "request": "logout",
+        "status": 200,
+        "expected_status": 200
+      },
+      {
+        "check": "logout",
+        "passed": true
+      },
+      {
+        "request": "logout",
+        "status": 200,
+        "expected_status": 200
+      },
+      {
+        "check": "logout",
+        "passed": true
+      }
+    ],
+    "finished_at": "2026-11-13T22:02:21.734694+00:00"
+  },
+  "steps": [
+    {
+      "check": "semantic fixture login",
+      "passed": true
+    },
+    {
+      "request": "semantic fixture active role",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "semantic fixture active role",
+      "passed": true
+    },
+    {
+      "request": "create owned semantic view",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "create owned semantic view",
+      "passed": true
+    },
+    {
+      "request": "draft model cannot author dataset",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "draft model cannot author dataset",
+      "passed": true
+    },
+    {
+      "request": "validate semantic model",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "validate semantic model",
+      "passed": true
+    },
+    {
+      "check": "semantic validation passed",
+      "passed": true
+    },
+    {
+      "request": "publish semantic model",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "publish semantic model",
+      "passed": true
+    },
+    {
+      "check": "published version one",
+      "passed": true
+    },
+    {
+      "request": "incorrect semantic fingerprint refused",
+      "status": 409,
+      "expected_status": 409
+    },
+    {
+      "check": "incorrect semantic fingerprint refused",
+      "passed": true
+    },
+    {
+      "request": "new semantic version",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "new semantic version",
+      "passed": true
+    },
+    {
+      "request": "validate new semantic version",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "validate new semantic version",
+      "passed": true
+    },
+    {
+      "check": "new semantic version valid",
+      "passed": true
+    },
+    {
+      "request": "publish new semantic version",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "publish new semantic version",
+      "passed": true
+    },
+    {
+      "check": "new active semantic version",
+      "passed": true
+    },
+    {
+      "check": "pinned semantic result unchanged",
+      "passed": true
+    },
+    {
+      "check": "native semantic dataset lifecycle",
+      "passed": true
+    },
+    {
+      "request": "deprecate owned semantic view",
+      "status": 204,
+      "expected_status": 204
+    },
+    {
+      "check": "deprecate owned semantic view",
+      "passed": true
+    },
+    {
+      "request": "deprecated model refuses new dataset inspection",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "deprecated model refuses new dataset inspection",
+      "passed": true
+    },
+    {
+      "request": "remove owned semantic view",
+      "status": 204,
+      "expected_status": 204
+    },
+    {
+      "check": "remove owned semantic view",
+      "passed": true
+    },
+    {
+      "request": "removed semantic view hidden",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "removed semantic view hidden",
+      "passed": true
+    },
+    {
+      "request": "semantic fixture logout",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "semantic fixture logout",
+      "passed": true
+    }
+  ]
+}

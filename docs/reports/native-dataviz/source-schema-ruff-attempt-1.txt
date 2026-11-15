@@ -1,0 +1,12 @@
+E501 Line too long (103 > 100)
+   --> app/sql_frontend/binding/starrocks.py:140:101
+    |
+138 |                         for column in columns],
+139 |         }
+140 |         digest = sha256(json.dumps(schema, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    |                                                                                                     ^^^
+141 |         return BoundTable(resolved, after[1], columns=columns,
+142 |                           physical_id=after[0], schema_version=digest)
+    |
+
+Found 3 errors (2 fixed, 1 remaining).

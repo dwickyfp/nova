@@ -1,0 +1,267 @@
+? Verifying lockfile against supply-chain policies (739 entries)...
+Progress: resolved 1, reused 0, downloaded 0, added 0
+Progress: resolved 6, reused 6, downloaded 0, added 0
+Progress: resolved 10, reused 10, downloaded 0, added 0
+Progress: resolved 12, reused 12, downloaded 0, added 0
+Progress: resolved 15, reused 15, downloaded 0, added 0
+Progress: resolved 19, reused 19, downloaded 0, added 0
+Progress: resolved 20, reused 20, downloaded 0, added 0
+Progress: resolved 22, reused 22, downloaded 0, added 0
+Progress: resolved 28, reused 28, downloaded 0, added 0
+[WARN] Request took 10063ms: https://registry.npmjs.org/@openuidev%2Freact-lang
+[WARN] Request took 10088ms: https://registry.npmjs.org/@types%2Freact-dom
+Progress: resolved 34, reused 34, downloaded 0, added 0
+[WARN] Request took 10170ms: https://registry.npmjs.org/@radix-ui%2Freact-direction
+[WARN] Request took 10335ms: https://registry.npmjs.org/@dnd-kit%2Fsortable
+[WARN] Request took 10355ms: https://registry.npmjs.org/eslint
+[WARN] Request took 10535ms: https://registry.npmjs.org/@radix-ui%2Freact-label
+[WARN] Request took 10539ms: https://registry.npmjs.org/@terraformer%2Fwkt
+[WARN] Request took 10450ms: https://registry.npmjs.org/@humanfs%2Ftypes
+[WARN] Request took 10708ms: https://registry.npmjs.org/@radix-ui%2Freact-alert-dialog
+[WARN] Request took 10571ms: https://registry.npmjs.org/@jridgewell%2Fremapping
+[WARN] Request took 10804ms: https://registry.npmjs.org/@floating-ui%2Futils
+[WARN] Request took 11021ms: https://registry.npmjs.org/@tanstack%2Freact-table
+[WARN] Request took 11091ms: https://registry.npmjs.org/@openuidev%2Flang-core
+[WARN] Request took 10910ms: https://registry.npmjs.org/@jridgewell%2Fgen-mapping
+Progress: resolved 41, reused 41, downloaded 0, added 0
+[WARN] Request took 10996ms: https://registry.npmjs.org/@humanfs%2Fnode
+[WARN] Request took 10975ms: https://registry.npmjs.org/@keyv%2Fserialize
+[WARN] Request took 11528ms: https://registry.npmjs.org/@floating-ui%2Fcore
+[WARN] Request took 11556ms: https://registry.npmjs.org/@humanfs%2Fcore
+[WARN] Request took 11782ms: https://registry.npmjs.org/vite
+[WARN] Request took 11787ms: https://registry.npmjs.org/@radix-ui%2Freact-scroll-area
+[WARN] Request took 11121ms: https://registry.npmjs.org/@mapbox%2Fpoint-geometry
+[WARN] Request took 10759ms: https://registry.npmjs.org/@mapbox%2Funitbezier
+[WARN] Request took 11423ms: https://registry.npmjs.org/@kobalte%2Fcore
+[WARN] Request took 12062ms: https://registry.npmjs.org/@radix-ui%2Freact-radio-group
+[WARN] Request took 12082ms: https://registry.npmjs.org/@radix-ui%2Freact-dialog
+[WARN] Request took 11380ms: https://registry.npmjs.org/@mapbox%2Fjsonlint-lines-primitives
+[WARN] Request took 11882ms: https://registry.npmjs.org/@humanwhocodes%2Fmodule-importer
+Progress: resolved 45, reused 45, downloaded 0, added 0
+[WARN] Request took 11122ms: https://registry.npmjs.org/@mapbox%2Ftiny-sdf
+[WARN] Request took 12230ms: https://registry.npmjs.org/@floating-ui%2Fdom
+[WARN] Request took 12909ms: https://registry.npmjs.org/@esbuild%2Fandroid-x64
+[WARN] Request took 11353ms: https://registry.npmjs.org/clsx
+Progress: resolved 46, reused 45, downloaded 0, added 0
+[WARN] Request took 11348ms: https://registry.npmjs.org/@maplibre%2Fvt-pbf
+[WARN] Request took 12062ms: https://registry.npmjs.org/acorn
+[WARN] Request took 12989ms: https://registry.npmjs.org/@jridgewell%2Fsourcemap-codec
+[WARN] Request took 12009ms: https://registry.npmjs.org/@maplibre%2Fgeojson-vt
+[WARN] Request took 12991ms: https://registry.npmjs.org/@jridgewell%2Fresolve-uri
+[WARN] Request took 11854ms: https://registry.npmjs.org/class-variance-authority
+[WARN] Request took 13546ms: https://registry.npmjs.org/@esbuild%2Flinux-riscv64
+[WARN] Request took 11539ms: https://registry.npmjs.org/@maplibre%2Fmlt
+[WARN] Request took 12121ms: https://registry.npmjs.org/axios
+[WARN] Request took 11743ms: https://registry.npmjs.org/cmdk
+[WARN] Request took 13568ms: https://registry.npmjs.org/@esbuild%2Flinux-ia32
+[WARN] Request took 12216ms: https://registry.npmjs.org/@mapbox%2Fvector-tile
+[WARN] Request took 13210ms: https://registry.npmjs.org/@hookform%2Fresolvers
+[WARN] Request took 11078ms: https://registry.npmjs.org/@napi-rs%2Fwasm-runtime
+[WARN] Request took 10814ms: https://registry.npmjs.org/@openuidev%2Fobservability
+[WARN] Request took 11089ms: https://registry.npmjs.org/input-otp
+[WARN] Request took 12469ms: https://registry.npmjs.org/date-fns
+Progress: resolved 52, reused 51, downloaded 0, added 0
+[WARN] Request took 14260ms: https://registry.npmjs.org/@hookform%2Fresolvers
+[WARN] Request took 10492ms: https://registry.npmjs.org/@oxc-parser%2Fbinding-darwin-x64
+[WARN] Request took 10466ms: https://registry.npmjs.org/@oxc-parser%2Fbinding-freebsd-x64
+[WARN] Request took 12073ms: https://registry.npmjs.org/highlight.js
+[WARN] Request took 14742ms: https://registry.npmjs.org/@radix-ui%2Freact-separator
+[WARN] Request took 14794ms: https://registry.npmjs.org/@eslint%2Fjs
+[WARN] Request took 15004ms: https://registry.npmjs.org/@cacheable%2Futils
+[WARN] Request took 14924ms: https://registry.npmjs.org/zod
+[WARN] Request took 13145ms: https://registry.npmjs.org/@monaco-editor%2Floader
+[WARN] Request took 14891ms: https://registry.npmjs.org/@floating-ui%2Freact-dom
+[WARN] Request took 10151ms: https://registry.npmjs.org/@oxc-parser%2Fbinding-linux-arm-musleabihf
+Progress: resolved 57, reused 54, downloaded 0, added 0
+[WARN] Request took 13249ms: https://registry.npmjs.org/@monaco-editor%2Freact
+[WARN] Request took 10877ms: https://registry.npmjs.org/@oxc-parser%2Fbinding-linux-arm-gnueabihf
+[WARN] Request took 10286ms: https://registry.npmjs.org/@oxc-parser%2Fbinding-linux-arm64-musl
+[WARN] Request took 14983ms: https://registry.npmjs.org/@kobalte%2Futils
+[WARN] Request took 15830ms: https://registry.npmjs.org/@esbuild%2Ffreebsd-arm64
+Progress: resolved 57, reused 56, downloaded 0, added 0
+[WARN] Request took 10441ms: https://registry.npmjs.org/react-top-loading-bar
+[WARN] Request took 14228ms: https://registry.npmjs.org/echarts
+[WARN] Request took 12171ms: https://registry.npmjs.org/react-day-picker
+[WARN] Request took 13186ms: https://registry.npmjs.org/@oxc-parser%2Fbinding-android-arm-eabi
+Progress: resolved 62, reused 60, downloaded 0, added 0
+[WARN] Request took 13495ms: https://registry.npmjs.org/@oxc-parser%2Fbinding-android-arm64
+[WARN] Request took 10317ms: https://registry.npmjs.org/recharts
+[WARN] Request took 17941ms: https://registry.npmjs.org/@humanwhocodes%2Fretry
+[WARN] Request took 18171ms: https://registry.npmjs.org/@radix-ui%2Freact-select
+Progress: resolved 65, reused 64, downloaded 0, added 0
+[WARN] Request took 14613ms: https://registry.npmjs.org/@oxc-parser%2Fbinding-darwin-arm64
+[WARN] Request took 10135ms: https://registry.npmjs.org/@oxc-parser%2Fbinding-linux-x64-gnu
+[WARN] Request took 18835ms: https://registry.npmjs.org/@eslint%2Fplugin-kit
+[WARN] Request took 18633ms: https://registry.npmjs.org/@internationalized%2Fnumber
+[WARN] Request took 10048ms: https://registry.npmjs.org/xlsx
+Progress: resolved 67, reused 65, downloaded 0, added 0
+[WARN] Request took 15448ms: https://registry.npmjs.org/maplibre-gl
+[WARN] Request took 19245ms: https://registry.npmjs.org/@jridgewell%2Ftrace-mapping
+[WARN] Request took 14450ms: https://registry.npmjs.org/@oxc-parser%2Fbinding-linux-arm64-gnu
+[WARN] Request took 19526ms: https://registry.npmjs.org/esbuild
+Progress: resolved 70, reused 69, downloaded 0, added 0
+[WARN] Request took 16598ms: https://registry.npmjs.org/lucide-react
+[WARN] Request took 20674ms: https://registry.npmjs.org/@keyv%2Fbigmap
+[WARN] Request took 20064ms: https://registry.npmjs.org/@maplibre%2Fmaplibre-gl-style-spec
+[WARN] Request took 21479ms: https://registry.npmjs.org/@esbuild%2Fwin32-x64
+[WARN] Request took 21600ms: https://registry.npmjs.org/@emnapi%2Fcore
+Progress: resolved 71, reused 70, downloaded 0, added 0
+[WARN] Request took 12919ms: https://registry.npmjs.org/@oxc-parser%2Fbinding-linux-x64-musl
+[WARN] Request took 14141ms: https://registry.npmjs.org/sql-formatter
+Progress: resolved 72, reused 70, downloaded 0, added 0
+[WARN] Request took 15498ms: https://registry.npmjs.org/remark-gfm
+Progress: resolved 73, reused 72, downloaded 0, added 0
+[WARN] Request took 24449ms: https://registry.npmjs.org/@esbuild%2Flinux-x64
+[WARN] Request took 24980ms: https://registry.npmjs.org/@types%2Fnode
+Progress: resolved 74, reused 72, downloaded 0, added 0
+[WARN] Request took 11705ms: https://registry.npmjs.org/@oxc-resolver%2Fbinding-wasm32-wasi
+[WARN] Request took 10560ms: https://registry.npmjs.org/@radix-ui%2Freact-checkbox
+[WARN] Request took 25953ms: https://registry.npmjs.org/@radix-ui%2Freact-dropdown-menu
+Progress: resolved 75, reused 74, downloaded 0, added 0
+[WARN] Request took 26364ms: https://registry.npmjs.org/@dnd-kit%2Futilities
+Progress: resolved 76, reused 75, downloaded 0, added 0
+[WARN] Request took 21446ms: https://registry.npmjs.org/react-markdown
+Progress: resolved 77, reused 76, downloaded 0, added 0
+[WARN] Request took 11034ms: https://registry.npmjs.org/@radix-ui%2Freact-popper
+[WARN] Request took 13546ms: https://registry.npmjs.org/@radix-ui%2Freact-dropdown-menu
+[WARN] Request took 29599ms: https://registry.npmjs.org/@esbuild%2Fsunos-x64
+[WARN] Request took 10201ms: https://registry.npmjs.org/@rolldown%2Fbinding-linux-arm64-musl
+[WARN] Request took 15256ms: https://registry.npmjs.org/@radix-ui%2Freact-collection
+[WARN] Request took 10869ms: https://registry.npmjs.org/@rolldown%2Fbinding-linux-x64-gnu
+[WARN] Request took 11326ms: https://registry.npmjs.org/@rolldown%2Fbinding-linux-arm64-gnu
+[WARN] Request took 13133ms: https://registry.npmjs.org/@radix-ui%2Freact-use-callback-ref
+[WARN] Request took 12493ms: https://registry.npmjs.org/@rolldown%2Fpluginutils
+[WARN] Request took 11429ms: https://registry.npmjs.org/@solid-primitives%2Futils
+[WARN] Request took 27278ms: https://registry.npmjs.org/@oxc-parser%2Fbinding-linux-ppc64-gnu
+[WARN] Request took 13222ms: https://registry.npmjs.org/@solid-primitives%2Fkeyed
+[WARN] Request took 35636ms: https://registry.npmjs.org/@babel%2Fparser
+[WARN] Request took 10897ms: https://registry.npmjs.org/@tailwindcss%2Foxide
+[WARN] Request took 12766ms: https://registry.npmjs.org/@tailwindcss%2Foxide-linux-arm64-musl
+[WARN] Request took 13519ms: https://registry.npmjs.org/@tailwindcss%2Foxide-darwin-x64
+[WARN] Request took 11679ms: https://registry.npmjs.org/@tanstack%2Frouter-generator
+[WARN] Request took 35999ms: https://registry.npmjs.org/katex
+Progress: resolved 78, reused 76, downloaded 0, added 0
+[WARN] Request took 13680ms: https://registry.npmjs.org/@tanstack%2Frouter-core
+Progress: resolved 78, reused 77, downloaded 0, added 0
+[WARN] Request took 15580ms: https://registry.npmjs.org/@tailwindcss%2Foxide-win32-arm64-msvc
+[WARN] Request took 41235ms: https://registry.npmjs.org/gridstack
+Progress: resolved 79, reused 77, downloaded 0, added 0
+[WARN] Request took 13963ms: https://registry.npmjs.org/@tanstack%2Ftable-core
+[WARN] Request took 42100ms: https://registry.npmjs.org/@tanstack%2Freact-router
+[WARN] Request took 42153ms: https://registry.npmjs.org/typescript-eslint
+[WARN] Request took 25145ms: https://registry.npmjs.org/@radix-ui%2Freact-portal
+Progress: resolved 81, reused 79, downloaded 0, added 0
+[WARN] Request took 11598ms: https://registry.npmjs.org/@typescript-eslint%2Ftsconfig-utils
+[WARN] Request took 10008ms: https://registry.npmjs.org/asynckit
+[WARN] Request took 20034ms: https://registry.npmjs.org/@tailwindcss%2Foxide-wasm32-wasi
+[WARN] Request took 46018ms: https://registry.npmjs.org/@babel%2Fhelper-module-transforms
+[WARN] Request took 12862ms: https://registry.npmjs.org/@vitest%2Fexpect
+[WARN] Request took 11709ms: https://registry.npmjs.org/browserslist
+[WARN] Request took 19813ms: https://registry.npmjs.org/@types%2Fd3-scale
+[WARN] Request took 14049ms: https://registry.npmjs.org/argparse
+[WARN] Request took 26194ms: https://registry.npmjs.org/@tanstack%2Fhistory
+[WARN] Request took 11803ms: https://registry.npmjs.org/chokidar
+[WARN] Request took 10121ms: https://registry.npmjs.org/d3-scale
+[WARN] Request took 36299ms: https://registry.npmjs.org/@radix-ui%2Freact-menu
+[WARN] Request took 20144ms: https://registry.npmjs.org/@typescript-eslint%2Futils
+[WARN] Request took 14924ms: https://registry.npmjs.org/ci-info
+[WARN] Request took 30829ms: https://registry.npmjs.org/@tailwindcss%2Foxide-win32-x64-msvc
+[WARN] Request took 11074ms: https://registry.npmjs.org/dompurify
+[WARN] Request took 25067ms: https://registry.npmjs.org/@typescript-eslint%2Ftype-utils
+[WARN] Request took 17808ms: https://registry.npmjs.org/comma-separated-tokens
+[WARN] GET https://registry.npmjs.org/@babel%2Fhelpers error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] GET https://registry.npmjs.org/@esbuild%2Flinux-loong64 error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] GET https://registry.npmjs.org/@eslint%2Fjs error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] GET https://registry.npmjs.org/typescript error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] GET https://registry.npmjs.org/vitest error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] GET https://registry.npmjs.org/@radix-ui%2Freact-checkbox error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] GET https://registry.npmjs.org/eslint-plugin-react-hooks error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] GET https://registry.npmjs.org/playwright error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] Request took 37806ms: https://registry.npmjs.org/@tailwindcss%2Foxide-linux-arm64-gnu
+[WARN] Request took 36836ms: https://registry.npmjs.org/@tanstack%2Freact-router
+[WARN] Request took 18625ms: https://registry.npmjs.org/detect-libc
+[WARN] GET https://registry.npmjs.org/monaco-editor error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] GET https://registry.npmjs.org/react error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] Request took 40624ms: https://registry.npmjs.org/@tailwindcss%2Foxide-linux-x64-musl
+[WARN] GET https://registry.npmjs.org/react-dom error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] GET https://registry.npmjs.org/react-hook-form error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] Request took 18930ms: https://registry.npmjs.org/eslint-plugin-react-hooks
+[WARN] GET https://registry.npmjs.org/tailwind-merge error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] GET https://registry.npmjs.org/tailwindcss error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] Request took 11092ms: https://registry.npmjs.org/mime-types
+[WARN] Request took 39460ms: https://registry.npmjs.org/@typescript-eslint%2Fparser
+[WARN] Request took 47965ms: https://registry.npmjs.org/@tailwindcss%2Foxide-linux-arm-gnueabihf
+[WARN] Request took 10627ms: https://registry.npmjs.org/remark-stringify
+[WARN] Request took 49223ms: https://registry.npmjs.org/@tailwindcss%2Foxide-freebsd-x64
+[WARN] Request took 12559ms: https://registry.npmjs.org/postcss
+[WARN] Request took 13718ms: https://registry.npmjs.org/pbf
+[WARN] Request took 20772ms: https://registry.npmjs.org/immer
+[WARN] Request took 15992ms: https://registry.npmjs.org/micromark-util-html-tag-name
+[WARN] Request took 37789ms: https://registry.npmjs.org/caniuse-lite
+[WARN] GET https://registry.npmjs.org/zod/-/zod-4.6.6.tgz error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] Request took 15951ms: https://registry.npmjs.org/nearley
+[WARN] Request took 79350ms: https://registry.npmjs.org/@esbuild%2Flinux-loong64
+[WARN] Request took 10232ms: https://registry.npmjs.org/vitest
+[WARN] Tarball download average speed 14 KiB/s (size 551 KiB) is below 50 KiB/s: https://registry.npmjs.org/gridstack/-/gridstack-14.1.0.tgz (GET)
+Progress: resolved 81, reused 79, downloaded 1, added 0
+[WARN] Request took 20772ms: https://registry.npmjs.org/property-information
+[WARN] GET https://registry.npmjs.org/@swc%2Fhelpers error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] Request took 14125ms: https://registry.npmjs.org/@babel%2Fhelpers
+[WARN] GET https://registry.npmjs.org/@tailwindcss%2Foxide-linux-x64-gnu error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] Request took 52739ms: https://registry.npmjs.org/@typescript-eslint%2Fvisitor-keys
+[WARN] Request took 25729ms: https://registry.npmjs.org/react
+[WARN] Request took 18108ms: https://registry.npmjs.org/use-sync-external-store
+Progress: resolved 82, reused 79, downloaded 1, added 0
+[WARN] Request took 18876ms: https://registry.npmjs.org/@radix-ui%2Freact-checkbox
+Progress: resolved 83, reused 81, downloaded 1, added 0
+[WARN] Request took 15122ms: https://registry.npmjs.org/react
+[WARN] Request took 29760ms: https://registry.npmjs.org/parse-entities
+[WARN] Request took 19367ms: https://registry.npmjs.org/zrender
+[WARN] Request took 27865ms: https://registry.npmjs.org/scheduler
+[WARN] GET https://registry.npmjs.org/@typescript-eslint%2Feslint-plugin error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] GET https://registry.npmjs.org/@typescript-eslint%2Fscope-manager error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] GET https://registry.npmjs.org/@typescript-eslint%2Ftypes error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] GET https://registry.npmjs.org/@typescript-eslint%2Ftypescript-estree error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] Request took 19349ms: https://registry.npmjs.org/monaco-editor
+Progress: resolved 84, reused 81, downloaded 1, added 0
+Progress: resolved 84, reused 82, downloaded 1, added 0
+Progress: resolved 84, reused 82, downloaded 2, added 0
+[WARN] Request took 31014ms: https://registry.npmjs.org/eslint-plugin-react-hooks
+[WARN] Request took 35962ms: https://registry.npmjs.org/playwright
+[WARN] Request took 37371ms: https://registry.npmjs.org/typescript
+[WARN] GET https://registry.npmjs.org/electron-to-chromium error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] Request took 37765ms: https://registry.npmjs.org/vitest
+Progress: resolved 85, reused 82, downloaded 2, added 0
+Progress: resolved 85, reused 83, downloaded 2, added 0
+[WARN] Request took 21298ms: https://registry.npmjs.org/react
+Progress: resolved 86, reused 83, downloaded 2, added 0
+Progress: resolved 86, reused 84, downloaded 2, added 0
+[WARN] Request took 24339ms: https://registry.npmjs.org/@tailwindcss%2Foxide-linux-x64-gnu
+[WARN] Request took 59942ms: https://registry.npmjs.org/playwright-core
+[WARN] GET https://registry.npmjs.org/playwright error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] GET https://registry.npmjs.org/react-dom error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] GET https://registry.npmjs.org/react-hook-form error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] GET https://registry.npmjs.org/react-is error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] Request took 20179ms: https://registry.npmjs.org/@typescript-eslint%2Ftypes
+[WARN] Request took 59877ms: https://registry.npmjs.org/semver
+[WARN] Request took 55286ms: https://registry.npmjs.org/eslint-plugin-react-hooks
+[WARN] Request took 50291ms: https://registry.npmjs.org/react-hook-form
+Progress: resolved 87, reused 84, downloaded 2, added 0
+[WARN] Request took 21121ms: https://registry.npmjs.org/playwright
+[WARN] GET https://registry.npmjs.org/tailwind-merge error (23). Will retry in 10 seconds. 2 retries left.
+[WARN] GET https://registry.npmjs.org/tailwindcss error (23). Will retry in 10 seconds. 2 retries left.
+Progress: resolved 88, reused 86, downloaded 2, added 0
+[WARN] Request took 26811ms: https://registry.npmjs.org/@typescript-eslint%2Ftypescript-estree
+[WARN] GET https://registry.npmjs.org/typescript error (23). Will retry in 1 minute. 1 retries left.
+Progress: resolved 89, reused 86, downloaded 2, added 0
+Progress: resolved 89, reused 87, downloaded 2, added 0
+[WARN] Request took 27825ms: https://registry.npmjs.org/typescript
+[WARN] GET https://registry.npmjs.org/react-dom error (23). Will retry in 1 minute. 1 retries left.
+[WARN] GET https://registry.npmjs.org/tailwindcss error (23). Will retry in 1 minute. 1 retries left.
+[WARN] Request took 41327ms: https://registry.npmjs.org/@typescript-eslint%2Fscope-manager
+[WARN] Request took 13182ms: https://registry.npmjs.org/playwright
+[WARN] Request took 13402ms: https://registry.npmjs.org/react-is
+[WARN] Request took 44775ms: https://registry.npmjs.org/@typescript-eslint%2Feslint-plugin
+[WARN] Request took 16453ms: https://registry.npmjs.org/react-hook-form
+[WARN] Request took 16698ms: https://registry.npmjs.org/react-dom
+[WARN] Request took 34528ms: https://registry.npmjs.org/electron-to-chromium

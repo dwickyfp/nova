@@ -1,0 +1,7 @@
+{
+  "result": "PASS",
+  "returncode": 0,
+  "image": "nginx:1.27-alpine",
+  "image_id": "sha256:96868d9fa38f469a86d2f25787e43ee9ad330339d30be260aa9f5a338bb03751",
+  "scope": "Unprivileged config parse only; no server/network/port/persistent volume."
+}

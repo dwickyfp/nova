@@ -1,0 +1,17 @@
+{
+  "recorded_at": "2026-11-14T17:07:28.606792+00:00",
+  "status": "FIX_VERIFIED_ON_PG17_AND_GOVERNED_GATEWAY",
+  "severity": "HIGH",
+  "resolved_finding": "dashboard-dataset-dependency-finding-1.json",
+  "implementation": "Immutable migration 0052 extends the dependency extractor for DashboardDefinition.datasets and backfills prior revisions. Recursive live-reference validation aborts an inconsistent upgrade without changing history.",
+  "evidence": {
+    "reproduction": "pg-attempt-26.json",
+    "focused": "pg-attempt-27.json",
+    "full_pg": "pg-attempt-28.json",
+    "deployment": "development-schema-52.json",
+    "live": "dataset-replay-live-attempt-3.json",
+    "fixture": "source-identity-live-attempt-38.json"
+  },
+  "observed": "Draft registry deletion now returns 409; atomic dashboard dataset creation, exact receipt replay, source replacement and owned cleanup pass.",
+  "limits": "Full application gates after this batch still running. Native editor and release acceptance remain open."
+}

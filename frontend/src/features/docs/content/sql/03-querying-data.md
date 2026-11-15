@@ -18,6 +18,31 @@ created in [Create databases and tables](/docs/sql/databases-and-tables).
   the customers again adds duplicate rows. The examples below assume that
   you have not yet run the update and delete examples.
 
+## Inspect a result schema
+
+Use `EXPLAIN SCHEMA` to inspect a query's column names, SQL types and nullability
+without reading its result rows. Your active role still needs access to every
+source. The schema also works when a query would return no rows.
+
+```sql
+EXPLAIN SCHEMA
+SELECT CAST(NULL AS BIGINT) AS optional_id,
+       CAST('12.50' AS DECIMAL(10,2)) AS amount;
+```
+
+| ordinal | name | physical_type | nullable |
+| --- | --- | --- | --- |
+| 1 | optional_id | bigint(20) | YES |
+| 2 | amount | decimal(10, 2) | YES |
+
+`YES` means the SQL analyzer allows a NULL result; it does not mean that every
+row is NULL. Give expressions clear aliases when using their schema in a dataset.
+
+This command accepts one read-only `SELECT` or `WITH ... SELECT` query, with at
+most 512 output columns. Mutations, recursive queries, stage access, external
+output, query hints and functions outside the supported read-only set are
+refused. Named parameters are not supported by this command.
+
 ## Filter and sort
 
 ```sql

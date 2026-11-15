@@ -28,6 +28,41 @@ official runtime `fe-core-4.1.4.jar`. It also pins Nashorn 15.4 and ASM Commons
 expressions need a JSR-223 JavaScript engine that Java 17 no longer bundles.
 The build does not vendor the StarRocks source tree.
 
+## View source identity
+
+`4.1.4-view-source-identity.patch` exposes a view's existing engine object ID in
+`information_schema.tables_config.TABLE_ID`. Upstream 4.1.4 fills that field for
+OLAP/materialized tables but leaves it unset for ordinary views. Dataset binding
+needs to distinguish a view from a replacement created under the same name.
+The existing caller/active-role authorization still runs before this projection;
+the patch adds no lookup API, role bypass or name-derived identity.
+
+The patch is included in the existing FE image build. Patch application,
+compilation and live governed acceptance are separate gates. Acceptance checks
+table rename, view drop/recreate, denied views, inactive/revoked assignments and
+zero/multiple active roles. The pinned grammar has no `ALTER VIEW ... RENAME`;
+view rename support is not claimed. Reflection permissions remain governed
+separately from the underlying object. External connector object identity is
+not supplied by this patch. See the [native Dataviz delivery evidence](../../docs/reports/native-dataviz/STATUS.md).
+
+## Query output schema
+
+`4.1.4-query-schema.patch` defines `EXPLAIN SCHEMA` for a top-level query without
+OUTFILE or recursive CTEs. It projects ordinal, output name, physical SQL type
+and nullability from the authorized query's analyzed fields. It does not execute result rows
+or infer types from samples. The existing analyzer, planner and Ranger checks
+precede the schema response. Physical output expressions are deliberately not
+used: optimizer rewrites can change their nullability based on the physical plan.
+DML and nested query use are refused by the parser.
+The response is bounded to 512 fields and one MiB.
+
+The FE grammar is generated with its upstream ANTLR 4.9.3 pin; Nova's Python
+grammar uses its own canonical generator and runtime. The image updates the
+existing `fe-grammar`, `fe-parser` and `fe-core` JARs, and runs `QuerySchemaTest`
+alongside the JDBC tests. Build, deployment, source binding and governed live
+acceptance remain distinct gates in the
+[native Dataviz delivery record](../../docs/reports/native-dataviz/STATUS.md).
+
 ## Task execution role
 
 `4.1.4-task-active-role.patch` fixes upstream `TaskRun.switchUser`, which normally

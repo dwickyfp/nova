@@ -1,0 +1,24 @@
+{
+  "command": [
+    "uv",
+    "run",
+    "pytest",
+    "tests/integration/test_metadata_viz.py",
+    "tests/integration/test_metadata_intelligence.py",
+    "tests/integration/test_metadata_migrator.py",
+    "--junitxml=/Users/dwickyferiansyahputra/.local/share/nova/native-dataviz-evidence-originals-20261114/pg-attempt-25.xml"
+  ],
+  "returncode": 0,
+  "seconds": 292.65,
+  "topology": "Existing user-authorized isolated PG17 TLS fixture on 55433; no StarRocks fixture",
+  "suites": [
+    {
+      "tests": "142",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "289.660"
+    }
+  ],
+  "failures": []
+}

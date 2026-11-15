@@ -1,0 +1,29 @@
+{
+  "command": [
+    "uv",
+    "run",
+    "pytest",
+    "tests/integration/test_metadata_viz.py",
+    "tests/integration/test_metadata_intelligence.py",
+    "tests/integration/test_metadata_migrator.py",
+    "--junitxml=/Users/dwickyferiansyahputra/.local/share/nova/native-dataviz-evidence-originals-20261114/pg-attempt-22.xml"
+  ],
+  "returncode": 1,
+  "seconds": 411.64,
+  "topology": "Existing user-authorized isolated PG17 TLS fixture on 55433; no StarRocks fixture",
+  "suites": [
+    {
+      "tests": "136",
+      "failures": "1",
+      "errors": "0",
+      "skipped": "0",
+      "time": "407.323"
+    }
+  ],
+  "failures": [
+    {
+      "test": "test_two_migrators_publish_one_schema_revision",
+      "message": "app.core.metadata_db.MetadataTimeout: Metadata operation exceeded its deadline"
+    }
+  ]
+}

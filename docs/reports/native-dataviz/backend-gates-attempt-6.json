@@ -1,0 +1,17 @@
+[
+  {
+    "file": "backend-unit-attempt-6.txt",
+    "returncode": 0,
+    "seconds": 913.7
+  },
+  {
+    "file": "scorecard-attempt-4.txt",
+    "returncode": 0,
+    "seconds": 1.91
+  },
+  {
+    "file": "user-data-boundary-attempt-3.txt",
+    "returncode": 0,
+    "seconds": 0.05
+  }
+]

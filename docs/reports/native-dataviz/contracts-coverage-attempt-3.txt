@@ -1,0 +1,21 @@
+........................................................................ [ 81%]
+................                                                         [100%]
+================================ tests coverage ================================
+______________ coverage: platform darwin, python 3.11.13-final-0 _______________
+
+Name                                      Stmts   Miss Branch BrPart  Cover   Missing
+-------------------------------------------------------------------------------------
+app/modules/viz/bindings.py                  84      8     70      6    90%   62, 71, 93-96, 98, 100, 109
+app/modules/viz/contracts/__init__.py         0      0      0      0   100%
+app/modules/viz/contracts/charts.py         120      7     10      4    90%   99-101, 174, 177, 180, 183
+app/modules/viz/contracts/commands.py        85      8      8      2    85%   102, 105-107, 117-120
+app/modules/viz/contracts/common.py          61      1      6      1    97%   82
+app/modules/viz/contracts/dashboards.py     122     13     48     12    84%   103, 105-106, 108, 110, 112, 136, 138, 141, 146, 148, 160, 162
+app/modules/viz/contracts/datasets.py       121     12     30     10    84%   69, 71, 75, 127, 129, 131, 133, 135, 137, 143-145
+app/modules/viz/contracts/filters.py        150     10     58      8    89%   41, 67, 111->113, 115-118, 134->138, 173, 175, 177, 179
+app/modules/viz/operations.py                56      0     42      1    99%   73->26
+app/modules/viz/permissions.py               15      0      8      0   100%
+-------------------------------------------------------------------------------------
+TOTAL                                       814     59    280     44    89%
+Coverage JSON written to file ../docs/reports/native-dataviz/contracts-coverage-attempt-3.json
+88 passed in 2.98s

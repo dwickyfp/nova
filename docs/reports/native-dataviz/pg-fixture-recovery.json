@@ -1,0 +1,20 @@
+{
+  "attempt_1": {
+    "passed": 712,
+    "errors": 303,
+    "memory_bytes": 536870912,
+    "cpus": 1,
+    "recovery_observed": true,
+    "postgres_child_exit_code": 2,
+    "oom_kill_count": 0,
+    "memory_max_events": 42236,
+    "root_cause": "not established; error logging is redacted"
+  },
+  "attempt_2": {
+    "memory_bytes": 1073741824,
+    "cpus": 2,
+    "maxfail": 1,
+    "shared_stack_changed": false
+  },
+  "cleanup": "17 owned orphan fixture roles removed after recovery; no schema remained; focused native and migrator suite then passed 38 tests"
+}

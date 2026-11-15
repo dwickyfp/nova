@@ -1,0 +1,25 @@
+$ uv run pytest tests/unit/test_native_viz_router.py tests/unit/test_native_viz_service.py -q
+.............F...........................                                [100%]
+=================================== FAILURES ===================================
+___________ test_chunked_oversized_body_is_rejected_before_mutation ____________
+
+api = (<httpx.AsyncClient object at 0x11bbcd390>, namespace(create_visual=<AsyncMock id='4758651472'>, require_kind=<AsyncMo...<AsyncMock id='4757438736'>, browse=<AsyncMock id='4759387728'>), <fastapi.applications.FastAPI object at 0x11b9aa950>)
+
+    async def test_chunked_oversized_body_is_rejected_before_mutation(api):
+        client, service, _ = api
+    
+        async def chunks():
+            for _ in range(17):
+                yield b" " * 65536
+    
+        response = await client.post("/viz/dashboards", content=chunks(), headers={
+            "Content-Type": "application/json", "Idempotency-Key": str(uuid4()),
+        })
+>       assert response.status_code == 413
+E       assert 400 == 413
+E        +  where 400 = <Response [400 Bad Request]>.status_code
+
+tests/unit/test_native_viz_router.py:77: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/test_native_viz_router.py::test_chunked_oversized_body_is_rejected_before_mutation
+1 failed, 40 passed in 29.46s

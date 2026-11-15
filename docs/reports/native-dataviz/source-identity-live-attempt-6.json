@@ -1,0 +1,54 @@
+{
+  "result": "FAIL",
+  "owned_database": "ndv_src_c0e1d9f77231",
+  "owned_roles": [
+    "ndv_read_c0e1d9f77231",
+    "ndv_none_c0e1d9f77231"
+  ],
+  "steps": [
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "table and view have distinct physical IDs",
+      "passed": true
+    },
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "empty source has authoritative decimal schema",
+      "passed": false
+    },
+    {
+      "check": "QA attributes unchanged",
+      "passed": true
+    },
+    {
+      "check": "QA grants unchanged",
+      "passed": true
+    }
+  ],
+  "cleanup_errors": [],
+  "error_type": "AssertionError",
+  "error_location": [
+    {
+      "file": "verify_native_source_identity_live.py",
+      "line": 183,
+      "function": "run"
+    },
+    {
+      "file": "verify_native_source_identity_live.py",
+      "line": 60,
+      "function": "check"
+    }
+  ],
+  "engine_version": "4.1.4",
+  "ranger_service": "nova_starrocks"
+}

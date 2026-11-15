@@ -1,0 +1,6 @@
+{
+  "recorded_at": "2026-11-13T22:08:47.988893+00:00",
+  "scope": "Frontend gate attempts 18 and 19",
+  "finding": "Passed with default shell toolchain Node 22.12.0 / pnpm 10.13.1; CI pins pnpm 11.8.0. These attempts are not CI-equivalent dependency validation.",
+  "correction": "Virtual table install attempt 2 uses the existing isolated CI toolchain; subsequent frontend gates use its Node and pnpm PATH explicitly. No global tool configuration changed."
+}

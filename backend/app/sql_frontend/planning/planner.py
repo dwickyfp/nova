@@ -76,6 +76,7 @@ class NativePlanner:
             transaction_intent=transaction_intent(logical.statement, context),
             private_bindings=private,
             stream_functions=stream_functions(logical.statement.parsed, context.database),
+            parameter_specs=context.parameter_specs,
         )
 
 
@@ -109,6 +110,8 @@ class SecurityPlanner(ActionPlanner):
 def default_registry() -> PlannerRegistry:
     registry = PlannerRegistry()
     registry.register(ast.NativeStatement, NativePlanner())
+    registry.register(ast.ParameterizedQueryStatement, NativePlanner())
+    registry.register(ast.QuerySchemaStatement, NativePlanner())
     registry.register(ast.StageAwareStatement, NativePlanner())
     registry.register(ast.SecurityStatement, SecurityPlanner(ActionKind.SECURITY))
     from app.sql_frontend.merge import MergePlanner

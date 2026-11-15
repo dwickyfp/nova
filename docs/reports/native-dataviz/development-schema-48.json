@@ -1,0 +1,46 @@
+{
+  "baseline_commit": "1ee12694e0ecb6ecfd8135965943be08f5195967",
+  "migration_sha256": "09104edb87ecd0c467da49a9ee4bd6a750db569c7abf2efae534e0ed7ea70325",
+  "fixture_evidence": "pg-attempt-5.xml",
+  "fixture_result": "38 passed; broader regression still blocked by fixture recovery",
+  "schema_before": 47,
+  "schema_after": 48,
+  "metadata_epoch_preserved": true,
+  "existing_tables_count_checked": 180,
+  "existing_counts_preserved": true,
+  "maintenance": false,
+  "backup_bytes": 188691566,
+  "checked_at": "2026-11-13T14:39:36.416501+00:00",
+  "backup_sha256": "da60ccd863fef9140c2bcce8879b3d1c14ead05a783c44ccb381990428f76c65",
+  "application_checks": {
+    "web": {
+      "http_status": 200,
+      "body": {
+        "status": "ready",
+        "role": "web",
+        "metadata": "read_write"
+      }
+    },
+    "query": {
+      "http_status": 200,
+      "body": {
+        "status": "ready",
+        "role": "query",
+        "metadata": "read_write"
+      }
+    }
+  },
+  "runtime_shutdown": "Original web supervisor ignored TERM; verified original checkout PIDs were stopped after the graceful deadline. Other services stopped normally.",
+  "scope": "Development additive metadata upgrade only. Native routes, query engine and product UI are not yet active. Superset retained.",
+  "runtime_gate": {
+    "command": "uv run python scripts/dev_readiness.py --web 8000 --query 8001 --frontend 5173",
+    "exit_code": 0,
+    "checks": [
+      "web/query readiness JSON",
+      "service and metadata metrics",
+      "worker heartbeat freshness",
+      "frontend root"
+    ],
+    "evidence": "development-readiness-48.txt"
+  }
+}

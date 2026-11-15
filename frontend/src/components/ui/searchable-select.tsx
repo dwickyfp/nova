@@ -74,10 +74,11 @@ export function SearchableSelect({
           <div className='relative'>
             <Search className='absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground' />
             <input
+              aria-label={placeholder ?? `Search ${label.toLowerCase()}`}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={placeholder ?? `Search ${label.toLowerCase()}…`}
-              className='h-7 w-full rounded-md border border-border bg-background pl-8 pr-2 text-xs outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-primary'
+              className='h-11 w-full rounded-md border border-border bg-background pl-8 pr-2 text-sm outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring'
             />
           </div>
         </div>
@@ -91,13 +92,13 @@ export function SearchableSelect({
                 setOpen(false)
               }}
               className={cn(
-                'flex w-full items-center gap-2 px-3 py-1.5 text-sm transition-colors hover:bg-muted/50',
-                value === '' ? 'text-primary' : 'text-foreground',
+                'flex min-h-11 w-full items-center gap-2 px-3 py-2 text-sm outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+                value === '' ? 'bg-accent text-accent-foreground' : 'text-foreground',
               )}
             >
               <span className='truncate'>{emptyLabel || `All ${label}`}</span>
               {value === '' && (
-                <Check className='ml-auto size-3.5 shrink-0 text-primary' />
+                <Check className='ml-auto size-3.5 shrink-0' />
               )}
             </button>
           ) : null}
@@ -118,13 +119,13 @@ export function SearchableSelect({
                   setOpen(false)
                 }}
                 className={cn(
-                  'flex w-full items-center gap-2 px-3 py-1.5 text-sm transition-colors hover:bg-muted/50',
-                  isActive ? 'text-primary' : 'text-foreground',
+                  'flex min-h-11 w-full items-center gap-2 px-3 py-2 text-sm outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+                  isActive ? 'bg-accent text-accent-foreground' : 'text-foreground',
                 )}
               >
                 <span className='truncate'>{option}</span>
                 {isActive && (
-                  <Check className='ml-auto size-3.5 shrink-0 text-primary' />
+                  <Check className='ml-auto size-3.5 shrink-0' />
                 )}
               </button>
             )

@@ -1,0 +1,27 @@
+{
+  "owner_id_gaps": {
+    "dashboard_user": 0,
+    "slice_user": 0,
+    "sqlatable_user": 0
+  },
+  "dashboards_published": 0,
+  "dashboards_with_slug": 0,
+  "dashboards_with_native_filters": 1,
+  "studio_artifact_types": {
+    "chart": 8,
+    "dashboard": 2
+  },
+  "studio_bi_references": 10,
+  "studio_thread_references": 2,
+  "semantic_dataset_references": 11,
+  "publication_statuses": {
+    "SUCCEEDED": 5,
+    "FAILED_FINAL": 1
+  },
+  "unmapped_dashboard_roles": 7,
+  "conversion_status": "NOT_RUN",
+  "studio_missing_objects": 1,
+  "studio_missing_datasets": 1,
+  "semantic_missing_datasets": 0,
+  "unmapped_dashboard_roles_note": "All seven are unpublished; retain owner-only visibility until a verified role mapping is approved."
+}

@@ -1,0 +1,13 @@
+{
+  "result": "FAIL",
+  "owned_database": "ndv_src_9d536f7c2943",
+  "owned_roles": [
+    "ndv_read_9d536f7c2943",
+    "ndv_none_9d536f7c2943"
+  ],
+  "steps": [],
+  "cleanup_errors": [],
+  "error_type": "OperationalError",
+  "cleanup": "NOT_CREATED",
+  "reason": "Probe used default engine port 9030; existing development FE is bound to 29030. System pool connection failed before fixture creation."
+}

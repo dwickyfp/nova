@@ -1,0 +1,17 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.13, pytest-9.1.0, pluggy-1.6.0
+Fugue tests will be initialized with options:
+rootdir: /Users/dwickyferiansyahputra/Public/Research/nova/backend
+configfile: pyproject.toml
+plugins: anyio-4.14.0, cov-7.1.0, asyncio-1.4.0, fugue-0.9.7
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 108 items
+
+tests/unit/test_query_result_streaming.py ....                           [  3%]
+tests/unit/test_native_viz_preview.py .................................. [ 35%]
+.....                                                                    [ 39%]
+tests/unit/test_native_viz_datasets.py ................................. [ 70%]
+................................                                         [100%]
+
+- generated xml file: /Users/dwickyferiansyahputra/Public/Research/nova/docs/reports/native-dataviz/preview-stream-unit-attempt-1.xml -
+============================= 108 passed in 3.06s ==============================

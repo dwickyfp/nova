@@ -215,8 +215,8 @@ export type SemanticBiDataset = {
 const viewPath = (id: string) => `/semantic-views/${encodeURIComponent(id)}`
 
 export const semanticViewsApi = {
-  list: () => api.get<SemanticView[]>('/semantic-views'),
-  get: (id: string) => api.get<SemanticViewDetail>(viewPath(id)),
+  list: ({ signal }: { signal?: AbortSignal } = {}) => api.get<SemanticView[]>('/semantic-views', signal),
+  get: (id: string, signal?: AbortSignal) => api.get<SemanticViewDetail>(viewPath(id), signal),
   create: (body: { name: string; database: string; definition: string }) =>
     api.post<SemanticViewDetail>('/semantic-views', body),
   addVersion: (id: string, definition: string) =>

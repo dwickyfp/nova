@@ -1,0 +1,31 @@
+F811 Redefinition of unused `environment` from line 46
+   --> tests/integration/test_metadata_viz.py:440:65
+    |
+440 | async def test_dependency_upgrade_backfills_exact_revision_pins(environment, tmp_path, monkeypatch):
+    |                                                                 ^^^^^^^^^^^ `environment` redefined here
+441 |     await environment.bootstrap()
+442 |     previous = tuple(m for m in load_migrations() if m.version <= 49)
+    |
+   ::: tests/integration/test_metadata_viz.py:46:55
+    |
+ 44 | from app.modules.viz.documents import VizDocumentRepository
+ 45 | from app.modules.workspaces.metadata_sharing import WorkspaceSharingRepository
+ 46 | from tests.integration.test_metadata_bootstrap import environment  # noqa: F401
+    |                                                       ----------- previous definition of `environment` here
+ 47 | from tests.integration.test_metadata_workspaces import session
+ 48 | from tests.unit.test_native_viz_bindings import chart, dataset
+    |
+help: Remove definition: `environment`
+
+E501 Line too long (101 > 100)
+   --> tests/integration/test_metadata_viz.py:455:101
+    |
+453 |         old_application.setattr(metadata_db_module, "load_migrations", lambda: previous)
+454 |         source, figure, board = await graph(fixture)
+455 |     before = await fixture.inspect("SELECT resource_id,revision,digest FROM nova_meta.viz_revisions "
+    |                                                                                                     ^
+456 |                                     "ORDER BY resource_id,revision")
+457 |     await environment.admin.execute("UPDATE nova_meta.deployment_state SET maintenance=true")
+    |
+
+Found 2 errors.

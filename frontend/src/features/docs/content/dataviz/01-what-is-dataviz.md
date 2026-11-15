@@ -56,3 +56,5 @@ dashboard you had open, so switching back and forth does not lose your place.
   folds into a menu.
 - Charts load their data each time a dashboard opens; on a busy system a chart
   can show "Waiting on Nova" for a while before it draws.
+- [Native document integrations](/docs/dataviz/native-documents) store separate
+  versioned definitions. Those records are not yet shown in these BI screens.

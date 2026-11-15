@@ -1,0 +1,36 @@
+{
+  "reason": "Configured dev values also appeared in credential regression test parameter IDs. Redacted the published copies; assertions and results are unchanged.",
+  "originals": "Restricted private evidence directory outside Git",
+  "changes": [
+    {
+      "file": "backend-unit-attempt-1.xml.gz",
+      "replacements": 7,
+      "original_sha256": "b918b34c8b8c36135dd1a9ac3a8c854074639287ac3524f013a5d835c47bb118",
+      "sanitized_sha256": "89c9c38407448798e8f183a6eaa14e33d55d68974718e6475843d10e91177211"
+    },
+    {
+      "file": "backend-unit-attempt-2.xml.gz",
+      "replacements": 7,
+      "original_sha256": "34b889b7c7dd96edd7e896ccfd00e85587c9f6b7f40ed6a7df41bf7a1fe5f15a",
+      "sanitized_sha256": "30c74a06db59716fd26d32151714b4a18fa4a486eb3398a8e2cedd12e9d35b47"
+    },
+    {
+      "file": "backend-unit-attempt-3.xml.gz",
+      "replacements": 7,
+      "original_sha256": "cc4ca54d6b353f23dc760e2f4965354d437d1ec38eb2e8aee571ceba11b94086",
+      "sanitized_sha256": "17dc6365e1d77de23938ab5b8054d09e1ad5ead8c0a63323e69f11395298b177"
+    },
+    {
+      "file": "backend-unit-attempt-4.xml.gz",
+      "replacements": 6,
+      "original_sha256": "b3138505442e9e4a80bbbe192896debe9f6f5ab9ea8ec1632a79defa96904741",
+      "sanitized_sha256": "9752756409d8fdde4ca8f7074890f2a64d999ad8131a18e6a08c268c7cf3f7b3"
+    },
+    {
+      "file": "backend-unit-attempt-5.xml.gz",
+      "replacements": 7,
+      "original_sha256": "fcd1fce465f8ab83fc23c1fefc179d1e73d12d9982deeec18164a884723931d7",
+      "sanitized_sha256": "1ff29f133ead61424a04f20c36619c491835fcde0abe4d8cecfe69f17538030d"
+    }
+  ]
+}

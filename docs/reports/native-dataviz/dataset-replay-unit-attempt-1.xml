@@ -1,0 +1,528 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="12" skipped="0" tests="126" time="1.845" timestamp="2026-11-14T23:29:06.629900+07:00" hostname="Dwickys-MacBook-Air.local"><testcase classname="tests.unit.test_native_viz_datasets" name="test_preview_preserves_exact_values_and_queries_only_as_caller" time="0.094" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_preview_denied_document_never_reaches_data_engine" time="0.005" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_preview_stale_revision_never_reaches_data_engine" time="0.009" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_preview_refuses_reused_source_identity[before]" time="0.005" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_preview_refuses_reused_source_identity[after]" time="0.005" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_preview_discards_rows_when_metadata_changes[metadata_revision]" time="0.005" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_preview_discards_rows_when_metadata_changes[grants_revision]" time="0.005" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_preview_discards_rows_when_metadata_changes[publication_id]" time="0.005" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_preview_role_switch_while_reading_discards_rows" time="0.005" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_preview_engine_failure_is_redacted" time="0.005" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_preview_deadline_cancels_the_stream" time="0.024" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_preview_capacity_refusal_precedes_metadata_and_engine_io" time="0.004" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_empty_source_has_catalog_owned_exact_schema_and_stable_ids" time="0.003" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_selection_preserves_requested_order_and_engine_spelling" time="0.002" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_supported_source_types_need_no_sample_rows[bigint]" time="0.002" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_supported_source_types_need_no_sample_rows[decimal(38,12)]" time="0.003" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_supported_source_types_need_no_sample_rows[float]" time="0.003" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_supported_source_types_need_no_sample_rows[double]" time="0.003" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_supported_source_types_need_no_sample_rows[varchar(100)]" time="0.002" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_supported_source_types_need_no_sample_rows[char(2)]" time="0.002" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_supported_source_types_need_no_sample_rows[boolean]" time="0.002" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_supported_source_types_need_no_sample_rows[date]" time="0.002" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_supported_source_types_need_no_sample_rows[datetime]" time="0.002" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_analyzer_distinguishes_boolean_from_catalog_tinyint" time="0.002" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_unrepresentable_types_fail_before_query_instead_of_guessing[largeint]" time="0.002" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_unrepresentable_types_fail_before_query_instead_of_guessing[array&lt;int&gt;]" time="0.002" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_unrepresentable_types_fail_before_query_instead_of_guessing[map&lt;int,int&gt;]" time="0.002" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_unrepresentable_types_fail_before_query_instead_of_guessing[json]" time="0.002" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_unrepresentable_types_fail_before_query_instead_of_guessing[hll]" time="0.002" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_unrepresentable_types_fail_before_query_instead_of_guessing[unknown]" time="0.002" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_replacement_or_schema_change_during_query_is_stale[physical_id]" time="0.002" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_replacement_or_schema_change_during_query_is_stale[schema_version]" time="0.002" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_catalog_reflection_does_not_substitute_for_select_permission" time="0.003" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_projection_protocol_mismatch_does_not_infer_from_rows[result0]" time="0.003" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_projection_protocol_mismatch_does_not_infer_from_rows[result1]" time="0.002" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_projection_protocol_mismatch_does_not_infer_from_rows[result2]" time="0.003" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_role_change_during_inspection_discards_the_schema" time="0.003" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_expired_session_does_not_read_catalog" time="0.002" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_catalog_refusal_is_audited_without_echoing_object_details" time="0.002" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_inspection_deadline_cancels_dependency" time="0.012" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_create_commits_only_server_derived_schema_after_external_io" time="0.003"><failure message="AssertionError: assert 0 == 2&#10; +  where 0 = &lt;AsyncMock id='4730003600'&gt;.await_count&#10; +    where &lt;AsyncMock id='4730003600'&gt; = namespace(get_source_schema=&lt;AsyncMock id='4730003600'&gt;).get_source_schema&#10; +      where namespace(get_source_schema=&lt;AsyncMock id='4730003600'&gt;) = namespace(user={'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-log...alse, transaction_active=False)], service=&lt;app.modules.viz.dataset_service.NativeDatasetService object at 0x11a23fe10&gt;).provider">setup = namespace(user={'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-log...alse, transaction_active=False)], service=&lt;app.modules.viz.dataset_service.NativeDatasetService object at 0x11a23fe10&gt;)
+inspection_request = ObjectInspect(dataset_id=UUID('3b475350-8ba3-4073-8e46-99563dbc5938'), source=ObjectSelection(kind='table', catalog='default_catalog', database='analytics', schema_name='default', object_name='orders', columns=None))
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x11a235a10&gt;
+
+    async def test_create_commits_only_server_derived_schema_after_external_io(
+        setup, inspection_request, monkeypatch
+    ):
+        inspected = await setup.service.inspect(setup.user, inspection_request)
+        setup.provider.get_source_schema.reset_mock()
+        setup.execute.reset_mock()
+        workspace = AsyncMock(return_value=SimpleNamespace(id="personal:alice"))
+        monkeypatch.setattr(module, "document_workspace", workspace)
+        repository = SimpleNamespace(create=AsyncMock(return_value={"receipt": "committed"}))
+    
+        @asynccontextmanager
+        async def transaction(*args, **kwargs):
+            assert setup.provider.get_source_schema.await_count == 2
+            assert setup.execute.await_count == 1
+            yield repository
+    
+        monkeypatch.setattr(module, "document_transaction", transaction)
+        body = ObjectDatasetCreate(
+            **inspection_request.model_dump(),
+            workspace_id="personal",
+            title="Orders",
+            expected_physical_id="10081",
+            expected_schema_fingerprint=inspected.schema_fingerprint,
+        )
+        key = uuid4()
+&gt;       result = await setup.service.create(setup.user, body, operation_id=key)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_native_viz_datasets.py:495: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+app/modules/viz/dataset_service.py:602: in create
+    prior = await self._replay(user, request, operation_id, workspace_id=space.id)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app/modules/viz/dataset_service.py:623: in _replay
+    async with document_transaction(
+../../../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = ({'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-login', ...},)
+kwargs = {'action': 'RECEIPT', 'identity': UUID('3b475350-8ba3-4073-8e46-99563dbc5938'), 'read_only': True}
+
+    @asynccontextmanager
+    async def transaction(*args, **kwargs):
+&gt;       assert setup.provider.get_source_schema.await_count == 2
+E       AssertionError: assert 0 == 2
+E        +  where 0 = &lt;AsyncMock id='4730003600'&gt;.await_count
+E        +    where &lt;AsyncMock id='4730003600'&gt; = namespace(get_source_schema=&lt;AsyncMock id='4730003600'&gt;).get_source_schema
+E        +      where namespace(get_source_schema=&lt;AsyncMock id='4730003600'&gt;) = namespace(user={'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-log...alse, transaction_active=False)], service=&lt;app.modules.viz.dataset_service.NativeDatasetService object at 0x11a23fe10&gt;).provider
+
+tests/unit/test_native_viz_datasets.py:482: AssertionError</failure></testcase><testcase classname="tests.unit.test_native_viz_datasets" name="test_stale_inspection_cannot_open_metadata_transaction[expected_physical_id-old-object]" time="0.003"><failure message="TypeError: 'coroutine' object does not support the asynchronous context manager protocol">setup = namespace(user={'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-log...alse, transaction_active=False)], service=&lt;app.modules.viz.dataset_service.NativeDatasetService object at 0x11a18a810&gt;)
+inspection_request = ObjectInspect(dataset_id=UUID('2e4e998d-d5de-4b6a-a5f8-53ac7c692878'), source=ObjectSelection(kind='table', catalog='default_catalog', database='analytics', schema_name='default', object_name='orders', columns=None))
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x11a1b6410&gt;
+field = 'expected_physical_id', value = 'old-object'
+
+    @pytest.mark.parametrize(
+        "field,value",
+        [("expected_physical_id", "old-object"), ("expected_schema_fingerprint", "b" * 64)],
+    )
+    async def test_stale_inspection_cannot_open_metadata_transaction(
+        setup, inspection_request, monkeypatch, field, value
+    ):
+        inspected = await setup.service.inspect(setup.user, inspection_request)
+        monkeypatch.setattr(
+            module, "document_workspace", AsyncMock(return_value=SimpleNamespace(id="p"))
+        )
+        transaction = AsyncMock(side_effect=AssertionError("Must not commit"))
+        monkeypatch.setattr(module, "document_transaction", transaction)
+        values = {
+            **inspection_request.model_dump(),
+            "workspace_id": "personal",
+            "title": "Orders",
+            "expected_physical_id": "10081",
+            "expected_schema_fingerprint": inspected.schema_fingerprint,
+            field: value,
+        }
+        with pytest.raises(NovaException, match="SCHEMA_STALE"):
+&gt;           await setup.service.create(setup.user, ObjectDatasetCreate(**values), operation_id=uuid4())
+
+tests/unit/test_native_viz_datasets.py:526: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+app/modules/viz/dataset_service.py:602: in create
+    prior = await self._replay(user, request, operation_id, workspace_id=space.id)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;app.modules.viz.dataset_service.NativeDatasetService object at 0x11a18a810&gt;
+user = {'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-login', ...}
+request = ObjectDatasetCreate(dataset_id=UUID('2e4e998d-d5de-4b6a-a5f8-53ac7c692878'), source=ObjectSelection(kind='table', cata...xpected_schema_fingerprint='f79539859c15f18fd66671e479d5a6103d857fe944eb69c82daea0e2c18d2d9f', workspace_id='personal')
+operation_id = UUID('1f8e4073-8b8d-49d8-83a8-aa4d09cbed7d'), workspace_id = 'p'
+expected_revision = None
+
+    async def _replay(
+        self, user: Mapping[str, Any], request: DatasetUpdate, operation_id: UUID, *,
+        workspace_id: str | None = None, expected_revision: int | None = None,
+    ) -&gt; dict[str, Any] | None:
+&gt;       async with document_transaction(
+            user, action="RECEIPT", identity=request.dataset_id, read_only=True,
+        ) as repository:
+E       TypeError: 'coroutine' object does not support the asynchronous context manager protocol
+
+app/modules/viz/dataset_service.py:623: TypeError</failure></testcase><testcase classname="tests.unit.test_native_viz_datasets" name="test_stale_inspection_cannot_open_metadata_transaction[expected_schema_fingerprint-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb]" time="0.003"><failure message="TypeError: 'coroutine' object does not support the asynchronous context manager protocol">setup = namespace(user={'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-log...alse, transaction_active=False)], service=&lt;app.modules.viz.dataset_service.NativeDatasetService object at 0x117535050&gt;)
+inspection_request = ObjectInspect(dataset_id=UUID('8e93fbb7-83bd-4518-8d9b-86ba0824edc3'), source=ObjectSelection(kind='table', catalog='default_catalog', database='analytics', schema_name='default', object_name='orders', columns=None))
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x1173f9e50&gt;
+field = 'expected_schema_fingerprint'
+value = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+
+    @pytest.mark.parametrize(
+        "field,value",
+        [("expected_physical_id", "old-object"), ("expected_schema_fingerprint", "b" * 64)],
+    )
+    async def test_stale_inspection_cannot_open_metadata_transaction(
+        setup, inspection_request, monkeypatch, field, value
+    ):
+        inspected = await setup.service.inspect(setup.user, inspection_request)
+        monkeypatch.setattr(
+            module, "document_workspace", AsyncMock(return_value=SimpleNamespace(id="p"))
+        )
+        transaction = AsyncMock(side_effect=AssertionError("Must not commit"))
+        monkeypatch.setattr(module, "document_transaction", transaction)
+        values = {
+            **inspection_request.model_dump(),
+            "workspace_id": "personal",
+            "title": "Orders",
+            "expected_physical_id": "10081",
+            "expected_schema_fingerprint": inspected.schema_fingerprint,
+            field: value,
+        }
+        with pytest.raises(NovaException, match="SCHEMA_STALE"):
+&gt;           await setup.service.create(setup.user, ObjectDatasetCreate(**values), operation_id=uuid4())
+
+tests/unit/test_native_viz_datasets.py:526: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+app/modules/viz/dataset_service.py:602: in create
+    prior = await self._replay(user, request, operation_id, workspace_id=space.id)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;app.modules.viz.dataset_service.NativeDatasetService object at 0x117535050&gt;
+user = {'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-login', ...}
+request = ObjectDatasetCreate(dataset_id=UUID('8e93fbb7-83bd-4518-8d9b-86ba0824edc3'), source=ObjectSelection(kind='table', cata...xpected_schema_fingerprint='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', workspace_id='personal')
+operation_id = UUID('d1d96509-3e2e-4524-9868-37afb995f665'), workspace_id = 'p'
+expected_revision = None
+
+    async def _replay(
+        self, user: Mapping[str, Any], request: DatasetUpdate, operation_id: UUID, *,
+        workspace_id: str | None = None, expected_revision: int | None = None,
+    ) -&gt; dict[str, Any] | None:
+&gt;       async with document_transaction(
+            user, action="RECEIPT", identity=request.dataset_id, read_only=True,
+        ) as repository:
+E       TypeError: 'coroutine' object does not support the asynchronous context manager protocol
+
+app/modules/viz/dataset_service.py:623: TypeError</failure></testcase><testcase classname="tests.unit.test_native_viz_datasets" name="test_update_reinspects_before_revision_cas_without_holding_pg" time="0.003"><failure message="AttributeError: 'types.SimpleNamespace' object has no attribute 'dataset_intent_receipt'">update_setup = namespace(user={'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-log...'&gt;), transactions=[{'action': 'RECEIPT', 'identity': UUID('734a4b4b-bc41-4d95-bf4e-9865deeda180'), 'read_only': True}])
+
+    async def test_update_reinspects_before_revision_cas_without_holding_pg(update_setup):
+        case = update_setup
+        key = uuid4()
+&gt;       result = await case.service.update(
+            case.user, case.request, operation_id=key, expected_revision=1
+        )
+
+tests/unit/test_native_viz_datasets.py:575: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+app/modules/viz/dataset_service.py:662: in update
+    prior = await self._replay(user, request, operation_id, expected_revision=expected_revision)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;app.modules.viz.dataset_service.NativeDatasetService object at 0x11a132190&gt;
+user = {'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-login', ...}
+request = ObjectDatasetUpdate(dataset_id=UUID('734a4b4b-bc41-4d95-bf4e-9865deeda180'), source=ObjectSelection(kind='table', cata...ed_physical_id='10081', expected_schema_fingerprint='f79539859c15f18fd66671e479d5a6103d857fe944eb69c82daea0e2c18d2d9f')
+operation_id = UUID('7a264701-03ba-4a23-904e-1c61cdb3f7aa'), workspace_id = None
+expected_revision = 1
+
+    async def _replay(
+        self, user: Mapping[str, Any], request: DatasetUpdate, operation_id: UUID, *,
+        workspace_id: str | None = None, expected_revision: int | None = None,
+    ) -&gt; dict[str, Any] | None:
+        async with document_transaction(
+            user, action="RECEIPT", identity=request.dataset_id, read_only=True,
+        ) as repository:
+&gt;           return await repository.dataset_intent_receipt(
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                request, operation_id=operation_id, workspace_id=workspace_id,
+                expected_revision=expected_revision,
+            )
+E           AttributeError: 'types.SimpleNamespace' object has no attribute 'dataset_intent_receipt'
+
+app/modules/viz/dataset_service.py:626: AttributeError</failure></testcase><testcase classname="tests.unit.test_native_viz_datasets" name="test_update_checks_document_permission_before_source_io" time="0.003"><failure message="AttributeError: 'types.SimpleNamespace' object has no attribute 'dataset_intent_receipt'">update_setup = namespace(user={'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-log...'&gt;), transactions=[{'action': 'RECEIPT', 'identity': UUID('f780ef00-0c96-4ef2-8671-0f594838964f'), 'read_only': True}])
+
+    async def test_update_checks_document_permission_before_source_io(update_setup):
+        case = update_setup
+        case.repository.read.side_effect = MetadataPermissionDenied()
+        with pytest.raises(MetadataPermissionDenied):
+&gt;           await case.service.update(
+                case.user, case.request, operation_id=uuid4(), expected_revision=1
+            )
+
+tests/unit/test_native_viz_datasets.py:591: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+app/modules/viz/dataset_service.py:662: in update
+    prior = await self._replay(user, request, operation_id, expected_revision=expected_revision)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;app.modules.viz.dataset_service.NativeDatasetService object at 0x11a229910&gt;
+user = {'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-login', ...}
+request = ObjectDatasetUpdate(dataset_id=UUID('f780ef00-0c96-4ef2-8671-0f594838964f'), source=ObjectSelection(kind='table', cata...ed_physical_id='10081', expected_schema_fingerprint='f79539859c15f18fd66671e479d5a6103d857fe944eb69c82daea0e2c18d2d9f')
+operation_id = UUID('462bd94a-10df-45f6-b9a9-8ca1b59562d3'), workspace_id = None
+expected_revision = 1
+
+    async def _replay(
+        self, user: Mapping[str, Any], request: DatasetUpdate, operation_id: UUID, *,
+        workspace_id: str | None = None, expected_revision: int | None = None,
+    ) -&gt; dict[str, Any] | None:
+        async with document_transaction(
+            user, action="RECEIPT", identity=request.dataset_id, read_only=True,
+        ) as repository:
+&gt;           return await repository.dataset_intent_receipt(
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                request, operation_id=operation_id, workspace_id=workspace_id,
+                expected_revision=expected_revision,
+            )
+E           AttributeError: 'types.SimpleNamespace' object has no attribute 'dataset_intent_receipt'
+
+app/modules/viz/dataset_service.py:626: AttributeError</failure></testcase><testcase classname="tests.unit.test_native_viz_datasets" name="test_update_refuses_a_source_that_changed_after_inspection" time="0.003"><failure message="AttributeError: 'types.SimpleNamespace' object has no attribute 'dataset_intent_receipt'">update_setup = namespace(user={'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-log...'&gt;), transactions=[{'action': 'RECEIPT', 'identity': UUID('027d3192-bc93-4ca7-a753-4fc17b8a28b6'), 'read_only': True}])
+source = BoundTable(name=TableName(table='orders', database='analytics', schema='default', catalog='default_catalog'), table_ty...n_columns=None, schema_version='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', physical_id='10081')
+
+    async def test_update_refuses_a_source_that_changed_after_inspection(update_setup, source):
+        case = update_setup
+        case.provider.get_source_schema.return_value = replace(source, physical_id="999999")
+        with pytest.raises(NovaException, match="SCHEMA_STALE"):
+&gt;           await case.service.update(
+                case.user, case.request, operation_id=uuid4(), expected_revision=1
+            )
+
+tests/unit/test_native_viz_datasets.py:603: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+app/modules/viz/dataset_service.py:662: in update
+    prior = await self._replay(user, request, operation_id, expected_revision=expected_revision)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;app.modules.viz.dataset_service.NativeDatasetService object at 0x11a1776d0&gt;
+user = {'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-login', ...}
+request = ObjectDatasetUpdate(dataset_id=UUID('027d3192-bc93-4ca7-a753-4fc17b8a28b6'), source=ObjectSelection(kind='table', cata...ed_physical_id='10081', expected_schema_fingerprint='f79539859c15f18fd66671e479d5a6103d857fe944eb69c82daea0e2c18d2d9f')
+operation_id = UUID('c7b30317-b063-41e2-af88-4ed18e49417b'), workspace_id = None
+expected_revision = 1
+
+    async def _replay(
+        self, user: Mapping[str, Any], request: DatasetUpdate, operation_id: UUID, *,
+        workspace_id: str | None = None, expected_revision: int | None = None,
+    ) -&gt; dict[str, Any] | None:
+        async with document_transaction(
+            user, action="RECEIPT", identity=request.dataset_id, read_only=True,
+        ) as repository:
+&gt;           return await repository.dataset_intent_receipt(
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                request, operation_id=operation_id, workspace_id=workspace_id,
+                expected_revision=expected_revision,
+            )
+E           AttributeError: 'types.SimpleNamespace' object has no attribute 'dataset_intent_receipt'
+
+app/modules/viz/dataset_service.py:626: AttributeError</failure></testcase><testcase classname="tests.unit.test_native_viz_datasets" name="test_update_keeps_concurrent_edit_conflicts" time="0.003"><failure message="AttributeError: 'types.SimpleNamespace' object has no attribute 'dataset_intent_receipt'">update_setup = namespace(user={'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-log...'&gt;), transactions=[{'action': 'RECEIPT', 'identity': UUID('b98ce2ab-e270-4f74-96b6-e4b9b3c8df99'), 'read_only': True}])
+
+    async def test_update_keeps_concurrent_edit_conflicts(update_setup):
+        case = update_setup
+        case.repository.replace.side_effect = MetadataConflict()
+        with pytest.raises(MetadataConflict):
+&gt;           await case.service.update(
+                case.user, case.request, operation_id=uuid4(), expected_revision=1
+            )
+
+tests/unit/test_native_viz_datasets.py:613: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+app/modules/viz/dataset_service.py:662: in update
+    prior = await self._replay(user, request, operation_id, expected_revision=expected_revision)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;app.modules.viz.dataset_service.NativeDatasetService object at 0x11757a690&gt;
+user = {'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-login', ...}
+request = ObjectDatasetUpdate(dataset_id=UUID('b98ce2ab-e270-4f74-96b6-e4b9b3c8df99'), source=ObjectSelection(kind='table', cata...ed_physical_id='10081', expected_schema_fingerprint='f79539859c15f18fd66671e479d5a6103d857fe944eb69c82daea0e2c18d2d9f')
+operation_id = UUID('7869acfb-4228-493e-bcc7-ceb3ece4593e'), workspace_id = None
+expected_revision = 1
+
+    async def _replay(
+        self, user: Mapping[str, Any], request: DatasetUpdate, operation_id: UUID, *,
+        workspace_id: str | None = None, expected_revision: int | None = None,
+    ) -&gt; dict[str, Any] | None:
+        async with document_transaction(
+            user, action="RECEIPT", identity=request.dataset_id, read_only=True,
+        ) as repository:
+&gt;           return await repository.dataset_intent_receipt(
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                request, operation_id=operation_id, workspace_id=workspace_id,
+                expected_revision=expected_revision,
+            )
+E           AttributeError: 'types.SimpleNamespace' object has no attribute 'dataset_intent_receipt'
+
+app/modules/viz/dataset_service.py:626: AttributeError</failure></testcase><testcase classname="tests.unit.test_native_viz_datasets" name="test_source_update_cannot_silently_remove_semantic_bindings" time="0.003"><failure message="AttributeError: 'types.SimpleNamespace' object has no attribute 'dataset_intent_receipt'">update_setup = namespace(user={'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-log...'&gt;), transactions=[{'action': 'RECEIPT', 'identity': UUID('0c2a1cd3-7f2e-49ef-a65c-dd90bf05e74b'), 'read_only': True}])
+
+    async def test_source_update_cannot_silently_remove_semantic_bindings(update_setup):
+        case = update_setup
+        document = case.current.model_copy(update={"grain": (case.current.fields[0].field_id,)})
+        case.repository.read.return_value = {"definition": document, "revision": 1}
+        with pytest.raises(NovaException, match="semantic bindings"):
+&gt;           await case.service.update(
+                case.user, case.request, operation_id=uuid4(), expected_revision=1
+            )
+
+tests/unit/test_native_viz_datasets.py:623: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+app/modules/viz/dataset_service.py:662: in update
+    prior = await self._replay(user, request, operation_id, expected_revision=expected_revision)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;app.modules.viz.dataset_service.NativeDatasetService object at 0x11a1c1190&gt;
+user = {'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-login', ...}
+request = ObjectDatasetUpdate(dataset_id=UUID('0c2a1cd3-7f2e-49ef-a65c-dd90bf05e74b'), source=ObjectSelection(kind='table', cata...ed_physical_id='10081', expected_schema_fingerprint='f79539859c15f18fd66671e479d5a6103d857fe944eb69c82daea0e2c18d2d9f')
+operation_id = UUID('210d5332-ae60-4200-a9e1-fb6ac8d3802e'), workspace_id = None
+expected_revision = 1
+
+    async def _replay(
+        self, user: Mapping[str, Any], request: DatasetUpdate, operation_id: UUID, *,
+        workspace_id: str | None = None, expected_revision: int | None = None,
+    ) -&gt; dict[str, Any] | None:
+        async with document_transaction(
+            user, action="RECEIPT", identity=request.dataset_id, read_only=True,
+        ) as repository:
+&gt;           return await repository.dataset_intent_receipt(
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                request, operation_id=operation_id, workspace_id=workspace_id,
+                expected_revision=expected_revision,
+            )
+E           AttributeError: 'types.SimpleNamespace' object has no attribute 'dataset_intent_receipt'
+
+app/modules/viz/dataset_service.py:626: AttributeError</failure></testcase><testcase classname="tests.unit.test_native_viz_datasets" name="test_projection_quotes_catalog_bound_names_as_identifiers" time="0.000" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_projection_rejects_unbound_columns_or_limits[columns0-1]" time="0.000" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_projection_rejects_unbound_columns_or_limits[columns1-1]" time="0.000" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_projection_rejects_unbound_columns_or_limits[columns2-1]" time="0.000" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_projection_rejects_unbound_columns_or_limits[columns3--1]" time="0.000" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_projection_rejects_unbound_columns_or_limits[columns4-1001]" time="0.000" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_projection_rejects_unbound_columns_or_limits[columns5-True]" time="0.000" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_source_selection_rejects_authority_fields_and_ambiguous_projection[changes0]" time="0.000" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_source_selection_rejects_authority_fields_and_ambiguous_projection[changes1]" time="0.000" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_source_selection_rejects_authority_fields_and_ambiguous_projection[changes2]" time="0.000" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_source_selection_rejects_authority_fields_and_ambiguous_projection[changes3]" time="0.000" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_sql_inspection_binds_sources_and_uses_authorized_engine_schema" time="0.071" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_invalid_sql_dataset_never_reaches_catalog_or_engine[DELETE FROM orders]" time="0.002" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_invalid_sql_dataset_never_reaches_catalog_or_engine[SELECT * FROM orders; SELECT 1]" time="0.020" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_invalid_sql_dataset_never_reaches_catalog_or_engine[SELECT * FROM]" time="0.011" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_invalid_sql_dataset_never_reaches_catalog_or_engine[SELECT :value AS total FROM orders]" time="0.003" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_invalid_sql_dataset_never_reaches_catalog_or_engine[SELECT * FROM foreign_catalog.db.t]" time="0.012" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_invalid_sql_dataset_never_reaches_catalog_or_engine[SELECT 1 AS total]" time="0.002" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_invalid_sql_dataset_never_reaches_catalog_or_engine[SELECT sleep(1) AS total FROM orders]" time="0.009" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_sql_replaced_source_is_refused_after_engine_inspection" time="0.003" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_sql_schema_change_alters_fingerprint" time="0.003" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_sql_comments_and_terminator_do_not_change_field_identity" time="0.003" /><testcase classname="tests.unit.test_native_viz_datasets" name="test_sql_create_persists_only_verified_definition_after_external_reads" time="0.003"><failure message="AssertionError: assert 1 == 2&#10; +  where 1 = &lt;AsyncMock id='4686309456'&gt;.await_count&#10; +    where &lt;AsyncMock id='4686309456'&gt; = namespace(user={'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-log...alse, transaction_active=False)], service=&lt;app.modules.viz.dataset_service.NativeDatasetService object at 0x11a130590&gt;).execute">setup = namespace(user={'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-log...alse, transaction_active=False)], service=&lt;app.modules.viz.dataset_service.NativeDatasetService object at 0x11a130590&gt;)
+sql_request = SqlInspect(dataset_id=UUID('d215e7c7-c0a8-4780-9022-3628c1f5601b'), source=SqlSelection(kind='sql', catalog='default_c...', database='analytics', schema_name='default', sql='SELECT CAST(sum(amount) AS DECIMAL(38,12)) AS total FROM orders'))
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x11a0ebd10&gt;
+
+    async def test_sql_create_persists_only_verified_definition_after_external_reads(
+        setup,
+        sql_request,
+        monkeypatch,
+    ):
+        inspected = await setup.service.inspect(setup.user, sql_request)
+        monkeypatch.setattr(
+            module, "document_workspace", AsyncMock(return_value=SimpleNamespace(id="p"))
+        )
+        repository = SimpleNamespace(create=AsyncMock(return_value={"committed": True}))
+    
+        @asynccontextmanager
+        async def transaction(*args, **kwargs):
+            assert setup.execute.await_count == 2
+            assert setup.provider.get_source_schema.await_count == 4
+            yield repository
+    
+        monkeypatch.setattr(module, "document_transaction", transaction)
+        body = SqlDatasetCreate(
+            **sql_request.model_dump(),
+            workspace_id="personal",
+            title="Revenue",
+            expected_schema_fingerprint=inspected.schema_fingerprint,
+        )
+&gt;       assert await setup.service.create(setup.user, body, operation_id=uuid4()) == {"committed": True}
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_native_viz_datasets.py:778: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+app/modules/viz/dataset_service.py:602: in create
+    prior = await self._replay(user, request, operation_id, workspace_id=space.id)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app/modules/viz/dataset_service.py:623: in _replay
+    async with document_transaction(
+../../../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = ({'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-login', ...},)
+kwargs = {'action': 'RECEIPT', 'identity': UUID('d215e7c7-c0a8-4780-9022-3628c1f5601b'), 'read_only': True}
+
+    @asynccontextmanager
+    async def transaction(*args, **kwargs):
+&gt;       assert setup.execute.await_count == 2
+E       AssertionError: assert 1 == 2
+E        +  where 1 = &lt;AsyncMock id='4686309456'&gt;.await_count
+E        +    where &lt;AsyncMock id='4686309456'&gt; = namespace(user={'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-log...alse, transaction_active=False)], service=&lt;app.modules.viz.dataset_service.NativeDatasetService object at 0x11a130590&gt;).execute
+
+tests/unit/test_native_viz_datasets.py:767: AssertionError</failure></testcase><testcase classname="tests.unit.test_native_viz_datasets" name="test_sql_create_cannot_persist_stale_preview" time="0.002"><failure message="TypeError: 'coroutine' object does not support the asynchronous context manager protocol">setup = namespace(user={'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-log...ck id='4733490064'&gt;, contexts=[], service=&lt;app.modules.viz.dataset_service.NativeDatasetService object at 0x11a237d50&gt;)
+sql_request = SqlInspect(dataset_id=UUID('cc1c3def-fad6-4150-b86a-1f2290a007d7'), source=SqlSelection(kind='sql', catalog='default_c...', database='analytics', schema_name='default', sql='SELECT CAST(sum(amount) AS DECIMAL(38,12)) AS total FROM orders'))
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x11a23d350&gt;
+
+    async def test_sql_create_cannot_persist_stale_preview(setup, sql_request, monkeypatch):
+        monkeypatch.setattr(
+            module, "document_workspace", AsyncMock(return_value=SimpleNamespace(id="p"))
+        )
+        transaction = AsyncMock(side_effect=AssertionError("Must not commit"))
+        monkeypatch.setattr(module, "document_transaction", transaction)
+        body = SqlDatasetCreate(
+            **sql_request.model_dump(),
+            workspace_id="personal",
+            title="Revenue",
+            expected_schema_fingerprint="0" * 64,
+        )
+        with pytest.raises(NovaException, match="SCHEMA_STALE"):
+&gt;           await setup.service.create(setup.user, body, operation_id=uuid4())
+
+tests/unit/test_native_viz_datasets.py:797: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+app/modules/viz/dataset_service.py:602: in create
+    prior = await self._replay(user, request, operation_id, workspace_id=space.id)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;app.modules.viz.dataset_service.NativeDatasetService object at 0x11a237d50&gt;
+user = {'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-login', ...}
+request = SqlDatasetCreate(dataset_id=UUID('cc1c3def-fad6-4150-b86a-1f2290a007d7'), source=SqlSelection(kind='sql', catalog='def...xpected_schema_fingerprint='0000000000000000000000000000000000000000000000000000000000000000', workspace_id='personal')
+operation_id = UUID('cb275d56-d529-4d5d-961d-19543361be00'), workspace_id = 'p'
+expected_revision = None
+
+    async def _replay(
+        self, user: Mapping[str, Any], request: DatasetUpdate, operation_id: UUID, *,
+        workspace_id: str | None = None, expected_revision: int | None = None,
+    ) -&gt; dict[str, Any] | None:
+&gt;       async with document_transaction(
+            user, action="RECEIPT", identity=request.dataset_id, read_only=True,
+        ) as repository:
+E       TypeError: 'coroutine' object does not support the asynchronous context manager protocol
+
+app/modules/viz/dataset_service.py:623: TypeError</failure></testcase><testcase classname="tests.unit.test_native_viz_semantic" name="test_semantic_inspection_uses_existing_compiler_and_analyzer" time="0.058" /><testcase classname="tests.unit.test_native_viz_semantic" name="test_denied_or_missing_pinned_model_never_queries_data[403]" time="0.002" /><testcase classname="tests.unit.test_native_viz_semantic" name="test_denied_or_missing_pinned_model_never_queries_data[404]" time="0.002" /><testcase classname="tests.unit.test_native_viz_semantic" name="test_denied_or_missing_pinned_model_never_queries_data[409]" time="0.002" /><testcase classname="tests.unit.test_native_viz_semantic" name="test_model_revoked_during_inspection_discards_schema" time="0.010" /><testcase classname="tests.unit.test_native_viz_semantic" name="test_unknown_metric_is_rejected_by_shared_compiler" time="0.002" /><testcase classname="tests.unit.test_native_viz_semantic" name="test_corrupt_pinned_model_is_refused_without_querying" time="0.001" /><testcase classname="tests.unit.test_native_viz_semantic" name="test_invalid_semantic_metadata_does_not_expose_private_exception" time="0.001" /><testcase classname="tests.unit.test_native_viz_semantic" name="test_authoritative_projection_must_match_compiled_names" time="0.009" /><testcase classname="tests.unit.test_native_viz_semantic" name="test_rebound_physical_source_requires_new_field_identity" time="0.030" /><testcase classname="tests.unit.test_native_viz_semantic" name="test_create_keeps_semantic_io_outside_pg_and_persists_declared_grain" time="0.017"><failure message="AttributeError: 'types.SimpleNamespace' object has no attribute 'dataset_intent_receipt'">semantic = namespace(user={'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-log...1e5388eb8bff5fe1b4dd69c842b0b3c789c60aa93f1e68414f368af21', dimensions=('id',), metrics=('total',), named_filters=())))
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x11a162d50&gt;
+
+    async def test_create_keeps_semantic_io_outside_pg_and_persists_declared_grain(
+        semantic, monkeypatch,
+    ):
+        case = semantic
+        inspected = await case.service.inspect(case.user, case.request)
+        repository = SimpleNamespace(create=AsyncMock(return_value={"new_revision": 1}))
+        in_pg = False
+        async def load(*args):
+            assert not in_pg
+            return case.record
+        case.owner.side_effect = load
+    
+        @asynccontextmanager
+        async def transaction(*args, **kwargs):
+            nonlocal in_pg
+            in_pg = True
+            try:
+                yield repository
+            finally:
+                in_pg = False
+    
+        monkeypatch.setattr(module, "document_transaction", transaction)
+        monkeypatch.setattr(module, "document_workspace",
+                            AsyncMock(return_value=SimpleNamespace(id="space")))
+        request = SemanticDatasetCreate(**case.request.model_dump(), title="Totals",
+                                       workspace_id="space",
+                                       expected_schema_fingerprint=inspected.schema_fingerprint)
+&gt;       result = await case.service.create(case.user, request, operation_id=uuid4())
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_native_viz_semantic.py:169: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+app/modules/viz/dataset_service.py:602: in create
+    prior = await self._replay(user, request, operation_id, workspace_id=space.id)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;app.modules.viz.dataset_service.NativeDatasetService object at 0x11a18de50&gt;
+user = {'username': 'alice', 'active_role': 'ANALYST', 'assigned_roles': ['ANALYST'], 'session_id': 'alice-login', ...}
+request = SemanticDatasetCreate(dataset_id=UUID('9674a589-f24a-4898-9b2c-d3b069cd38ac'), source=SemanticSelection(kind='semantic..., expected_schema_fingerprint='bedf950a9e54d09fbcabcae76fd83bc0dd442a47fe259ff7d01930b5f16add29', workspace_id='space')
+operation_id = UUID('71b1f7f9-086d-4df1-a8a9-cf8044a47d0b')
+workspace_id = 'space', expected_revision = None
+
+    async def _replay(
+        self, user: Mapping[str, Any], request: DatasetUpdate, operation_id: UUID, *,
+        workspace_id: str | None = None, expected_revision: int | None = None,
+    ) -&gt; dict[str, Any] | None:
+        async with document_transaction(
+            user, action="RECEIPT", identity=request.dataset_id, read_only=True,
+        ) as repository:
+&gt;           return await repository.dataset_intent_receipt(
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                request, operation_id=operation_id, workspace_id=workspace_id,
+                expected_revision=expected_revision,
+            )
+E           AttributeError: 'types.SimpleNamespace' object has no attribute 'dataset_intent_receipt'
+
+app/modules/viz/dataset_service.py:626: AttributeError</failure></testcase><testcase classname="tests.unit.test_native_viz_semantic" name="test_semantic_preview_revalidates_model_and_preserves_decimal" time="0.052" /><testcase classname="tests.unit.test_native_viz_semantic" name="test_semantic_selection_rejects_ambiguous_or_invented_contracts[update0]" time="0.001" /><testcase classname="tests.unit.test_native_viz_semantic" name="test_semantic_selection_rejects_ambiguous_or_invented_contracts[update1]" time="0.001" /><testcase classname="tests.unit.test_native_viz_semantic" name="test_semantic_selection_rejects_ambiguous_or_invented_contracts[update2]" time="0.001" /><testcase classname="tests.unit.test_native_viz_semantic" name="test_semantic_selection_rejects_ambiguous_or_invented_contracts[update3]" time="0.001" /><testcase classname="tests.unit.test_native_viz_semantic" name="test_semantic_selection_rejects_ambiguous_or_invented_contracts[update4]" time="0.001" /><testcase classname="tests.unit.test_native_viz_semantic" name="test_semantic_selection_rejects_ambiguous_or_invented_contracts[update5]" time="0.001" /><testcase classname="tests.unit.test_native_viz_references" name="test_dashboard_data_registry_retains_sources_without_chart_widgets" time="0.001" /><testcase classname="tests.unit.test_native_viz_references" name="test_local_metric_source_pins_and_authorizes_its_base_dataset" time="0.001" /><testcase classname="tests.unit.test_native_viz_references" name="test_local_metric_source_cycle_is_refused" time="0.001" /><testcase classname="tests.unit.test_native_viz_references" name="test_shared_dataset_dag_is_validated_once_per_edge_not_per_path" time="0.002" /><testcase classname="tests.unit.test_native_viz_references" name="test_cached_subtree_cannot_hide_cycle_across_dataset_revisions" time="0.001" /><testcase classname="tests.unit.test_native_viz_references" name="test_cached_subtree_depth_is_checked_under_each_parent" time="0.001" /><testcase classname="tests.unit.test_native_viz_references" name="test_complete_sixteen_level_graph_is_valid" time="0.001" /><testcase classname="tests.unit.test_native_viz_references" name="test_digest_verifies_stored_document_before_applying_new_optional_defaults" time="0.001"><failure message="AttributeError: 'types.SimpleNamespace' object has no attribute '_revision_payload'">async def test_digest_verifies_stored_document_before_applying_new_optional_defaults():
+        saved = chart(dataset())
+        payload = saved.model_dump(mode="json")
+        del payload["encoding"]["dimensions"][0]["discrete"]
+        row = {"definition": payload, "digest": sha256(canonical(payload)).hexdigest()}
+    
+        class Connection:
+            async def execute(self, *_args):
+                return self
+    
+            async def fetchone(self):
+                return row
+    
+        repository = SimpleNamespace(connection=Connection())
+&gt;       restored = await VizDocumentRepository._definition(repository, saved.chart_id, 1, "chart")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_native_viz_references.py:143: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = namespace(connection=&lt;tests.unit.test_native_viz_references.test_digest_verifies_stored_document_before_applying_new_optional_defaults.&lt;locals&gt;.Connection object at 0x11a4735d0&gt;)
+identity = UUID('45af69a5-b8ab-4df4-b5d5-89abe8397bc0'), revision = 1
+kind = 'chart'
+
+    async def _definition(self, identity: UUID, revision: int, kind: str) -&gt; Document:
+&gt;       return parse_document(kind, await self._revision_payload(identity, revision))
+                                          ^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'types.SimpleNamespace' object has no attribute '_revision_payload'
+
+app/modules/viz/documents.py:279: AttributeError</failure></testcase><testcase classname="tests.unit.test_native_viz_service" name="test_publication_excludes_private_sql_and_formulas_while_draft_retains_them[False]" time="0.001" /><testcase classname="tests.unit.test_native_viz_service" name="test_publication_excludes_private_sql_and_formulas_while_draft_retains_them[True]" time="0.004" /><testcase classname="tests.unit.test_native_viz_service" name="test_session_binding_uses_current_assigned_roles_without_credentials" time="0.002" /><testcase classname="tests.unit.test_native_viz_service" name="test_changed_or_incomplete_security_context_is_refused[changes0]" time="0.001" /><testcase classname="tests.unit.test_native_viz_service" name="test_changed_or_incomplete_security_context_is_refused[changes1]" time="0.001" /><testcase classname="tests.unit.test_native_viz_service" name="test_changed_or_incomplete_security_context_is_refused[changes2]" time="0.001" /><testcase classname="tests.unit.test_native_viz_service" name="test_changed_or_incomplete_security_context_is_refused[changes3]" time="0.001" /><testcase classname="tests.unit.test_native_viz_service" name="test_changed_or_incomplete_security_context_is_refused[changes4]" time="0.001" /><testcase classname="tests.unit.test_native_viz_service" name="test_changed_or_incomplete_security_context_is_refused[changes5]" time="0.001" /><testcase classname="tests.unit.test_native_viz_service" name="test_changed_or_incomplete_security_context_is_refused[changes6]" time="0.001" /><testcase classname="tests.unit.test_native_viz_service" name="test_changed_or_incomplete_security_context_is_refused[changes7]" time="0.001" /><testcase classname="tests.unit.test_native_viz_service" name="test_changed_or_incomplete_security_context_is_refused[changes8]" time="0.001" /><testcase classname="tests.unit.test_native_viz_service" name="test_changed_or_incomplete_security_context_is_refused[changes9]" time="0.001" /><testcase classname="tests.unit.test_native_viz_service" name="test_changed_or_incomplete_security_context_is_refused[changes10]" time="0.001" /><testcase classname="tests.unit.test_native_viz_service" name="test_changed_or_incomplete_security_context_is_refused[changes11]" time="0.001" /><testcase classname="tests.unit.test_native_viz_service" name="test_changed_or_incomplete_security_context_is_refused[changes12]" time="0.001" /><testcase classname="tests.unit.test_native_viz_service" name="test_changed_or_incomplete_security_context_is_refused[changes13]" time="0.001" /><testcase classname="tests.unit.test_native_viz_service" name="test_changed_or_incomplete_security_context_is_refused[changes14]" time="0.001" /><testcase classname="tests.unit.test_native_viz_service" name="test_expired_session_and_absent_login_cannot_open_metadata" time="0.001" /><testcase classname="tests.unit.test_native_viz_service" name="test_missing_canonical_role_assignment_cannot_use_legacy_roles" time="0.001" /><testcase classname="tests.unit.test_native_viz_service" name="test_directory_is_not_read_before_document_management_is_authorized" time="0.001" /><testcase classname="tests.unit.test_native_viz_service" name="test_unknown_grant_subject_is_refused_without_echoing_the_identifier" time="0.001" /><testcase classname="tests.unit.test_native_viz_service" name="test_role_switch_during_directory_lookup_prevents_the_write" time="0.001" /><testcase classname="tests.unit.test_native_viz_service" name="test_refusal_audit_contains_identity_but_no_definitions_or_credentials" time="0.001" /><testcase classname="tests.unit.test_native_viz_service" name="test_admission_refusals_are_audited_before_document_transaction[stale_session-LIST]" time="0.001" /><testcase classname="tests.unit.test_native_viz_service" name="test_admission_refusals_are_audited_before_document_transaction[stale_session-CREATE]" time="0.001" /><testcase classname="tests.unit.test_native_viz_service" name="test_admission_refusals_are_audited_before_document_transaction[workspace-LIST]" time="0.001" /><testcase classname="tests.unit.test_native_viz_service" name="test_admission_refusals_are_audited_before_document_transaction[workspace-CREATE]" time="0.002" /></testsuite></testsuites>

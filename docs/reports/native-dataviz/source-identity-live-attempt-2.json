@@ -1,0 +1,22 @@
+{
+  "result": "FAIL",
+  "owned_database": "ndv_src_e8e3d611de10",
+  "owned_roles": [
+    "ndv_read_e8e3d611de10",
+    "ndv_none_e8e3d611de10"
+  ],
+  "steps": [
+    {
+      "check": "QA attributes unchanged",
+      "passed": true
+    },
+    {
+      "check": "QA grants unchanged",
+      "passed": true
+    }
+  ],
+  "cleanup_errors": [],
+  "error_type": "ValueError",
+  "engine_version": "4.1.4",
+  "ranger_service": "nova_starrocks"
+}

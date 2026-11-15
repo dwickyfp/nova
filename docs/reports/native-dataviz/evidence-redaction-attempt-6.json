@@ -1,0 +1,14 @@
+{
+  "private_original_directory": "/Users/dwickyferiansyahputra/.local/share/nova/native-dataviz-evidence-originals-20261114",
+  "redactions": [
+    {
+      "file": "backend-unit-attempt-10.xml",
+      "occurrences": 2
+    },
+    {
+      "file": "backend-unit-attempt-10.xml",
+      "occurrences": 5
+    }
+  ],
+  "scope": "Public JUnit identifiers only; test outcomes unchanged"
+}

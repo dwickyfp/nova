@@ -59,6 +59,10 @@ Nova shows **Add to Dataviz** only when it can rebuild the view exactly:
 - An answer still being written, or one from a role that may not author BI
   content, shows no button.
 
+After you switch roles, Nova checks which answers you can add again. Closing
+an answer cancels its pending check; returning to it checks availability under
+your current role.
+
 ## Limits
 
 - The dashboard chart has its own dataset built from the answer's query.

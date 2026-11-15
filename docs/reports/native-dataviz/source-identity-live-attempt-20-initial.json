@@ -1,0 +1,10 @@
+{
+  "result": "RUNNING",
+  "owned_database": "ndv_src_6737d4c2b9fb",
+  "owned_roles": [
+    "ndv_read_6737d4c2b9fb",
+    "ndv_none_6737d4c2b9fb"
+  ],
+  "steps": [],
+  "cleanup_errors": []
+}

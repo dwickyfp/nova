@@ -1,0 +1,39 @@
+[
+  {
+    "command": [
+      "pnpm",
+      "install",
+      "--frozen-lockfile"
+    ],
+    "file": "frontend-install-attempt-15.txt",
+    "returncode": 0,
+    "seconds": 0.79
+  },
+  {
+    "command": [
+      "pnpm",
+      "lint"
+    ],
+    "file": "frontend-lint-attempt-15.txt",
+    "returncode": 0,
+    "seconds": 13.42
+  },
+  {
+    "command": [
+      "pnpm",
+      "build"
+    ],
+    "file": "frontend-build-attempt-15.txt",
+    "returncode": 0,
+    "seconds": 28.64
+  },
+  {
+    "command": [
+      "pnpm",
+      "test:coverage"
+    ],
+    "file": "frontend-coverage-attempt-15.txt",
+    "returncode": 0,
+    "seconds": 184.26
+  }
+]

@@ -1,0 +1,17 @@
+$ vitest run --browser.headless src/features/studio/dataviz/use-dataviz-capability.test.tsx src/features/studio/dataviz/dataviz.test.tsx src/features/studio/studio-chat.integration.test.tsx --browser.fileParallelism=false --no-file-parallelism --maxWorkers=1
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+
+11:04:17 PM [vite] (client) Re-optimizing dependencies because vite config has changed
+11:04:18 PM [vite] (client) [optimizer] scanning dependencies...
+11:04:19 PM [vite] (client) [optimizer] bundling dependencies...
+11:04:37 PM [vite] (client) [console.error] The current testing environment is not configured to support act(...)
+11:04:37 PM [vite] (client) [console.error] The current testing environment is not configured to support act(...)
+11:04:37 PM [vite] (client) [console.error] The current testing environment is not configured to support act(...)
+11:04:37 PM [vite] (client) [console.error] The current testing environment is not configured to support act(...)
+
+ Test Files  3 passed (3)
+      Tests  49 passed (49)
+   Start at  23:04:16
+   Duration  20.25s (transform 0ms, setup 0ms, import 3.71s, tests 10.99s, environment 0ms)
+

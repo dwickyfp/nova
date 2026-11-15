@@ -1,0 +1,12 @@
+E501 Line too long (105 > 100)
+   --> app/modules/viz/bindings.py:178:101
+    |
+176 |             if isinstance(node, TableCalculation):
+177 |                 if set(node.addressing) | set(node.partition_by) != dimensions:
+178 |                     raise ValueError("Calculation addressing and partitions must cover chart dimensions")
+    |                                                                                                     ^^^^^
+179 |             elif isinstance(node, TopN) and node.dimension.field_id not in dimensions:
+180 |                 raise ValueError("Top N requires an encoded dimension")
+    |
+
+Found 1 error.

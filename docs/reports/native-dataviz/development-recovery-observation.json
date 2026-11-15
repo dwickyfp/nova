@@ -1,0 +1,12 @@
+{
+  "development_container": "docker-nova-metadata-db-1",
+  "restart_count": 0,
+  "oom_kill_events": 0,
+  "memory_limit_bytes": 536870912,
+  "recovery_started_utc": "2026-11-13T15:33:58.562Z",
+  "ready_utc": "2026-11-13T15:35:07.563Z",
+  "selected_server_events": [
+    "2026-11-13 15:33:58.562 UTC [1] LOG:  server process (PID 107309) exited with exit code 2"
+  ],
+  "scope": "Read-only diagnosis; no development reset, resource change or restart performed."
+}

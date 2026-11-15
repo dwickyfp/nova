@@ -1,0 +1,12 @@
+E501 Line too long (102 > 100)
+   --> scripts/verify_native_source_identity_live.py:301:101
+    |
+299 |                 if query_schema_output is not None:
+300 |                     try:
+301 |                         await cursor.execute(f"EXPLAIN SCHEMA SELECT id FROM {database}.source_table")
+    |                                                                                                     ^^
+302 |                     except asyncmy.errors.DatabaseError as error:
+303 |                         check(
+    |
+
+Found 1 error.

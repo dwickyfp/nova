@@ -1,0 +1,3 @@
+$ uv run pytest tests/integration/test_metadata_viz.py tests/integration/test_metadata_migrator.py -q --junit-xml=/Users/dwickyferiansyahputra/Public/Research/nova/docs/reports/native-dataviz/pg-attempt-13.xml
+...............................................................          [100%]
+63 passed in 69.46s (0:01:09)

@@ -43,6 +43,7 @@ class BoundTable:
     partition_sql: str | None = None
     partition_columns: tuple[str, ...] | None = None
     schema_version: str | None = None
+    physical_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

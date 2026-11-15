@@ -1,0 +1,44 @@
+E501 Line too long (101 > 100)
+   --> app/modules/viz/dataset_service.py:452:101
+    |
+450 |             len(request.source.sql), parameter_schema_query, parsed,
+451 |             tuple(item.specification() for item in request.parameters),
+452 |         ) if request.parameters else await run_sql_cpu(len(request.source.sql), schema_query, parsed)
+    |                                                                                                     ^
+453 |         names = await run_sql_cpu(
+454 |             len(request.source.sql), read_query_sources, parsed, database=request.source.database
+    |
+
+E501 Line too long (105 > 100)
+  --> tests/unit/test_native_viz_parameters.py:34:101
+   |
+32 |     ("string", "O'Reilly'; DROP TABLE t; -- \\ %", "O'Reilly'; DROP TABLE t; -- \\ %", {}),
+33 | ])
+34 | def test_private_values_retain_exact_types_at_the_existing_binding_boundary(kind, wire, expected, extra):
+   |                                                                                                     ^^^^^
+35 |     declaration = Parameter(parameter_id="input", type=kind, **extra)
+36 |     supplied = given(value(kind, wire))
+   |
+
+E501 Line too long (103 > 100)
+  --> tests/unit/test_native_viz_parameters.py:93:101
+   |
+92 | @pytest.mark.parametrize("kind,lower,upper,inside,outside,extra", [
+93 |     ("integer", "9007199254740992", "9223372036854775807", "9007199254740993", "9007199254740991", {}),
+   |                                                                                                     ^^^
+94 |     ("decimal", "0.000000000001", "999.999999999999", "1.2300", "0.000000000000",
+95 |      {"precision": 38, "scale": 12}),
+   |
+
+E501 Line too long (113 > 100)
+   --> tests/unit/test_native_viz_parameters.py:100:101
+    |
+ 98 |      "2024-11-03T06:30:00Z", "2024-11-03T01:30:00-04:00", {}),
+ 99 | ])
+100 | def test_inclusive_ranges_compare_exact_values_and_absolute_instants(kind, lower, upper, inside, outside, extra):
+    |                                                                                                     ^^^^^^^^^^^^^
+101 |     declaration = Parameter(parameter_id="input", type=kind, minimum=value(kind, lower),
+102 |                             maximum=value(kind, upper), **extra)
+    |
+
+Found 4 errors.

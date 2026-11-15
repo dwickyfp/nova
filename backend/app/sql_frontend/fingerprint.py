@@ -12,6 +12,7 @@ from app.sql_frontend.antlr_utils import walk_nodes
 from app.sql_frontend.ast.builder import ast_builders
 from app.sql_frontend.ast.statements import NativeStatement
 from app.sql_frontend.parser import parse_statement
+from app.sql_frontend.read_queries import REPLAY_SAFE_FUNCTIONS
 
 VERSION = 2
 _VALUES = {
@@ -21,8 +22,10 @@ _VALUES = {
     "BinaryLiteralContext",
     "BooleanLiteralContext",
     "ParameterContext",
+    "NamedParameterContext",
 }
 _UNSAFE = {
+    "NamedParameterContext",
     "OutfileContext",
     "StageReferenceContext",
     "FileTableFunctionContext",
@@ -39,34 +42,7 @@ _UNSAFE = {
     "LimitElementContext",
     "WindowFunctionCallContext",
 }
-_PURE_FUNCTIONS = frozenset(
-    {
-        "abs",
-        "ceil",
-        "floor",
-        "round",
-        "coalesce",
-        "ifnull",
-        "nullif",
-        "date_trunc",
-        "date_format",
-        "year",
-        "month",
-        "day",
-        "hour",
-        "lower",
-        "upper",
-        "length",
-        "substring",
-        "concat",
-        "cast",
-        "sum",
-        "count",
-        "avg",
-        "min",
-        "max",
-    }
-)
+
 
 
 @dataclass(frozen=True)
@@ -178,7 +154,7 @@ def fingerprint(sql: str) -> QueryShape:
                 if previous.text.upper() == "AS":
                     skipped.add(previous.tokenIndex)
             if kind == "SimpleFunctionCallContext":
-                safe &= _source(sql, node.qualifiedName()).lower() in _PURE_FUNCTIONS
+                safe &= _source(sql, node.qualifiedName()).lower() in REPLAY_SAFE_FUNCTIONS
         for node in nodes:
             kind = _name(node)
             if kind == "ColumnReferenceContext":

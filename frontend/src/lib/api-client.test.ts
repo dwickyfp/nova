@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/stores/auth-store'
-import { ApiError, api, signInNavigation, signInUrl, tokenSecondsLeft } from './api-client'
+import { ApiError, api, renewAccessToken, signInNavigation, signInUrl, tokenSecondsLeft } from './api-client'
 
 const fetchMock = vi.fn()
 
@@ -147,6 +147,40 @@ function jwt(exp: number) {
 }
 
 describe('token renewal', () => {
+  it('does not sign out a new login when an old request renewal is refused', async () => {
+    const open = vi.spyOn(signInNavigation, 'open').mockImplementation(() => {})
+    useAuthStore.getState().auth.setAccessToken('old-login')
+    let finish!: (body: unknown) => void
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 401 })
+    fetchMock.mockResolvedValueOnce({ ok: true,
+      json: () => new Promise((resolve) => { finish = resolve }),
+    })
+    const request = api.get('/thing')
+    const checked = expect(request).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+    useAuthStore.getState().auth.setAccessToken('new-login')
+    finish({ access_token: 'old-login-renewed' })
+    await checked
+    expect(useAuthStore.getState().auth.accessToken).toBe('new-login')
+    expect(open).not.toHaveBeenCalled()
+    open.mockRestore()
+  })
+
+  it('does not replace a new login with an earlier login renewal', async () => {
+    useAuthStore.getState().auth.setAccessToken('old-login')
+    let finish!: (body: unknown) => void
+    fetchMock.mockResolvedValueOnce({ ok: true,
+      json: () => new Promise((resolve) => { finish = resolve }),
+    })
+    const renewal = renewAccessToken()
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+    useAuthStore.getState().auth.setAccessToken('new-login')
+    finish({ access_token: 'old-login-renewed' })
+    await expect(renewal).resolves.toBe(false)
+    expect(useAuthStore.getState().auth.accessToken).toBe('new-login')
+    useAuthStore.getState().auth.reset()
+  })
+
   afterEach(() => {
     useAuthStore.getState().auth.reset()
   })

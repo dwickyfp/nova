@@ -1,0 +1,75 @@
+E501 Line too long (103 > 100)
+   --> app/modules/viz/documents.py:144:101
+    |
+142 |         cursor = await self.connection.execute(
+143 |             "INSERT INTO nova_meta.viz_operations "
+144 |             "(operation_id,resource_id,request_digest,kind,base_revision,new_revision,event_sequence) "
+    |                                                                                                     ^^^
+145 |             "VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING *",
+146 |             (operation_id, head["resource_id"], digest, kind, base_revision,
+    |
+
+E501 Line too long (103 > 100)
+   --> app/modules/viz/documents.py:271:101
+    |
+269 |         publication_id = uuid4()
+270 |         await self.connection.execute(
+271 |             "INSERT INTO nova_meta.viz_publications(publication_id,resource_id,revision,release_notes)"
+    |                                                                                                     ^^^
+272 |             " VALUES (%s,%s,%s,%s)",
+273 |             (publication_id, identity, head["draft_revision"], request.release_notes),
+    |
+
+F811 Redefinition of unused `environment` from line 27
+  --> tests/integration/test_metadata_viz.py:34:24
+   |
+33 | class VizFixture:
+34 |     def __init__(self, environment, epoch, workspace_id):
+   |                        ^^^^^^^^^^^ `environment` redefined here
+35 |         self.environment = environment
+36 |         self.epoch = epoch
+   |
+  ::: tests/integration/test_metadata_viz.py:27:55
+   |
+25 | from app.modules.viz.documents import VizDocumentRepository
+26 | from app.modules.workspaces.metadata_sharing import WorkspaceSharingRepository
+27 | from tests.integration.test_metadata_bootstrap import environment  # noqa: F401
+   |                                                       ----------- previous definition of `environment` here
+28 | from tests.integration.test_metadata_workspaces import session
+   |
+help: Remove definition: `environment`
+
+SIM117 Use a single `with` statement with multiple contexts instead of nested `with` statements
+  --> tests/integration/test_metadata_viz.py:45:13
+   |
+43 |           await database.open(schema_version=len(load_migrations()), metadata_epoch=self.epoch)
+44 |           try:
+45 | /             async with database.transaction(SecurityContext.from_session(user)) as connection:
+46 | |                 async with VizDocumentRepository.bind(connection, user) as repository:
+   | |______________________________________________________________________________________^
+47 |                       yield repository, connection
+48 |           finally:
+   |
+help: Combine `with` statements
+
+E501 Line too long (106 > 100)
+   --> tests/integration/test_metadata_viz.py:150:101
+    |
+148 |     async with viz.transaction(active) as (repo, connection):
+149 |         assert (await repo.read(identity))["definition"].title == "Sales"
+150 |         cursor = await connection.execute("SELECT nova_meta.viz_can(%s,'export') AS allowed", (identity,))
+    |                                                                                                     ^^^^^^
+151 |         assert (await cursor.fetchone())["allowed"] is False
+152 |         with pytest.raises(MetadataPermissionDenied):
+    |
+
+E501 Line too long (102 > 100)
+   --> tests/integration/test_metadata_viz.py:233:101
+    |
+231 |             await connection.execute("INSERT INTO nova_meta.viz_acl_grants"
+232 |                                      "(resource_id,subject_type,subject_id,permission) "
+233 |                                      "VALUES (%s,'user','editor','manage')", (document.dashboard_id,))
+    |                                                                                                     ^^
+    |
+
+Found 6 errors.

@@ -1,0 +1,10 @@
+E501 Line too long (105 > 100)
+   --> tests/unit/test_sql_frontend_query_schema.py:112:101
+    |
+110 | def test_parameter_schema_refuses_undeclared_unused_or_structural_list_inputs(query):
+111 |     with pytest.raises(SemanticError):
+112 |         parameter_schema_query(parse_statement(query), (ParameterSpec("ids", "integer", multiple=True),))
+    |                                                                                                     ^^^^^
+    |
+
+Found 3 errors (2 fixed, 1 remaining).

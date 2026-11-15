@@ -82,6 +82,10 @@ export default defineConfig(({ command }) => ({
   server: {
     watch: { ignored: ["**/coverage/**", "**/__screenshots__/**"] },
     proxy: {
+      "^/api/v1/viz/datasets/(inspect|[0-9a-fA-F-]{36}/preview)/?(\\?|$)": {
+        target: process.env.NOVA_QUERY_API_URL ?? process.env.NOVA_WEB_API_URL ?? "http://localhost:8000",
+        changeOrigin: true,
+      },
       // Query and ML use their workload grants. Studio and assistant metadata
       // remain owned by web until the dedicated Agent runtime is delivered.
       "^/api/v1/(query|ml)(/|$)": {

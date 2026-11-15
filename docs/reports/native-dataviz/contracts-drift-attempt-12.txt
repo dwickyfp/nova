@@ -1,0 +1,1 @@
+Native Viz contracts match the backend schema

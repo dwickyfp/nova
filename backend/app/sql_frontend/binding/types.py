@@ -67,7 +67,11 @@ class _TypeParser:
                 self.take(",")
                 parameters.append(int(self.take()))
             self.take(")")
-        if name in _INTEGER_BITS and not parameters:
+        if name in _INTEGER_BITS:
+            # Catalog COLUMN_TYPE uses MySQL display widths, e.g. bigint(20).
+            # Width does not change the signed integer's storage or precision.
+            if parameters and (len(parameters) != 1 or not 1 <= parameters[0] <= 255):
+                raise ValueError("Invalid integer display width")
             return SqlType("INTEGER", bits=_INTEGER_BITS[name])
         if name in {"BOOL", "BOOLEAN"} and not parameters:
             return SqlType("BOOLEAN")

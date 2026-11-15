@@ -1,0 +1,37 @@
+{
+  "baseline_commit": "1ee12694e0ecb6ecfd8135965943be08f5195967",
+  "schema_before": 48,
+  "schema_target": 49,
+  "migration_sha256": "5ef0d571e912581477fccddc3f31f3a1f8edcdec885ad3da723803d6e9516596",
+  "fixture_evidence": "pg-attempt-9.xml",
+  "fixture_result": "50 passed",
+  "schema_after": 49,
+  "metadata_epoch_preserved": true,
+  "existing_tables_count_checked": 193,
+  "existing_counts_preserved": true,
+  "backup": {
+    "bytes": 188098893,
+    "sha256": "9e1844b40755a88aa661872031ffc009630e5b6051a6dded0f890acc54f8c8c8",
+    "toc_verified": true,
+    "attempt": 2,
+    "initial_failure": "Default postgres role does not exist; used configured administrator on attempt 2"
+  },
+  "migration_immutable": true,
+  "verification_attempts": [
+    "Initial backup failed because default postgres role was absent; configured administrator backup succeeded.",
+    "Post-migration environment update stopped on a quoted version value; no migration replay occurred. Version updated preserving quoting, then unfreeze committed."
+  ],
+  "readiness_attempts": [
+    "First checker invocation omitted required ports (exit 2).",
+    "Second check reported web unavailable within its one-second timeout."
+  ],
+  "schema_version": 49,
+  "maintenance": false,
+  "native_resources": 0,
+  "http": {
+    "web": 200,
+    "query": 200,
+    "frontend": 200
+  },
+  "recorded_at": "2026-11-13T16:24:09.430056+00:00"
+}

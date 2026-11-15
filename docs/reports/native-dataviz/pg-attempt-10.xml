@@ -1,0 +1,655 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="13" failures="2" skipped="0" tests="55" time="135.073" timestamp="2026-11-13T23:40:46.513517+07:00" hostname="Dwickys-MacBook-Air.local"><testcase classname="tests.integration.test_metadata_viz" name="test_sensitive_parameter_default_cannot_be_saved_through_dashboard_control" time="2.941" /><testcase classname="tests.integration.test_metadata_viz" name="test_http_document_create_publish_history_and_receipt" time="2.793" /><testcase classname="tests.integration.test_metadata_viz" name="test_http_concurrent_cas_is_atomic" time="2.964" /><testcase classname="tests.integration.test_metadata_viz" name="test_http_permission_and_kind_boundaries" time="3.153"><failure message="assert 404 == 403&#10; +  where 404 = &lt;Response [404 Not Found]&gt;.status_code">native_http = (&lt;httpx.AsyncClient object at 0x11ccb0950&gt;, {'login-owner': {'username': 'owner', 'active_role': 'ANALYST', 'assigned_...er': {'username': 'reader', 'active_role': 'VIEWER', 'assigned_roles': ['VIEWER'], 'session_id': 'login-reader', ...}})
+native_service = (&lt;app.modules.viz.document_service.NativeDocumentService object at 0x11bc73890&gt;, {'login-owner': {'username': 'owner',...er': {'username': 'reader', 'active_role': 'VIEWER', 'assigned_roles': ['VIEWER'], 'session_id': 'login-reader', ...}})
+viz = &lt;tests.integration.test_metadata_viz.VizFixture object at 0x11bcfd250&gt;
+
+    async def test_http_permission_and_kind_boundaries(native_http, native_service, viz):
+        client, records = native_http
+        service, _ = native_service
+        owner, reader = records["login-owner"], records["login-reader"]
+        document = dashboard()
+        assert (await http_create(client, owner, document, viz.workspace_id)).status_code == 201
+        path = f"/api/v1/viz/dashboards/{document.dashboard_id}"
+        hidden = await client.get(path + "?draft=true", headers=http_headers(reader))
+        assert hidden.status_code == 404
+        wrong_kind = await client.get(f"/api/v1/viz/charts/{document.dashboard_id}?draft=true",
+                                       headers=http_headers(owner))
+        assert wrong_kind.status_code == 404
+        async with viz.transaction() as (repository, _):
+            await repository.replace_grants(document.dashboard_id, GrantsReplace.model_validate({
+                "operation_id": uuid4(), "expected_revision": 1, "grants": [
+                    {"subject_type": "user", "subject_id": "reader", "permissions": ["view"]},
+                ],
+            }))
+        await service.publish(owner, document.dashboard_id, PublicationRequest(
+            operation_id=uuid4(), expected_revision=1,
+        ))
+        viewed = await client.get(path, headers=http_headers(reader))
+        assert viewed.status_code == 200
+        for suffix in ("?draft=true", "/revisions", "/grants"):
+&gt;           assert (await client.get(path + suffix, headers=http_headers(reader))).status_code == 403
+E           assert 404 == 403
+E            +  where 404 = &lt;Response [404 Not Found]&gt;.status_code
+
+tests/integration/test_metadata_viz.py:256: AssertionError</failure></testcase><testcase classname="tests.integration.test_metadata_viz" name="test_http_headers_must_agree_and_expired_login_is_rejected" time="3.082" /><testcase classname="tests.integration.test_metadata_viz" name="test_service_commits_personal_visual_history_and_replay" time="3.105" /><testcase classname="tests.integration.test_metadata_viz" name="test_service_directory_validation_and_atomic_refusal_audit" time="2.532" /><testcase classname="tests.integration.test_metadata_viz" name="test_service_rejects_stale_session_without_committing_any_document" time="2.115" /><testcase classname="tests.integration.test_metadata_viz" name="test_personal_documents_use_existing_private_workspace_namespace" time="2.114" /><testcase classname="tests.integration.test_metadata_viz" name="test_personal_binding_cannot_borrow_another_principals_dataset" time="1.895" /><testcase classname="tests.integration.test_metadata_viz" name="test_personal_namespace_cannot_be_forged_or_used_without_bound_roles" time="2.682" /><testcase classname="tests.integration.test_metadata_viz" name="test_create_commits_revision_receipt_outbox_and_redacted_audit_together" time="3.312" /><testcase classname="tests.integration.test_metadata_viz" name="test_ack_loss_retry_returns_exact_receipt_and_changed_payload_conflicts" time="3.266" /><testcase classname="tests.integration.test_metadata_viz" name="test_two_edits_have_one_winner_and_one_revision_conflict" time="3.648" /><testcase classname="tests.integration.test_metadata_viz" name="test_role_grant_is_active_only_and_workspace_membership_is_separate" time="4.183" /><testcase classname="tests.integration.test_metadata_viz" name="test_publication_stays_immutable_then_restore_creates_new_draft" time="4.275" /><testcase classname="tests.integration.test_metadata_viz" name="test_expired_grant_and_inactive_role_do_not_count_as_document_access" time="3.595" /><testcase classname="tests.integration.test_metadata_viz" name="test_direct_revision_update_and_owner_spoof_are_denied" time="2.838" /><testcase classname="tests.integration.test_metadata_viz" name="test_listing_never_exposes_unpublished_titles_to_viewers" time="2.950" /><testcase classname="tests.integration.test_metadata_viz" name="test_history_listing_and_event_cursors_are_bounded_and_complete" time="3.440" /><testcase classname="tests.integration.test_metadata_viz" name="test_receipt_lookup_is_bound_to_the_original_security_context" time="2.454" /><testcase classname="tests.integration.test_metadata_viz" name="test_manager_can_resolve_acknowledgement_after_downgrading_their_grant" time="1.722" /><testcase classname="tests.integration.test_metadata_viz" name="test_widget_filter_cannot_borrow_another_accessible_dataset_binding" time="2.047" /><testcase classname="tests.integration.test_metadata_viz" name="test_direct_head_change_without_receipt_rolls_back" time="1.781" /><testcase classname="tests.integration.test_metadata_viz" name="test_editor_cannot_publish_or_change_grants_even_with_direct_sql" time="2.522" /><testcase classname="tests.integration.test_metadata_viz" name="test_manager_can_replace_acl_and_remove_their_own_access_atomically" time="2.472" /><testcase classname="tests.integration.test_metadata_viz" name="test_acl_replacement_updates_expiry_without_duplicate_or_lost_grants" time="2.643" /><testcase classname="tests.integration.test_metadata_viz" name="test_future_revision_cannot_piggyback_on_a_valid_edit_receipt" time="2.063" /><testcase classname="tests.integration.test_metadata_viz" name="test_receipt_without_a_head_transition_and_event_is_rejected" time="2.850" /><testcase classname="tests.integration.test_metadata_viz" name="test_published_references_cannot_be_appended_in_a_later_transaction" time="2.686" /><testcase classname="tests.integration.test_metadata_viz" name="test_cancellation_rolls_back_definition_receipt_outbox_and_audit" time="2.105" /><testcase classname="tests.integration.test_metadata_viz" name="test_read_workloads_cannot_mutate_native_documents[query]" time="3.051" /><testcase classname="tests.integration.test_metadata_viz" name="test_read_workloads_cannot_mutate_native_documents[agent]" time="3.344" /><testcase classname="tests.integration.test_metadata_viz" name="test_publication_pins_transitive_definitions_while_drafts_change" time="4.518" /><testcase classname="tests.integration.test_metadata_viz" name="test_chart_cannot_bind_fields_absent_from_the_pinned_dataset" time="5.265" /><testcase classname="tests.integration.test_metadata_viz" name="test_chart_cannot_reference_a_dataset_in_another_workspace" time="8.367" /><testcase classname="tests.integration.test_metadata_viz" name="test_storage_revalidates_internal_model_copies_before_persistence" time="5.394" /><testcase classname="tests.integration.test_metadata_migrator" name="test_fresh_schema_has_restricted_grants_and_no_active_epoch" time="3.892" /><testcase classname="tests.integration.test_metadata_migrator" name="test_reapply_is_unchanged_and_does_not_rewrite_ledger" time="1.901" /><testcase classname="tests.integration.test_metadata_migrator" name="test_upgrade_from_deployment_only_schema_preserves_first_revision" time="3.367" /><testcase classname="tests.integration.test_metadata_migrator" name="test_changed_applied_bytes_refuse_migrator_and_application" time="4.458" /><testcase classname="tests.integration.test_metadata_migrator" name="test_two_migrators_publish_one_schema_revision" time="3.428"><failure message="app.core.metadata_db.MetadataTimeout: Metadata operation exceeded its deadline">migration_environment = &lt;tests.integration.test_metadata_migrator.MigrationEnvironment object at 0x11ce89150&gt;
+
+    async def test_two_migrators_publish_one_schema_revision(migration_environment):
+        env = migration_environment
+&gt;       results = await asyncio.gather(install(env), install(env))
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/integration/test_metadata_migrator.py:242: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/integration/test_metadata_migrator.py:144: in install
+    return await migrate(env.migrator, app_version=APP_VERSION, directory=env.directory)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+config = MetadataPoolConfig(max_size=10, max_waiting=40, acquire_timeout=5, statement_timeout_ms=15000, lock_timeout_ms=3000, idle_transaction_timeout_ms=30000)
+app_version = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+directory = PosixPath('/private/var/folders/xz/yr_gwc2551l_29g4nj8x8n4c0000gn/T/pytest-of-dwickyferiansyahputra/pytest-497/test_two_migrators_publish_one0')
+
+    async def migrate(
+        config: MetadataPoolConfig, *, app_version: str,
+        directory: Path = MIGRATION_DIRECTORY,
+    ) -&gt; MigrationResult:
+        """Commit all pending DDL and its ledger together; never publish an epoch."""
+        if not re.fullmatch(r"[0-9a-f]{40}", app_version):
+            raise SchemaManifestError()
+        migrations = load_migrations(directory)
+        try:
+            async with await psycopg.AsyncConnection.connect(
+                config.dsn, autocommit=True, row_factory=dict_row, prepare_threshold=None,
+                application_name="nova-metadata-migrator",
+                connect_timeout=max(1, int(config.acquire_timeout)),
+                options=(
+                    f"-c statement_timeout={config.statement_timeout_ms} "
+                    f"-c lock_timeout={config.lock_timeout_ms} "
+                    f"-c idle_in_transaction_session_timeout={config.idle_transaction_timeout_ms} "
+                    "-c synchronous_commit=on -c timezone=UTC"
+                ),
+            ) as conn:
+                if conn.info.server_version // 10000 != 17:
+                    raise MetadataSchemaMismatch()
+                async with conn.transaction():
+                    cursor = await conn.execute(
+                        "SELECT rolname, rolcanlogin, rolsuper, rolbypassrls, rolcreatedb, "
+                        "rolcreaterole, rolreplication FROM pg_catalog.pg_roles "
+                        "WHERE rolname = ANY(%s)", (list(METADATA_ROLES),),
+                    )
+                    roles = {row["rolname"]: row for row in await cursor.fetchall()}
+                    if set(roles) != set(METADATA_ROLES):
+                        raise MetadataSchemaMismatch()
+                    for name, role in roles.items():
+                        if any(role[key] for key in (
+                            "rolsuper", "rolbypassrls", "rolcreatedb", "rolcreaterole",
+                        )) or (name != "nova_meta_backup" and role["rolreplication"]):
+                            raise MetadataSchemaMismatch()
+                        if name == "nova_meta_owner" and role["rolcanlogin"]:
+                            raise MetadataSchemaMismatch()
+                    cursor = await conn.execute(
+                        "SELECT session_user = 'nova_meta_migrator' AND "
+                        "pg_has_role(session_user, 'nova_meta_owner', 'SET') AS allowed"
+                    )
+                    identity = await cursor.fetchone()
+                    if not identity or not identity["allowed"]:
+                        raise MetadataSchemaMismatch()
+                    await conn.execute("SET LOCAL ROLE nova_meta_owner")
+                    await conn.execute("SET LOCAL search_path = pg_catalog")
+                    await conn.execute(
+                        "SELECT pg_advisory_xact_lock(%s)", (METADATA_DEPLOYMENT_LOCK,),
+                    )
+                    cursor = await conn.execute(
+                        "SELECT nspowner = 'nova_meta_owner'::regrole AS owned "
+                        "FROM pg_catalog.pg_namespace WHERE nspname = 'nova_meta'"
+                    )
+                    schema = await cursor.fetchone()
+                    if schema is not None and not schema["owned"]:
+                        raise MetadataSchemaMismatch()
+                    if schema is None:
+                        await conn.execute("CREATE SCHEMA nova_meta AUTHORIZATION nova_meta_owner")
+                    await conn.execute("REVOKE ALL ON SCHEMA nova_meta FROM PUBLIC")
+                    for kind in ("TABLES", "SEQUENCES", "FUNCTIONS", "TYPES"):
+                        await conn.execute(psycopg.sql.SQL(
+                            "ALTER DEFAULT PRIVILEGES FOR ROLE nova_meta_owner IN SCHEMA nova_meta "
+                            "REVOKE ALL ON {} FROM PUBLIC"
+                        ).format(psycopg.sql.SQL(kind)))
+                    cursor = await conn.execute(
+                        "SELECT to_regclass('nova_meta.schema_migrations') AS ledger"
+                    )
+                    ledger = await cursor.fetchone()
+                    applied = []
+                    if ledger and ledger["ledger"] is not None:
+                        cursor = await conn.execute(
+                            "SELECT version, name, checksum FROM nova_meta.schema_migrations "
+                            "ORDER BY version"
+                        )
+                        applied = await cursor.fetchall()
+                        if not applied:
+                            raise SchemaManifestError()
+                    else:
+                        cursor = await conn.execute(
+                            "SELECT EXISTS(SELECT 1 FROM pg_class "
+                            "WHERE relnamespace = 'nova_meta'::regnamespace) "
+                            "OR EXISTS(SELECT 1 FROM pg_proc "
+                            "WHERE pronamespace = 'nova_meta'::regnamespace) "
+                            "OR EXISTS(SELECT 1 FROM pg_type "
+                            "WHERE typnamespace = 'nova_meta'::regnamespace) AS occupied"
+                        )
+                        occupied = await cursor.fetchone()
+                        if occupied and occupied["occupied"]:
+                            raise SchemaManifestError()
+                    count = verify_applied_migrations(migrations, applied)
+                    if count:
+                        cursor = await conn.execute(
+                            "SELECT schema_version, maintenance FROM nova_meta.deployment_state "
+                            "WHERE singleton = true"
+                        )
+                        state = await cursor.fetchone()
+                        if not state or state["schema_version"] != count:
+                            raise MetadataSchemaMismatch()
+                        if count &lt; len(migrations) and not state["maintenance"]:
+                            raise MetadataSchemaMismatch()
+                    for migration in migrations[count:]:
+                        # PostgreSQL forbids transaction control inside a DO block
+                        # nested in our transaction, including dynamic COMMIT SQL.
+                        await conn.execute(
+                            "DO $nova_schema_revision$ BEGIN\n" + migration.statement
+                            + "\nEND $nova_schema_revision$;", prepare=False,
+                        )
+                        await conn.execute(
+                            "INSERT INTO nova_meta.schema_migrations "
+                            "(version, name, checksum, app_version) VALUES (%s, %s, %s, %s)",
+                            (migration.version, migration.name, migration.checksum, app_version),
+                        )
+                    if count &lt; len(migrations):
+                        await conn.execute(
+                            "UPDATE nova_meta.deployment_state SET schema_version = %s, "
+                            "updated_at = clock_timestamp() WHERE singleton = true",
+                            (len(migrations),),
+                        )
+                return MigrationResult(len(migrations), tuple(m.version for m in migrations[count:]))
+        except (psycopg.errors.QueryCanceled, psycopg.errors.LockNotAvailable):
+&gt;           raise MetadataTimeout() from None
+E           app.core.metadata_db.MetadataTimeout: Metadata operation exceeded its deadline
+
+app/core/metadata_migrations.py:163: MetadataTimeout</failure></testcase><testcase classname="tests.integration.test_metadata_migrator" name="test_two_migrators_publish_one_schema_revision" time="0.255"><error message="failed on teardown with &quot;psycopg.errors.DependentObjectsStillExist: role &quot;nova_meta_outbox&quot; cannot be dropped because some objects depend on it&#10;DETAIL:  privileges for column next_publish_at of table nova_meta.outbox_events&#10;privileges for column published_at of table nova_meta.outbox_events&#10;privileges for column publish_attempt of table nova_meta.outbox_events&#10;privileges for column lease_holder of table nova_meta.outbox_events&#10;privileges for column lease_token of table nova_meta.outbox_events&#10;privileges for column lease_expires_at of table nova_meta.outbox_events&#10;target of policy outbox_update on table nova_meta.outbox_events&quot;">tmp_path = PosixPath('/private/var/folders/xz/yr_gwc2551l_29g4nj8x8n4c0000gn/T/pytest-of-dwickyferiansyahputra/pytest-497/test_two_migrators_publish_one0')
+
+    @pytest_asyncio.fixture
+    async def migration_environment(tmp_path):
+        dsn = os.environ.get("NOVA_TEST_METADATA_ADMIN_DSN")
+        if not dsn:
+            pytest.skip("Dedicated PG17 TLS fixture requires NOVA_TEST_METADATA_ADMIN_DSN")
+        if os.environ.get("NOVA_TEST_METADATA_DISPOSABLE") != "acknowledged":
+            pytest.fail("PG migration fixture requires disposable database acknowledgement")
+        if conninfo_to_dict(dsn).get("dbname") != "nova_control":
+            pytest.fail("PG migration fixture must select nova_control")
+        marker = str(uuid4())
+        app_role = "nova_fixture_" + uuid4().hex[:12]
+        password = secrets.token_urlsafe(30)
+        created = False
+        async with await psycopg.AsyncConnection.connect(
+            dsn, autocommit=True, row_factory=dict_row,
+        ) as admin:
+            if admin.info.server_version // 10000 != 17:
+                pytest.fail("Migration acceptance requires PostgreSQL 17")
+            cursor = await admin.execute(
+                "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='nova_meta') "
+                "OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=ANY(%s)) AS occupied",
+                (list(ALL_ROLES),),
+            )
+            assert not (await cursor.fetchone())["occupied"], "Refusing existing metadata schema/roles"
+            try:
+                async with admin.transaction():
+                    for role in ALL_ROLES:
+                        await admin.execute(
+                            sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(role)),
+                        )
+                    await admin.execute(
+                        sql.SQL("ALTER ROLE nova_meta_migrator LOGIN PASSWORD {}").format(
+                            sql.Literal(password),
+                        ),
+                    )
+                    await admin.execute(sql.SQL("CREATE ROLE {} LOGIN PASSWORD {}").format(
+                        sql.Identifier(app_role), sql.Literal(password),
+                    ))
+                    await provision_role_logging(admin, "nova_meta_migrator")
+                    await provision_role_logging(admin, app_role)
+                    await admin.execute(sql.SQL(
+                        "GRANT CONNECT ON DATABASE nova_control TO nova_meta_migrator, {}"
+                    ).format(sql.Identifier(app_role)))
+                    await admin.execute(sql.SQL("COMMENT ON ROLE nova_meta_owner IS {}").format(
+                        sql.Literal(marker),
+                    ))
+                    await admin.execute(
+                        "GRANT nova_meta_owner TO nova_meta_migrator WITH INHERIT FALSE, SET TRUE; "
+                        "GRANT CREATE ON DATABASE nova_control TO nova_meta_owner"
+                    )
+                    await admin.execute(sql.SQL("GRANT nova_meta_app TO {}").format(
+                        sql.Identifier(app_role),
+                    ))
+                created = True
+                for migration in load_migrations():
+                    (tmp_path / migration.name).write_text(migration.statement)
+                yield MigrationEnvironment(
+                    admin,
+                    MetadataPoolConfig(make_conninfo(
+                        dsn, user="nova_meta_migrator", password=password,
+                    )),
+                    MetadataPoolConfig(make_conninfo(dsn, user=app_role, password=password)),
+                    tmp_path,
+                )
+            finally:
+                if created:
+                    cursor = await admin.execute(
+                        "SELECT shobj_description(oid, 'pg_authid') AS marker "
+                        "FROM pg_roles WHERE rolname='nova_meta_owner'"
+                    )
+                    assert (await cursor.fetchone())["marker"] == marker, "Fixture ownership changed"
+                    cursor = await admin.execute(
+                        "SELECT nspowner = 'nova_meta_owner'::regrole AS owned "
+                        "FROM pg_namespace WHERE nspname='nova_meta'"
+                    )
+                    schema = await cursor.fetchone()
+                    if schema:
+                        assert schema["owned"], "Refusing cleanup of a foreign metadata schema"
+                        await admin.execute("DROP SCHEMA nova_meta CASCADE")
+                    await admin.execute("REVOKE CREATE ON DATABASE nova_control FROM nova_meta_owner")
+                    # ALTER DEFAULT PRIVILEGES persists outside a schema after its removal.
+                    await admin.execute("DROP OWNED BY nova_meta_owner")
+                    await admin.execute(sql.SQL(
+                        "REVOKE CONNECT ON DATABASE nova_control FROM nova_meta_migrator, {}"
+                    ).format(sql.Identifier(app_role)))
+                    for role in (app_role, *reversed(ALL_ROLES)):
+&gt;                       await admin.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role)))
+
+tests/integration/test_metadata_migrator.py:140: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;psycopg.AsyncConnection [BAD] at 0x11cf74310&gt;
+query = Composed([SQL('DROP ROLE '), Identifier('nova_meta_outbox')])
+params = None, prepare = None, binary = False
+
+    async def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool = False,
+    ) -&gt; AsyncCursor[Row]:
+        """Execute a query and return a cursor to read its results."""
+        try:
+            cur = self.cursor()
+            if binary:
+                cur.format = BINARY
+    
+            if isinstance(query, Template):
+                if params is not None:
+                    raise TypeError(
+                        "'execute()' with string template query"
+                        " doesn't support parameters"
+                    )
+                return await cur.execute(query, prepare=prepare)
+            else:
+                return await cur.execute(query, params, prepare=prepare)
+    
+        except e._NO_TRACEBACK as ex:
+&gt;           raise ex.with_traceback(None)
+E           psycopg.errors.DependentObjectsStillExist: role "nova_meta_outbox" cannot be dropped because some objects depend on it
+E           DETAIL:  privileges for column next_publish_at of table nova_meta.outbox_events
+E           privileges for column published_at of table nova_meta.outbox_events
+E           privileges for column publish_attempt of table nova_meta.outbox_events
+E           privileges for column lease_holder of table nova_meta.outbox_events
+E           privileges for column lease_token of table nova_meta.outbox_events
+E           privileges for column lease_expires_at of table nova_meta.outbox_events
+E           target of policy outbox_update on table nova_meta.outbox_events
+
+.venv/lib/python3.11/site-packages/psycopg/connection_async.py:333: DependentObjectsStillExist</error></testcase><testcase classname="tests.integration.test_metadata_migrator" name="test_partial_ddl_and_transaction_escape_roll_back[SELECT missing_column FROM nova_meta.deployment_state;]" time="0.031"><error message="failed on setup with &quot;AssertionError: Refusing existing metadata schema/roles&#10;assert not True&quot;">tmp_path = PosixPath('/private/var/folders/xz/yr_gwc2551l_29g4nj8x8n4c0000gn/T/pytest-of-dwickyferiansyahputra/pytest-497/test_partial_ddl_and_transacti0')
+
+    @pytest_asyncio.fixture
+    async def migration_environment(tmp_path):
+        dsn = os.environ.get("NOVA_TEST_METADATA_ADMIN_DSN")
+        if not dsn:
+            pytest.skip("Dedicated PG17 TLS fixture requires NOVA_TEST_METADATA_ADMIN_DSN")
+        if os.environ.get("NOVA_TEST_METADATA_DISPOSABLE") != "acknowledged":
+            pytest.fail("PG migration fixture requires disposable database acknowledgement")
+        if conninfo_to_dict(dsn).get("dbname") != "nova_control":
+            pytest.fail("PG migration fixture must select nova_control")
+        marker = str(uuid4())
+        app_role = "nova_fixture_" + uuid4().hex[:12]
+        password = secrets.token_urlsafe(30)
+        created = False
+        async with await psycopg.AsyncConnection.connect(
+            dsn, autocommit=True, row_factory=dict_row,
+        ) as admin:
+            if admin.info.server_version // 10000 != 17:
+                pytest.fail("Migration acceptance requires PostgreSQL 17")
+            cursor = await admin.execute(
+                "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='nova_meta') "
+                "OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=ANY(%s)) AS occupied",
+                (list(ALL_ROLES),),
+            )
+&gt;           assert not (await cursor.fetchone())["occupied"], "Refusing existing metadata schema/roles"
+E           AssertionError: Refusing existing metadata schema/roles
+E           assert not True
+
+tests/integration/test_metadata_migrator.py:77: AssertionError</error></testcase><testcase classname="tests.integration.test_metadata_migrator" name="test_partial_ddl_and_transaction_escape_roll_back[COMMIT;]" time="0.027"><error message="failed on setup with &quot;AssertionError: Refusing existing metadata schema/roles&#10;assert not True&quot;">tmp_path = PosixPath('/private/var/folders/xz/yr_gwc2551l_29g4nj8x8n4c0000gn/T/pytest-of-dwickyferiansyahputra/pytest-497/test_partial_ddl_and_transacti1')
+
+    @pytest_asyncio.fixture
+    async def migration_environment(tmp_path):
+        dsn = os.environ.get("NOVA_TEST_METADATA_ADMIN_DSN")
+        if not dsn:
+            pytest.skip("Dedicated PG17 TLS fixture requires NOVA_TEST_METADATA_ADMIN_DSN")
+        if os.environ.get("NOVA_TEST_METADATA_DISPOSABLE") != "acknowledged":
+            pytest.fail("PG migration fixture requires disposable database acknowledgement")
+        if conninfo_to_dict(dsn).get("dbname") != "nova_control":
+            pytest.fail("PG migration fixture must select nova_control")
+        marker = str(uuid4())
+        app_role = "nova_fixture_" + uuid4().hex[:12]
+        password = secrets.token_urlsafe(30)
+        created = False
+        async with await psycopg.AsyncConnection.connect(
+            dsn, autocommit=True, row_factory=dict_row,
+        ) as admin:
+            if admin.info.server_version // 10000 != 17:
+                pytest.fail("Migration acceptance requires PostgreSQL 17")
+            cursor = await admin.execute(
+                "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='nova_meta') "
+                "OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=ANY(%s)) AS occupied",
+                (list(ALL_ROLES),),
+            )
+&gt;           assert not (await cursor.fetchone())["occupied"], "Refusing existing metadata schema/roles"
+E           AssertionError: Refusing existing metadata schema/roles
+E           assert not True
+
+tests/integration/test_metadata_migrator.py:77: AssertionError</error></testcase><testcase classname="tests.integration.test_metadata_migrator" name="test_partial_ddl_and_transaction_escape_roll_back[EXECUTE 'COMMIT';]" time="0.032"><error message="failed on setup with &quot;AssertionError: Refusing existing metadata schema/roles&#10;assert not True&quot;">tmp_path = PosixPath('/private/var/folders/xz/yr_gwc2551l_29g4nj8x8n4c0000gn/T/pytest-of-dwickyferiansyahputra/pytest-497/test_partial_ddl_and_transacti2')
+
+    @pytest_asyncio.fixture
+    async def migration_environment(tmp_path):
+        dsn = os.environ.get("NOVA_TEST_METADATA_ADMIN_DSN")
+        if not dsn:
+            pytest.skip("Dedicated PG17 TLS fixture requires NOVA_TEST_METADATA_ADMIN_DSN")
+        if os.environ.get("NOVA_TEST_METADATA_DISPOSABLE") != "acknowledged":
+            pytest.fail("PG migration fixture requires disposable database acknowledgement")
+        if conninfo_to_dict(dsn).get("dbname") != "nova_control":
+            pytest.fail("PG migration fixture must select nova_control")
+        marker = str(uuid4())
+        app_role = "nova_fixture_" + uuid4().hex[:12]
+        password = secrets.token_urlsafe(30)
+        created = False
+        async with await psycopg.AsyncConnection.connect(
+            dsn, autocommit=True, row_factory=dict_row,
+        ) as admin:
+            if admin.info.server_version // 10000 != 17:
+                pytest.fail("Migration acceptance requires PostgreSQL 17")
+            cursor = await admin.execute(
+                "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='nova_meta') "
+                "OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=ANY(%s)) AS occupied",
+                (list(ALL_ROLES),),
+            )
+&gt;           assert not (await cursor.fetchone())["occupied"], "Refusing existing metadata schema/roles"
+E           AssertionError: Refusing existing metadata schema/roles
+E           assert not True
+
+tests/integration/test_metadata_migrator.py:77: AssertionError</error></testcase><testcase classname="tests.integration.test_metadata_migrator" name="test_lost_migration_connection_rolls_back_and_resumes" time="0.028"><error message="failed on setup with &quot;AssertionError: Refusing existing metadata schema/roles&#10;assert not True&quot;">tmp_path = PosixPath('/private/var/folders/xz/yr_gwc2551l_29g4nj8x8n4c0000gn/T/pytest-of-dwickyferiansyahputra/pytest-497/test_lost_migration_connection0')
+
+    @pytest_asyncio.fixture
+    async def migration_environment(tmp_path):
+        dsn = os.environ.get("NOVA_TEST_METADATA_ADMIN_DSN")
+        if not dsn:
+            pytest.skip("Dedicated PG17 TLS fixture requires NOVA_TEST_METADATA_ADMIN_DSN")
+        if os.environ.get("NOVA_TEST_METADATA_DISPOSABLE") != "acknowledged":
+            pytest.fail("PG migration fixture requires disposable database acknowledgement")
+        if conninfo_to_dict(dsn).get("dbname") != "nova_control":
+            pytest.fail("PG migration fixture must select nova_control")
+        marker = str(uuid4())
+        app_role = "nova_fixture_" + uuid4().hex[:12]
+        password = secrets.token_urlsafe(30)
+        created = False
+        async with await psycopg.AsyncConnection.connect(
+            dsn, autocommit=True, row_factory=dict_row,
+        ) as admin:
+            if admin.info.server_version // 10000 != 17:
+                pytest.fail("Migration acceptance requires PostgreSQL 17")
+            cursor = await admin.execute(
+                "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='nova_meta') "
+                "OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=ANY(%s)) AS occupied",
+                (list(ALL_ROLES),),
+            )
+&gt;           assert not (await cursor.fetchone())["occupied"], "Refusing existing metadata schema/roles"
+E           AssertionError: Refusing existing metadata schema/roles
+E           assert not True
+
+tests/integration/test_metadata_migrator.py:77: AssertionError</error></testcase><testcase classname="tests.integration.test_metadata_migrator" name="test_schema_upgrade_requires_maintenance_and_preserves_epoch" time="0.031"><error message="failed on setup with &quot;AssertionError: Refusing existing metadata schema/roles&#10;assert not True&quot;">tmp_path = PosixPath('/private/var/folders/xz/yr_gwc2551l_29g4nj8x8n4c0000gn/T/pytest-of-dwickyferiansyahputra/pytest-497/test_schema_upgrade_requires_m0')
+
+    @pytest_asyncio.fixture
+    async def migration_environment(tmp_path):
+        dsn = os.environ.get("NOVA_TEST_METADATA_ADMIN_DSN")
+        if not dsn:
+            pytest.skip("Dedicated PG17 TLS fixture requires NOVA_TEST_METADATA_ADMIN_DSN")
+        if os.environ.get("NOVA_TEST_METADATA_DISPOSABLE") != "acknowledged":
+            pytest.fail("PG migration fixture requires disposable database acknowledgement")
+        if conninfo_to_dict(dsn).get("dbname") != "nova_control":
+            pytest.fail("PG migration fixture must select nova_control")
+        marker = str(uuid4())
+        app_role = "nova_fixture_" + uuid4().hex[:12]
+        password = secrets.token_urlsafe(30)
+        created = False
+        async with await psycopg.AsyncConnection.connect(
+            dsn, autocommit=True, row_factory=dict_row,
+        ) as admin:
+            if admin.info.server_version // 10000 != 17:
+                pytest.fail("Migration acceptance requires PostgreSQL 17")
+            cursor = await admin.execute(
+                "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='nova_meta') "
+                "OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=ANY(%s)) AS occupied",
+                (list(ALL_ROLES),),
+            )
+&gt;           assert not (await cursor.fetchone())["occupied"], "Refusing existing metadata schema/roles"
+E           AssertionError: Refusing existing metadata schema/roles
+E           assert not True
+
+tests/integration/test_metadata_migrator.py:77: AssertionError</error></testcase><testcase classname="tests.integration.test_metadata_migrator" name="test_migration_waits_for_readers_and_lock_wait_is_bounded" time="0.030"><error message="failed on setup with &quot;AssertionError: Refusing existing metadata schema/roles&#10;assert not True&quot;">tmp_path = PosixPath('/private/var/folders/xz/yr_gwc2551l_29g4nj8x8n4c0000gn/T/pytest-of-dwickyferiansyahputra/pytest-497/test_migration_waits_for_reade0')
+
+    @pytest_asyncio.fixture
+    async def migration_environment(tmp_path):
+        dsn = os.environ.get("NOVA_TEST_METADATA_ADMIN_DSN")
+        if not dsn:
+            pytest.skip("Dedicated PG17 TLS fixture requires NOVA_TEST_METADATA_ADMIN_DSN")
+        if os.environ.get("NOVA_TEST_METADATA_DISPOSABLE") != "acknowledged":
+            pytest.fail("PG migration fixture requires disposable database acknowledgement")
+        if conninfo_to_dict(dsn).get("dbname") != "nova_control":
+            pytest.fail("PG migration fixture must select nova_control")
+        marker = str(uuid4())
+        app_role = "nova_fixture_" + uuid4().hex[:12]
+        password = secrets.token_urlsafe(30)
+        created = False
+        async with await psycopg.AsyncConnection.connect(
+            dsn, autocommit=True, row_factory=dict_row,
+        ) as admin:
+            if admin.info.server_version // 10000 != 17:
+                pytest.fail("Migration acceptance requires PostgreSQL 17")
+            cursor = await admin.execute(
+                "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='nova_meta') "
+                "OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=ANY(%s)) AS occupied",
+                (list(ALL_ROLES),),
+            )
+&gt;           assert not (await cursor.fetchone())["occupied"], "Refusing existing metadata schema/roles"
+E           AssertionError: Refusing existing metadata schema/roles
+E           assert not True
+
+tests/integration/test_metadata_migrator.py:77: AssertionError</error></testcase><testcase classname="tests.integration.test_metadata_migrator" name="test_privileged_runtime_role_refuses_schema_install[nova_meta_app]" time="0.025"><error message="failed on setup with &quot;AssertionError: Refusing existing metadata schema/roles&#10;assert not True&quot;">tmp_path = PosixPath('/private/var/folders/xz/yr_gwc2551l_29g4nj8x8n4c0000gn/T/pytest-of-dwickyferiansyahputra/pytest-497/test_privileged_runtime_role_r0')
+
+    @pytest_asyncio.fixture
+    async def migration_environment(tmp_path):
+        dsn = os.environ.get("NOVA_TEST_METADATA_ADMIN_DSN")
+        if not dsn:
+            pytest.skip("Dedicated PG17 TLS fixture requires NOVA_TEST_METADATA_ADMIN_DSN")
+        if os.environ.get("NOVA_TEST_METADATA_DISPOSABLE") != "acknowledged":
+            pytest.fail("PG migration fixture requires disposable database acknowledgement")
+        if conninfo_to_dict(dsn).get("dbname") != "nova_control":
+            pytest.fail("PG migration fixture must select nova_control")
+        marker = str(uuid4())
+        app_role = "nova_fixture_" + uuid4().hex[:12]
+        password = secrets.token_urlsafe(30)
+        created = False
+        async with await psycopg.AsyncConnection.connect(
+            dsn, autocommit=True, row_factory=dict_row,
+        ) as admin:
+            if admin.info.server_version // 10000 != 17:
+                pytest.fail("Migration acceptance requires PostgreSQL 17")
+            cursor = await admin.execute(
+                "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='nova_meta') "
+                "OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=ANY(%s)) AS occupied",
+                (list(ALL_ROLES),),
+            )
+&gt;           assert not (await cursor.fetchone())["occupied"], "Refusing existing metadata schema/roles"
+E           AssertionError: Refusing existing metadata schema/roles
+E           assert not True
+
+tests/integration/test_metadata_migrator.py:77: AssertionError</error></testcase><testcase classname="tests.integration.test_metadata_migrator" name="test_privileged_runtime_role_refuses_schema_install[nova_meta_readonly]" time="0.026"><error message="failed on setup with &quot;AssertionError: Refusing existing metadata schema/roles&#10;assert not True&quot;">tmp_path = PosixPath('/private/var/folders/xz/yr_gwc2551l_29g4nj8x8n4c0000gn/T/pytest-of-dwickyferiansyahputra/pytest-497/test_privileged_runtime_role_r1')
+
+    @pytest_asyncio.fixture
+    async def migration_environment(tmp_path):
+        dsn = os.environ.get("NOVA_TEST_METADATA_ADMIN_DSN")
+        if not dsn:
+            pytest.skip("Dedicated PG17 TLS fixture requires NOVA_TEST_METADATA_ADMIN_DSN")
+        if os.environ.get("NOVA_TEST_METADATA_DISPOSABLE") != "acknowledged":
+            pytest.fail("PG migration fixture requires disposable database acknowledgement")
+        if conninfo_to_dict(dsn).get("dbname") != "nova_control":
+            pytest.fail("PG migration fixture must select nova_control")
+        marker = str(uuid4())
+        app_role = "nova_fixture_" + uuid4().hex[:12]
+        password = secrets.token_urlsafe(30)
+        created = False
+        async with await psycopg.AsyncConnection.connect(
+            dsn, autocommit=True, row_factory=dict_row,
+        ) as admin:
+            if admin.info.server_version // 10000 != 17:
+                pytest.fail("Migration acceptance requires PostgreSQL 17")
+            cursor = await admin.execute(
+                "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='nova_meta') "
+                "OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=ANY(%s)) AS occupied",
+                (list(ALL_ROLES),),
+            )
+&gt;           assert not (await cursor.fetchone())["occupied"], "Refusing existing metadata schema/roles"
+E           AssertionError: Refusing existing metadata schema/roles
+E           assert not True
+
+tests/integration/test_metadata_migrator.py:77: AssertionError</error></testcase><testcase classname="tests.integration.test_metadata_migrator" name="test_application_identity_cannot_run_migrator" time="0.046"><error message="failed on setup with &quot;AssertionError: Refusing existing metadata schema/roles&#10;assert not True&quot;">tmp_path = PosixPath('/private/var/folders/xz/yr_gwc2551l_29g4nj8x8n4c0000gn/T/pytest-of-dwickyferiansyahputra/pytest-497/test_application_identity_cann0')
+
+    @pytest_asyncio.fixture
+    async def migration_environment(tmp_path):
+        dsn = os.environ.get("NOVA_TEST_METADATA_ADMIN_DSN")
+        if not dsn:
+            pytest.skip("Dedicated PG17 TLS fixture requires NOVA_TEST_METADATA_ADMIN_DSN")
+        if os.environ.get("NOVA_TEST_METADATA_DISPOSABLE") != "acknowledged":
+            pytest.fail("PG migration fixture requires disposable database acknowledgement")
+        if conninfo_to_dict(dsn).get("dbname") != "nova_control":
+            pytest.fail("PG migration fixture must select nova_control")
+        marker = str(uuid4())
+        app_role = "nova_fixture_" + uuid4().hex[:12]
+        password = secrets.token_urlsafe(30)
+        created = False
+        async with await psycopg.AsyncConnection.connect(
+            dsn, autocommit=True, row_factory=dict_row,
+        ) as admin:
+            if admin.info.server_version // 10000 != 17:
+                pytest.fail("Migration acceptance requires PostgreSQL 17")
+            cursor = await admin.execute(
+                "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='nova_meta') "
+                "OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=ANY(%s)) AS occupied",
+                (list(ALL_ROLES),),
+            )
+&gt;           assert not (await cursor.fetchone())["occupied"], "Refusing existing metadata schema/roles"
+E           AssertionError: Refusing existing metadata schema/roles
+E           assert not True
+
+tests/integration/test_metadata_migrator.py:77: AssertionError</error></testcase><testcase classname="tests.integration.test_metadata_migrator" name="test_failed_fresh_install_leaves_no_partial_schema" time="0.030"><error message="failed on setup with &quot;AssertionError: Refusing existing metadata schema/roles&#10;assert not True&quot;">tmp_path = PosixPath('/private/var/folders/xz/yr_gwc2551l_29g4nj8x8n4c0000gn/T/pytest-of-dwickyferiansyahputra/pytest-497/test_failed_fresh_install_leav0')
+
+    @pytest_asyncio.fixture
+    async def migration_environment(tmp_path):
+        dsn = os.environ.get("NOVA_TEST_METADATA_ADMIN_DSN")
+        if not dsn:
+            pytest.skip("Dedicated PG17 TLS fixture requires NOVA_TEST_METADATA_ADMIN_DSN")
+        if os.environ.get("NOVA_TEST_METADATA_DISPOSABLE") != "acknowledged":
+            pytest.fail("PG migration fixture requires disposable database acknowledgement")
+        if conninfo_to_dict(dsn).get("dbname") != "nova_control":
+            pytest.fail("PG migration fixture must select nova_control")
+        marker = str(uuid4())
+        app_role = "nova_fixture_" + uuid4().hex[:12]
+        password = secrets.token_urlsafe(30)
+        created = False
+        async with await psycopg.AsyncConnection.connect(
+            dsn, autocommit=True, row_factory=dict_row,
+        ) as admin:
+            if admin.info.server_version // 10000 != 17:
+                pytest.fail("Migration acceptance requires PostgreSQL 17")
+            cursor = await admin.execute(
+                "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='nova_meta') "
+                "OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=ANY(%s)) AS occupied",
+                (list(ALL_ROLES),),
+            )
+&gt;           assert not (await cursor.fetchone())["occupied"], "Refusing existing metadata schema/roles"
+E           AssertionError: Refusing existing metadata schema/roles
+E           assert not True
+
+tests/integration/test_metadata_migrator.py:77: AssertionError</error></testcase><testcase classname="tests.integration.test_metadata_migrator" name="test_missing_ledger_never_overwrites_existing_objects" time="0.043"><error message="failed on setup with &quot;AssertionError: Refusing existing metadata schema/roles&#10;assert not True&quot;">tmp_path = PosixPath('/private/var/folders/xz/yr_gwc2551l_29g4nj8x8n4c0000gn/T/pytest-of-dwickyferiansyahputra/pytest-497/test_missing_ledger_never_over0')
+
+    @pytest_asyncio.fixture
+    async def migration_environment(tmp_path):
+        dsn = os.environ.get("NOVA_TEST_METADATA_ADMIN_DSN")
+        if not dsn:
+            pytest.skip("Dedicated PG17 TLS fixture requires NOVA_TEST_METADATA_ADMIN_DSN")
+        if os.environ.get("NOVA_TEST_METADATA_DISPOSABLE") != "acknowledged":
+            pytest.fail("PG migration fixture requires disposable database acknowledgement")
+        if conninfo_to_dict(dsn).get("dbname") != "nova_control":
+            pytest.fail("PG migration fixture must select nova_control")
+        marker = str(uuid4())
+        app_role = "nova_fixture_" + uuid4().hex[:12]
+        password = secrets.token_urlsafe(30)
+        created = False
+        async with await psycopg.AsyncConnection.connect(
+            dsn, autocommit=True, row_factory=dict_row,
+        ) as admin:
+            if admin.info.server_version // 10000 != 17:
+                pytest.fail("Migration acceptance requires PostgreSQL 17")
+            cursor = await admin.execute(
+                "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='nova_meta') "
+                "OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=ANY(%s)) AS occupied",
+                (list(ALL_ROLES),),
+            )
+&gt;           assert not (await cursor.fetchone())["occupied"], "Refusing existing metadata schema/roles"
+E           AssertionError: Refusing existing metadata schema/roles
+E           assert not True
+
+tests/integration/test_metadata_migrator.py:77: AssertionError</error></testcase><testcase classname="tests.integration.test_metadata_migrator" name="test_one_shot_entrypoint_installs_without_publishing_epoch" time="0.031"><error message="failed on setup with &quot;AssertionError: Refusing existing metadata schema/roles&#10;assert not True&quot;">tmp_path = PosixPath('/private/var/folders/xz/yr_gwc2551l_29g4nj8x8n4c0000gn/T/pytest-of-dwickyferiansyahputra/pytest-497/test_one_shot_entrypoint_insta0')
+
+    @pytest_asyncio.fixture
+    async def migration_environment(tmp_path):
+        dsn = os.environ.get("NOVA_TEST_METADATA_ADMIN_DSN")
+        if not dsn:
+            pytest.skip("Dedicated PG17 TLS fixture requires NOVA_TEST_METADATA_ADMIN_DSN")
+        if os.environ.get("NOVA_TEST_METADATA_DISPOSABLE") != "acknowledged":
+            pytest.fail("PG migration fixture requires disposable database acknowledgement")
+        if conninfo_to_dict(dsn).get("dbname") != "nova_control":
+            pytest.fail("PG migration fixture must select nova_control")
+        marker = str(uuid4())
+        app_role = "nova_fixture_" + uuid4().hex[:12]
+        password = secrets.token_urlsafe(30)
+        created = False
+        async with await psycopg.AsyncConnection.connect(
+            dsn, autocommit=True, row_factory=dict_row,
+        ) as admin:
+            if admin.info.server_version // 10000 != 17:
+                pytest.fail("Migration acceptance requires PostgreSQL 17")
+            cursor = await admin.execute(
+                "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='nova_meta') "
+                "OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=ANY(%s)) AS occupied",
+                (list(ALL_ROLES),),
+            )
+&gt;           assert not (await cursor.fetchone())["occupied"], "Refusing existing metadata schema/roles"
+E           AssertionError: Refusing existing metadata schema/roles
+E           assert not True
+
+tests/integration/test_metadata_migrator.py:77: AssertionError</error></testcase></testsuite></testsuites>

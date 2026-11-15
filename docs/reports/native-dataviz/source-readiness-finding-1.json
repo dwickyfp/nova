@@ -1,0 +1,12 @@
+{
+  "recorded_at": "2026-11-14T18:08:40.417472+00:00",
+  "result": "GOVERNED_RERUN_PASSED",
+  "finding": "Attempt 41 failed initial source identity reflection after the empty SHOW TABLES readiness probe passed. Owned fixture cleanup and QA grants/attributes preservation passed.",
+  "correction": "Probe both created source schemas with bounded read-only retries before acceptance; never retry fixture DDL.",
+  "evidence": [
+    "source-identity-live-attempt-41.json",
+    "source-identity-live-attempt-42.json",
+    "dataset-replay-live-attempt-7.json"
+  ],
+  "limits": "Rerun needed only one readiness attempt, so policy propagation is a hypothesis, not an established root cause."
+}

@@ -1,0 +1,24 @@
+{
+  "command": [
+    "uv",
+    "run",
+    "pytest",
+    "tests/integration/test_metadata_viz.py",
+    "-k",
+    "dashboard_dataset_registry or dashboard_dataset_dependency_upgrade or dashboard_dataset_creation",
+    "--junitxml=/Users/dwickyferiansyahputra/.local/share/nova/native-dataviz-evidence-originals-20261114/pg-attempt-27.xml"
+  ],
+  "returncode": 0,
+  "seconds": 19.13,
+  "topology": "Existing user-authorized isolated PG17 TLS fixture on 55433; no StarRocks fixture",
+  "suites": [
+    {
+      "tests": "11",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "16.623"
+    }
+  ],
+  "failures": []
+}

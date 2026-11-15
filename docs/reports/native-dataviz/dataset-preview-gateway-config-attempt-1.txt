@@ -1,0 +1,4 @@
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+2026/11/13 20:28:56 [emerg] 1#1: chown("/var/cache/nginx/client_temp", 101) failed (1: Operation not permitted)
+nginx: [emerg] chown("/var/cache/nginx/client_temp", 101) failed (1: Operation not permitted)
+nginx: configuration file /etc/nginx/nginx.conf test failed

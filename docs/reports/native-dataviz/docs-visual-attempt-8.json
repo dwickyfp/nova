@@ -1,0 +1,19 @@
+{
+  "recorded_at": "2026-11-13T21:42:36.259842+00:00",
+  "result": "PASS",
+  "surface": "Existing authenticated Nova QA Chrome tab, native app control",
+  "page": "/docs/dataviz/native-documents#semantic-datasets",
+  "viewport": [
+    1920,
+    1080
+  ],
+  "theme": "dark",
+  "observations": [
+    "Semantic datasets navigation anchor reaches the new section",
+    "Published model pinning, explicit version adoption and permission refusals are visible",
+    "Preview and source-edit descriptions include semantic datasets",
+    "Native editor remains documented as unavailable"
+  ],
+  "evidence": "AX state and screenshot observed in this conversation; no local screenshot file was created",
+  "limits": "Docs only; not native editor/mobile/light-theme acceptance"
+}

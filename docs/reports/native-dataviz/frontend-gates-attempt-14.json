@@ -1,0 +1,43 @@
+[
+  {
+    "command": [
+      "/private/tmp/nova-ci-tools/_npx/003686afb8f2641f/node_modules/node/bin/node",
+      "/private/tmp/nova-ci-tools/_npx/003686afb8f2641f/node_modules/pnpm/bin/pnpm.cjs",
+      "install",
+      "--frozen-lockfile"
+    ],
+    "file": "frontend-install-attempt-14.txt",
+    "returncode": 0,
+    "seconds": 0.65
+  },
+  {
+    "command": [
+      "/private/tmp/nova-ci-tools/_npx/003686afb8f2641f/node_modules/node/bin/node",
+      "/private/tmp/nova-ci-tools/_npx/003686afb8f2641f/node_modules/pnpm/bin/pnpm.cjs",
+      "lint"
+    ],
+    "file": "frontend-lint-attempt-14.txt",
+    "returncode": 0,
+    "seconds": 13.43
+  },
+  {
+    "command": [
+      "/private/tmp/nova-ci-tools/_npx/003686afb8f2641f/node_modules/node/bin/node",
+      "/private/tmp/nova-ci-tools/_npx/003686afb8f2641f/node_modules/pnpm/bin/pnpm.cjs",
+      "build"
+    ],
+    "file": "frontend-build-attempt-14.txt",
+    "returncode": 0,
+    "seconds": 48.45
+  },
+  {
+    "command": [
+      "/private/tmp/nova-ci-tools/_npx/003686afb8f2641f/node_modules/node/bin/node",
+      "/private/tmp/nova-ci-tools/_npx/003686afb8f2641f/node_modules/pnpm/bin/pnpm.cjs",
+      "test:coverage"
+    ],
+    "file": "frontend-coverage-attempt-14.txt",
+    "returncode": 0,
+    "seconds": 177.89
+  }
+]

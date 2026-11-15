@@ -1,0 +1,3 @@
+$ uv run pytest tests/unit/test_native_viz_service.py tests/unit/test_native_viz_router.py -q --junit-xml=/Users/dwickyferiansyahputra/Public/Research/nova/docs/reports/native-dataviz/native-http-unit-attempt-3.xml
+................................................                         [100%]
+48 passed in 6.69s

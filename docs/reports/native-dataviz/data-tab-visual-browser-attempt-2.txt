@@ -1,0 +1,88 @@
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+
+ ❯ |browser (chromium)| src/features/native-dataviz/dashboard-data-tab.test.tsx (8 tests | 1 failed) 17178ms
+     × reads the pinned definition and executes a preview only on request 15076ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |browser (chromium)| src/features/native-dataviz/dashboard-data-tab.test.tsx > shared dashboard Data tab > reads the pinned definition and executes a preview only on request
+VitestBrowserElementError: Cannot find element with locator: page.getByRole('button', { name: 'Fields and lineage' })
+
+[36m<body>[39m
+  [0m
+  
+
+[0m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mstyle[39m=[32m"width: calc(-32px + 100vw); height: calc(-32px + 100dvh); display: flex; min-height: 0px; min-width: 0px;"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"@container/data flex min-h-0 min-w-0 flex-1 flex-col"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"flex min-h-0 min-w-0 flex-1 flex-col @2xl/data:flex-row"[39m
+        [36m>[39m
+          [36m<aside[39m
+            [33maria-label[39m=[32m"Dashboard datasets"[39m
+            [33mclass[39m=[32m"flex min-h-0 shrink-0 flex-col border-b @2xl/data:w-48 @2xl/data:border-r @2xl/data:border-b-0"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"flex shrink-0 items-center justify-between gap-2 p-3"[39m
+            [36m>[39m
+              [36m<h2[39m …[36m />[39m
+              [36m<button[39m …[36m />[39m
+            [36m</div>[39m
+            [36m<nav[39m
+              [33maria-label[39m=[32m"Choose a dataset"[39m
+              [33mclass[39m=[32m"flex min-h-0 gap-1 overflow-auto p-2 @2xl/data:flex-col"[39m
+            [36m>[39m
+              [36m<button[39m …[36m />[39m
+            [36m</nav>[39m
+          [36m</aside>[39m
+          [36m<section[39m
+            [33maria-label[39m=[32m"Pinned revenue dataset"[39m
+            [33mclass[39m=[32m"flex min-h-0 min-w-0 flex-1 flex-col"[39m
+          [36m>[39m
+            [36m<header[39m
+              [33mclass[39m=[32m"flex shrink-0 flex-wrap items-start justify-between gap-3 border-b p-4"[39m
+            [36m>[39m
+              [36m<div[39m …[36m />[39m
+              [36m<button[39m …[36m />[39m
+            [36m</header>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"flex min-h-0 min-w-0 flex-1"[39m
+            [36m>[39m
+              [36m<div[39m …[36m />[39m
+              [36m<aside[39m …[36m />[39m
+            [36m</div>[39m
+          [36m</section>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m...
+
+Failure screenshot:
+  - src/features/native-dataviz/__screenshots__/dashboard-data-tab.test.tsx/shared-dashboard-Data-tab-reads-the-pinned-definition-and-executes-a-preview-only-on-request-1.png
+
+ ❯ src/features/native-dataviz/dashboard-data-tab.test.tsx:78:89
+     76|     expect(committed).not.toHaveBeenCalled()
+     77|     await expect.element(screen.getByRole('complementary', { name: 'Da…
+     78|     await expect.element(screen.getByRole('button', { name: 'Fields an…
+       |                                                                                         ^
+     79|     expect(screen.container.firstElementChild!.getBoundingClientRect()…
+     80|     await page.screenshot({ element: screen.container.firstElementChil…
+
+Caused by: Error: Matcher did not succeed in time.
+ ❯ src/features/native-dataviz/dashboard-data-tab.test.tsx:78:4
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 7 passed (8)
+   Start at  00:54:01
+   Duration  19.70s (transform 0ms, setup 0ms, import 937ms, tests 17.18s, environment 0ms)
+

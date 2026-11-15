@@ -1,0 +1,21 @@
+E501 Line too long (104 > 100)
+  --> app/modules/viz/dataset_service.py:74:101
+   |
+72 |                                     status_code=422) from None
+73 |             except StarRocksError:
+74 |                 raise NovaException("Source is unavailable or not permitted", status_code=403) from None
+   |                                                                                                     ^^^^
+75 |
+76 |     async def _inspect(
+   |
+
+E501 Line too long (101 > 100)
+  --> app/modules/viz/router.py:92:101
+   |
+90 | User = Annotated[dict[str, Any], Depends(get_current_user)]
+91 | Collection = Literal["charts", "dashboards", "datasets"]
+92 | KINDS: dict[Collection, Kind] = {"charts": "chart", "dashboards": "dashboard", "datasets": "dataset"}
+   |                                                                                                     ^
+   |
+
+Found 3 errors (1 fixed, 2 remaining).

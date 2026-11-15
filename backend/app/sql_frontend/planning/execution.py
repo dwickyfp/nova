@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 
 from app.modules.streams.namespace import StreamName
 from app.sql_frontend.analysis.effects import PlanEffects
+from app.sql_frontend.parameters import ParameterSpec
 
 
 class ActionKind(Enum):
@@ -219,6 +220,7 @@ class EngineSqlPlan:
     stream_functions: tuple[StreamFunctionBinding, ...] = ()
     #: Set by the MERGE planner when the target has Streams.
     capture: MergeCapture | None = None
+    parameter_specs: tuple[ParameterSpec, ...] = ()
 
     def __post_init__(self) -> None:
         from app.common.sql_guard import redact_sql_credentials

@@ -1,0 +1,25 @@
+✓ Lockfile passes supply-chain policies (verified 3h ago)
+Progress: resolved 1, reused 0, downloaded 0, added 0
+Progress: resolved 88, reused 66, downloaded 0, added 0
+Progress: resolved 92, reused 91, downloaded 1, added 0
+Progress: resolved 92, reused 91, downloaded 2, added 0
+Progress: resolved 144, reused 98, downloaded 2, added 0
+Progress: resolved 195, reused 127, downloaded 2, added 0
+Progress: resolved 240, reused 199, downloaded 2, added 0
+Progress: resolved 249, reused 222, downloaded 2, added 0
+Progress: resolved 317, reused 288, downloaded 3, added 0
+Progress: resolved 396, reused 367, downloaded 3, added 0
+Progress: resolved 471, reused 397, downloaded 3, added 0
+Progress: resolved 517, reused 416, downloaded 3, added 0
+Progress: resolved 572, reused 472, downloaded 3, added 0
+Progress: resolved 608, reused 492, downloaded 3, added 0
+Progress: resolved 683, reused 573, downloaded 3, added 0
+Progress: resolved 738, reused 628, downloaded 3, added 0
+Packages: +2
+++
+Progress: resolved 738, reused 628, downloaded 3, added 2, done
+
+dependencies:
++ @tanstack/react-virtual 3.14.26
+
+Done in 22.6s using pnpm v11.8.0

@@ -30,6 +30,8 @@ from app.common.identifiers import check_identifier
 from app.common.sql_guard import redact_sql_credentials
 from app.core.database import db
 from app.core.exceptions import StarRocksError
+from app.modules.query.provenance import current_dataset_query
+from app.sql_frontend.parameters import BoundParameters, driver_parameters
 
 
 def _convert_ascii(converter, value):
@@ -47,7 +49,8 @@ def _binary_result_mode(conn, enabled: bool):
         conn._use_unicode = False
         conn._decoders = {
             code: partial(_convert_ascii, converter)
-            if converter is not None and converter is not through else converter
+            if converter is not None and converter is not through
+            else converter
             for code, converter in decoders.items()
         }
         yield True
@@ -99,6 +102,41 @@ class RowSink(Protocol):
     async def begin(self, columns: list[str], column_types: tuple[str, ...]) -> None: ...
 
     async def rows(self, rows: list[list]) -> None: ...
+
+
+async def _stream_result(
+    cur, conn, sink: RowSink, result: QueryResult, raw_text: bool, *, row_limit: int | None = None,
+) -> None:
+    try:
+        if row_limit is not None and (type(row_limit) is not int or not 1 <= row_limit <= 100_000):
+            raise ValueError("Invalid streaming result limit")
+        batch_rows = getattr(sink, "fetch_batch_rows", _STREAM_BATCH_ROWS)
+        if type(batch_rows) is not int or not 1 <= batch_rows <= _STREAM_BATCH_ROWS:
+            raise ValueError("Invalid streaming batch size")
+        await sink.begin(result.columns, result.column_types)
+        while batch := await cur.fetchmany(
+            min(batch_rows, row_limit - result.row_count + 1)
+            if row_limit is not None else batch_rows
+        ):
+            if row_limit is not None and result.row_count + len(batch) > row_limit:
+                raise StarRocksError("Bound query exceeded its streaming result limit")
+            rows = _decode_result_rows(cur, batch) if raw_text else _text_rows(batch)
+            result.row_count += len(rows)
+            await sink.rows(rows)
+        result.streamed = True
+    except BaseException:
+        # Discard before SSCursor.__aexit__ can drain an interrupted result.
+        # The sink may refuse a byte budget or the caller may cancel its request.
+        result_set = getattr(cur, "_result", None)
+        if result_set is not None:
+            # asyncmy 0.2.11 otherwise drains from the now-closed reader and
+            # replaces the original refusal/cancellation with AttributeError.
+            result_set.unbuffered_active = False
+            result_set.has_next = False
+            result_set.connection = None
+        cur.connection = None
+        conn.close()
+        raise
 
 
 def _starrocks_error(exc: Exception) -> StarRocksError:
@@ -263,6 +301,7 @@ class QueryRepository:
         connected: asyncmy.Connection | None = None,
         session_prepared: bool = False,
         row_sink: RowSink | None = None,
+        parameters: BoundParameters | None = None,
     ) -> QueryResult:
         """Execute SQL as an authenticated user (RBAC-respecting).
 
@@ -281,6 +320,10 @@ class QueryRepository:
         """
         if not role:
             raise StarRocksError("User-data execution requires exactly one explicit active role")
+        if parameters is not None and connected is not None:
+            raise StarRocksError("Bound queries require a managed session")
+        if current_dataset_query() is not None and connected is not None:
+            raise StarRocksError("Dataset queries require a managed session")
         start = time.monotonic()
         if connected is not None:
             # Suspend before touching the shared socket. Planning first drives
@@ -299,6 +342,7 @@ class QueryRepository:
                 session_prepared=session_prepared,
                 binary_results=True,
                 row_sink=row_sink,
+                parameters=parameters,
             )
         try:
             async with db.user_conn(
@@ -314,6 +358,7 @@ class QueryRepository:
                     max_rows=max_rows,
                     start=start,
                     row_sink=row_sink,
+                    parameters=parameters,
                 )
         except asyncmy.errors.DatabaseError as e:
             raise _starrocks_error(e) from e
@@ -330,6 +375,7 @@ class QueryRepository:
         session_prepared: bool = False,
         binary_results: bool = False,
         row_sink: RowSink | None = None,
+        parameters: BoundParameters | None = None,
     ) -> QueryResult:
         from app.modules.query_autopilot.telemetry import EXECUTION, collector
         from app.sql_frontend.session_functions import CORRELATION_SESSION, preserve_last_query_id
@@ -337,9 +383,21 @@ class QueryRepository:
         identity = EXECUTION.get()
         session = CORRELATION_SESSION.get()
         wire_sql, labels = preserve_last_query_id(sql, session)
+        arguments = None
+        if parameters is not None:
+            from app.core.database import configured_timezone
+            from app.sql_frontend.parser import run_sql_cpu
+
+            wire_sql, arguments = await run_sql_cpu(
+                len(wire_sql), driver_parameters, wire_sql, parameters, configured_timezone()
+            )
+        private_query = current_dataset_query() is not None
         restore_profile = False
         try:
-            if identity is not None and identity.capture_profile:
+            if (
+                identity is not None and identity.capture_profile
+                and parameters is None and not private_query
+            ):
                 try:
                     async with conn.cursor() as setup:
                         await setup.execute("SELECT @@enable_profile")
@@ -372,8 +430,17 @@ class QueryRepository:
                         await cur.execute(f"SET ROLE {check_identifier(role, field='role')}")
                     if database and not session_prepared:
                         await conn.select_db(database)
+                    if parameters is not None or private_query:
+                        # Private inputs must not enter an engine profile, even if an
+                        # operator enabled profiling globally after process startup.
+                        await cur.execute("SET enable_profile = false")
+                        if identity is not None:
+                            identity.profile_enabled = False
                     submitted = time.monotonic()
-                    await cur.execute(wire_sql)
+                    if arguments is None:
+                        await cur.execute(wire_sql)
+                    else:
+                        await cur.execute(wire_sql, arguments)
                     fetched = time.monotonic()
                     result = QueryResult(executed_sql=sql)
                     if cur.description:
@@ -384,16 +451,10 @@ class QueryRepository:
                             str((desc[1], desc[4], desc[5])) for desc in cur.description
                         )
                         if row_sink is not None:
-                            await row_sink.begin(result.columns, result.column_types)
-                            while batch := await cur.fetchmany(_STREAM_BATCH_ROWS):
-                                rows = (
-                                    _decode_result_rows(cur, batch)
-                                    if raw_text
-                                    else _text_rows(batch)
-                                )
-                                result.row_count += len(rows)
-                                await row_sink.rows(rows)
-                            result.streamed = True
+                            await _stream_result(
+                                cur, conn, row_sink, result, raw_text,
+                                row_limit=max_rows if parameters is not None else None,
+                            )
                             raw_rows = None
                         else:
                             raw_rows = (
@@ -465,6 +526,12 @@ class QueryRepository:
             conn.close()
             raise
         except asyncmy.errors.DatabaseError as e:
+            if parameters is not None or private_query:
+                raise StarRocksError(
+                    "Dataset query execution failed"
+                    if private_query else "Bound query execution failed",
+                    engine_code=_starrocks_error(e).engine_code,
+                ) from None
             raise _starrocks_error(e) from e
         finally:
             if restore_profile:

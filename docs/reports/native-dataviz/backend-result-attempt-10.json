@@ -1,0 +1,24 @@
+{
+  "counts": {
+    "tests": 11821,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "coverage": {
+    "version": "7.14.1",
+    "timestamp": "1794602226181",
+    "lines-valid": "140572",
+    "lines-covered": "94061",
+    "line-rate": "0.6691",
+    "branches-valid": "35240",
+    "branches-covered": "21005",
+    "branch-rate": "0.5961",
+    "complexity": "0"
+  },
+  "changed_since_start": [
+    "backend/app/modules/query/repository.py",
+    "backend/tests/unit/test_query_result_streaming.py"
+  ],
+  "scope": "Run began before the live stream-cleanup correction; final source requires the next complete backend gate"
+}

@@ -1,0 +1,1024 @@
+$ vitest run --coverage --browser.headless --browser.fileParallelism=false --no-file-parallelism --maxWorkers=1 --reporter=verbose
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+      Coverage enabled with v8
+
+10:56:22 PM [vite] (client) Re-optimizing dependencies because vite config has changed
+10:56:23 PM [vite] (client) [optimizer] scanning dependencies...
+10:56:25 PM [vite] (client) [optimizer] bundling dependencies...
+ ✓ |node| tests/dev-proxy.rule.test.ts > routes /api/v1/query/execute to its metadata owner 40ms
+ ✓ |node| tests/dev-proxy.rule.test.ts > routes /api/v1/ml/jobs to its metadata owner 13ms
+ ✓ |node| tests/dev-proxy.rule.test.ts > routes /api/v1/agents to its metadata owner 7ms
+ ✓ |node| tests/dev-proxy.rule.test.ts > routes /api/v1/agents/fixture/knowledge/consolidate to its metadata owner 3ms
+ ✓ |node| tests/dev-proxy.rule.test.ts > routes /api/v1/assistant/chat to its metadata owner 4ms
+ ✓ |node| tests/dev-proxy.rule.test.ts > routes /api/v1/intelligence/actions/fixture to its metadata owner 11ms
+ ✓ |node| tests/dev-proxy.rule.test.ts > routes /api/v1/query-autopilot/policies to its metadata owner 4ms
+ ✓ |node| tests/dev-proxy.rule.test.ts > routes /api/v1/queryish to its metadata owner 9ms
+ ✓ |node| tests/dev-proxy.rule.test.ts > routes /api/v1/catalog/catalogs to its metadata owner 6ms
+ ✓ |node| src/lib/design-system-gate.rule.test.ts > design-system gate: literal controls still fail > catches a raw palette class 28ms
+ ✓ |node| src/lib/design-system-gate.rule.test.ts > design-system gate: literal controls still fail > catches a hex literal 3ms
+ ✓ |node| src/lib/design-system-gate.rule.test.ts > design-system gate: assembled values > catches a palette class built by string concatenation 1ms
+ ✓ |node| src/lib/design-system-gate.rule.test.ts > design-system gate: assembled values > catches a palette class built by Array.prototype.join 3ms
+ ✓ |node| src/lib/design-system-gate.rule.test.ts > design-system gate: assembled values > catches a hex colour built by string concatenation 2ms
+ ✓ |node| src/lib/design-system-gate.rule.test.ts > design-system gate: assembled values > catches a hex colour built from a static template placeholder 2ms
+ ✓ |node| src/lib/design-system-gate.rule.test.ts > design-system gate: assembled values > reports a nested concatenation exactly once 1ms
+ ✓ |node| src/lib/design-system-gate.rule.test.ts > design-system gate: dynamic templates stay caught via their binding > catches the palette literal bound to a variable used in a template 2ms
+ ✓ |node| src/lib/design-system-gate.rule.test.ts > design-system gate: dynamic templates stay caught via their binding > catches the binding when the template only has a suffix 2ms
+ ✓ |node| src/lib/design-system-gate.rule.test.ts > design-system gate: dynamic templates stay caught via their binding > does not treat an unknown binding as an empty string 2ms
+ ✓ |node| src/lib/design-system-gate.rule.test.ts > design-system gate: no false positives on genuinely dynamic values > ignores a template whose placeholder is unknown 4ms
+ ✓ |node| src/lib/design-system-gate.rule.test.ts > design-system gate: no false positives on genuinely dynamic values > ignores a join with an unknown element 1ms
+ ✓ |node| src/lib/design-system-gate.rule.test.ts > design-system gate: no false positives on genuinely dynamic values > ignores concatenation with an unknown operand 1ms
+ ✓ |node| src/lib/design-system-gate.rule.test.ts > design-system gate: no false positives on genuinely dynamic values > ignores a hex assembled from an unknown operand 1ms
+ ✓ |node| src/lib/design-system-gate.rule.test.ts > design-system gate: no false positives on genuinely dynamic values > allows semantic tokens in literal and assembled form 2ms
+ ✓ |node| src/lib/design-system-gate.rule.test.ts > design-system gate: the A2 fallback exemption survives > allows the literal token-reader fallback 3ms
+ ✓ |node| src/lib/design-system-gate.rule.test.ts > design-system gate: the A2 fallback exemption survives > allows a later-argument token-reader fallback 2ms
+ ✓ |browser (chromium)| src/components/config-drawer.test.tsx > ConfigDrawer (integration) > opens the drawer and renders the sections 315ms
+ ✓ |browser (chromium)| src/components/config-drawer.test.tsx > ConfigDrawer (integration) > theme preference > applies light theme to <html> and cookie 145ms
+ ✓ |browser (chromium)| src/components/config-drawer.test.tsx > ConfigDrawer (integration) > theme preference > applies dark theme to <html> and cookie 129ms
+ ✓ |browser (chromium)| src/components/config-drawer.test.tsx > ConfigDrawer (integration) > theme preference > applies system theme: stores cookie and applies a resolved light or dark class 135ms
+ ✓ |browser (chromium)| src/components/config-drawer.test.tsx > ConfigDrawer (integration) > sidebar variant > selecting floating updates layout_variant cookie 141ms
+ ✓ |browser (chromium)| src/components/config-drawer.test.tsx > ConfigDrawer (integration) > sidebar variant > selecting sidebar updates layout_variant cookie 138ms
+ ✓ |browser (chromium)| src/components/config-drawer.test.tsx > ConfigDrawer (integration) > sidebar variant > selecting inset updates layout_variant cookie after another variant 175ms
+ ✓ |browser (chromium)| src/components/config-drawer.test.tsx > ConfigDrawer (integration) > selecting full layout sets collapsible to offcanvas and closes sidebar 129ms
+ ✓ |browser (chromium)| src/components/config-drawer.test.tsx > ConfigDrawer (integration) > section reset buttons > resets theme via section control after choosing dark 181ms
+ ✓ |browser (chromium)| src/components/config-drawer.test.tsx > ConfigDrawer (integration) > section reset buttons > resets direction via section control after choosing RTL 166ms
+ ✓ |browser (chromium)| src/components/config-drawer.test.tsx > ConfigDrawer (integration) > section reset buttons > resets sidebar style via section control after choosing floating 146ms
+ ✓ |browser (chromium)| src/components/config-drawer.test.tsx > ConfigDrawer (integration) > section reset buttons > resets layout via section control after choosing compact 152ms
+ ✓ |browser (chromium)| src/components/config-drawer.test.tsx > ConfigDrawer (integration) > changes direction and applies it to <html dir> 107ms
+ ✓ |browser (chromium)| src/components/config-drawer.test.tsx > ConfigDrawer (integration) > updates layout: selecting non-default closes sidebar and changes layout cookie 130ms
+ ✓ |browser (chromium)| src/components/config-drawer.test.tsx > ConfigDrawer (integration) > reset restores defaults across sidebar/theme/layout/direction 317ms
+ ✓ |browser (chromium)| src/features/intelligence/intelligence-page.test.tsx > Nova Intelligence > shows only the search page for its sidebar route 48ms
+ ✓ |browser (chromium)| src/features/intelligence/intelligence-page.test.tsx > Nova Intelligence > shows only the semantic page for its sidebar route 15ms
+ ✓ |browser (chromium)| src/features/intelligence/intelligence-page.test.tsx > Nova Intelligence > shows only the features page for its sidebar route 15ms
+ ✓ |browser (chromium)| src/features/intelligence/intelligence-page.test.tsx > Nova Intelligence > shows only the entities page for its sidebar route 10ms
+ ✓ |browser (chromium)| src/features/intelligence/intelligence-page.test.tsx > Nova Intelligence > opens a Semantic View on its own detail route 62ms
+ ✓ |browser (chromium)| src/features/intelligence/intelligence-page.test.tsx > Nova Intelligence > shows a recoverable error instead of view actions when a detail URL cannot load 58ms
+ ✓ |browser (chromium)| src/features/intelligence/intelligence-page.test.tsx > Nova Intelligence > queries a selected search index and displays authorized hits 225ms
+ ✓ |browser (chromium)| src/features/intelligence/intelligence-page.test.tsx > Nova Intelligence > searches an index built without an embedding model by text match 145ms
+ ✓ |browser (chromium)| src/features/intelligence/intelligence-page.test.tsx > Nova Intelligence > explains an index that is still building before search 116ms
+ ✓ |browser (chromium)| src/features/intelligence/intelligence-page.test.tsx > Nova Intelligence > creates a lexical index from labeled fields 2397ms
+ ✓ |browser (chromium)| src/features/intelligence/intelligence-page.test.tsx > Nova Intelligence > trains from a selected Feature Group with its entity keys 2033ms
+ ✓ |browser (chromium)| src/features/intelligence/intelligence-page.test.tsx > Nova Intelligence > looks up a Feature Group using every registered entity key 200ms
+ ✓ |browser (chromium)| src/features/intelligence/intelligence-page.test.tsx > Nova Intelligence > shows Semantic View regression evidence before an acknowledged publish 207ms
+ ✓ |browser (chromium)| src/features/intelligence/intelligence-page.test.tsx > Nova Intelligence > opens a saved Semantic View definition as a valid new Ossie draft 159ms
+ ✓ |browser (chromium)| src/features/intelligence/intelligence-page.test.tsx > Nova Intelligence > queries a Semantic View with selected metrics, dimensions, and named filters 1566ms
+ ✓ |browser (chromium)| src/features/intelligence/intelligence-page.test.tsx > Nova Intelligence > inspects a View definition, quality report, and question preview 363ms
+ ✓ |browser (chromium)| src/features/intelligence/intelligence-page.test.tsx > Nova Intelligence > keeps Semantic View details within a narrow viewport 106ms
+ ✓ |browser (chromium)| src/features/intelligence/intelligence-page.test.tsx > Nova Intelligence > keeps an unsupported imported View readable while requiring a new supported version 184ms
+ ✓ |browser (chromium)| src/features/intelligence/intelligence-page.test.tsx > Nova Intelligence > explains the empty Semantic View catalog 62ms
+ ✓ |browser (chromium)| src/features/intelligence/intelligence-page.test.tsx > Nova Intelligence > shows a retry action when View quality cannot load 71ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/quality-tab.test.tsx > Agent Quality > treats an agent that never saved a version as having no release 121ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/quality-tab.test.tsx > Agent Quality > shows recorded canonicalization costs across narrow and desktop themes 115ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/quality-tab.test.tsx > Agent Quality > sends selected behavioral gates and bounded performance limits with the evaluation 1850ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/quality-tab.test.tsx > Agent Quality > keeps performance report only and omits limits that were cleared 800ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/quality-tab.test.tsx > Agent Quality > blocks invalid limits before pinning a manifest or starting an evaluation 550ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/quality-tab.test.tsx > Agent Quality > shows critical, scorer and performance gate assessments separately without deriving passes from case status 117ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/quality-tab.test.tsx > Agent Quality > reports failed performance without blocking passed required gates 15ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/quality-tab.test.tsx > Agent Quality > keeps legacy gate assessments unrecorded and does not invent separate passes 18ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/quality-tab.test.tsx > Agent Quality > does not claim promotion gates passed when required assessments are missing or unavailable 16ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/quality-tab.test.tsx > Agent Quality > keeps pending modern assessments unavailable without treating the run as legacy 18ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/quality-tab.test.tsx > Agent Quality > creates a reviewed configuration draft without updating or publishing the active agent 148ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/quality-tab.test.tsx > Agent Quality > evaluates the selected release, shows scorer gates, opens a trace and proposes analysis 416ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/quality-tab.test.tsx > Agent Quality > creates regression cases with reviewed assertions and does not modify the frozen run 284ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/quality-tab.test.tsx > Agent Quality > rejects invalid JSON and non-object expectations before creating a case 266ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/quality-tab.test.tsx > Agent Quality > saves monitoring with the current revision and without supplying an execution binding 234ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/quality-tab.test.tsx > Agent Quality > distinguishes unavailable quality from success and retains Knowledge and Suggestions tabs 250ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/quality-tab.test.tsx > Agent Quality > labels diagnoses as hypotheses and sends revision-bound proposal review 102ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/quality-tab.test.tsx > Agent Quality > counts pass-to-unavailable regressions even when another case improves and marks changed case sets 16ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/quality-tab.test.tsx > Agent Quality > removes previous scoped results after a role change and handles narrow themes 450ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > discloses result rows omitted by the server's evidence transport 46ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > offers Add to Dataviz only on the views the server allows, and never on maps 903ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > asks nothing and shows no Dataviz action without a stored answer 43ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > Nova interactive answers > dispatches a conditional follow-up after local state reveals it 130ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > Nova interactive answers > does not dispatch an action after leaving its conversation during save 140ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > Nova interactive answers > saves the current value after an edit is reverted before autosave 38ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > Nova interactive answers > pins the full component and function catalog and rejects unsafe sources 38ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > Nova interactive answers > calculates locally, saves, flushes and sends the source-bound action once 142ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > Nova interactive answers > restores another device state and exposes a revision conflict without overwriting it 151ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > Nova interactive answers > renders form validation, filtered chart, SVG, flashcards and offline canvas 298ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > Nova interactive answers > renders a bar chart in light with contrast boundaries and accessible data 97ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > Nova interactive answers > renders a bar chart in dark with contrast boundaries and accessible data 97ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > Nova interactive answers > renders a line chart in light with contrast boundaries and accessible data 101ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > Nova interactive answers > renders a line chart in dark with contrast boundaries and accessible data 99ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > Nova interactive answers > renders a area chart in light with contrast boundaries and accessible data 210ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > Nova interactive answers > renders a area chart in dark with contrast boundaries and accessible data 107ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > Nova interactive answers > renders a pie chart in light with contrast boundaries and accessible data 104ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > Nova interactive answers > renders a pie chart in dark with contrast boundaries and accessible data 84ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > Nova interactive answers > renders a donut chart in light with contrast boundaries and accessible data 101ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > Nova interactive answers > renders a donut chart in dark with contrast boundaries and accessible data 82ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > Nova interactive answers > renders a scatter chart in light with contrast boundaries and accessible data 111ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > Nova interactive answers > renders a scatter chart in dark with contrast boundaries and accessible data 105ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > Nova interactive answers > does not execute an unfinished program and renders a read-only trace 25ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > Nova interactive answers > keeps Markdown media offline and local form actions execute once 78ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > keeps a streamed chart mounted when its turn completes and while saved state loads 99ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > routes public images to media and retains their offline fallback 17ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > renders verified geometry and links table selection to declarative state 2112ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > saves the camera after the user moves a verified map 1898ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > does not re-save a restored camera whose keys come back in another order 1875ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/version-history.test.tsx > Agent version history > does not publish over unsaved local edits 47ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/version-history.test.tsx > Agent version history > opens History, compares fields, and publishes with the active revision 881ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/version-history.test.tsx > Agent version history > keeps comparison open after a publication conflict 386ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/version-history.test.tsx > Agent version history > shows empty history and retries failed history reads 415ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/version-history.test.tsx > Agent version history > pages history and retries a failed comparison 868ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/version-history.test.tsx > Agent version history > keeps long comparisons bounded at 320px in light mode 402ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/version-history.test.tsx > Agent version history > keeps long comparisons bounded at 320px in dark mode 416ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/version-history.test.tsx > Agent version history > keeps long comparisons bounded at 1280px in light mode 447ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/version-history.test.tsx > Agent version history > keeps long comparisons bounded at 1280px in dark mode 434ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/version-history.test.tsx > Agent resource bindings > selects a resource and a typed fixed filter without granting other indexes 1701ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/version-history.test.tsx > Agent resource bindings > retries unavailable resource lists and shows empty results 215ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/configuration-tab.test.tsx > AgentConfigurationTab > keeps business tools and removes legacy free-form SQL on save 286ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/configuration-tab.test.tsx > AgentConfigurationTab > switches web search for this agent (key set: false) 203ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/configuration-tab.test.tsx > AgentConfigurationTab > switches web search for this agent (key set: true) 221ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/configuration-tab.test.tsx > AgentConfigurationTab > resets an unsaved custom tool edit when the dialog is reopened 523ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/configuration-tab.test.tsx > AgentConfigurationTab > saves the selected provider and model and restores the default 1239ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/configuration-tab.test.tsx > AgentConfigurationTab > shows runtime mode, compiled contract, and separate skill availability modes 479ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/configuration-tab.test.tsx > AgentConfigurationTab > lets the owner explicitly enable an external MCP tool 221ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/configuration-tab.test.tsx > AgentConfigurationTab > binds only published Semantic Views using semantic_view_ids 717ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/configuration-tab.test.tsx > AgentConfigurationTab > keeps the ML playbook on for an agent with ML tools 126ms
+ ✓ |browser (chromium)| src/features/ontology/ontology.test.tsx > explains an unpublished ontology and shows approved definitions on request 124ms
+ ✓ |browser (chromium)| src/features/ontology/ontology.test.tsx > opens a concept with its definition, binding and history 88ms
+ ✓ |browser (chromium)| src/features/ontology/ontology.test.tsx > proposes a concept bound to a published metric 1953ms
+ ✓ |browser (chromium)| src/features/ontology/ontology.test.tsx > lets a steward approve a proposal and keeps the submitter from reviewing 341ms
+ ✓ |browser (chromium)| src/features/ontology/ontology.test.tsx > publishes a prepared release and refuses one prepared before the current release 94ms
+ ✓ |browser (chromium)| src/features/ontology/ontology.test.tsx > shows releases read-only to a non-administrator 54ms
+ ✓ |browser (chromium)| src/features/ontology/ontology.test.tsx > creates a domain with steward and reader roles 376ms
+ ✓ |browser (chromium)| src/features/ontology/ontology.test.tsx > describes proposed changes with the names a reader can see 1ms
+ ✓ |browser (chromium)| src/features/ontology/ontology.test.tsx > explains why there is nothing to draft from when no view is published 98ms
+ ✓ |browser (chromium)| src/features/ontology/ontology.test.tsx > shows derived entities with roles, official links and how metrics are built 105ms
+ ✓ |browser (chromium)| src/features/ontology/ontology.test.tsx > offers to compile when nothing is derived yet 98ms
+ ✓ |browser (chromium)| src/features/ontology/ontology.test.tsx > drafts proposals per domain from the derived layer and says what it left out 368ms
+ ✓ |browser (chromium)| src/features/ontology/ontology.test.tsx > labels engine proposals and shows why each link was proposed 16ms
+ ✓ |browser (chromium)| src/features/ontology/ontology.test.tsx > names the Semantic View a proposed binding uses 0ms
+ ✓ |browser (chromium)| src/features/ontology/ontology.test.tsx > lists meaning checks with their evidence 59ms
+ ✓ |browser (chromium)| src/features/ontology/ontology.test.tsx > says so when every definition matches 59ms
+ ✓ |browser (chromium)| src/features/ontology/ontology.test.tsx > suggests names and shows what the validator dropped 317ms
+ ✓ |browser (chromium)| src/features/ontology/ontology.test.tsx > says what has not been measured instead of showing a number 55ms
+ ✓ |browser (chromium)| src/features/ontology/ontology.test.tsx > shows measured accuracy with its interval, n and the ontology effect 57ms
+ ✓ |browser (chromium)| src/features/ontology/ontology.test.tsx > shows the joins found in the data, what Nova decided and how honest its probability is 61ms
+ ✓ |browser (chromium)| src/features/ontology/ontology.test.tsx > keeps evaluation runs to ACCOUNTADMIN and lists them for an administrator 59ms
+ ✓ |browser (chromium)| src/features/ontology/ontology.test.tsx > lists the joins found in the data with probability, decision and evidence 113ms
+ ✓ |browser (chromium)| src/features/ontology/ontology.test.tsx > turns measured failures into steward proposals on request 51ms
+ ✓ |browser (chromium)| src/features/studio/agent-memory-dialog.test.tsx > AgentMemoryDialog > shows a sourced memory and lets its owner delete it 1429ms
+ ✓ |browser (chromium)| src/features/studio/agent-memory-dialog.test.tsx > AgentMemoryDialog > keeps the memory dialog inside a narrow viewport 425ms
+ ✓ |browser (chromium)| src/features/studio/agent-memory-dialog.test.tsx > AgentMemoryDialog > loads older memories on request 609ms
+ ✓ |browser (chromium)| src/features/studio/agent-memory-dialog.test.tsx > AgentMemoryDialog > keeps loaded memories visible when a later page fails 600ms
+ ✓ |browser (chromium)| src/features/studio/agent-memory-dialog.test.tsx > AgentMemoryDialog > requires a preview before approving a remembered rule 817ms
+ ✓ |browser (chromium)| src/features/studio/agent-memory-dialog.test.tsx > AgentMemoryDialog > keeps the proposal review inside a narrow viewport 769ms
+ ✓ |browser (chromium)| src/features/migration/index.test.tsx > MigrationPage > shows no execution gate and needs no capability check 30ms
+ ✓ |browser (chromium)| src/features/migration/index.test.tsx > MigrationPage > requires a successful connection test and invalidates it when the address changes 157ms
+ ✓ |browser (chromium)| src/features/migration/index.test.tsx > MigrationPage > discovers databases only after source details are saved and supports multi-selection 298ms
+ ✓ |browser (chromium)| src/features/migration/index.test.tsx > MigrationPage > reviews every selected database before each worker job 750ms
+ ✓ |browser (chromium)| src/features/migration/index.test.tsx > MigrationPage > invalidates the review when the selection changes 362ms
+ ✓ |browser (chromium)| src/features/migration/index.test.tsx > MigrationPage > blocks submission when a selected database fails preflight 281ms
+ ✓ |browser (chromium)| src/features/migration/index.test.tsx > MigrationPage > shows a retry after database discovery fails 200ms
+ ✓ |browser (chromium)| src/features/migration/index.test.tsx > MigrationPage > restores a submitted job after reopening the page 14ms
+ ✓ |browser (chromium)| src/features/migration/index.test.tsx > MigrationPage > explains a worker failure before any database result is recorded 14ms
+ ✓ |browser (chromium)| src/features/migration/index.test.tsx > MigrationPage > uses a generic message for an unknown worker error code 13ms
+ ✓ |browser (chromium)| src/features/migration/index.test.tsx > MigrationPage > does not select more databases than the batch limit 287ms
+ ✓ |browser (chromium)| src/features/migration/index.test.tsx > MigrationPage > keeps source controls usable when worker status is unavailable 15ms
+ ✓ |browser (chromium)| src/features/migration/index.test.tsx > MigrationPage > supports keyboard selection in the database list 236ms
+ ✓ |browser (chromium)| src/features/migration/index.test.tsx > MigrationPage > keeps the database picker within a narrow viewport 223ms
+ ✓ |browser (chromium)| src/features/workspaces/table-item-with-popover.test.tsx > workspace table hover card > replaces the active card immediately and keeps one height across tables and loading states 720ms
+ ✓ |browser (chromium)| src/features/workspaces/table-item-with-popover.test.tsx > workspace table hover card > keeps both scroll axes inside the same card size at 320 px, loading preview only on demand 317ms
+ ✓ |browser (chromium)| src/features/workspaces/table-item-with-popover.test.tsx > workspace table hover card > keeps both scroll axes inside the same card size at 1280 px, loading preview only on demand 317ms
+ ✓ |browser (chromium)| src/features/workspaces/table-item-with-popover.test.tsx > workspace table hover card > quotes identifiers, handles null values and caps the rendered preview at 10 rows 148ms
+ ✓ |browser (chromium)| src/features/workspaces/table-item-with-popover.test.tsx > workspace table hover card > shows loading, engine failure and an empty result after retry without resizing 394ms
+ ✓ |browser (chromium)| src/features/workspaces/table-item-with-popover.test.tsx > workspace table hover card > opens by keyboard and switches tabs with arrow keys 158ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-detail.test.tsx > TaskDetail > shows the persisted execution identity when a run is expanded 168ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-detail.test.tsx > TaskDetail > keeps the SQL modal open when a node run state refreshes 269ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-detail.test.tsx > TaskDetail > shows the selected node SQL in a modal at 1280px 749ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-detail.test.tsx > TaskDetail > shows the selected node SQL in a modal at 320px 829ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-detail.test.tsx > TaskDetail > opens an error directly from a failed run in history 380ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-detail.test.tsx > TaskDetail > centres the graph above history at 1280px in light with 0 runs 624ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-detail.test.tsx > TaskDetail > centres the graph above history at 1280px in dark with 12 runs 757ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-detail.test.tsx > TaskDetail > centres the graph above history at 320px in light with 12 runs 736ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-detail.test.tsx > TaskDetail > centres the graph above history at 320px in dark with 0 runs 616ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-detail.test.tsx > TaskDetail > renders the flow full-bleed with the run history as a bottom drawer 65ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-detail.test.tsx > TaskDetail > collapses and expands the run history drawer 125ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-detail.test.tsx > TaskDetail > requests the first page of runs with a limit and a zero offset 12ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-detail.test.tsx > TaskDetail > advances the offset when the next page is chosen 137ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-detail.test.tsx > TaskDetail > shows an empty state when the task has no runs 64ms
+ ✓ |browser (chromium)| src/features/studio/news/newspaper-page.test.tsx > lays out the edition at 320 px without page overflow 517ms
+ ✓ |browser (chromium)| src/features/studio/news/newspaper-page.test.tsx > lays out the edition at 1280 px without page overflow 214ms
+ ✓ |browser (chromium)| src/features/studio/news/newspaper-page.test.tsx > explains an edition with nothing the reader can see 57ms
+ ✓ |browser (chromium)| src/features/studio/news/newspaper-page.test.tsx > explains when no edition exists yet 59ms
+ ✓ |browser (chromium)| src/features/studio/news/newspaper-page.test.tsx > tells a user without the entitlement who can enable News 60ms
+ ✓ |browser (chromium)| src/features/studio/news/newspaper-page.test.tsx > offers a retry when the edition fails to load 127ms
+ ✓ |browser (chromium)| src/features/studio/news/newspaper-page.test.tsx > drops the cached edition when the signed-in principal changes 109ms
+ ✓ |browser (chromium)| src/features/studio/news/newspaper-page.test.tsx > colours by direction when the metric has not been judged 56ms
+ ✓ |browser (chromium)| src/features/studio/news/newspaper-page.test.tsx > rotates the chart form down the page 67ms
+ ✓ |browser (chromium)| src/features/studio/news/newspaper-page.test.tsx > records a like or dislike without opening the story, and clears it on a second press 249ms
+ ✓ |browser (chromium)| src/features/studio/news/newspaper-page.test.tsx > puts the mark back when a reaction cannot be saved 100ms
+ ✓ |browser (chromium)| src/features/studio/news/newspaper-page.test.tsx > orders stories the way the server ranked them for this reader 57ms
+ ✓ |browser (chromium)| src/features/studio/news/newspaper-page.test.tsx > names each story's desk and narrows the edition to one desk 190ms
+ ✓ |browser (chromium)| src/features/studio/news/newspaper-page.test.tsx > offers no desk filter when the edition has one desk 58ms
+ ✓ |browser (chromium)| src/features/studio/news/newspaper-page.test.tsx > opens a story from anywhere in its block 90ms
+ ✓ |browser (chromium)| src/features/studio/news/newspaper-page.test.tsx > moves between edition days from the masthead 284ms
+ ✓ |browser (chromium)| src/features/studio/news/newspaper-page.test.tsx > opens the monitor alerts desk 83ms
+ ✓ |browser (chromium)| src/features/studio/news/newspaper-page.test.tsx > tells the full story in a panel beside the edition at 320 px 1230ms
+ ✓ |browser (chromium)| src/features/studio/news/newspaper-page.test.tsx > tells the full story in a panel beside the edition at 1280 px 1199ms
+ ✓ |browser (chromium)| src/features/studio/news/newspaper-page.test.tsx > asks for an agent before a story can be investigated 114ms
+ ✓ |browser (chromium)| src/features/studio/news/newspaper-page.test.tsx > sends the agent with an investigation request 1ms
+ ✓ |browser (chromium)| src/features/studio/news/newspaper-page.test.tsx > does not reveal whether a hidden story exists 70ms
+ ✓ |browser (chromium)| src/components/layout/navigation-material.test.tsx > Nova navigation material > preserves solid content and neutral navigation through collapse in light 1514ms
+ ✓ |browser (chromium)| src/components/layout/navigation-material.test.tsx > Nova navigation material > preserves solid content and neutral navigation through collapse in dark 1397ms
+ ✓ |browser (chromium)| src/components/layout/navigation-material.test.tsx > Nova navigation material > selects only the most specific AI & ML item for nested paths 136ms
+ ✓ |browser (chromium)| src/components/layout/navigation-material.test.tsx > Nova navigation material > restores persisted icon mode and keeps collapsed menus solid 569ms
+ ✓ |browser (chromium)| src/components/layout/navigation-material.test.tsx > Nova navigation material > switches appearance through the account menu without changing content material 710ms
+ ✓ |browser (chromium)| src/components/layout/navigation-material.test.tsx > Nova navigation material > opens a glass mobile Sheet and closes on navigation in 'light' at 320 px 2452ms
+ ✓ |browser (chromium)| src/components/layout/navigation-material.test.tsx > Nova navigation material > opens a glass mobile Sheet and closes on navigation in 'light' at 600 px 2569ms
+ ✓ |browser (chromium)| src/components/layout/navigation-material.test.tsx > Nova navigation material > opens a glass mobile Sheet and closes on navigation in 'dark' at 320 px 2526ms
+ ✓ |browser (chromium)| src/components/layout/navigation-material.test.tsx > Nova navigation material > opens a glass mobile Sheet and closes on navigation in 'dark' at 600 px 2465ms
+ ✓ |browser (chromium)| src/components/layout/navigation-material.test.tsx > Nova navigation material > retains inset layout at intermediate width 86ms
+ ✓ |browser (chromium)| src/components/layout/navigation-material.test.tsx > Nova navigation material > retains floating layout at intermediate width 124ms
+ ✓ |browser (chromium)| src/components/layout/navigation-material.test.tsx > Nova navigation material > retains sidebar layout at intermediate width 99ms
+ ✓ |browser (chromium)| src/components/layout/navigation-material.test.tsx > Nova navigation material > uses an opaque, unfiltered fallback for supports 87ms
+ ✓ |browser (chromium)| src/components/layout/navigation-material.test.tsx > Nova navigation material > uses an opaque, unfiltered fallback for transparency 52ms
+ ✓ |browser (chromium)| src/components/layout/navigation-material.test.tsx > Nova navigation material > keeps the mobile fallback opaque for supports 146ms
+ ✓ |browser (chromium)| src/components/layout/navigation-material.test.tsx > Nova navigation material > keeps the mobile fallback opaque for transparency 148ms
+ ✓ |browser (chromium)| src/components/layout/navigation-material.test.tsx > Nova navigation material > keeps mobile glass static when motion is reduced 203ms
+ ✓ |browser (chromium)| src/components/layout/navigation-material.test.tsx > Nova navigation material > keeps the primitive solid by default and supports a non-collapsible material shell 27ms
+ ✓ |browser (chromium)| src/components/layout/navigation-material.test.tsx > Nova navigation material > retains the opaque provider for a solid inset sidebar 32ms
+ ✓ |browser (chromium)| src/components/layout/navigation-material.test.tsx > Nova navigation material > keeps the frame continuous and workspace bounded with the assistant open in light 583ms
+ ✓ |browser (chromium)| src/components/layout/navigation-material.test.tsx > Nova navigation material > keeps the frame continuous and workspace bounded with the assistant open in dark 616ms
+ ✓ |browser (chromium)| src/features/monitoring/ai/index.test.tsx > AI Monitoring > supports keyboard selection and closing the period menu 439ms
+ ✓ |browser (chromium)| src/features/monitoring/ai/index.test.tsx > AI Monitoring > keeps text and chart contrast in theme dark=false 156ms
+ ✓ |browser (chromium)| src/features/monitoring/ai/index.test.tsx > AI Monitoring > keeps text and chart contrast in theme dark=true 123ms
+ ✓ |browser (chromium)| src/features/monitoring/ai/index.test.tsx > AI Monitoring > shows reported usage and explains missing usage without guessing tokens 126ms
+ ✓ |browser (chromium)| src/features/monitoring/ai/index.test.tsx > AI Monitoring > filters the full dashboard, resets pagination, and supports refresh controls 3100ms
+ ✓ |browser (chromium)| src/features/monitoring/ai/index.test.tsx > AI Monitoring > lets the user inspect rankings and exact daily values 399ms
+ ✓ |browser (chromium)| src/features/monitoring/ai/index.test.tsx > AI Monitoring > fetches usage once on load, after the signed-in identity is known 101ms
+ ✓ |browser (chromium)| src/features/monitoring/ai/index.test.tsx > AI Monitoring > shows loading, error, retry, and administrator access states 317ms
+ ✓ |browser (chromium)| src/features/monitoring/ai/index.test.tsx > AI Monitoring > marks partial results and distinguishes empty activity from missing token metadata 222ms
+ ✓ |browser (chromium)| src/features/monitoring/ai/index.test.tsx > AI Monitoring > contains long content at 320 px (dark=false, assistant=false) 210ms
+ ✓ |browser (chromium)| src/features/monitoring/ai/index.test.tsx > AI Monitoring > contains long content at 1280 px (dark=false, assistant=true) 202ms
+ ✓ |browser (chromium)| src/features/monitoring/ai/index.test.tsx > AI Monitoring > contains long content at 1280 px (dark=true, assistant=false) 208ms
+10:58:01 PM [vite] (client) [console.error] Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["bi","session",0]
+ ✓ |browser (chromium)| src/features/studio/studio-artifacts.test.tsx > Studio artifacts > opens fresh data and exposes Table and SQL views 236ms
+10:58:01 PM [vite] (client) [console.error] Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["bi","session",0]
+ ✓ |browser (chromium)| src/features/studio/studio-artifacts.test.tsx > Studio artifacts > applies a filter to both the artifact preview and data table 267ms
+10:58:01 PM [vite] (client) [console.error] Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["bi","session",0]
+ ✓ |browser (chromium)| src/features/studio/studio-artifacts.test.tsx > Studio artifacts > previews a chat edit and saves it only after Apply 228ms
+10:58:01 PM [vite] (client) [console.error] Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["bi","session",0]
+ ✓ |browser (chromium)| src/features/studio/studio-artifacts.test.tsx > Studio artifacts > shows what Nova is changing while the chart rests, without chat bubbles 209ms
+ ✓ |browser (chromium)| src/features/studio/studio-artifacts.test.tsx > Studio artifacts > draws a BI artifact in the panel and edits it edge to edge 184ms
+ ✓ |browser (chromium)| src/features/studio/studio-artifacts.test.tsx > Studio artifacts > previews a Nova edit made while editing in BI, then reopens BI 277ms
+ ✓ |browser (chromium)| src/features/studio/studio-artifacts.test.tsx > Studio artifacts > views a dashboard without an empty filter bar and edits it under one header 234ms
+ ✓ |browser (chromium)| src/features/studio/studio-artifacts.test.tsx > Studio artifacts > shows a BI draft in Superset's own frame and returns to the saved chart 217ms
+ ✓ |browser (chromium)| src/features/intelligence/monitor-panel.test.tsx > creates a monitor using configured UTC without a Jakarta fallback 2424ms
+ ✓ |browser (chromium)| src/features/intelligence/monitor-panel.test.tsx > creates a monitor using configured Europe/Berlin without a Jakarta fallback 2236ms
+ ✓ |browser (chromium)| src/features/intelligence/monitor-panel.test.tsx > does not invent a timezone when runtime configuration is unavailable 96ms
+ ✓ |browser (chromium)| src/components/ui/map/map.test.tsx > uses local resources, working controls, and retains the camera across style changes 1491ms
+ ✓ |browser (chromium)| src/components/ui/map/map.test.tsx > opens marker popups with the keyboard, closes with Escape, and restores focus 306ms
+ ✓ |browser (chromium)| src/components/ui/map/map.test.tsx > renders route progress, markers, arcs, GeoJSON and standalone popup using local layers 583ms
+ ✓ |browser (chromium)| src/components/ui/map/map.test.tsx > reports initialization failure without leaving an endless loader 12ms
+ ✓ |browser (chromium)| src/components/ui/map/map.test.tsx > handles a rejected fullscreen request with a visible message 221ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > notebook names and files > recognises notebooks and what Workspaces opens as text 1ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > notebook names and files > starts a dropped data file with a bounded preview query, quoted safely 0ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > notebook names and files > formats values and durations for a reader 0ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > stale outputs > marks output stale after an edit, a kernel restart, a new runtime or a move 0ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > event stream frames > keeps the event id used to resume 0ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell outputs > shows HTML only in a sandboxed frame without scripts or same origin 9ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell outputs > lets interactive output run its scripts only in an opaque, offline frame 5ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell outputs > treats a nested frame (PyGWalker) as interactive and plain markup as static 1ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell outputs > names column types by kind, whichever engine reported them 1ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell outputs > shows a type icon, keeps the exact type in the tooltip, and lines between columns 9ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell outputs > labels a preview honestly and where it was computed 11ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell outputs > shows an error with its traceback folded 71ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell > marks a saved output out of date instead of showing its run time 70ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell > highlights sql before editing and escapes code markup 25ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell > highlights python before editing and escapes code markup 27ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell > keeps preview and editor syntax legible in dark=false 504ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell > keeps preview and editor syntax legible in dark=true 741ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell > runs exactly once with Control+Enter inside the code editor 201ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell > runs exactly once with Meta+Enter inside the code editor 180ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell > refuses keyboard execution while unavailable 23ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell > refuses keyboard execution while unavailable 20ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell > finishes Markdown editing with Ctrl+Enter without a running runtime 190ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell > opens a cell from its preview without switching editing off first 68ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell > gives Markdown room for several lines and keeps editing on clicks inside 288ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell > changes type directly from its labelled dropdown using the keyboard 630ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell > keeps the type visible but refuses changing it when locked 21ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell > keeps the type visible but refuses changing it when locked 17ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell > moves with the keyboard from its handle 18ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell > cannot be moved while it runs and offers Stop 60ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell > offers Ask Neva on a failed cell and shows the execution count 68ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell > runs but cannot be changed in a view-only workspace 382ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell > moves up and down from Cell actions 901ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell > refuses moving beyond the first position 101ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell > uses Markdown headings without a separate title or old execution controls 29ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell > saves a title on Enter and keeps SQL without an engine choice 31ms
+ ✓ |browser (chromium)| src/features/workspaces/notebook/notebook.test.tsx > cell > offers to move an older Nova SQL cell to DuckDB 107ms
+ ✓ |browser (chromium)| src/features/auth/sign-in/components/user-auth-form.test.tsx > UserAuthForm > renders credential fields and submit button 26ms
+ ✓ |browser (chromium)| src/features/auth/sign-in/components/user-auth-form.test.tsx > UserAuthForm > shows validation messages when credentials are empty 62ms
+ ✓ |browser (chromium)| src/features/auth/sign-in/components/user-auth-form.test.tsx > UserAuthForm > shows the splash after authentication, then opens the default route 1766ms
+ ✓ |browser (chromium)| src/features/auth/sign-in/components/user-auth-form.test.tsx > UserAuthForm > shows the forced change-password form when the admin requires it 152ms
+ ✓ |browser (chromium)| src/features/auth/sign-in/components/user-auth-form.test.tsx > UserAuthForm > changes the password and logs in with the new one 179ms
+ ✓ |browser (chromium)| src/features/auth/sign-in/components/user-auth-form.test.tsx > UserAuthForm > navigates to a safe internal redirect path 1687ms
+ ✓ |browser (chromium)| src/features/auth/sign-in/components/user-auth-form.test.tsx > UserAuthForm > keeps the form available after a 401 response 82ms
+ ✓ |browser (chromium)| src/features/auth/sign-in/components/user-auth-form.test.tsx > UserAuthForm > keeps the form available after a 503 response 105ms
+ ✓ |browser (chromium)| src/features/auth/sign-in/components/user-auth-form.test.tsx > UserAuthForm > shows the splash only after first-time setup authenticates 143ms
+ ✓ |browser (chromium)| src/features/intelligence/decision-compose.test.tsx > registered scenario decision composition > uses registered controls and preserves retry identity with canonical scenario parameters 731ms
+ ✓ |browser (chromium)| src/features/intelligence/decision-compose.test.tsx > registered scenario decision composition > shows a safe error for unsupported schema fields 132ms
+ ✓ |browser (chromium)| src/features/intelligence/decision-compose.test.tsx > registered scenario decision composition > persists a second adapter through generic fields without currency or profit assumptions 195ms
+ ✓ |browser (chromium)| src/features/intelligence/decision-compose.test.tsx > registered scenario decision composition > keeps contextual permission and revision errors closed (403) 116ms
+ ✓ |browser (chromium)| src/features/intelligence/decision-compose.test.tsx > registered scenario decision composition > keeps contextual permission and revision errors closed (404) 118ms
+ ✓ |browser (chromium)| src/features/intelligence/decision-compose.test.tsx > registered scenario decision composition > keeps contextual permission and revision errors closed (409) 131ms
+ ✓ |browser (chromium)| src/features/intelligence/decision-compose.test.tsx > registered scenario decision composition > reflows schema fields and add/remove options at 320px in both themes 225ms
+ ✓ |browser (chromium)| src/features/intelligence/decision-compose.test.tsx > registered scenario decision composition > shows missing published currency without creating an IDR input 111ms
+ ✓ |browser (chromium)| src/features/intelligence/decision-compose.test.tsx > registered scenario decision composition > does not trust a catalog-only response for canonical Decision discovery 133ms
+ ✓ |browser (chromium)| src/features/intelligence/decision-compose.test.tsx > registered scenario decision composition > permits currency entry only when the reviewed adapter permits it 134ms
+ ✓ |browser (chromium)| src/features/intelligence/decision-compose.test.tsx > registered scenario decision composition > sends the Mission and exact Investigation revision in contextual discovery 81ms
+ ✓ |browser (chromium)| src/features/stages/index.test.tsx > does not offer an existing folder through an assigned but inactive admin role 402ms
+ ✓ |browser (chromium)| src/features/stages/index.test.tsx > allows the active admin to choose an existing folder 80ms
+ ✓ |browser (chromium)| src/features/stages/index.test.tsx > discards an admin draft and cached stage list when the role changes 180ms
+ ✓ |browser (chromium)| src/features/stages/index.test.tsx > keeps the draft editable after a failed creation 404ms
+ ✓ |browser (chromium)| src/features/monitoring/autopilot/index.test.tsx > binds approval to the displayed version and distinguishes estimates from evidence 318ms
+ ✓ |browser (chromium)| src/features/monitoring/autopilot/index.test.tsx > blocks expired approvals and hides mutations after role switch 139ms
+ ✓ |browser (chromium)| src/features/monitoring/autopilot/index.test.tsx > supports keyboard navigation, empty and error states 220ms
+ ✓ |browser (chromium)| src/features/monitoring/autopilot/index.test.tsx > fits mobile and assistant layouts in dark=false 176ms
+ ✓ |browser (chromium)| src/features/monitoring/autopilot/index.test.tsx > fits mobile and assistant layouts in dark=true 202ms
+ ✓ |browser (chromium)| src/features/monitoring/autopilot/index.test.tsx > shows structural plan changes with planner estimates and measured outcomes 140ms
+ ✓ |browser (chromium)| src/features/monitoring/autopilot/index.test.tsx > saves the collection setting from the policy checkbox 453ms
+ ✓ |browser (chromium)| src/features/studio/studio-app.test.tsx > StudioApp thread routing > opens mixed history using each conversation's agent 257ms
+ ✓ |browser (chromium)| src/features/studio/studio-app.test.tsx > StudioApp thread routing > renames and deletes another agent's history without using the selected agent 102ms
+ ✓ |browser (chromium)| src/features/studio/studio-app.test.tsx > StudioApp thread routing > opens the newest conversation with its owner when no agent is requested 55ms
+ ✓ |browser (chromium)| src/features/studio/studio-app.test.tsx > StudioApp thread routing > restores only the requested agent's newest conversation 56ms
+ ✓ |browser (chromium)| src/features/studio/studio-app.test.tsx > StudioApp thread routing > keeps the unified history when choosing a different agent for a new chat 109ms
+ ✓ |browser (chromium)| src/features/studio/studio-app.test.tsx > StudioApp thread routing > keeps a selected thread instead of removing it again 57ms
+ ✓ |browser (chromium)| src/features/studio/studio-app.test.tsx > StudioApp thread routing > reports an agent catalog that cannot load and retries it 558ms
+ ✓ |browser (chromium)| src/features/studio/studio-app.test.tsx > StudioApp thread routing > keeps agents awaiting access verification out of the Studio banner and selection 57ms
+ ✓ |browser (chromium)| src/features/studio/studio-app.test.tsx > StudioApp thread routing > asks for a role instead of reporting load failures when none is active 58ms
+ ✓ |browser (chromium)| src/features/studio/studio-app.test.tsx > StudioApp thread routing > opens the newest thread once when no thread is selected 104ms
+ ✓ |browser (chromium)| src/features/studio/studio-app.test.tsx > StudioApp thread routing > does not replace an explicit agent link with another agent's latest thread 56ms
+ ✓ |browser (chromium)| src/features/studio/studio-app.test.tsx > StudioApp thread routing > starts a fresh chat from the header without reopening history 261ms
+ ✓ |browser (chromium)| src/features/studio/studio-app.test.tsx > StudioApp thread routing > starts skill authoring in a fresh chat from capabilities 147ms
+ ✓ |browser (chromium)| src/features/studio/studio-app.test.tsx > StudioApp thread routing > restores an embedded author conversation without adding it to user agents 56ms
+ ✓ |browser (chromium)| src/features/studio/studio-app.test.tsx > StudioApp thread routing > keeps Studio focused on the agent conversation without the Neva panel 4ms
+ ✓ |browser (chromium)| src/features/studio/studio-app.test.tsx > StudioApp thread routing > returns to chat and starts fresh from the sidebar action 105ms
+ ✓ |browser (chromium)| src/features/studio/studio-app.test.tsx > StudioApp thread routing > does not auto-open history while a sample question creates its thread 151ms
+ ✓ |browser (chromium)| src/features/studio/studio-app.test.tsx > StudioApp thread routing > default agent > opens the agent last used in this browser and starts new chats with it 98ms
+ ✓ |browser (chromium)| src/features/studio/studio-app.test.tsx > StudioApp thread routing > default agent > falls back to the first agent when the remembered one is gone 101ms
+ ✓ |browser (chromium)| src/features/studio/studio-app.test.tsx > StudioApp thread routing > default agent > opens the default agent for a retired agent link 111ms
+ ✓ |browser (chromium)| src/features/studio/studio-app.test.tsx > StudioApp thread routing > default agent > remembers the agent the user chooses 54ms
+ ✓ |browser (chromium)| src/features/studio/studio-app.test.tsx > StudioApp thread routing > default agent > tells the chat when the user has no agent 57ms
+ ✓ |browser (chromium)| src/features/studio/studio-app.test.tsx > StudioApp thread routing > default agent > follows up a News alert with the default agent 63ms
+ ✓ |browser (chromium)| src/features/studio/studio-app.test.tsx > StudioApp thread routing > default agent > hands News the default agent to investigate with, or none 112ms
+ ✓ |browser (chromium)| src/features/studio/knowledge-panel.test.tsx > opens pinned knowledge context and removes it after an access change 179ms
+ ✓ |browser (chromium)| src/features/studio/knowledge-panel.test.tsx > changes the selected context node even when the semantic version is unchanged 114ms
+ ✓ |browser (chromium)| src/features/studio/knowledge-panel.test.tsx > reviews Published filter against the exact published version 425ms
+ ✓ |browser (chromium)| src/features/studio/knowledge-panel.test.tsx > reviews Published dimension against the exact published version 368ms
+ ✓ |browser (chromium)| src/features/studio/knowledge-panel.test.tsx > reviews Business heuristic against the exact published version 357ms
+ ✓ |browser (chromium)| src/features/users/components/users-delete-dialog.test.tsx > UsersDeleteDialog > renders the dialog with the correct title, description, input and buttons 35ms
+ ✓ |browser (chromium)| src/features/users/components/users-delete-dialog.test.tsx > UsersDeleteDialog > keeps the delete button disabled until the username input is filled correctly 105ms
+ ✓ |browser (chromium)| src/features/users/components/users-delete-dialog.test.tsx > UsersDeleteDialog > closes the dialog when the cancel button is clicked 70ms
+ ✓ |browser (chromium)| src/features/users/components/users-delete-dialog.test.tsx > UsersDeleteDialog > resets the username input when the dialog is closed and reopened 190ms
+ ✓ |browser (chromium)| src/features/users/components/users-delete-dialog.test.tsx > UsersDeleteDialog > shows the submitted data when deleted successfully 86ms
+ ✓ |browser (chromium)| src/features/users/components/users-delete-dialog.test.tsx > UsersDeleteDialog > deletes successfully when press Enter key on the username input 40ms
+ ✓ |browser (chromium)| src/features/intelligence/action-lifecycle.test.tsx > governed action lifecycle > reads an exact Mission Action pin and keeps historical consent inactive 77ms
+ ✓ |browser (chromium)| src/features/intelligence/action-lifecycle.test.tsx > governed action lifecycle > switches action type by keyboard and reviews edited report configuration 266ms
+ ✓ |browser (chromium)| src/features/intelligence/action-lifecycle.test.tsx > governed action lifecycle > renders automation configuration and readback without claiming business improvement 134ms
+ ✓ |browser (chromium)| src/features/intelligence/action-lifecycle.test.tsx > governed action lifecycle > previews an automation using the selected Decision and current Mission 114ms
+ ✓ |browser (chromium)| src/features/intelligence/action-lifecycle.test.tsx > governed action lifecycle > keeps a pending execution request open while independently resolving tool consent 984ms
+ ✓ |browser (chromium)| src/features/intelligence/action-lifecycle.test.tsx > governed action lifecycle > never displays execution after uncertain dispatch and uses readback verification 68ms
+ ✓ |browser (chromium)| src/features/intelligence/action-lifecycle.test.tsx > governed action lifecycle > distinguishes reviewer permission from policy approval and submits current revision 65ms
+ ✓ |browser (chromium)| src/features/intelligence/action-lifecycle.test.tsx > governed action lifecycle > requires an explicit compensation preparation and new operation consent 117ms
+ ✓ |browser (chromium)| src/features/intelligence/action-lifecycle.test.tsx > governed action lifecycle > preserves the original dispatch receipt while showing a distinct compensation readback 134ms
+ ✓ |browser (chromium)| src/features/intelligence/action-lifecycle.test.tsx > governed action lifecycle > reuses preview identity on retry and preserves the selected decision revision 232ms
+ ✓ |browser (chromium)| src/features/intelligence/action-lifecycle.test.tsx > governed action lifecycle > shows permission errors, omits unauthorized review, and reflows at narrow widths 403ms
+ ✓ |browser (chromium)| src/features/assistant/assistant-provider.test.tsx > AssistantProvider > opens a fresh chat and immediately sends the grant request 340ms
+ ✓ |browser (chromium)| src/features/assistant/assistant-provider.test.tsx > AssistantProvider > stays closed after loading a previously open panel preference 58ms
+ ✓ |browser (chromium)| src/features/assistant/assistant-provider.test.tsx > AssistantProvider > keeps a collapsed panel closed when the tree says so 5ms
+ ✓ |browser (chromium)| src/features/assistant/assistant-provider.test.tsx > AssistantProvider > clamps a resize to the allowed range before persisting it 200ms
+ ✓ |browser (chromium)| src/features/assistant/assistant-provider.test.tsx > AssistantProvider > fetches the tree with the shared workspace-tree key exactly once 6ms
+ ✓ |browser (chromium)| src/features/assistant/assistant-provider.test.tsx > AssistantProvider > keeps manual open and close choices across workspace refetches 178ms
+ ✓ |browser (chromium)| src/features/assistant/assistant-provider.test.tsx > AssistantProvider > keeps the composer live off the workspace by creating a file-less thread 103ms
+ ✓ |browser (chromium)| src/features/assistant/assistant-provider.test.tsx > AssistantProvider > prefers a registered workspace binding over the default 97ms
+ ✓ |browser (chromium)| src/features/assistant/assistant-provider.test.tsx > AssistantProvider binding identity > keeps one global conversation while moving between non-workspace routes 101ms
+ ✓ |browser (chromium)| src/features/assistant/assistant-provider.test.tsx > AssistantProvider binding identity > keeps the global transcript across a file binding and back 181ms
+ ✓ |browser (chromium)| src/features/access-control/access-control.test.tsx > Access Control > keeps the Ranger status with the page, not with one tab 124ms
+ ✓ |browser (chromium)| src/features/access-control/access-control.test.tsx > Access Control > explains each tab in plain words 187ms
+ ✓ |browser (chromium)| src/features/access-control/access-control.test.tsx > Access Control > reads a checked result in words 2198ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/harness-tab.test.tsx > AgentHarnessTab > shows every component, the always-on budget and validation problems 162ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/harness-tab.test.tsx > AgentHarnessTab > shows each candidate's verdict and the adopted harness 86ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/harness-tab.test.tsx > AgentHarnessTab > starts an experiment only with a version, cases and a valid budget 419ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/harness-tab.test.tsx > AgentHarnessTab > explains what to fix before a guard can be saved 628ms
+ ✓ |browser (chromium)| src/features/agents/agent-detail/harness-tab.test.tsx > AgentHarnessTab > says what to do when the baseline is pinned to changed dependencies 58ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-list.test.tsx > TaskList > shows ownership and prevents Run when another role is active 69ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-list.test.tsx > TaskList > opens failed-run errors without navigating at 1280px 434ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-list.test.tsx > TaskList > opens failed-run errors without navigating at 320px 489ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-list.test.tsx > TaskList > retries loading an error and explains when no message was recorded 445ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-list.test.tsx > TaskList > contains table scrolling at 1280px in dark with 1 tasks 151ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-list.test.tsx > TaskList > contains table scrolling at 320px in light with 15 tasks 207ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-list.test.tsx > TaskList > shows the latest run start time 66ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-list.test.tsx > TaskList > runs without opening the detail page via click 112ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-list.test.tsx > TaskList > runs without opening the detail page via Enter 66ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-list.test.tsx > TaskList > runs without opening the detail page via Space 68ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-list.test.tsx > TaskList > shows a rejected run and allows retry 134ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-list.test.tsx > TaskList > shows the run tallies for a task 59ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-list.test.tsx > TaskList > navigates to the detail page when a row is clicked 69ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-list.test.tsx > TaskList > filters rows by search text 51ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-list.test.tsx > TaskList > shows a "never run" badge when a task has no runs 56ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-list.test.tsx > TaskList > shows an empty state when there are no tasks 57ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-list.test.tsx > TaskList > resumes a suspended scheduled task 106ms
+ ✓ |browser (chromium)| src/features/task-orchestration/task-list.test.tsx > TaskList > offers no Resume on a manual task 58ms
+ ✓ |browser (chromium)| src/features/users/components/users-invite-dialog.test.tsx > UsersInviteDialog > renders the dialog title and description 46ms
+ ✓ |browser (chromium)| src/features/users/components/users-invite-dialog.test.tsx > UsersInviteDialog > closes when the dialog close button is clicked 73ms
+ ✓ |browser (chromium)| src/features/users/components/users-invite-dialog.test.tsx > UsersInviteDialog > closes when Cancel is clicked 81ms
+ ✓ |browser (chromium)| src/features/users/components/users-invite-dialog.test.tsx > UsersInviteDialog > shows error messages when submitting empty form, and clears them as fields are filled 210ms
+ ✓ |browser (chromium)| src/features/users/components/users-invite-dialog.test.tsx > UsersInviteDialog > resets entered values when the dialog is closed and reopened 332ms
+ ✓ |browser (chromium)| src/features/users/components/users-invite-dialog.test.tsx > UsersInviteDialog > shows submitted data when the form is submitted successfully 196ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/map-surface.test.tsx > keeps data in view while the answer settles, and saves only a camera the user moved 1492ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/map-surface.test.tsx > shows every location from a tilted, rotated camera 3160ms
+ ✓ |browser (chromium)| src/features/studio/intelligent-ui/map-surface.test.tsx > renders no navigation controls on the canvas 42ms
+ ✓ |browser (chromium)| src/features/users/components/users-action-dialog.test.tsx > UsersActionDialog > add user > renders title and description 50ms
+ ✓ |browser (chromium)| src/features/users/components/users-action-dialog.test.tsx > UsersActionDialog > add user > shows validation messages when the form is submitted with empty fields 95ms
+ ✓ |browser (chromium)| src/features/users/components/users-action-dialog.test.tsx > UsersActionDialog > add user > keeps confirm password disabled until password field is touched 75ms
+ ✓ |browser (chromium)| src/features/users/components/users-action-dialog.test.tsx > UsersActionDialog > add user > shows password validation messages when password is invalid 271ms
+ ✓ |browser (chromium)| src/features/users/components/users-action-dialog.test.tsx > UsersActionDialog > add user > shows the submitted data when the form is submitted successfully 377ms
+ ✓ |browser (chromium)| src/features/users/components/users-action-dialog.test.tsx > UsersActionDialog > edit user > renders title and description 32ms
+ ✓ |browser (chromium)| src/features/users/components/users-action-dialog.test.tsx > UsersActionDialog > edit user > submits without password changes 55ms
+ ✓ |browser (chromium)| src/features/users/components/users-action-dialog.test.tsx > UsersActionDialog > edit user > requires confirm password when password is changed 84ms
+ ✓ |browser (chromium)| src/features/users/components/users-action-dialog.test.tsx > UsersActionDialog > edit user > shows the submitted data when the form is submitted successfully 476ms
+ ✓ |browser (chromium)| src/features/studio/artifact-explorer.test.tsx > ArtifactExplorer > filters by content type and draws dashboard zones in the thumbnail 159ms
+ ✓ |browser (chromium)| src/features/studio/artifact-explorer.test.tsx > ArtifactExplorer > lists sheets in a table, sorts by name, and keeps favorites 397ms
+ ✓ |browser (chromium)| src/features/studio/artifact-explorer.test.tsx > ArtifactExplorer > reads each sheet's current answer and source 72ms
+ ✓ |browser (chromium)| src/features/studio/artifact-explorer.test.tsx > ArtifactExplorer > creates a sheet from a query and opens it for editing 269ms
+ ✓ |browser (chromium)| src/features/studio/artifact-explorer.test.tsx > ArtifactExplorer > shows Superset's thumbnail on a BI dashboard card once it is drawn 5063ms
+ ✓ |browser (chromium)| src/features/intelligence/action-preview.test.tsx > uses the server configured UTC timezone for scheduled reports 164ms
+ ✓ |browser (chromium)| src/features/intelligence/action-preview.test.tsx > uses the server configured America/New_York timezone for scheduled reports 134ms
+ ✓ |browser (chromium)| src/features/intelligence/action-preview.test.tsx > preserves explicit object timezone and a user's explicit override 149ms
+ ✓ |browser (chromium)| src/features/intelligence/action-preview.test.tsx > keeps a report override separate from monitor timezone Europe/Berlin 201ms
+ ✓ |browser (chromium)| src/features/intelligence/action-preview.test.tsx > keeps a report override separate from monitor timezone undefined 217ms
+ ✓ |browser (chromium)| src/features/intelligence/action-preview.test.tsx > blocks preview while configured timezone is missing and recovers through retry 200ms
+ ✓ |browser (chromium)| src/features/intelligence/action-preview.test.tsx > keeps loading and timezone errors usable at narrow widths in both themes 84ms
+ ✓ |browser (chromium)| src/features/studio/answer-footer.test.tsx > AnswerFooter > copies the answer and confirms success 64ms
+ ✓ |browser (chromium)| src/features/studio/answer-footer.test.tsx > AnswerFooter > can like, switch to dislike, and clear feedback 166ms
+ ✓ |browser (chromium)| src/features/studio/answer-footer.test.tsx > AnswerFooter > keeps the saved rating when a write fails 83ms
+ ✓ |browser (chromium)| src/features/studio/answer-footer.test.tsx > AnswerFooter > changes the rating immediately and keeps the latest choice while saving 117ms
+ ✓ |browser (chromium)| src/features/studio/answer-footer.test.tsx > AnswerFooter > coalesces rapid changes and lets the user clear a pending rating 148ms
+ ✓ |browser (chromium)| src/features/studio/answer-footer.test.tsx > AnswerFooter > does not roll back a newer choice when an earlier request fails 101ms
+ ✓ |browser (chromium)| src/features/studio/answer-footer.test.tsx > AnswerFooter > rolls back to the last confirmed rating when the latest request fails 152ms
+ ✓ |browser (chromium)| src/features/studio/answer-footer.test.tsx > AnswerFooter > shows reported token details including zero, without inventing missing usage 66ms
+ ✓ |browser (chromium)| src/features/studio/answer-footer.test.tsx > AnswerFooter > wraps the footer within a narrow viewport 33ms
+ ✓ |browser (chromium)| src/features/tasks/components/tasks-mutate-drawer.test.tsx > TasksMutateDrawer > renders create title and description 74ms
+ ✓ |browser (chromium)| src/features/tasks/components/tasks-mutate-drawer.test.tsx > TasksMutateDrawer > renders edit title, description, and prefilled title 80ms
+ ✓ |browser (chromium)| src/features/tasks/components/tasks-mutate-drawer.test.tsx > TasksMutateDrawer > shows validation messages when submitting an empty form 145ms
+ ✓ |browser (chromium)| src/features/tasks/components/tasks-mutate-drawer.test.tsx > TasksMutateDrawer > submits create form and shows submitted data 457ms
+ ✓ |browser (chromium)| src/features/tasks/components/tasks-mutate-drawer.test.tsx > TasksMutateDrawer > closes when Close is clicked 93ms
+ ✓ |browser (chromium)| src/features/tasks/components/tasks-mutate-drawer.test.tsx > TasksMutateDrawer > resets entered values when the sheet is closed and reopened 403ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > reconnects a direct run after reload and supports server stop: false 88ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > reconnects a direct run after reload and supports server stop: true 156ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > remembers Stop before acceptance and cancels the accepted server run 220ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > keeps a direct provider-format failure visible after reload without resubmitting 63ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > shows a storage interruption beside the partial answer and removes consent 212ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > preserves the draft when the user switches agents 583ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > remembers the agent a message was sent with 212ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > explains that Studio needs an agent when the user has none 16ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > sends once when repeated Enter waits for an interactive state flush 130ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > studio transcript click-through > attaches a text file, removes it, then sends the selected file to the agent 319ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > studio transcript click-through > allows a file to be sent without typed text 139ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > studio transcript click-through > attaches PDF and image files and sends their media types to the agent 319ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > studio transcript click-through > authors a skill from the slash command and saves only after review 511ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > studio transcript click-through > preserves the create-with-chat prefill through initial effects 15ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > studio transcript click-through > shows the personalized Nova welcome without a chat header 17ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > studio transcript click-through > keeps welcome suggestions above a stationary composer across the first send 158ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > studio transcript click-through > clears the composer and shows progress while a new thread is still being created 174ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > studio transcript click-through > restores the draft if a new conversation cannot be created 154ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > studio transcript click-through > keeps a long question list compact and makes every question available 418ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > studio transcript click-through > uses a white composer and a bordered text-only agent badge 19ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > studio transcript click-through > renders the process rail and the answer, and opens a step 1523ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > studio transcript click-through > shows a consent card for an ask_every_tool agent and resolves it 402ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > studio transcript click-through > keeps the composer controls keyboard reachable 257ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > studio transcript click-through > opens a step to show what it did 1278ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > studio transcript click-through > offers a reconsider pass that streams as a labelled continuation 356ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > studio transcript click-through > rebuilds the process and the data when a stored thread is opened 742ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > studio transcript click-through > restores saved feedback and sends changes for the persisted assistant message 125ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > studio transcript click-through > loads a thread that is selected after mount, without hanging 119ms
+ ✓ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > studio transcript click-through > does not reopen the previous thread while New chat waits for the URL 326ms
+10:59:32 PM [vite] (client) [console.error] TypeError: Cannot read properties of undefined (reading 'wrapDynamicImport')
+    at $$splitComponentImporter (http://localhost:63315/src/routes/(auth)/sign-in.tsx:1:234)
+    at Lazy.load [as preload] (http://localhost:63315/node_modules/.vite/vitest/ef98362b8a6b0c8cd804b0d227aa1ffeaba89786/deps/@tanstack_react-router.js?v=b56de90d:6403:18)
+    at preloadComponent (http://localhost:63315/node_modules/.vite/vitest/ef98362b8a6b0c8cd804b0d227aa1ffeaba89786/deps/@tanstack_react-router.js?v=b56de90d:2949:39)
+    at loadComponents (http://localhost:63315/node_modules/.vite/vitest/ef98362b8a6b0c8cd804b0d227aa1ffeaba89786/deps/@tanstack_react-router.js?v=b56de90d:2952:20)
+    at afterLazy (http://localhost:63315/node_modules/.vite/vitest/ef98362b8a6b0c8cd804b0d227aa1ffeaba89786/deps/@tanstack_react-router.js?v=b56de90d:2960:118)
+    at loadRouteChunk (http://localhost:63315/node_modules/.vite/vitest/ef98362b8a6b0c8cd804b0d227aa1ffeaba89786/deps/@tanstack_react-router.js?v=b56de90d:2963:28)
+    at http://localhost:63315/node_modules/.vite/vitest/ef98362b8a6b0c8cd804b0d227aa1ffeaba89786/deps/@tanstack_react-router.js?v=b56de90d:3312:18
+    at createLoaderTask$1 (http://localhost:63315/node_modules/.vite/vitest/ef98362b8a6b0c8cd804b0d227aa1ffeaba89786/deps/@tanstack_react-router.js?v=b56de90d:3322:4)
+    at planSuccessfulLane (http://localhost:63315/node_modules/.vite/vitest/ef98362b8a6b0c8cd804b0d227aa1ffeaba89786/deps/@tanstack_react-router.js?v=b56de90d:3572:22)
+    at contextualize$1 (http://localhost:63315/node_modules/.vite/vitest/ef98362b8a6b0c8cd804b0d227aa1ffeaba89786/deps/@tanstack_react-router.js?v=b56de90d:3118:2)
+
+The above error occurred in the <MatchInnerImpl> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, CatchBoundary.
+
+10:59:32 PM [vite] (client) [console.warn] Warning: Error in route match: __root__/
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯⎯⎯ Unhandled Error ⎯⎯⎯⎯⎯⎯⎯
+Error: Failed to run the test /Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/features/studio/studio-chat.integration.test.tsx.
+ ❯ node_modules/.pnpm/vitest@4.1.11_@types+node@25.9.7_@vitest+browser-playwright@4.1.11_@vitest+coverage-v8@_3ea6e8dff42b3eadeef761313752f0a5/node_modules/vitest/dist/chunks/cli-api.CnMVyzaz.js:2639:17
+ ❯ processTicksAndRejections node:internal/process/task_queues:105:5
+
+Caused by: Error: Cannot connect to the iframe. Did you change the location or submitted a form? If so, don't forget to call `event.preventDefault()` to avoid reloading the page.
+
+Received URL: http://localhost:63315/sign-in?redirect=%2F%3FsessionId%3De9ae86df-3a60-4b12-80d1-59150dcbb73a%26iframeId%3D%252FUsers%252Fdwickyferiansyahputra%252FPublic%252FResearch%252Fnova%252Ffrontend%252Fsrc%252Ffeatures%252Fstudio%252Fstudio-chat.integration.test.tsx
+Expected: http://localhost:63315/?sessionId=e9ae86df-3a60-4b12-80d1-59150dcbb73a&iframeId=%2FUsers%2Fdwickyferiansyahputra%2FPublic%2FResearch%2Fnova%2Ffrontend%2Fsrc%2Ffeatures%2Fstudio%2Fstudio-chat.integration.test.tsx
+ ❯ iframe.onload ../../../../../../__vitest_browser__/orchestrator-jtzFEKPy.js:174:43
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files  40 passed (199)
+      Tests  486 passed (486)
+     Errors  1 error
+   Start at  22:56:22
+   Duration  194.04s (transform 454ms, setup 0ms, import 20.93s, tests 146.63s, environment 1ms)
+
+ % Coverage report from v8
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   31.74 |    29.46 |   30.52 |   32.57 |                   
+ src               |       0 |        0 |       0 |       0 |                   
+  main.tsx         |       0 |        0 |       0 |       0 | 23-102            
+ src/components    |   47.92 |    39.83 |   43.03 |   50.66 |                   
+  coming-soon.tsx  |       0 |      100 |       0 |       0 | 4                 
+  command-menu.tsx |      50 |      100 |   26.66 |   61.11 | 25-26,46,61-82    
+  ...ig-drawer.tsx |   94.87 |     90.9 |     100 |   94.87 | 284-285           
+  ...rm-dialog.tsx |     100 |    84.61 |     100 |     100 | 63,66             
+  ...fo-dialog.tsx |   31.11 |    30.95 |   22.22 |   30.55 | ...,68-69,132-313 
+  date-picker.tsx  |       0 |        0 |       0 |       0 | 22-45             
+  learn-more.tsx   |       0 |      100 |       0 |       0 | 22                
+  long-text.tsx    |       0 |        0 |       0 |       0 | 26-83             
+  ...-progress.tsx |       0 |        0 |       0 |       0 | 6-17              
+  ...ord-input.tsx |   66.66 |    54.54 |      50 |      75 | 36                
+  search.tsx       |      25 |        0 |       0 |      25 | 11-21             
+  ...-dropdown.tsx |     100 |     62.5 |     100 |     100 | 33-44             
+  ...ut-dialog.tsx |    62.5 |      100 |      50 |    62.5 | 15-18             
+  theme-switch.tsx |       0 |        0 |       0 |       0 | 14-48             
+ ...ts/ai-elements |       0 |        0 |       0 |       0 |                   
+  file-tree.tsx    |       0 |        0 |       0 |       0 | 32-241            
+ ...nts/data-table |    12.5 |     8.43 |   12.76 |   12.14 |                   
+  bulk-actions.tsx |       0 |        0 |       0 |       0 | 35-126            
+  ...mn-header.tsx |       0 |        0 |       0 |       0 | 29-64             
+  ...ed-filter.tsx |       0 |        0 |       0 |       0 | 38-133            
+  pagination.tsx   |       0 |        0 |       0 |       0 | 27-120            
+  ...-controls.tsx |   73.68 |       70 |   54.54 |   72.22 | ...32,157-167,190 
+  toolbar.tsx      |       0 |        0 |       0 |       0 | 30-73             
+  view-options.tsx |       0 |        0 |       0 |       0 | 20-47             
+ ...ponents/layout |      75 |    72.36 |   65.38 |   73.39 |                   
+  app-title.tsx    |      75 |      100 |      50 |      75 | 21                
+  ...ed-layout.tsx |   73.91 |    56.25 |   85.71 |   66.66 | 90-107            
+  header.tsx       |      90 |    45.45 |      75 |    87.5 | 16                
+  main.tsx         |     100 |    91.66 |     100 |     100 | 14                
+  nav-group.tsx    |   88.57 |    79.45 |      80 |   90.62 | 62,79,149         
+  nav-user.tsx     |   67.64 |    78.12 |   57.14 |   67.74 | ...67,214-242,267 
+  ...-switcher.tsx |       0 |        0 |       0 |       0 | 28-64             
+  top-nav.tsx      |       0 |        0 |       0 |       0 | 22-58             
+ src/config        |       0 |      100 |     100 |       0 |                   
+  fonts.ts         |       0 |      100 |     100 |       0 | 2                 
+ src/context       |   71.01 |    45.94 |      65 |   72.09 |                   
+  ...-provider.tsx |   95.45 |       75 |     100 |   95.23 | 58                
+  ...-provider.tsx |       0 |        0 |       0 |       0 | 7-57              
+  ...-provider.tsx |   96.55 |    83.33 |     100 |   96.42 | 82                
+  ...-provider.tsx |   73.68 |    14.28 |   57.14 |      75 | 20-22,45          
+  ...-provider.tsx |   83.33 |    57.14 |      75 |   87.17 | 29-30,65-67       
+ ..._archive/pipes |       0 |        0 |       0 |       0 |                   
+  api.ts           |       0 |      100 |       0 |       0 | 35-52             
+  index.tsx        |       0 |        0 |       0 |       0 | 27-423            
+ ...access-control |   65.97 |    57.35 |   54.11 |   65.77 |                   
+  index.tsx        |   65.97 |    57.35 |   54.11 |   65.77 | ...1159,1295-1296 
+ ...admin-settings |       0 |        0 |       0 |       0 |                   
+  api.ts           |       0 |        0 |       0 |       0 | 52-81             
+  index.tsx        |       0 |        0 |       0 |       0 | 11-51             
+  ...ables-tab.tsx |       0 |        0 |       0 |       0 | 33-289            
+ ...eatures/agents |    9.96 |     5.19 |   11.51 |   10.77 |                   
+  ...lder-page.tsx |       0 |        0 |       0 |       0 | 23-191            
+  api.ts           |   11.11 |     4.68 |     8.1 |   12.39 | ...1048-1056,1064 
+  harness-api.ts   |   88.88 |      100 |   83.33 |    87.5 | 154               
+  index.tsx        |       0 |        0 |       0 |       0 | 29-246            
+  metadata-api.ts  |    90.9 |       60 |   83.33 |      90 | 63                
+  quality-api.ts   |   86.95 |     62.5 |   83.33 |   86.36 | 260,283,302       
+  ...lder-page.tsx |       0 |        0 |       0 |       0 | 56-604            
+  ...ntic-draft.ts |       0 |        0 |       0 |       0 | 15-202            
+  ...stry-page.tsx |       0 |        0 |       0 |       0 | 25-194            
+  ...igence-api.ts |   26.92 |    11.11 |   44.44 |   26.92 | 46,69-107         
+  ...stry-page.tsx |       0 |        0 |       0 |       0 | 35-323            
+ ...s/agent-detail |   51.08 |    44.65 |   46.13 |   52.68 |                   
+  access-prompt.ts |       0 |        0 |       0 |       0 | 3-23              
+  access-tab.tsx   |       0 |        0 |       0 |       0 | 39-359            
+  agent-draft.ts   |     100 |       50 |     100 |     100 | 18-19             
+  ...ation-tab.tsx |   70.42 |    62.41 |   61.76 |   70.45 | ...80,714,794-819 
+  ...ol-editor.tsx |    37.7 |    43.39 |   17.77 |   42.85 | ...16,355-364,380 
+  harness-tab.tsx  |   72.03 |    68.55 |   58.18 |   74.33 | ...-987,1006-1032 
+  ...-overview.tsx |   85.36 |    58.82 |    64.7 |   86.84 | 87,92,97,100,225  
+  improve-tab.tsx  |   43.07 |    18.75 |    28.2 |   41.37 | ...39-397,423-447 
+  model-select.tsx |   95.65 |     82.5 |    90.9 |      95 | 115               
+  ...ility-tab.tsx |       0 |        0 |       0 |       0 | 39-233            
+  overview-tab.tsx |       0 |        0 |       0 |       0 | 23-120            
+  ...se-editor.tsx |      74 |    76.36 |      64 |   77.27 | ...49-253,298-330 
+  ...ty-doctor.tsx |      40 |    33.33 |   30.76 |      40 | 33,71-152         
+  ...sal-draft.tsx |   85.18 |    57.69 |      70 |   84.61 | 36-44,165-205     
+  ...al-review.tsx |      45 |    21.42 |   16.66 |   44.44 | 32-41,58-155      
+  ...y-results.tsx |   70.21 |    59.72 |   77.55 |   72.09 | ...96-597,618-661 
+  quality-tab.tsx  |   85.25 |     74.5 |   73.17 |   84.93 | ...-999,1023-1037 
+  ...-bindings.tsx |   93.33 |    82.14 |   96.15 |    97.5 | 249               
+  ...race-view.tsx |       0 |        0 |       0 |       0 | 105-1722          
+  ...n-history.tsx |    83.9 |    76.31 |   77.77 |   85.36 | ...65,427-430,456 
+ ...s/ai-providers |       0 |        0 |       0 |       0 |                   
+  ...l-control.tsx |       0 |        0 |       0 |       0 | 36-174            
+  ...tions-tab.tsx |       0 |        0 |       0 |       0 | 105-899           
+  index.tsx        |       0 |      100 |       0 |       0 | 12-14             
+  ...iders-tab.tsx |       0 |        0 |       0 |       0 | 94-1171           
+  ...y-control.tsx |       0 |        0 |       0 |       0 | 18-184            
+ ...ures/assistant |   36.26 |    18.37 |   31.68 |   37.72 |                   
+  ...ity-trace.tsx |    7.14 |        0 |       0 |    9.09 | 10-37             
+  app-context.ts   |    23.4 |    11.47 |   21.42 |   26.92 | ...43-274,283-284 
+  ...-selector.tsx |   83.33 |      100 |   66.66 |   83.33 | 51                
+  ...-composer.tsx |   25.49 |    38.23 |    6.66 |   26.66 | ...90-104,130-226 
+  ...pty-state.tsx |   25.71 |    27.77 |    12.5 |   31.03 | 32-49,90-123      
+  ...anel-state.ts |    62.5 |    41.17 |   66.66 |   70.37 | 70,80-102         
+  ...ant-panel.tsx |   74.35 |    62.06 |    62.5 |   77.14 | ...63,286,315,325 
+  ...-provider.tsx |   69.53 |    46.03 |      62 |   72.93 | ...25,513,595-598 
+  ...nt-toggle.tsx |    60.6 |    39.02 |      75 |   67.27 | ...42-143,150-160 
+  code-card.tsx    |    4.39 |        0 |       0 |    3.61 | 45-55,74-432      
+  events.ts        |   28.17 |    10.13 |   26.08 |   28.74 | ...81-499,565-566 
+  markdown.tsx     |   42.59 |       10 |   36.36 |   40.38 | ...23-128,132-171 
+  ...sult-table.ts |    1.92 |        0 |       0 |     2.7 | 13-65             
+  message-list.tsx |    9.09 |        0 |       0 |    9.67 | ...83-228,273-311 
+  model-client.ts  |   11.11 |        0 |      20 |   11.11 | 40-60             
+  ...-selector.tsx |   48.38 |    37.93 |    37.5 |      50 | ...0,62-70,87-103 
+  ...rface-hook.ts |   73.68 |        0 |   42.85 |   78.57 | 32-33,36          
+  ...ze-handle.tsx |   46.66 |    41.66 |   33.33 |   46.15 | 32,42-53          
+  query-attach.ts  |     3.4 |     2.63 |    8.33 |    2.46 | 62-63,75-241      
+  stream-client.ts |   38.09 |    39.02 |    37.5 |   41.02 | ...24-126,165-178 
+  ...e-registry.ts |   41.33 |    37.77 |   41.66 |   41.26 | ...43-164,184-188 
+  thread-client.ts |   22.72 |       25 |   33.33 |   26.31 | 51-52,65-122      
+  ...d-history.tsx |   28.76 |    22.03 |   15.38 |   29.03 | ...15-125,134-310 
+  ...call-card.tsx |      10 |        0 |       0 |    8.57 | 83-284            
+  types.ts         |      60 |       25 |     100 |      50 | 208-209           
+  ...nversation.ts |   90.38 |    64.28 |   66.66 |   93.33 | 136-149,212       
+  ...tant-panel.ts |      90 |       60 |   83.33 |    87.5 | 20                
+  ...transcript.ts |   20.96 |     9.72 |    17.5 |   22.42 | ...14,518,522,526 
+  ...stant-turn.ts |   45.04 |    23.27 |   33.33 |   46.73 | ...80-406,413-426 
+  ...nel-resize.ts |   35.89 |        0 |      50 |   36.11 | 34-42,48-60,65-71 
+  ...-assistant.ts |       0 |        0 |       0 |       0 | 27-38             
+ ...s/auth/sign-in |       0 |      100 |       0 |       0 |                   
+  sign-in-2.tsx    |       0 |      100 |       0 |       0 | 7-8               
+ ...-in/components |    73.8 |    68.85 |   81.81 |   75.86 |                   
+  ...in-splash.tsx |     100 |       50 |     100 |     100 | 13                
+  ...in-visual.tsx |       0 |      100 |       0 |       0 | 4                 
+  ...auth-form.tsx |   72.17 |    69.49 |   83.33 |   74.76 | ...53-256,273-279 
+ src/features/bi   |   64.62 |    62.38 |   61.22 |   69.74 |                   
+  bi-frame.tsx     |   89.23 |    67.79 |   86.36 |   96.07 | 38,95             
+  bi-launch.tsx    |       0 |        0 |       0 |       0 | 12-51             
+  bi-target.ts     |      75 |       80 |     100 |     100 | 5                 
+  bi-workspace.tsx |       0 |        0 |       0 |       0 | 11-70             
+  ...rd-filters.ts |   89.47 |    83.33 |     100 |   93.75 | 17                
+  ...et-loading.ts |   83.33 |      100 |     100 |   83.33 | 12                
+  ...bi-session.ts |    92.3 |       75 |      80 |     100 | 22,51             
+ ...atures/cluster |       0 |        0 |       0 |       0 |                   
+  api.ts           |       0 |        0 |       0 |       0 | 21-168            
+  index.tsx        |       0 |        0 |       0 |       0 | 49-469            
+ ...es/connections |       0 |        0 |       0 |       0 |                   
+  api.ts           |       0 |      100 |       0 |       0 | 54-93             
+  ...n-dialogs.tsx |       0 |        0 |       0 |       0 | 42-721            
+  index.tsx        |       0 |        0 |       0 |       0 | 37-267            
+  sources.ts       |       0 |        0 |       0 |       0 | 35-109            
+ ...ures/dashboard |       0 |        0 |       0 |       0 |                   
+  docs-matches.tsx |       0 |        0 |       0 |       0 | 13-36             
+  index.tsx        |       0 |        0 |       0 |       0 | 85-511            
+ ...ard/components |       0 |      100 |       0 |       0 |                   
+  ...ics-chart.tsx |       0 |      100 |       0 |       0 | 4-46              
+  analytics.tsx    |       0 |      100 |       0 |       0 | 11-168            
+  overview.tsx     |       0 |      100 |       0 |       0 | 4-75              
+  recent-sales.tsx |       0 |      100 |       0 |       0 | 4                 
+ ...abase-explorer |    0.63 |     0.19 |    0.67 |    0.72 |                   
+  ...tadata-api.ts |       0 |        0 |       0 |       0 | 67-131            
+  ...a-section.tsx |       0 |        0 |       0 |       0 | 41-535            
+  ...og-search.tsx |       0 |        0 |       0 |       0 | 9-159             
+  ...se-dialog.tsx |       0 |        0 |       0 |       0 | 20-99             
+  ...er-detail.tsx |       0 |        0 |       0 |       0 | 110-1182          
+  helpers.ts       |       0 |        0 |       0 |       0 | 23-404            
+  index.tsx        |       0 |        0 |       0 |       0 | 73-867            
+  ...-data-tab.tsx |       0 |        0 |       0 |       0 | 21-119            
+  ...ew-request.ts |       0 |        0 |       0 |       0 | 1-33              
+  ...ode-block.tsx |     100 |    66.66 |     100 |     100 | 17                
+  ...ighlighter.ts |      75 |      100 |     100 |      75 | 12                
+  ...les-panel.tsx |       0 |        0 |       0 |       0 | 56-461            
+  ...-node-row.tsx |       0 |        0 |       0 |       0 | 42-182            
+ src/features/docs |       0 |        0 |       0 |       0 |                   
+  content.ts       |       0 |        0 |       0 |       0 | 18-214            
+  docs-layout.tsx  |       0 |        0 |       0 |       0 | 19-93             
+  ...-markdown.tsx |       0 |        0 |       0 |       0 | 15-214            
+  docs-page.tsx    |       0 |        0 |       0 |       0 | 9-137             
+  docs-search.tsx  |       0 |        0 |       0 |       0 | 28-116            
+  nav.ts           |       0 |      100 |     100 |       0 | 13                
+ ...eatures/errors |       0 |        0 |       0 |       0 |                   
+  forbidden.tsx    |       0 |      100 |       0 |       0 | 5-20              
+  ...ral-error.tsx |       0 |        0 |       0 |       0 | 13-30             
+  ...nce-error.tsx |       0 |      100 |       0 |       0 | 4                 
+  ...und-error.tsx |       0 |      100 |       0 |       0 | 5-20              
+  ...zed-error.tsx |       0 |      100 |       0 |       0 | 5-20              
+ ...ernal-catalogs |       0 |        0 |       0 |       0 |                   
+  api.ts           |       0 |        0 |       0 |       0 | 53-90             
+  ...g-dialogs.tsx |       0 |        0 |       0 |       0 | 15-32             
+ ...ures/functions |       0 |        0 |       0 |       0 |                   
+  api.ts           |       0 |        0 |       0 |       0 | 49-101            
+  index.tsx        |       0 |        0 |       0 |       0 | 27-448            
+ ...s/intelligence |   64.84 |    63.65 |   54.89 |   64.68 |                   
+  ...lifecycle.tsx |   85.71 |    88.88 |   81.48 |   86.66 | ...69,363,430-433 
+  ...n-preview.tsx |   96.36 |       96 |     100 |   97.95 | 227               
+  ...lot-panel.tsx |    1.94 |        0 |       0 |    1.02 | 52-551            
+  context-api.ts   |       0 |      100 |       0 |       0 | 40-59             
+  ...inspector.tsx |   61.11 |    66.07 |   33.33 |   57.57 | ...07-167,188-207 
+  ...n-compose.tsx |   95.12 |    84.61 |   95.34 |   94.52 | 115-144,204,268   
+  ...overnance.tsx |       0 |        0 |       0 |       0 | 33-146            
+  ...ence-page.tsx |   67.97 |    73.46 |    54.3 |   69.03 | ...84,793-813,856 
+  learning-api.ts  |       0 |      100 |       0 |       0 | 49                
+  lifecycle-api.ts |    61.9 |    47.61 |   42.85 |    61.9 | 310-356           
+  ...ta-fields.tsx |   92.59 |    90.47 |   85.71 |   91.66 | 30,68             
+  ...tor-panel.tsx |   76.69 |    77.33 |   64.86 |   77.89 | ...48-376,411-466 
+  ...-settings.tsx |   23.72 |     18.3 |    3.03 |   23.63 | ...54-258,277-363 
+  ...io-fields.tsx |   84.61 |    70.27 |   66.66 |   83.33 | 45-56             
+  ...rio-schema.ts |   72.36 |    72.86 |     100 |   73.33 | ...56,258,268,274 
+  ...-datasets.tsx |   68.75 |    36.36 |   42.85 |   66.66 | 31-32,54-68       
+  ...ew-detail.tsx |   78.89 |    61.18 |    74.5 |   79.34 | ...30,337-338,369 
+  ...ew-glance.tsx |   69.23 |       52 |   63.88 |   72.46 | ...49,289,315-351 
+  ...oute-page.tsx |       0 |      100 |       0 |       0 | 5-6               
+  ...-views-api.ts |    42.1 |      100 |   35.29 |   38.88 | ...33,240,250-255 
+ ...ures/migration |   82.83 |    85.41 |      80 |   83.56 |                   
+  api.ts           |   91.66 |      100 |    90.9 |   91.66 | 143               
+  index.tsx        |   82.47 |    85.36 |   78.37 |   83.21 | ...1020-1030,1238 
+ ...ures/ml-models |       0 |        0 |       0 |       0 |                   
+  aliases-tab.tsx  |       0 |        0 |       0 |       0 | 49-335            
+  index.tsx        |       0 |      100 |       0 |       0 | 13-15             
+  model-scope.ts   |       0 |        0 |       0 |       0 | 22-57             
+  models-tab.tsx   |       0 |        0 |       0 |       0 | 91-972            
+  predict-tab.tsx  |       0 |        0 |       0 |       0 | 48-336            
+ ...res/monitoring |      75 |      100 |      50 |   66.66 |                   
+  index.tsx        |      75 |      100 |      50 |   66.66 | 18                
+ ...active-queries |       0 |        0 |       0 |       0 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 59-360            
+ .../monitoring/ai |     100 |    80.28 |     100 |     100 |                   
+  api.ts           |     100 |       75 |     100 |     100 | 79,121,127-143    
+  index.tsx        |     100 |    82.07 |     100 |     100 | ...89,756,778-783 
+ ...ng/audit-trail |       0 |        0 |       0 |       0 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 66-399            
+ ...ring/autopilot |   59.44 |    61.25 |   53.16 |   61.19 |                   
+  api.ts           |   44.44 |      100 |   28.57 |   44.44 | 145-166           
+  index.tsx        |   60.44 |    61.25 |   55.55 |    62.4 | ...0,846,884-1049 
+ ...ing/components |      20 |     6.66 |   11.11 |      20 |                   
+  ...dable-row.tsx |       0 |        0 |       0 |       0 | 25-177            
+  ...ng-header.tsx |      75 |       40 |     100 |      75 | 23                
+ ...ing/data-loads |       0 |        0 |       0 |       0 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 70-475            
+ ...itoring/health |       0 |        0 |       0 |       0 |                   
+  api.ts           |       0 |        0 |       0 |       0 | 53-162            
+  index.tsx        |       0 |        0 |       0 |       0 | 35-283            
+ ...toring/queries |       0 |      100 |       0 |       0 |                   
+  index.tsx        |       0 |      100 |       0 |       0 | 6-49              
+ ...ing/query-cost |       0 |        0 |       0 |       0 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 108-771           
+ .../query-history |       0 |        0 |       0 |       0 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 69-434            
+ ...aviz/contracts |       0 |      100 |       0 |       0 |                   
+  index.ts         |       0 |      100 |       0 |       0 | 14-27             
+  schema.ts        |       0 |      100 |     100 |       0 | 2                 
+ ...tures/ontology |    66.1 |    57.96 |   54.04 |   66.57 |                   
+  api.ts           |    6.66 |        0 |    2.77 |    7.14 | 468-544           
+  checks-tab.tsx   |   89.47 |     67.5 |      75 |   89.18 | 62,119,165,201    
+  ...pt-detail.tsx |   73.17 |    43.75 |      60 |   75.67 | ...58,206,239-250 
+  concepts-tab.tsx |   79.31 |    79.41 |   57.14 |   78.57 | ...97,128,149,202 
+  derived-tab.tsx  |   84.07 |    57.54 |   75.75 |   82.52 | ...04,469,515,553 
+  domains-tab.tsx  |   81.57 |    60.65 |   63.15 |   81.08 | ...27,181,235,259 
+  ...ation-tab.tsx |   51.69 |    36.61 |   39.53 |    54.9 | ...69,284-344,382 
+  index.tsx        |       0 |        0 |       0 |       0 | 33-94             
+  model.ts         |   90.38 |    67.44 |    90.9 |   93.47 | 133,145-147       
+  overview-tab.tsx |   78.46 |    67.03 |   68.57 |   77.58 | ...88,335-336,534 
+  ...sal-forms.tsx |    62.5 |       64 |   51.85 |   63.82 | ...10-713,768,790 
+  ...osals-tab.tsx |   78.68 |    74.57 |   61.29 |      78 | ...80,226,243-261 
+  releases-tab.tsx |   52.45 |    66.12 |   35.71 |   51.72 | ...52-259,262-284 
+ ...features/roles |       0 |        0 |       0 |       0 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 86-613            
+  role-detail.tsx  |       0 |        0 |       0 |       0 | 59-590            
+ ...tures/settings |       0 |        0 |       0 |       0 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 23-213            
+ ...eatures/stages |   32.14 |    25.75 |   31.52 |   31.54 |                   
+  api.ts           |   53.84 |    41.66 |   69.23 |   54.16 | 86-113            
+  index.tsx        |   68.11 |    76.31 |    60.6 |    66.1 | ...82,379,395-408 
+  ...e-browser.tsx |    1.98 |        0 |       0 |    1.17 | 49-475            
+ ...eatures/studio |   31.77 |    27.45 |   29.73 |   33.07 |                   
+  ...ry-dialog.tsx |   83.87 |    70.73 |      75 |   84.61 | 58,88,138,208     
+  ...er-footer.tsx |   94.82 |    81.81 |    92.3 |   97.95 | 76                
+  ...chart-spec.ts |       0 |        0 |       0 |       0 | 8-17              
+  ...-explorer.tsx |   81.92 |    72.91 |   70.58 |   82.58 | ...64,702,761-762 
+  ...ilter-bar.tsx |      75 |    62.16 |    62.5 |   76.92 | ...55,185,228-248 
+  ...ct-filters.ts |   52.43 |    45.07 |   60.86 |   59.42 | ...29-143,184-205 
+  ...act-source.ts |   66.66 |      100 |     100 |   66.66 | 21                
+  chart-title.ts   |       0 |        0 |       0 |       0 | 10-18             
+  consent-card.tsx |       0 |        0 |       0 |       0 | 29-104            
+  ...arch-card.tsx |       0 |        0 |       0 |       0 | 9-91              
+  default-agent.ts |   91.66 |      100 |     100 |   88.88 | 10                
+  ...nce-health.ts |       0 |        0 |       0 |       0 | 5-121             
+  greeting.ts      |      75 |    73.33 |     100 |   84.61 | 8,27              
+  index.tsx        |   71.83 |    73.42 |   62.29 |   78.57 | ...67-370,422-437 
+  ...dge-panel.tsx |   87.01 |     78.7 |   78.57 |   87.67 | ...89-290,374,411 
+  ...onversion.tsx |    5.55 |        0 |       0 |       5 | 24-164,181-191    
+  ...ss-summary.ts |       0 |        0 |       0 |       0 | 9-42              
+  rail-model.ts    |       0 |        0 |       0 |       0 | 4-23              
+  result-cards.tsx |   23.52 |        0 |       0 |   21.42 | 19-59,69-73       
+  result-table.tsx |   44.11 |    44.87 |   45.45 |   47.45 | ...50,180,265-278 
+  ...sal-panel.tsx |      80 |    81.66 |    82.6 |   87.14 | ...22,135,142,167 
+  ...l-document.ts |    37.5 |        0 |       0 |   42.85 | 8-17              
+  skill-editor.tsx |       0 |        0 |       0 |       0 | 27-93             
+  skill-upload.tsx |       0 |        0 |       0 |       0 | 18-202            
+  ...ount-menu.tsx |   71.42 |    56.09 |   64.28 |   71.87 | ...60,177,209,234 
+  ...artifacts.tsx |   66.48 |    73.36 |    50.9 |   67.85 | ...39-850,917,942 
+  ...ttachments.ts |   12.76 |        0 |       0 |   14.63 | 48-108            
+  ...abilities.tsx |    4.34 |        0 |       0 |    2.38 | 42-377            
+  studio-chat.tsx  |     0.2 |        0 |       0 |    0.24 | 69-1218           
+  ...-composer.tsx |       0 |        0 |       0 |       0 | 21-215            
+  ...elligence.tsx |    2.27 |        0 |       0 |    1.19 | 34-820            
+  ...o-sidebar.tsx |    4.25 |        0 |       0 |    2.32 | 38-431            
+  studio-tabs.tsx  |      50 |       60 |   57.14 |      50 | 62-67,86          
+  ...transcript.ts |       0 |        0 |       0 |       0 | 24-1008           
+  text-shimmer.tsx |      50 |      100 |       0 |      50 | 17                
+  thought-turn.tsx |    5.07 |        0 |       0 |     5.3 | 86-89,108-520     
+  thread-time.ts   |       0 |        0 |       0 |       0 | 9-28              
+  thread-title.ts  |       0 |        0 |       0 |       0 | 2-10              
+  tool-preview.ts  |   33.33 |        0 |       0 |   33.33 | 11-14             
+  ...tent-order.ts |       0 |        0 |       0 |       0 | 5-14              
+  turn-content.tsx |       0 |        0 |       0 |       0 | 48-196            
+  ...nt-daypart.ts |    90.9 |      100 |      80 |     100 |                   
+  ...ipt-stream.ts |       0 |        0 |       0 |       0 | 5-43              
+  ...ge-footer.tsx |       0 |        0 |       0 |       0 | 15-51             
+  workflow-api.ts  |       0 |        0 |       0 |       0 | 41-71             
+ ...studio/dataviz |   14.41 |     5.39 |   11.21 |   14.64 |                   
+  ...o-dataviz.tsx |   10.66 |     8.33 |    6.45 |    9.23 | 68-321            
+  api.ts           |      50 |       50 |      25 |      50 | 76-90             
+  ...ard-bridge.ts |   12.06 |        0 |       0 |   13.72 | 44-142            
+  ...workspace.tsx |    4.54 |        0 |       0 |    4.58 | 28-402            
+  superset-bar.ts  |    2.85 |        0 |       0 |    3.44 | 25-76             
+  ...capability.ts |      84 |    58.33 |   81.81 |   94.44 | 25                
+ ...intelligent-ui |   45.44 |    39.11 |   40.37 |   46.98 |                   
+  api.ts           |   14.28 |        0 |       0 |   14.28 | 5-7,13-24         
+  catalog-v2.ts    |   85.71 |        0 |      50 |   88.46 | 370-382           
+  catalog.ts       |   58.06 |       16 |   83.33 |   61.11 | 391-422           
+  ...spec-block.ts |    4.44 |        0 |       0 |    5.06 | 22-163            
+  components.tsx   |   56.62 |    49.72 |   63.46 |    55.4 | ...22,745-767,792 
+  data-chart.tsx   |   83.87 |       75 |   66.66 |   85.18 | 94-95,211-213     
+  functions.ts     |   33.11 |    29.21 |    18.6 |   36.09 | ...02-523,545-564 
+  ...ap-legacy.tsx |    1.55 |        0 |       0 |    1.04 | 11-152            
+  geo-map.tsx      |    80.3 |    63.63 |   70.96 |   81.35 | ...03,128-211,227 
+  geometry.ts      |   67.69 |    45.83 |   78.57 |   73.91 | ...37,39-44,78-80 
+  html-policy.ts   |   73.52 |       70 |     100 |   74.19 | ...11,120-122,127 
+  map-data.ts      |   45.45 |    14.81 |     100 |   47.61 | ...44,48-55,58-59 
+  map-metrics.ts   |     100 |      100 |   66.66 |     100 |                   
+  map-surface.tsx  |   80.72 |    78.46 |      75 |   78.94 | ...45-246,275-277 
+  media.tsx        |   32.92 |    23.72 |   18.18 |   33.33 | ...1-58,64,82-196 
+  public-map.tsx   |       0 |        0 |       0 |       0 | 36-256            
+  renderer.tsx     |   88.65 |    79.65 |   84.78 |   89.41 | ...42,356,366,398 
+  route-data.ts    |    4.54 |        0 |       0 |    5.26 | 24-81,88-92       
+  route-road.ts    |    8.16 |        0 |       0 |    9.75 | 25-97             
+  ...stops-map.tsx |    5.15 |        0 |       0 |     4.7 | 26-312            
+  ...me-context.ts |     100 |      100 |       0 |     100 |                   
+  ui-chart.tsx     |   28.57 |        0 |       0 |      20 | 15-18             
+  validator-v2.ts  |    2.88 |        0 |       0 |    3.18 | 74,76,78,85-475   
+  validator.ts     |   79.48 |    77.23 |   89.18 |   83.96 | ...14,425,491,493 
+ ...es/studio/news |   80.12 |    74.82 |   76.25 |    82.2 |                   
+  chart-kind.ts    |      60 |       50 |     100 |     100 | 10-11             
+  echart.tsx       |   94.54 |    71.42 |     100 |   95.91 | 110,120           
+  format.ts        |   88.23 |    76.31 |     100 |   96.55 | 57                
+  highlight.tsx    |     100 |    86.66 |     100 |     100 | 12,35             
+  ...t-section.tsx |   26.92 |    20.45 |    8.69 |   27.27 | 42-97,115,125-203 
+  newspaper-api.ts |   28.57 |        0 |   16.66 |   28.57 | 138-153,168       
+  ...aper-page.tsx |   98.36 |    94.59 |   97.14 |   98.14 | 296               
+  story-chart.tsx  |   84.44 |    74.41 |   86.95 |   85.36 | 50-57,175-176,245 
+  story-panel.tsx  |      85 |     87.5 |      75 |   84.21 | 57,192,216        
+  story-parts.tsx  |     100 |    94.73 |     100 |     100 | 10                
+ ...-orchestration |   82.66 |    67.42 |   83.06 |   85.17 |                   
+  api.ts           |   95.83 |      100 |    87.5 |   95.83 | 233               
+  presentation.ts  |   73.33 |       60 |     100 |   79.06 | ...6-57,64-66,113 
+  ...or-dialog.tsx |     100 |    78.94 |     100 |     100 | 71-76,99-102      
+  ...ry-drawer.tsx |   77.63 |    66.66 |   88.23 |   80.88 | 78-86,102-109     
+  run-history.tsx  |   86.11 |       72 |   76.92 |   85.29 | 55-71,222-232,243 
+  task-detail.tsx  |   71.42 |    77.77 |      50 |   68.42 | ...1,63-76,95-136 
+  ...low-layout.ts |   87.17 |    60.37 |     100 |   93.75 | 77-78,159,163     
+  task-flow.tsx    |   94.59 |     87.5 |     100 |   93.54 | 126,144           
+  task-list.tsx    |   76.11 |    68.47 |   68.75 |   77.41 | ...33,325,332-334 
+  task-node.tsx    |     100 |    83.33 |     100 |     100 | 18                
+  ...ql-dialog.tsx |   88.88 |       50 |   66.66 |    87.5 | 74                
+ ...features/tasks |       0 |      100 |       0 |       0 |                   
+  index.tsx        |       0 |      100 |       0 |       0 | 11                
+ ...sks/components |    9.61 |    11.76 |    9.09 |    9.86 |                   
+  ...k-actions.tsx |       0 |        0 |       0 |       0 | 30-171            
+  ...w-actions.tsx |       0 |      100 |       0 |       0 | 29-72             
+  ...s-columns.tsx |       0 |        0 |       0 |       0 | 9-121             
+  ...s-dialogs.tsx |       0 |        0 |       0 |       0 | 8-52              
+  ...rt-dialog.tsx |       0 |        0 |       0 |       0 | 25-88             
+  ...te-dialog.tsx |       0 |        0 |       0 |       0 | 1-85              
+  ...y-buttons.tsx |       0 |      100 |       0 |       0 | 6-16              
+  ...-provider.tsx |       0 |        0 |       0 |       0 | 14-35             
+  tasks-table.tsx  |       0 |        0 |       0 |       0 | 31-165            
+ ...res/tasks/data |       0 |      100 |       0 |       0 |                   
+  data.tsx         |       0 |      100 |     100 |       0 | 13-56             
+  schema.ts        |       0 |      100 |     100 |       0 | 5                 
+  tasks.ts         |       0 |      100 |       0 |       0 | 4-17              
+ ...features/users |       0 |        0 |       0 |       0 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 182-2377          
+  user-detail.tsx  |       0 |        0 |       0 |       0 | 45-371            
+ ...ers/components |   36.04 |    44.61 |   35.22 |   34.96 |                   
+  ...k-actions.tsx |       0 |        0 |       0 |       0 | 23-117            
+  ...w-actions.tsx |       0 |      100 |       0 |       0 | 21-50             
+  ...on-dialog.tsx |   94.87 |    96.42 |      95 |   94.11 | 142-143           
+  ...s-columns.tsx |       0 |        0 |       0 |       0 | 11-129            
+  ...te-dialog.tsx |    90.9 |       50 |     100 |     100 | 26                
+  ...s-dialogs.tsx |       0 |        0 |       0 |       0 | 7-42              
+  ...te-dialog.tsx |     100 |       50 |     100 |     100 | 32                
+  ...te-dialog.tsx |       0 |        0 |       0 |       0 | 1-85              
+  ...y-buttons.tsx |       0 |      100 |       0 |       0 | 6-16              
+  ...-provider.tsx |       0 |        0 |       0 |       0 | 14-35             
+  users-table.tsx  |       0 |        0 |       0 |       0 | 38-160            
+ ...res/users/data |      20 |      100 |       0 |      20 |                   
+  schema.ts        |       0 |      100 |     100 |       0 | 3-18              
+  users.ts         |       0 |      100 |       0 |       0 | 4-9               
+ src/features/viz  |   46.11 |     28.2 |   40.62 |   48.37 |                   
+  chart-frame.tsx  |   91.66 |    86.66 |     100 |     100 | 38,49             
+  ...fact-card.tsx |       0 |        0 |       0 |       0 | 11-31             
+  ...rd-canvas.tsx |    2.85 |        0 |       0 |    1.72 | 36-296            
+  insight.ts       |    71.3 |    41.66 |   85.18 |   79.77 | ...19,162,175-191 
+  view-answer.tsx  |       0 |        0 |       0 |       0 | 5                 
+  viz-view.tsx     |   42.16 |    29.47 |   34.37 |   43.78 | ...24,622,639-825 
+ ...res/workspaces |    4.33 |     2.99 |    4.87 |    4.44 |                   
+  ...alization.tsx |    2.04 |        0 |       0 |    2.27 | ...8-195,206-1277 
+  ...-selector.tsx |       0 |        0 |       0 |       0 | 28-152            
+  explain-plan.ts  |       0 |        0 |       0 |       0 | 4-26              
+  explain-tree.tsx |       0 |        0 |       0 |       0 | 10-175            
+  ...ry-dialog.tsx |       0 |        0 |       0 |       0 | 40-205            
+  ...ory-format.ts |       0 |        0 |       0 |       0 | 4-14              
+  index.tsx        |       0 |        0 |       0 |       0 | 152-4322          
+  ...ne-select.tsx |       0 |        0 |       0 |       0 | 26-79             
+  monaco-theme.ts  |   81.25 |       75 |   66.66 |   81.25 | 47-71             
+  neva-feedback.ts |    8.33 |        0 |       0 |    9.37 | 24-119            
+  ...firmation.tsx |       0 |        0 |       0 |       0 | 14-44             
+  ...y-history.tsx |       0 |        0 |       0 |       0 | 17-134            
+  ...y-messages.ts |       0 |        0 |       0 |       0 | 11-32             
+  ...ite-blocks.ts |       0 |        0 |       0 |       0 | 21-51             
+  ...te-review.tsx |       0 |        0 |       0 |       0 | 21-54             
+  session-role.ts  |       0 |        0 |       0 |       0 | 13-27             
+  ...statements.ts |       0 |        0 |       0 |       0 | 4-119             
+  ...completion.ts |       0 |        0 |       0 |       0 | 32-135            
+  ...-templates.ts |       0 |      100 |       0 |       0 | 4-107             
+  ...h-popover.tsx |    88.6 |    79.03 |   88.88 |   91.04 | ...5,57,72,99,229 
+  ...tab-strip.tsx |       0 |        0 |       0 |       0 | 42-439            
+ ...paces/explorer |       0 |        0 |       0 |       0 |                   
+  api.ts           |       0 |        0 |       0 |       0 | 4-46              
+  controller.ts    |       0 |      100 |       0 |       0 | 23-27             
+  ...em-button.tsx |       0 |        0 |       0 |       0 | 27-76             
+  share-dialog.tsx |       0 |        0 |       0 |       0 | 17-172            
+  tree-data.ts     |       0 |        0 |       0 |       0 | 5-68              
+  ...-explorer.tsx |       0 |        0 |       0 |       0 | 71-664            
+ ...paces/notebook |    24.3 |    27.69 |   22.59 |   23.44 |                   
+  api.ts           |    8.69 |        0 |       0 |    9.09 | 19-91             
+  cell-editor.tsx  |   90.32 |    72.72 |   86.36 |   94.93 | 96,133,141-142    
+  cell.tsx         |   73.87 |    79.89 |      70 |   76.84 | ...60-468,487,510 
+  helpers.ts       |   91.66 |    91.11 |   83.33 |   91.89 | 16,42,68          
+  names.ts         |   93.75 |    83.33 |     100 |     100 | 10                
+  neva.tsx         |       0 |        0 |       0 |       0 | 20-205            
+  ...ok-editor.tsx |       0 |        0 |       0 |       0 | 63-930            
+  outputs.tsx      |   62.02 |     57.3 |   66.66 |   61.64 | ...87-396,400-406 
+  ...e-control.tsx |       0 |        0 |       0 |       0 | 20-211            
+  side-panel.tsx   |       0 |        0 |       0 |       0 | 18-326            
+  stream.ts        |   29.03 |     37.5 |   14.28 |      24 | 25-103            
+  use-notebook.ts  |    3.89 |     8.06 |    1.49 |    2.77 | 42,62-653         
+ src/hooks         |   16.27 |     4.44 |      25 |   15.18 |                   
+  ...log-state.tsx |   66.66 |    33.33 |   33.33 |      80 | 15                
+  use-mobile.tsx   |    90.9 |       60 |   83.33 |   88.88 | 14                
+  ...-url-state.ts |       0 |        0 |       0 |       0 | 77-210            
+ src/lib           |   34.23 |    18.39 |   39.28 |   38.18 |                   
+  api-client.ts    |   26.31 |    18.18 |   28.57 |   29.59 | ...00-201,221-250 
+  cookies.ts       |      80 |    66.66 |     100 |     100 | 12,31-40          
+  datetime.ts      |   63.63 |    35.29 |      50 |   55.55 | 24,36-65          
+  format.ts        |       0 |        0 |       0 |       0 | 9-74              
+  ...rver-error.ts |       0 |        0 |       0 |       0 | 5-27              
+  read-token.ts    |   92.68 |    56.25 |     100 |     100 | 18,53-94          
+  ...tted-data.tsx |      50 |        0 |       0 |      50 | 7                 
+  ...i-devtools.ts |       0 |      100 |     100 |       0 | 4                 
+  utils.ts         |    2.94 |        0 |      20 |    3.57 | 9-74              
+ src/stores        |   65.38 |    68.42 |      50 |   60.86 |                   
+  auth-store.ts    |   66.66 |    86.66 |   54.54 |   63.15 | 52-60             
+  ...zone-store.ts |      60 |        0 |   33.33 |      50 | 22-26             
+-------------------|---------|----------|---------|---------|-------------------
+
+=============================== Coverage summary ===============================
+Statements   : 31.74% ( 7009/22082 )
+Branches     : 29.46% ( 6325/21465 )
+Functions    : 30.52% ( 2314/7581 )
+Lines        : 32.57% ( 6372/19560 )
+================================================================================
+[ELIFECYCLE] Command failed with exit code 1.

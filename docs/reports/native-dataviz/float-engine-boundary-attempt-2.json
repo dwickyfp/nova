@@ -1,0 +1,20 @@
+{
+  "scope": "synthetic numeric constants only; QA caller with login default role; existing pinned FE",
+  "sql": "SELECT CAST(5e-324 AS DOUBLE) AS literal_min, CAST('5e-324' AS DOUBLE) AS text_min, CAST(2.2250738585072014e-308 AS DOUBLE) AS normal_min, CAST(1.7976931348623157e308 AS DOUBLE) AS normal_max",
+  "success": true,
+  "columns": [
+    "literal_min",
+    "text_min",
+    "normal_min",
+    "normal_max"
+  ],
+  "rows": [
+    [
+      0.0,
+      5e-324,
+      0.0,
+      1.7976931348623157e+308
+    ]
+  ],
+  "result": "OBSERVED_ENGINE_BOUNDARY"
+}

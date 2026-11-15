@@ -1,0 +1,282 @@
+{
+  "advisories": {
+    "1120680": {
+      "findings": [
+        {
+          "version": "0.27.4",
+          "paths": [
+            ".>@tailwindcss/vite>vite>esbuild",
+            ".>@tanstack/router-plugin>unplugin>esbuild",
+            ".>@tanstack/router-plugin>unplugin>vite>esbuild",
+            ".>@tanstack/router-plugin>vite>esbuild",
+            ".>@vitejs/plugin-react>vite>esbuild",
+            ".>@vitest/browser-playwright>@vitest/browser>@vitest/mocker>vite>esbuild",
+            ".>@vitest/browser-playwright>@vitest/browser>vitest>@vitest/mocker>vite>esbuild",
+            ".>@vitest/browser-playwright>@vitest/browser>vitest>vite>esbuild",
+            ".>@vitest/browser-playwright>@vitest/mocker>vite>esbuild",
+            ".>@vitest/browser-playwright>vitest>@vitest/mocker>vite>esbuild",
+            ".>@vitest/browser-playwright>vitest>vite>esbuild",
+            ".>@vitest/browser-playwright>vitest>@vitest/coverage-v8>@vitest/browser>@vitest/mocker>vite>esbuild",
+            ".>@vitest/coverage-v8>vitest>@vitest/mocker>vite>esbuild",
+            ".>@vitest/coverage-v8>vitest>vite>esbuild",
+            ".>@vitest/coverage-v8>vitest>@vitest/browser-playwright>@vitest/browser>@vitest/mocker>vite>esbuild",
+            ".>@vitest/coverage-v8>vitest>@vitest/browser-playwright>@vitest/mocker>vite>esbuild",
+            ".>@vitest/coverage-v8>@vitest/browser>@vitest/mocker>vite>esbuild",
+            ".>@vitest/coverage-v8>@vitest/browser>vitest>@vitest/mocker>vite>esbuild",
+            ".>@vitest/coverage-v8>@vitest/browser>vitest>vite>esbuild",
+            ".>@vitest/coverage-v8>@vitest/browser>vitest>@vitest/browser-playwright>@vitest/mocker>vite>esbuild",
+            ".>@vitest/ui>vitest>@vitest/mocker>vite>esbuild",
+            ".>@vitest/ui>vitest>vite>esbuild",
+            ".>@vitest/ui>vitest>@vitest/browser-playwright>@vitest/browser>@vitest/mocker>vite>esbuild",
+            ".>@vitest/ui>vitest>@vitest/browser-playwright>@vitest/mocker>vite>esbuild",
+            ".>@vitest/ui>vitest>@vitest/coverage-v8>@vitest/browser>@vitest/mocker>vite>esbuild",
+            ".>esbuild",
+            ".>vite>esbuild",
+            ".>vitest>@vitest/mocker>vite>esbuild",
+            ".>vitest>vite>esbuild",
+            ".>vitest>@vitest/browser-playwright>@vitest/browser>@vitest/mocker>vite>esbuild",
+            ".>vitest>@vitest/browser-playwright>@vitest/mocker>vite>esbuild",
+            ".>vitest>@vitest/coverage-v8>@vitest/browser>@vitest/mocker>vite>esbuild",
+            ".>vitest-browser-react>vitest>@vitest/mocker>vite>esbuild",
+            ".>vitest-browser-react>vitest>vite>esbuild",
+            ".>vitest-browser-react>vitest>@vitest/browser-playwright>@vitest/browser>@vitest/mocker>vite>esbuild",
+            ".>vitest-browser-react>vitest>@vitest/browser-playwright>@vitest/mocker>vite>esbuild",
+            ".>vitest-browser-react>vitest>@vitest/coverage-v8>@vitest/browser>@vitest/mocker>vite>esbuild"
+          ],
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1120680,
+      "title": "esbuild allows arbitrary file read when running the development server on Windows",
+      "module_name": "esbuild",
+      "vulnerable_versions": ">=0.27.3 <0.28.1",
+      "patched_versions": ">=0.28.1",
+      "severity": "low",
+      "cwe": "CWE-22",
+      "github_advisory_id": "GHSA-g7r4-m6w7-qqqr",
+      "url": "https://github.com/advisories/GHSA-g7r4-m6w7-qqqr"
+    },
+    "1241205": {
+      "findings": [
+        {
+          "version": "1.8.0",
+          "paths": [
+            ".>knip>smol-toml"
+          ],
+          "dev": true,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1241205,
+      "title": "smol-toml: Quadratic-time parse() from parseKey rescanning to end of document on each key line",
+      "module_name": "smol-toml",
+      "vulnerable_versions": "<=1.8.0",
+      "patched_versions": ">=1.8.1",
+      "severity": "moderate",
+      "cwe": "CWE-407",
+      "github_advisory_id": "GHSA-r4xh-jqrq-34v2",
+      "url": "https://github.com/advisories/GHSA-r4xh-jqrq-34v2"
+    },
+    "1241206": {
+      "findings": [
+        {
+          "version": "0.16.22",
+          "paths": [
+            ".>katex"
+          ],
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1241206,
+      "title": "KaTeX: Existing prototype pollution can bypass trust restrictions",
+      "module_name": "katex",
+      "vulnerable_versions": ">=0.11.0 <0.18.2",
+      "patched_versions": ">=0.18.2",
+      "severity": "low",
+      "cwe": "CWE-807",
+      "github_advisory_id": "GHSA-238p-pmpm-9mq7",
+      "url": "https://github.com/advisories/GHSA-238p-pmpm-9mq7"
+    },
+    "1242767": {
+      "findings": [
+        {
+          "version": "4.1.11",
+          "paths": [
+            ".>@vitest/browser-playwright>@vitest/browser>@vitest/mocker",
+            ".>@vitest/browser-playwright>@vitest/browser>vitest>@vitest/mocker",
+            ".>@vitest/browser-playwright>@vitest/mocker",
+            ".>@vitest/browser-playwright>vitest>@vitest/mocker",
+            ".>@vitest/browser-playwright>vitest>@vitest/coverage-v8>@vitest/browser>@vitest/mocker",
+            ".>@vitest/coverage-v8>vitest>@vitest/mocker",
+            ".>@vitest/coverage-v8>vitest>@vitest/browser-playwright>@vitest/browser>@vitest/mocker",
+            ".>@vitest/coverage-v8>vitest>@vitest/browser-playwright>@vitest/mocker",
+            ".>@vitest/coverage-v8>@vitest/browser>@vitest/mocker",
+            ".>@vitest/coverage-v8>@vitest/browser>vitest>@vitest/mocker",
+            ".>@vitest/coverage-v8>@vitest/browser>vitest>@vitest/browser-playwright>@vitest/mocker",
+            ".>@vitest/ui>vitest>@vitest/mocker",
+            ".>@vitest/ui>vitest>@vitest/browser-playwright>@vitest/browser>@vitest/mocker",
+            ".>@vitest/ui>vitest>@vitest/browser-playwright>@vitest/mocker",
+            ".>@vitest/ui>vitest>@vitest/coverage-v8>@vitest/browser>@vitest/mocker",
+            ".>vitest>@vitest/mocker",
+            ".>vitest>@vitest/browser-playwright>@vitest/browser>@vitest/mocker",
+            ".>vitest>@vitest/browser-playwright>@vitest/mocker",
+            ".>vitest>@vitest/coverage-v8>@vitest/browser>@vitest/mocker",
+            ".>vitest-browser-react>vitest>@vitest/mocker",
+            ".>vitest-browser-react>vitest>@vitest/browser-playwright>@vitest/browser>@vitest/mocker",
+            ".>vitest-browser-react>vitest>@vitest/browser-playwright>@vitest/mocker",
+            ".>vitest-browser-react>vitest>@vitest/coverage-v8>@vitest/browser>@vitest/mocker"
+          ],
+          "dev": true,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1242767,
+      "title": "Vitest: Code injection via unauthenticated manual mock registration",
+      "module_name": "@vitest/mocker",
+      "vulnerable_versions": ">=2.1.0-beta.7 <4.1.12",
+      "patched_versions": ">=4.1.12",
+      "severity": "moderate",
+      "cwe": "CWE-94, CWE-116, CWE-306",
+      "github_advisory_id": "GHSA-qxg6-89mg-rqv8",
+      "url": "https://github.com/advisories/GHSA-qxg6-89mg-rqv8"
+    },
+    "1242769": {
+      "findings": [
+        {
+          "version": "4.1.11",
+          "paths": [
+            ".>@vitest/browser-playwright>@vitest/browser>@vitest/mocker",
+            ".>@vitest/browser-playwright>@vitest/browser>vitest>@vitest/mocker",
+            ".>@vitest/browser-playwright>@vitest/mocker",
+            ".>@vitest/browser-playwright>vitest>@vitest/mocker",
+            ".>@vitest/browser-playwright>vitest>@vitest/coverage-v8>@vitest/browser>@vitest/mocker",
+            ".>@vitest/coverage-v8>vitest>@vitest/mocker",
+            ".>@vitest/coverage-v8>vitest>@vitest/browser-playwright>@vitest/browser>@vitest/mocker",
+            ".>@vitest/coverage-v8>vitest>@vitest/browser-playwright>@vitest/mocker",
+            ".>@vitest/coverage-v8>@vitest/browser>@vitest/mocker",
+            ".>@vitest/coverage-v8>@vitest/browser>vitest>@vitest/mocker",
+            ".>@vitest/coverage-v8>@vitest/browser>vitest>@vitest/browser-playwright>@vitest/mocker",
+            ".>@vitest/ui>vitest>@vitest/mocker",
+            ".>@vitest/ui>vitest>@vitest/browser-playwright>@vitest/browser>@vitest/mocker",
+            ".>@vitest/ui>vitest>@vitest/browser-playwright>@vitest/mocker",
+            ".>@vitest/ui>vitest>@vitest/coverage-v8>@vitest/browser>@vitest/mocker",
+            ".>vitest>@vitest/mocker",
+            ".>vitest>@vitest/browser-playwright>@vitest/browser>@vitest/mocker",
+            ".>vitest>@vitest/browser-playwright>@vitest/mocker",
+            ".>vitest>@vitest/coverage-v8>@vitest/browser>@vitest/mocker",
+            ".>vitest-browser-react>vitest>@vitest/mocker",
+            ".>vitest-browser-react>vitest>@vitest/browser-playwright>@vitest/browser>@vitest/mocker",
+            ".>vitest-browser-react>vitest>@vitest/browser-playwright>@vitest/mocker",
+            ".>vitest-browser-react>vitest>@vitest/coverage-v8>@vitest/browser>@vitest/mocker"
+          ],
+          "dev": true,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1242769,
+      "title": "Vitest: Windows backslash traversal bypasses the @vitest/mocker redirect allowlist fix",
+      "module_name": "@vitest/mocker",
+      "vulnerable_versions": ">=4.1.11 <4.1.12",
+      "patched_versions": ">=4.1.12",
+      "severity": "moderate",
+      "cwe": "CWE-22",
+      "github_advisory_id": "GHSA-xp26-3454-mjgp",
+      "url": "https://github.com/advisories/GHSA-xp26-3454-mjgp"
+    },
+    "1244623": {
+      "findings": [
+        {
+          "version": "10.2.6",
+          "paths": [
+            ".>@eslint/js>eslint>@eslint/config-array>minimatch",
+            ".>@eslint/js>eslint>minimatch",
+            ".>@tanstack/eslint-plugin-query>@typescript-eslint/utils>@eslint-community/eslint-utils>eslint>@eslint/config-array>minimatch",
+            ".>@tanstack/eslint-plugin-query>@typescript-eslint/utils>@eslint-community/eslint-utils>eslint>minimatch",
+            ".>@tanstack/eslint-plugin-query>@typescript-eslint/utils>@typescript-eslint/typescript-estree>minimatch",
+            ".>@tanstack/eslint-plugin-query>@typescript-eslint/utils>eslint>@eslint/config-array>minimatch",
+            ".>@tanstack/eslint-plugin-query>@typescript-eslint/utils>eslint>minimatch",
+            ".>@tanstack/eslint-plugin-query>eslint>@eslint/config-array>minimatch",
+            ".>@tanstack/eslint-plugin-query>eslint>minimatch",
+            ".>eslint>@eslint/config-array>minimatch",
+            ".>eslint>minimatch",
+            ".>eslint-plugin-react-hooks>eslint>@eslint/config-array>minimatch",
+            ".>eslint-plugin-react-hooks>eslint>minimatch",
+            ".>eslint-plugin-react-refresh>eslint>@eslint/config-array>minimatch",
+            ".>eslint-plugin-react-refresh>eslint>minimatch",
+            ".>typescript-eslint>@typescript-eslint/eslint-plugin>@typescript-eslint/parser>@typescript-eslint/typescript-estree>minimatch",
+            ".>typescript-eslint>@typescript-eslint/eslint-plugin>@typescript-eslint/parser>eslint>@eslint/config-array>minimatch",
+            ".>typescript-eslint>@typescript-eslint/eslint-plugin>@typescript-eslint/parser>eslint>minimatch",
+            ".>typescript-eslint>@typescript-eslint/eslint-plugin>@typescript-eslint/type-utils>@typescript-eslint/typescript-estree>minimatch",
+            ".>typescript-eslint>@typescript-eslint/eslint-plugin>@typescript-eslint/type-utils>@typescript-eslint/utils>@eslint-community/eslint-utils>eslint>@eslint/config-array>minimatch",
+            ".>typescript-eslint>@typescript-eslint/eslint-plugin>@typescript-eslint/type-utils>@typescript-eslint/utils>@eslint-community/eslint-utils>eslint>minimatch",
+            ".>typescript-eslint>@typescript-eslint/eslint-plugin>@typescript-eslint/type-utils>@typescript-eslint/utils>@typescript-eslint/typescript-estree>minimatch",
+            ".>typescript-eslint>@typescript-eslint/eslint-plugin>@typescript-eslint/type-utils>@typescript-eslint/utils>eslint>@eslint/config-array>minimatch",
+            ".>typescript-eslint>@typescript-eslint/eslint-plugin>@typescript-eslint/type-utils>@typescript-eslint/utils>eslint>minimatch",
+            ".>typescript-eslint>@typescript-eslint/eslint-plugin>@typescript-eslint/type-utils>eslint>@eslint/config-array>minimatch",
+            ".>typescript-eslint>@typescript-eslint/eslint-plugin>@typescript-eslint/type-utils>eslint>minimatch",
+            ".>typescript-eslint>@typescript-eslint/eslint-plugin>@typescript-eslint/utils>@eslint-community/eslint-utils>eslint>@eslint/config-array>minimatch",
+            ".>typescript-eslint>@typescript-eslint/eslint-plugin>@typescript-eslint/utils>@eslint-community/eslint-utils>eslint>minimatch",
+            ".>typescript-eslint>@typescript-eslint/eslint-plugin>@typescript-eslint/utils>@typescript-eslint/typescript-estree>minimatch",
+            ".>typescript-eslint>@typescript-eslint/eslint-plugin>@typescript-eslint/utils>eslint>@eslint/config-array>minimatch",
+            ".>typescript-eslint>@typescript-eslint/eslint-plugin>@typescript-eslint/utils>eslint>minimatch",
+            ".>typescript-eslint>@typescript-eslint/eslint-plugin>eslint>@eslint/config-array>minimatch",
+            ".>typescript-eslint>@typescript-eslint/eslint-plugin>eslint>minimatch",
+            ".>typescript-eslint>@typescript-eslint/parser>@typescript-eslint/typescript-estree>minimatch",
+            ".>typescript-eslint>@typescript-eslint/parser>eslint>@eslint/config-array>minimatch",
+            ".>typescript-eslint>@typescript-eslint/parser>eslint>minimatch",
+            ".>typescript-eslint>@typescript-eslint/typescript-estree>minimatch",
+            ".>typescript-eslint>@typescript-eslint/utils>@eslint-community/eslint-utils>eslint>@eslint/config-array>minimatch",
+            ".>typescript-eslint>@typescript-eslint/utils>@eslint-community/eslint-utils>eslint>minimatch",
+            ".>typescript-eslint>@typescript-eslint/utils>@typescript-eslint/typescript-estree>minimatch",
+            ".>typescript-eslint>@typescript-eslint/utils>eslint>@eslint/config-array>minimatch",
+            ".>typescript-eslint>@typescript-eslint/utils>eslint>minimatch",
+            ".>typescript-eslint>eslint>@eslint/config-array>minimatch",
+            ".>typescript-eslint>eslint>minimatch"
+          ],
+          "dev": true,
+          "optional": false,
+          "bundled": false
+        },
+        {
+          "version": "9.0.9",
+          "paths": [
+            ".>@trivago/prettier-plugin-sort-imports>minimatch",
+            ".>prettier-plugin-tailwindcss>@trivago/prettier-plugin-sort-imports>minimatch"
+          ],
+          "dev": true,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1244623,
+      "title": "minimatch has potential denial of service via globparts amplification",
+      "module_name": "minimatch",
+      "vulnerable_versions": ">=7.0.0 <11.0.1",
+      "patched_versions": ">=11.0.1",
+      "severity": "moderate",
+      "cwe": "CWE-405",
+      "github_advisory_id": "GHSA-g3hv-75wg-m249",
+      "url": "https://github.com/advisories/GHSA-g3hv-75wg-m249"
+    }
+  },
+  "metadata": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 2,
+      "moderate": 4,
+      "high": 0,
+      "critical": 0
+    },
+    "dependencies": 365,
+    "devDependencies": 288,
+    "optionalDependencies": 126,
+    "totalDependencies": 736
+  }
+}

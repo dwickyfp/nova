@@ -1,0 +1,28 @@
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯⎯⎯ Unhandled Error ⎯⎯⎯⎯⎯⎯⎯
+Error: Failed to run the test /Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/features/native-dataviz/dataset-object-picker.test.tsx.
+ ❯ node_modules/.pnpm/vitest@4.1.11_@types+node@25.9.7_@vitest+browser-playwright@4.1.11_@vitest+coverage-v8@_7da8845f9c5da930039dc32ca8787a70/node_modules/vitest/dist/chunks/cli-api.CnMVyzaz.js:2639:17
+ ❯ process.processTicksAndRejections node:internal/process/task_queues:105:5
+
+Caused by: Error: Cannot connect to the iframe. Did you change the location or submitted a form? If so, don't forget to call `event.preventDefault()` to avoid reloading the page.
+
+Received URL: http://localhost:63315/sign-in?redirect=%2F%3FsessionId%3D48711093-8954-406b-b5af-aa1ae20fcf51%26iframeId%3D%252FUsers%252Fdwickyferiansyahputra%252FPublic%252FResearch%252Fnova%252Ffrontend%252Fsrc%252Ffeatures%252Fnative-dataviz%252Fdataset-object-picker.test.tsx
+Expected: http://localhost:63315/?sessionId=48711093-8954-406b-b5af-aa1ae20fcf51&iframeId=%2FUsers%2Fdwickyferiansyahputra%2FPublic%2FResearch%2Fnova%2Ffrontend%2Fsrc%2Ffeatures%2Fnative-dataviz%2Fdataset-object-picker.test.tsx
+ ❯ iframe.onload ../../../../../../__vitest_browser__/orchestrator-jtzFEKPy.js:174:43
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files   (2)
+      Tests  1 passed (14)
+     Errors  1 error
+   Start at  00:24:58
+   Duration  5.30s (transform 0ms, setup 0ms, import 1.75s, tests 0ms, environment 0ms)
+

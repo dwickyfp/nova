@@ -1,0 +1,55 @@
+$ uv run ruff check --force-exclude app/modules/viz/router.py app/modules/viz/contracts/http.py app/modules/viz/documents.py app/modules/viz/document_service.py app/main.py scripts/generate_viz_contracts.py tests/integration/test_metadata_viz.py tests/unit/test_native_viz_router.py
+I001 [*] Import block is un-sorted or un-formatted
+  --> tests/integration/test_metadata_viz.py:3:1
+   |
+ 1 |   """Native document isolation, immutable publications and atomic revision races on PG17."""
+ 2 |
+ 3 | / from __future__ import annotations
+ 4 | |
+ 5 | | import asyncio
+ 6 | | import secrets
+ 7 | | from contextlib import asynccontextmanager
+ 8 | | from datetime import UTC, datetime, timedelta
+ 9 | | from unittest.mock import AsyncMock
+10 | | from uuid import uuid4
+11 | |
+12 | | import httpx
+13 | | import pytest
+14 | | import pytest_asyncio
+15 | | from cryptography.fernet import Fernet
+16 | | from fastapi import FastAPI
+17 | | from pydantic import ValidationError
+18 | |
+19 | | from app.core import metadata_scope
+20 | | from app.core import security
+21 | | from app.core.config import settings
+22 | | from app.core.exceptions import NovaException, register_exception_handlers
+23 | | from app.core.metadata_db import (
+24 | |     MetadataConflict,
+25 | |     MetadataDatabase,
+26 | |     MetadataIntegrityViolation,
+27 | |     MetadataOperationFailed,
+28 | |     MetadataPermissionDenied,
+29 | | )
+30 | | from app.core.metadata_migrations import migrate
+31 | | from app.core.metadata_schema import load_migrations
+32 | | from app.modules.access_control.security_context import SecurityContext
+33 | | from app.modules.viz import document_service
+34 | | from app.modules.viz import router as viz_router
+35 | | from app.modules.viz.contracts.commands import GrantsReplace, PublicationRequest, RestoreRequest
+36 | | from app.modules.viz.contracts.dashboards import DashboardDefinition, Page
+37 | | from app.modules.viz.contracts.filters import FilterDefinition
+38 | | from app.modules.viz.document_service import NativeDocumentService
+39 | | from app.modules.viz.documents import VizDocumentRepository
+40 | | from app.modules.workspaces.metadata_sharing import WorkspaceSharingRepository
+41 | | from tests.integration.test_metadata_bootstrap import environment  # noqa: F401
+42 | | from tests.integration.test_metadata_workspaces import session
+43 | | from tests.unit.test_native_viz_bindings import chart, dataset
+   | |______________________________________________________________^
+44 |
+45 |   pytestmark = pytest.mark.metadata_pg
+   |
+help: Organize imports
+
+Found 1 error.
+[*] 1 fixable with the `--fix` option.

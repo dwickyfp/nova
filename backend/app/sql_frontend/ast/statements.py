@@ -17,6 +17,16 @@ class NativeStatement(Statement):
 
 
 @dataclass(frozen=True, slots=True)
+class ParameterizedQueryStatement(NativeStatement):
+    """A read query with declared value inputs supplied outside its SQL text."""
+
+
+@dataclass(frozen=True, slots=True)
+class QuerySchemaStatement(NativeStatement):
+    """Engine-authorized output metadata without physical row execution."""
+
+
+@dataclass(frozen=True, slots=True)
 class StreamStatement(Statement):
     operation: str
     name: tuple[str, ...] | None = None

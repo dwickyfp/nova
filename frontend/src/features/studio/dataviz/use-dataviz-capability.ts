@@ -7,29 +7,72 @@ const MAX_BATCH = 50;
 
 type Pending = {
   locator: DatavizLocator;
+  securityEpoch: number;
+  settled: boolean;
   resolve: (value: DatavizCapability | null) => void;
+  dispose: () => void;
+  cancelBatch?: () => void;
 };
 
 const queue: Pending[] = [];
 let timer: ReturnType<typeof setTimeout> | null = null;
 
+function finish(item: Pending, value: DatavizCapability | null) {
+  if (item.settled) return;
+  item.settled = true;
+  item.dispose();
+  item.resolve(value);
+}
+
 function flush() {
   timer = null;
-  const batch = queue.splice(0, MAX_BATCH);
+  const epoch = useAuthStore.getState().securityEpoch;
+  const batch = queue.splice(0, MAX_BATCH).filter((item) => {
+    if (item.securityEpoch === epoch) return true;
+    finish(item, null);
+    return false;
+  });
   if (queue.length) timer = setTimeout(flush, 0);
   if (!batch.length) return;
-  datavizApi.check(batch.map((item) => item.locator)).then(
+  const controller = new AbortController();
+  for (const item of batch) {
+    item.cancelBatch = () => {
+      if (batch.every((pending) => pending.settled)) controller.abort();
+    };
+  }
+  datavizApi.check(batch.map((item) => item.locator), controller.signal).then(
     // A missing or malformed answer is unknown, and unknown never shows an action.
-    (body) => batch.forEach((item, index) => item.resolve(body?.results?.[index] ?? null)),
+    (body) => batch.forEach((item, index) => finish(item,
+      useAuthStore.getState().securityEpoch === epoch ? body?.results?.[index] ?? null : null,
+    )),
     // An unavailable check never shows an action: unknown is not supported.
-    () => batch.forEach((item) => item.resolve(null)),
+    () => batch.forEach((item) => finish(item, null)),
   );
 }
 
 /** One server capability answer; results rendered together share one request. */
-function load(locator: DatavizLocator): Promise<DatavizCapability | null> {
+function load(
+  locator: DatavizLocator, signal: AbortSignal, securityEpoch: number,
+): Promise<DatavizCapability | null> {
+  if (signal.aborted || useAuthStore.getState().securityEpoch !== securityEpoch)
+    return Promise.resolve(null);
   return new Promise((resolve) => {
-    queue.push({ locator, resolve });
+    const item: Pending = {
+      locator, securityEpoch, settled: false, resolve,
+      dispose: () => signal.removeEventListener("abort", cancel),
+    };
+    function cancel() {
+      const index = queue.indexOf(item);
+      if (index !== -1) queue.splice(index, 1);
+      finish(item, null);
+      item.cancelBatch?.();
+      if (!queue.length && timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    }
+    signal.addEventListener("abort", cancel, { once: true });
+    queue.push(item);
     if (!timer) timer = setTimeout(flush, BATCH_MS);
   });
 }
@@ -44,7 +87,7 @@ export function useDatavizCapability(locator: DatavizLocator | null) {
   const securityEpoch = useAuthStore((state) => state.securityEpoch);
   const query = useQuery({
     queryKey: ["dataviz", "capability", securityEpoch, locator ? locatorKey(locator) : null],
-    queryFn: () => load(locator as DatavizLocator),
+    queryFn: ({ signal }) => load(locator as DatavizLocator, signal, securityEpoch),
     enabled: locator !== null,
     staleTime: 5 * 60_000,
     gcTime: 10 * 60_000,

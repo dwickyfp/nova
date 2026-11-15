@@ -313,6 +313,16 @@ def default_semantics() -> StatementSemanticsRegistry:
     )
     registry.register(ast.NativeStatement, native)
     registry.register(ast.StageAwareStatement, native)
+    from app.sql_frontend.read_queries import validate_parameter_query, validate_query_schema
+
+    registry.register(
+        ast.ParameterizedQueryStatement,
+        StatementSemantics(_native_effects, validator=validate_parameter_query),
+    )
+    registry.register(
+        ast.QuerySchemaStatement,
+        StatementSemantics(_native_effects, validator=validate_query_schema),
+    )
     registry.register(
         ast.SecurityStatement,
         StatementSemantics(

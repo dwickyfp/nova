@@ -1,0 +1,6 @@
+{
+  "snapshot_files_verified": 41,
+  "snapshot_count_digest_permissions": "passed",
+  "sbom_component_counts_and_digests": "passed",
+  "scope": "Stored read-only inventory snapshots; no source mutation or migration equivalence check."
+}

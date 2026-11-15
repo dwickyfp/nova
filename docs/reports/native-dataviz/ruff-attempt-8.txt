@@ -1,0 +1,12 @@
+E501 Line too long (101 > 100)
+   --> tests/integration/test_metadata_viz.py:371:101
+    |
+369 |         await repo.replace(source.model_copy(update={"title": "New dataset draft"}),
+370 |                            operation_id=uuid4(), expected_revision=1)
+371 |     refs = await viz.inspect("SELECT resource_id,revision FROM nova_meta.viz_publication_references")
+    |                                                                                                     ^
+372 |     assert {(row["resource_id"], row["revision"]) for row in refs} == {
+373 |         (source.dataset_id, 1), (figure.chart_id, 1),
+    |
+
+Found 1 error.

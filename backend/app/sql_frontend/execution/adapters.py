@@ -556,6 +556,9 @@ class FeatureAdapters:
         """
         from app.modules.streams.sql import stream_sql
 
+        supplied = context.parameters.specs if context.parameters is not None else ()
+        if plan.parameter_specs != supplied:
+            raise SemanticError("Execution parameters do not match the query plan")
         handled = await stream_sql.intercept(self, plan, context)
         if handled is not None:
             return handled
@@ -587,6 +590,8 @@ class FeatureAdapters:
         if parsed.stage_refs and not plan.stage_aware:
             raise ValueError("Stage references require a stage lowering rule")
         if sql_override is not None:
+            if context.parameters is not None:
+                raise SemanticError("Bound queries do not support stream relation expansion")
             if parsed.stage_refs:
                 raise ValueError("A statement cannot read a stream and a stage together")
             return await self._run_on_engine(
@@ -752,6 +757,7 @@ class FeatureAdapters:
                 connected=connection,
                 **({"session_prepared": True} if context.engine_session_prepared else {}),
                 **({"row_sink": row_sink} if row_sink is not None else {}),
+                **({"parameters": context.parameters} if context.parameters is not None else {}),
             )
 
             if browse:

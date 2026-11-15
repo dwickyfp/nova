@@ -1,0 +1,18 @@
+{
+  "recorded_at": "2026-11-14T15:55:21.307994+00:00",
+  "result": "FOCUSED_PASS_FULL_GATE_PENDING",
+  "failed_full_attempt": "frontend-coverage-attempt-21.txt",
+  "focused_command": [
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "--coverage",
+    "--browser.headless",
+    "src/features/agents/agent-detail/version-history.test.tsx",
+    "src/features/workspaces/notebook/notebook.test.tsx"
+  ],
+  "focused_result": "47 passed; unchanged source",
+  "finding": "Full suite encountered a resource-binding click timeout and asynchronous Monaco tokenization assertion; focused rerun passes. Resource contention/timing is a hypothesis, not a confirmed root cause.",
+  "next": "Repeat full coverage after other gates/fixtures complete without weakening assertions or excluding files."
+}

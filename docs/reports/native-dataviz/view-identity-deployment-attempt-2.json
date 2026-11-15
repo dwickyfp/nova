@@ -1,0 +1,9 @@
+{
+  "result": "INCOMPLETE",
+  "compose_returncode": 0,
+  "observed_container_id": "1ed9276615b20cdbf33b77cbcf430323fae82f681524c5c1d7836aa9392d186d",
+  "observed_name": "/08209f78ecc6_nova-starrocks-fe",
+  "reason": "Compose resumed its replacement container with the temporary name; health lookup by expected name failed",
+  "old_container_exit_code": 137,
+  "old_oom_killed": false
+}

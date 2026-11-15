@@ -1,0 +1,7 @@
+{
+  "scope": "Caller-owned synthetic SELECT, two text rows, no stored analytical data changed",
+  "expected": "NovaException status 422",
+  "result": "FAIL",
+  "error_type": "AttributeError",
+  "status_code": null
+}

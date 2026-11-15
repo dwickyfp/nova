@@ -1,0 +1,10 @@
+ ERR_PNPM_UNEXPECTED_STORE  Unexpected store location
+
+The dependencies at "/Users/dwickyferiansyahputra/Public/Research/nova/frontend/node_modules" are currently linked from the store at "/Users/dwickyferiansyahputra/Library/pnpm/store/v11".
+
+pnpm now wants to use the store at "/Users/dwickyferiansyahputra/Library/pnpm/store/v10" to link dependencies.
+
+If you want to use the new store location, reinstall your dependencies with "pnpm install".
+
+You may change the global store location by running "pnpm config set store-dir <dir> --global".
+(This error may happen if the node_modules was installed with a different major version of pnpm)

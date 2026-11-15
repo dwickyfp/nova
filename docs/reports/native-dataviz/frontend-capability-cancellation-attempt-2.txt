@@ -1,0 +1,10 @@
+$ vitest run --browser.headless src/features/studio/dataviz/use-dataviz-capability.test.tsx src/features/studio/studio-chat.integration.test.tsx --browser.fileParallelism=false --no-file-parallelism --maxWorkers=1
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+
+
+ Test Files  2 passed (2)
+      Tests  34 passed (34)
+   Start at  23:05:36
+   Duration  12.35s (transform 0ms, setup 0ms, import 2.47s, tests 8.37s, environment 0ms)
+

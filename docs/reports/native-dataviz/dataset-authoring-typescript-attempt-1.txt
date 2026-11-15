@@ -1,0 +1,27 @@
+src/features/agents/agent-builder-page.tsx(48,68): error TS2322: Type '(signal?: AbortSignal) => Promise<SemanticView[]>' is not assignable to type 'unique symbol | QueryFunction<SemanticView[], string[], never> | undefined'.
+  Type '(signal?: AbortSignal) => Promise<SemanticView[]>' is not assignable to type 'QueryFunction<SemanticView[], string[], never>'.
+    Types of parameters 'signal' and 'context' are incompatible.
+      Type '{ client: QueryClient; queryKey: string[]; signal: AbortSignal; meta: Record<string, unknown> | undefined; pageParam?: unknown; direction?: unknown; }' is missing the following properties from type 'AbortSignal': aborted, onabort, reason, throwIfAborted, and 3 more.
+src/features/agents/agent-detail/configuration-tab.tsx(325,5): error TS2769: No overload matches this call.
+  Overload 1 of 3, '(options: DefinedInitialDataOptions<unknown, Error, unknown, string[]>, queryClient?: QueryClient | undefined): DefinedUseQueryResult<unknown, Error>', gave the following error.
+    Type '(signal?: AbortSignal) => Promise<SemanticView[]>' is not assignable to type 'QueryFunction<unknown, string[]>'.
+      Types of parameters 'signal' and 'context' are incompatible.
+        Type '{ client: QueryClient; queryKey: string[]; signal: AbortSignal; meta: Record<string, unknown> | undefined; pageParam?: unknown; direction?: unknown; }' is missing the following properties from type 'AbortSignal': aborted, onabort, reason, throwIfAborted, and 3 more.
+  Overload 2 of 3, '(options: UndefinedInitialDataOptions<SemanticView[], Error, SemanticView[], string[]>, queryClient?: QueryClient | undefined): UseQueryResult<...>', gave the following error.
+    Type '(signal?: AbortSignal) => Promise<SemanticView[]>' is not assignable to type 'unique symbol | QueryFunction<SemanticView[], string[], never> | undefined'.
+      Type '(signal?: AbortSignal) => Promise<SemanticView[]>' is not assignable to type 'QueryFunction<SemanticView[], string[], never>'.
+        Types of parameters 'signal' and 'context' are incompatible.
+          Type '{ client: QueryClient; queryKey: string[]; signal: AbortSignal; meta: Record<string, unknown> | undefined; pageParam?: unknown; direction?: unknown; }' is missing the following properties from type 'AbortSignal': aborted, onabort, reason, throwIfAborted, and 3 more.
+  Overload 3 of 3, '(options: UseQueryOptions<SemanticView[], Error, SemanticView[], string[]>, queryClient?: QueryClient | undefined): UseQueryResult<...>', gave the following error.
+    Type '(signal?: AbortSignal) => Promise<SemanticView[]>' is not assignable to type 'unique symbol | QueryFunction<SemanticView[], string[], never> | undefined'.
+      Type '(signal?: AbortSignal) => Promise<SemanticView[]>' is not assignable to type 'QueryFunction<SemanticView[], string[], never>'.
+        Types of parameters 'signal' and 'context' are incompatible.
+          Type '{ client: QueryClient; queryKey: string[]; signal: AbortSignal; meta: Record<string, unknown> | undefined; pageParam?: unknown; direction?: unknown; }' is missing the following properties from type 'AbortSignal': aborted, onabort, reason, throwIfAborted, and 3 more.
+src/features/agents/agent-detail/configuration-tab.tsx(418,42): error TS2339: Property 'filter' does not exist on type '{}'.
+src/features/agents/agent-detail/configuration-tab.tsx(418,50): error TS7006: Parameter 'view' implicitly has an 'any' type.
+src/features/agents/agent-detail/configuration-tab.tsx(434,45): error TS2339: Property 'find' does not exist on type '{}'.
+src/features/agents/agent-detail/configuration-tab.tsx(435,18): error TS7006: Parameter 'item' implicitly has an 'any' type.
+src/features/intelligence/semantic-views-api.ts(218,80): error TS2353: Object literal may only specify known properties, and 'signal' does not exist in type 'AbortSignal'.
+src/features/intelligence/semantic-views-api.ts(219,90): error TS2353: Object literal may only specify known properties, and 'signal' does not exist in type 'AbortSignal'.
+src/features/native-dataviz/dataset-create.tsx(85,68): error TS2322: Type 'Selection' is not assignable to type 'ObjectSelection'.
+  Type 'SemanticSelection' is missing the following properties from type 'ObjectSelection': "database", "object_name"

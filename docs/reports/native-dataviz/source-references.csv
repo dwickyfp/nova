@@ -1,0 +1,293 @@
+path,line,reference
+dev.sh,371,"  SUPERSET_SERVICE_TOKEN_VALUE=""$(container_env_value nova-superset NOVA_SUPERSET_SERVICE_TOKEN || true)"""
+docker/docker-compose.split.yml,71,  # only through the gateway's /bi/ route.
+.github/workflows/ci.yml,613,        run: docker build -f superset/Dockerfile -t nova-superset:ci .
+.github/workflows/ci.yml,620,          docker build -f superset/Dockerfile --target web -t nova-superset-web:ci .
+.github/workflows/ci.yml,621,          docker run --rm --entrypoint sh nova-superset-web:ci -c \
+.github/workflows/ci.yml,624,            --entrypoint /app/.venv/bin/python nova-superset-web:ci \
+.github/workflows/ci.yml,635,          --entrypoint python nova-superset:ci
+docker/docker-compose-engine.yml,427,    container_name: nova-superset-db
+docker/docker-compose-engine.yml,451,    image: nova-superset:local
+docker/docker-compose-engine.yml,452,    container_name: nova-superset-init
+docker/docker-compose-engine.yml,480,    image: nova-superset:local
+docker/docker-compose-engine.yml,481,    container_name: nova-superset
+docker/docker-compose-engine.yml,492,"      test: [""CMD"", ""python"", ""-c"", ""import urllib.request; urllib.request.urlopen('http://127.0.0.1:8088/bi/health', timeout=3)""]"
+docker/docker-compose-engine.yml,511,    image: nova-superset-jobs:local
+docker/docker-compose-engine.yml,512,    container_name: nova-superset-worker
+docker/docker-compose-engine.yml,535,    image: nova-superset:local
+docker/docker-compose-engine.yml,536,    container_name: nova-superset-beat
+docker/gateway/routes.conf,43,location ^~ /bi/ {
+superset/nova_superset/app.py,87,"    the server and again in the browser, which requests ``/bi/bi/static/...``"
+superset/nova_superset/app.py,88,    and links to ``/bi/bi``. Keep the server-side values unprefixed so the
+superset/nova_superset/app.py,99,        # The logo's link target gets the same double prefix (``/bi/bi``).
+frontend/src/routes/bi-launch.tsx,3,import { BiLaunch } from '@/features/bi/bi-launch'
+frontend/src/routes/bi-launch.tsx,8, * Entry point into Superset (served at `/bi/`). Superset sends signed-out
+superset/tests/test_nova_superset.py,4,        --entrypoint python nova-superset:local -m unittest discover -s /app/nova-tests -v
+superset/tests/test_nova_superset.py,118,"            ""token"": {""brandLogoUrl"": ""/bi/static/logo.png"", ""brandLogoHref"": ""/bi""}"
+superset/tests/test_nova_superset.py,120,"        flask_app.config[""THEME_DARK""] = {""token"": {""brandLogoHref"": ""/bi/dashboard/list/""}}"
+superset/tests/test_nova_superset.py,198,"                security.launch_url(""/bi/dashboard/1/""), ""/bi-launch?next=/bi/dashboard/1/"""
+superset/tests/test_nova_superset.py,200,"            self.assertEqual(security.launch_url(""//evil.example/""), ""/bi-launch?next=/bi/"")"
+superset/tests/test_nova_superset.py,201,"            self.assertEqual(security.launch_url(""https://evil.example/""), ""/bi-launch?next=/bi/"")"
+superset/tests/test_nova_superset.py,202,"            self.assertEqual(security.launch_url(""/settings""), ""/bi-launch?next=/bi/"")"
+superset/superset_config.py,288,"WEBDRIVER_BASEURL = os.environ.get(""SUPERSET_WEBDRIVER_BASEURL"", ""http://superset:8088/bi/"")"
+superset/superset_config.py,289,"WEBDRIVER_BASEURL_USER_FRIENDLY = os.environ.get(""NOVA_PUBLIC_BI_URL"", ""http://localhost:5173/bi/"")"
+frontend/src/routes/studio.tsx,26,  // The Superset page shown in Dataviz; only `/bi/` paths are kept.
+frontend/src/routes/studio.tsx,30,    .refine((value) => value.startsWith('/bi/') && !value.startsWith('//'))
+superset/bench/load.py,46,"from app.modules.superset.charts import ChartPlan, Measure, to_superset  # noqa: E402"
+superset/bench/resources.py,33,"CONTAINERS = (""nova-superset"", ""nova-superset-worker"", ""nova-superset-beat"", ""nova-superset-db"")"
+superset/bench/resources.py,34,"IMAGES = (""nova-superset:local"", ""apache/superset:6.1.0"", ""postgres:16.10-alpine"", ""redis:7-alpine"")"
+superset/bench/resources.py,98,"    for extra in (""nova-superset-jobs:local"",):"
+superset/bench/coldstart.py,7,Each run restarts the ``nova-superset`` container and records three moments
+superset/bench/coldstart.py,78,"    parser.add_argument(""--container"", default=""nova-superset"")"
+superset/bench/lean_smoke.py,28,"    ""nova-superset"": ""running"","
+superset/bench/lean_smoke.py,29,"    ""nova-superset-worker"": ""running"","
+superset/bench/lean_smoke.py,30,"    ""nova-superset-beat"": ""running"","
+superset/bench/lean_smoke.py,31,"    ""nova-superset-db"": ""running"","
+superset/bench/lean_smoke.py,48,"    init = _sh(""docker"", ""inspect"", ""nova-superset-init"", ""--format"", ""{{.State.Status}} {{.State.ExitCode}}"")"
+superset/bench/lean_smoke.py,50,"    web_browser = _sh(""docker"", ""exec"", ""nova-superset"", ""sh"", ""-c"", ""test -d /app/.playwright && echo yes || echo no"")"
+superset/bench/lean_smoke.py,52,"    worker_browser = _sh(""docker"", ""exec"", ""nova-superset-worker"", ""sh"", ""-c"", ""test -d /app/.playwright && echo yes || echo no"")"
+superset/bench/lean_smoke.py,54,"    ping = _sh(""docker"", ""exec"", ""nova-superset-worker"", ""sh"", ""-c"","
+superset/bench/lean_smoke.py,57,"    queue = _sh(""docker"", ""exec"", ""nova-superset-worker"", ""/app/.venv/bin/python"", ""-c"","
+superset/bench/lean_smoke.py,65,"        check(""GET /bi/health"", health.status_code == 200, status=health.status_code)"
+frontend/src/routes/_authenticated/analytics.tsx,4,import { BiWorkspace } from '@/features/bi/bi-workspace'
+backend/app/modules/backup/bi_metadata.py,52,"    return f""backups/bi/{repository}/{label}.dump"""
+backend/app/modules/superset/metadata_repository.py,285,"        bi_dataset_id: int | None = None,"
+backend/app/modules/superset/metadata_repository.py,292,"            ""bi_dataset_id,owner_name,version,status,message) VALUES (%s,%s,%s,%s,%s,%s,%s) """
+backend/app/modules/superset/metadata_repository.py,293,"            ""ON CONFLICT (view_id,dataset_name) DO UPDATE SET bi_dataset_id=EXCLUDED.bi_dataset_id,"""
+backend/app/modules/superset/metadata_repository.py,299,"                bi_dataset_id,"
+backend/app/modules/superset/metadata_repository.py,333,"            ""WHERE m.bi_dataset_id=ANY(%s)"","
+backend/app/modules/superset/dashboard_context.py,130,"        int(row[""bi_dataset_id""]): {"
+backend/app/modules/superset/dashboard_context.py,137,"        if row[""bi_dataset_id""] is not None"
+backend/app/modules/superset/dashboard_context.py,416,"        ""bi_view_path"": f""/bi/superset/dashboard/{dashboard.get('id')}/"","
+backend/app/modules/superset/artifacts.py,126,"        bi_object_id=chart_id,"
+backend/app/modules/superset/artifacts.py,127,"        bi_dataset_id=dataset_id,"
+backend/app/modules/superset/artifacts.py,231,"        if artifact is None or artifact[""artifact_type""] != ""chart"" or not artifact[""bi_object_id""]:"
+backend/app/modules/superset/artifacts.py,258,"        bi_object_id=dashboard_id,"
+backend/app/modules/superset/artifacts.py,259,"        bi_dataset_id=None,"
+backend/app/modules/superset/artifacts.py,275,"    placed = [(int(chart[""bi_object_id""]), str(chart[""title""])) for chart in chart_artifacts]"
+backend/app/modules/superset/artifacts.py,314,"    dataset_id = int(artifact[""bi_dataset_id""])"
+backend/app/modules/superset/artifacts.py,315,"    chart_id = int(artifact[""bi_object_id""])"
+backend/app/modules/superset/artifacts.py,366,"    kind, object_id = artifact.get(""bi_kind""), artifact.get(""bi_object_id"")"
+backend/app/modules/superset/artifacts.py,372,"            if artifact.get(""bi_dataset_id""):"
+backend/app/modules/superset/artifacts.py,373,"                await _delete_quietly(bi, f""/api/v1/dataset/{artifact['bi_dataset_id']}"")"
+backend/app/modules/superset/artifacts.py,449,"    chart_id = int(artifact[""bi_object_id""])"
+backend/app/modules/superset/artifacts.py,450,"    saved_dataset = int(artifact[""bi_dataset_id""])"
+backend/app/modules/superset/artifacts.py,485,"    return f""/bi/explore/?form_data_key={key}&standalone=1"""
+backend/app/main.py,70,from app.modules.superset.dataviz_router import router as dataviz_router
+backend/app/main.py,71,from app.modules.superset.router import internal_router as superset_internal_router
+backend/app/main.py,72,from app.modules.superset.router import router as superset_router
+backend/app/modules/superset/publication.py,139,"    return f""/bi/superset/dashboard/{int(dashboard_id or 0)}/"""
+backend/app/modules/superset/publication.py,1021,"            bi_object_id=int(op.chart_id),"
+backend/app/modules/superset/publication.py,1022,"            bi_dataset_id=op.dataset_id,"
+backend/app/modules/superset/publication.py,1038,"            bi_object_id=int(op.dashboard_id),"
+backend/app/modules/superset/publication.py,1039,"            bi_dataset_id=None,"
+backend/app/modules/superset/dataviz_router.py,4,:mod:`app.modules.superset.dataviz` and :mod:`app.modules.superset.publication`
+frontend/src/features/bi/dashboard-filters.ts,46,"      const response = await fetch(`/bi/api/v1/dashboard/${dashboardId}`, { signal })"
+frontend/src/features/bi/dashboard-filters.test.ts,15,"    expect(withoutFilterBar(""/bi/superset/dashboard/7/?standalone=2"")).toBe("
+frontend/src/features/bi/dashboard-filters.test.ts,16,"      ""/bi/superset/dashboard/7/?standalone=2&show_filters=0"","
+frontend/src/features/bi/dashboard-filters.test.ts,18,"    expect(withoutFilterBar(""/bi/superset/dashboard/7/?standalone=2&show_filters=1"")).toBe("
+frontend/src/features/bi/dashboard-filters.test.ts,19,"      ""/bi/superset/dashboard/7/?standalone=2&show_filters=0"","
+frontend/src/features/bi/bi-frame.test.tsx,29,"    mocks.post.mockResolvedValue({ path: ""/bi/"", superset_role: ""NovaAuthor"" });"
+frontend/src/features/bi/bi-frame.test.tsx,32,"        <BiFrame path=""/bi/explore/?slice_id=21&standalone=1"" title=""Chart Revenue"" />"
+frontend/src/features/bi/bi-frame.test.tsx,38,"      .toHaveAttribute(""src"", ""/bi/explore/?slice_id=21&standalone=1"");"
+frontend/src/features/bi/bi-frame.test.tsx,43,"    mocks.post.mockResolvedValue({ path: ""/bi/"", superset_role: ""NovaAuthor"" });"
+frontend/src/features/bi/bi-frame.test.tsx,46,"        <BiFrame path=""/bi/"" title=""BI view"" />"
+frontend/src/features/bi/bi-frame.test.tsx,50,"    await expect.element(frame).toHaveAttribute(""src"", ""/bi/"");"
+frontend/src/features/bi/bi-frame.test.tsx,75,"    mocks.post.mockResolvedValue({ path: ""/bi/"", superset_role: ""NovaAuthor"" });"
+frontend/src/features/bi/bi-frame.test.tsx,79,"        <BiFrame path=""/bi/explore/?slice_id=1&standalone=1"" version=""v1"" title=""Chart"" />"
+frontend/src/features/bi/bi-frame.test.tsx,83,"    await expect.element(first).toHaveAttribute(""src"", ""/bi/explore/?slice_id=1&standalone=1"");"
+frontend/src/features/bi/bi-frame.test.tsx,89,"        <BiFrame path=""/bi/explore/?form_data_key=K1&standalone=1"" version=""v1"" title=""Chart"" />"
+frontend/src/features/bi/bi-frame.test.tsx,105,"    expect(frames()[0].getAttribute(""src"")).toBe(""/bi/explore/?form_data_key=K1&standalone=1"");"
+frontend/src/features/bi/bi-frame.test.tsx,111,"    mocks.post.mockResolvedValue({ path: ""/bi/"", superset_role: ""NovaViewer"" });"
+frontend/src/features/bi/bi-frame.test.tsx,114,"        <BiFrame path=""/bi/explore/?slice_id=1&standalone=1"" title=""Chart A"" />"
+frontend/src/features/bi/bi-frame.test.tsx,115,"        <BiFrame path=""/bi/explore/?slice_id=2&standalone=1"" title=""Chart B"" />"
+frontend/src/features/bi/bi-frame.test.tsx,124,"    mocks.post.mockResolvedValue({ path: ""/bi/"", superset_role: ""NovaAuthor"" });"
+frontend/src/features/bi/bi-frame.test.tsx,128,"        <BiFrame path=""/bi/explore/?slice_id=1&standalone=1"" title=""Chart"" />"
+frontend/src/features/bi/bi-frame.test.tsx,129,"        <BiFrame path=""/bi/explore/?slice_id=1&uiConfig=4"" title=""Editor"" holdsEdits />"
+frontend/src/features/bi/bi-frame.test.tsx,140,"        <BiFrame path=""/bi/explore/?slice_id=1&standalone=1"" title=""Chart"" />"
+frontend/src/features/bi/bi-frame.test.tsx,141,"        <BiFrame path=""/bi/explore/?slice_id=1&uiConfig=4"" title=""Editor"" holdsEdits />"
+frontend/src/features/bi/bi-frame.test.tsx,152,"    mocks.post.mockResolvedValue({ path: ""/bi/"", superset_role: ""NovaAuthor"" });"
+frontend/src/features/bi/bi-frame.test.tsx,156,"        <BiFrame path=""/bi/"" title=""BI view"" />"
+frontend/src/features/bi/bi-frame.test.tsx,164,"    mocks.post.mockResolvedValue({ path: ""/bi/"", superset_role: ""NovaViewer"" });"
+frontend/src/features/bi/bi-frame.test.tsx,170,"    await expect.element(page.getByTitle(""BI view"")).toHaveAttribute(""src"", ""/bi/"");"
+backend/app/modules/superset/capability.py,119,"            response = await client.get(f""{settings.SUPERSET_INTERNAL_URL.rstrip('/')}/bi/health"")"
+frontend/src/features/bi/bi-launch.test.tsx,17,"    expect(safeBiTarget(""/bi/superset/dashboard/7/?native_filters=x"")).toBe("
+frontend/src/features/bi/bi-launch.test.tsx,18,"      ""/bi/superset/dashboard/7/?native_filters=x"","
+frontend/src/features/bi/bi-launch.test.tsx,22,"  it.each([undefined, """", ""/settings"", ""//evil.example/bi/"", ""https://evil.example/bi/""])("
+frontend/src/features/bi/bi-launch.test.tsx,25,"      expect(safeBiTarget(next)).toBe(""/bi/"");"
+frontend/src/features/bi/bi-launch.test.tsx,34,"    mocks.post.mockResolvedValue({ path: ""/bi/"", superset_role: ""NovaAuthor"" });"
+frontend/src/features/bi/bi-launch.test.tsx,36,"    render(<BiLaunch next=""/bi/sqllab/"" navigate={navigate} />);"
+frontend/src/features/bi/bi-launch.test.tsx,38,"    await expect.poll(() => navigate.mock.calls).toEqual([[""/bi/sqllab/""]]);"
+frontend/src/features/bi/bi-launch.test.tsx,45,"      .mockResolvedValueOnce({ path: ""/bi/"", superset_role: ""NovaViewer"" });"
+frontend/src/features/bi/bi-launch.test.tsx,52,"    await expect.poll(() => navigate.mock.calls).toEqual([[""/bi/""]]);"
+frontend/src/features/bi/bi-workspace.tsx,15,    return path.startsWith('/bi/') ? path : null
+frontend/src/features/bi/bi-workspace.test.tsx,26,"    mocks.post.mockResolvedValue({ path: ""/bi/"", superset_role: ""NovaAuthor"" });"
+frontend/src/features/bi/bi-workspace.test.tsx,27,"    render(withQueries(<BiWorkspace path=""/bi/sqllab/"" onPathChange={vi.fn()} />));"
+frontend/src/features/bi/bi-workspace.test.tsx,31,"    await expect.element(frame).toHaveAttribute(""src"", ""/bi/sqllab/"");"
+frontend/src/features/bi/bi-workspace.test.tsx,39,"    mocks.post.mockResolvedValue({ path: ""/bi/"", superset_role: ""NovaViewer"" });"
+frontend/src/features/bi/bi-workspace.test.tsx,42,"    await expect.element(page.getByTitle(""BI workspace"")).toHaveAttribute(""src"", ""/bi/"");"
+frontend/src/features/bi/bi-workspace.test.tsx,48,"      .mockResolvedValueOnce({ path: ""/bi/"", superset_role: ""NovaViewer"" });"
+backend/app/modules/superset/tokens.py,22,  (:mod:`app.modules.superset.delegation`). Its session id is
+backend/app/modules/superset/tokens.py,66,    authorized the delegation (:func:`app.modules.superset.delegation.authorize`).
+frontend/src/features/bi/bi-target.ts,1,const BI_ROOT = '/bi/'
+backend/app/modules/superset/access.py,16,from app.modules.superset.metadata_repository import superset_metadata
+backend/app/modules/superset/conversion.py,81,"            if chart is None or not chart.get(""bi_object_id""):"
+backend/app/modules/superset/conversion.py,194,"        bi_object_id=chart_id,"
+backend/app/modules/superset/conversion.py,195,"        bi_dataset_id=dataset_id,"
+backend/app/modules/superset/conversion.py,234,"            bi_object_id=dashboard_id,"
+backend/app/modules/superset/conversion.py,235,"            bi_dataset_id=None,"
+backend/app/modules/superset/conversion.py,246,"            bi_object_id=dashboard_id,"
+backend/app/modules/superset/conversion.py,247,"            bi_dataset_id=None,"
+backend/app/modules/superset/conversion.py,281,"        key: {**row, ""bi_object_id"": row[""bi_object_id""] or -1} for key, row in owned.items()"
+backend/app/modules/superset/semantic.py,243,"            ""bi_dataset_id"": row[""bi_dataset_id""],"
+backend/app/modules/superset/semantic.py,249,"                f""/bi/explore/?datasource_type=table&datasource_id={int(row['bi_dataset_id'])}"""
+backend/app/modules/superset/semantic.py,250,"                if row[""bi_dataset_id""]"
+backend/app/modules/superset/semantic.py,341,"                    if name not in wanted and item[""bi_dataset_id""]:"
+backend/app/modules/superset/semantic.py,342,"                        await _delete_dataset(bi, item[""bi_dataset_id""])"
+backend/app/modules/superset/semantic.py,352,"                    bi_dataset_id=(previous.get(plan.fact) or {}).get(""bi_dataset_id""),"
+backend/app/modules/superset/semantic.py,378,"    dataset_id = (previous or {}).get(""bi_dataset_id"")"
+backend/app/modules/superset/semantic.py,397,"            bi_dataset_id=dataset_id, status=""FAILED"", message=exc.message,"
+backend/app/modules/superset/semantic.py,403,"        bi_dataset_id=dataset_id, status=""SYNCED"","
+backend/app/modules/access_control/data_tokens.py,14,* ``bi`` — Superset's per-session token (``app.modules.superset.tokens``);
+backend/app/modules/access_control/data_tokens.py,46,#: :mod:`app.modules.superset.delegation`.
+backend/app/modules/intelligence/semantic_views.py,940,        from app.modules.superset.semantic import sync_semantic_view
+backend/app/modules/intelligence/semantic_views.py,958,        from app.modules.superset.semantic import synced_datasets
+backend/app/modules/intelligence/semantic_views.py,1057,        from app.modules.superset.semantic import sync_semantic_view
+backend/app/modules/agents/metadata_repository.py,76,"    ""title"", ""sql_text"", ""database_name"", ""schema_name"", ""bi_kind"", ""bi_object_id"","
+backend/app/modules/agents/metadata_repository.py,77,"    ""bi_dataset_id"","
+backend/app/modules/agents/metadata_repository.py,1574,"            ""bi_object_id,bi_dataset_id) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *"","
+backend/app/modules/agents/metadata_repository.py,1586,"                data.get(""bi_object_id""),"
+backend/app/modules/agents/metadata_repository.py,1587,"                data.get(""bi_dataset_id""),"
+backend/app/modules/agents/studio_router.py,307,    from app.modules.superset.client import BiError
+backend/app/modules/agents/studio_router.py,320,"    from app.modules.superset.charts import plan_from_vega, plan_from_worksheet, with_sql_order"
+backend/app/modules/agents/studio_router.py,347,    from app.modules.superset import artifacts as bi_artifacts
+backend/app/modules/agents/studio_router.py,348,    from app.modules.superset.client import BiError
+backend/app/modules/agents/studio_router.py,393,    from app.modules.superset.conversion import legacy_report
+backend/app/modules/agents/studio_router.py,414,    from app.modules.superset.client import BiError
+backend/app/modules/agents/studio_router.py,415,    from app.modules.superset.conversion import convert_owner
+backend/app/modules/agents/studio_router.py,567,    from app.modules.superset import artifacts as bi_artifacts
+backend/app/modules/agents/studio_router.py,568,    from app.modules.superset.client import BiError
+backend/app/modules/agents/studio_router.py,590,        from app.modules.superset.artifacts import discard_chart_drafts
+backend/app/modules/agents/studio_router.py,611,    from app.modules.superset import artifacts as bi_artifacts
+backend/app/modules/agents/studio_router.py,612,    from app.modules.superset.client import BiError
+backend/app/modules/agents/studio_router.py,647,    from app.modules.superset.artifacts import delete_bi_objects
+backend/app/modules/agents/studio_schemas.py,107,    bi_object_id: int | None = None
+backend/app/modules/agents/router.py,2186,        from app.modules.superset.dataviz import pending_change
+backend/app/modules/agents/router.py,2200,            from app.modules.superset.client import BiError
+backend/app/modules/agents/router.py,2201,"            from app.modules.superset.dashboard_context import brief, dashboard_context"
+backend/app/modules/agents/artifact_repository.py,9,"and ``bi_object_id`` name its Superset chart or dashboard, and"
+backend/app/modules/agents/artifact_repository.py,10,``bi_dataset_id`` the virtual dataset over ``sql_text``. Superset holds the
+backend/app/modules/agents/artifact_repository.py,13,Artifacts saved before BI are *legacy*: ``bi_object_id`` is empty and the
+backend/app/modules/agents/artifact_repository.py,16,artifact is read-only until :mod:`app.modules.superset.conversion` converts it
+backend/app/modules/agents/artifact_repository.py,48,"    bi_object_id BIGINT,"
+backend/app/modules/agents/artifact_repository.py,49,"    bi_dataset_id BIGINT,"
+backend/app/modules/agents/artifact_repository.py,62,"    ""bi_kind, bi_object_id, bi_dataset_id"""
+backend/app/modules/agents/artifact_repository.py,70,"    (""bi_object_id"", ""BIGINT""),"
+backend/app/modules/agents/artifact_repository.py,71,"    (""bi_dataset_id"", ""BIGINT""),"
+backend/app/modules/agents/artifact_repository.py,85,"            f""/bi/explore/?slice_id={object_id}&standalone=1"","
+backend/app/modules/agents/artifact_repository.py,86,"            f""/bi/explore/?slice_id={object_id}&uiConfig=4"","
+backend/app/modules/agents/artifact_repository.py,90,"            f""/bi/superset/dashboard/{object_id}/?standalone=2"","
+backend/app/modules/agents/artifact_repository.py,91,"            f""/bi/superset/dashboard/{object_id}/?edit=true&standalone=1"","
+backend/app/modules/agents/artifact_repository.py,166,"        bi_object_id,"
+backend/app/modules/agents/artifact_repository.py,167,"        bi_dataset_id,"
+backend/app/modules/agents/artifact_repository.py,172,    object_id = int(str(bi_object_id)) if bi_object_id else None
+backend/app/modules/agents/artifact_repository.py,189,"        ""bi_object_id"": object_id,"
+backend/app/modules/agents/artifact_repository.py,190,"        ""bi_dataset_id"": int(str(bi_dataset_id)) if bi_dataset_id else None,"
+backend/app/modules/agents/artifact_repository.py,201,"    legacy = [row.get(name) for name in LEGACY_COLUMNS] if not row.get(""bi_object_id"") else []"
+backend/app/modules/agents/artifact_repository.py,221,"        bi_object_id: int,"
+backend/app/modules/agents/artifact_repository.py,222,"        bi_dataset_id: int | None,"
+backend/app/modules/agents/artifact_repository.py,230,        _bi_id(bi_object_id)
+backend/app/modules/agents/artifact_repository.py,231,        if bi_dataset_id is not None:
+backend/app/modules/agents/artifact_repository.py,232,            _bi_id(bi_dataset_id)
+backend/app/modules/agents/artifact_repository.py,244,"                    ""bi_object_id"": bi_object_id,"
+backend/app/modules/agents/artifact_repository.py,245,"                    ""bi_dataset_id"": bi_dataset_id,"
+backend/app/modules/agents/artifact_repository.py,304,"        bi_object_id: int,"
+backend/app/modules/agents/artifact_repository.py,305,"        bi_dataset_id: int | None,"
+backend/app/modules/agents/artifact_repository.py,308,        _bi_id(bi_object_id)
+backend/app/modules/agents/artifact_repository.py,309,        if bi_dataset_id is not None:
+backend/app/modules/agents/artifact_repository.py,310,            _bi_id(bi_dataset_id)
+backend/app/modules/agents/artifact_repository.py,314,"                if current is None or current[""bi_object_id""] is not None:"
+backend/app/modules/agents/artifact_repository.py,322,"                        ""bi_object_id"": bi_object_id,"
+backend/app/modules/agents/artifact_repository.py,323,"                        ""bi_dataset_id"": bi_dataset_id,"
+frontend/src/features/agents/api.ts,538,  bi_object_id?: number | null;
+backend/app/proxy/connection.py,36,from app.modules.superset import tokens as bi_tokens
+backend/app/proxy/connection.py,37,"from app.modules.superset.access import notebook_peer_allowed, peer_allowed"
+backend/app/proxy/connection.py,498,"        from app.modules.superset.delegation import DelegationError, owner_session"
+backend/app/modules/agents/tools/dataviz.py,75,"    from app.modules.superset.openui_nodes import OpenUiParseError, data_nodes"
+backend/app/modules/agents/tools/dataviz.py,148,    from app.modules.superset.previews import Locator
+backend/app/modules/agents/tools/dataviz.py,215,        from app.modules.superset.dataviz import check_locator
+backend/app/modules/agents/tools/dataviz.py,249,        from app.modules.superset.dashboard_context import dashboard_context
+backend/app/modules/agents/tools/dataviz.py,264,        from app.modules.superset.client import BiError
+backend/app/modules/agents/tools/dataviz.py,315,        from app.modules.superset.client import BiError
+backend/app/modules/agents/tools/dataviz.py,316,"        from app.modules.superset.dashboard_query import QueryRefused, query_dashboard_dataset"
+backend/app/modules/agents/tools/dataviz.py,395,        from app.modules.superset.dashboard_context import chart_source
+backend/app/modules/agents/tools/dataviz.py,404,        from app.modules.superset.client import BiError
+backend/app/modules/agents/tools/dataviz.py,440,        from app.modules.superset.dataviz import preview_change
+backend/app/modules/agents/tools/dataviz.py,441,        from app.modules.superset.previews import sign
+backend/app/modules/agents/tools/dataviz.py,442,"        from app.modules.superset.publication import PublishError, Target"
+backend/app/modules/agents/tools/dataviz.py,488,        from app.modules.superset.dataviz import remember_pending
+backend/app/modules/agents/tools/dataviz.py,522,        from app.modules.superset.dataviz import apply_change
+backend/app/modules/agents/tools/dataviz.py,523,        from app.modules.superset.publication import PublishError
+backend/app/modules/agents/dataviz_assistant.py,109,"    from app.modules.superset.client import BiError, SupersetClient"
+backend/app/modules/agents/dataviz_assistant.py,110,    from app.modules.superset.dashboard_context import _semantic_views
+backend/app/modules/agents/tools/dashboard_build.py,112,        from app.modules.superset import artifacts as bi_artifacts
+backend/app/modules/agents/tools/dashboard_build.py,113,        from app.modules.superset.charts import plan_from_worksheet
+backend/app/modules/agents/tools/dashboard_build.py,114,        from app.modules.superset.client import BiError
+frontend/src/features/studio/artifact-explorer.tsx,39,"import { useBiSession } from ""@/features/bi/use-bi-session"";"
+frontend/src/features/studio/artifact-explorer.tsx,451,"        {artifact.bi_kind === ""dashboard"" && artifact.bi_object_id ? ("
+frontend/src/features/studio/artifact-explorer.tsx,452,          <BiDashboardThumbnail dashboardId={artifact.bi_object_id} updatedAt={artifact.updated_at} />
+frontend/src/features/studio/artifact-explorer.tsx,742,"      const response = await fetch(`/bi/api/v1/dashboard/${dashboardId}/thumbnail/latest/`, { signal });"
+frontend/src/features/studio/legacy-conversion.test.tsx,20,"    bi_view_path: status === ""converted"" ? ""/bi/superset/explore/?slice_id=3"" : null,"
+frontend/src/features/studio/artifact-explorer.test.tsx,128,"    biSession.post.mockResolvedValue({ path: ""/bi/"", superset_role: ""NovaViewer"" });"
+frontend/src/features/studio/artifact-explorer.test.tsx,130,"      artifacts: [{ ...ARTIFACTS[1], bi_kind: ""dashboard"", bi_object_id: 7, bi_view_path: ""/bi/superset/dashboard/7/?standalone=2"" }],"
+frontend/src/features/studio/artifact-explorer.test.tsx,151,"      expect(fetchMock).toHaveBeenCalledWith(""/bi/api/v1/dashboard/7/thumbnail/latest/"", expect.anything());"
+frontend/src/features/studio/dataviz/dataviz-panel.test.tsx,8,"vi.mock(""@/features/bi/bi-frame"", () => ({"
+frontend/src/features/studio/dataviz/dataviz-workspace.tsx,9,"import { BiFrame } from ""@/features/bi/bi-frame"";"
+frontend/src/features/studio/dataviz/dataviz-workspace.tsx,10,"import { safeBiTarget } from ""@/features/bi/bi-target"";"
+frontend/src/features/studio/dataviz/dashboard-bridge.ts,44,"  if (!path || !path.startsWith(""/bi/"")) return EMPTY;"
+frontend/src/features/studio/dataviz/dashboard-bridge.ts,77,"    return path.startsWith(""/bi/"") ? path : null;"
+frontend/src/features/studio/dataviz/dataviz.test.tsx,45,"    expect(parseFramePath(""/bi/superset/dashboard/14/?native_filters_key=Ab_9-x"")).toMatchObject({"
+frontend/src/features/studio/dataviz/dataviz.test.tsx,49,"    expect(parseFramePath(""/bi/superset/dashboard/14/?native_filters_key=<script>"")).toMatchObject({"
+frontend/src/features/studio/dataviz/dataviz.test.tsx,53,"    expect(parseFramePath(""/bi/explore/?slice_id=3"").dashboardId).toBeNull();"
+frontend/src/features/studio/dataviz/dataviz.test.tsx,54,"    expect(parseFramePath(""https://evil.example/bi/superset/dashboard/1/"").path).toBeNull();"
+frontend/src/features/studio/dataviz/dataviz.test.tsx,60,"      location: { pathname: ""/bi/superset/dashboard/1/"", search: """" },"
+frontend/src/features/studio/dataviz/dataviz.test.tsx,109,"      dashboards: [{ id: 7, title: ""Sales"", published: true, own: true, bi_view_path: ""/bi/superset/dashboard/7/"" }],"
+frontend/src/features/studio/dataviz/dataviz.test.tsx,143,"        artifact_id: ""a"", bi_view_path: ""/bi/superset/dashboard/7/"", reused_chart: false, concepts: [],"
+frontend/src/features/studio/dataviz/dataviz.test.tsx,162,"      artifact_id: ""a"", bi_view_path: ""/bi/superset/dashboard/11/"", reused_chart: false, concepts: [],"
+frontend/src/features/studio/dataviz/dataviz.test.tsx,208,"    attachDatavizFrame(framed(""/bi/superset/dashboard/16/"", ""Dataviz 5W1H eval""));"
+frontend/src/features/studio/dataviz/dataviz.test.tsx,210,"    attachDatavizFrame(framed(""/bi/superset/dashboard/16/"", ""Sales | Superset""));"
+frontend/src/features/studio/dataviz/dataviz.test.tsx,215,"    attachDatavizFrame(framed(""/bi/explore/"", ""Revenue chart""));"
+frontend/src/features/studio/dataviz/dataviz.test.tsx,217,"    attachDatavizFrame(framed(""/bi/superset/dashboard/16/"", ""Superset""));"
+frontend/src/features/studio/studio-artifacts.test.tsx,284,"    biSession.post.mockResolvedValue({ path: ""/bi/"", superset_role: ""NovaAuthor"" });"
+frontend/src/features/studio/studio-artifacts.test.tsx,287,"      bi_object_id: 21,"
+frontend/src/features/studio/studio-artifacts.test.tsx,288,"      bi_view_path: ""/bi/explore/?slice_id=21&standalone=1"","
+frontend/src/features/studio/studio-artifacts.test.tsx,289,"      bi_edit_path: ""/bi/explore/?slice_id=21&uiConfig=4"","
+frontend/src/features/studio/studio-artifacts.test.tsx,308,"      .toHaveAttribute(""src"", ""/bi/explore/?slice_id=21&standalone=1"");"
+frontend/src/features/studio/studio-artifacts.test.tsx,312,"      .toHaveAttribute(""src"", ""/bi/explore/?slice_id=21&uiConfig=4"");"
+frontend/src/features/studio/studio-artifacts.test.tsx,326,"      .toHaveAttribute(""src"", ""/bi/explore/?slice_id=21&standalone=1"");"
+frontend/src/features/studio/studio-artifacts.test.tsx,338,"    biSession.post.mockResolvedValue({ path: ""/bi/"", superset_role: ""NovaAuthor"" });"
+frontend/src/features/studio/studio-artifacts.test.tsx,341,"      bi_object_id: 21,"
+frontend/src/features/studio/studio-artifacts.test.tsx,342,"      bi_view_path: ""/bi/explore/?slice_id=21&standalone=1"","
+frontend/src/features/studio/studio-artifacts.test.tsx,343,"      bi_edit_path: ""/bi/explore/?slice_id=21&uiConfig=4"","
+frontend/src/features/studio/studio-artifacts.test.tsx,391,"      .toHaveAttribute(""src"", ""/bi/explore/?slice_id=21&uiConfig=4"");"
+frontend/src/features/studio/studio-artifacts.test.tsx,395,"    biSession.post.mockResolvedValue({ path: ""/bi/"", superset_role: ""NovaAuthor"" });"
+frontend/src/features/studio/studio-artifacts.test.tsx,403,"      bi_object_id: 7,"
+frontend/src/features/studio/studio-artifacts.test.tsx,404,"      bi_view_path: ""/bi/superset/dashboard/7/?standalone=2"","
+frontend/src/features/studio/studio-artifacts.test.tsx,405,"      bi_edit_path: ""/bi/superset/dashboard/7/?edit=true&standalone=1"","
+frontend/src/features/studio/studio-artifacts.test.tsx,410,"      String(input) === ""/bi/api/v1/dashboard/7"""
+frontend/src/features/studio/studio-artifacts.test.tsx,423,"        .toHaveAttribute(""src"", ""/bi/superset/dashboard/7/?standalone=2&show_filters=0"");"
+frontend/src/features/studio/studio-artifacts.test.tsx,430,"        .toHaveAttribute(""src"", ""/bi/superset/dashboard/7/?edit=true&standalone=1"");"
+frontend/src/features/studio/studio-artifacts.test.tsx,442,"    biSession.post.mockResolvedValue({ path: ""/bi/"", superset_role: ""NovaAuthor"" });"
+frontend/src/features/studio/studio-artifacts.test.tsx,445,"      bi_object_id: 21,"
+frontend/src/features/studio/studio-artifacts.test.tsx,446,"      bi_view_path: ""/bi/explore/?slice_id=21&standalone=1"","
+frontend/src/features/studio/studio-artifacts.test.tsx,447,"      bi_edit_path: ""/bi/explore/?slice_id=21&uiConfig=4"","
+frontend/src/features/studio/studio-artifacts.test.tsx,459,"      preview_path: ""/bi/explore/?form_data_key=K1&standalone=1"","
+frontend/src/features/studio/studio-artifacts.test.tsx,469,"      .toHaveAttribute(""src"", ""/bi/explore/?slice_id=21&standalone=1"");"
+frontend/src/features/studio/studio-artifacts.test.tsx,476,"      .toHaveAttribute(""src"", ""/bi/explore/?form_data_key=K1&standalone=1"");"
+frontend/src/features/studio/studio-artifacts.test.tsx,487,"      .toHaveAttribute(""src"", ""/bi/explore/?slice_id=21&standalone=1"");"
+frontend/src/features/studio/studio-artifacts.tsx,3,"import { BiFrame, FrameLoading } from ""@/features/bi/bi-frame"";"
+frontend/src/features/studio/studio-artifacts.tsx,4,"import { useDashboardHasFilters, withoutFilterBar } from ""@/features/bi/dashboard-filters"";"
+frontend/src/features/studio/studio-artifacts.tsx,116,      ? (meta.data.bi_object_id ?? null)
+frontend/src/features/intelligence/semantic-bi-datasets.test.tsx,16,"  bi_dataset_id: 103,"
+frontend/src/features/intelligence/semantic-bi-datasets.test.tsx,21,"  bi_path: ""/bi/explore/?datasource_type=table&datasource_id=103"","
+frontend/src/features/intelligence/semantic-views-api.ts,207,  bi_dataset_id: number | null

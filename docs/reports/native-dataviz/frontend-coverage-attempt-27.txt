@@ -1,0 +1,24 @@
+$ vitest run --coverage --browser.headless --browser.fileParallelism=false --maxWorkers=1
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+      Coverage enabled with v8
+
+1:13:55 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=a9d9cd30:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=a9d9cd30:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=a9d9cd30:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=a9d9cd30:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=a9d9cd30:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=a9d9cd30:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=a9d9cd30:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=a9d9cd30:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=a9d9cd30:2792:2)
+stderr | src/features/native-dataviz/dataset-create.test.tsx > dashboard dataset authoring > preserves rapid input through the real Monaco SQL editor: SELECT amount FROM Orders
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout -14700.274999999994ms exceeded.
+Call log:
+[2m  - taking element screenshot[22m
+]
+ ❯ |browser (chromium)| src/features/native-dataviz/dataset-create.test.tsx (12 tests | 1 failed) 111923ms
+     × preserves rapid input through the real Monaco SQL editor: SELECT amount FROM Orders 57822ms
+[ELIFECYCLE] Command failed with exit code 130.

@@ -1,0 +1,128 @@
+{
+  "result": "PASS",
+  "owned_database": "ndv_src_3e0deb3512cb",
+  "owned_roles": [
+    "ndv_read_3e0deb3512cb",
+    "ndv_none_3e0deb3512cb"
+  ],
+  "steps": [
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "table and view have distinct physical IDs",
+      "passed": true
+    },
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "empty source has authoritative decimal schema",
+      "passed": true
+    },
+    {
+      "check": "stable source schema",
+      "passed": true
+    },
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "dataset API on governed empty view",
+      "passed": true
+    },
+    {
+      "check": "inactive role cannot discover view identity",
+      "passed": true
+    },
+    {
+      "check": "missing view is refused",
+      "passed": true
+    },
+    {
+      "check": "engine refuses NONE role metadata",
+      "passed": true
+    },
+    {
+      "check": "engine refuses ALL role metadata",
+      "passed": true
+    },
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "table rename retains physical identity",
+      "passed": true
+    },
+    {
+      "check": "old table name requires repair",
+      "passed": true
+    },
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "drop recreate never reuses source identity",
+      "passed": true
+    },
+    {
+      "check": "revoked role cannot read metadata",
+      "passed": true
+    },
+    {
+      "check": "QA attributes unchanged",
+      "passed": true
+    },
+    {
+      "check": "QA grants unchanged",
+      "passed": true
+    }
+  ],
+  "cleanup_errors": [],
+  "synthetic_view_schema": [
+    {
+      "name": "id",
+      "physical_type": "bigint(20)",
+      "nullable": false
+    },
+    {
+      "name": "amount",
+      "physical_type": "decimal(38, 12)",
+      "nullable": true
+    }
+  ],
+  "engine_version": "4.1.4",
+  "limits": [
+    "ALTER VIEW RENAME is absent from the pinned grammar; table rename and view drop/recreate are verified separately"
+  ],
+  "ranger_service": "nova_starrocks"
+}

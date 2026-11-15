@@ -1,0 +1,130 @@
+$ vitest run --coverage --browser.headless --browser.fileParallelism=false --no-file-parallelism --maxWorkers=1
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+      Coverage enabled with v8
+
+11:18:21 PM [vite] (client) Re-optimizing dependencies because vite config has changed
+11:18:24 PM [vite] (client) [optimizer] scanning dependencies...
+11:18:30 PM [vite] (client) [optimizer] bundling dependencies...
+ ❯ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx (29 tests | 3 failed) 51359ms
+   × renders verified geometry and links table selection to declarative state 15102ms
+   × saves the camera after the user moves a verified map 15168ms
+   × does not re-save a restored camera whose keys come back in another order 15174ms
+11:21:09 PM [vite] (client) [console.error] TypeError: Cannot read properties of undefined (reading 'wrapDynamicImport')
+    at $$splitComponentImporter (http://localhost:63315/src/routes/(auth)/sign-in.tsx:1:234)
+    at Lazy.load [as preload] (http://localhost:63315/node_modules/.vite/vitest/ef98362b8a6b0c8cd804b0d227aa1ffeaba89786/deps/@tanstack_react-router.js?v=224c1903:6403:18)
+    at preloadComponent (http://localhost:63315/node_modules/.vite/vitest/ef98362b8a6b0c8cd804b0d227aa1ffeaba89786/deps/@tanstack_react-router.js?v=224c1903:2949:39)
+    at loadComponents (http://localhost:63315/node_modules/.vite/vitest/ef98362b8a6b0c8cd804b0d227aa1ffeaba89786/deps/@tanstack_react-router.js?v=224c1903:2952:20)
+    at afterLazy (http://localhost:63315/node_modules/.vite/vitest/ef98362b8a6b0c8cd804b0d227aa1ffeaba89786/deps/@tanstack_react-router.js?v=224c1903:2960:118)
+    at loadRouteChunk (http://localhost:63315/node_modules/.vite/vitest/ef98362b8a6b0c8cd804b0d227aa1ffeaba89786/deps/@tanstack_react-router.js?v=224c1903:2963:28)
+    at http://localhost:63315/node_modules/.vite/vitest/ef98362b8a6b0c8cd804b0d227aa1ffeaba89786/deps/@tanstack_react-router.js?v=224c1903:3312:18
+    at createLoaderTask$1 (http://localhost:63315/node_modules/.vite/vitest/ef98362b8a6b0c8cd804b0d227aa1ffeaba89786/deps/@tanstack_react-router.js?v=224c1903:3322:4)
+    at planSuccessfulLane (http://localhost:63315/node_modules/.vite/vitest/ef98362b8a6b0c8cd804b0d227aa1ffeaba89786/deps/@tanstack_react-router.js?v=224c1903:3572:22)
+    at contextualize$1 (http://localhost:63315/node_modules/.vite/vitest/ef98362b8a6b0c8cd804b0d227aa1ffeaba89786/deps/@tanstack_react-router.js?v=224c1903:3118:2)
+
+The above error occurred in the <MatchInnerImpl> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, CatchBoundary.
+
+11:21:09 PM [vite] (client) [console.warn] Warning: Error in route match: __root__/
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > renders verified geometry and links table selection to declarative state
+Error: [2mexpect([22m[31melement[39m[2m).toHaveAttribute([22m[32m[32m"aria-busy"[32m[39m[2m, [22m[32m[32m"false"[32m[39m[2m) // element.getAttribute("aria-busy") === "false"[22m
+
+Expected the element to have attribute:
+[32m  aria-busy="false"[39m
+Received:
+[31m  aria-busy="true"[39m
+
+Failure screenshot:
+  - src/features/studio/intelligent-ui/__screenshots__/renderer.test.tsx/renders-verified-geometry-and-links-table-selection-to-declarative-state-1.png
+
+ ❯ src/features/studio/intelligent-ui/renderer.test.tsx:506:62
+    504|   await screen.getByRole("button",{name:"Select Jakarta"}).click();
+    505|   await expect.element(screen.getByText("Selected: Jakarta",{exact:tru…
+    506|   await expect.element(screen.getByLabelText("Map viewport")).toHaveAt…
+       |                                                              ^
+    507|   await expect.element(screen.getByRole("button",{name:"Select Jakarta…
+    508|   await expect.element(screen.getByText("Invalid or missing coordinate…
+
+Caused by: Error: Matcher did not succeed in time.
+ ❯ src/features/studio/intelligent-ui/renderer.test.tsx:506:2
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > saves the camera after the user moves a verified map
+Error: [2mexpect([22m[31melement[39m[2m).toHaveAttribute([22m[32m[32m"aria-busy"[32m[39m[2m, [22m[32m[32m"false"[32m[39m[2m) // element.getAttribute("aria-busy") === "false"[22m
+
+Expected the element to have attribute:
+[32m  aria-busy="false"[39m
+Received:
+[31m  aria-busy="true"[39m
+
+Failure screenshot:
+  - src/features/studio/intelligent-ui/__screenshots__/renderer.test.tsx/saves-the-camera-after-the-user-moves-a-verified-map-1.png
+
+ ❯ src/features/studio/intelligent-ui/renderer.test.tsx:521:62
+    519|   vi.mocked(uiApi.get).mockResolvedValue({revision:0,state:ui.state_de…
+    520|   const screen = await render(<ThemeProvider><IntelligentUi block={ui}…
+    521|   await expect.element(screen.getByLabelText("Map viewport")).toHaveAt…
+       |                                                              ^
+    522|   // Saving runs in the background without a progress label.
+    523|   const seen: string[] = [];
+
+Caused by: Error: Matcher did not succeed in time.
+ ❯ src/features/studio/intelligent-ui/renderer.test.tsx:521:2
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > does not re-save a restored camera whose keys come back in another order
+Error: [2mexpect([22m[31melement[39m[2m).toHaveAttribute([22m[32m[32m"aria-busy"[32m[39m[2m, [22m[32m[32m"false"[32m[39m[2m) // element.getAttribute("aria-busy") === "false"[22m
+
+Expected the element to have attribute:
+[32m  aria-busy="false"[39m
+Received:
+[31m  aria-busy="true"[39m
+
+Failure screenshot:
+  - src/features/studio/intelligent-ui/__screenshots__/renderer.test.tsx/does-not-re-save-a-restored-camera-whose-keys-come-back-in-another-order-1.png
+
+ ❯ src/features/studio/intelligent-ui/renderer.test.tsx:543:62
+    541|     state:{$selected:-1,$viewport:{bearing:0,center:[109.75,-6.75],pit…
+    542|   const screen = await render(<ThemeProvider><IntelligentUi block={ui}…
+    543|   await expect.element(screen.getByLabelText("Map viewport")).toHaveAt…
+       |                                                              ^
+    544|   await new Promise((resolve) => setTimeout(resolve, 800));
+    545|   await flushUiStates();
+
+Caused by: Error: Matcher did not succeed in time.
+ ❯ src/features/studio/intelligent-ui/renderer.test.tsx:543:2
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯⎯⎯ Unhandled Error ⎯⎯⎯⎯⎯⎯⎯
+Error: Failed to run the test /Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/features/studio/intelligent-ui/renderer.test.tsx.
+ ❯ node_modules/.pnpm/vitest@4.1.11_@types+node@25.9.7_@vitest+browser-playwright@4.1.11_@vitest+coverage-v8@_3ea6e8dff42b3eadeef761313752f0a5/node_modules/vitest/dist/chunks/cli-api.CnMVyzaz.js:2639:17
+ ❯ processTicksAndRejections node:internal/process/task_queues:105:5
+
+Caused by: Error: Cannot connect to the iframe. Did you change the location or submitted a form? If so, don't forget to call `event.preventDefault()` to avoid reloading the page.
+
+Received URL: http://localhost:63315/sign-in?redirect=%2F%3FsessionId%3D98e5353c-7695-494d-b336-5647b31515e5%26iframeId%3D%252FUsers%252Fdwickyferiansyahputra%252FPublic%252FResearch%252Fnova%252Ffrontend%252Fsrc%252Ffeatures%252Fstudio%252Fintelligent-ui%252Frenderer.test.tsx
+Expected: http://localhost:63315/?sessionId=98e5353c-7695-494d-b336-5647b31515e5&iframeId=%2FUsers%2Fdwickyferiansyahputra%2FPublic%2FResearch%2Fnova%2Ffrontend%2Fsrc%2Ffeatures%2Fstudio%2Fintelligent-ui%2Frenderer.test.tsx
+ ❯ iframe.onload ../../../../../../__vitest_browser__/orchestrator-jtzFEKPy.js:174:43
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files  1 failed | 3 passed (200)
+      Tests  3 failed | 73 passed (76)
+     Errors  1 error
+   Start at  23:18:19
+   Duration  189.84s (transform 10.77s, setup 0ms, import 85.93s, tests 87.78s, environment 28ms)
+
+[ELIFECYCLE] Command failed with exit code 1.

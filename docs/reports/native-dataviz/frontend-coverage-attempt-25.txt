@@ -1,0 +1,82 @@
+$ vitest run --coverage --browser.headless
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+      Coverage enabled with v8
+
+1:00:27 AM [vite] (client) Re-optimizing dependencies because vite config has changed
+1:00:29 AM [vite] (client) [optimizer] bundling dependencies...
+ ❯ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx (29 tests | 1 failed) 37997ms
+     × shows a consent card for an ask_every_tool agent and resolves it 15522ms
+1:01:34 AM [vite] (client) [console.error] Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["bi","session",0]
+1:01:35 AM [vite] (client) [console.error] Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["bi","session",0]
+1:01:36 AM [vite] (client) [console.error] Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["bi","session",0]
+1:01:38 AM [vite] (client) [console.error] Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["bi","session",0]
+1:03:41 AM [vite] (client) [console.error] You seem to have overlapping act() calls, this is not supported. Be sure to await previous act() calls before making a new one. 
+1:03:41 AM [vite] (client) [console.error] You seem to have overlapping act() calls, this is not supported. Be sure to await previous act() calls before making a new one. 
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > studio transcript click-through > shows a consent card for an ask_every_tool agent and resolves it
+VitestBrowserElementError: Cannot find element with locator: getByText('Approved query_execute')
+
+[36m<body[39m
+  [33mstyle[39m=[32m""[39m
+[36m>[39m
+  [0m
+  
+
+[0m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"flex h-svh"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"relative flex min-h-0 min-w-0 flex-1 overflow-hidden"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"relative flex min-h-0 min-w-0 flex-1 flex-col"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"flex min-h-0 flex-1 flex-col"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"flex min-h-0 w-full flex-1 flex-col overflow-y-auto"[39m
+            [36m>[39m
+              [36m<div[39m …[36m />[39m
+            [36m</div>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"w-full shrink-0 px-4 sm:px-6 pb-6 pt-2"[39m
+              [33mdata-testid[39m=[32m"studio-composer"[39m
+            [36m>[39m
+              [36m<div[39m …[36m />[39m
+            [36m</div>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m...
+
+Failure screenshot:
+  - src/features/studio/__screenshots__/studio-chat.integration.test.tsx/studio-transcript-click-through-shows-a-consent-card-for-an-ask-every-tool-agent-and-resolves-it-1.png
+
+ ❯ src/features/studio/studio-chat.integration.test.tsx:990:7
+    988|     await expect
+    989|       .element(page.getByText("Approved query_execute"))
+    990|       .toBeVisible();
+       |       ^
+    991|   });
+    992|
+
+Caused by: Error: Matcher did not succeed in time.
+ ❯ src/features/studio/studio-chat.integration.test.tsx:988:4
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 208 passed (209)
+      Tests  1 failed | 1790 passed (1791)
+   Start at  01:00:27
+   Duration  224.86s (transform 1.84s, setup 0ms, import 328.69s, tests 838.83s, environment 1ms)
+
+[ELIFECYCLE] Command failed with exit code 1.

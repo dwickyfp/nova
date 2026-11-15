@@ -1,0 +1,10 @@
+{
+  "at": "2026-11-13T16:51:03.589569+00:00",
+  "fixture_project": "nova-native-dataviz-test",
+  "reason": "Attempt 10 concurrent migration outlived gather failure and recreated schema during teardown",
+  "ownership_marker_verified": true,
+  "other_clients": 0,
+  "roles_removed": 17,
+  "shared_development_unchanged": true,
+  "first_cleanup_attempt": "Refused before any mutation because broad role-name selection included fixture administrator; explicit fixture role allowlist used in this attempt"
+}

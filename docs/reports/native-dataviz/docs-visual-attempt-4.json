@@ -1,0 +1,29 @@
+{
+  "date": "2026-11-14",
+  "method": "CUA native Google Chrome, authenticated Nova session",
+  "result": "PASS",
+  "window_pixels": [
+    1920,
+    1080
+  ],
+  "theme": "dark",
+  "observations": [
+    {
+      "path": "/docs/dataviz/native-documents#sql-datasets",
+      "result": "Authoring behavior and remaining limits readable; anchor navigation works"
+    },
+    {
+      "path": "/docs/sql/querying-data#inspect-a-result-schema",
+      "result": "Live-verified SQL example, typed result table and refusal limits readable"
+    },
+    {
+      "path": "/docs/sql/nova-sql-reference#query-schema",
+      "result": "Command row and linked example readable"
+    }
+  ],
+  "image_evidence": "CUA conversation screenshots; no local screenshot artifact claimed",
+  "limits": [
+    "Documentation only",
+    "No native editor, mobile or light-theme acceptance claimed"
+  ]
+}

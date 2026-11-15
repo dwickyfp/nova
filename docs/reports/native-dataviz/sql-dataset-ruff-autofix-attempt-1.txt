@@ -1,0 +1,12 @@
+E501 Line too long (101 > 100)
+   --> app/modules/viz/dataset_service.py:206:101
+    |
+204 |             sql=sql, username=context.username, encrypted_password=encrypted,
+205 |             database=context.database, schema=context.schema, role=context.role, max_rows=512,
+206 |             session_id=context.session_id, security_context_version=context.security_context_version,
+    |                                                                                                     ^
+207 |         )
+208 |         columns = query_output_schema(result)
+    |
+
+Found 4 errors (3 fixed, 1 remaining).

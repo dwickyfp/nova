@@ -1,0 +1,38 @@
+{
+  "recorded_at": "2026-11-14T18:08:46.850400+00:00",
+  "result": "PASS_COMPONENT_SCOPE",
+  "observed": [
+    "Wide 1440px layout shows dataset library, preview and fields/lineage in light and dark",
+    "520px panel uses inspector sheet with keyboard focus restoration",
+    "390px viewport keeps dataset header and preview scroll region bounded",
+    "Exact decimal renders without conversion to float"
+  ],
+  "screenshots": [
+    {
+      "file": "component-data-tab-desktop-light-attempt-3.png",
+      "sha256": "28320162cef776489cd07e4c87fad23ff63da8a85196b1fad88fb76c507ad264"
+    },
+    {
+      "file": "component-data-tab-desktop-dark-attempt-3.png",
+      "sha256": "ad9d2705110386194e21dfdee619a729451ea712d58fa1dfbef75be106cda738"
+    },
+    {
+      "file": "component-data-tab-panel-light.png",
+      "sha256": "26c72e24c1bf08133bb448c6ac44508e44c36f798caef890519a7d514d1a5aff"
+    },
+    {
+      "file": "component-data-tab-panel-dark.png",
+      "sha256": "7d427c353c450e728c5811a586a7c45ea830f072f9eae1c4e64ca9098392cdb5"
+    },
+    {
+      "file": "component-data-tab-mobile.png",
+      "sha256": "505271b7a3ff04af2638105d8f9e650655d7358e215a915482749b6f0fe5a9dc"
+    }
+  ],
+  "evidence": [
+    "data-tab-visual-browser-attempt-1.txt",
+    "dataset-attach-browser-attempt-1.txt",
+    "frontend-coverage-attempt-25.txt"
+  ],
+  "limits": "Fixture-backed components, not product-shell/E2E acceptance. Initial screenshot lacked an explicit desktop viewport; visual-browser attempt 2 caught a hidden-role matcher failure, corrected without changing layout."
+}

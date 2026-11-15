@@ -1,0 +1,11 @@
+[
+  {
+    "command": [
+      "pnpm",
+      "test:coverage"
+    ],
+    "file": "frontend-coverage-attempt-22.txt",
+    "returncode": 0,
+    "seconds": 105.78
+  }
+]

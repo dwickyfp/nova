@@ -67,6 +67,7 @@ jobs:
               "tests/integration/test_metadata_retired_agents.py",
               "tests/integration/test_metadata_stages.py",
               "tests/integration/test_metadata_workspaces.py",
+              "tests/integration/test_metadata_viz.py",
               "tests/integration/test_metadata_workspace_files.py",
               "tests/integration/test_metadata_workspace_service.py",
               "tests/integration/test_metadata_notebooks.py",
@@ -144,6 +145,10 @@ jobs:
       - name: Install dependencies
         working-directory: backend
         run: uv sync --locked
+
+      - name: Native visualization contract drift
+        working-directory: backend
+        run: uv run python scripts/generate_viz_contracts.py --check
 
       - name: ruff (full tree, report-only)
         working-directory: backend

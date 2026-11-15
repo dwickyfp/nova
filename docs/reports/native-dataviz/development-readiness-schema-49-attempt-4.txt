@@ -1,0 +1,4 @@
+$ uv run python scripts/dev_readiness.py --web 8000 --query 8001 --frontend 5173
+Waiting for: query
+
+Exit: 1

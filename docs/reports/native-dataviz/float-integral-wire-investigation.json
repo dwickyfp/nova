@@ -1,0 +1,22 @@
+{
+  "result": "OPEN_CONTRACT_EDGE",
+  "scope": "JSON integer lexeme for an explicitly floating value; no source data",
+  "cases": [
+    {
+      "binary_exact_integer": true,
+      "value_bits": 54,
+      "result": "ACCEPTED"
+    },
+    {
+      "binary_exact_integer": false,
+      "value_bits": 54,
+      "result": "REFUSED"
+    },
+    {
+      "binary_exact_integer": true,
+      "value_bits": 55,
+      "result": "REFUSED"
+    }
+  ],
+  "finding": "Exactly representable integers above 2**53 are refused even though JS may serialize an integral float without a decimal point. Permit exactly representable finite integers while still refusing lossy int-to-float conversion."
+}

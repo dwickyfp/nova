@@ -1,0 +1,12 @@
+{
+  "result": "FAIL",
+  "owned_database": "ndv_src_962133772e8f",
+  "owned_roles": [
+    "ndv_read_962133772e8f",
+    "ndv_none_962133772e8f"
+  ],
+  "steps": [],
+  "cleanup_errors": [],
+  "error_type": "OperationalError",
+  "cleanup": "NOT_CREATED"
+}

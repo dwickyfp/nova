@@ -1,0 +1,17 @@
+{
+  "tool": "cdxgen 13.7.0",
+  "command": [
+    "-t",
+    "js",
+    "--no-install-deps",
+    "--no-recurse",
+    "--no-progress",
+    "--spec-version",
+    "1.6",
+    "-o",
+    "../docs/reports/native-dataviz/frontend-sbom-virtual-table.cdx.json",
+    "."
+  ],
+  "returncode": 0,
+  "seconds": 481.77
+}

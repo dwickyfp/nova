@@ -1,0 +1,267 @@
+{
+  "started_at": "2026-11-13T17:44:39.185308+00:00",
+  "resource_id": "e775d2b6-65f4-4ad4-9ba2-e1d6a6d8f94a",
+  "scope": "live document metadata",
+  "result": "PASS",
+  "cleanup": "SOFT_DELETED",
+  "steps": [
+    {
+      "check": "QA login",
+      "passed": true
+    },
+    {
+      "check": "QA identity admitted",
+      "passed": true
+    },
+    {
+      "check": "QA role is not administrator",
+      "passed": true
+    },
+    {
+      "check": "QA login",
+      "passed": true
+    },
+    {
+      "check": "QA identity admitted",
+      "passed": true
+    },
+    {
+      "check": "QA role is not administrator",
+      "passed": true
+    },
+    {
+      "request": "anonymous refusal",
+      "status": 401,
+      "expected_status": 401
+    },
+    {
+      "check": "anonymous refusal",
+      "passed": true
+    },
+    {
+      "request": "create",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "create",
+      "passed": true
+    },
+    {
+      "request": "create replay",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "create replay",
+      "passed": true
+    },
+    {
+      "check": "same command has same receipt",
+      "passed": true
+    },
+    {
+      "request": "owner draft",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "owner draft",
+      "passed": true
+    },
+    {
+      "check": "draft revision and cache boundary",
+      "passed": true
+    },
+    {
+      "request": "unpublished refusal",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "unpublished refusal",
+      "passed": true
+    },
+    {
+      "request": "personal draft isolation",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "personal draft isolation",
+      "passed": true
+    },
+    {
+      "request": "receipt isolation",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "receipt isolation",
+      "passed": true
+    },
+    {
+      "check": "refusal contains no title",
+      "passed": true
+    },
+    {
+      "request": "publish",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "publish",
+      "passed": true
+    },
+    {
+      "request": "publication",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "publication",
+      "passed": true
+    },
+    {
+      "check": "publication bound to revision",
+      "passed": true
+    },
+    {
+      "request": "personal publication isolation",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "personal publication isolation",
+      "passed": true
+    },
+    {
+      "check": "concurrent CAS has one winner",
+      "passed": true
+    },
+    {
+      "request": "retained publication",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "retained publication",
+      "passed": true
+    },
+    {
+      "check": "draft edits preserve publication",
+      "passed": true
+    },
+    {
+      "request": "latest draft",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "latest draft",
+      "passed": true
+    },
+    {
+      "check": "single committed revision",
+      "passed": true
+    },
+    {
+      "request": "restore",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "restore",
+      "passed": true
+    },
+    {
+      "request": "restored draft",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "restored draft",
+      "passed": true
+    },
+    {
+      "check": "restore creates new draft",
+      "passed": true
+    },
+    {
+      "request": "history",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "history",
+      "passed": true
+    },
+    {
+      "check": "history retained",
+      "passed": true
+    },
+    {
+      "request": "event replay",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "event replay",
+      "passed": true
+    },
+    {
+      "check": "only committed events",
+      "passed": true
+    },
+    {
+      "request": "delete owned fixture",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "delete owned fixture",
+      "passed": true
+    },
+    {
+      "request": "deleted document hidden",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "deleted document hidden",
+      "passed": true
+    },
+    {
+      "request": "receipt after deletion",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "receipt after deletion",
+      "passed": true
+    },
+    {
+      "check": "deleted receipt retained",
+      "passed": true
+    },
+    {
+      "request": "logout QA session",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "logout QA session",
+      "passed": true
+    },
+    {
+      "request": "logout QA session",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "logout QA session",
+      "passed": true
+    }
+  ],
+  "finished_at": "2026-11-13T17:44:40.732619+00:00"
+}

@@ -1,0 +1,7 @@
+Proxy: alice / regional_manager -> Bandung, Jakarta
+Proxy: alice / marketing -> Jakarta; explicit Bandung predicate -> empty
+Proxy: bob / marketing -> Bandung
+Transaction: alice / marketing kept its row filter; role switch refused until ROLLBACK
+Proxy: alice / finance -> analytics.sales denied
+Connections: alice / marketing and alice / finance remained isolated
+Mask: marketing masked -> regional_manager raw -> marketing masked

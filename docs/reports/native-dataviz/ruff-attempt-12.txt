@@ -1,0 +1,12 @@
+E501 Line too long (101 > 100)
+   --> app/modules/viz/documents.py:232:101
+    |
+230 |                         and isinstance(referenced, DatasetDefinition)):
+231 |                     for relation in current_document.relationships:
+232 |                         if relation.dataset_id == identity and relation.dataset_revision == revision:
+    |                                                                                                     ^
+233 |                             validate_relationship_binding(current_document, relation, referenced)
+234 |                 cached = closures.get(key)
+    |
+
+Found 1 error.

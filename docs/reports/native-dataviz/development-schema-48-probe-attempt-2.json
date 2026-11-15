@@ -1,0 +1,75 @@
+{
+  "baseline_commit": "1ee12694e0ecb6ecfd8135965943be08f5195967",
+  "migration_sha256": "09104edb87ecd0c467da49a9ee4bd6a750db569c7abf2efae534e0ed7ea70325",
+  "fixture_evidence": "pg-attempt-5.xml",
+  "fixture_result": "38 passed; broader regression still blocked by fixture recovery",
+  "schema_before": 47,
+  "schema_after": 48,
+  "metadata_epoch_preserved": true,
+  "existing_tables_count_checked": 180,
+  "existing_counts_preserved": true,
+  "maintenance": false,
+  "backup_bytes": 188691566,
+  "checked_at": "2026-11-13T14:39:36.416501+00:00",
+  "backup_sha256": "da60ccd863fef9140c2bcce8879b3d1c14ead05a783c44ccb381990428f76c65",
+  "application_checks": {
+    "web": {
+      "http_status": 200,
+      "body": {
+        "status": "ready",
+        "role": "web",
+        "metadata": "read_write"
+      }
+    },
+    "query": {
+      "http_status": 200,
+      "body": {
+        "status": "ready",
+        "role": "query",
+        "metadata": "read_write"
+      }
+    },
+    "scheduler": {
+      "http_status": 200,
+      "body": "# HELP python_gc_objects_collected_total Objects collected during gc\n# TYPE python_gc_objects_collected_total counter\npython_gc_objects_collected_total{generation=\"0\"} 516.0\npython_gc_objects_collected_total{generation=\"1\"} 357.0\npython_gc_objects_collected_total{generation=\"2\"} 45.0\n# HELP python_gc_objects_uncollectable_total Uncollectable objects found during GC\n# TYPE python_gc_objects_uncollectable_total counter\npython_gc_objects_uncollectable_total{generation=\"0\"} 0.0\npython_gc_objects_uncollectable_total{generation=\"1\"} 0.0\npython_gc_objects_uncollectable_total{generation=\"2\"} 0.0\n# HELP python_gc_collections_total Number of times this generation was collected\n# TYPE python_gc_collections_total counter\npython_gc_collections_total{generation=\"0\"} 378.0\npython_gc_collections_total{generation=\"1\"} 34.0\npython_gc_collections_total{generation=\"2\"} 3.0\n# HELP python_info Python platform information\n# TYPE python_info gauge\npython_info{implementation=\"CPython\",major=\"3\",minor=\"11\",patchlevel=\"13\",version=\"3.1"
+    },
+    "task": {
+      "http_status": 200,
+      "body": "# HELP python_gc_objects_collected_total Objects collected during gc\n# TYPE python_gc_objects_collected_total counter\npython_gc_objects_collected_total{generation=\"0\"} 3432.0\npython_gc_objects_collected_total{generation=\"1\"} 658.0\npython_gc_objects_collected_total{generation=\"2\"} 206.0\n# HELP python_gc_objects_uncollectable_total Uncollectable objects found during GC\n# TYPE python_gc_objects_uncollectable_total counter\npython_gc_objects_uncollectable_total{generation=\"0\"} 0.0\npython_gc_objects_uncollectable_total{generation=\"1\"} 0.0\npython_gc_objects_uncollectable_total{generation=\"2\"} 0.0\n# HELP python_gc_collections_total Number of times this generation was collected\n# TYPE python_gc_collections_total counter\npython_gc_collections_total{generation=\"0\"} 430.0\npython_gc_collections_total{generation=\"1\"} 39.0\npython_gc_collections_total{generation=\"2\"} 3.0\n# HELP python_info Python platform information\n# TYPE python_info gauge\npython_info{implementation=\"CPython\",major=\"3\",minor=\"11\",patchlevel=\"13\",version=\"3"
+    },
+    "proxy": {
+      "http_status": 200,
+      "body": "# HELP python_gc_objects_collected_total Objects collected during gc\n# TYPE python_gc_objects_collected_total counter\npython_gc_objects_collected_total{generation=\"0\"} 2875.0\npython_gc_objects_collected_total{generation=\"1\"} 882.0\npython_gc_objects_collected_total{generation=\"2\"} 28.0\n# HELP python_gc_objects_uncollectable_total Uncollectable objects found during GC\n# TYPE python_gc_objects_uncollectable_total counter\npython_gc_objects_uncollectable_total{generation=\"0\"} 0.0\npython_gc_objects_uncollectable_total{generation=\"1\"} 0.0\npython_gc_objects_uncollectable_total{generation=\"2\"} 0.0\n# HELP python_gc_collections_total Number of times this generation was collected\n# TYPE python_gc_collections_total counter\npython_gc_collections_total{generation=\"0\"} 387.0\npython_gc_collections_total{generation=\"1\"} 35.0\npython_gc_collections_total{generation=\"2\"} 3.0\n# HELP python_info Python platform information\n# TYPE python_info gauge\npython_info{implementation=\"CPython\",major=\"3\",minor=\"11\",patchlevel=\"13\",version=\"3."
+    },
+    "ingestion": {
+      "http_status": 200,
+      "body": "# HELP python_gc_objects_collected_total Objects collected during gc\n# TYPE python_gc_objects_collected_total counter\npython_gc_objects_collected_total{generation=\"0\"} 1295.0\npython_gc_objects_collected_total{generation=\"1\"} 376.0\npython_gc_objects_collected_total{generation=\"2\"} 40.0\n# HELP python_gc_objects_uncollectable_total Uncollectable objects found during GC\n# TYPE python_gc_objects_uncollectable_total counter\npython_gc_objects_uncollectable_total{generation=\"0\"} 0.0\npython_gc_objects_uncollectable_total{generation=\"1\"} 0.0\npython_gc_objects_uncollectable_total{generation=\"2\"} 0.0\n# HELP python_gc_collections_total Number of times this generation was collected\n# TYPE python_gc_collections_total counter\npython_gc_collections_total{generation=\"0\"} 350.0\npython_gc_collections_total{generation=\"1\"} 31.0\npython_gc_collections_total{generation=\"2\"} 2.0\n# HELP python_info Python platform information\n# TYPE python_info gauge\npython_info{implementation=\"CPython\",major=\"3\",minor=\"11\",patchlevel=\"13\",version=\"3."
+    },
+    "ml": {
+      "http_status": 200,
+      "body": "# HELP python_gc_objects_collected_total Objects collected during gc\n# TYPE python_gc_objects_collected_total counter\npython_gc_objects_collected_total{generation=\"0\"} 799.0\npython_gc_objects_collected_total{generation=\"1\"} 324.0\npython_gc_objects_collected_total{generation=\"2\"} 0.0\n# HELP python_gc_objects_uncollectable_total Uncollectable objects found during GC\n# TYPE python_gc_objects_uncollectable_total counter\npython_gc_objects_uncollectable_total{generation=\"0\"} 0.0\npython_gc_objects_uncollectable_total{generation=\"1\"} 0.0\npython_gc_objects_uncollectable_total{generation=\"2\"} 0.0\n# HELP python_gc_collections_total Number of times this generation was collected\n# TYPE python_gc_collections_total counter\npython_gc_collections_total{generation=\"0\"} 204.0\npython_gc_collections_total{generation=\"1\"} 18.0\npython_gc_collections_total{generation=\"2\"} 1.0\n# HELP python_info Python platform information\n# TYPE python_info gauge\npython_info{implementation=\"CPython\",major=\"3\",minor=\"11\",patchlevel=\"13\",version=\"3.11"
+    },
+    "notebook": {
+      "http_status": 200,
+      "body": "# HELP python_gc_objects_collected_total Objects collected during gc\n# TYPE python_gc_objects_collected_total counter\npython_gc_objects_collected_total{generation=\"0\"} 3834.0\npython_gc_objects_collected_total{generation=\"1\"} 1204.0\npython_gc_objects_collected_total{generation=\"2\"} 268.0\n# HELP python_gc_objects_uncollectable_total Uncollectable objects found during GC\n# TYPE python_gc_objects_uncollectable_total counter\npython_gc_objects_uncollectable_total{generation=\"0\"} 0.0\npython_gc_objects_uncollectable_total{generation=\"1\"} 0.0\npython_gc_objects_uncollectable_total{generation=\"2\"} 0.0\n# HELP python_gc_collections_total Number of times this generation was collected\n# TYPE python_gc_collections_total counter\npython_gc_collections_total{generation=\"0\"} 302.0\npython_gc_collections_total{generation=\"1\"} 27.0\npython_gc_collections_total{generation=\"2\"} 2.0\n# HELP python_info Python platform information\n# TYPE python_info gauge\npython_info{implementation=\"CPython\",major=\"3\",minor=\"11\",patchlevel=\"13\",version=\""
+    },
+    "automation": {
+      "http_status": 200,
+      "body": "# HELP python_gc_objects_collected_total Objects collected during gc\n# TYPE python_gc_objects_collected_total counter\npython_gc_objects_collected_total{generation=\"0\"} 1325.0\npython_gc_objects_collected_total{generation=\"1\"} 350.0\npython_gc_objects_collected_total{generation=\"2\"} 0.0\n# HELP python_gc_objects_uncollectable_total Uncollectable objects found during GC\n# TYPE python_gc_objects_uncollectable_total counter\npython_gc_objects_uncollectable_total{generation=\"0\"} 0.0\npython_gc_objects_uncollectable_total{generation=\"1\"} 0.0\npython_gc_objects_uncollectable_total{generation=\"2\"} 0.0\n# HELP python_gc_collections_total Number of times this generation was collected\n# TYPE python_gc_collections_total counter\npython_gc_collections_total{generation=\"0\"} 234.0\npython_gc_collections_total{generation=\"1\"} 21.0\npython_gc_collections_total{generation=\"2\"} 1.0\n# HELP python_info Python platform information\n# TYPE python_info gauge\npython_info{implementation=\"CPython\",major=\"3\",minor=\"11\",patchlevel=\"13\",version=\"3.1"
+    },
+    "autopilot": {
+      "http_status": 200,
+      "body": "# HELP python_gc_objects_collected_total Objects collected during gc\n# TYPE python_gc_objects_collected_total counter\npython_gc_objects_collected_total{generation=\"0\"} 594.0\npython_gc_objects_collected_total{generation=\"1\"} 370.0\npython_gc_objects_collected_total{generation=\"2\"} 40.0\n# HELP python_gc_objects_uncollectable_total Uncollectable objects found during GC\n# TYPE python_gc_objects_uncollectable_total counter\npython_gc_objects_uncollectable_total{generation=\"0\"} 0.0\npython_gc_objects_uncollectable_total{generation=\"1\"} 0.0\npython_gc_objects_uncollectable_total{generation=\"2\"} 0.0\n# HELP python_gc_collections_total Number of times this generation was collected\n# TYPE python_gc_collections_total counter\npython_gc_collections_total{generation=\"0\"} 44921.0\npython_gc_collections_total{generation=\"1\"} 4083.0\npython_gc_collections_total{generation=\"2\"} 371.0\n# HELP python_info Python platform information\n# TYPE python_info gauge\npython_info{implementation=\"CPython\",major=\"3\",minor=\"11\",patchlevel=\"13\",versio"
+    },
+    "maintenance": {
+      "http_status": 200,
+      "body": "# HELP python_gc_objects_collected_total Objects collected during gc\n# TYPE python_gc_objects_collected_total counter\npython_gc_objects_collected_total{generation=\"0\"} 6245.0\npython_gc_objects_collected_total{generation=\"1\"} 616.0\npython_gc_objects_collected_total{generation=\"2\"} 111.0\n# HELP python_gc_objects_uncollectable_total Uncollectable objects found during GC\n# TYPE python_gc_objects_uncollectable_total counter\npython_gc_objects_uncollectable_total{generation=\"0\"} 0.0\npython_gc_objects_uncollectable_total{generation=\"1\"} 0.0\npython_gc_objects_uncollectable_total{generation=\"2\"} 0.0\n# HELP python_gc_collections_total Number of times this generation was collected\n# TYPE python_gc_collections_total counter\npython_gc_collections_total{generation=\"0\"} 812.0\npython_gc_collections_total{generation=\"1\"} 73.0\npython_gc_collections_total{generation=\"2\"} 5.0\n# HELP python_info Python platform information\n# TYPE python_info gauge\npython_info{implementation=\"CPython\",major=\"3\",minor=\"11\",patchlevel=\"13\",version=\"3"
+    },
+    "outbox": {
+      "http_status": 200,
+      "body": "# HELP python_gc_objects_collected_total Objects collected during gc\n# TYPE python_gc_objects_collected_total counter\npython_gc_objects_collected_total{generation=\"0\"} 499.0\npython_gc_objects_collected_total{generation=\"1\"} 324.0\npython_gc_objects_collected_total{generation=\"2\"} 0.0\n# HELP python_gc_objects_uncollectable_total Uncollectable objects found during GC\n# TYPE python_gc_objects_uncollectable_total counter\npython_gc_objects_uncollectable_total{generation=\"0\"} 0.0\npython_gc_objects_uncollectable_total{generation=\"1\"} 0.0\npython_gc_objects_uncollectable_total{generation=\"2\"} 0.0\n# HELP python_gc_collections_total Number of times this generation was collected\n# TYPE python_gc_collections_total counter\npython_gc_collections_total{generation=\"0\"} 191.0\npython_gc_collections_total{generation=\"1\"} 17.0\npython_gc_collections_total{generation=\"2\"} 1.0\n# HELP python_info Python platform information\n# TYPE python_info gauge\npython_info{implementation=\"CPython\",major=\"3\",minor=\"11\",patchlevel=\"13\",version=\"3.11"
+    }
+  },
+  "runtime_shutdown": "Original web supervisor ignored TERM; verified original checkout PIDs were stopped after the graceful deadline. Other services stopped normally.",
+  "scope": "Development additive metadata upgrade only. Native routes, query engine and product UI are not yet active. Superset retained."
+}

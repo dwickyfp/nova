@@ -20,6 +20,7 @@ from app.common.metadata_audit import AuditEvent, AuditIdentity, AuditRepository
 from app.common.sql_guard import redact_sql_credentials
 from app.core.metadata_scope import acting_actor, active_scope, independent_transaction
 from app.modules.access_control.security_context import SecurityContext, SecurityContextError
+from app.modules.query.provenance import current_dataset_query
 
 #: Recorded as the active role of an event that has none: a sign-in attempt,
 #: a refusal before role activation or a system step acting for a person.
@@ -151,6 +152,14 @@ async def write_audit_log(
         engine_query_ids = engine_query_ids if engine_query_ids is not None else execution.query_ids
     qid = query_id or str(uuid.uuid4())
     actor = audit_actor(user_name, active_role, security_context_version, session_id)
+    provenance = current_dataset_query()
+    if provenance is not None and event_type == "query":
+        object_type = "DATASET"
+        object_name = str(provenance.dataset_id)
+        sql_text = provenance.label
+        rewritten_sql = None
+        if error_message:
+            error_message = "Dataset query failed or was refused"
     event = AuditEvent(
         event_type=event_type,
         action=action or "-",

@@ -1,0 +1,17 @@
+{
+  "command": [
+    "-t",
+    "js",
+    "--no-install-deps",
+    "--no-recurse",
+    "--no-progress",
+    "--spec-version",
+    "1.6",
+    "-o",
+    "../docs/reports/native-dataviz/frontend-sbom-security-update.cdx.json",
+    "."
+  ],
+  "tool": "cdxgen 13.7.0",
+  "returncode": 0,
+  "seconds": 308.75
+}

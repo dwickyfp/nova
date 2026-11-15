@@ -14,6 +14,8 @@ from app.sql_frontend.ast.statements import (
     MLMaterializeStatement,
     MLPredictStatement,
     NativeStatement,
+    ParameterizedQueryStatement,
+    QuerySchemaStatement,
     SecurityStatement,
     StageAwareStatement,
     Statement,
@@ -41,6 +43,28 @@ class AstBuilderRegistry:
         self._builders[context_name] = builder
 
     def build(self, parsed: ParsedStatement) -> Statement:
+        schema_explains = [
+            node
+            for node in _walk_nodes(parsed.statement_context)
+            if type(node).__name__ == "ExplainDescContext" and node.SCHEMA() is not None
+        ]
+        if schema_explains:
+            root = parsed.statement_context
+            if (
+                len(schema_explains) != 1
+                or type(root).__name__ != "QueryStatementContext"
+                or schema_explains[0] is not root.explainDesc()
+                or root.outfile() is not None
+            ):
+                raise SemanticError("EXPLAIN SCHEMA requires a top-level query without OUTFILE")
+            return QuerySchemaStatement(parsed)
+        if any(
+            type(node).__name__ == "NamedParameterContext"
+            for node in _walk_nodes(parsed.statement_context)
+        ):
+            if type(parsed.statement_context).__name__ != "QueryStatementContext":
+                raise SemanticError("Named parameters are supported only in read queries")
+            return ParameterizedQueryStatement(parsed)
         builder = self._builders.get(type(parsed.statement_context).__name__)
         if builder:
             return builder(parsed)

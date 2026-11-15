@@ -1,0 +1,45 @@
+$ npx --yes --package=node@22.22.0 --package=pnpm@11.8.0 -c pnpm exec tsc -b && pnpm test src/features/native-dataviz/documents.test.ts src/features/native-dataviz/contracts/contracts.test.ts src/lib/api-client.test.ts src/features/docs/content.test.ts --browser.fileParallelism=false --no-file-parallelism --maxWorkers=1
+$ vitest run --browser.headless src/features/native-dataviz/documents.test.ts src/features/native-dataviz/contracts/contracts.test.ts src/lib/api-client.test.ts src/features/docs/content.test.ts --browser.fileParallelism=false --no-file-parallelism --maxWorkers=1
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+
+12:22:39 AM [vite] (client) Re-optimizing dependencies because vite config has changed
+12:22:41 AM [vite] (client) [optimizer] bundling dependencies...
+ ❯ |browser (chromium)| src/features/native-dataviz/documents.test.ts (21 tests | 1 failed) 214ms
+     × uses the original operation for deletion and receipt verification after deletion 136ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |browser (chromium)| src/features/native-dataviz/documents.test.ts > native document transport > uses the original operation for deletion and receipt verification after deletion
+AssertionError: expected { method: 'DELETE', …(4) } to match object { method: 'DELETE', …(1) }
+(7 matching properties omitted from actual)
+
+Failure screenshot:
+  - src/features/native-dataviz/__screenshots__/documents.test.ts/native-document-transport-uses-the-original-operation-for-deletion-and-receipt-verification-after-deletion-1.png
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[2m  {[22m
+[32m-   "body": "{\"operation_id\":\"00000000-0000-4000-8000-000000000003\",\"expected_revision\":1}",[39m
+[31m+   "body": "{\"expected_revision\":1,\"operation_id\":\"00000000-0000-4000-8000-000000000003\"}",[39m
+[2m    "method": "DELETE",[22m
+[2m  }[22m
+
+ ❯ src/features/native-dataviz/documents.test.ts:105:39
+    103|   it('uses the original operation for deletion and receipt verificatio…
+    104|     await client().remove('dashboards', id(1), intent)
+    105|     expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'DELETE…
+       |                                       ^
+    106|   })
+    107| })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 3 passed (4)
+      Tests  1 failed | 61 passed (62)
+   Start at  00:22:39
+   Duration  4.64s (transform 0ms, setup 0ms, import 773ms, tests 341ms, environment 0ms)
+
+[ELIFECYCLE] Test failed. See above for more details.
