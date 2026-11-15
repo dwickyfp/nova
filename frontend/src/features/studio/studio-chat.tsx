@@ -59,6 +59,7 @@ import { useTranscriptStream } from "./use-transcript-stream";
 import { rememberLastAgent } from "./default-agent";
 import { mergeMissionProjection, type Mission } from "./workflow-api";
 import { useAuthStore } from "@/stores/auth-store";
+import { NATIVE_DASHBOARD_CHANGED } from "@/features/native-dataviz/dashboard/events";
 import { patchTurn, replayThread, type PendingCall, type TranscriptTurn } from "./studio-transcript";
 export type { OrderedContent, TranscriptTurn } from "./studio-transcript";
 
@@ -176,6 +177,15 @@ export function StudioChat({
         ["studio", "workflow", useAuthStore.getState().securityEpoch, mission.thread_id],
         (current) => mergeMissionProjection(current, mission, mission.thread_id),
       );
+    }
+    if (workflow.type === "dashboard_changed") {
+      // Native dashboards reload the committed revision Neva just wrote.
+      const changed = event as unknown as { dashboard_id?: unknown; revision?: unknown };
+      if (typeof changed.dashboard_id === "string" && typeof changed.revision === "number") {
+        window.dispatchEvent(new CustomEvent(NATIVE_DASHBOARD_CHANGED, {
+          detail: { dashboard_id: changed.dashboard_id, revision: changed.revision },
+        }));
+      }
     }
     queueEvent(turnId, event);
   }, [queryClient, queueEvent]);

@@ -59,15 +59,18 @@ def preview_value(field: DatasetField, value: object) -> Scalar | None:
 class PreviewRows:
     fetch_batch_rows = 1
 
-    def __init__(self, fields: tuple[DatasetField, ...], limit: int) -> None:
+    def __init__(
+        self, fields: tuple[DatasetField, ...], limit: int, *, max_bytes: int = MAX_PREVIEW_BYTES,
+    ) -> None:
         self.fields = fields
+        self.max_bytes = max_bytes
         self.limit = limit
         self.values: list[tuple[Scalar | None, ...]] = []
         self.has_more = False
         self.count = 0
         self.bytes = sum(len(field.model_dump_json().encode()) for field in fields) + 1024
-        if self.bytes > MAX_PREVIEW_BYTES:
-            raise NovaException("Preview schema exceeds one MiB", status_code=413)
+        if self.bytes > self.max_bytes:
+            raise NovaException("Preview schema exceeds its size limit", status_code=413)
         self.begun = False
 
     async def begin(self, columns: list[str], column_types: tuple[str, ...]) -> None:
@@ -96,8 +99,8 @@ class PreviewRows:
                 raise NovaException(
                     "Preview contains an unsupported value", status_code=422
                 ) from None
-            if self.bytes > MAX_PREVIEW_BYTES:
+            if self.bytes > self.max_bytes:
                 raise NovaException(
-                    "Preview exceeds one MiB; reduce the page size", status_code=413
+                    "Result exceeds its size limit; reduce the row limit", status_code=413
                 )
             self.values.append(values)

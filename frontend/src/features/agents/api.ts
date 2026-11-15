@@ -304,6 +304,13 @@ export type DatavizTurnContext = {
   native_filters_key: string | null;
   edit_state: "clean" | "dirty" | "unknown";
   path: string | null;
+  /** The native dashboard open in Dataviz; Neva edits it through committed revisions. */
+  native_dashboard?: {
+    dashboard_id: string;
+    revision: number;
+    page_id: string | null;
+    selected_widget_id: string | null;
+  } | null;
 };
 
 export type StreamAgentTurnOptions = {

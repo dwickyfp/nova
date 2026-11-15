@@ -49,7 +49,6 @@ describe('native document transport', () => {
     fetchMock.mockResolvedValueOnce(response(snapshot))
     await expect(client().read('dashboards', id(1), { draft: true, revision: 2 })).resolves.toEqual(snapshot)
     expect(fetchMock.mock.calls[0][0]).toBe(`/api/v1/viz/dashboards/${id(1)}?draft=true&revision=2`)
-    await expect(client().read('dashboards', id(1), { revision: 2 })).rejects.toThrow('Revision reads require draft access')
     expect(fetchMock).toHaveBeenCalledTimes(1)
     fetchMock.mockResolvedValueOnce(response({ ...snapshot, revision: 3 }))
     await expect(client().read('dashboards', id(1), { draft: true, revision: 2 })).rejects.toThrow('Unexpected document response')

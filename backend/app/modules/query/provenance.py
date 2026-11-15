@@ -11,11 +11,13 @@ from uuid import UUID
 @dataclass(frozen=True)
 class DatasetQuery:
     dataset_id: UUID
-    operation: Literal["inspect", "preview"]
+    operation: Literal["inspect", "preview", "query"]
     revision: int | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.dataset_id, UUID) or self.operation not in {"inspect", "preview"}:
+        if not isinstance(self.dataset_id, UUID) or self.operation not in {
+            "inspect", "preview", "query",
+        }:
             raise ValueError("Invalid dataset query provenance")
         if self.revision is not None and (type(self.revision) is not int or self.revision < 1):
             raise ValueError("Invalid dataset query revision")

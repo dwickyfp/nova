@@ -208,6 +208,9 @@ class LoopContext:
     #: the Dataviz assistant, governed data comes from the open dashboard's
     #: own dataset). Set by the router only.
     capability_aliases: dict[str, str] = field(default_factory=dict)
+    #: Tools for the native dashboard on screen kept in reach with the
+    #: aliases above (reading and changing it). Set by the router only.
+    dashboard_tools: tuple[str, ...] = ()
     user: dict[str, Any] | None = None
     app_context: NevaAppContext | None = None
     secure_input: dict[str, str] | None = field(default=None, repr=False)
@@ -344,7 +347,10 @@ _PREVIEW_COLUMNS = 12
 #: is registered only for Studio turns and refuses when no dashboard is open.
 _ANALYSIS_TOOLS = (
     "compute_metrics", "data_to_chart", "diagnose_change", "ml_execute", "dataviz_query",
+    "native_dataset_query",
 )
+#: Reading the open Dataviz dashboard stays in reach whatever the planner chose.
+_DASHBOARD_TOOLS = ("dataviz_query", "dataviz_context")
 #: Tool-call syntax some providers leak into the text channel.
 _TOOL_MARKUP = re.compile(
     r"<\s*[\uff5c|]{1,2}\s*DSML\s*[\uff5c|]|<\s*(?:function_calls|tool_call)\s*>|<\s*invoke\s+name\s*=",
@@ -1179,7 +1185,7 @@ class AssistantLoop:
             selected_tools = tuple(dict.fromkeys((
                 *selected_tools,
                 *(
-                    name for name in ("dataviz_query", "dataviz_context")
+                    name for name in (*_DASHBOARD_TOOLS, *context.dashboard_tools)
                     if self._registry.get(name) is not None
                 ),
             )))
@@ -1823,10 +1829,13 @@ class AssistantLoop:
                 # concepts) when no data tool was required.
                 lineage_answer = bool(
                     getattr(context, "dataviz", None)
-                    and completed_capabilities & {"dataviz_context", "dataviz_chart_source"}
+                    and completed_capabilities & {
+                        "dataviz_context", "dataviz_chart_source", "native_dashboard_read",
+                    }
                     and not set(route.required_capabilities) & {
                         "semantic_query", "semantic_view_query", "query_execute",
                         "diagnose_change", "compute_metrics", "dataviz_query",
+                        "native_dataset_query",
                     }
                 )
                 if (
@@ -2705,6 +2714,11 @@ class AssistantLoop:
 
             yield events.tool_status(invocation.tool_call_id, "done")
             _transition(context, TurnState.VERIFYING_RESULT)
+            dashboard_change = outcome.metadata.get("native_dashboard_change")
+            if isinstance(dashboard_change, dict):
+                # The tool's operation receipt confirmed a new dashboard
+                # revision: the page reloads it.
+                yield events.dashboard_changed(invocation.tool_call_id, dashboard_change)
             client_action = outcome.metadata.get("client_action")
             if (
                 invocation.tool_name == "invoke_client_capability"
@@ -4678,7 +4692,9 @@ def _tag_safe(payload: str) -> str:
 
 
 #: Governed sources: answers built on them are labelled trusted.
-_SEMANTIC_SOURCES = frozenset({"semantic_query", "semantic_view_query", "dataviz_query"})
+_SEMANTIC_SOURCES = frozenset(
+    {"semantic_query", "semantic_view_query", "dataviz_query", "native_dataset_query"}
+)
 _GLOSSARY_SOURCES = frozenset({"ontology_resolve", "ontology_explain", "ontology_status"})
 
 

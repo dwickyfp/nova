@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowUpRight, PanelRightClose, Sparkle, SquarePen } from "lucide-react";
+import { ArrowUpRight, LayoutDashboard, PanelRightClose, Sparkle, SquarePen } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 import type { DatavizTurnContext } from "@/features/agents/api";
 import { BiFrame } from "@/features/bi/bi-frame";
 import { safeBiTarget } from "@/features/bi/bi-target";
+import { NativeDataviz } from "@/features/native-dataviz/native-dataviz";
+import type { NativeDashboardContext } from "@/features/native-dataviz/dashboard/editor";
 import { StudioChat } from "../studio-chat";
 import { dockLeft, measureBarGap, supersetBarStacked } from "./superset-bar";
 import { DATAVIZ_ASSISTANT } from "./assistant-agent";
@@ -20,6 +22,16 @@ import {
 } from "./dashboard-bridge";
 
 const PANEL_KEY = "nova.dataviz.assistant";
+const MODE_KEY = "nova.dataviz.mode";
+type Mode = "native" | "legacy";
+
+function readMode(): Mode {
+  try {
+    return localStorage.getItem(MODE_KEY) === "legacy" ? "legacy" : "native";
+  } catch {
+    return "native";
+  }
+}
 const MIN_WIDTH = 320;
 const MAX_WIDTH = 640;
 const DEFAULT_WIDTH = 400;
@@ -53,7 +65,7 @@ function isNarrow(): boolean {
 }
 
 /** The dashboard on screen, read fresh when a message is sent. */
-function turnContext(): DatavizTurnContext {
+function legacyTurnContext(): DatavizTurnContext {
   const frame = syncDatavizFrame();
   return {
     dashboard_id: frame.dashboardId,
@@ -92,6 +104,40 @@ export function DatavizWorkspace({
   tabs?: React.ReactNode;
 }) {
   const isMobile = useIsMobile();
+  const [mode, setModeState] = useState<Mode>(readMode);
+  const [legacyVisited, setLegacyVisited] = useState(() => readMode() === "legacy");
+  const nativeContext = useRef<NativeDashboardContext | null>(null);
+  const [nativeOpen, setNativeOpen] = useState(false);
+  const [askPrompt, setAskPrompt] = useState("");
+  const setMode = (next: Mode) => {
+    setModeState(next);
+    if (next === "legacy") setLegacyVisited(true);
+    try {
+      localStorage.setItem(MODE_KEY, next);
+    } catch {
+      // A per-browser convenience.
+    }
+  };
+  const onNativeContext = useCallback((context: NativeDashboardContext | null) => {
+    nativeContext.current = context;
+    setNativeOpen(Boolean(context));
+  }, []);
+  const turnContext = useCallback((): DatavizTurnContext => {
+    if (mode === "legacy") return legacyTurnContext();
+    return {
+      dashboard_id: null,
+      native_filters_key: null,
+      edit_state: "unknown",
+      path: null,
+      native_dashboard: nativeContext.current,
+    };
+  }, [mode]);
+  const askNeva = useCallback((prompt: string) => {
+    setPanel((current) => ({ ...current, open: true }));
+    // Clear first so asking the same question twice fills the composer again.
+    setAskPrompt("");
+    window.setTimeout(() => setAskPrompt(prompt), 0);
+  }, []);
   const [panel, setPanel] = useState(readPanel);
   const [source, setSource] = useState(() => safeBiTarget(path));
   const [threadId, setThreadId] = useState<string | null>(null);
@@ -107,12 +153,14 @@ export function DatavizWorkspace({
   const [docked, setDocked] = useState(() => !isNarrow());
   const [resizing, setResizing] = useState(false);
 
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
   const placeControls = useCallback(() => {
     const root = rootRef.current;
     const node = frameRef.current;
     const cluster = clusterRef.current;
     if (!root || !node || !cluster) return;
-    if (isNarrow()) {
+    if (isNarrow() || modeRef.current === "native") {
       setDocked(false);
       return;
     }
@@ -142,9 +190,11 @@ export function DatavizWorkspace({
   useEffect(() => writePanel(panel), [panel]);
   useEffect(() => () => attachDatavizFrame(null), []);
 
+  useEffect(() => placeControls(), [mode, placeControls]);
+
   // Superset routes client-side without load events; follow the frame while shown.
   useEffect(() => {
-    if (!visible) return;
+    if (!visible || mode !== "legacy") return;
     const timer = window.setInterval(() => {
       syncDatavizFrame();
       placeControls();
@@ -157,7 +207,7 @@ export function DatavizWorkspace({
       window.clearInterval(timer);
       observer.disconnect();
     };
-  }, [visible, placeControls]);
+  }, [visible, placeControls, mode]);
 
   useEffect(() => {
     if (!frame.path || frame.path === reported.current) return;
@@ -204,6 +254,7 @@ export function DatavizWorkspace({
   };
 
   const panelOpen = panel.open;
+  const dockedHere = mode === "legacy" && docked && dock;
   return (
     // With room in Superset's bar, the switch and the Assistant button dock in
     // its empty middle and there is no header row: Superset's bar and the
@@ -212,17 +263,35 @@ export function DatavizWorkspace({
     // still share one top rule. Superset is never covered.
     <div
       ref={rootRef}
-      className={cn("relative flex h-full min-h-0 w-full", !(docked && dock) && "pt-14")}
+      className={cn("relative flex h-full min-h-0 w-full", !dockedHere && "pt-14")}
     >
       <div
         className={cn(
           "pointer-events-none absolute z-20",
-          docked && dock ? "" : "inset-x-0 top-3 flex justify-center px-4",
+          dockedHere ? "" : "inset-x-0 top-3 flex justify-center px-4",
         )}
-        style={docked && dock ? { left: dock.left, top: dock.top } : undefined}
+        style={dockedHere ? { left: dock.left, top: dock.top } : undefined}
       >
         <div ref={clusterRef} className="pointer-events-auto flex items-center gap-2">
           {tabs}
+          <div role="radiogroup" aria-label="Dataviz mode" className="nova-mode-switch flex rounded-full p-1">
+            {(["native", "legacy"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={mode === value}
+                onClick={() => setMode(value)}
+                className={cn(
+                  "flex h-8 items-center gap-1.5 rounded-full px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  mode === value ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {value === "native" ? <LayoutDashboard aria-hidden="true" className="size-4" strokeWidth={1.5} /> : null}
+                {value === "native" ? "Dashboards" : "Legacy BI"}
+              </button>
+            ))}
+          </div>
           {!panelOpen ? (
             <div className="nova-mode-switch rounded-full p-1">
               <button
@@ -243,10 +312,17 @@ export function DatavizWorkspace({
         <div
           className={cn(
             "flex min-h-0 flex-1 flex-col overflow-hidden bg-background",
-            !(docked && dock) && "border-t",
+            !dockedHere && "border-t",
           )}
         >
-          <BiFrame ref={setFrame} path={source} title="Dataviz" onLoad={() => syncDatavizFrame()} holdsEdits />
+          {mode === "native" ? (
+            <NativeDataviz onContextChange={onNativeContext} onAskNeva={askNeva} />
+          ) : null}
+          {legacyVisited ? (
+            <div className={cn("flex min-h-0 flex-1 flex-col", mode !== "legacy" && "hidden")}>
+              <BiFrame ref={setFrame} path={source} title="Dataviz" onLoad={() => syncDatavizFrame()} holdsEdits />
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -316,7 +392,7 @@ export function DatavizWorkspace({
           style={isMobile ? undefined : { width: panel.width }}
           className={cn(
             "flex h-full min-h-0 flex-col border-l bg-background",
-            !(docked && dock) && "border-t",
+            !dockedHere && "border-t",
           )}
         >
           {/* As tall as Superset's own header (61px with its rule), so both rules meet. */}
@@ -328,13 +404,17 @@ export function DatavizWorkspace({
                   aria-hidden="true"
                   className={cn(
                     "size-1.5 shrink-0 rounded-full",
-                    frame.dashboardId ? "bg-success" : "bg-muted-foreground/40",
+                    (mode === "native" ? nativeOpen : frame.dashboardId) ? "bg-success" : "bg-muted-foreground/40",
                   )}
                 />
                 <span className="truncate">
-                  {frame.dashboardId
-                    ? `Reading ${frame.title ?? `dashboard ${frame.dashboardId}`}`
-                    : "Open a dashboard to ask about it"}
+                  {mode === "native"
+                    ? nativeOpen
+                      ? "Neva can read and edit this dashboard"
+                      : "Open a dashboard to work on it with Neva"
+                    : frame.dashboardId
+                      ? `Reading ${frame.title ?? `dashboard ${frame.dashboardId}`}`
+                      : "Open a dashboard to ask about it"}
                 </span>
               </p>
             </div>
@@ -353,7 +433,7 @@ export function DatavizWorkspace({
                 onClick={() => {
                   const open = datavizFrameState();
                   onContinueInAgent(
-                    open.dashboardId
+                    mode === "legacy" && open.dashboardId
                       ? `Lanjutkan analisis dashboard Dataviz #${open.dashboardId}: `
                       : "",
                   );
@@ -381,6 +461,7 @@ export function DatavizWorkspace({
               onThreadChange={setThreadId}
               newChatNonce={newChatNonce}
               datavizContext={turnContext}
+              initialPrompt={askPrompt}
             />
           </div>
         </aside>

@@ -12,6 +12,8 @@ Wire format: ``event: <name>\\ndata: <json>\\n\\n``. Payloads are JSON objects.
  * ``tool_call``   — a ``ToolCallView`` with ``status:"pending"``
  * ``tool_progress`` — a live, redacted stage inside one tool execution
  * ``tool_status`` — ``{"tool_call_id", "status"}``
+ * ``dashboard_changed`` — ``{"tool_call_id", "dashboard_id", "revision"}``
+   after a tool committed a native Dataviz dashboard revision
  * ``content_block_done`` — closes one ordered response content block
  * ``done``        — ``{"message_id", "finish_reason"}``
  * ``error``       — ``{"code", "message"}`` (message already redacted)
@@ -58,6 +60,9 @@ EVENT_CITATION = "citation"
 #: A visible tool result summary, sent after success. Skill bodies stay in the
 #: model's tool result and are not emitted on this stream.
 EVENT_TOOL_DETAIL = "tool_detail"
+#: A Dataviz dashboard committed a new revision through a tool: the page
+#: reloads that dashboard. ``{"tool_call_id", "dashboard_id", "revision"}``.
+EVENT_DASHBOARD_CHANGED = "dashboard_changed"
 
 #: Media type the route must set on the response.
 SSE_MEDIA_TYPE = "text/event-stream"
@@ -254,6 +259,19 @@ def content_block_done(content_index: int, content_id: str) -> str:
         EVENT_CONTENT_BLOCK_DONE,
         {"content_index": content_index, "content_id": content_id},
     )
+
+
+def dashboard_changed(tool_call_id: str, change: dict[str, Any]) -> str:
+    """A committed native dashboard revision, confirmed by its operation receipt."""
+    payload: dict[str, Any] = {
+        "tool_call_id": tool_call_id,
+        "dashboard_id": str(change["dashboard_id"]),
+        "revision": int(change["revision"]),
+    }
+    for flag in ("created", "published"):
+        if change.get(flag):
+            payload[flag] = True
+    return format_sse(EVENT_DASHBOARD_CHANGED, payload)
 
 
 def tool_detail(tool_call_id: str, text: str) -> str:

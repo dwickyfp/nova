@@ -119,10 +119,18 @@ class VizDocumentRepository(WorkspaceMetadataScope):
         self, identity: UUID, *, draft: bool = False, revision: int | None = None,
     ) -> dict[str, Any]:
         if revision is not None and (
-            not draft or type(revision) is not int or not 1 <= revision <= 9_007_199_254_740_991
+            type(revision) is not int or not 1 <= revision <= 9_007_199_254_740_991
         ):
-            raise NovaException("A revision read requires draft editing access", status_code=422)
+            raise NovaException("Invalid document revision", status_code=422)
         head = await self._head(identity)
+        if revision is not None and not draft:
+            # A viewer reads the exact revision a publication pins. Revision row
+            # security admits it only through a visible current publication.
+            document = await self._definition(identity, revision, head["kind"])
+            return {"resource_id": identity, "revision": revision,
+                    "metadata_revision": head["metadata_revision"],
+                    "grants_revision": head["grants_revision"],
+                    "publication_id": head["current_publication_id"], "definition": document}
         if draft:
             await self._permission(identity, "edit")
             revision = head["draft_revision"] if revision is None else revision
@@ -140,6 +148,10 @@ class VizDocumentRepository(WorkspaceMetadataScope):
                 "metadata_revision": head["metadata_revision"],
                 "grants_revision": head["grants_revision"],
                 "publication_id": head["current_publication_id"], "definition": document}
+
+    async def head(self, identity: UUID) -> dict[str, Any]:
+        """The visible resource row (kind, workspace, revisions); row security decides."""
+        return await self._head(identity)
 
     async def require_kind(self, identity: UUID, kind: Kind) -> None:
         if (await self._head(identity))["kind"] != kind:

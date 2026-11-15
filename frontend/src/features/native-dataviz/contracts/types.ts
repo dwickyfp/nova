@@ -191,6 +191,25 @@ export type DatasetPublication = {
   "grain": Array<string>;
 };
 
+export type DatasetQueryRequest = {
+  "revision": number;
+  "draft"?: boolean;
+  "dimensions"?: Array<QueryDimension>;
+  "measures"?: Array<QueryMeasure>;
+  "filters"?: FilterTree | null;
+  "sort"?: Array<QuerySort>;
+  "limit"?: number;
+  "parameters"?: Array<ParameterInput>;
+};
+
+export type DatasetQueryResult = {
+  "dataset_id": string;
+  "revision": number;
+  "columns": Array<QueryColumn>;
+  "rows": Array<Array<StringValue | IntegerValue | DecimalValue | FloatValue | BooleanValue | DateValue | TimestampValue | null>>;
+  "truncated": boolean;
+};
+
 export type DatasetReference = {
   "dataset_id": string;
   "revision": number;
@@ -620,6 +639,32 @@ export type PublishedMetric = {
   "level": "row" | "aggregate" | "post_aggregate";
   "unit": string;
   "currency": string | null;
+};
+
+export type QueryColumn = {
+  "key": string;
+  "name": string;
+  "logical_type": "string" | "boolean" | "integer" | "decimal" | "float" | "date" | "timestamp" | "geometry";
+  "role": "dimension" | "measure";
+  "field_id"?: string | null;
+  "aggregation"?: "sum" | "avg" | "min" | "max" | "count" | "count_distinct" | null;
+  "date_grain"?: "day" | "week" | "month" | "quarter" | "year" | null;
+  "timezone"?: string | null;
+};
+
+export type QueryDimension = {
+  "field_id": string;
+  "date_grain"?: "day" | "week" | "month" | "quarter" | "year" | null;
+};
+
+export type QueryMeasure = {
+  "field_id"?: string | null;
+  "aggregation": "sum" | "avg" | "min" | "max" | "count" | "count_distinct";
+};
+
+export type QuerySort = {
+  "column": string;
+  "direction"?: "asc" | "desc";
 };
 
 export type ReferenceBand = {

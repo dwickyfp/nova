@@ -244,6 +244,8 @@ class EvidenceTracker:
                 # Rows of the open Dataviz dashboard's own dataset, read through
                 # Superset and Nova's proxy as the caller (governed, audited).
                 "dataviz_query",
+                # Rows of a native Dataviz dataset, aggregated as the caller.
+                "native_dataset_query",
                 "canonical_investigation",
                 # A forecast or score the runtime computed is a result the answer may
                 # state; without it every ML answer is rebuilt from the input table.

@@ -2169,6 +2169,7 @@ async def send_agent_message(
     #: Required tools whose output the server already gave this turn.
     dataviz_settled: tuple[str, ...] = ()
     dataviz_aliases: dict[str, str] = {}
+    dashboard_tools: tuple[str, ...] = ()
     if agent_id == SKILL_AUTHOR_ID or is_skill_authoring(body.content, history):
         from app.modules.agents.prompt import build_system_prompt
 
@@ -2250,6 +2251,34 @@ async def send_agent_message(
                     f"\n\nThe user is looking at Dataviz dashboard "
                     f"{body.dataviz.dashboard_id}, which could not be read right now."
                 )
+        native = body.dataviz.native_dashboard if body.dataviz is not None else None
+        if is_dataviz_assistant(agent_id) or native is not None:
+            # Native Dataviz dashboards: the same loop gets tools that read and
+            # change them through the native document service, as the caller.
+            from app.modules.agents.tools import native_dataviz
+
+            native_dataviz.register(registry)
+            system_prompt += "\n\n" + native_dataviz.PROMPT
+            if native is not None:
+                text, read = await native_dataviz.brief(user, native.model_dump(mode="json"))
+                system_prompt += (
+                    "\n\n## The native dashboard on screen\n"
+                    "\"This dashboard\" means this one. Change it only with the native "
+                    "dashboard tools; the other Dataviz add tools are for BI dashboards.\n"
+                    + text
+                )
+                if read:
+                    dataviz_settled += ("native_dashboard_read",)
+                superset_open = bool(body.dataviz and body.dataviz.dashboard_id)
+                if is_dataviz_assistant(agent_id) and not superset_open:
+                    # Numbers come from the dashboard's own datasets, and reading
+                    # or changing it stays in reach whatever the planner chose.
+                    from app.modules.agents.dataviz_assistant import DASHBOARD_ALIASES
+
+                    for name in (*DASHBOARD_ALIASES, "dataviz_query", "dataviz_context"):
+                        registry.discard(name)
+                    dataviz_aliases = dict.fromkeys(DASHBOARD_ALIASES, "native_dataset_query")
+                    dashboard_tools = native_dataviz.TOOL_NAMES
         system_prompt += await _business_terms_note(body.content, user, bound_view_ids(agent))
         try:
             memories = await memory_repository.list(
@@ -2359,9 +2388,10 @@ async def send_agent_message(
         workspace_file_id=thread_row.get("workspace_file_id"),
         session_id=user.get("session_id"),
         thread_id=thread_id,
-        dataviz=body.dataviz.model_dump() if body.dataviz is not None else None,
+        dataviz=body.dataviz.model_dump(mode="json") if body.dataviz is not None else None,
         settled_capabilities=dataviz_settled,
         capability_aliases=dataviz_aliases,
+        dashboard_tools=dashboard_tools,
         user=user,
         attachments=attachments,
         has_attachment_history=any(row.get("attachments") for row in history),

@@ -47,6 +47,7 @@ from .contracts.http import (
     OperationReceipt,
     RevisionSummary,
 )
+from .contracts.queries import DatasetQueryRequest, DatasetQueryResult
 from .dataset_service import native_dataset_service as datasets
 from .document_service import native_document_service as service
 from .documents import Kind
@@ -213,6 +214,13 @@ async def preview_dataset(
     identity: UUID, body: DatasetPreviewRequest, user: User
 ) -> DatasetPreview:
     return await datasets.preview(user, identity, body)
+
+
+@router.post("/datasets/{identity}/query", response_model=DatasetQueryResult)
+async def query_dataset(
+    identity: UUID, body: DatasetQueryRequest, user: User,
+) -> DatasetQueryResult:
+    return await datasets.query(user, identity, body)
 
 
 @router.patch("/datasets/{identity}/draft", response_model=OperationReceipt)

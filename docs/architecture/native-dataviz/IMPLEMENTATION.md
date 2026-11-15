@@ -511,6 +511,33 @@ base dataset in the document dependency graph; their authoring/execution remains
 unfinished. Semantic charts must plan through the existing compiler, including
 its additivity rules, rather than blindly reaggregate a preview result.
 
+## Dataviz assistant tools
+
+`backend/app/modules/agents/tools/native_dataviz.py` gives the Studio Dataviz
+assistant (and any Studio turn asked from a native dashboard) eleven tools in
+the shared `AssistantLoop`: list, read, describe a dataset, aggregate query,
+add charts, update a chart, arrange/remove widgets, filters, create, attach a
+dataset (existing or from a table), and publish. They call
+`NativeDocumentService` and `NativeDatasetService` in-process with the turn's
+caller; no service credential or HTTP hop is involved.
+
+- Reads are `read_only`. Every change is `session_change` with consent, like the
+  other Dataviz writes; `auto_read_only` never covers it.
+- Each change uses the draft revision it read as `expected_revision`; a conflict
+  is re-read and retried once. Operation ids derive from the tool call, so a
+  retried call returns its existing receipt. A failure with an unknown outcome is
+  resolved by `receipt` lookup and is never sent again.
+- A committed change returns `dashboard_id` and the receipt's `new_revision`; the
+  loop emits a `dashboard_changed` SSE event so the page reloads that revision.
+- The turn context accepts `dataviz.native_dashboard` (`dashboard_id`, shown
+  `revision`, `page_id`, `selected_widget_id`). The router reads that dashboard
+  as the caller into the prompt, and for the Dataviz assistant routes governed
+  data questions to its datasets.
+
+Covered by `tests/unit/test_native_dataviz_assistant_tools.py` and
+`tests/eval/test_native_dataviz_trajectory.py` with faked services. No live
+model, PG17 or browser run has exercised these tools yet.
+
 ## Failure and recovery boundaries
 
 Invalid definitions fail before persistence. Revision races return the existing

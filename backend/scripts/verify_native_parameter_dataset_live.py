@@ -40,6 +40,73 @@ def cities(*names: str) -> dict[str, Any]:
     return {"parameter_id": "cities", "values": [{"type": "string", "value": n} for n in names]}
 
 
+async def verify_aggregates(
+    probe: LiveCheck, path: str, owner: str, outsider: str, schema: dict[str, Any],
+    identity: str, canary: str,
+) -> None:
+    """Governed aggregate queries over the same saved dataset revision."""
+    ids = {f["source_column"]: f["field_id"] for f in schema["fields"]}
+    both = [cities("Jakarta", "Bandung")]
+
+    def where(column: str, op: str, *values: dict[str, Any]) -> dict[str, Any]:
+        return {"expression": {"type": "predicate", "op": op, "values": list(values), "field": {
+            "dataset_id": identity, "dataset_revision": 1, "field_id": ids[column]}}}
+
+    async def query(name: str, body: dict[str, Any], status: int = 200,
+                    token: str = owner) -> dict[str, Any]:
+        response = await probe.request(name, "POST", path + "/query", token, status=status,
+                                       body={"revision": 1, "draft": True, **body})
+        probe.check(f"{name}: no filter value echoed", canary not in response.text)
+        return response.json() if status == 200 else {}
+
+    grouped = await query("sum and count by city", {
+        "dimensions": [{"field_id": ids["city"]}],
+        "measures": [{"field_id": ids["amount"], "aggregation": "sum"},
+                     {"aggregation": "count"}],
+        "parameters": both})
+    probe.check("exact grouped totals", [[cell["value"] for cell in row] for row in grouped["rows"]]
+                == [["Bandung", "20.00", "1"], ["Jakarta", "40.75", "2"]])
+    probe.check("typed result columns", [(c["key"], c["logical_type"]) for c in grouped["columns"]]
+                == [("d0", "string"), ("m0", "decimal"), ("m1", "integer")])
+    monthly = await query("monthly date grain", {
+        "dimensions": [{"field_id": ids["sale_day"], "date_grain": "month"}],
+        "measures": [{"aggregation": "count"}], "parameters": both})
+    probe.check("calendar month buckets", [[cell["value"] for cell in row]
+                                           for row in monthly["rows"]]
+                == [["2024-02-01", "2"], ["2024-03-01", "1"]])
+    filtered = await query("bound filter predicate", {
+        "measures": [{"field_id": ids["amount"], "aggregation": "max"}],
+        "filters": where("city", "eq", {"type": "string", "value": "Jakarta"}),
+        "parameters": both})
+    probe.check("filter applied before aggregation", filtered["rows"] == [[
+        {"type": "decimal", "value": "30.25"}]])
+    ranged = await query("between dates and sort", {
+        "dimensions": [{"field_id": ids["id"]}],
+        "measures": [{"field_id": ids["amount"], "aggregation": "sum"}],
+        "filters": where("sale_day", "between", {"type": "date", "value": "2024-02-29"},
+                         {"type": "date", "value": "2024-03-31"}),
+        "sort": [{"column": "m0", "direction": "desc"}], "parameters": both})
+    probe.check("sorted by measure", [row[0]["value"] for row in ranged["rows"]] == ["3", "2"])
+    limited = await query("limit marks truncation", {
+        "dimensions": [{"field_id": ids["id"]}], "limit": 2, "parameters": both})
+    probe.check("truncation reported", limited["truncated"] is True and len(limited["rows"]) == 2)
+    injected = await query("injection-shaped filter value", {
+        "measures": [{"aggregation": "count"}],
+        "filters": where("city", "in", {"type": "string", "value": canary}),
+        "parameters": both})
+    probe.check("filter value stays data", injected["rows"] == [[
+        {"type": "integer", "value": "0"}]])
+    await query("type-mismatched filter refused", {
+        "measures": [{"aggregation": "count"}],
+        "filters": where("city", "eq", {"type": "integer", "value": "1"}), "parameters": both},
+        status=422)
+    await query("text sum refused", {
+        "measures": [{"field_id": ids["city"], "aggregation": "sum"}], "parameters": both},
+        status=422)
+    await query("outsider cannot query personal dataset", {
+        "measures": [{"aggregation": "count"}], "parameters": both}, status=404, token=outsider)
+
+
 async def run(args: argparse.Namespace) -> dict[str, Any]:
     identity = str(uuid4())
     path = f"/api/v1/viz/datasets/{identity}"
@@ -151,6 +218,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             probe.check("injection-shaped text stays a value", injected["rows"] == [])
             await preview("personal dataset hidden from outsider", [cities("Jakarta")],
                           status=404, token=outsider)
+            await verify_aggregates(probe, path, owner, outsider, schema, identity, canary)
             history = await probe.request("caller query history", "GET",
                                           "/api/v1/query/history?limit=100", owner)
             probe.check("parameter values absent from history", canary not in history.text)

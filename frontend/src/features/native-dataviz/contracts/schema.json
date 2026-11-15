@@ -1346,6 +1346,168 @@
       "title": "DatasetPublication",
       "type": "object"
     },
+    "DatasetQueryRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "dimensions": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/QueryDimension"
+          },
+          "maxItems": 8,
+          "title": "Dimensions",
+          "type": "array"
+        },
+        "draft": {
+          "default": true,
+          "title": "Draft",
+          "type": "boolean"
+        },
+        "filters": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FilterTree"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "limit": {
+          "default": 1000,
+          "maximum": 10000,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "measures": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/QueryMeasure"
+          },
+          "maxItems": 16,
+          "title": "Measures",
+          "type": "array"
+        },
+        "parameters": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ParameterInput"
+          },
+          "maxItems": 32,
+          "title": "Parameters",
+          "type": "array"
+        },
+        "revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "sort": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/QuerySort"
+          },
+          "maxItems": 8,
+          "title": "Sort",
+          "type": "array"
+        }
+      },
+      "required": [
+        "revision"
+      ],
+      "title": "DatasetQueryRequest",
+      "type": "object"
+    },
+    "DatasetQueryResult": {
+      "additionalProperties": false,
+      "properties": {
+        "columns": {
+          "items": {
+            "$ref": "#/$defs/QueryColumn"
+          },
+          "title": "Columns",
+          "type": "array"
+        },
+        "dataset_id": {
+          "format": "uuid",
+          "title": "Dataset Id",
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "rows": {
+          "items": {
+            "items": {
+              "anyOf": [
+                {
+                  "discriminator": {
+                    "mapping": {
+                      "boolean": "#/$defs/BooleanValue",
+                      "date": "#/$defs/DateValue",
+                      "decimal": "#/$defs/DecimalValue",
+                      "float": "#/$defs/FloatValue",
+                      "integer": "#/$defs/IntegerValue",
+                      "string": "#/$defs/StringValue",
+                      "timestamp": "#/$defs/TimestampValue"
+                    },
+                    "propertyName": "type"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/StringValue"
+                    },
+                    {
+                      "$ref": "#/$defs/IntegerValue"
+                    },
+                    {
+                      "$ref": "#/$defs/DecimalValue"
+                    },
+                    {
+                      "$ref": "#/$defs/FloatValue"
+                    },
+                    {
+                      "$ref": "#/$defs/BooleanValue"
+                    },
+                    {
+                      "$ref": "#/$defs/DateValue"
+                    },
+                    {
+                      "$ref": "#/$defs/TimestampValue"
+                    }
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array"
+          },
+          "title": "Rows",
+          "type": "array"
+        },
+        "truncated": {
+          "title": "Truncated",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "dataset_id",
+        "revision",
+        "columns",
+        "rows",
+        "truncated"
+      ],
+      "title": "DatasetQueryResult",
+      "type": "object"
+    },
     "DatasetReference": {
       "additionalProperties": false,
       "properties": {
@@ -4201,6 +4363,211 @@
       "title": "PublishedMetric",
       "type": "object"
     },
+    "QueryColumn": {
+      "additionalProperties": false,
+      "properties": {
+        "aggregation": {
+          "anyOf": [
+            {
+              "enum": [
+                "sum",
+                "avg",
+                "min",
+                "max",
+                "count",
+                "count_distinct"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Aggregation"
+        },
+        "date_grain": {
+          "anyOf": [
+            {
+              "enum": [
+                "day",
+                "week",
+                "month",
+                "quarter",
+                "year"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date Grain"
+        },
+        "field_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field Id"
+        },
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "logical_type": {
+          "enum": [
+            "string",
+            "boolean",
+            "integer",
+            "decimal",
+            "float",
+            "date",
+            "timestamp",
+            "geometry"
+          ],
+          "title": "Logical Type",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "dimension",
+            "measure"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "timezone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timezone"
+        }
+      },
+      "required": [
+        "key",
+        "name",
+        "logical_type",
+        "role"
+      ],
+      "title": "QueryColumn",
+      "type": "object"
+    },
+    "QueryDimension": {
+      "additionalProperties": false,
+      "properties": {
+        "date_grain": {
+          "anyOf": [
+            {
+              "enum": [
+                "day",
+                "week",
+                "month",
+                "quarter",
+                "year"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date Grain"
+        },
+        "field_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Field Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "field_id"
+      ],
+      "title": "QueryDimension",
+      "type": "object"
+    },
+    "QueryMeasure": {
+      "additionalProperties": false,
+      "properties": {
+        "aggregation": {
+          "enum": [
+            "sum",
+            "avg",
+            "min",
+            "max",
+            "count",
+            "count_distinct"
+          ],
+          "title": "Aggregation",
+          "type": "string"
+        },
+        "field_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field Id"
+        }
+      },
+      "required": [
+        "aggregation"
+      ],
+      "title": "QueryMeasure",
+      "type": "object"
+    },
+    "QuerySort": {
+      "additionalProperties": false,
+      "properties": {
+        "column": {
+          "pattern": "^[dm][0-9]{1,2}$",
+          "title": "Column",
+          "type": "string"
+        },
+        "direction": {
+          "default": "asc",
+          "enum": [
+            "asc",
+            "desc"
+          ],
+          "title": "Direction",
+          "type": "string"
+        }
+      },
+      "required": [
+        "column"
+      ],
+      "title": "QuerySort",
+      "type": "object"
+    },
     "ReferenceBand": {
       "additionalProperties": false,
       "properties": {
@@ -5739,6 +6106,12 @@
     "dataset_preview_request": {
       "$ref": "#/$defs/DatasetPreviewRequest"
     },
+    "dataset_query_request": {
+      "$ref": "#/$defs/DatasetQueryRequest"
+    },
+    "dataset_query_result": {
+      "$ref": "#/$defs/DatasetQueryResult"
+    },
     "delete": {
       "$ref": "#/$defs/DeleteRequest"
     },
@@ -5815,6 +6188,8 @@
     "dataset",
     "dataset_preview",
     "dataset_preview_request",
+    "dataset_query_request",
+    "dataset_query_result",
     "object_inspect",
     "object_inspection",
     "object_dataset_create",

@@ -790,3 +790,23 @@ input:-webkit-autofill:active {
     animation: none;
   }
 }
+
+/* Native Dataviz canvas. The dotted grid is an editing affordance only; widget
+   geometry comes from the saved 12-column layout, never from these pixels. */
+.nova-dataviz-edit-grid {
+  background-image: radial-gradient(circle, var(--viz-axis) 1px, transparent 1.5px);
+  background-size: calc(100% / 12) 72px;
+  background-position: 0 0;
+}
+.nova-dataviz-canvas .grid-stack-placeholder > .placeholder-content {
+  border: 1px dashed var(--ring);
+  border-radius: var(--radius);
+  background: color-mix(in oklab, var(--primary) 8%, transparent);
+}
+.nova-dataviz-canvas .grid-stack-item > .ui-resizable-se {
+  opacity: 0;
+}
+.nova-dataviz-canvas[data-mode="edit"] .grid-stack-item:hover > .ui-resizable-se,
+.nova-dataviz-canvas[data-mode="edit"] .grid-stack-item:focus-within > .ui-resizable-se {
+  opacity: 1;
+}

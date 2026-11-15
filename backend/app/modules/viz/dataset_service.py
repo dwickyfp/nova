@@ -27,14 +27,22 @@ from app.sql_frontend.analysis.lineage import read_query_sources
 from app.sql_frontend.binding.models import BoundColumn, BoundTable, TableName
 from app.sql_frontend.binding.starrocks import (
     StarRocksCatalogProvider,
+    _identifier,
     query_output_schema,
     source_projection,
 )
 from app.sql_frontend.context import ExecutionContext
 from app.sql_frontend.errors import SemanticError, SQLFrontendError
+from app.sql_frontend.parameters import BoundParameters, parameter_slots
 from app.sql_frontend.parser import parse_statement_async, run_sql_cpu
-from app.sql_frontend.read_queries import parameter_schema_query, preview_query, schema_query
+from app.sql_frontend.read_queries import (
+    parameter_schema_query,
+    preview_query,
+    schema_query,
+    validate_read_query,
+)
 
+from .aggregate import plan_aggregate
 from .contracts.authoring import (
     DashboardDatasetCreate,
     DatasetCreate,
@@ -62,6 +70,7 @@ from .contracts.datasets import (
     SemanticSource,
     SqlSource,
 )
+from .contracts.queries import DatasetQueryRequest, DatasetQueryResult
 from .document_service import (
     current_session,
     document_admission,
@@ -77,7 +86,7 @@ SOURCE_TIMEOUT_SECONDS = 30
 @asynccontextmanager
 async def source_capacity(
     user: Mapping[str, Any], identity: UUID, *,
-    operation: Literal["inspect", "preview"], revision: int | None = None,
+    operation: Literal["inspect", "preview", "query"], revision: int | None = None,
 ) -> AsyncIterator[None]:
     try:
         with dataset_query(DatasetQuery(identity, operation, revision)):
@@ -324,6 +333,106 @@ class NativeDatasetService:
             offset=request.offset,
             has_more=sink.has_more,
             next_offset=next_offset if sink.has_more and next_offset <= 10_000 else None,
+        )
+
+    async def query(
+        self, user: Mapping[str, Any], identity: UUID, request: DatasetQueryRequest
+    ) -> DatasetQueryResult:
+        """Aggregate a pinned dataset revision under the caller's active role."""
+        async with document_admission(user, action="QUERY", identity=identity):
+            try:
+                async with (
+                    source_capacity(user, identity, operation="query", revision=request.revision),
+                    asyncio.timeout(SOURCE_TIMEOUT_SECONDS),
+                ):
+                    return await self._query(user, identity, request)
+            except TimeoutError:
+                raise NovaException("Dataset query timed out", status_code=504) from None
+            except SQLFrontendError:
+                raise NovaException(
+                    "Dataset query is unavailable or unsupported", status_code=422
+                ) from None
+            except StarRocksError:
+                raise NovaException(
+                    "Dataset is unavailable or not permitted", status_code=403
+                ) from None
+
+    async def _query_snapshot(
+        self, user: Mapping[str, Any], identity: UUID, request: DatasetQueryRequest
+    ) -> dict[str, Any]:
+        async with document_transaction(
+            user, action="QUERY", identity=identity, read_only=True
+        ) as repository:
+            await repository.require_kind(identity, "dataset")
+            if request.draft:
+                snapshot = await repository.read(identity, draft=True, revision=request.revision)
+            else:
+                # Pinned revisions are visible through a published reference or
+                # edit access; row security on revisions decides, not the client.
+                definition = await repository.revision(identity, request.revision)
+                snapshot = {"revision": request.revision, "definition": definition}
+        return snapshot
+
+    async def _query(
+        self, user: Mapping[str, Any], identity: UUID, request: DatasetQueryRequest
+    ) -> DatasetQueryResult:
+        snapshot = await self._query_snapshot(user, identity, request)
+        document = snapshot["definition"]
+        if not isinstance(document, DatasetDefinition) or snapshot["revision"] != request.revision:
+            raise NovaException("Document not found", status_code=404)
+        selection = self._selection(document)
+        parameters = bind_parameters(document.parameters, request.parameters)
+        await self._verify_preview_source(user, document, selection)
+        execution: ObjectInspect | SqlInspect
+        if isinstance(selection, SemanticInspect):
+            execution, _ = await self._semantic_query(user, selection)
+        else:
+            execution = selection
+        if isinstance(execution, SqlInspect):
+            parsed = await parse_statement_async(execution.source.sql)
+            validate_read_query(parsed)
+            if parameters is not None:
+                parameter_slots(parsed, parameters.specs)
+            relation = parsed.statement_context.queryRelation()
+            inner = parsed.normalized_sql[relation.start.start : relation.stop.stop + 1]
+        else:
+            source = execution.source
+            qualified = ".".join(
+                _identifier(part) for part in (source.catalog, source.database, source.object_name)
+            )
+            projection = ",".join(_identifier(f.source_column) for f in document.fields)
+            inner = f"SELECT {projection} FROM {qualified}"
+        plan = await run_sql_cpu(
+            len(inner), plan_aggregate, inner, document.fields, request,
+            dataset_id=str(identity),
+            reserved_parameters={spec.name for spec in parameters.specs} if parameters else set(),
+        )
+        specs = (*(parameters.specs if parameters else ()), *plan.specs)
+        values = (*(parameters.values if parameters else ()), *plan.values)
+        if len(specs) > 32:
+            raise NovaException("The query uses too many filter values", status_code=422)
+        bound = BoundParameters(tuple(specs), tuple(values)) if specs else None
+        session = await current_session(user)
+        sink = PreviewRows(plan.output_fields, request.limit, max_bytes=4 * 1_048_576)
+        result = await query_service.execute(
+            sql=plan.sql,
+            username=session["username"],
+            encrypted_password=user["encrypted_password"],
+            database=execution.source.database,
+            schema=execution.source.schema_name,
+            role=session["active_role"],
+            session_id=session["session_id"],
+            security_context_version=session["security_context_version"],
+            max_rows=request.limit + 1,
+            row_sink=sink,
+            parameters=bound,
+        )
+        if result.error or not result.streamed or not sink.begun or result.rows:
+            raise NovaException("Dataset query could not be completed", status_code=422)
+        await self._verify_preview_source(user, document, selection)
+        return DatasetQueryResult(
+            dataset_id=identity, revision=request.revision, columns=plan.columns,
+            rows=tuple(sink.values), truncated=sink.has_more,
         )
 
     async def inspect(

@@ -981,8 +981,32 @@ function describeTool(name: string, skillName?: string | null): string {
       return "Searched the semantic model";
     case "data_to_chart":
       return "Built a chart";
+    case "native_dashboard_list":
+      return "Listed your dashboards";
+    case "native_dashboard_read":
+      return "Read the dashboard";
+    case "native_dataset_describe":
+      return "Read the dataset's fields";
+    case "native_dataset_query":
+    case "dataviz_query":
+      return "Queried the dashboard data";
+    case "native_dashboard_add_charts":
+      return "Added charts to the dashboard";
+    case "native_chart_update":
+      return "Updated a chart";
+    case "native_dashboard_arrange":
+      return "Rearranged the dashboard";
+    case "native_dashboard_filters":
+      return "Updated the dashboard filters";
+    case "native_dashboard_create":
+      return "Created a dashboard";
+    case "native_dashboard_attach_dataset":
+      return "Added a dataset to the dashboard";
+    case "native_dashboard_publish":
+      return "Published the dashboard";
     default:
-      return `Called ${name}`;
+      // Never show an internal identifier: "inspect_role_access" → "Inspect role access".
+      return name ? `${name.replace(/^native_/, "").replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase())}` : "Used a tool";
   }
 }
 

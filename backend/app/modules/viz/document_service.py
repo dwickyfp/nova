@@ -118,6 +118,17 @@ class NativeDocumentService:
         ) as repository:
             await repository.require_kind(identity, kind)
 
+    async def workspace_of(self, user: Mapping[str, Any], identity: UUID) -> str:
+        """The workspace holding a document the caller can see.
+
+        Charts and datasets a dashboard references must live in its workspace,
+        so an assistant creating one for a dashboard needs it.
+        """
+        async with document_transaction(
+            user, action="READ", identity=identity, read_only=True,
+        ) as repository:
+            return str((await repository.head(identity))["workspace_id"])
+
     async def browse(
         self, user: Mapping[str, Any], workspace_id: str, *, kind: Kind = "dashboard",
         draft: bool = False, before: tuple[datetime, UUID] | None = None, limit: int = 50,

@@ -12,7 +12,9 @@ caller, not from an agent grant:
   ``MAX_VIEWS``. Each is checked under the caller's role
   (``semantic_view_service.get_active_for_agent``); Ranger decides the rows;
 * its tools are fixed: governed semantic queries, change diagnosis, metrics,
-  inline charts, the ontology, and the Dataviz tools.
+  inline charts, the ontology, and the Dataviz tools, including the native
+  dashboard tools that read and change native dashboards as the caller (every
+  change is approved by the user and committed as a new revision).
 
 Its instructions ask for answers that cover what, who, when, where, why and
 how wherever the data supports it, and say plainly when a part cannot be
@@ -80,6 +82,9 @@ How to work:
   a change stated without its row ("net revenue naik ...") cannot be verified and is removed.
 - Write numbers in the reader's format: 329.840 unit, not 329840.0.
 - With a dashboard open, dataviz_query is the only data source; without one, use semantic_query.
+- With a native dashboard open (its brief is below), native_dataset_query on its datasets is
+  the only data source, and "this dashboard" is that one. Build and edit it with the native
+  dashboard tools when asked: add charts, change a chart, move or remove widgets, filters.
 - A ranking (who or where is highest) is a dataviz_query with that dimension and no
   compare_period: rows come sorted by the first metric, largest first. Add compare_period only
   when the question asks about a change; then rows are ordered by the size of the change, and

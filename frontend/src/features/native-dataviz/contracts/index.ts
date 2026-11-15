@@ -6,6 +6,8 @@ import type {
   DatasetDefinition,
   DatasetPreview,
   DatasetPreviewRequest,
+  DatasetQueryRequest,
+  DatasetQueryResult,
   DashboardDatasetCreate,
   DashboardDatasets,
   ChartCreate,
@@ -53,6 +55,8 @@ function contract<T>(name: keyof typeof schema.$defs): z.ZodType<T> {
 export const datasetSchema = contract<DatasetDefinition>('DatasetDefinition')
 export const datasetPreviewSchema = contract<DatasetPreview>('DatasetPreview')
 export const datasetPreviewRequestSchema = contract<DatasetPreviewRequest>('DatasetPreviewRequest')
+export const datasetQueryRequestSchema = contract<DatasetQueryRequest>('DatasetQueryRequest')
+export const datasetQueryResultSchema = contract<DatasetQueryResult>('DatasetQueryResult')
 export const parameterSchema = contract<Parameter>('Parameter')
 export const parameterInputSchema = contract<ParameterInput>('ParameterInput')
 export const dashboardDatasetCreateSchema = contract<DashboardDatasetCreate>('DashboardDatasetCreate')

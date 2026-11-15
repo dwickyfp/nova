@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
 
@@ -205,6 +206,21 @@ class UiMapMetricInput(BaseModel):
 
 
 
+class NativeDashboardTurnInput(BaseModel):
+    """The native Dataviz dashboard on screen: an untrusted hint.
+
+    Native tools read the dashboard again as the caller before using it; the
+    revision is what the page shows, so a change made meanwhile is detected.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    dashboard_id: UUID
+    revision: int = Field(ge=1, le=9_007_199_254_740_991, strict=True)
+    page_id: UUID | None = None
+    selected_widget_id: UUID | None = None
+
+
 class DatavizTurnInput(BaseModel):
     """The Dataviz page a Studio turn is asked from (docs/arch-19-studio-dataviz.md).
 
@@ -218,6 +234,7 @@ class DatavizTurnInput(BaseModel):
     native_filters_key: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_\-]{1,128}$")
     edit_state: Literal["clean", "dirty", "unknown"] = "unknown"
     path: str | None = Field(default=None, max_length=512)
+    native_dashboard: NativeDashboardTurnInput | None = None
 
 
 class AgentMessageRequest(MessageRequest):

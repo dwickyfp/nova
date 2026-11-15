@@ -47,6 +47,7 @@ from app.modules.viz.contracts.http import (
     OperationReceipt,
     RevisionSummary,
 )
+from app.modules.viz.contracts.queries import DatasetQueryRequest, DatasetQueryResult
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = ROOT / "frontend/src/features/native-dataviz/contracts"
@@ -58,6 +59,8 @@ class NativeContracts(BaseModel):
     dataset: DatasetDefinition
     dataset_preview: DatasetPreview
     dataset_preview_request: DatasetPreviewRequest
+    dataset_query_request: DatasetQueryRequest
+    dataset_query_result: DatasetQueryResult
     object_inspect: ObjectInspect
     object_inspection: ObjectInspection
     object_dataset_create: ObjectDatasetCreate

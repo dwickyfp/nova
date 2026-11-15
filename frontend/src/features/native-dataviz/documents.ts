@@ -11,7 +11,7 @@ import {
   objectDatasetUpdateSchema, sqlDatasetUpdateSchema,
   semanticInspectSchema, semanticInspectionSchema,
   semanticDatasetCreateSchema, semanticDatasetUpdateSchema,
-  datasetPreviewSchema, datasetPreviewRequestSchema,
+  datasetPreviewSchema, datasetPreviewRequestSchema, datasetQueryRequestSchema, datasetQueryResultSchema,
   dashboardDatasetCreateSchema, dashboardDatasetsSchema, type DashboardDatasetCreate,
   type ChartCreate, type ChartDefinition, type DashboardCreate, type DashboardDefinition,
   type DeleteRequest, type GrantsReplace, type Operation, type PublicationRequest,
@@ -20,7 +20,7 @@ import {
   type SqlInspect, type SqlDatasetCreate,
   type ObjectDatasetUpdate, type SqlDatasetUpdate,
   type SemanticInspect, type SemanticDatasetCreate, type SemanticDatasetUpdate,
-  type DatasetPreviewRequest,
+  type DatasetPreviewRequest, type DatasetQueryRequest,
 } from './contracts'
 
 type Collection = 'charts' | 'dashboards' | 'datasets'
@@ -127,7 +127,6 @@ export function nativeDocuments(securityEpoch: number) {
       return items
     },
     async read(collection: Collection, id: string, options: RequestOptions & { draft?: boolean; revision?: number } = {}) {
-      if (options.revision !== undefined && !options.draft) throw new Error('Revision reads require draft access')
       const pinned = options.revision === undefined ? '' : `&revision=${validated(revision, options.revision, 'request')}`
       const snapshot = await send(`${resourcePath(collection, id)}?draft=${options.draft ?? false}${pinned}`, snapshotSchema, options)
       const definitionId = 'chart_id' in snapshot.definition
@@ -246,6 +245,24 @@ export function nativeDocuments(securityEpoch: number) {
         || result.rows.some(row => row.length !== result.fields.length || row.some((cell, i) =>
           cell === null ? !result.fields[i].nullable : cell.type !== result.fields[i].logical_type))) {
         throw new Error('Unexpected dataset preview')
+      }
+      return result
+    },
+    async queryDataset(id: string, value: DatasetQueryRequest, options?: RequestOptions) {
+      const body = validated(datasetQueryRequestSchema, value, 'request')
+      const result = await send(`${resourcePath('datasets', id)}/query`, datasetQueryResultSchema, options, {
+        method: 'POST', body,
+      })
+      const expected = [
+        ...(body.dimensions ?? []).map((_, index) => `d${index}`),
+        ...(body.measures ?? []).map((_, index) => `m${index}`),
+      ]
+      if (result.dataset_id !== id.toLowerCase() || result.revision !== body.revision
+        || result.columns.map(column => column.key).join() !== expected.join()
+        || result.rows.length > (body.limit ?? 1000)
+        || result.rows.some(row => row.length !== result.columns.length || row.some((cell, i) =>
+          cell !== null && cell.type !== result.columns[i].logical_type))) {
+        throw new Error('Unexpected dataset query result')
       }
       return result
     },
