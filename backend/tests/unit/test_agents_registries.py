@@ -161,8 +161,8 @@ def test_studio_router_literal_paths_are_registered_before_agent_dynamic() -> No
     assert "/tools" in studio_paths
     assert "/mcp-servers" in studio_paths
     assert "/studio/settings" in studio_paths
-    assert "/studio/artifacts" in studio_paths
-    assert "/studio/artifacts/{artifact_id}/refresh" in studio_paths
+    assert "/studio/shares" in studio_paths
+    assert not any(path.startswith("/studio/artifacts") for path in studio_paths)
 
     agent_paths = {r.path for r in agent_router.routes}
     assert "/{agent_id}" in agent_paths

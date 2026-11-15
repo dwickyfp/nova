@@ -1,6 +1,7 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { DashboardEditor, type NativeDashboardContext } from './dashboard/editor'
 import { DashboardHome } from './dashboard/dashboard-home'
+import { NATIVE_DASHBOARD_OPEN, type NativeDashboardOpen } from './dashboard/events'
 
 const OPEN_KEY = 'nova.dataviz.native.open'
 type Open = { dashboardId: string; workspaceId: string }
@@ -29,6 +30,14 @@ export function NativeDataviz({ onContextChange, onAskNeva, refreshToken, densit
 }) {
   const [open, setOpen] = useState<Open | null>(readOpen)
   const select = useCallback((value: Open | null) => { setOpen(value); writeOpen(value) }, [])
+  useEffect(() => {
+    const listener = (event: Event) => {
+      const detail = (event as CustomEvent<NativeDashboardOpen>).detail
+      if (detail?.dashboardId && detail.workspaceId) select({ dashboardId: detail.dashboardId, workspaceId: detail.workspaceId })
+    }
+    window.addEventListener(NATIVE_DASHBOARD_OPEN, listener)
+    return () => window.removeEventListener(NATIVE_DASHBOARD_OPEN, listener)
+  }, [select])
   if (!open) return <DashboardHome onOpen={select} />
   return <DashboardEditor key={open.dashboardId} dashboardId={open.dashboardId} workspaceId={open.workspaceId}
     onBack={() => select(null)} onContextChange={onContextChange} onAskNeva={onAskNeva} refreshToken={refreshToken} density={density} />

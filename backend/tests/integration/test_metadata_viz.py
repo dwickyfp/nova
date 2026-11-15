@@ -1251,8 +1251,13 @@ async def test_historical_dataset_read_returns_exact_revision_only_to_current_ed
     denied = await client.get(path + "?draft=true&revision=1", headers=reader_headers)
     assert denied.status_code == 403 and "physical_id" not in denied.text
     for headers in (owner_headers, reader_headers):
-        invalid = await client.get(path + "?revision=1", headers=headers)
-        assert invalid.status_code == 422 and "physical_id" not in invalid.text
+        # Publication scope may read a revision a visible publication pins; it
+        # returns the source-free projection, never the private definition.
+        pinned_view = await client.get(path + "?revision=1", headers=headers)
+        assert pinned_view.status_code == 200 and "physical_id" not in pinned_view.text
+        assert pinned_view.json()["definition"]["definition_scope"] == "publication"
+    unpublished = await client.get(path + "?revision=2", headers=reader_headers)
+    assert unpublished.status_code == 404 and "physical_id" not in unpublished.text
     absent = await client.get(path + "?draft=true&revision=3", headers=owner_headers)
     assert absent.status_code == 404
     editor = session("editor", active="EDITOR", roles=["EDITOR"])
@@ -1831,3 +1836,39 @@ async def test_storage_revalidates_internal_model_copies_before_persistence(viz)
             await repo.replace(invalid, operation_id=uuid4(), expected_revision=1)
     async with viz.transaction() as (repo, _):
         assert (await repo.read(document.dashboard_id, draft=True))["definition"] == document
+
+
+async def test_viewer_reads_only_the_revisions_a_visible_publication_pins(viz):
+    source, figure, board = await graph(viz)
+    for identity in (source.dataset_id, figure.chart_id, board.dashboard_id):
+        async with viz.transaction() as (repository, _):
+            await repository.replace_grants(identity, GrantsReplace.model_validate({
+                "operation_id": uuid4(), "expected_revision": 1, "grants": [
+                    {"subject_type": "user", "subject_id": "reader", "permissions": ["view"]},
+                ],
+            }))
+    async with viz.transaction() as (repository, _):
+        await repository.publish(board.dashboard_id, PublicationRequest(
+            operation_id=uuid4(), expected_revision=1,
+        ))
+    # A later chart draft is not part of the publication the viewer can see.
+    async with viz.transaction() as (repository, _):
+        await repository.replace(figure.model_copy(update={"title": "Unpublished edit"}),
+                                 operation_id=uuid4(), expected_revision=1)
+    reader = session("reader", active="VIEWER")
+    async with viz.transaction(reader) as (repository, _):
+        pinned = await repository.read(figure.chart_id, revision=1)
+        assert pinned["revision"] == 1 and pinned["definition"].title == figure.title
+        assert (await repository.read(source.dataset_id, revision=1))["revision"] == 1
+    with pytest.raises(NovaException) as unpublished:
+        async with viz.transaction(reader) as (repository, _):
+            await repository.read(figure.chart_id, revision=2)
+    assert unpublished.value.status_code == 404
+    with pytest.raises(NovaException) as draft:
+        async with viz.transaction(reader) as (repository, _):
+            await repository.read(figure.chart_id, draft=True, revision=1)
+    assert draft.value.status_code in {403, 404}
+    stranger = session("stranger", active="VIEWER")
+    with pytest.raises(NovaException):
+        async with viz.transaction(stranger) as (repository, _):
+            await repository.read(figure.chart_id, revision=1)

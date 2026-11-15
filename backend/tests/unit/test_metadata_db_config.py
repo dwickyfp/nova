@@ -29,7 +29,7 @@ def test_pool_and_transaction_limits_cannot_be_disabled(change):
     [
         "host=localhost dbname=nova_control sslmode=disable",
         "host=localhost dbname=nova_control sslmode=require",
-        "host=localhost dbname=superset sslmode=verify-full",
+        "host=localhost dbname=other_app sslmode=verify-full",
         "synthetic-invalid-canary",
         "dbname=nova_control sslmode=verify-full",
         "host=/tmp dbname=nova_control sslmode=verify-full",

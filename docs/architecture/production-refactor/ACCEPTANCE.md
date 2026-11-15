@@ -17,7 +17,8 @@ topology and load requirements.
   secrets. Never emit its expanded configuration to logs or CI artifacts.
 - PostgreSQL 17 owns Nova control metadata after verified cutover. StarRocks
   retains user authentication, governed business data, and engine-transactional
-  Stream journals. Ranger, Superset and Nova retain separate databases.
+  Stream journals. Ranger and Nova retain separate databases
+  (Superset was removed on 2026-11-16).
 - Separate critical and cache Redis; PG owns durable jobs, receipts and outbox.
 - One backend image with separate workload processes. All required roles start
   through the normal deployment path, without feature-enable switches.

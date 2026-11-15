@@ -6,7 +6,6 @@ import {
 } from "@/features/assistant/events";
 import type { AssistantEvent, WorkflowProvenance } from "@/features/assistant/types";
 import { historyQuery } from "@/features/assistant/thread-client";
-import type { DashboardComputeResponse } from "@/features/viz/types";
 
 /** Agent Studio API client (Phase 12). Mirrors /api/v1/agents/*. */
 
@@ -530,93 +529,6 @@ export type StudioCapabilities = {
   }[];
 };
 
-export type StudioArtifact = {
-  artifact_id: string;
-  title: string;
-  artifact_type: "chart" | "dashboard";
-  agent_id: string | null;
-  thread_id: string | null;
-  database_name: string | null;
-  schema_name: string | null;
-  created_at: string;
-  updated_at: string;
-  /** Set when the artifact lives in BI (Superset): its view and edit paths. */
-  bi_kind?: "chart" | "dashboard" | null;
-  bi_object_id?: number | null;
-  bi_view_path?: string | null;
-  bi_edit_path?: string | null;
-  /** Saved before BI: read-only until it is converted. */
-  legacy?: boolean;
-};
-
-export type StudioArtifactDetail = StudioArtifact & {
-  sql_text: string;
-  chart_spec: Record<string, unknown> | null;
-  viz_spec: Record<string, unknown> | null;
-  /** For a legacy artifact: what BI cannot carry over, and what changes look. */
-  legacy_blockers?: string[];
-  legacy_notes?: string[];
-};
-
-export type StudioArtifactConversion = {
-  artifact_id: string;
-  title: string;
-  artifact_type: "chart" | "dashboard";
-  status: "converted" | "kept" | "failed";
-  blockers: string[];
-  notes: string[];
-  error: string | null;
-  bi_view_path: string | null;
-};
-
-export type StudioArtifactCreate = {
-  semantic_provenance_ref?: string;
-  title: string;
-  artifact_type: "chart" | "dashboard";
-  sql_text: string;
-  database_name?: string | null;
-  schema_name?: string | null;
-  chart_spec?: Record<string, unknown> | null;
-  viz_spec?: Record<string, unknown> | null;
-  agent_id?: string | null;
-  thread_id?: string | null;
-};
-
-export type StudioArtifactRefresh = {
-  artifact: StudioArtifactDetail;
-  columns: string[];
-  rows: (string | number | null)[][];
-  row_count: number;
-  elapsed_ms: number;
-  presmodel?: Record<string, unknown> | null;
-  sql?: string | null;
-  /** A worksheet derived for a chart saved before worksheets existed. */
-  derived_viz_spec?: Record<string, unknown> | null;
-};
-
-export type StudioArtifactDraft = {
-  sql_text: string;
-  artifact_type: "chart";
-  chart_spec: Record<string, unknown> | null;
-  viz_spec?: Record<string, unknown> | null;
-};
-
-export type StudioArtifactEditMessage = {
-  role: "user" | "assistant";
-  content: string;
-};
-
-export type StudioArtifactEditResponse = {
-  message: string;
-  draft: StudioArtifactDraft | null;
-  columns: string[];
-  rows: (string | number | null)[][];
-  row_count: number;
-  elapsed_ms: number;
-  /** Superset's own view of the draft, when BI can draw it. */
-  preview_path?: string | null;
-};
-
 export const toolsApi = {
   list: () => api.get<{ tools: Tool[]; count: number }>("/agents/tools"),
   create: (body: { name: string; description?: string; source?: string }) =>
@@ -663,59 +575,6 @@ export const studioApi = {
     api.patch<StudioPreferences>("/agents/studio/settings", body),
   capabilities: () =>
     api.get<StudioCapabilities>("/agents/studio/capabilities"),
-  listArtifacts: () =>
-    api.get<{ artifacts: StudioArtifact[]; count: number }>(
-      "/agents/studio/artifacts",
-    ),
-  createArtifact: (body: StudioArtifactCreate) =>
-    api.post<StudioArtifactDetail>("/agents/studio/artifacts", body),
-  getArtifact: (id: string) =>
-    api.get<StudioArtifactDetail>(
-      `/agents/studio/artifacts/${encodeURIComponent(id)}`,
-    ),
-  refreshArtifact: (id: string) =>
-    api.post<StudioArtifactRefresh>(
-      `/agents/studio/artifacts/${encodeURIComponent(id)}/refresh`,
-    ),
-  editArtifact: (
-    id: string,
-    body: {
-      instruction: string;
-      draft: StudioArtifactDraft | null;
-      columns: string[];
-      history: StudioArtifactEditMessage[];
-    },
-  ) =>
-    api.post<StudioArtifactEditResponse>(
-      `/agents/studio/artifacts/${encodeURIComponent(id)}/edit`,
-      body,
-    ),
-  applyArtifactEdit: (
-    id: string,
-    body: { draft: StudioArtifactDraft; expected_updated_at: string },
-  ) =>
-    api.patch<StudioArtifactRefresh>(
-      `/agents/studio/artifacts/${encodeURIComponent(id)}`,
-      body,
-    ),
-  discardArtifactDraft: (id: string) =>
-    api.delete<void>(`/agents/studio/artifacts/${encodeURIComponent(id)}/draft`),
-  deleteArtifact: (id: string) =>
-    api.delete<void>(`/agents/studio/artifacts/${encodeURIComponent(id)}`),
-  convertArtifacts: (body: { artifact_ids?: string[]; force?: boolean }) =>
-    api.post<{ outcomes: StudioArtifactConversion[] }>(
-      "/agents/studio/artifacts/convert",
-      body,
-    ),
-  computeVizDashboard: (body: {
-    spec: Record<string, unknown>;
-    filter_values?: Record<string, Record<string, unknown>>;
-    zone_filters?: Record<string, Record<string, unknown>[]>;
-  }) =>
-    api.post<DashboardComputeResponse>(
-      "/agents/studio/viz/dashboard-compute",
-      body,
-    ),
 };
 
 // ── Skill Registry ─────────────────────────────────────────────

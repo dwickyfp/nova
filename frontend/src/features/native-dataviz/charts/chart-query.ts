@@ -146,3 +146,36 @@ export function formatNumber(value: number | null, style: 'compact' | 'full' = '
   if (value === null || !Number.isFinite(value)) return '–'
   return (style === 'compact' && Math.abs(value) >= 10_000 ? compact : full).format(value)
 }
+
+/** The exclusive end of the calendar period that starts on `from` (YYYY-MM-DD). */
+export function periodEnd(from: string, grain: DateGrain): string {
+  const [year, month, day] = from.split('-').map(Number)
+  const next = grain === 'day' ? new Date(Date.UTC(year, month - 1, day + 1))
+    : grain === 'week' ? new Date(Date.UTC(year, month - 1, day + 7))
+      : grain === 'month' ? new Date(Date.UTC(year, month, 1))
+        : grain === 'quarter' ? new Date(Date.UTC(year, month + 2, 1))
+          : new Date(Date.UTC(year + 1, 0, 1))
+  return next.toISOString().slice(0, 10)
+}
+
+/** A field name as people read it: `order_date` → `Order date`. Names with spaces or capitals stay as written. */
+export function humanize(name: string): string {
+  // A qualified engine name (`table.column`) is labelled by its column.
+  if (/^[a-z0-9_]+(\.[a-z0-9_]+)+$/.test(name)) name = name.slice(name.lastIndexOf('.') + 1)
+  if (!/^[a-z0-9_]+$/.test(name)) return name
+  const words = name.split('_').filter(Boolean).join(' ')
+  return words ? words[0].toUpperCase() + words.slice(1) : name
+}
+
+const AGGREGATION_WORDS: Record<string, string> = {
+  sum: 'Sum of', avg: 'Average', min: 'Minimum', max: 'Maximum', count: 'Count of', count_distinct: 'Distinct',
+}
+
+/** How a result column is named in legends, tooltips and table headers. */
+export function columnLabel(column: Pick<QueryColumn, 'name' | 'aggregation' | 'field_id'>): string {
+  if (column.aggregation === 'count' && !column.field_id) return 'Rows'
+  const name = humanize(column.name)
+  if (!column.aggregation) return name
+  const word = AGGREGATION_WORDS[column.aggregation]
+  return word ? `${word} ${name.charAt(0).toLowerCase()}${name.slice(1)}` : name
+}

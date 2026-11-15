@@ -68,7 +68,8 @@ function loadEcharts() {
  * theme changes, and the instance follows its container's size.
  */
 export function EChartHost({ build, label, onSelect, className }: {
-  build: (tokens: VizTokens) => EChartsCoreOption
+  /** Receives the drawing width, rounded so small resizes do not rebuild. */
+  build: (tokens: VizTokens, width: number) => EChartsCoreOption
   label: string
   onSelect?: (selection: MarkSelection) => void
   className?: string
@@ -77,6 +78,7 @@ export function EChartHost({ build, label, onSelect, className }: {
   const instance = useRef<ECharts | null>(null)
   const select = useRef(onSelect)
   const [failed, setFailed] = useState(false)
+  const [width, setWidth] = useState(0)
   const theme = useThemeVersion()
   useEffect(() => { select.current = onSelect }, [onSelect])
 
@@ -94,7 +96,10 @@ export function EChartHost({ build, label, onSelect, className }: {
           select.current?.({ seriesIndex: event.seriesIndex ?? 0, dataIndex: event.dataIndex, name: String(event.name ?? '') })
         }
       })
-      observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => chart.resize())
+      observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
+        chart.resize()
+        setWidth(Math.round(node.clientWidth / 16) * 16)
+      })
       observer?.observe(node)
       setFailed(false)
     }).catch(() => { if (!cancelled) setFailed(true) })
@@ -111,13 +116,13 @@ export function EChartHost({ build, label, onSelect, className }: {
     void loadEcharts().then(() => {
       if (cancelled || !instance.current) return
       try {
-        instance.current.setOption({ aria: { enabled: true, label: { description: label } }, ...build(readTokens()) }, true)
+        instance.current.setOption({ aria: { enabled: true, label: { description: label } }, ...build(readTokens(), width) }, true)
       } catch {
         setFailed(true)
       }
     }).catch(() => { if (!cancelled) setFailed(true) })
     return () => { cancelled = true }
-  }, [build, label, theme])
+  }, [build, label, theme, width])
 
   if (failed) return <p role='alert' className='p-3 text-sm text-muted-foreground'>The chart could not be drawn.</p>
   return <div ref={container} role='img' aria-label={label} className={className ?? 'size-full min-h-0 min-w-0'} />

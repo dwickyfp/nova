@@ -1,5 +1,4 @@
 import { NewsSettings } from "./news-settings";
-import { SemanticBiDatasets } from "./semantic-bi-datasets";
 import { useAuthStore } from '@/stores/auth-store';
 import { useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -676,11 +675,6 @@ function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligenceP
                ? <p className="text-sm text-muted-foreground">Results come from a live version. Make this version live, or pick the live version above.</p> : null}
              {semanticResult !== null && <SemanticResultTable result={semanticResult} />}
               </section>
-              {selectedSemanticView?.status !== "DEPRECATED" ? <SemanticBiDatasets
-                viewId={selectedSemantic}
-                published={Boolean(selectedSemanticView?.active_version)}
-                isPrivate={selectedSemanticView?.visibility === "PRIVATE"}
-                canSync={"news_config" in semanticDetail.data} /> : null}
               <details className="rounded-lg border bg-background p-4 sm:p-5">
                 <summary className="cursor-pointer font-medium">Manage this view</summary>
                 <p className="mt-2 text-sm text-muted-foreground">Deprecating or deleting a view stops agents from using it.</p>

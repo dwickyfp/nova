@@ -153,15 +153,13 @@ async def test_semantic_publish_requires_acknowledgement_for_regression(
         yield store
 
     monkeypatch.setattr(module, "intelligence_metadata", metadata)
-    monkeypatch.setattr(service, "sync_bi", AsyncMock(return_value=[]))
     drift = AsyncMock()
     monkeypatch.setattr("app.modules.ontology.representations.refresh_after_publish", drift)
     result = await service.publish("view-id", 2, user, acknowledge_regressions=True)
     drift.assert_awaited_once_with("view-id", user)
     assert result["active_version"] == 2
     store.publish.assert_awaited_once_with("view-id", 2, expected_revision=4, expected_active=1)
-    service.sync_bi.assert_awaited_once_with("view-id", user)
-    assert result["bi_datasets"] == []
+    assert "bi_datasets" not in result
     identity_check.assert_awaited_once_with(
         sql="SELECT 1",
         username="nova_admin",

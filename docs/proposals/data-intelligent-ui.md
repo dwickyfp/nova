@@ -218,8 +218,9 @@ Documentation and configuration debt found while checking (not in scope here):
   renderer for "data answers".
 - Client-side SQL, client-side access to unbound data, or components that
   fetch rows on their own.
-- BI authoring. Saved charts and dashboards remain Superset objects
-  ([Arch 17](../arch-17-superset.md)); the UI only offers the existing save.
+- BI authoring. Saved charts and dashboards are native Dataviz documents
+  ([Arch 19](../arch-19-studio-dataviz.md); Superset, Arch 17, was removed on
+  2026-11-16); the UI only offers the existing save.
 - A feature flag, rollout gate or opt-in mode for the new behavior.
 - Changes to authentication, Ranger policy, row filters or masks.
 - Changing how Smart delegates. Specialists keep returning rows; the root
@@ -310,7 +311,7 @@ No new SSE event type, no new step kind, no new renderer entry point.
    measure → PivotGrid; otherwise → data grid. It stays deterministic, makes
    no provider call and runs the same validator.
 5. **Tool charts and tables.** `table` and `chart` frames stay, because saved
-   artifacts, Superset conversion and replay depend on them. They render
+   artifacts, legacy conversion and replay depend on them. They render
    through the same component implementations as UI nodes: `ResultTable`
    already does; charts converge in Phase 5.
 6. **Actions.** `@Drill` uses the existing `ui_action` request and produces a

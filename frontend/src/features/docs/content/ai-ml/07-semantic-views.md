@@ -63,7 +63,7 @@ version instead of rewriting published history. **Edit definition directly
 (advanced)** exposes the definition for detailed editing.
 
 **BI datasets** shows the datasets associated with the published view. Review
-these before building [charts](/docs/dataviz/build-a-chart) from its measures.
+these before building [charts](/docs/dataviz/native-dashboards) from its measures.
 
 ## Limits and errors
 

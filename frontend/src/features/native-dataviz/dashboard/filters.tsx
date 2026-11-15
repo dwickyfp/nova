@@ -16,6 +16,7 @@ import type {
 import { nativeDocuments } from '../documents'
 import { cellLabel, type Cell } from '../charts/chart-query'
 import { useDatasetDefinition } from '../charts/chart-data'
+import { capacityDelay, capacityRetry, queuedQuery } from '../charts/query-queue'
 import { isNumeric, isTemporal } from '../charts/builder-model'
 
 import { predicate, type CrossFilter, type FilterDefinition, type FilterValue } from './filter-model'
@@ -23,11 +24,21 @@ import { predicate, type CrossFilter, type FilterDefinition, type FilterValue } 
 export type { CrossFilter, FilterDefinition, FilterValue }
 type Scalar = NonNullable<Cell>
 
+function shortValue(cell: Scalar | null): string {
+  if (cell && (cell.type === 'date' || cell.type === 'timestamp')) {
+    const [year, month, day] = cell.value.slice(0, 10).split('-').map(Number)
+    return new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+      .format(new Date(Date.UTC(year, month - 1, day)))
+  }
+  return cellLabel(cell)
+}
+
 function describe(value: FilterValue | undefined, field?: DatasetField): string {
   if (!value) return 'All'
   switch (value.kind) {
     case 'members': return value.values.length ? value.values.length === 1 ? cellLabel(value.values[0]) : `${value.values.length} selected` : 'All'
-    case 'range': return value.from || value.to ? `${value.from ? cellLabel(value.from) : '…'} – ${value.to ? cellLabel(value.to) : '…'}` : 'All'
+    case 'range': return value.from || value.to ? value.from && value.to ? `${shortValue(value.from)} – ${shortValue(value.to)}`
+      : value.from ? `from ${shortValue(value.from)}` : `until ${shortValue(value.to)}` : 'All'
     case 'text': return value.value ? `Contains “${value.value}”` : 'All'
     case 'relative': return `${value.mode === 'previous' ? 'Previous' : value.mode === 'to_date' ? 'This' : 'Last'} ${value.mode === 'to_date' ? value.unit : `${value.count} ${value.unit}${value.count > 1 ? 's' : ''}`}${value.mode === 'to_date' ? ' to date' : ''}`
     case 'boolean': return value.value ? 'True' : 'False'
@@ -40,12 +51,12 @@ function useFilterOptions(filter: FilterDefinition, search: string, enabled: boo
   const field = filter.field
   return useQuery({
     queryKey: ['native-dataviz', 'filter-options', epoch, field?.dataset_id, field?.dataset_revision, field?.field_id, search, draft],
-    queryFn: ({ signal }) => nativeDocuments(epoch).queryDataset(field!.dataset_id, {
+    queryFn: ({ signal }) => queuedQuery(() => nativeDocuments(epoch).queryDataset(field!.dataset_id, {
       revision: field!.dataset_revision, draft, dimensions: [{ field_id: field!.field_id }], limit: 200,
       ...(search.trim() ? { filters: { expression: predicate(field!, 'like_literal', [{ type: 'string', value: search.trim() }]) } } : {}),
-    }, { signal }),
+    }, { signal }), signal),
     enabled: enabled && Boolean(field),
-    staleTime: 60_000, retry: false,
+    staleTime: 60_000, retry: capacityRetry, retryDelay: capacityDelay,
   })
 }
 
@@ -65,8 +76,8 @@ function MembersControl({ filter, value, onChange, field, draft }: ControlProps)
   }
   return <Popover open={open} onOpenChange={setOpen}>
     <PopoverTrigger asChild>
-      <Button variant='outline' size='sm' className='h-9 max-w-64 justify-between gap-2' aria-label={`${filter.title} filter`}>
-        <span className='truncate'><span className='text-muted-foreground'>{filter.title}:</span> {describe(value, field)}</span>
+      <Button variant='outline' size='sm' className={CHIP} aria-label={`${filter.title} filter`}>
+        <span className='truncate'><span className='text-muted-foreground'>{filter.title}</span> {describe(value, field)}</span>
         <ChevronDown className='size-4 opacity-60' />
       </Button>
     </PopoverTrigger>
@@ -105,7 +116,8 @@ function RangeControl({ filter, value, onChange, field }: ControlProps) {
   const date = isTemporal(field)
   const scalar = (text: string): Scalar | null => {
     if (!text) return null
-    if (date) return field?.logical_type === 'timestamp' ? { type: 'timestamp', value: `${text}T00:00:00Z` } : { type: 'date', value: text }
+    // Calendar days: the server places them at midnight in the field's own time zone.
+    if (date) return { type: 'date', value: text }
     return /^-?\d+(\.\d+)?$/.test(text) ? (text.includes('.') ? { type: 'decimal', value: text } : { type: 'integer', value: text }) : null
   }
   const raw = (cell: Scalar | null) => cell ? String(cell.value).slice(0, date ? 10 : undefined) : ''
@@ -113,15 +125,31 @@ function RangeControl({ filter, value, onChange, field }: ControlProps) {
     const next = { ...range, [side]: scalar(text) }
     onChange(next.from || next.to ? next : undefined)
   }
-  return <fieldset className='flex items-center gap-1 rounded-md border px-2'>
-    <legend className='sr-only'>{filter.title}</legend>
-    <span className='text-sm text-muted-foreground'>{filter.title}</span>
-    <Input type={date ? 'date' : 'number'} aria-label={`${filter.title} from`} value={raw(range.from)}
-      onChange={event => update('from', event.target.value)} className='h-8 w-36 border-0 shadow-none' />
-    <span className='text-muted-foreground'>–</span>
-    <Input type={date ? 'date' : 'number'} aria-label={`${filter.title} to`} value={raw(range.to)}
-      onChange={event => update('to', event.target.value)} className='h-8 w-36 border-0 shadow-none' />
-  </fieldset>
+  const summary = range.from || range.to ? describe(range) : date ? 'Any time' : 'Any value'
+  return <Popover>
+    <PopoverTrigger asChild>
+      <Button variant='outline' size='sm' className={CHIP} aria-label={`${filter.title} filter`}>
+        <span className='truncate'><span className='text-muted-foreground'>{filter.title}</span> {summary}</span>
+        <ChevronDown className='size-4 opacity-60' aria-hidden />
+      </Button>
+    </PopoverTrigger>
+    <PopoverContent align='start' className='w-72 space-y-3 p-3'>
+      <div className='grid grid-cols-2 gap-2'>
+        <div className='space-y-1'>
+          <Label className='text-xs text-muted-foreground'>From</Label>
+          <Input type={date ? 'date' : 'number'} aria-label={`${filter.title} from`} value={raw(range.from)}
+            onChange={event => update('from', event.target.value)} className='h-9' />
+        </div>
+        <div className='space-y-1'>
+          <Label className='text-xs text-muted-foreground'>To</Label>
+          <Input type={date ? 'date' : 'number'} aria-label={`${filter.title} to`} value={raw(range.to)}
+            onChange={event => update('to', event.target.value)} className='h-9' />
+        </div>
+      </div>
+      {date && <p className='text-xs text-muted-foreground'>Both days are included.</p>}
+      {(range.from || range.to) && <Button variant='ghost' size='sm' className='w-full' onClick={() => onChange(undefined)}>Clear</Button>}
+    </PopoverContent>
+  </Popover>
 }
 
 const RELATIVE_PRESETS: { label: string; value: Extract<FilterValue, { kind: 'relative' }> }[] = [
@@ -138,8 +166,8 @@ const RELATIVE_PRESETS: { label: string; value: Extract<FilterValue, { kind: 're
 function RelativeControl({ filter, value, onChange }: ControlProps) {
   const current = value?.kind === 'relative' ? RELATIVE_PRESETS.findIndex(item => JSON.stringify(item.value) === JSON.stringify(value)) : -1
   return <Select value={current >= 0 ? String(current) : 'all'} onValueChange={next => onChange(next === 'all' ? undefined : RELATIVE_PRESETS[Number(next)].value)}>
-    <SelectTrigger aria-label={`${filter.title} filter`} className='h-9 w-auto min-w-44'>
-      <span className='truncate'><span className='text-muted-foreground'>{filter.title}:</span> <SelectValue /></span>
+    <SelectTrigger aria-label={`${filter.title} filter`} size='sm' className='h-8 w-auto gap-2 px-3'>
+      <span className='truncate'><span className='text-muted-foreground'>{filter.title}</span> <SelectValue /></span>
     </SelectTrigger>
     <SelectContent>
       <SelectItem value='all'>All time</SelectItem>
@@ -150,8 +178,8 @@ function RelativeControl({ filter, value, onChange }: ControlProps) {
 
 function TextControl({ filter, value, onChange }: ControlProps) {
   return <div className='relative'>
-    <Search className='pointer-events-none absolute top-2.5 left-2 size-4 text-muted-foreground' aria-hidden />
-    <Input aria-label={`${filter.title} contains`} placeholder={`${filter.title} contains…`} className='h-9 w-56 pl-8'
+    <Search className='pointer-events-none absolute top-2 left-2.5 size-4 text-muted-foreground' aria-hidden />
+    <Input aria-label={`${filter.title} contains`} placeholder={filter.title} className='h-8 w-48 pl-8'
       value={value?.kind === 'text' ? value.value : ''} onChange={event => onChange(event.target.value ? { kind: 'text', value: event.target.value } : undefined)} />
   </div>
 }
@@ -159,12 +187,14 @@ function TextControl({ filter, value, onChange }: ControlProps) {
 function BooleanControl({ filter, value, onChange }: ControlProps) {
   const current = value?.kind === 'boolean' ? String(value.value) : 'all'
   return <Select value={current} onValueChange={next => onChange(next === 'all' ? undefined : { kind: 'boolean', value: next === 'true' })}>
-    <SelectTrigger aria-label={`${filter.title} filter`} className='h-9 w-auto min-w-36'>
-      <span className='truncate'><span className='text-muted-foreground'>{filter.title}:</span> <SelectValue /></span>
+    <SelectTrigger aria-label={`${filter.title} filter`} size='sm' className='h-8 w-auto gap-2 px-3'>
+      <span className='truncate'><span className='text-muted-foreground'>{filter.title}</span> <SelectValue /></span>
     </SelectTrigger>
     <SelectContent><SelectItem value='all'>All</SelectItem><SelectItem value='true'>True</SelectItem><SelectItem value='false'>False</SelectItem></SelectContent>
   </Select>
 }
+
+const CHIP = 'h-8 max-w-72 justify-between gap-2 px-3 font-normal'
 
 type ControlProps = {
   filter: FilterDefinition; value: FilterValue | undefined; onChange: (value: FilterValue | undefined) => void
@@ -197,19 +227,19 @@ export function FilterBar({ definition, values, onChange, crossFilters, onClearC
   const filters = definition.filters ?? []
   if (!filters.length && !crossFilters.length && !editing) return null
   const active = Object.keys(values).length
-  return <div role='toolbar' aria-label='Dashboard filters' className='flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2'>
-    <Filter className='size-4 text-muted-foreground' aria-hidden />
+  return <div role='toolbar' aria-label='Dashboard filters' className='flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b px-4 py-1.5'>
+    <Filter className='size-4 shrink-0 text-muted-foreground' aria-hidden />
     {filters.map(filter => <FilterControl key={filter.filter_id} filter={filter} value={values[filter.filter_id]} draft={draft}
       onChange={value => onChange(filter.filter_id, value)} />)}
-    {crossFilters.map((cross, index) => <Badge key={`${cross.source_widget_id}:${index}`} variant='secondary' className='h-8 gap-1 pr-1'>
-      <span className='text-muted-foreground'>Selected:</span> {cross.label}
+    {crossFilters.map((cross, index) => <Badge key={`${cross.source_widget_id}:${index}`} variant='secondary' className='h-8 gap-1 rounded-md pr-1 pl-3 font-normal'>
+      <span className='text-muted-foreground'>Selected</span> {cross.label}
       <Button variant='ghost' size='icon' className='size-6' aria-label={`Clear selection ${cross.label}`} onClick={() => onClearCross(index)}><X /></Button>
     </Badge>)}
-    {(active > 0 || crossFilters.length > 0) && <Button variant='ghost' size='sm' onClick={() => {
+    {(active > 0 || crossFilters.length > 0) && <Button variant='ghost' size='sm' className='h-8 text-muted-foreground' onClick={() => {
       for (const filter of filters) onChange(filter.filter_id, undefined)
       onClearCross(null)
     }}>Reset</Button>}
-    {editing && <Button variant='ghost' size='sm' onClick={onEdit}><Plus />{filters.length ? 'Edit filters' : 'Add filter'}</Button>}
+    {editing && <Button variant='ghost' size='sm' className='h-8 text-muted-foreground' onClick={onEdit}><Plus />{filters.length ? 'Edit filters' : 'Add filter'}</Button>}
   </div>
 }
 

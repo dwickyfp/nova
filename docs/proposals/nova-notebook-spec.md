@@ -795,7 +795,7 @@ Chart spec example:
 
 - Tables and charts share result data. Do not run expensive query twice just because user changes tabs.
 - Implement chart validation using schema and data source; show helpful error if axis type unsupported.
-- `Add to Dataviz` only when Nova's deterministic chart capability validator confirms compatible Superset chart type, source data binding, active user permission and materialization strategy.
+- `Add to Dataviz` only when Nova's deterministic chart capability validator confirms compatible native Dataviz chart type, source data binding, active user permission and materialization strategy.
 - Chart config can be saved even when runtime is stopped; stale data requests prompt rerun.
 
 ## 7. Output lifecycle & storage

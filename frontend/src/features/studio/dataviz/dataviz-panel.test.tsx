@@ -1,23 +1,19 @@
-import { forwardRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { DatavizWorkspace } from "./dataviz-workspace";
 
-vi.mock("@/features/bi/bi-frame", () => ({
-  BiFrame: forwardRef<HTMLIFrameElement, { title: string }>(function BiFrame(props, ref) {
-    return <iframe ref={ref} title={props.title} srcDoc="<p>Superset</p>" />;
-  }),
-}));
 vi.mock("../studio-chat", () => ({ StudioChat: () => <p>Assistant transcript</p> }));
+vi.mock("@/features/native-dataviz/native-dataviz", () => ({
+  NativeDataviz: () => <p>Native dashboards</p>,
+}));
 
 async function mount() {
   return render(
     <TooltipProvider>
       <div style={{ height: 700 }}>
         <DatavizWorkspace
-          onPathChange={() => {}}
           onContinueInAgent={() => {}}
           currentRole="ANALYST"
           visible
@@ -33,7 +29,9 @@ function slide(container: HTMLElement) {
 }
 
 describe("the Dataviz assistant panel", () => {
-  beforeEach(() => localStorage.removeItem("nova.dataviz.assistant"));
+  beforeEach(() => {
+    localStorage.removeItem("nova.dataviz.assistant");
+  });
   afterEach(() => page.viewport(1280, 900));
 
   it("slides closed and open, and a closed panel is out of reach", async () => {
@@ -65,8 +63,21 @@ describe("the Dataviz assistant panel", () => {
     const screen = await mount();
     const { wrapper } = slide(screen.container);
     expect(wrapper.className).toContain("transition-transform");
+    // The panel would cover the dashboard, so a phone starts with it closed.
+    await vi.waitFor(() => expect(wrapper.dataset.state).toBe("closed"));
+    await screen.getByRole("button", { name: "Assistant", exact: true }).click();
+    await vi.waitFor(() => expect(wrapper.dataset.state).toBe("open"));
+    expect(wrapper.className).not.toContain("translate-x-full");
     await screen.getByRole("button", { name: "Close assistant" }).last().click();
     await vi.waitFor(() => expect(wrapper.dataset.state).toBe("closed"));
     expect(wrapper.className).toContain("translate-x-full");
+  });
+
+  it("opens native dashboards with no embedded BI frame", async () => {
+    await page.viewport(1440, 900);
+    const screen = await mount();
+    await expect.element(screen.getByText("Native dashboards")).toBeVisible();
+    expect(screen.container.querySelector("iframe")).toBeNull();
+    expect(screen.container.textContent).not.toMatch(/Legacy BI|Superset/);
   });
 });

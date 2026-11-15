@@ -189,7 +189,7 @@ async def run_python_task(
 
 @dataclass
 class _Identity:
-    session: data_tokens.BiSession
+    session: data_tokens.TokenSession
     #: Scheduled runs: the verified impersonated connection Nova uses for the
     #: kernel's write requests (con.write, con.merge_into, con.put).
     connection: Any = None
@@ -206,7 +206,7 @@ async def _run_identity(
     if spec.execution_session_id:
         try:
             session = await data_tokens.resolve_session(spec.execution_session_id)
-        except data_tokens.BiCredentialError:
+        except data_tokens.DataTokenError:
             raise NodeExecutionError(
                 "The session that started this run has ended; sign in and run again"
             ) from None

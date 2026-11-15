@@ -33,9 +33,11 @@ not this guide.
   values, explicit timezones, bounded admission/streaming and caller identity.
   Reject unsupported or ambiguous semantics instead of substituting a source,
   privilege, metric, type or result.
-- Legacy visualization and Superset compatibility remains until verified
-  conversion and regression acceptance permits cutover. Keep historical and
-  target behavior explicit in architecture and user documentation.
+- Native Dataviz is the only chart and dashboard engine. Apache Superset was
+  removed on 2026-11-16 ([historical note](../../../../docs/arch-17-superset.md));
+  do not add Superset publication, sync or compatibility paths. Legacy
+  worksheet views stay read-only through the viz core. Keep historical and
+  current behavior explicit in architecture and user documentation.
 
 ## Validation
 

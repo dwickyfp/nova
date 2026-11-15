@@ -1,7 +1,7 @@
 """Token renewal: a live session keeps its user signed in, an ended one does not.
 
-Studio and the Dataviz frame renew the access token before it lapses, so a user
-working in Superset is not sent to sign in while their Nova session is alive.
+Studio and Dataviz renew the access token before it lapses, so a user working
+in them is not sent to sign in while their Nova session is alive.
 Renewal is not activity, and only the server-side session decides.
 """
 

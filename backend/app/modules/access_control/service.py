@@ -22,7 +22,6 @@ from app.integrations.ranger.client import (
 )
 from app.integrations.ranger.compiler import (
     compile_access_policy,
-    compile_bi_metadata_policy,
     compile_mask_policy,
     compile_row_filter_policy,
     role_scope_attribute,
@@ -521,25 +520,6 @@ class AccessControlService:
             security,
             action="PUT_MASK",
             object_type="RANGER_MASK_POLICY",
-            object_name=policy.name,
-            ranger_ids=[result["id"]] if result.get("id") is not None else [],
-        )
-        return result
-
-    async def put_bi_metadata_access(self, security: SecurityContext, roles: list[str]) -> dict:
-        """Grant table reflection to exactly ``roles`` (the BI author roles).
-
-        Replaces the managed policy's role list, so a role removed from the BI
-        authors loses reflection in the same change. ``ACCOUNTADMIN`` always
-        keeps it.
-        """
-        self.require_security_admin(security)
-        policy = compile_bi_metadata_policy(roles=[*roles, "ACCOUNTADMIN"])
-        result = await self._apply_policy(security, policy)
-        await self._audit_admin(
-            security,
-            action="PUT_BI_METADATA_ACCESS",
-            object_type="RANGER_POLICY",
             object_name=policy.name,
             ranger_ids=[result["id"]] if result.get("id") is not None else [],
         )

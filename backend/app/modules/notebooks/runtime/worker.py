@@ -74,7 +74,7 @@ CATALOG_CHECK_SECONDS = 20
 KERNEL_CALL_SECONDS = 60.0
 
 
-async def visible_catalogs(session: data_tokens.BiSession) -> list[dict[str, str]]:
+async def visible_catalogs(session: data_tokens.TokenSession) -> list[dict[str, str]]:
     """The catalogs the user's role sees, as ``SHOW CATALOGS`` answers it for them."""
     from app.modules.query.service import query_service
 
@@ -323,7 +323,7 @@ class NotebookRuntimeWorker:
             return None
         try:
             session = await data_tokens.resolve_session(runtime.session_id)
-        except data_tokens.BiCredentialError as exc:
+        except data_tokens.DataTokenError as exc:
             runtime.nova_error = "Sign in again to read Nova data in this notebook"
             logger.info("Notebook runtime %s has no usable session: %s", runtime.id, exc)
             return None

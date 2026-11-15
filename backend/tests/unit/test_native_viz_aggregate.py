@@ -158,3 +158,16 @@ def test_request_shape_validation():
 def test_distinct_values_for_filter_options():
     result = plan(request(dimensions=[{"field_id": "f_city"}], limit=200))
     assert result.sql.endswith("GROUP BY `city`\nORDER BY `d0` ASC\nLIMIT 201")
+
+
+def test_date_bounds_on_timestamps_use_the_fields_own_midnight():
+    tree = FilterTree(expression={"type": "and", "children": [
+        predicate("f_at", "gte", {"type": "date", "value": "2024-02-01"}),
+        predicate("f_at", "lt", {"type": "date", "value": "2024-03-01"}),
+    ]})
+    result = plan(request(measures=[{"aggregation": "count"}], filters=tree))
+    assert "(`sold``at` >= :nova_q0_)" in result.sql and "(`sold``at` < :nova_q1)" in result.sql
+    values = dict(result.values)
+    assert values["nova_q0_"].isoformat() == "2024-02-01T00:00:00+07:00"
+    assert values["nova_q1"].isoformat() == "2024-03-01T00:00:00+07:00"
+    assert [spec.type for spec in result.specs] == ["timestamp", "timestamp"]

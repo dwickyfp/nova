@@ -34,28 +34,26 @@ export type DatavizCapability = {
   concepts?: DatavizConcept[];
 };
 
+/** A native dashboard the person can edit. */
 export type DatavizDashboard = {
-  id: number;
+  id: string;
   title: string;
   published: boolean;
   own: boolean;
   changed?: string | null;
-  bi_view_path: string;
+  workspace_id: string;
 };
 
 export type DatavizTarget =
-  | { mode: "existing"; dashboard_id: number; expected_revision?: string }
+  | { mode: "existing"; dashboard_id: string }
   | { mode: "new"; title: string };
-
-export type DatavizEditorState = "clean" | "dirty" | "unknown";
 
 export type DatavizPublication = {
   operation_id: string;
   status: string;
-  dashboard_id: number | null;
-  chart_id: number | null;
-  artifact_id: string | null;
-  bi_view_path: string | null;
+  dashboard_id: string;
+  workspace_id: string;
+  chart_id: string;
   reused_chart: boolean;
   concepts: { qualified_name?: string | null; label?: string | null }[];
 };
@@ -84,8 +82,6 @@ export const datavizApi = {
     idempotency_key: string;
     target: DatavizTarget;
     title?: string;
-    editor_state?: DatavizEditorState;
-    open_dashboard_id?: number | null;
     agent_id?: string;
   }) => api.post<DatavizPublication>(`${BASE}/publish`, body),
 };

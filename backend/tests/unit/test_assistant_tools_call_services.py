@@ -21,9 +21,7 @@ EXTERNAL_HTTP = {
 }
 
 #: Files that name another service's routes (never Nova's), never shown to a model.
-OTHER_SERVICE_ROUTES = {
-    "agents/dataviz_assistant.py",  # Superset's dashboard datasets, through its BI client
-}
+OTHER_SERVICE_ROUTES: set[str] = set()
 
 HTTP_CLIENT = re.compile(r"^\s*(?:import httpx|from httpx|import requests|import aiohttp)", re.M)
 SELF_ROUTE = re.compile(r"""["'](?:https?://[^"']*)?/api/v1/""")

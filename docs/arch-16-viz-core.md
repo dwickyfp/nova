@@ -1,16 +1,17 @@
 # Arch 16: The Viz Core (worksheets, calculations, dashboards)
 
-Status: **authoring retired** by [Architecture 17](arch-17-superset.md)
-Phase 6. Saved Studio charts and dashboards are Superset objects; the worksheet
-editor, the dashboard layout editor and their endpoints are gone, and nothing
-writes a viz spec. The viz core still runs three paths:
+Status: **legacy worksheet authoring retired.** Saved charts and dashboards
+are native Dataviz documents owned by `backend/app/modules/viz/` (see the
+[native visualization guide](../backend/app/modules/viz/AGENTS.md) and
+[Architecture 19](arch-19-studio-dataviz.md)). Superset, which briefly held
+saved Studio charts ([Architecture 17](arch-17-superset.md)), was removed on
+2026-11-16. The worksheet editor, the dashboard layout editor and their
+endpoints are gone, and nothing writes a viz spec. The viz core still runs:
 
 - the chat chart (`data_to_chart`): Show Me, the typed chart intent and the
   presentation model drawn inline in a conversation;
-- read-only views of artifacts saved before BI, until each is converted
-  (refresh and dashboard compute below);
-- the source of conversion: `superset/charts.py` reads a worksheet to build a
-  Superset chart and reports what BI cannot carry.
+- read-only views of legacy worksheet artifacts (refresh and dashboard compute
+  below).
 
 The rest of this document describes the model those paths use. Sections about
 authoring are kept as the record of what saved worksheets may contain.
@@ -115,18 +116,18 @@ a pill over an aggregate or table calculation.
    the model returns a small typed chart intent (or Show Me picks
    deterministically), and the presentation model is computed in-core from rows
    already redacted and held. The chart SSE frame carries `chart_spec`
-   (Vega-Lite mirror for replay), `viz_spec`, and `presmodel`. Saving the
-   chart publishes it to BI (Architecture 17); the worksheet only seeds the
-   Superset chart.
+   (Vega-Lite mirror for replay), `viz_spec`, and `presmodel`. Saved charts
+   belong to native Dataviz; the historical path that published them to
+   Superset (Architecture 17) is removed.
 2. **Refresh** (`POST /studio/artifacts/{id}/refresh`): a chart re-compiles its
    worksheet against current data under current RBAC. A chart saved before
    worksheets existed (Vega-only, or a plain query) re-runs its stored SQL and
    gets a worksheet derived from that SQL and its saved encoding
    (`viz_service.derive_worksheet`, returned as `derived_viz_spec` with a
    presentation model); nothing is stored. Dashboard zones over such charts use
-   the same derivation. Only artifacts saved before BI take this path.
+   the same derivation. Only artifacts saved before native Dataviz take this path.
 3. **Dashboard** (`POST /studio/viz/dashboard-compute`): every sheet zone of a
-   dashboard saved before BI re-compiles with filter-zone values and
+   dashboard saved before native Dataviz re-compiles with filter-zone values and
    filter-action selections merged (`WorksheetSpec.with_extra_filters`);
    failures are per zone.
 
@@ -155,13 +156,12 @@ The authoring endpoints (`/studio/viz/compute`, `/describe`, `/calc/check`,
 
 1. Legacy `table` artifacts become `chart` (no viz spec: they render as grids).
 2. `legacy_tile_dashboards` reads `CONFIG_STUDIO_DASHBOARDS` rows that never
-   became artifacts, for the BI conversion to place under their deterministic
-   ids. The legacy table is never written.
+   became artifacts, under their deterministic ids. The legacy table is never
+   written.
 
-Nothing adds or writes `viz_spec` any more. Conversion to BI
-(`superset/conversion.py`) clears each artifact's legacy spec, and once no
-legacy artifact remains the repository drops the `chart_spec` and `viz_spec`
-columns.
+Nothing adds or writes `viz_spec` any more. The historical conversion of
+legacy artifacts into Superset objects was removed with Superset on
+2026-11-16; legacy worksheet artifacts remain read-only.
 
 ## Frontend
 
@@ -179,7 +179,7 @@ columns.
   (leader, share, gap, average, trend, low point) and the one mark it is
   about; `features/viz/view-answer.tsx` shows it as the headline and the view
   draws that mark in `--viz-highlight` (DESIGN.md 2.6).
-- `features/viz/dashboard-canvas.tsx` shows a dashboard saved before BI,
+- `features/viz/dashboard-canvas.tsx` shows a dashboard saved before native Dataviz,
   read-only, with quick filters and cross-filter mark clicks.
 - `features/studio/legacy-conversion.tsx` is the banner on a read-only view and
   the Explore notice: what conversion leaves out or changes, and the convert

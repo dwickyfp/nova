@@ -48,12 +48,12 @@ function DataTab({ dashboardId, workspaceId, revision, onCommitted, onReload, ep
 
   return <div className='@container/data flex min-h-0 min-w-0 flex-1 flex-col'>
     <div className='flex min-h-0 min-w-0 flex-1 flex-col @2xl/data:flex-row'>
-    <aside aria-label='Dashboard datasets' className='flex min-h-0 shrink-0 flex-col border-b @2xl/data:w-48 @2xl/data:border-r @2xl/data:border-b-0'>
-      <div className='flex shrink-0 items-center justify-between gap-2 p-3'>
+    <aside aria-label='Dashboard datasets' className='flex min-h-0 shrink-0 flex-col border-b @2xl/data:w-60 @2xl/data:border-r @2xl/data:border-b-0'>
+      <div className='flex h-12 shrink-0 items-center justify-between gap-2 pr-2 pl-4'>
         <h2 className='text-sm font-medium'>Datasets</h2>
         <DropdownMenu>
           <DropdownMenuTrigger asChild><Button aria-label='Add dataset' title='Add dataset' variant='ghost' size='icon'
-            className='size-11 @2xl/data:size-9' disabled={Boolean(creating) || query.isPending || sources.length >= 128}><Plus /></Button></DropdownMenuTrigger>
+            className='size-11 @2xl/data:size-8' disabled={Boolean(creating) || query.isPending || sources.length >= 128}><Plus /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align='start'>
             <DropdownMenuItem className='min-h-11' onSelect={() => setCreating('new')}>New dataset</DropdownMenuItem>
             <DropdownMenuItem className='min-h-11' onSelect={() => setCreating('existing')}>Use existing dataset</DropdownMenuItem>
@@ -65,11 +65,11 @@ function DataTab({ dashboardId, workspaceId, revision, onCommitted, onReload, ep
             {sources.map((item, index) => <button key={item.dataset_id} type='button'
               disabled={Boolean(creating) || item.title === null}
               aria-current={!creating && selected?.dataset_id === item.dataset_id ? 'true' : undefined}
-              className={cn('flex min-h-11 max-w-64 shrink-0 items-center gap-2 rounded-md px-3 py-2 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 @2xl/data:max-w-none',
+              className={cn('flex min-h-11 max-w-64 shrink-0 items-start gap-2 rounded-md px-2 py-2.5 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 @2xl/data:max-w-none',
                 !creating && selected?.dataset_id === item.dataset_id ? 'bg-accent text-accent-foreground' : 'hover:bg-muted')}
               onClick={() => setSelectedId(item.dataset_id)}>
-              <Database className='size-4 shrink-0' aria-hidden='true' />
-              <span className='min-w-0 break-words'>{item.title ?? `Unavailable dataset ${index + 1}`}</span>
+              <Database className='mt-0.5 size-4 shrink-0' aria-hidden='true' />
+              <span className='line-clamp-2 min-w-0 break-words' title={item.title ?? undefined}>{item.title ?? `Unavailable dataset ${index + 1}`}</span>
             </button>)}
           </nav>}
       {sources.length >= 128 && <p className='px-3 pb-3 text-xs text-muted-foreground'>This dashboard has reached its 128-dataset limit.</p>}
@@ -131,13 +131,13 @@ function SavedDataset({ reference, epoch }: { reference: DatasetReferenceSummary
     <header className='flex shrink-0 flex-wrap items-start justify-between gap-3 border-b p-4'>
       <div className='min-w-0'>
         <h3 className='break-words text-base font-medium'>{dataset.title}</h3>
-        <p className='text-xs text-muted-foreground'>{sourceLabel} · Revision {reference.revision}</p>
+        <p className='text-xs text-muted-foreground'>{sourceLabel} · Version {reference.revision}</p>
       </div>
       <Sheet>
         <SheetTrigger asChild><Button variant='outline' className='h-11 @5xl/data:hidden'><Columns3 />Fields and lineage</Button></SheetTrigger>
         <SheetContent className='flex min-h-0 flex-col'>
           <SheetHeader><SheetTitle>Fields and lineage</SheetTitle>
-            <SheetDescription>{dataset.title} · Revision {reference.revision}</SheetDescription></SheetHeader>
+            <SheetDescription>{dataset.title} · Version {reference.revision}</SheetDescription></SheetHeader>
           <div className='min-h-0 overflow-auto p-4'><DatasetInspectionPanel inspection={dataset} /></div>
         </SheetContent>
       </Sheet>

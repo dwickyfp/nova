@@ -241,9 +241,6 @@ class EvidenceTracker:
             (tool in {
                 "semantic_query", "semantic_view_query", "query_execute", "diagnose_change",
                 "compute_metrics", "analyze_documents",
-                # Rows of the open Dataviz dashboard's own dataset, read through
-                # Superset and Nova's proxy as the caller (governed, audited).
-                "dataviz_query",
                 # Rows of a native Dataviz dataset, aggregated as the caller.
                 "native_dataset_query",
                 "canonical_investigation",

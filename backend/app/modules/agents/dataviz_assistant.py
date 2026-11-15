@@ -6,15 +6,15 @@ the skill author, it is a configuration Nova assembles per turn and runs
 through the same bounded ``AssistantLoop``. What it may read comes from the
 caller, not from an agent grant:
 
-* its Semantic Views are the views behind the open dashboard's datasets, then
-  the views the Supernova Business Ontology binds to concepts the question
-  names, then every other published view the active role can open, at most
+* its Semantic Views are the views the Supernova Business Ontology binds to
+  concepts the question names, then every other published view the active
+  role can open, at most
   ``MAX_VIEWS``. Each is checked under the caller's role
   (``semantic_view_service.get_active_for_agent``); Ranger decides the rows;
 * its tools are fixed: governed semantic queries, change diagnosis, metrics,
-  inline charts, the ontology, and the Dataviz tools, including the native
-  dashboard tools that read and change native dashboards as the caller (every
-  change is approved by the user and committed as a new revision).
+  inline charts, the ontology, and the native dashboard tools that read and
+  change Dataviz dashboards as the caller (every change is approved by the
+  user and committed as a new revision).
 
 Its instructions ask for answers that cover what, who, when, where, why and
 how wherever the data supports it, and say plainly when a part cannot be
@@ -40,24 +40,24 @@ TOOLS = (
     "ontology_explain",
 )
 #: With a dashboard open, numbers come only from its own datasets
-#: (``dataviz_query``), so they match its charts and verified filters.
+#: (``native_dataset_query``), so they match its charts.
 #: Planner requirements the dashboard's own query satisfies.
 DASHBOARD_ALIASES = {
-    "semantic_query": "dataviz_query",
-    "semantic_view_query": "dataviz_query",
-    "diagnose_change": "dataviz_query",
-    "compute_metrics": "dataviz_query",
+    "semantic_query": "native_dataset_query",
+    "semantic_view_query": "native_dataset_query",
+    "diagnose_change": "native_dataset_query",
+    "compute_metrics": "native_dataset_query",
 }
 
 MISSION = (
-    "Nova's Dataviz assistant. Help people understand and change the governed BI dashboards "
+    "Nova's Dataviz assistant. Help people understand and change the Dataviz dashboards "
     "they have open in Dataviz, using only verified data their active role may read."
 )
 
 INSTRUCTIONS = """
 Answer every data question so the reader knows, as far as verified data allows:
 - What: the measure, with its business definition from the Supernova Business Ontology
-  (the concepts in the dashboard brief, or ontology_explain) and its unit.
+  (ontology_explain) and its unit.
 - Who: the people, customers, outlets, products or teams behind the number, with the top
   contributors when the question is about a total or a change.
 - When: the exact period and grain of every number, and the comparison period for a change.
@@ -65,32 +65,22 @@ Answer every data question so the reader knows, as far as verified data allows:
 - Why: for a rise or fall, compare the two periods and name the members that moved it most.
   Call these drivers or contributors; a breakdown shows where a change happened, it does not
   prove its cause.
-- How: how the number is computed (formula, filters, source dataset and Semantic View) and,
-  for a chart, its lineage (dataviz_chart_source).
+- How: how the number is computed (fields, filters and source dataset).
 
 How to work:
-- The dashboard brief below lists its datasets, saved metrics, columns and verified filters.
-  Answer from those datasets with dataviz_query so your numbers match the charts and the
-  dashboard's filters: who -> a person dimension (for example a salesman or employee column),
-  where -> region, city or channel, when -> period on the time column.
-- Why/what changed: call dataviz_query with period, compare_period and one non-time dimension
-  at a time (for example region, then brand or salesman); report the Total row's change and
-  change_pct, then the two or three largest contributions with their share_of_change_pct,
-  each member's numbers taken together from top_contributors.
-- Quote totals from the Total row; never add up rows yourself (a breakdown can be cut). Name
-  the row a change belongs to: "Total naik Rp81.598.302,97 (5,47%)", "Jawa Timur naik ...";
-  a change stated without its row ("net revenue naik ...") cannot be verified and is removed.
-- Write numbers in the reader's format: 329.840 unit, not 329840.0.
-- With a dashboard open, dataviz_query is the only data source; without one, use semantic_query.
-- With a native dashboard open (its brief is below), native_dataset_query on its datasets is
-  the only data source, and "this dashboard" is that one. Build and edit it with the native
-  dashboard tools when asked: add charts, change a chart, move or remove widgets, filters.
-- A ranking (who or where is highest) is a dataviz_query with that dimension and no
-  compare_period: rows come sorted by the first metric, largest first. Add compare_period only
-  when the question asks about a change; then rows are ordered by the size of the change, and
-  the largest members of the period are in largest_in_period.
-- Write every number exactly as the tool returned it, with its unit (Rp1.573.810.277,50), never
-  rounded words like "1,57 miliar" or "71 juta": answers are checked number by number.
+- With a dashboard open (its brief is below), native_dataset_query on its datasets is the only
+  data source, and "this dashboard" is that one, so your numbers match its charts: who -> a
+  person dimension (for example a salesman or employee column), where -> region, city or
+  channel, when -> a date field with its grain. Without a dashboard open, use semantic_query.
+- Build and edit dashboards with the native dashboard tools when asked: add charts, change a
+  chart, move or remove widgets, filters.
+- A ranking (who or where is highest) is a query with that dimension sorted by the measure,
+  largest first. For a change, query the two periods and compare them member by member.
+- Quote totals from a query that computes them; never add up rows yourself (a breakdown can be
+  cut).
+- Write every number exactly as the tool returned it, with its unit, in the reader's format
+  (329.840 unit, Rp1.573.810.277,50), never rounded words like "1,57 miliar": answers are
+  checked number by number.
 - Answer in the language of the user's question, the whole answer in that one language.
 - Lead with the direct answer in one or two sentences, then the 5W+1H points that apply, as a
   short list. Skip a W that does not apply instead of padding it. If a part cannot be answered
@@ -102,41 +92,21 @@ How to work:
 
 STANDING_RULES = [
     "State the period of every number.",
-    "Say whether the dashboard's current filters were applied.",
+    "Say which filters were applied to every number.",
     "Name a change's drivers as contributors, never as proven causes.",
 ]
 
 
-async def _views_for_dashboard(user: dict[str, Any], dashboard_id: int | None) -> list[str]:
-    """Semantic Views behind the open dashboard's datasets, read as the caller."""
-    if not dashboard_id:
-        return []
-    from app.modules.superset.client import BiError, SupersetClient
-    from app.modules.superset.dashboard_context import _semantic_views
-
-    try:
-        async with SupersetClient.for_user(user, author=False) as bi:
-            body = await bi.request("GET", f"/api/v1/dashboard/{int(dashboard_id)}/datasets")
-    except BiError:
-        return []
-    ids = [int(row["id"]) for row in body.get("result") or [] if row.get("id") is not None]
-    from app.core.metadata_scope import actor_for
-
-    mapped = await _semantic_views(ids, actor=actor_for(user))
-    return list(dict.fromkeys(str(item["view_id"]) for item in mapped.values()))
-
-
 async def _views_for_question(
-    user: dict[str, Any], question: str, scope: list[str] | None = None
+    user: dict[str, Any], question: str
 ) -> list[str]:
-    """Views the ontology binds to the approved concepts a question names,
-    read in the business of ``scope`` (the open dashboard's views) when given."""
+    """Views the ontology binds to the approved concepts a question names."""
     if not question.strip():
         return []
     from app.modules.ontology.resolver import ConceptResolver
 
     try:
-        resolution = await ConceptResolver().resolve(question, user, scope_views=scope or None)
+        resolution = await ConceptResolver().resolve(question, user)
     except Exception as exc:  # noqa: BLE001 - resolution helps scope, it never grants
         logger.info("Ontology scope unavailable: %s", type(exc).__name__)
         return []
@@ -149,26 +119,17 @@ async def _views_for_question(
     return list(dict.fromkeys(views))
 
 
-async def scope_views(
-    user: dict[str, Any], *, dashboard_id: int | None = None, question: str = ""
-) -> list[str]:
+async def scope_views(user: dict[str, Any], *, question: str = "") -> list[str]:
     """The Semantic Views this turn may use, most relevant first.
 
-    Only views the caller's active role can open are returned; the order puts
-    the dashboard's own views first, so its numbers and the answer agree.
+    Only views the caller's active role can open are returned.
     """
     from app.modules.intelligence.semantic_views import semantic_view_service
 
-    dashboard = await _views_for_dashboard(user, dashboard_id)
-    preferred = [*dashboard, *(await _views_for_question(user, question, dashboard))]
     readable: list[str] = []
-    for view_id in dict.fromkeys(preferred):
+    for view_id in await _views_for_question(user, question):
         if await semantic_view_service.get_active_for_agent(view_id, user):
             readable.append(view_id)
-    if dashboard and readable:
-        # A dashboard on screen is the business of this turn: no other
-        # business's views (or meanings of its terms) are mixed in.
-        return readable[:MAX_VIEWS]
     if len(readable) < MAX_VIEWS:
         try:
             for record in await semantic_view_service.list_active_for_agent(user):

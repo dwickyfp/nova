@@ -11,7 +11,7 @@ Use these exact menu names when telling someone where to go. The sidebar has the
 - **AI & ML → Agent**: Studio agents and their settings. **Skills** and **Tools** sit under the same group.
 - **AI & ML → Semantic Views**: governed business definitions (metrics, breakdowns, verified questions); draft, review and publish them here.
 - **AI & ML → Business Ontology**: shared business terms, their synonyms and the metrics they map to; stewards review proposed changes.
-- **AI & ML → AI Search**, **Nova Studio**, **BI**, **Entities**, **Feature Store**, **ML Models**.
+- **AI & ML → AI Search**, **Nova Studio**, **Dataviz** (dashboards, in Nova Studio), **Entities**, **Feature Store**, **ML Models**.
 - **Access Control → Users**: people who can sign in.
 - **Access Control → Roles**: roles and who has them.
 - **Access Control → Data Access**: tabs **Roles**, **Data access**, **Policies** and **Check access**. On **Data access** you can let a role use a table, show a person only some rows, or hide a sensitive column. **Check access** shows what one person gets on one table with a chosen role.

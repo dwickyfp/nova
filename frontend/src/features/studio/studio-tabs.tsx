@@ -9,7 +9,7 @@ const TABS: { id: StudioTab; label: string }[] = [
 
 /**
  * Studio's two workspaces as one floating segmented control: Agent (the
- * native chat) and Dataviz (Superset with Nova's assistant). It floats over
+ * native chat) and Dataviz (native dashboards with Neva). It floats over
  * the workspace instead of taking a header row; the selected plate slides
  * between the two tabs. Arrow keys move between them, as in any tab list.
  *
@@ -42,7 +42,7 @@ export function StudioTabs({
   );
 }
 
-/** The switch itself, for a workspace that places it (Dataviz docks it in Superset's bar). */
+/** The switch itself, for a workspace that places it (Dataviz places it in its own band). */
 export function StudioTabSwitch({
   tab,
   onSelect,

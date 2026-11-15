@@ -197,7 +197,6 @@ NAV = [
     ("StarRocks", "nova-starrocks", "nova-7c-starrocks-engine"),
     ("Host system", "nova-host-system", "nova-7c-host-system"),
     ("Dependencies", "nova-dependencies", "nova-7c-dependencies"),
-    ("BI", "nova-bi", "nova-7c-bi-superset"),
 ]
 
 LINUX_FS_TYPES = "btrfs|ext4|xfs|zfs|f2fs"
@@ -1348,121 +1347,6 @@ dependencies = dashboard(
 )
 
 
-BI_JOB = 'job="bi-metrics"'
-REQ = "nova_bi_request_duration_seconds"
-QUERY = "nova_bi_query_duration_seconds"
-TASK = "nova_bi_task_duration_seconds"
-
-bi = dashboard(
-    "nova-bi",
-    "Nova | BI (Superset)",
-    "Superset requests, the queries it runs on Nova, and its background work.",
-    [
-        text_panel(
-            "**BI (Superset)**  ·  Superset sends these through the stats"
-            "d exporter. No data with the exporter up means Superset is n"
-            "ot running or not sending."
-        ),
-        row("Availability"),
-        health("Metrics exporter", "bi-metrics", w=6),
-        stat("Requests/s", f"sum(rate({REQ}_count{{{BI_JOB}}}[5m]))", unit="reqps", w=6),
-        stat(
-            "Server errors",
-            f'100 * sum(rate({REQ}_count{{{BI_JOB},status="5xx"}}[5m])) / '
-            f"clamp_min(sum(rate({REQ}_count{{{BI_JOB}}}[5m])), 0.001)",
-            unit="percent",
-            w=6,
-            warning=1,
-            critical=5,
-        ),
-        stat(
-            "Failed queries",
-            f'100 * sum(rate({QUERY}_count{{{BI_JOB},outcome="error"}}[5m])) / '
-            f"clamp_min(sum(rate({QUERY}_count{{{BI_JOB}}}[5m])), 0.001)",
-            unit="percent",
-            w=6,
-            warning=1,
-            critical=5,
-            description="Queries Superset ran on Nova that the engine or Nova's policies refused.",
-        ),
-        row("Requests"),
-        line(
-            "Requests by area",
-            f"sum by(area) (rate({REQ}_count{{{BI_JOB}}}[5m]))",
-            legend="{{area}}",
-            unit="reqps",
-        ),
-        line(
-            "Request latency p95",
-            f"histogram_quantile(0.95, sum by(le, area) (rate({REQ}_bucket{{{BI_JOB}}}[5m])))",
-            legend="{{area}}",
-            unit="s",
-        ),
-        line(
-            "Responses by status",
-            f"sum by(status) (rate({REQ}_count{{{BI_JOB}}}[5m]))",
-            legend="{{status}}",
-            unit="reqps",
-        ),
-        line(
-            "API errors",
-            (
-                'sum by(api, method) (rate(nova_bi_api_calls_total{job="bi-me'
-                'trics",outcome="error"}[5m]))'
-            ),
-            legend="{{api}}.{{method}}",
-            unit="reqps",
-        ),
-        row("Queries on Nova"),
-        line(
-            "Queries by outcome",
-            f"sum by(outcome) (rate({QUERY}_count{{{BI_JOB}}}[5m]))",
-            legend="{{outcome}}",
-            unit="ops",
-        ),
-        line(
-            "Query latency",
-            f"histogram_quantile(0.95, sum by(le) (rate({QUERY}_bucket{{{BI_JOB}}}[5m])))",
-            legend="p95",
-            unit="s",
-            description="Time from sending a query to Nova's SQL proxy to its last row.",
-        ),
-        row("Background work"),
-        line(
-            "Tasks by state",
-            f"sum by(task, state) (rate({TASK}_count{{{BI_JOB}}}[5m]))",
-            legend="{{task}} · {{state}}",
-            unit="ops",
-        ),
-        line(
-            "Task duration p95",
-            f"histogram_quantile(0.95, sum by(le, task) (rate({TASK}_bucket{{{BI_JOB}}}[5m])))",
-            legend="{{task}}",
-            unit="s",
-        ),
-        line(
-            "Reports and alerts run",
-            (
-                'sum by(event) (rate(nova_bi_events_total{job="bi-metrics",ev'
-                'ent=~"reports[.].*"}[15m]))'
-            ),
-            legend="{{event}}",
-            unit="ops",
-        ),
-        line(
-            "SQL Lab wait before running",
-            (
-                "histogram_quantile(0.95, sum by(le) (rate(nova_bi_event_dura"
-                'tion_seconds_bucket{job="bi-metrics",event="sqllab.query.tim'
-                'e_pending"}[5m])))'
-            ),
-            legend="p95",
-            unit="s",
-        ),
-    ],
-)
-
-
 def main() -> None:
     ROOT.mkdir(parents=True, exist_ok=True)
     for entry in (
@@ -1472,7 +1356,6 @@ def main() -> None:
         starrocks,
         host_system,
         dependencies,
-        bi,
     ):
         path = ROOT / f"{entry['uid']}.json"
         path.write_text(json.dumps(entry, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

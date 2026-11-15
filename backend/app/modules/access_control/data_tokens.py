@@ -1,6 +1,7 @@
 """Session-bound data tokens: short-lived MySQL proxy passwords for a Nova session.
 
-A data token lets a trusted client (Superset, a notebook runtime) open MySQL
+A data token lets a trusted sandbox client (a notebook runtime or a Python
+task run) open MySQL
 proxy connections *as a signed-in user* without ever holding that user's
 password. It is not a second identity: every check resolves the Nova session
 again and compares the principal, the active role and the security-context
@@ -8,10 +9,8 @@ version captured when the token was issued, so a role switch, a logout or an
 expired session invalidates it without any extra revocation step.
 
 Tokens are scoped by **purpose**. Each purpose has its own Redis namespace,
-its own cap and its own peer networks (checked by the proxy), so a notebook
-token is never accepted as a Superset token or the other way round:
+its own cap and its own peer networks (checked by the proxy):
 
-* ``bi`` — Superset's per-session token (``app.modules.superset.tokens``);
 * ``notebook`` — one notebook runtime's token. It is bound to the runtime as
   well: it stops working when the runtime stops, and the proxy runs every
   statement on its connections read-only.
@@ -25,30 +24,37 @@ Redis layout per purpose (all keys expire on their own):
   token. The token is encrypted, not hashed, because the proxy verifies a
   ``mysql_native_password`` response, which needs the token value itself.
 * ``<prefix>tokens:<principal>`` → sorted set of token ids by expiry, bounded.
-* ``<prefix>bind:<subject>`` → the subject's current token id (the Nova session
-  for BI, the runtime for a notebook), so many connections reuse one token.
+* ``<prefix>bind:<subject>`` → the subject's current token id (the runtime),
+  so many connections reuse one token.
 """
 
 from __future__ import annotations
 
 import hmac
+import ipaddress
+import logging
 import secrets
 import time
 import uuid
 from dataclasses import dataclass
+from functools import lru_cache
 
 from cryptography.fernet import InvalidToken
 
+from app.core.config import settings
 from app.core.redis import session_store
 from app.core.security import decrypt_password, encrypt_password
 
-#: A delegated (background) BI session: owner + role, no password. See
-#: :mod:`app.modules.superset.delegation`.
+logger = logging.getLogger(__name__)
+
+#: A delegated (background) session: owner + role, no password. See
+#: :mod:`app.modules.task_orchestration.delegation`. The key prefix is kept so
+#: sessions recorded before an upgrade still resolve.
 DELEGATED_PREFIX = "nova:bi:delegated:"
 DELEGATED = "delegated:"
 
 
-class BiCredentialError(Exception):
+class DataTokenError(Exception):
     """A data token or handle no longer maps to a usable Nova session."""
 
 
@@ -74,16 +80,15 @@ class TokenPurpose:
         return f"{self.prefix}bind:"
 
 
-BI = TokenPurpose(name="bi", prefix="nova:bi:")
 NOTEBOOK = TokenPurpose(name="notebook", prefix="nova:nb:", subject_key_prefix="nova:nb:rt:")
 TASK = TokenPurpose(name="task", prefix="nova:task:", subject_key_prefix="nova:task:rt:")
-PURPOSES = {BI.name: BI, NOTEBOOK.name: NOTEBOOK, TASK.name: TASK}
+PURPOSES = {NOTEBOOK.name: NOTEBOOK, TASK.name: TASK}
 #: Purposes whose connections come from a sandbox runtime (DuckDB's scanner).
 SANDBOX_PURPOSES = frozenset({NOTEBOOK.name, TASK.name})
 
 
 @dataclass(frozen=True)
-class BiSession:
+class TokenSession:
     """The Nova session a credential resolves to, as of this check."""
 
     session_id: str
@@ -114,8 +119,8 @@ class TokenBinding:
     username: str
     active_role: str
     security_context_version: int
-    purpose: str = BI.name
-    #: The notebook runtime a notebook token belongs to ("" for BI).
+    purpose: str = NOTEBOOK.name
+    #: The sandbox runtime the token belongs to.
     subject: str = ""
 
     @property
@@ -127,7 +132,7 @@ class TokenBinding:
 def _redis():
     redis = session_store._redis
     if redis is None:
-        raise BiCredentialError("Session store is not initialized")
+        raise DataTokenError("Session store is not initialized")
     return redis
 
 
@@ -135,7 +140,7 @@ def _text(value: object) -> str:
     return value.decode() if isinstance(value, bytes) else str(value or "")
 
 
-async def resolve_session(session_id: str) -> BiSession:
+async def resolve_session(session_id: str) -> TokenSession:
     """Return the session's current security state, or raise.
 
     A session without an explicit active role, or whose stored password no
@@ -145,17 +150,17 @@ async def resolve_session(session_id: str) -> BiSession:
         return await _delegated_session(session_id)
     session = await session_store.get(session_id)
     if not session:
-        raise BiCredentialError("Nova session has ended")
+        raise DataTokenError("Nova session has ended")
     username = session.get("username") or ""
     active_role = session.get("active_role") or ""
     if not username or not active_role:
-        raise BiCredentialError("Nova session has no active role")
+        raise DataTokenError("Nova session has no active role")
     encrypted_password = session.get("encrypted_password") or ""
     try:
         decrypt_password(encrypted_password)
     except (InvalidToken, TypeError, ValueError) as exc:
-        raise BiCredentialError("Nova session is no longer readable") from exc
-    return BiSession(
+        raise DataTokenError("Nova session is no longer readable") from exc
+    return TokenSession(
         session_id=session_id,
         username=username,
         active_role=active_role,
@@ -164,12 +169,12 @@ async def resolve_session(session_id: str) -> BiSession:
     )
 
 
-async def _delegated_session(session_id: str) -> BiSession:
+async def _delegated_session(session_id: str) -> TokenSession:
     stored = await _redis().hgetall(DELEGATED_PREFIX + session_id[len(DELEGATED) :])
     fields = {_text(k): _text(v) for k, v in stored.items()}
     if not fields.get("username") or not fields.get("active_role"):
-        raise BiCredentialError("The delegated BI session has ended")
-    return BiSession(
+        raise DataTokenError("The delegated session has ended")
+    return TokenSession(
         session_id=session_id,
         username=fields["username"],
         active_role=fields["active_role"],
@@ -202,7 +207,7 @@ async def end_delegated_session(session_id: str) -> None:
 
 
 async def mint(
-    session: BiSession,
+    session: TokenSession,
     *,
     purpose: TokenPurpose,
     ttl: int,
@@ -287,7 +292,7 @@ async def match(
     still holds.
     """
     # Imported here: ``app.proxy`` imports the proxy server, which imports this
-    # module through the Superset token wrapper.
+    # module.
     from app.proxy.protocol import scramble_native_password
 
     if len(auth_response) != 20 or not username:
@@ -322,7 +327,7 @@ async def match(
     return None
 
 
-async def verify_binding(binding: TokenBinding) -> BiSession:
+async def verify_binding(binding: TokenBinding) -> TokenSession:
     """Return the bound session if the binding still holds, else raise.
 
     Holds only while the session exists for the same principal, with the same
@@ -331,32 +336,61 @@ async def verify_binding(binding: TokenBinding) -> BiSession:
     """
     purpose = PURPOSES.get(binding.purpose)
     if purpose is None:
-        raise BiCredentialError("Unknown data token purpose")
+        raise DataTokenError("Unknown data token purpose")
     if purpose.subject_key_prefix is not None and not (
         binding.subject
         and await _redis().exists(purpose.subject_key_prefix + binding.subject)
     ):
-        raise BiCredentialError("The notebook runtime this connection belonged to has stopped")
+        raise DataTokenError("The notebook runtime this connection belonged to has stopped")
     session = await resolve_session(binding.session_id)
     if (
         session.username != binding.username
         or session.active_role != binding.active_role
         or session.security_context_version != binding.security_context_version
     ):
-        raise BiCredentialError("Nova session changed since this connection was opened")
+        raise DataTokenError("Nova session changed since this connection was opened")
     return session
 
 
+@lru_cache(maxsize=8)
+def _networks(raw: str) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    parsed = []
+    for entry in raw.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        try:
+            parsed.append(ipaddress.ip_network(entry, strict=False))
+        except ValueError:
+            logger.error("Ignoring invalid network entry %r", entry)
+    return tuple(parsed)
+
+
+def peer_in(host: str, networks: str) -> bool:
+    """True when ``host`` is inside the comma-separated CIDRs. Fail closed."""
+    try:
+        address = ipaddress.ip_address(host.strip("[]"))
+    except ValueError:
+        return False
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+        address = address.ipv4_mapped
+    return any(address in network for network in _networks(networks))
+
+
+def sandbox_peer_allowed(host: str) -> bool:
+    """True when ``host`` is inside ``NOTEBOOK_SANDBOX_NETWORKS``. Fail closed."""
+    return peer_in(host, settings.NOTEBOOK_SANDBOX_NETWORKS)
+
+
 __all__ = [
-    "BI",
     "DELEGATED",
     "DELEGATED_PREFIX",
     "NOTEBOOK",
     "PURPOSES",
     "SANDBOX_PURPOSES",
     "TASK",
-    "BiCredentialError",
-    "BiSession",
+    "DataTokenError",
+    "TokenSession",
     "DataToken",
     "TokenBinding",
     "TokenPurpose",
@@ -365,6 +399,8 @@ __all__ = [
     "resolve_session",
     "revoke_subject",
     "verify_binding",
+    "peer_in",
+    "sandbox_peer_allowed",
     "create_delegated_session",
     "end_delegated_session",
 ]

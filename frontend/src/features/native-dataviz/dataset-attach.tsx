@@ -125,7 +125,7 @@ function AttachDataset({ dashboardId, workspaceId, revision, references, onSaved
               selected?.resource_id === item.resource_id ? 'bg-accent text-accent-foreground' : 'hover:bg-muted')}
             onClick={() => { setSelected(item); setError('') }}>
             <span className='min-w-0 break-words'>{item.title}</span>
-            <span className='shrink-0 text-xs'>{included(item.resource_id) ? 'Already added' : `Revision ${item.revision}`}</span>
+            <span className='shrink-0 text-xs'>{included(item.resource_id) ? 'Already added' : `Version ${item.revision}`}</span>
           </button>)}
           {!visible.length && <p role='status' className='p-3 text-sm text-muted-foreground'>
             {search ? 'No matching datasets on this page.' : 'No editable datasets are available on this page.'}
@@ -140,7 +140,7 @@ function AttachDataset({ dashboardId, workspaceId, revision, references, onSaved
     {selected && detail.isPending && <p role='status' className='text-sm text-muted-foreground'>Reading the selected revision…</p>}
     {selected && detail.isError && <p role='alert' className='text-sm text-destructive'>This dataset revision is unavailable. Reload the list and choose again.</p>}
     {dataset && <div className='space-y-3'>
-      <p className='break-words text-sm font-medium'>{dataset.title} · Revision {selected?.revision}</p>
+      <p className='break-words text-sm font-medium'>{dataset.title} · Version {selected?.revision}</p>
       <DatasetInspectionPanel inspection={dataset} />
     </div>}
     {references.length >= 128 && <p role='alert' className='text-sm'>This dashboard has reached its 128-dataset limit.</p>}

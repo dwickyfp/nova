@@ -9,27 +9,6 @@ export function signInUrl(location: Pick<Location, 'pathname' | 'search' | 'hash
   return back === '/' ? '/sign-in' : `/sign-in?redirect=${encodeURIComponent(back)}`
 }
 
-/**
- * The page that should sign in. Nova frames only its BI launch page (inside
- * Dataviz); that page sends the top window to sign in, so the sign-in form
- * never appears inside the frame. Every other page signs in where it is.
- */
-function signInWindow(): Window {
-  try {
-    if (
-      window.top &&
-      window.top !== window.self &&
-      window.location.pathname.startsWith('/bi-launch')
-    ) {
-      void window.top.location.pathname // throws for a cross-origin parent
-      return window.top
-    }
-  } catch {
-    // Not same-origin: sign in where we are.
-  }
-  return window
-}
-
 /** How the sign-in page is opened; replaced in tests, which must not navigate. */
 export const signInNavigation = {
   open(target: Window, url: string): void {
@@ -39,7 +18,7 @@ export const signInNavigation = {
 
 function signInAgain(): void {
   useAuthStore.getState().auth.reset()
-  const target = signInWindow()
+  const target = window
   const url = signInUrl(target.location)
   if (url) signInNavigation.open(target, url)
 }

@@ -48,7 +48,7 @@ async function mount() {
 }
 const saves = () => fetchMock.mock.calls.filter(([url]) => url.endsWith('/operations'))
 async function choose() {
-  await page.getByRole('button', { name: 'Dataset 3 Revision 3', exact: true }).click()
+  await page.getByRole('button', { name: 'Dataset 3 Version 3', exact: true }).click()
   await expect.element(page.getByRole('table', { name: 'Inspected dataset fields' })).toBeVisible()
 }
 beforeEach(() => {
@@ -126,7 +126,7 @@ describe('reuse a dataset in the shared Data tab', () => {
     fetchMock.mockImplementation((url: string, options: RequestInit) => url.includes(`/datasets/${id(3)}?`)
       ? Promise.resolve(json({ detail: 'private-revision-marker' }, 403)) : route(url, options))
     const screen = await mount()
-    await screen.getByRole('button', { name: 'Dataset 3 Revision 3', exact: true }).click()
+    await screen.getByRole('button', { name: 'Dataset 3 Version 3', exact: true }).click()
     await expect.element(screen.getByRole('alert')).toHaveTextContent('This dataset revision is unavailable')
     await expect.element(screen.getByRole('button', { name: 'Add selected revision' })).toBeDisabled()
     expect(screen.container.textContent).not.toContain('private-revision-marker')
@@ -147,7 +147,7 @@ describe('reuse a dataset in the shared Data tab', () => {
     expect(request.searchParams.get('before_id')).toBe(id(52))
     expect(request.searchParams.get('before_time')).toBe('2026-11-14T00:00:00Z')
     await screen.getByRole('button', { name: 'Reload list' }).click()
-    await expect.element(screen.getByRole('button', { name: 'Dataset 3 Revision 3', exact: true })).toBeVisible()
+    await expect.element(screen.getByRole('button', { name: 'Dataset 3 Version 3', exact: true })).toBeVisible()
   })
 
   it('aborts a pending save and discards its late receipt on role change', async () => {

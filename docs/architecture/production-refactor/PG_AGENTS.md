@@ -113,8 +113,8 @@ in the same transaction. Runs, events, Missions, knowledge and bookkeeping
   owner's artifacts. The CLI discovers owner names through a maintenance-only
   projection, then explicitly authorizes delegation and binds each owner's
   identity for conversion. Historical tile readers use PG and propagate outages.
-  Superset effect reconciliation and the legacy import/type transformations
-  still need full rehearsal; storage tests do not prove those external effects.
+  The legacy import/type transformations still need full rehearsal (Superset
+  effect reconciliation is moot: Superset was removed on 2026-11-16); storage tests do not prove those external effects.
 - **Shared-agent MCP tools:** owner-only. If a shared agent must call the
   owner's MCP tools, add a reference-bound read like skills and custom tools.
 - **Run visibility** is owner-wide because thread deletion spans roles; replay

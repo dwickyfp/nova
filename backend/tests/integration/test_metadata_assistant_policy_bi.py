@@ -1,4 +1,4 @@
-"""Assistant, access-control, Superset, migration and AI-usage metadata on real PG.
+"""Assistant, access-control, migration and AI-usage metadata on real PG.
 
 Owner isolation, append-only retries, CAS one-winner concurrency, workload
 grants, maintenance, maintenance-only legacy import and credential refusal.
@@ -34,7 +34,6 @@ from app.modules.access_control.security_context import SecurityContext
 from app.modules.assistant.metadata_repository import AssistantMetadataRepository
 from app.modules.llm_functions.metadata_repository import LLMUsageMetadataRepository
 from app.modules.migration.metadata_repository import MigrationMetadataRepository
-from app.modules.superset.metadata_repository import SupersetMetadataRepository
 from tests.integration.test_metadata_bootstrap import environment  # noqa: F401
 from tests.integration.test_metadata_workspaces import session
 
@@ -42,7 +41,7 @@ pytestmark = pytest.mark.metadata_pg
 SHA = "a" * 64
 REPOSITORIES = {
     "assistant": AssistantMetadataRepository, "access": AccessControlMetadataRepository,
-    "superset": SupersetMetadataRepository, "migration": MigrationMetadataRepository,
+    "migration": MigrationMetadataRepository,
     "usage": LLMUsageMetadataRepository,
 }
 
@@ -466,106 +465,6 @@ async def test_business_policy_revisions_have_one_winner(meta):
             await conn.execute("UPDATE nova_meta.config_business_policies SET revision=9")
 
 
-# ── Superset ──────────────────────────────────────────────────────────────
-
-
-async def test_author_roles_change_as_a_set_from_the_revision_read(meta):
-    async with meta.transaction("superset", name="owner", role="ACCOUNTADMIN") as (repo, _):
-        assert await repo.author_roles() == (frozenset(), 0)
-        assert await repo.replace_author_roles(["BI_AUTHOR", "ANALYST"],
-                                               expected_revision=0) == (
-            ["ANALYST", "BI_AUTHOR"], 1)
-    ready = asyncio.Barrier(2)
-
-    async def replace(roles):
-        async with meta.transaction("superset", name="owner", role="ACCOUNTADMIN") as (repo, _):
-            await ready.wait()
-            return await repo.replace_author_roles(roles, expected_revision=1)
-
-    results = await asyncio.gather(replace(["ANALYST"]), replace(["FINANCE"]),
-                                   return_exceptions=True)
-    assert sum(isinstance(r, tuple) for r in results) == 1
-    assert sum(isinstance(r, MetadataConflict) for r in results) == 1
-    winner = next(r for r in results if isinstance(r, tuple))
-    async with meta.transaction("superset", name="viewer") as (repo, _):
-        assert await repo.author_roles() == (frozenset(winner[0]), 2)
-    with pytest.raises(MetadataIntegrityViolation):  # a row change without the set revision
-        async with meta.transaction("superset", name="owner", role="ACCOUNTADMIN") as (_, conn):
-            await conn.execute("INSERT INTO nova_meta.config_bi_author_roles (role_name,"
-                               "created_by) VALUES ('SNEAKY','owner')")
-    with pytest.raises(MetadataPermissionDenied):
-        async with meta.transaction("superset", name="sec", role="SECURITYADMIN") as (repo, _):
-            await repo.replace_author_roles([], expected_revision=2)
-    actions = await meta.admin("SELECT metadata_table,action FROM nova_meta.audit_log "
-                               "WHERE metadata_table LIKE 'config_bi_author%%'")
-    assert ("config_bi_author_role_set", "UPDATE") in {(a["metadata_table"], a["action"])
-                                                       for a in actions}
-
-
-async def test_publications_belong_to_their_owner_and_role(meta):
-    start = {"operation_id": "op-1", "idempotency_scope": "scope-1",
-             "request_fingerprint": "fp-1", "target_mode": "new"}
-
-    async def begin():
-        async with meta.transaction("superset", workload="agent") as (repo, _):
-            return await repo.start_publication(start)
-
-    results = await asyncio.gather(*(begin() for _ in range(3)))
-    assert sum(created for _, created in results) == 1
-    async with meta.transaction("superset", workload="agent") as (repo, _):
-        await repo.advance_publication("op-1", "VALIDATING", {"status": "CHART_READY",
-                                                             "chart_id": 11})
-        with pytest.raises(MetadataConflict):
-            await repo.advance_publication("op-1", "VALIDATING", {"status": "ATTACHING"})
-    async with meta.transaction("superset") as (repo, _):
-        done = await repo.advance_publication(
-            "op-1", "CHART_READY",
-            {"status": "SUCCEEDED", "business_context": {"concept": "orders"}})
-        assert done["owner_name"] == "alice" and done["active_role"] == "ANALYST"
-        assert (await repo.publication_by_scope("scope-1"))["operation_id"] == "op-1"
-        assert await repo.list_publications(unresolved=True) == []
-    with pytest.raises(MetadataIntegrityViolation):  # a finished operation is frozen
-        async with meta.transaction("superset") as (repo, _):
-            await repo.advance_publication("op-1", "SUCCEEDED", {"status": "COMPENSATING"})
-    with pytest.raises(MetadataIntegrityViolation):  # continued only in its own role
-        async with meta.transaction("superset", role="ACCOUNTADMIN") as (repo, _):
-            await repo.start_publication({**start, "operation_id": "op-2",
-                                          "idempotency_scope": "scope-2"})
-            await repo.connection.execute(
-                "UPDATE nova_meta.config_dataviz_publications SET error='x' "
-                "WHERE operation_id='op-1'")
-    with pytest.raises(MetadataConflict):
-        async with meta.transaction("superset", name="bob") as (repo, _):
-            await repo.start_publication(start)
-    async with meta.transaction("superset", name="bob") as (repo, conn):
-        assert await repo.get_publication("op-1") is None
-        assert await repo.published_contexts([11, 12]) == {11: {"concept": "orders"}}
-        cursor = await conn.execute(
-            "SELECT count(*) AS n FROM nova_meta.config_dataviz_publications")
-        assert (await cursor.fetchone())["n"] == 0
-    with pytest.raises(MetadataPermissionDenied):
-        async with meta.transaction("superset") as (_, conn):
-            await conn.execute("DELETE FROM nova_meta.config_dataviz_publications")
-
-
-async def test_semantic_dataset_map_names_the_last_publisher(meta):
-    async with meta.transaction("superset", name="steward") as (repo, _):
-        await repo.record_semantic_dataset("view-1", "orders", status="SYNCED",
-                                           bi_dataset_id=5, version=1)
-    async with meta.transaction("superset", name="steward-2") as (repo, _):
-        row = await repo.record_semantic_dataset("view-1", "orders", status="FAILED",
-                                                 message="metric not expressible")
-        assert row["owner_name"] == "steward-2"
-    async with meta.transaction("superset", workload="automation") as (repo, _):
-        assert [r["dataset_name"] for r in await repo.synced_datasets("view-1")] == ["orders"]
-    with pytest.raises(MetadataPermissionDenied):
-        async with meta.transaction("superset", workload="agent") as (repo, _):
-            await repo.forget_semantic_dataset("view-1", "orders")
-    with pytest.raises(MetadataIntegrityViolation):
-        async with meta.transaction("superset") as (repo, _):
-            await repo.record_semantic_dataset("view-1", "x", status="STALE")
-
-
 # ── Migration ─────────────────────────────────────────────────────────────
 
 
@@ -678,7 +577,8 @@ async def _window(meta):
 
 # ── Workloads, maintenance and import ─────────────────────────────────────
 
-#: workload -> tables it may read (anything else is refused outright).
+#: workload -> tables it may read (anything else is refused outright). The BI
+#: tables are historical: no runtime uses them, but their grants remain.
 READS = {
     "web": {"config_assistant_threads", "config_assistant_messages", "config_assistant_ui_state",
             "config_i18n_messages", "config_security_role_projections",
@@ -810,7 +710,7 @@ async def caller_runtime(meta, *, name="alice", role="ANALYST"):
 
 
 async def test_preview_caller_reads_pg_and_refuses_another_conversation(meta):
-    from app.modules.superset.previews import Locator, PreviewError, _message
+    from app.modules.viz.studio_results import Locator, PreviewError, _message
 
     thread, answer = await thread_with_answer(meta)
     async with caller_runtime(meta) as user:
@@ -822,77 +722,6 @@ async def test_preview_caller_reads_pg_and_refuses_another_conversation(meta):
     async with caller_runtime(meta, name="bob") as user:
         with pytest.raises(PreviewError):
             await _message(Locator(thread["thread_id"], answer["message_id"], "c1"), user)
-
-
-async def test_publication_caller_cas_refuses_lost_progress_and_duplicate_scope(meta):
-    from app.modules.superset import publication
-
-    async with caller_runtime(meta):
-        op = publication.Operation(
-            "caller-op", "alice", "caller-scope", "fp", active_role="ANALYST",
-            security_context_version=5,
-        )
-        await publication._save(op)
-        first = await publication.get_operation(op.operation_id, "alice")
-        stale = await publication.get_operation(op.operation_id, "alice")
-        first.dataset_id = 12
-        await publication._save(first)
-        stale.dataset_id = 13
-        with pytest.raises(MetadataConflict):
-            await publication._save(stale)
-        assert (await publication.get_operation(op.operation_id, "alice")).dataset_id == 12
-        duplicate = publication.Operation(
-            "other-op", "alice", "caller-scope", "fp", active_role="ANALYST",
-            security_context_version=5,
-        )
-        with pytest.raises(MetadataConflict):
-            await publication._save(duplicate)
-        first.status = "SUCCEEDED"
-        await publication._save(first)
-        with pytest.raises(MetadataIntegrityViolation):
-            await publication._save(first)
-    async with caller_runtime(meta, name="bob"):
-        assert await publication.get_operation(op.operation_id, "bob") is None
-    async with caller_runtime(meta, role="FINANCE"):
-        with pytest.raises(MetadataPermissionDenied):
-            await publication._save(op)
-
-
-async def test_author_roles_caller_revocation_and_audit_rollback(meta):
-    from app.core.metadata_scope import actor_for, metadata_transaction
-    from app.modules.superset import access
-
-    async with caller_runtime(meta, name="admin", role="ACCOUNTADMIN") as user:
-        assert await access.replace_author_roles(["ANALYST"], changed_by="admin") == ["ANALYST"]
-        with pytest.raises(RuntimeError, match="audit failed"):
-            async with metadata_transaction(actor_for(user)):
-                await access.replace_author_roles([], changed_by="admin", expected_revision=1)
-                raise RuntimeError("audit failed")
-        assert await access.author_role_set() == (frozenset({"ANALYST"}), 1)
-    async with caller_runtime(meta):
-        assert await access.superset_role_for("ANALYST") == access.SUPERSET_AUTHOR
-    async with caller_runtime(meta, name="admin", role="ACCOUNTADMIN"):
-        await access.replace_author_roles([], changed_by="admin", expected_revision=1)
-        with pytest.raises(MetadataConflict):
-            await access.replace_author_roles(["ANALYST"], changed_by="admin", expected_revision=1)
-    async with caller_runtime(meta):
-        assert await access.superset_role_for("ANALYST") == access.SUPERSET_VIEWER
-
-
-async def test_semantic_mapping_and_context_callers_use_pg(meta):
-    from app.core.metadata_scope import actor_for
-    from app.modules.superset import dashboard_context, semantic
-
-    async with caller_runtime(meta) as user:
-        await semantic._record("view-one", "alice", "orders", status="SYNCED",
-                               bi_dataset_id=31, version=4)
-        datasets = await semantic.synced_datasets("view-one")
-        assert datasets[0]["dataset"] == "orders" and datasets[0]["bi_dataset_id"] == 31
-        mapping = await dashboard_context._semantic_views([31], actor=actor_for(user))
-        assert mapping[31]["view_id"] == "view-one" and mapping[31]["version"] == 4
-        assert await dashboard_context._published_contexts([99], actor=actor_for(user)) == {}
-        await semantic._forget("view-one", "orders")
-        assert await semantic.synced_datasets("view-one") == []
 
 
 async def test_query_history_caller_preserves_filters_stats_and_principal(meta):

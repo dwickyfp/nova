@@ -584,7 +584,7 @@ class ProxyQueryExecutor:
             if self._session.role_locked:
                 part = WireResult(
                     error=(
-                        "The active role of a Nova BI connection follows the Nova "
+                        "The active role of a notebook or task connection follows the Nova "
                         "session; switch roles in Nova"
                     ),
                     error_code=1235,

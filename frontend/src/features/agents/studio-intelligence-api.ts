@@ -1,4 +1,4 @@
-import { api, apiBase, authHeaders, ApiError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
 
 const agentPath = (agentId: string, rest: string) =>
   `/agents/${encodeURIComponent(agentId)}${rest}`;
@@ -76,33 +76,3 @@ export const deepResearchApi = {
       agentPath(agentId, `/deep-research/${encodeURIComponent(runId)}/cancel`),
     ),
 };
-
-// ── Export ─────────────────────────────────────────────────────
-
-export type ExportFormat = "csv" | "xlsx" | "pdf" | "pptx";
-
-/** Download an artifact's current result, re-run with the caller's access. */
-export async function downloadArtifact(artifactId: string, format: ExportFormat): Promise<void> {
-  const response = await fetch(
-    `${apiBase()}/agents/studio/artifacts/${encodeURIComponent(artifactId)}/export?format=${format}`,
-    { headers: authHeaders() },
-  );
-  if (!response.ok) {
-    let message = "The export failed.";
-    try {
-      const body = await response.json();
-      message = typeof body?.detail === "string" ? body.detail : message;
-    } catch {
-      // keep the generic message
-    }
-    throw new ApiError(response.status, message);
-  }
-  const disposition = response.headers.get("content-disposition") ?? "";
-  const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `result.${format}`;
-  const url = URL.createObjectURL(await response.blob());
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
-}

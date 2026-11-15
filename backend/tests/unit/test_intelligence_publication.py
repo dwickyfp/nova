@@ -83,7 +83,6 @@ def publication(monkeypatch, fake_metadata_db):
     monkeypatch.setattr(service, "_source_access", probe)
     monkeypatch.setattr(service, "describe", AsyncMock(return_value={"active_version": 2}))
     monkeypatch.setattr(service, "_audit", AsyncMock(side_effect=audit))
-    monkeypatch.setattr(service, "sync_bi", AsyncMock(side_effect=after_commit))
     monkeypatch.setattr(semantic_views, "_relink", AsyncMock(side_effect=after_commit))
     monkeypatch.setattr(semantic_views, "intelligence_metadata", transaction)
     monkeypatch.setattr(semantic_views.query_service, "execute", checkpoint)
@@ -102,12 +101,11 @@ def publication(monkeypatch, fake_metadata_db):
     )
 
 
-async def test_probes_precede_the_transaction_and_bi_follows_commit(publication):
+async def test_probes_precede_the_transaction(publication):
     p = publication
-    assert await p.service.publish("view", 2, USER) == {"active_version": 2, "bi_datasets": []}
+    assert await p.service.publish("view", 2, USER) == {"active_version": 2}
     p.repo.publish.assert_awaited_once_with("view", 2, expected_revision=4, expected_active=1)
     p.service._audit.assert_awaited_once_with("PUBLISH", "sales", USER)
-    p.service.sync_bi.assert_awaited_once_with("view", USER)
     p.checkpoint.assert_awaited_once_with(
         sql="SELECT 1",
         username="owner",
@@ -141,7 +139,6 @@ async def test_inputs_changed_during_probes_are_rejected(publication, changed):
         await p.service.publish("view", 2, USER, acknowledge_regressions=True)
     assert exc.value.status_code == 409
     p.repo.publish.assert_not_awaited()
-    p.service.sync_bi.assert_not_awaited()
 
 
 async def test_expired_execution_context_cannot_start_a_write(publication):
@@ -180,7 +177,7 @@ async def test_session_is_revalidated_before_the_write_transaction(
 
 
 @pytest.mark.parametrize("boundary", ["cas", "publish", "audit"])
-async def test_a_failure_rolls_back_the_unit_without_publishing_bi(publication, boundary):
+async def test_a_failure_rolls_back_the_unit(publication, boundary):
     p = publication
     failure = MetadataConflict() if boundary == "cas" else RuntimeError("fixture failure")
     if boundary == "audit":
@@ -190,7 +187,6 @@ async def test_a_failure_rolls_back_the_unit_without_publishing_bi(publication, 
     with pytest.raises(type(failure)):
         await p.service.publish("view", 2, USER)
     assert [tx.outcome for tx in p.database.transactions] == ["rolled_back"]
-    p.service.sync_bi.assert_not_awaited()
     semantic_views._relink.assert_not_awaited()
 
 

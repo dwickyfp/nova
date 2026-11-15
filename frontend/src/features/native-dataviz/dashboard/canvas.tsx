@@ -25,7 +25,8 @@ type CanvasProps = {
   contextFor: (widget: Widget, chart: ChartDefinition) => FilterTree | undefined
   onSelectValue: (widget: Widget, chart: ChartDefinition, selection: ValueSelection) => void
   selectedValueFor?: (widget: Widget) => string | null
-  highlight?: { widgetId: string; label: string } | null
+  /** Widgets Neva just changed; they carry a brief "Neva" marker. */
+  highlighted?: string[]
 }
 
 function ChartBody({ widget, props }: { widget: ChartWidget; props: CanvasProps }) {
@@ -54,7 +55,7 @@ function WidgetFrame({ widget, title, props, chart, children }: {
   widget: Widget; title: string; props: CanvasProps; chart?: ChartDefinition; children: React.ReactNode
 }) {
   const selected = props.selectedId === widget.widget_id
-  const highlighted = props.highlight?.widgetId === widget.widget_id
+  const highlighted = props.highlighted?.includes(widget.widget_id) ?? false
   const appearance = widget.appearance
   return <div className={cn('grid-stack-item-content flex flex-col overflow-hidden rounded-lg',
     appearance?.surface === 'transparent' ? 'bg-transparent' : 'bg-card',
@@ -64,8 +65,8 @@ function WidgetFrame({ widget, title, props, chart, children }: {
     selected && 'outline-2 outline-offset-2 outline-ring',
     highlighted && 'ring-2 ring-primary/60 transition-shadow')}
   onClick={event => { if (props.editing) { event.stopPropagation(); props.onSelect(widget.widget_id) } }}>
-    {(title || props.editing) && <div className='flex shrink-0 items-start justify-between gap-2 pb-1'>
-      <h3 className='type-title min-w-0 truncate text-sm font-semibold' title={title}>{title}</h3>
+    {(title || props.editing) && <div className='flex h-7 shrink-0 items-center justify-between gap-2'>
+      <h3 className='min-w-0 truncate text-sm font-medium' title={title}>{title}</h3>
       <div className={cn('flex shrink-0 items-center gap-0.5', !props.editing && 'opacity-0 focus-within:opacity-100 group-hover/widget:opacity-100')}>
         {props.onAskNeva && <Button variant='ghost' size='icon' className='size-7' aria-label={`Ask Neva about ${title || 'this widget'}`}
           onClick={event => { event.stopPropagation(); props.onAskNeva?.(widget, chart) }}><Sparkles className='size-4' /></Button>}
@@ -82,8 +83,8 @@ function WidgetFrame({ widget, title, props, chart, children }: {
       </div>
     </div>}
     <div className='flex min-h-0 flex-1 flex-col'>{children}</div>
-    {highlighted && props.highlight && <span className='pointer-events-none absolute top-1 right-1 rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground'>
-      {props.highlight.label}
+    {highlighted && <span role='status' className='pointer-events-none absolute top-1 right-1 flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground motion-safe:animate-in motion-safe:fade-in'>
+      <Sparkles className='size-3' aria-hidden />Changed by Neva
     </span>}
   </div>
 }
@@ -165,12 +166,12 @@ export function DashboardCanvas(props: CanvasProps) {
     grid.current?.setStatic(!props.editing || narrow)
   }, [props.editing, narrow])
 
-  return <div className='min-h-0 flex-1 overflow-y-auto' onClick={() => props.editing && props.onSelect(null)}>
-    {props.editing && narrow && <p role='status' className='mx-3 mt-3 rounded-md border border-dashed p-2 text-xs text-muted-foreground'>
+  return <div className='min-h-0 flex-1 overflow-y-auto p-2.5' onClick={() => props.editing && props.onSelect(null)}>
+    {props.editing && narrow && <p role='status' className='m-1.5 rounded-md border border-dashed p-2 text-xs text-muted-foreground'>
       Widen the window to move or resize widgets. Your layout is kept for larger screens.
     </p>}
-    {!widgets.length && <div className='m-6 flex flex-col items-center gap-2 rounded-lg border border-dashed p-10 text-center'>
-      <p className='font-medium'>This page is empty</p>
+    {!widgets.length && <div className='m-1.5 flex flex-col items-center gap-2 rounded-lg border border-dashed px-6 py-12 text-center'>
+      <p className='text-sm font-medium'>This page is empty</p>
       <p className='max-w-sm text-sm text-muted-foreground'>{props.editing ? 'Add a chart, KPI or text from the toolbar, or ask Neva to build one for you.' : 'Nothing has been added to this page yet.'}</p>
     </div>}
     <div ref={host} data-mode={props.editing ? 'edit' : 'view'} aria-label={`${props.page.title} canvas`}

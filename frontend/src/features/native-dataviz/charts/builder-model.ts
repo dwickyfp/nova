@@ -103,13 +103,13 @@ function meas(item: BuilderMeasure, number: NumberStyle) {
 /** What the builder still needs before the chart can be saved, in plain words. */
 export function missing(state: BuilderState): string | null {
   const kind = kindOf(state.visual)
-  if (!state.title.trim()) return 'Name the chart.'
-  if (['cartesian', 'category', 'heatmap', 'hierarchy', 'flow'].includes(kind) && !state.dimensions.length) return 'Choose a field to group by.'
-  if ((kind === 'heatmap' || kind === 'flow') && state.dimensions.length < 2) return 'Choose two fields to group by.'
-  if (['cartesian', 'single_measure', 'category', 'heatmap', 'hierarchy', 'flow'].includes(kind) && !state.measures.length) return 'Choose a value to measure.'
-  if (kind === 'scatter' && (!state.x || !state.y)) return 'Choose numeric fields for both axes.'
-  if (kind === 'distribution' && !state.x) return 'Choose a numeric field.'
-  if (kind === 'table' && !state.dimensions.length && !state.measures.length) return 'Add a column.'
+  if (!state.title.trim()) return 'Name the chart'
+  if (['cartesian', 'category', 'heatmap', 'hierarchy', 'flow'].includes(kind) && !state.dimensions.length) return 'Choose a field to group by'
+  if ((kind === 'heatmap' || kind === 'flow') && state.dimensions.length < 2) return 'Choose two fields to group by'
+  if (['cartesian', 'single_measure', 'category', 'heatmap', 'hierarchy', 'flow'].includes(kind) && !state.measures.length) return 'Choose a value to measure'
+  if (kind === 'scatter' && (!state.x || !state.y)) return 'Choose numeric fields for both axes'
+  if (kind === 'distribution' && !state.x) return 'Choose a numeric field'
+  if (kind === 'table' && !state.dimensions.length && !state.measures.length) return 'Add a column'
   return null
 }
 

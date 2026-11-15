@@ -5,23 +5,23 @@ description: Learn what the Dataviz tab in Nova Studio is, how it relates to BI,
 
 ## What it is
 
-**Dataviz** is the dashboard workspace inside Nova Studio. It is a full
-business intelligence (BI) tool: you can browse dashboards, open and edit
-charts, build new dashboards, and write SQL, all on governed Nova data. Next
-to it sits the **Dataviz assistant**, which answers questions about the
-dashboard on screen.
+**Dataviz** is the dashboard workspace inside Nova Studio. It opens on Nova's
+own **native dashboards**: you add datasets, build charts and KPIs, arrange
+them on a 12-column canvas, add filters, and publish, all on governed Nova
+data. Next to it sits the **Dataviz assistant**, Neva, which can explain a
+dashboard and, with your approval, change it for you.
 
-The same BI tool is also available as its own page from the Console menu
-item **BI**. See [The BI page](/docs/dataviz/bi-workspace).
+You can also open Dataviz from the Console menu item **Dataviz**.
 
 Some words used on these pages:
 
 | Word | Meaning |
 | --- | --- |
-| **Chart** | One picture of data: a table, bar chart, line chart, number and so on. |
+| **Chart** | One picture of data: a bar or line chart, a KPI number, a table and so on. |
 | **Dashboard** | A page that arranges several charts. |
-| **Dataset** | The query a chart reads from. |
-| **Published** | A dashboard that the people of its role can open. New dashboards are published for your role automatically. |
+| **Dataset** | The table, view, SQL query or Semantic View a chart reads from. |
+| **Draft** | Your working copy. Every saved change creates a new revision. |
+| **Published** | The exact version viewers see. Later edits stay in the draft until you publish again. |
 
 ## Before you start
 
@@ -33,9 +33,7 @@ Some words used on these pages:
 ## Open Dataviz
 
 1. In Studio, click **Dataviz** in the switch at the top of the page.
-2. The BI home page opens, with **Dashboards**, **Charts**, **Datasets** and
-   **SQL** in its top bar and your recent and favourite dashboards and charts
-   below.
+2. The list of dashboards you can open appears.
 3. The **Assistant** panel opens on the right. Click **Close assistant** to
    hide it and give the dashboard the full width; click **Assistant** at the
    top to bring it back.
@@ -45,16 +43,15 @@ dashboard you had open, so switching back and forth does not lose your place.
 
 ## What you can do
 
-- [Build a chart](/docs/dataviz/build-a-chart)
-- [Build a dashboard](/docs/dataviz/build-a-dashboard)
+- [Build a native dashboard](/docs/dataviz/native-dashboards)
+- [Who sees what](/docs/dataviz/who-sees-what)
 - [Ask the Dataviz assistant about a dashboard](/docs/dataviz/dataviz-assistant)
 - [Add a chart from an agent's answer](/docs/studio/add-to-dataviz)
 
 ## Limits
 
-- Dataviz shows the BI tool's own screens. On narrow windows its top bar
-  folds into a menu.
-- Charts load their data each time a dashboard opens; on a busy system a chart
-  can show "Waiting on Nova" for a while before it draws.
-- [Native document integrations](/docs/dataviz/native-documents) store separate
-  versioned definitions. Those records are not yet shown in these BI screens.
+- Native dashboards run every query with your sign-in and active role. Two
+  people can see different numbers on the same dashboard when their roles
+  read different rows.
+- Dashboards made with the earlier BI tool are no longer available; rebuild
+  them as native dashboards.

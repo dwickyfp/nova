@@ -59,8 +59,8 @@ deployment acceptance result.
   separated by privilege. Do not require `.env`, an override chain or opt-in
   profiles to start required production roles. Existing development overrides
   remain development tooling.
-- Use separate services for Nova PG17 `nova_control.nova_meta`, Ranger/Superset
-  databases, critical/cache Redis and owning workloads. Keep analytical data
+- Use separate services for Nova PG17 `nova_control.nova_meta`, the Ranger
+  database, critical/cache Redis and owning workloads. Keep analytical data
   and its transactional Stream journals in StarRocks, and payloads with their
   storage owner. Do not expose metadata PG through user connection settings.
 - Track only credential-free templates. Keep actual deployment values and TLS
@@ -82,7 +82,7 @@ deployment acceptance result.
   Follow runtime claim/fencing, session/consent and duplicate-effect checks before
   changing affinity or ownership. Single-host Compose does not provide host HA.
 - Recovery requires PG base backup/WAL and a manifest for StarRocks, object
-  storage, Ranger and Superset, with off-host copies and tested restore/PITR.
+  storage and Ranger, with off-host copies and tested restore/PITR.
   A mounted backup directory on the same host is insufficient.
 
 For a service addition or replacement, update normal launchers, dependency order,

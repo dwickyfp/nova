@@ -47,7 +47,6 @@ AGENTS = [
             "data_to_chart",
             "diagnose_change",
             "ml_execute",
-            "dashboard_build",
         ],
         "sample_questions": [
             "Toko mana yang paling ramai bulan ini?",

@@ -1129,44 +1129,34 @@ function NoAgentState() {
 }
 
 /**
- * The Dataviz assistant's empty state, in the Agent greeting's voice and ink,
- * sized for the side panel: the question names what it answers about.
+ * Neva's empty state beside a dashboard: what it can do here, then three
+ * starting points. Quiet on purpose; the dashboard is the subject.
  */
 function DatavizGreeting({
-  displayName,
   onPick,
 }: {
   displayName?: string | null;
   onPick?: (text: string) => void;
 }) {
-  const daypart = useClientDaypart();
-  const name = displayName?.trim();
   const questions = [
-    "Dashboard ini tentang apa?",
-    "Data di dashboard ini dari mana?",
-    "Kenapa angkanya berubah bulan ini?",
+    "What does this dashboard show?",
+    "Which region changed the most this month?",
+    "Add a chart of revenue by month",
   ];
   return (
     <section aria-label="Dataviz assistant" className="py-2">
-      <h1 className="text-left text-2xl leading-[1.2] font-normal tracking-[-0.01em] text-balance">
-        <span className="nova-welcome-line block">
-          <span className="nova-greeting-ink" data-daypart={daypart}>
-            {GREETING[daypart]}
-            {name ? `, ${name}` : ""}
-          </span>
-        </span>
-        <span className="nova-welcome-line block text-muted-foreground">
-          What would you like to know?
-        </span>
-      </h1>
+      <h1 className="text-base font-medium text-foreground">Work on this dashboard with Neva</h1>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Ask about its numbers, or ask for a chart, filter or layout change. Neva shows each change before saving it.
+      </p>
       {onPick ? (
-        <div className="nova-welcome-follow mt-6 grid gap-2">
+        <div className="mt-4 grid gap-2">
           {questions.map((question) => (
             <button
               key={question}
               type="button"
               onClick={() => onPick(question)}
-              className="flex min-h-12 items-center rounded-xl border bg-card px-4 py-3 text-left text-sm leading-snug text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex min-h-10 items-center rounded-lg border bg-card px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             >
               {question}
             </button>

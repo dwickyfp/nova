@@ -1,0 +1,43 @@
+{
+  "attempt": 2,
+  "date": "2026-11-16",
+  "scope": "Native Dataviz after Superset removal: dashboard list, editor, chart inspector, filters, Data tab, version history, share, Neva panel, Add to Dataviz from an Agent answer",
+  "environment": {
+    "frontend": "Vite dev server on the original checkout, hot reload",
+    "backend": "host dev processes on the original checkout, development stack (one Compose project)",
+    "identity": "nova_admin, ACCOUNTADMIN, local development only",
+    "viewports": ["1440x900 dark", "375x812 light (phone)", "desktop pane dark"]
+  },
+  "method": "Walked each surface as a first-time user, measured row heights and insets from the DOM, and scored layout, lines/separators, headers and content with an LLM-as-judge rubric before and after fixes",
+  "defects_found_and_fixed": [
+    {"id": "UI2-01", "surface": "Add to Dataviz", "defect": "Dashboard list empty: the native list asked the document store for 200 rows per page; the store allows at most 100, so every workspace was skipped", "fix": "Page size 100; the unit fake now rejects pages above 100", "verified": "List shows both editable dashboards in the app"},
+    {"id": "UI2-02", "surface": "Add to Dataviz", "defect": "After adding a chart, the Dataviz tab still showed the previously open dashboard unless the toast button was used", "fix": "Dataviz switches to the destination dashboard as soon as the chart is added", "verified": "Added a chart, opened Dataviz manually, destination dashboard shown"},
+    {"id": "UI2-03", "surface": "Add to Dataviz", "defect": "Destination choice used two filled accent buttons next to an accent primary action; dates used a different format", "fix": "Quiet segmented control; dates match the rest of Dataviz", "verified": "Screenshot"},
+    {"id": "UI2-04", "surface": "Chart axis", "defect": "Axis title showed the engine name outlet_stock_daily.stock_date", "fix": "Qualified engine names are labelled by their column in plain words (Stock date)", "verified": "Unit test and screenshot"},
+    {"id": "UI2-05", "surface": "Bar chart at phone width", "defect": "ECharts dropped two of five region labels", "fix": "Short category axes keep every label, shortened to its band; the tooltip keeps the full name", "verified": "Unit test and phone screenshot"},
+    {"id": "UI2-06", "surface": "Studio Dataviz on a phone", "defect": "Neva opened over the dashboard by default, so a first visit showed only a chat", "fix": "The panel starts closed on phones; the desktop choice is remembered separately", "verified": "Browser test and phone screenshot"},
+    {"id": "UI2-07", "surface": "Editor header on a phone", "defect": "The dashboard name was squeezed to zero width", "fix": "Below the narrow breakpoint the state moves into the status line and Ask Neva into the Assistant button", "verified": "Phone screenshot shows title, state and save status"},
+    {"id": "UI2-08", "surface": "Editor header", "defect": "A disabled faded Publish button stayed visible when nothing was left to publish", "fix": "Publish shows only when there is something to publish", "verified": "Screenshot"},
+    {"id": "UI2-09", "surface": "Chart inspector", "defect": "Header 53 px with a 600-weight title, 12/16 px mixed insets and uneven section rhythm", "fix": "48 px header aligned to the filter row, 500 weight, 16 px insets, 16 px around separators", "verified": "DOM measurement"},
+    {"id": "UI2-10", "surface": "Dashboard list", "defect": "Card metadata wrapped with a dangling separator dot", "fix": "Cards size by container (min 18rem) and metadata stays on one line", "verified": "Screenshot"},
+    {"id": "UI2-11", "surface": "Data tab", "defect": "Long dataset names wrapped to five lines in the side list", "fix": "Two-line clamp with the full name on hover; list header aligned to 48 px", "verified": "Screenshot"},
+    {"id": "UI2-12", "surface": "Version history", "defect": "Boxed rows with second-precision timestamps and no marker for the current or published version", "fix": "Hairline-divided rows, short dates, Current and Published markers; Version wording used across Dataviz", "verified": "Screenshot"}
+  ],
+  "judge_scores_after_fixes": {
+    "scale": "1-10",
+    "dashboard_list": {"layout": 9, "lines_separators": 9, "header": 9, "content": 9},
+    "editor_canvas": {"layout": 9, "lines_separators": 9, "header": 9, "content": 8},
+    "chart_inspector": {"layout": 9, "lines_separators": 9, "header": 9, "content": 9},
+    "filters_dialog": {"layout": 9, "lines_separators": 9, "header": 9, "content": 9},
+    "data_tab": {"layout": 8, "lines_separators": 9, "header": 8, "content": 8},
+    "version_history": {"layout": 9, "lines_separators": 9, "header": 9, "content": 9},
+    "add_to_dataviz": {"layout": 9, "lines_separators": 9, "header": 9, "content": 9},
+    "phone": {"layout": 9, "lines_separators": 9, "header": 8, "content": 9}
+  },
+  "remaining_observations": [
+    "Charts added from an answer keep the question as their title; a shorter title is a manual edit",
+    "Adding the same answer twice adds a second chart and dataset rather than reusing the first",
+    "The Data tab dataset header uses two lines for long names, so it does not align with the 48 px list header"
+  ],
+  "test_data_created": ["Personal dashboard 'Sell-out by month' (nova_admin) with two charts from the same Agent answer"]
+}

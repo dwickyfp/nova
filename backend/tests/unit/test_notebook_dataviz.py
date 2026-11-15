@@ -9,7 +9,7 @@ import pytest
 
 from app.modules.notebooks.document import NotebookDocument, make_cell
 from app.modules.notebooks.runtime.worker import NotebookRuntimeWorker
-from app.modules.superset import previews
+from app.modules.viz import studio_results as previews
 
 USER = {"username": "alice", "active_role": "analyst", "assigned_roles": ["analyst"],
         "session_id": "s1"}

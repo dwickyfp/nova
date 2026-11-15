@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import type { ChartDefinition, DatasetDefinition, FilterTree, ParameterInput } from '../contracts'
 import { nativeDocuments } from '../documents'
 import { chartQueryShape, ChartQueryError, combineFilters } from './chart-query'
+import { capacityDelay, capacityRetry, queuedQuery } from './query-queue'
 
 export function queryError(error: unknown): string {
   if (error instanceof ChartQueryError) return error.message
@@ -12,7 +13,7 @@ export function queryError(error: unknown): string {
     if ([401, 403, 404].includes(error.status)) return 'This data is unavailable with your current role.'
     if (error.status === 409) return 'The data source changed. Open the Data tab to review it.'
     if (error.status === 413) return 'The result is too large. Reduce the row limit or add a filter.'
-    if (error.status === 429) return 'Query capacity is busy. The chart will load when you retry.'
+    if (error.status === 429) return 'Query capacity is still busy. Retry in a moment.'
     if (error.status === 504) return 'The query timed out. Add a filter or reduce the row limit.'
     if (error.status === 422) return 'This chart configuration cannot be run. Check its fields and filters.'
   }
@@ -38,10 +39,11 @@ export function useChartData({ chart, draft, context, parameters }: {
   }, [chart, draft, context, parameters])
   return useQuery({
     queryKey: ['native-dataviz', 'chart-data', epoch, chart.dataset_id, JSON.stringify(request)],
-    queryFn: ({ signal }) => nativeDocuments(epoch).queryDataset(chart.dataset_id, request!, { signal }),
+    queryFn: ({ signal }) => queuedQuery(() => nativeDocuments(epoch).queryDataset(chart.dataset_id, request!, { signal }), signal),
     enabled: request !== null,
     placeholderData: keepPreviousData,
-    retry: false,
+    retry: capacityRetry,
+    retryDelay: capacityDelay,
     staleTime: 30_000,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,

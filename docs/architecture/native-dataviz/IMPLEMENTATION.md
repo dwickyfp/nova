@@ -4,11 +4,13 @@ The approved target is the supplied [production specification](source/NOVA_NATIV
 This record distinguishes the prepared implementation from the active product.
 Native chart/dashboard HTTP routes are registered through the shared document
 service. Table/view dataset authoring is active through the same API. SQL datasets
-(including declared, non-sensitive named parameters), published Semantic View datasets
-and bounded row previews are active; the browser editor mount and chart query
-execution remain unimplemented.
-Superset remains active. No production cutover, migration completion, or release
-is claimed.
+(including declared, non-sensitive named parameters), published Semantic View datasets,
+bounded row previews and governed aggregate queries (`viz/aggregate.py`, routed to the
+query workload) are active. The native editor (`frontend/src/features/native-dataviz/`)
+is the only Dataviz engine and also opens from Studio Artifacts. Superset was
+removed on 2026-11-16 by the user's decision, without converting its assets
+(see the [status record](../../reports/native-dataviz/STATUS.md)). No production
+cutover, migration completion, or release is claimed.
 
 ## Baseline and authority
 
@@ -49,9 +51,9 @@ workspace registry or implicit shared workspace.
 
 | Boundary | Current owner | Required integration |
 | --- | --- | --- |
-| Dataviz | `frontend/src/features/studio/dataviz/dataviz-workspace.tsx` | Shared native editor replacing the frame after conversion |
+| Dataviz | `frontend/src/features/studio/dataviz/dataviz-workspace.tsx` | Native dashboard list and editor with Neva beside it; no embedded frame |
 | Studio artifacts | `frontend/src/features/studio/studio-artifacts.tsx` | Same editor and stable document IDs |
-| API / legacy writes | `backend/app/modules/agents/studio_router.py` and `modules/superset/` | Route commands through the native document service |
+| Add to Dataviz | `backend/app/modules/viz/studio_publish.py` | Capability check and publish through the native document service as the caller (Superset removed 2026-11-16) |
 | Native definitions | `backend/app/modules/viz/contracts/` | Canonical v2 definitions; generated browser schemas |
 | Control metadata | `backend/app/core/metadata_db.py` | Existing actor-bound PostgreSQL transaction |
 | Workspace membership | `backend/app/modules/workspaces/metadata_sharing.py` | Existing assigned-role membership; separate artifact action ACL |

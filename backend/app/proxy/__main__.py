@@ -51,7 +51,7 @@ async def _run() -> None:
 
 async def _run_admitted(metadata: MetadataDatabase, readiness_interval: float) -> None:
     await db.init_system_pool()
-    # Superset logs in with data tokens bound to Nova sessions in Redis.
+    # Notebook and task sandboxes log in with data tokens bound to Nova sessions in Redis.
     await session_store.init()
     PROXY_EXPECTED.set(1)
     start_metrics_server("proxy")

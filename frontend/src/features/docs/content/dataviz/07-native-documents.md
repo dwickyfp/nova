@@ -5,13 +5,10 @@ description: Understand drafts, publications, permissions and change receipts in
 
 ## What is available
 
-The native document API stores dataset, chart and dashboard definitions with a
-history of their changes. It is available to integrations. Native records are not yet
-shown in the Dataviz or Studio editor.
-
-The existing [Dataviz screens](/docs/dataviz/what-is-dataviz) continue to use
-their current BI workflow. Saving a native definition does not convert an
-existing BI dashboard.
+Nova stores dataset, chart and dashboard definitions with a history of their
+changes. The [native dashboard editor](/docs/dataviz/native-dashboards) in
+Dataviz and Neva both use these records; integrations can use them too.
+Dashboards from the earlier BI tool were not converted.
 
 ## Table and view datasets
 
@@ -127,6 +124,19 @@ to the source data can change their contents. Reduce the page size if the result
 exceeds the size limit. A preview has a 30-second deadline; retry later if query
 capacity is busy.
 
+## Aggregate dataset queries
+
+Charts read a dataset through aggregate queries: the fields to group by (with
+an optional day, week, month, quarter or year grain for dates), the values to
+calculate (sum, average, minimum, maximum, count or distinct count), filters,
+sort order and a row limit of up to 10,000. Every filter value is sent as a
+typed value, never as query text, and must match its field's type.
+
+A query runs with your current role. Draft queries need edit access and use the
+exact dataset revision requested; published dashboards read the dataset
+revision their publication pins. The response says when more rows exist than
+the limit allowed. Sums of whole numbers and decimals keep their exact values.
+
 ## Edit or repair a dataset source
 
 An editor can inspect a new table, view, SQL query or semantic selection and explicitly save that
@@ -201,8 +211,7 @@ undelete operation in this API.
 
 ## Current limits
 
-- Local metric views, chart execution and the native browser editor are
-  not available yet. Sensitive parameters cannot be previewed. Saving a chart requires an
+- Local metric views and sensitive parameter previews are not available yet. Saving a chart requires an
   existing valid native dataset revision.
 - Document requests are limited to one MiB. Lists return at most 100 records
   per page.

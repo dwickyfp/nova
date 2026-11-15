@@ -13,7 +13,12 @@ export type FilterValue =
   | { kind: 'relative'; unit: 'day' | 'week' | 'month' | 'quarter' | 'year'; count: number; mode: 'previous' | 'rolling' | 'to_date' }
   | { kind: 'boolean'; value: boolean }
 
-export type CrossFilter = { source_widget_id: string; field: Binding; value: Scalar | null; label: string }
+export type CrossFilter = { source_widget_id: string; field: Binding; value: Scalar | null; label: string; period?: { from: string; to: string } }
+
+export function nextDay(isoDate: string): string {
+  const [year, month, day] = isoDate.split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10)
+}
 
 export function predicate(field: Binding, op: string, values: Scalar[] = [], extra: Record<string, unknown> = {}): Expression {
   return { type: 'predicate', field, op, values, source: 'global', stage: 'row', ...extra } as Expression
@@ -30,11 +35,16 @@ function expressionFor(field: Binding, value: FilterValue): Expression | null {
       if (value.values.includes(null)) parts.push(predicate(field, 'is_null'))
       return parts.length === 1 ? parts[0] : { type: 'or', children: parts }
     }
-    case 'range':
-      if (value.from && value.to) return predicate(field, 'between', [value.from, value.to])
-      if (value.from) return predicate(field, 'gte', [value.from])
-      if (value.to) return predicate(field, 'lte', [value.to])
-      return null
+    case 'range': {
+      // A date range includes its whole end day: [from, to + 1 day). On a
+      // timestamp column, `<= to` would drop everything after its midnight.
+      const upper = value.to && value.to.type === 'date'
+        ? predicate(field, 'lt', [{ type: 'date', value: nextDay(value.to.value) }])
+        : value.to ? predicate(field, 'lte', [value.to]) : null
+      const lower = value.from ? predicate(field, 'gte', [value.from]) : null
+      if (lower && upper) return { type: 'and', children: [lower, upper] }
+      return lower ?? upper
+    }
     case 'text':
       return value.value.trim() ? predicate(field, 'like_literal', [{ type: 'string', value: value.value.trim() }]) : null
     case 'relative':
@@ -80,6 +90,13 @@ export function chartContext(input: {
   }
   for (const cross of input.crossFilters) {
     if (cross.source_widget_id === input.widgetId || !sameDataset(cross.field, input.chart)) continue
+    if (cross.period) {
+      parts.push({ type: 'and', children: [
+        predicate(cross.field, 'gte', [{ type: 'date', value: cross.period.from }]),
+        predicate(cross.field, 'lt', [{ type: 'date', value: cross.period.to }]),
+      ] })
+      continue
+    }
     parts.push(cross.value === null ? predicate(cross.field, 'is_null') : predicate(cross.field, 'eq', [cross.value]))
   }
   if (!parts.length) return undefined

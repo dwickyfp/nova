@@ -4,11 +4,17 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { ChartDefinition, DatasetQueryResult, FilterTree, ParameterInput, QueryColumn } from '../contracts'
 import { buildChartOption } from './chart-options'
-import { cellLabel, cellNumber, chartQueryShape, type Cell } from './chart-query'
+import { cellLabel, cellNumber, chartQueryShape, columnLabel, periodEnd, type Cell } from './chart-query'
 import { queryError, useChartData } from './chart-data'
 import { EChartHost, type MarkSelection, type VizTokens } from './echart-host'
 
-export type ValueSelection = { field_id: string; value: NonNullable<Cell> | null; label: string }
+export type ValueSelection = {
+  field_id: string
+  value: NonNullable<Cell> | null
+  label: string
+  /** A date-grain mark selects its whole period: [from, to). */
+  period?: { from: string; to: string }
+}
 
 type Props = {
   chart: ChartDefinition
@@ -47,14 +53,14 @@ function Kpi({ chart, result }: { chart: ChartDefinition; result: DatasetQueryRe
   const base = comparison ?? target
   const delta = value !== null && base ? (value - base) / Math.abs(base) : null
   return <div className='flex min-h-0 flex-1 flex-col justify-center gap-1 px-1'>
-    <p className='type-figure viz-numerals truncate text-3xl font-semibold tracking-tight' data-testid='kpi-value'>
+    <p className='viz-numerals truncate text-3xl font-medium tabular-nums' data-testid='kpi-value'>
       {value === null ? '–' : formatter.format(value)}
     </p>
     {delta !== null && Number.isFinite(delta) && <p className={cn('flex items-center gap-1 text-sm',
       delta >= 0 ? 'text-success-strong' : 'text-destructive')}>
       {delta >= 0 ? <ArrowUp className='size-4' aria-hidden /> : <ArrowDown className='size-4' aria-hidden />}
       <span>{`${delta >= 0 ? '+' : ''}${(delta * 100).toFixed(1)}%`}</span>
-      <span className='text-muted-foreground'>{comparison !== null ? `vs. ${result.columns[1]?.name ?? 'comparison'}` : 'vs. target'}</span>
+      <span className='text-muted-foreground'>{comparison !== null ? `vs ${columnLabel(result.columns[1]).toLowerCase()}` : 'vs target'}</span>
     </p>}
   </div>
 }
@@ -80,7 +86,7 @@ function ResultTable({ chart, result }: { chart: ChartDefinition; result: Datase
           <tr>{result.columns.map(column => <th key={column.key} scope='col'
             className={cn('border-b px-2 py-1.5 text-left font-medium text-muted-foreground whitespace-nowrap',
               column.role === 'measure' && 'text-right')}>
-            {column.name}{column.aggregation && column.aggregation !== 'sum' ? ` (${column.aggregation.replace('_', ' ')})` : ''}
+            {columnLabel(column)}
           </th>)}</tr>
         </thead>
         <tbody>
@@ -117,20 +123,27 @@ export function NativeChart({ chart, draft, context, parameters, onSelectValue, 
   }
   const query = useChartData({ chart, draft, context, parameters })
   const result = query.data
-  const build = useCallback((tokens: VizTokens) => buildChartOption(chart, result!, tokens, selectedLabel ?? null), [chart, result, selectedLabel])
+  const build = useCallback((tokens: VizTokens, width: number) => buildChartOption(chart, result!, tokens, selectedLabel ?? null, width || undefined), [chart, result, selectedLabel])
   const select = useCallback((mark: MarkSelection) => {
     if (!result || !onSelectValue) return
     const encoding = chart.encoding
     const columnIndex = 0
     const column = result.columns[columnIndex]
-    if (!column?.field_id || column.role !== 'dimension' || column.date_grain) return
+    if (!column?.field_id || column.role !== 'dimension') return
     let row: DatasetQueryResult['rows'][number] | undefined
     if (encoding.kind === 'category' || encoding.kind === 'heatmap') row = result.rows[mark.dataIndex]
     else if (encoding.kind === 'cartesian') {
       row = result.rows.find(item => encoding.dimensions.map((_, i) => cellLabel(item[i], result.columns[i])).join(' · ') === mark.name)
     }
     if (!row) return
-    onSelectValue({ field_id: column.field_id, value: row[columnIndex], label: cellLabel(row[columnIndex], column) })
+    const cell = row[columnIndex]
+    if (column.date_grain && cell && (cell.type === 'date' || cell.type === 'timestamp')) {
+      const from = cell.value.slice(0, 10)
+      onSelectValue({ field_id: column.field_id, value: cell, label: cellLabel(cell, column),
+        period: { from, to: periodEnd(from, column.date_grain) } })
+      return
+    }
+    onSelectValue({ field_id: column.field_id, value: cell, label: cellLabel(cell, column) })
   }, [chart, result, onSelectValue])
 
   const label = `${chart.title}: ${chart.visual} chart`

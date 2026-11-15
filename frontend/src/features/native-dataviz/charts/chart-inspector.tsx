@@ -108,7 +108,7 @@ function MeasureRow({ label, fields, value, onChange, onRemove, combo }: {
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return <section className='space-y-2 border-t pt-3 first:border-t-0 first:pt-0'>
+  return <section className='space-y-2 border-t pt-4 first:border-t-0 first:pt-0'>
     <h4 className='type-label text-xs font-medium text-muted-foreground'>{title}</h4>
     {children}
   </section>
@@ -154,9 +154,9 @@ export function ChartInspector(props: InspectorProps) {
 
 function InspectorShell({ title, onClose, children }: InspectorProps & { title: string; children: React.ReactNode }) {
   return <aside aria-label='Chart inspector' className='flex h-full min-h-0 w-full min-w-0 flex-col bg-card'>
-    <header className='flex shrink-0 items-center justify-between gap-2 border-b px-4 py-2'>
-      <h3 className='type-title text-base font-semibold'>{title}</h3>
-      <Button variant='ghost' size='icon' className='size-9' aria-label='Close inspector' onClick={onClose}><X /></Button>
+    <header className='flex h-12 shrink-0 items-center justify-between gap-2 border-b pr-2 pl-4'>
+      <h3 className='truncate text-sm font-medium'>{title}</h3>
+      <Button variant='ghost' size='icon' className='size-8 text-muted-foreground hover:text-foreground' aria-label='Close inspector' onClick={onClose}><X /></Button>
     </header>
     {children}
   </aside>
@@ -173,7 +173,7 @@ function Builder({ datasets, chart, initialVisual, saving, error, onSave, fields
   const set = (changes: Partial<BuilderState>) => setState(current => ({ ...current, ...changes }))
   const kind = kindOf(state.visual)
   const gap = missing(state)
-  const preview = useMemo(() => gap && gap !== 'Name the chart.' ? null : toChart({ ...state, title: state.title || 'Preview' }), [state, gap])
+  const preview = useMemo(() => gap && gap !== 'Name the chart' ? null : toChart({ ...state, title: state.title || 'Preview' }), [state, gap])
   const numeric = fields.filter(isNumeric)
   const dimensionLabels = kind === 'cartesian' ? ['X axis', 'Second X field'] : kind === 'category' ? ['Category']
     : kind === 'heatmap' ? ['Columns', 'Rows'] : kind === 'flow' ? ['From', 'To'] : kind === 'hierarchy' ? ['Level 1', 'Level 2', 'Level 3']
@@ -191,17 +191,17 @@ function Builder({ datasets, chart, initialVisual, saving, error, onSave, fields
   }
 
   return <>
-    <div className='h-52 shrink-0 border-b p-3'>
+    <div className='h-52 shrink-0 border-b p-4'>
       <div className='flex size-full min-h-0 flex-col rounded-md border bg-background p-2'>
         {preview ? <NativeChart chart={preview} draft /> : <p className='m-auto text-sm text-muted-foreground'>{gap}</p>}
       </div>
     </div>
     <Tabs defaultValue='configure' className='flex min-h-0 flex-1 flex-col gap-0'>
-      <TabsList className='mx-4 mt-3 shrink-0'>
+      <TabsList className='mx-4 mt-4 shrink-0'>
         <TabsTrigger value='configure'>Configure</TabsTrigger>
         <TabsTrigger value='style'>Style</TabsTrigger>
       </TabsList>
-      <TabsContent value='configure' className='min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3'>
+      <TabsContent value='configure' className='min-h-0 flex-1 space-y-4 overflow-y-auto p-4'>
         <div className='space-y-1'>
           <Label htmlFor={titleId} className='text-xs text-muted-foreground'>Chart name</Label>
           <Input id={titleId} value={state.title} maxLength={256} placeholder='Revenue by region' className='h-9'
@@ -302,7 +302,7 @@ function Builder({ datasets, chart, initialVisual, saving, error, onSave, fields
           </div>
         </Section>
       </TabsContent>
-      <TabsContent value='style' className='min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3'>
+      <TabsContent value='style' className='min-h-0 flex-1 space-y-4 overflow-y-auto p-4'>
         <Section title='Display'>
           <Toggle label='Show title' checked={state.showTitle} onChange={showTitle => set({ showTitle })} />
           <Toggle label='Show legend' checked={state.showLegend} onChange={showLegend => set({ showLegend })} />
@@ -329,7 +329,7 @@ function Builder({ datasets, chart, initialVisual, saving, error, onSave, fields
         </Section>
       </TabsContent>
     </Tabs>
-    <footer className='flex shrink-0 flex-wrap items-center justify-end gap-2 border-t px-4 py-3'>
+    <footer className='flex min-h-14 shrink-0 flex-wrap items-center justify-end gap-2 border-t px-4 py-2.5'>
       {(error || gap) && <p role={error ? 'alert' : 'status'} className={cn('me-auto text-sm', error ? 'text-destructive' : 'text-muted-foreground')}>{error ?? gap}</p>}
       <Button disabled={Boolean(gap) || saving || (state.number.kind === 'currency' && state.number.currency.length !== 3)}
         onClick={() => onSave(toChart(state))}>{saving ? 'Saving…' : chart ? 'Save chart' : 'Add to dashboard'}</Button>

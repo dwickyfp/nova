@@ -3,7 +3,7 @@
     UV_NO_SYNC=1 uv run python -m tests.benchmark.ontology_isolation.seed
 
 Through the production API as ``nova_admin`` (credentials read from
-``docker/.env`` by ``superset/bench/nova_session.py``, never printed), this
+``docker/.env`` by ``tests/benchmark/nova_session.py``, never printed), this
 publishes an HR Semantic View over ``NOVA_FK_SP_HR_1`` and creates one agent
 per business: Sales (retail_sales), HR (hr_people), Operasional
 (delivery_routes) and Persediaan (outlet_stock).
@@ -27,18 +27,14 @@ from __future__ import annotations
 
 import asyncio
 import json
-import sys
 import uuid
 from pathlib import Path
 from typing import Any
 
 import httpx
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "superset" / "bench"))
-
-from nova_session import principal, sign_in  # noqa: E402
-
-from tests.benchmark.retail_field.views import dataset, field, metric  # noqa: E402
+from tests.benchmark.nova_session import principal, sign_in
+from tests.benchmark.retail_field.views import dataset, field, metric
 
 STATE = Path.home() / ".cache" / "nova-ontology-isolation" / "state.json"
 ROLE = "ACCOUNTADMIN"

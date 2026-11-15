@@ -145,7 +145,7 @@ class SessionState:
     #: each read already runs on its own. Writes are refused until the client
     #: ends it with ``COMMIT``/``ROLLBACK``, which the proxy also answers.
     read_only_transaction: bool = False
-    #: The active role follows a Nova session (Superset data-token login), so
+    #: The active role follows a Nova session (sandbox data-token login), so
     #: role statements on this connection are refused rather than applied.
     role_locked: bool = False
     #: A notebook runtime's DuckDB (notebook data token). Its scanner's
@@ -529,7 +529,7 @@ def connect_database(name: str | None) -> str | None:
     """The database a handshake's database field selects, or ``None``.
 
     StarRocks clients send ``catalog.`` to select a catalog without a
-    database (Superset's StarRocks engine does so to browse schemas). For the
+    database (some SQL tools do so to browse schemas). For the
     default catalog that is the same as no database; re-selecting it as a
     database name would fail every later statement.
     """

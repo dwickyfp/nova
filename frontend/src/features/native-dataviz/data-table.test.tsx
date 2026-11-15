@@ -78,10 +78,13 @@ describe('shared typed dataset table', () => {
     await page.screenshot({ path: `__screenshots__/native-table-narrow-${theme}.png` })
     await userEvent.keyboard('{Control>}{Home}{/Control}')
     await expect.poll(() => activeCell(grid)?.textContent).toBe('row 0, column 0')
+    // A page is the rows that fit under the header; scrollbars take room in some browsers.
+    const pageRows = Math.floor((grid.clientHeight - 36) / 36)
+    expect(pageRows).toBeGreaterThanOrEqual(6)
     await userEvent.keyboard('{PageDown}')
-    await expect.poll(() => activeCell(grid)?.textContent).toBe('row 7, column 0')
+    await expect.poll(() => activeCell(grid)?.textContent).toBe(`row ${pageRows}, column 0`)
     await userEvent.keyboard('{ArrowRight}{ArrowUp}')
-    await expect.poll(() => activeCell(grid)?.textContent).toBe('row 6, column 1')
+    await expect.poll(() => activeCell(grid)?.textContent).toBe(`row ${pageRows - 1}, column 1`)
   })
 
   it('resets selection and scroll when the caller changes data or security scope', async () => {

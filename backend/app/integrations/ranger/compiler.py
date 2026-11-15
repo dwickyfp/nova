@@ -185,16 +185,16 @@ BI_METADATA_TABLES = ("tables", "tables_config", "columns", "views", "materializ
 def compile_bi_metadata_policy(
     *, roles: list[str], catalog: str = "default_catalog"
 ) -> RangerPolicy:
-    """Let BI authors reflect tables they can query (docs/arch-17-superset.md).
+    """Let ``roles`` reflect table structure through ``information_schema``.
 
-    Superset builds datasets from ``information_schema``. The policy grants
-    ``select`` on the reflection views only; which objects appear in them is
-    still decided by each principal's own object policies.
+    The policy grants ``select`` on the reflection views only; which objects
+    appear in them is still decided by each principal's own object policies.
+    The managed policy name is kept for deployments that already hold it.
     """
     return RangerPolicy(
         service=settings.RANGER_SERVICE_NAME,
         name=managed_name("bi", "metadata", catalog),
-        description="Managed by Nova. Table reflection for BI author roles.",
+        description="Managed by Nova. Table reflection for the listed roles.",
         resources={
             "catalog": RangerPolicyResource(values=[catalog]),
             "database": RangerPolicyResource(values=["information_schema"]),

@@ -12,20 +12,20 @@ Baseline: `1ee12694e0ecb6ecfd8135965943be08f5195967`.
 | WP01 contracts/design | In progress | Full spec coverage, complete compatibility conversion, real shared UI composition |
 | WP02 metadata/ACL | In progress | Schema 52 deployed; draft registry dependency fix passes PG17 and live regression; final application and release gates remain |
 | WP03 datasets | In progress | Table/view, SQL (including declared non-sensitive parameters) and published Semantic View inspection/create/preview/source-update APIs active; parameter declaration editor and preview inputs prepared in unmounted components; local metrics, relationships, sensitive-input engine boundary and product-shell Data tab remain open |
-| WP04 calculations | Not started | Semantic metrics/time intelligence and independent governed golden results |
-| WP05 chart builder | Not started | Native chart registry, inspector, rendering and export |
-| WP06 canvas | Not started | GridStack integration, responsive layout, undo/redo and both surfaces |
-| WP07 filters | Not started | Safe compilation, options, cascading and scope UI |
-| WP08 interactions | Not started | Cross-filter/drill behavior and lineage mappings |
-| WP09 query orchestration | Not started | Batching, identity-partitioned cache, cancellation and pagination |
-| WP10 publish/share | Not started | User-facing draft/publish/share flow and governed end-to-end tests |
-| WP11 Neva tools | Not started | Shared command service, consent, receipts and trajectory tests |
-| WP12 collaboration | Not started | Authorized realtime replay, presence, cross-chat bindings and conflicts |
+| WP04 calculations | In progress | Exact governed aggregates (sum/avg/min/max/count/distinct, date grains) active; ratio/weighted, window calculations, time intelligence and golden results open |
+| WP05 chart builder | In progress | Inspector (Configure/Style) and ECharts/KPI/table rendering for 14 visuals active in both shells; pivot, conditional formatting, map, export and remaining visual QA open |
+| WP06 canvas | In progress | 12-column GridStack canvas with drag/resize commits, pages, undo/redo, keyboard nudge, one-column phone view, mounted in Dataviz and Studio Artifacts; Neva cursor overlay and 100-widget load open |
+| WP07 filters | In progress | Typed predicate compilation, multi/single value, date range, relative date, number range, text and Boolean controls with governed options; cascading, explicit cross-dataset mapping UI and parameter controls open |
+| WP08 interactions | In progress | Click-to-cross-filter on the same dataset revision with highlight and reset; drill, drill-through and breadcrumbs open |
+| WP09 query orchestration | In progress | Client query queue (3 in flight), capacity retry, debounce, abort of superseded queries, epoch-scoped cache keys; server-side cache and large-table pagination open |
+| WP10 publish/share | In progress | Publish dialog, Published/unpublished-changes state, share dialog (user/role presets, grants on pinned charts/datasets) and history; multi-role governed E2E and restore UI open |
+| WP11 Neva tools | In progress | 11 native tools with approvals, receipts and dashboard_changed refresh; live add-chart verified; remaining tools need live runs and broader trajectories |
+| WP12 collaboration | In progress | Event-polling refresh (4 s) and Neva change events update open editors; presence, cursor overlay and websocket replay open |
 | WP13 export/report/schedules | Not started | Durable jobs and verified private outputs |
 | WP14 conversion | Not started | Complete asset mapping and semantic/visual comparisons |
 | WP15 security/resilience | Not started | Live governed acceptance, faults, restore and metrics |
 | WP16 release QA | Not started | All 254 scenarios, numerical SLOs and rollback evidence |
-| WP17 decommission | Dependency blocked | WP14 and WP16 must pass before Superset removal |
+| WP17 decommission | Done by user decision (2026-11-16), ahead of WP14/WP16 | Superset services, image, gateway route, backend module, frontend and docs removed; development Superset metadata backed up outside Git before deletion; no assets converted |
 
 WP00 completion records the verified baseline, not a product release. WP01–WP17
 remain open. Prepared storage/publication mechanics are not completion of the
@@ -176,6 +176,34 @@ Open from this area: a native editor mount for the Data tab, sensitive parameter
 declaration UI, parameter controls bound to dashboard filters (WP07), and preview
 resilience under host load (two 504s at the 30-second deadline). WP01–WP17
 remain open and no Superset cutover has occurred.
+
+## 16 November 2026 product batch: native dashboards active
+
+Native Dataviz was then the default **Dataviz** mode in Studio, with Superset
+reachable as **Legacy BI** (removed later the same day, below).
+
+- Backend: `POST /viz/datasets/{id}/query` plans one governed aggregate over the
+  dataset source (`viz/aggregate.py`): quoted catalog identifiers only, typed
+  filter values bound as engine parameters (eq/neq/in/not_in/comparisons/between/
+  null/text contains/relative dates with fiscal and week starts), exact decimal
+  widening for sums/averages, date grains, deterministic order and limit+1
+  truncation. The same source-identity and stale-schema checks as previews run
+  before and after execution under the caller's active role. Pinned publication
+  revisions are readable through revision row security for viewers.
+- Live evidence: `aggregate-query-http-attempt-1.json` (111 checks; owned fixture,
+  cleanup and QA identity verified).
+- Frontend: dashboard list/create, Canvas/Data editor, GridStack canvas, chart
+  inspector with live preview (14 visuals), dashboard filters, cross-filtering,
+  publish/share/history, query queue with capacity retry, phone layout; also
+  opened from Studio Artifacts with the same editor.
+- Neva: native tools for the Dataviz assistant (approval-gated writes, receipts,
+  `dashboard_changed` refresh). Live run: the first attempt failed (dataset
+  revision confusion) and the second added a chart after approval.
+- UI QA walkthrough: `native-dashboard-ui-qa-attempt-1.json`, including four
+  defects found and fixed (Neva revision resolution, redundant color split,
+  capacity refusals under rapid filtering, phone header/band overflow) plus the
+  inclusive end-day date-range defect found during QA review.
+- QA matrix: 15 PASS, 239 NOT_RUN.
 
 ## Evidence recorded so far
 
@@ -424,9 +452,11 @@ chart planning, security E2E, performance and native-editor visual QA remain pen
 NDV-OSS-003 is `PASS` for the pinned GridStack real-browser compatibility gate.
 NDV-OSS-005 is `PASS` for exact-version MIT Table/Virtual licensing and feature sources.
 NDV-DATA-015 is `PASS` for inactive-role schema refusal through the normal gateway.
+NDV-CHART-001, NDV-CHART-004, NDV-GRID-012, NDV-FILTER-002, NDV-FILTER-004,
+NDV-INTER-001 and NDV-CACHE-009 pass on 16 November product evidence.
 NDV-DATA-001, NDV-DATA-002 and NDV-DATA-009 also have complete governed API
 evidence. NDV-DATA-007 and NDV-DATA-008 pass on governed parameter evidence from
-16 November 2026. The remaining 246 scenarios are `NOT_RUN` until their entire
+16 November 2026. The remaining 239 scenarios are `NOT_RUN` until their entire
 assertion has evidence. A passing narrow unit test does not satisfy a broader QA scenario.
 
 ## Test topology and protected state
@@ -455,6 +485,32 @@ paragraphs, section navigation and native-document link were inspected at
 sign-in redirect are retained as unsuccessful attempts. This docs check does
 not establish native editor, mobile or light-theme acceptance.
 
-Superset services and legacy routes remain active. No source assets have been
-deleted, converted in place, or claimed migrated. No commits or pushes have been
-made while required checks and the implementation remain incomplete.
+## Superset decommission (2026-11-16)
+
+The user directed removal of every Superset integration and its image ahead of
+WP14 conversion and WP16 release QA. That order is a recorded user decision, not
+a passed dependency.
+
+- Removed: the `superset/` image build, Compose services and volume, the `/bi`
+  gateway route, `backend/app/modules/superset/`, the Superset Dataviz tools,
+  BI metadata backup, Semantic View BI sync, the Studio artifact editor routes,
+  the frontend BI workspace and Legacy BI mode, the CI Superset job and the
+  Superset-only tests.
+- Kept: delegated task sessions moved to `task_orchestration/delegation.py`
+  (same Redis prefix); the data-token proxy login now serves notebook and task
+  tokens only; historical migrations and shared legacy dashboards stay readable.
+- Replaced: **Add to Dataviz** now checks and publishes through
+  `viz/studio_publish.py` as the caller at the same HTTP paths.
+- Data: the development Superset metadata database was dumped to a private
+  location outside Git before its containers, image and volume were deleted.
+  The 7 dashboards, 52 charts and 22 datasets in the earlier inventory were
+  not converted; rebuilding any of them is manual.
+- Evidence: backend gate attempt 18 (`backend-gates-attempt-18.json`: mypy,
+  changed-file Ruff, 11,834 unit tests, scorecard 54/54, boundary); PG17 fixture
+  `test_metadata_agents`, `test_metadata_assistant_policy_bi` and
+  `test_metadata_viz` (190 passed); frontend lint, build and the full browser
+  suite (the last full run had one notebook timing failure under load that
+  passed 3/3 in isolation, with no notebook source changed); and the in-app walkthrough in `native-dashboard-ui-qa-attempt-2.json`,
+  which found and fixed 12 defects, including an empty dashboard list in
+  **Add to Dataviz**. Engine-backed integration suites run in CI on the pull
+  request.

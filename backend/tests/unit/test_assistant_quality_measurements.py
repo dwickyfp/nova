@@ -246,7 +246,6 @@ async def test_a_tool_whose_model_calls_are_in_process_keeps_usage_measured():
 
 def test_tools_that_declare_measured_model_calls_use_the_native_client():
     from app.modules.agents.tools.compute_metrics import ComputeMetricsTool
-    from app.modules.agents.tools.dashboard_build import DashboardBuildTool
     from app.modules.agents.tools.data_to_chart import DataToChartTool
     from app.modules.agents.tools.describe_agent import DescribeAgentTool
     from app.modules.agents.tools.diagnose_change import DiagnoseChangeTool
@@ -257,7 +256,7 @@ def test_tools_that_declare_measured_model_calls_use_the_native_client():
     from app.modules.assistant.tools.query_execute import QueryExecuteTool
 
     declared = [
-        ComputeMetricsTool, DashboardBuildTool, DataToChartTool, DescribeAgentTool,
+        ComputeMetricsTool, DataToChartTool, DescribeAgentTool,
         DiagnoseChangeTool, MLExecuteTool, SemanticQueryTool, SemanticSearchTool,
         LoadSkillTool,
     ]

@@ -10,7 +10,6 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
-import { Route as BiLaunchRouteImport } from './routes/bi-launch'
 import { Route as DocsRouteImport } from './routes/docs'
 import { Route as StudioRouteImport } from './routes/studio'
 import { Route as authSignInRouteImport } from './routes/(auth)/sign-in'
@@ -18,7 +17,6 @@ import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedAccessControlRouteImport } from './routes/_authenticated/access-control'
 import { Route as AuthenticatedActiveQueryRouteImport } from './routes/_authenticated/active-query'
 import { Route as AuthenticatedAiSearchRouteImport } from './routes/_authenticated/ai-search'
-import { Route as AuthenticatedAnalyticsRouteImport } from './routes/_authenticated/analytics'
 import { Route as AuthenticatedBusinessOntologyRouteImport } from './routes/_authenticated/business-ontology'
 import { Route as AuthenticatedDatabaseExplorerRouteImport } from './routes/_authenticated/database-explorer'
 import { Route as AuthenticatedEntitiesRouteImport } from './routes/_authenticated/entities'
@@ -69,11 +67,6 @@ const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
-const BiLaunchRoute = BiLaunchRouteImport.update({
-  id: '/bi-launch',
-  path: '/bi-launch',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const DocsRoute = DocsRouteImport.update({
   id: '/docs',
   path: '/docs',
@@ -109,11 +102,6 @@ const AuthenticatedActiveQueryRoute =
 const AuthenticatedAiSearchRoute = AuthenticatedAiSearchRouteImport.update({
   id: '/ai-search',
   path: '/ai-search',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedAnalyticsRoute = AuthenticatedAnalyticsRouteImport.update({
-  id: '/analytics',
-  path: '/analytics',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedBusinessOntologyRoute =
@@ -380,7 +368,6 @@ const AuthenticatedAgentsSemanticBuilderRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
-  '/bi-launch': typeof BiLaunchRoute
   '/docs': typeof DocsRouteWithChildren
   '/studio': typeof StudioRoute
   '/monitoring': typeof AuthenticatedMonitoringRouteRouteWithChildren
@@ -388,7 +375,6 @@ export interface FileRoutesByFullPath {
   '/access-control': typeof AuthenticatedAccessControlRoute
   '/active-query': typeof AuthenticatedActiveQueryRoute
   '/ai-search': typeof AuthenticatedAiSearchRoute
-  '/analytics': typeof AuthenticatedAnalyticsRoute
   '/business-ontology': typeof AuthenticatedBusinessOntologyRoute
   '/database-explorer': typeof AuthenticatedDatabaseExplorerRoute
   '/entities': typeof AuthenticatedEntitiesRoute
@@ -435,13 +421,11 @@ export interface FileRoutesByFullPath {
   '/agents/semantic/': typeof AuthenticatedAgentsSemanticIndexRoute
 }
 export interface FileRoutesByTo {
-  '/bi-launch': typeof BiLaunchRoute
   '/studio': typeof StudioRoute
   '/sign-in': typeof authSignInRoute
   '/access-control': typeof AuthenticatedAccessControlRoute
   '/active-query': typeof AuthenticatedActiveQueryRoute
   '/ai-search': typeof AuthenticatedAiSearchRoute
-  '/analytics': typeof AuthenticatedAnalyticsRoute
   '/business-ontology': typeof AuthenticatedBusinessOntologyRoute
   '/database-explorer': typeof AuthenticatedDatabaseExplorerRoute
   '/entities': typeof AuthenticatedEntitiesRoute
@@ -491,7 +475,6 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
-  '/bi-launch': typeof BiLaunchRoute
   '/docs': typeof DocsRouteWithChildren
   '/studio': typeof StudioRoute
   '/_authenticated/monitoring': typeof AuthenticatedMonitoringRouteRouteWithChildren
@@ -499,7 +482,6 @@ export interface FileRoutesById {
   '/_authenticated/access-control': typeof AuthenticatedAccessControlRoute
   '/_authenticated/active-query': typeof AuthenticatedActiveQueryRoute
   '/_authenticated/ai-search': typeof AuthenticatedAiSearchRoute
-  '/_authenticated/analytics': typeof AuthenticatedAnalyticsRoute
   '/_authenticated/business-ontology': typeof AuthenticatedBusinessOntologyRoute
   '/_authenticated/database-explorer': typeof AuthenticatedDatabaseExplorerRoute
   '/_authenticated/entities': typeof AuthenticatedEntitiesRoute
@@ -550,7 +532,6 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/bi-launch'
     | '/docs'
     | '/studio'
     | '/monitoring'
@@ -558,7 +539,6 @@ export interface FileRouteTypes {
     | '/access-control'
     | '/active-query'
     | '/ai-search'
-    | '/analytics'
     | '/business-ontology'
     | '/database-explorer'
     | '/entities'
@@ -605,13 +585,11 @@ export interface FileRouteTypes {
     | '/agents/semantic/'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/bi-launch'
     | '/studio'
     | '/sign-in'
     | '/access-control'
     | '/active-query'
     | '/ai-search'
-    | '/analytics'
     | '/business-ontology'
     | '/database-explorer'
     | '/entities'
@@ -660,7 +638,6 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_authenticated'
-    | '/bi-launch'
     | '/docs'
     | '/studio'
     | '/_authenticated/monitoring'
@@ -668,7 +645,6 @@ export interface FileRouteTypes {
     | '/_authenticated/access-control'
     | '/_authenticated/active-query'
     | '/_authenticated/ai-search'
-    | '/_authenticated/analytics'
     | '/_authenticated/business-ontology'
     | '/_authenticated/database-explorer'
     | '/_authenticated/entities'
@@ -718,7 +694,6 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
-  BiLaunchRoute: typeof BiLaunchRoute
   DocsRoute: typeof DocsRouteWithChildren
   StudioRoute: typeof StudioRoute
   authSignInRoute: typeof authSignInRoute
@@ -731,13 +706,6 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AuthenticatedRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/bi-launch': {
-      id: '/bi-launch'
-      path: '/bi-launch'
-      fullPath: '/bi-launch'
-      preLoaderRoute: typeof BiLaunchRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/docs': {
@@ -787,13 +755,6 @@ declare module '@tanstack/react-router' {
       path: '/ai-search'
       fullPath: '/ai-search'
       preLoaderRoute: typeof AuthenticatedAiSearchRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/analytics': {
-      id: '/_authenticated/analytics'
-      path: '/analytics'
-      fullPath: '/analytics'
-      preLoaderRoute: typeof AuthenticatedAnalyticsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/business-ontology': {
@@ -1152,7 +1113,6 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAccessControlRoute: typeof AuthenticatedAccessControlRoute
   AuthenticatedActiveQueryRoute: typeof AuthenticatedActiveQueryRoute
   AuthenticatedAiSearchRoute: typeof AuthenticatedAiSearchRoute
-  AuthenticatedAnalyticsRoute: typeof AuthenticatedAnalyticsRoute
   AuthenticatedBusinessOntologyRoute: typeof AuthenticatedBusinessOntologyRoute
   AuthenticatedDatabaseExplorerRoute: typeof AuthenticatedDatabaseExplorerRoute
   AuthenticatedEntitiesRoute: typeof AuthenticatedEntitiesRoute
@@ -1194,7 +1154,6 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAccessControlRoute: AuthenticatedAccessControlRoute,
   AuthenticatedActiveQueryRoute: AuthenticatedActiveQueryRoute,
   AuthenticatedAiSearchRoute: AuthenticatedAiSearchRoute,
-  AuthenticatedAnalyticsRoute: AuthenticatedAnalyticsRoute,
   AuthenticatedBusinessOntologyRoute: AuthenticatedBusinessOntologyRoute,
   AuthenticatedDatabaseExplorerRoute: AuthenticatedDatabaseExplorerRoute,
   AuthenticatedEntitiesRoute: AuthenticatedEntitiesRoute,
@@ -1250,7 +1209,6 @@ const DocsRouteWithChildren = DocsRoute._addFileChildren(DocsRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
-  BiLaunchRoute: BiLaunchRoute,
   DocsRoute: DocsRouteWithChildren,
   StudioRoute: StudioRoute,
   authSignInRoute: authSignInRoute,

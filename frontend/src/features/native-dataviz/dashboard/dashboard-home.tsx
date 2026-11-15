@@ -18,36 +18,44 @@ export function DashboardHome({ onOpen }: { onOpen: (entry: { dashboardId: strin
   const [search, setSearch] = useState('')
   const [creating, setCreating] = useState(false)
   const visible = entries.filter(item => item.title.toLowerCase().includes(search.trim().toLowerCase()))
+  const updated = (iso: string) => new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(iso))
   return <div className='flex min-h-0 flex-1 flex-col'>
-    <div className='flex shrink-0 flex-wrap items-center gap-3 border-b px-4 py-3'>
-      <div className='min-w-48 flex-1'>
-        <h2 className='type-display text-xl font-semibold'>Dashboards</h2>
-        <p className='text-sm text-muted-foreground'>Native dashboards run every query with your current role.</p>
-      </div>
-      <div className='relative'>
+    <header className='flex h-14 shrink-0 items-center gap-3 border-b px-4'>
+      <h2 className='min-w-0 flex-1 truncate text-base font-medium'>
+        Dashboards{!pending && entries.length ? <span className='ml-2 text-sm font-normal text-muted-foreground tabular-nums'>{entries.length}</span> : null}
+      </h2>
+      <div className='relative max-sm:hidden'>
         <Search className='pointer-events-none absolute top-2.5 left-2.5 size-4 text-muted-foreground' aria-hidden />
-        <Input aria-label='Search dashboards' placeholder='Search dashboards' value={search} onChange={event => setSearch(event.target.value)} className='h-9 w-56 pl-8' />
+        <Input aria-label='Search dashboards' placeholder='Search' value={search} onChange={event => setSearch(event.target.value)} className='h-9 w-56 pl-8' />
       </div>
-      <Button onClick={() => setCreating(true)}><Plus />New dashboard</Button>
-    </div>
-    <div className='min-h-0 flex-1 overflow-y-auto p-4'>
-      {pending ? <div role='status' aria-label='Loading dashboards' className='grid gap-3 sm:grid-cols-2 xl:grid-cols-3'>
-        {Array.from({ length: 6 }, (_, i) => <div key={i} className='h-28 animate-pulse rounded-lg bg-muted/60' />)}
+      <Button size='sm' className='h-9' onClick={() => setCreating(true)}><Plus />New dashboard</Button>
+    </header>
+    <div className='min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6'>
+      <div className='relative mb-4 sm:hidden'>
+        <Search className='pointer-events-none absolute top-2.5 left-2.5 size-4 text-muted-foreground' aria-hidden />
+        <Input aria-label='Search dashboards' placeholder='Search' value={search} onChange={event => setSearch(event.target.value)} className='h-9 w-full pl-8' />
+      </div>
+      {pending ? <div role='status' aria-label='Loading dashboards' className='grid grid-cols-[repeat(auto-fill,minmax(min(100%,18rem),1fr))] gap-4'>
+        {Array.from({ length: 6 }, (_, i) => <div key={i} className='h-28 rounded-lg bg-muted/50' />)}
       </div> : error ? <EmptyState variant='error' title='Dashboards are unavailable' description='They could not be loaded with your current access.'
         action={<Button variant='outline' onClick={refetch}>Try again</Button>} />
         : !visible.length ? <EmptyState icon={LayoutDashboard} title={search ? 'No dashboards match your search' : 'No dashboards yet'}
-          description={search ? 'Try another name.' : 'Create a dashboard, add a dataset and build charts — or ask Neva to build one for you.'}
+          description={search ? 'Try another name.' : 'Create a dashboard, add data and build charts, or ask Neva to build one with you. Every chart runs with your current role.'}
           action={!search ? <Button onClick={() => setCreating(true)}><Plus />New dashboard</Button> : undefined} />
-          : <ul className='grid gap-3 sm:grid-cols-2 xl:grid-cols-3'>
+          : <ul className='grid grid-cols-[repeat(auto-fill,minmax(min(100%,18rem),1fr))] gap-4'>
             {visible.map(item => <li key={item.resource_id}>
               <button type='button' onClick={() => onOpen({ dashboardId: item.resource_id, workspaceId: item.workspace_id })}
-                className='flex h-full w-full flex-col gap-2 rounded-lg border bg-card p-4 text-left transition-colors hover:border-primary/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none'>
-                <span className='flex items-start justify-between gap-2'>
-                  <span className='type-title line-clamp-2 font-semibold'>{item.title}</span>
-                  <Badge variant={item.current_publication_id ? 'secondary' : 'outline'}>{item.current_publication_id ? 'Published' : 'Draft'}</Badge>
+                className='flex h-full min-h-28 w-full flex-col gap-3 rounded-lg border bg-card p-4 text-left transition-colors hover:border-foreground/20 hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none'>
+                <span className='flex w-full items-start justify-between gap-3'>
+                  <span className='line-clamp-2 text-sm font-medium'>{item.title}</span>
+                  <Badge variant={item.current_publication_id ? 'secondary' : 'outline'} className='shrink-0 font-normal'>
+                    {item.current_publication_id ? 'Published' : 'Draft'}
+                  </Badge>
                 </span>
-                <span className='mt-auto text-xs text-muted-foreground'>
-                  {item.space.kind === 'personal' ? 'Personal' : item.space.name} · {item.editable ? 'You can edit' : 'View only'} · Updated {new Date(item.updated_at).toLocaleDateString()}
+                <span className='mt-auto block truncate text-xs text-muted-foreground'>
+                  {item.space.kind === 'personal' ? 'Personal' : item.space.name}
+                  {' · '}{item.editable ? 'Can edit' : 'View only'}
+                  {' · '}<span className='tabular-nums'>Edited {updated(item.updated_at)}</span>
                 </span>
               </button>
             </li>)}

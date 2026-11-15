@@ -68,8 +68,8 @@ Goal: know exactly what Nove does today and how well, before changing it.
       phase 1.
 - [x] 0.3 "No HTTP self-calls": `tests/unit/test_assistant_tools_call_services.py`.
       HTTP clients only in provider, measurements, ui_media, mcp_client; no Nova
-      route in assistant or agent code (the Dataviz assistant's Superset route is
-      the one named exception).
+      route in assistant or agent code (the Dataviz assistant's Superset route,
+      once the one named exception, was removed with Superset on 2026-11-16).
 - [x] 0.4 Parity suite: `tests/unit/test_neva_capability_parity.py` (52 checks:
       21 tools with read/write class and approval rule, every write needs
       approval, 14 skills load, 16 knowledge documents present and found by a

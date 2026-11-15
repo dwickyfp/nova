@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowLeft, BarChart3, Check, Eye, Filter, Hash, History, Loader2, Pencil, Plus, Redo2, Share2, Sparkles,
+  ArrowLeft, BarChart3, Check, Filter, Hash, History, Loader2, Pencil, Plus, Redo2, Share2, Sparkles,
   Table2, Type, Undo2, Upload,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -118,6 +118,16 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
   const [undo, setUndo] = useState<{ forward: Change[]; backward: Change[] }[]>([])
   const [redo, setRedo] = useState<{ forward: Change[]; backward: Change[] }[]>([])
   const queue = useRef<Promise<unknown>>(Promise.resolve())
+  const bodyRef = useRef<HTMLDivElement | null>(null)
+  const [bodyWidth, setBodyWidth] = useState(1280)
+  useEffect(() => {
+    const node = bodyRef.current
+    if (!node || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => setBodyWidth(node.clientWidth))
+    observer.observe(node)
+    setBodyWidth(node.clientWidth)
+    return () => observer.disconnect()
+  }, [tab, definition === null])
   const lastSequence = useRef(0)
   const revisionRef = useRef(revision)
   useEffect(() => { revisionRef.current = revision }, [revision])
@@ -154,20 +164,33 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
 
   const reload = useCallback(async () => {
     const result = await snapshot.refetch()
-    if (result.data) {
-      setDefinition(result.data.definition as DashboardDefinition)
-      setRevision(result.data.revision)
-      setPublicationId(result.data.publication_id ?? null)
-    }
+    if (!result.data) return undefined
+    setDefinition(result.data.definition as DashboardDefinition)
+    setRevision(result.data.revision)
+    setPublicationId(result.data.publication_id ?? null)
+    return result.data.definition as DashboardDefinition
   }, [snapshot])
 
   // Changes by Neva or another editor arrive as committed document events.
   useEffect(() => { if (refreshToken) void reload() }, [refreshToken])
+  const [nevaChanged, setNevaChanged] = useState<string[]>([])
+  useEffect(() => {
+    if (!nevaChanged.length) return
+    const timer = window.setTimeout(() => setNevaChanged([]), 4000)
+    return () => window.clearTimeout(timer)
+  }, [nevaChanged])
   useEffect(() => {
     const listener = (event: Event) => {
       const detail = (event as CustomEvent<NativeDashboardChanged>).detail
       if (detail?.dashboard_id?.toLowerCase() === dashboardId.toLowerCase() && detail.revision !== revisionRef.current) {
-        void reload()
+        const before = definitionRef.current
+        void reload().then(after => {
+          // Point at what Neva changed: new widgets and widgets whose content or place moved.
+          if (!before || !after) return
+          const previous = new Map(before.pages.flatMap(item => item.widgets ?? []).map(widget => [widget.widget_id, JSON.stringify(widget)]))
+          setNevaChanged(after.pages.flatMap(item => item.widgets ?? [])
+            .filter(widget => previous.get(widget.widget_id) !== JSON.stringify(widget)).map(widget => widget.widget_id))
+        })
         void datasets.refetch()
       }
     }
@@ -339,9 +362,15 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
     void apply([{ op: 'page.add', page: created }]).then(ok => { if (ok) setPageId(created.page_id) })
   }
 
+  // Rapid filter clicks settle before widgets re-query.
+  const [appliedValues, setAppliedValues] = useState(filterValues)
+  useEffect(() => {
+    const timer = window.setTimeout(() => setAppliedValues(filterValues), 300)
+    return () => window.clearTimeout(timer)
+  }, [filterValues])
   const contextFor = useCallback((widget: Widget, chart: ChartDefinition) => definition && page
-    ? chartContext({ definition, chart, widgetId: widget.widget_id, pageId: page.page_id, values: filterValues, crossFilters })
-    : undefined, [definition, page, filterValues, crossFilters])
+    ? chartContext({ definition, chart, widgetId: widget.widget_id, pageId: page.page_id, values: appliedValues, crossFilters })
+    : undefined, [definition, page, appliedValues, crossFilters])
 
   const onSelectValue = useCallback((widget: Widget, _chart: ChartDefinition, selection: ValueSelection) => {
     const chart = _chart
@@ -351,6 +380,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
       if (exists >= 0) return current.filter((_, index) => index !== exists)
       const others = current.filter(item => item.source_widget_id !== widget.widget_id)
       return [...others, { source_widget_id: widget.widget_id, label: selection.label, value: selection.value,
+        ...(selection.period ? { period: selection.period } : {}),
         field: { dataset_id: chart.dataset_id, dataset_revision: chart.dataset_revision, field_id: selection.field_id } }]
     })
   }, [])
@@ -371,64 +401,84 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
   const state = !publicationId ? 'Draft' : publishedRevision === revision ? 'Published' : 'Unpublished changes'
   const compact = density === 'panel'
 
-  return <div className='flex min-h-0 min-w-0 flex-1 flex-col bg-background'>
-    <header className={cn('flex shrink-0 flex-wrap items-center gap-2 border-b', compact ? 'px-3 py-2' : 'px-4 py-3')}>
-      {!compact && <Button variant='ghost' size='icon' className='size-9' aria-label='Back to dashboards' onClick={onBack}><ArrowLeft /></Button>}
-      <div className='min-w-0 flex-1'>
-        {renaming && canEdit ? <Input autoFocus defaultValue={definition.title} maxLength={256} aria-label='Dashboard title'
-          className='h-9 max-w-md text-lg font-semibold'
-          onBlur={event => {
-            setRenaming(false)
-            const title = event.target.value.trim()
-            if (title && title !== definition.title) void apply([{ op: 'dashboard.rename', title }])
-          }}
-          onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setRenaming(false) }} />
-          : <h2 className={cn('type-display truncate font-semibold', compact ? 'text-base' : 'text-xl')}
-            onDoubleClick={() => canEdit && setRenaming(true)}>{definition.title}</h2>}
-        <p className='flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground'>
-          <span>Revision {revision}</span>
-          <span aria-live='polite' className={cn(status === 'conflict' || status === 'error' ? 'text-destructive' : '')}>
-            {status === 'saving' ? 'Saving…' : status === 'conflict' ? 'Reloaded after a conflict' : status === 'error' ? 'Last change not saved' : 'All changes saved'}
-          </span>
+  const sideInspector = bodyWidth >= 960 && !compact
+  const saveText = status === 'saving' ? 'Saving…' : status === 'conflict' ? 'Reloaded after someone else\u2019s change'
+    : status === 'error' ? 'Last change not saved' : 'All changes saved'
+  const label = '@max-3xl/editor:sr-only'
+  return <div className='@container/editor flex min-h-0 min-w-0 flex-1 flex-col bg-background'>
+    <header className={cn('flex h-14 shrink-0 items-center gap-3 border-b', compact ? 'px-3' : 'pr-4 pl-2')}>
+      {!compact && <Button variant='ghost' size='icon' className='size-9 shrink-0' aria-label='Back to dashboards' onClick={onBack}><ArrowLeft /></Button>}
+      <div className='flex min-w-0 flex-1 flex-col justify-center'>
+        <div className='flex min-w-0 items-center gap-2'>
+          {renaming && canEdit ? <Input autoFocus defaultValue={definition.title} maxLength={256} aria-label='Dashboard title'
+            className='h-8 max-w-md text-base font-medium'
+            onBlur={event => {
+              setRenaming(false)
+              const title = event.target.value.trim()
+              if (title && title !== definition.title) void apply([{ op: 'dashboard.rename', title }])
+            }}
+            onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setRenaming(false) }} />
+            : <h2 className='truncate text-base font-medium' title={canEdit ? 'Double-click to rename' : undefined}
+              onDoubleClick={() => canEdit && setRenaming(true)}>{definition.title}</h2>}
+          <Badge variant={state === 'Published' ? 'secondary' : 'outline'} className='shrink-0 font-normal @max-md/editor:hidden'>{state}</Badge>
+        </div>
+        <p aria-live='polite' className={cn('truncate text-xs text-muted-foreground', (status === 'conflict' || status === 'error') && 'text-destructive')}>
+          <span className='@md/editor:hidden'>{state} · </span>{saveText}
         </p>
       </div>
-      <Badge variant={state === 'Published' ? 'secondary' : 'outline'} className='h-7'>{state}</Badge>
-      {onAskNeva && <Button variant='outline' size='sm' className='h-9' onClick={() => onAskNeva(`Help me improve the dashboard “${definition.title}”.`)}>
-        <Sparkles />Ask Neva
-      </Button>}
-      {canEdit && <Button variant={editing ? 'default' : 'outline'} size='sm' className='h-9' onClick={() => { setEditing(!editing); setSelected(null); setInspector(null) }}>
-        {editing ? <><Check />Done</> : <><Pencil />Edit</>}
-      </Button>}
-      {canEdit && <Tooltip><TooltipTrigger asChild><Button variant='ghost' size='icon' className='size-9' aria-label='Version history' onClick={() => setHistoryOpen(true)}><History /></Button></TooltipTrigger><TooltipContent>Version history</TooltipContent></Tooltip>}
-      {canManage && <Button variant='outline' size='sm' className='h-9' onClick={() => setShareOpen(true)}><Share2 />Share</Button>}
-      {canPublish && <Button size='sm' className='h-9' disabled={state === 'Published' || status === 'saving'} onClick={() => setPublishOpen(true)}><Upload />Publish</Button>}
+      <div className='flex shrink-0 items-center gap-1.5'>
+        {onAskNeva && <Button variant='ghost' size='sm' className='h-9 @max-md/editor:hidden' aria-label='Ask Neva'
+          onClick={() => onAskNeva(`Help me improve the dashboard \u201c${definition.title}\u201d.`)}>
+          <Sparkles /><span className={label}>Ask Neva</span>
+        </Button>}
+        {canEdit && <Tooltip><TooltipTrigger asChild><Button variant='ghost' size='icon' className='size-9' aria-label='Version history' onClick={() => setHistoryOpen(true)}><History /></Button></TooltipTrigger><TooltipContent>Version history</TooltipContent></Tooltip>}
+        {canManage && <Button variant='outline' size='sm' className='h-9' aria-label='Share' onClick={() => setShareOpen(true)}><Share2 /><span className={label}>Share</span></Button>}
+        {canEdit && <Button variant='outline' size='sm' className='h-9' aria-label={editing ? 'Done' : 'Edit'}
+          onClick={() => { setEditing(!editing); setSelected(null); setInspector(null) }}>
+          {editing ? <><Check /><span className={label}>Done</span></> : <><Pencil /><span className={label}>Edit</span></>}
+        </Button>}
+        {canPublish && state !== 'Published' && <Button size='sm' className='h-9' aria-label='Publish' disabled={status === 'saving'} onClick={() => setPublishOpen(true)}>
+          <Upload /><span className={label}>Publish</span>
+        </Button>}
+      </div>
     </header>
 
-    <div className='flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-1.5'>
+    <div className='flex min-h-12 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b px-4 py-1.5'>
       {canEdit && <Tabs value={tab} onValueChange={value => setTab(value as 'canvas' | 'data')}>
-        <TabsList><TabsTrigger value='canvas'>Canvas</TabsTrigger><TabsTrigger value='data'>Data</TabsTrigger></TabsList>
+        <TabsList className='h-8'><TabsTrigger value='canvas'>Canvas</TabsTrigger><TabsTrigger value='data'>Data</TabsTrigger></TabsList>
       </Tabs>}
-      {tab === 'canvas' && <nav aria-label='Dashboard pages' className='flex min-w-0 flex-1 items-center gap-1 overflow-x-auto'>
-        {definition.pages.map(item => <Button key={item.page_id} variant={item.page_id === page.page_id ? 'secondary' : 'ghost'} size='sm'
-          aria-current={item.page_id === page.page_id ? 'page' : undefined} onClick={() => { setPageId(item.page_id); setSelected(null) }}>{item.title}</Button>)}
-        {editing && definition.pages.length < 15 && <Button variant='ghost' size='icon' className='size-8' aria-label='Add page' onClick={addPage}><Plus /></Button>}
-      </nav>}
+      {tab === 'canvas' && <>
+        {canEdit && <span className='h-5 w-px bg-border' aria-hidden />}
+        <nav aria-label='Dashboard pages' className='flex min-w-0 flex-1 items-center gap-1 overflow-x-auto'>
+          {definition.pages.map(item => {
+            const current = item.page_id === page.page_id
+            return <button key={item.page_id} type='button' aria-current={current ? 'page' : undefined}
+              onClick={() => { setPageId(item.page_id); setSelected(null) }}
+              className={cn('h-8 shrink-0 border-b-2 px-2 text-sm transition-colors focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                current ? 'border-primary font-medium text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground')}>
+              {item.title}
+            </button>
+          })}
+          {editing && definition.pages.length < 15 && <Tooltip><TooltipTrigger asChild>
+            <Button variant='ghost' size='icon' className='size-8' aria-label='Add page' onClick={addPage}><Plus /></Button>
+          </TooltipTrigger><TooltipContent>Add page</TooltipContent></Tooltip>}
+        </nav>
+      </>}
       {tab === 'canvas' && editing && <div role='toolbar' aria-label='Add to dashboard' className='flex flex-wrap items-center gap-1'>
-        <Button variant='outline' size='sm' onClick={() => setInspector({ mode: 'new', visual: 'bar' })}><BarChart3 />Chart</Button>
-        <Button variant='outline' size='sm' onClick={() => setInspector({ mode: 'new', visual: 'kpi' })}><Hash />KPI</Button>
-        <Button variant='outline' size='sm' onClick={() => setInspector({ mode: 'new', visual: 'table' })}><Table2 />Table</Button>
-        <Button variant='outline' size='sm' onClick={() => setTextOpen(true)}><Type />Text</Button>
-        <Button variant='outline' size='sm' onClick={() => setFiltersOpen(true)}><Filter />Filters</Button>
-        <span className='mx-1 h-6 w-px bg-border' aria-hidden />
-        <Button variant='ghost' size='icon' className='size-8' aria-label='Undo' disabled={!undo.length || status === 'saving'} onClick={undoLast}><Undo2 /></Button>
-        <Button variant='ghost' size='icon' className='size-8' aria-label='Redo' disabled={!redo.length || status === 'saving'} onClick={redoLast}><Redo2 /></Button>
+        <Button variant='ghost' size='sm' onClick={() => setInspector({ mode: 'new', visual: 'bar' })}><BarChart3 />Chart</Button>
+        <Button variant='ghost' size='sm' onClick={() => setInspector({ mode: 'new', visual: 'kpi' })}><Hash />KPI</Button>
+        <Button variant='ghost' size='sm' onClick={() => setInspector({ mode: 'new', visual: 'table' })}><Table2 />Table</Button>
+        <Button variant='ghost' size='sm' onClick={() => setTextOpen(true)}><Type />Text</Button>
+        <Button variant='ghost' size='sm' onClick={() => setFiltersOpen(true)}><Filter />Filters</Button>
+        <span className='mx-1 h-5 w-px bg-border' aria-hidden />
+        <Tooltip><TooltipTrigger asChild><Button variant='ghost' size='icon' className='size-8' aria-label='Undo' disabled={!undo.length || status === 'saving'} onClick={undoLast}><Undo2 /></Button></TooltipTrigger><TooltipContent>Undo</TooltipContent></Tooltip>
+        <Tooltip><TooltipTrigger asChild><Button variant='ghost' size='icon' className='size-8' aria-label='Redo' disabled={!redo.length || status === 'saving'} onClick={redoLast}><Redo2 /></Button></TooltipTrigger><TooltipContent>Redo</TooltipContent></Tooltip>
       </div>}
-      {tab === 'canvas' && !editing && canEdit && <span className='ms-auto flex items-center gap-1 text-xs text-muted-foreground'><Eye className='size-3.5' />Viewing your draft</span>}
     </div>
 
     {tab === 'data' && canEdit ? <DashboardDataTab dashboardId={dashboardId} workspaceId={workspaceId} revision={revision}
       onCommitted={receipt => { setRevision(receipt.new_revision); void reload(); void datasets.refetch() }} onReload={() => void reload()} />
-      : <div className='flex min-h-0 flex-1'>
+      : <div ref={bodyRef} className='relative flex min-h-0 flex-1'>
         <div className='flex min-h-0 min-w-0 flex-1 flex-col'>
           <FilterBar definition={definition} values={filterValues} draft={editing}
             onChange={(id, value) => setFilterValues(current => {
@@ -444,9 +494,13 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
             onDuplicate={duplicate} onRemove={widget => void apply([{ op: 'widget.remove', page_id: page.page_id, widget_id: widget.widget_id }])}
             onAskNeva={onAskNeva ? (_widget, chart) => onAskNeva(chart ? `Explain the chart “${chart.title}” on this dashboard and suggest improvements.` : 'Help me with this widget.') : undefined}
             contextFor={contextFor} onSelectValue={onSelectValue}
-            selectedValueFor={widget => crossFilters.find(item => item.source_widget_id === widget.widget_id)?.label ?? null} />
+            selectedValueFor={widget => crossFilters.find(item => item.source_widget_id === widget.widget_id)?.label ?? null}
+            highlighted={nevaChanged} />
         </div>
-        {inspector && <div className={cn('flex min-h-0 shrink-0 border-l', compact ? 'w-full max-w-sm' : 'w-[360px] max-w-[45vw]')}>
+        {inspector && <div className={cn('flex min-h-0 border-l bg-card',
+          // A side column only when the canvas keeps room for a multi-column layout;
+          // otherwise the inspector floats over the canvas instead of squeezing it.
+          sideInspector ? 'w-90 shrink-0' : 'absolute inset-y-0 right-0 z-20 w-[min(22.5rem,100%)] shadow-xl')}>
           <ChartInspector key={inspector.mode === 'edit' ? inspector.chart.chart_id : `new-${inspector.visual}`}
             datasets={sources} chart={inspector.mode === 'edit' ? inspector.chart : null} initialVisual={inspector.mode === 'new' ? inspector.visual : undefined}
             saving={savingChart} error={inspectorError} onSave={chart => void saveChart(chart)} onClose={() => { setInspector(null); setInspectorError(undefined) }} />
@@ -465,7 +519,8 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
       } catch (error) { toast.error(message(error)) }
     }} />
     {shareOpen && <ShareDialog open onOpenChange={setShareOpen} dashboardId={dashboardId} workspaceId={workspaceId} definition={definition} />}
-    <HistorySheet open={historyOpen} onOpenChange={setHistoryOpen} dashboardId={dashboardId} epoch={epoch} />
+    <HistorySheet open={historyOpen} onOpenChange={setHistoryOpen} dashboardId={dashboardId} epoch={epoch}
+      current={revision} published={publicationId ? publishedRevision : undefined} />
     <TextDialog open={textOpen} onOpenChange={setTextOpen} onAdd={addText} />
   </div>
 }
@@ -510,21 +565,34 @@ function TextDialog({ open, onOpenChange, onAdd }: { open: boolean; onOpenChange
   </Dialog>
 }
 
-function HistorySheet({ open, onOpenChange, dashboardId, epoch }: { open: boolean; onOpenChange: (open: boolean) => void; dashboardId: string; epoch: number }) {
+const WHEN = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+
+function HistorySheet({ open, onOpenChange, dashboardId, epoch, current, published }: {
+  open: boolean; onOpenChange: (open: boolean) => void; dashboardId: string; epoch: number; current: number; published?: number
+}) {
   const history = useQuery({
-    queryKey: ['native-dataviz', 'history', epoch, dashboardId],
+    queryKey: ['native-dataviz', 'history', epoch, dashboardId, current],
     queryFn: ({ signal }) => nativeDocuments(epoch).history('dashboards', dashboardId, { limit: 50, signal }),
     enabled: open, retry: false,
   })
   return <Sheet open={open} onOpenChange={onOpenChange}>
-    <SheetContent>
-      <SheetHeader><SheetTitle>Version history</SheetTitle><SheetDescription>Every saved change creates a revision. Published versions stay unchanged.</SheetDescription></SheetHeader>
-      <ol className='space-y-1 overflow-y-auto px-4 pb-4'>
-        {history.isPending ? <li role='status' className='text-sm text-muted-foreground'>Loading…</li>
-          : history.isError ? <li role='alert' className='text-sm text-muted-foreground'>History is unavailable.</li>
-            : history.data.map(item => <li key={item.revision} className='flex items-center justify-between rounded-md border px-3 py-2 text-sm'>
-              <span>Revision {item.revision} <span className='text-muted-foreground'>· {item.author_name}</span></span>
-              <time className='text-xs text-muted-foreground' dateTime={item.created_at}>{new Date(item.created_at).toLocaleString()}</time>
+    <SheetContent className='flex min-h-0 flex-col gap-0'>
+      <SheetHeader className='border-b'><SheetTitle>Version history</SheetTitle>
+        <SheetDescription>Every saved change is kept. Viewers see the published version until you publish again.</SheetDescription></SheetHeader>
+      <ol className='min-h-0 flex-1 divide-y overflow-y-auto px-4'>
+        {history.isPending ? <li role='status' className='py-3 text-sm text-muted-foreground'>Loading…</li>
+          : history.isError ? <li role='alert' className='py-3 text-sm text-muted-foreground'>History is unavailable.</li>
+            : history.data.map(item => <li key={item.revision} className='flex items-center justify-between gap-3 py-3'>
+              <div className='min-w-0'>
+                <p className='text-sm'>Version {item.revision}</p>
+                <p className='truncate text-xs text-muted-foreground'>
+                  {item.author_name} · <time className='tabular-nums' dateTime={item.created_at}>{WHEN.format(new Date(item.created_at))}</time>
+                </p>
+              </div>
+              <span className='flex shrink-0 gap-1.5'>
+                {item.revision === published && <Badge variant='secondary' className='font-normal'>Published</Badge>}
+                {item.revision === current && <Badge variant='outline' className='font-normal'>Current</Badge>}
+              </span>
             </li>)}
       </ol>
     </SheetContent>

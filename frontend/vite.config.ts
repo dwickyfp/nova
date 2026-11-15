@@ -10,19 +10,6 @@ import { playwright } from "@vitest/browser-playwright";
 export default defineConfig(({ command }) => ({
   plugins: [
     {
-      name: "test-bi-frame-documents",
-      configureServer(server) {
-        if (!process.env.VITEST) return;
-        // Component tests exercise iframe messages and URLs without loading
-        // the local BI service or the SPA fallback inside a second app.
-        server.middlewares.use((request, response, next) => {
-          if (!/^\/bi(?:\/|\?|$)/.test(request.url ?? "")) return next();
-          response.setHeader("Content-Type", "text/html");
-          response.end("<!doctype html><html><body></body></html>");
-        });
-      },
-    },
-    {
       name: "maplibre-class-fields",
       enforce: "pre",
       async transform(code, id) {
@@ -95,12 +82,6 @@ export default defineConfig(({ command }) => ({
       "/api": {
         target: process.env.NOVA_WEB_API_URL ?? "http://localhost:8000",
         changeOrigin: true,
-      },
-      // Superset, served under /bi so its cookie and pages stay same-origin.
-      // Anchored on the path boundary so Nova's own /bi-launch stays here.
-      "^/bi(/|$)": {
-        target: process.env.NOVA_BI_URL ?? "http://localhost:8088",
-        xfwd: true,
       },
     },
   },

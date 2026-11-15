@@ -432,119 +432,24 @@ http://localhost:8000/api/*
 
 Karena itu, backend harus tetap berjalan pada port `8000`.
 
-### BI (Superset) di `/bi`
+### Studio Dataviz
 
-Superset berjalan sebagai bagian dari profile `app` stack engine
-([arsitektur](docs/arch-17-superset.md)). Isi tiga nilai ini sekali di
-`docker/.env` (simpan, jangan diganti setelah dipakai):
+Dashboard, chart dan dataset adalah dokumen native Nova
+([arsitektur](docs/arch-19-studio-dataviz.md)); tidak ada service tambahan
+yang perlu dijalankan selain backend dan frontend. Di Studio, tab **Dataviz**
+membuka daftar dashboard native di samping panel **Assistant**. Setiap query
+chart berjalan dengan login dan role aktif penonton, jadi filter dan mask
+Ranger tetap berlaku. Panduan pemakaian ada di `/docs` bagian **Dataviz**.
 
-```text
-SUPERSET_SECRET_KEY=        # openssl rand -base64 42
-SUPERSET_DB_PASSWORD=       # openssl rand -hex 24
-NOVA_SUPERSET_SERVICE_TOKEN=  # openssl rand -hex 32, dipakai backend dan Superset
-```
-
-Jalankan atau perbarui service-nya di project compose yang sudah berjalan
-(nama project `docker` di mesin ini; sesuaikan bila berbeda):
-
-```bash
-cd docker
-docker compose -p docker -f docker-compose-engine.yml -f docker-compose.dev.yml --profile app up -d --build --no-deps nova-backend superset-db superset-init superset superset-worker superset-beat
-```
-
-Vite meneruskan `/bi/*` ke Superset (`127.0.0.1:8088`). Buka menu **BI** di
-sidebar ([http://localhost:5173/analytics](http://localhost:5173/analytics)):
-Superset tampil di dalam frame Nova. Versi layar penuh ada di
-[http://localhost:5173/bi-launch](http://localhost:5173/bi-launch). Login hanya lewat Nova; Superset tidak punya form login
-sendiri. Role yang boleh membuat chart/dataset diatur `ACCOUNTADMIN` lewat
-`PUT /api/v1/superset/author-roles`; role lain mendapat akses lihat saja.
-
-#### Studio Dataviz
-
-Di Studio, tab **Dataviz** membuka Superset lengkap (`/bi/`) di samping panel
-**Assistant** ([arsitektur](docs/arch-19-studio-dataviz.md)). Hasil di tab
-Agent yang bisa dibuat ulang di Superset menampilkan tombol **Add to Dataviz**;
-hasil lain tidak menampilkan tombol apa pun. Asisten panel tidak memilih agent:
-ia menjawab dari dataset dashboard yang terbuka, dengan filter dashboard yang
-terverifikasi, dan meminta persetujuan sebelum mengubah dashboard.
-
-Dashboard Dataviz tidak di-share: dashboard baru menempel pada role Nova aktif
-pembuatnya dan terlihat oleh semua orang di role itu (Superset
-`DASHBOARD_RBAC`, role `Nova role <ROLE>`). Datanya tetap mengikuti Ranger
-masing-masing penonton.
-
-Bila backend berjalan di host (`./dev.sh`), `docker-compose.dev.yml` mengarahkan
-Superset ke backend host lewat `host.docker.internal`, dan `dev.sh` membaca
-`SUPERSET_SERVICE_TOKEN` dari container `nova-superset`. Image dibangun dua
-target: `web` (`nova-superset:local`, tanpa browser) untuk web dan beat, `jobs`
-(`nova-superset-jobs:local`, dengan Playwright) untuk worker:
-
-```bash
-docker compose -p docker -f docker-compose-engine.yml -f docker-compose.dev.yml build superset-init superset-worker
-docker compose -p docker -f docker-compose-engine.yml -f docker-compose.dev.yml up -d --no-build superset-init superset superset-worker superset-beat
-```
-
-Cek deployment: `UV_NO_SYNC=1 uv run python ../superset/bench/lean_smoke.py`
-(dari `backend/`). Uji kualitas asisten 5W+1H:
-`uv run python -m tests.benchmark.dataviz_assistant.run ask --out <file>`
-(lihat [hasilnya](docs/benchmarks/dataviz-assistant/README.md)).
-
-Pekerjaan background Superset (alert, report, thumbnail, SQL Lab async)
-berjalan di `superset-worker` dan `superset-beat`. Alert dan report berjalan
-sebagai pemiliknya lewat akun worker yang sama dengan task terjadwal
-(`WORKER_IMPERSONATION_*` di `docker/.env`, juga dipakai `nova-backend`); beri
-akun itu izin impersonate per pemilik:
-
-```bash
-uv run python scripts/provision_task_worker_access.py --owner <username>
-```
-
-Tanpa `SUPERSET_SMTP_HOST` report dan alert tetap dijalankan dan dicatat, tetapi
-tidak dikirim.
-
-Artifact Studio yang disimpan sebelum BI tampil read-only sampai dikonversi.
-Pemiliknya mengonversi sendiri di Studio (**Convert all** di Explore). Untuk
-pemilik yang tidak sedang login, konversi lewat sesi terdelegasi (izin
-impersonate per pemilik seperti di atas; `root` dan `nova_admin` tidak pernah
-didelegasikan, jadi mereka mengonversi sendiri di Studio):
-
-```bash
-uv run python scripts/convert_studio_artifacts.py --all-owners
-uv run python scripts/convert_studio_artifacts.py --owner <username> --force
-```
-
-Skrip mencetak laporan per artifact. Tanpa `--force`, artifact yang memakai
-fitur yang dihitung berbeda oleh BI tetap read-only. Kolom lama `chart_spec`
-dan `viz_spec` dihapus otomatis setelah tidak ada artifact lama tersisa.
-
-Semantic View yang dipublikasikan otomatis menjadi dataset BI (dikunci: ubah
-lewat Semantic View, bukan di Superset). Metrik Superset masuk ke Prometheus dan
-Grafana (dashboard **Nova | BI (Superset)**) bila stack observability berjalan:
-
-```bash
-cd docker
-docker compose -p docker -f docker-compose-engine.yml -f docker-compose.dev.yml -f docker-compose-observability.yml up -d --no-deps statsd-exporter prometheus grafana
-```
+Apache Superset (dulu di `/bi`) sudah dihapus sejak 2026-11-16
+([catatan historis](docs/arch-17-superset.md)). Variabel `SUPERSET_*` dan
+`NOVA_SUPERSET_SERVICE_TOKEN` di `docker/.env` lama tidak dipakai lagi dan
+boleh dihapus.
 
 Snapshot engine lama bukan backup lengkap control plane PG. Backup deployment
-harus mencakup PG Nova, database Superset/Ranger, StarRocks dan payload storage
+harus mencakup PG Nova, database Ranger, StarRocks dan payload storage
 dengan recovery manifest yang cocok. Pengujian restore dan salinan di luar host
 memiliki gate tersendiri; jangan menganggap snapshot StarRocks memulihkan PG Nova.
-
-Acceptance di stack governed (membuat dan menghapus sendiri user, role,
-policy Ranger, dan data ujinya; tes Fase 2 menghentikan dan menyalakan lagi
-`nova-superset-worker` sesaat):
-
-```bash
-cd backend
-TOKEN=$(grep '^NOVA_SUPERSET_SERVICE_TOKEN=' ../docker/.env | cut -d= -f2-)
-STARROCKS_HOST=127.0.0.1 STARROCKS_FE_MYSQL_PORT=29030 \
-NOVA_SUPERSET_URL=http://127.0.0.1:8088 NOVA_SUPERSET_SERVICE_TOKEN="$TOKEN" \
-NOVA_SUPERSET_LOG_CONTAINERS=nova-superset,nova-backend,nova-superset-db \
-NOVA_SUPERSET_DB_CONTAINER=nova-superset-db \
-NOVA_SUPERSET_WORKER_CONTAINER=nova-superset-worker \
-uv run pytest tests/integration/test_superset_governed.py -v -rs
-```
 
 ### Nova Notebook di Workspaces
 

@@ -197,12 +197,12 @@ class LoopContext:
     workspace_file_id: str | None = None
     session_id: str | None = None
     thread_id: str | None = None
-    #: The Dataviz page a Studio turn was asked from: dashboard id, filter key
-    #: and edit state. Hints only; Dataviz tools verify them as the caller.
+    #: The Dataviz page a Studio turn was asked from (the native dashboard on
+    #: screen). Hints only; Dataviz tools verify them as the caller.
     dataviz: dict[str, Any] | None = None
     #: Required tools whose verified output the server already put in this
-    #: turn's context (for example the Dataviz dashboard brief, which is the
-    #: output of ``dataviz_context`` for the caller). Set by the router only.
+    #: turn's context (for example the native dashboard brief, which is the
+    #: output of ``native_dashboard_read`` for the caller). Set by the router only.
     settled_capabilities: tuple[str, ...] = ()
     #: Required tools this turn satisfies with another registered tool (for
     #: the Dataviz assistant, governed data comes from the open dashboard's
@@ -343,14 +343,11 @@ _RESULT_TOOLS = ("compute_metrics", "data_to_chart")
 _PREVIEW_ROWS = 40
 _PREVIEW_COLUMNS = 12
 #: Read-only analysis an owner can enable on a Studio agent, usable after its query.
-#: ``dataviz_query`` answers from the open Dataviz dashboard's own dataset; it
-#: is registered only for Studio turns and refuses when no dashboard is open.
+#: ``native_dataset_query`` answers from a native Dataviz dashboard's dataset.
 _ANALYSIS_TOOLS = (
-    "compute_metrics", "data_to_chart", "diagnose_change", "ml_execute", "dataviz_query",
+    "compute_metrics", "data_to_chart", "diagnose_change", "ml_execute",
     "native_dataset_query",
 )
-#: Reading the open Dataviz dashboard stays in reach whatever the planner chose.
-_DASHBOARD_TOOLS = ("dataviz_query", "dataviz_context")
 #: Tool-call syntax some providers leak into the text channel.
 _TOOL_MARKUP = re.compile(
     r"<\s*[\uff5c|]{1,2}\s*DSML\s*[\uff5c|]|<\s*(?:function_calls|tool_call)\s*>|<\s*invoke\s+name\s*=",
@@ -1185,7 +1182,7 @@ class AssistantLoop:
             selected_tools = tuple(dict.fromkeys((
                 *selected_tools,
                 *(
-                    name for name in (*_DASHBOARD_TOOLS, *context.dashboard_tools)
+                    name for name in context.dashboard_tools
                     if self._registry.get(name) is not None
                 ),
             )))
@@ -1830,12 +1827,11 @@ class AssistantLoop:
                 lineage_answer = bool(
                     getattr(context, "dataviz", None)
                     and completed_capabilities & {
-                        "dataviz_context", "dataviz_chart_source", "native_dashboard_read",
+                        "native_dashboard_read",
                     }
                     and not set(route.required_capabilities) & {
                         "semantic_query", "semantic_view_query", "query_execute",
-                        "diagnose_change", "compute_metrics", "dataviz_query",
-                        "native_dataset_query",
+                        "diagnose_change", "compute_metrics", "native_dataset_query",
                     }
                 )
                 if (
@@ -2812,14 +2808,6 @@ class AssistantLoop:
                         tool_call_id=invocation.tool_call_id,
                     )
                 )
-                context.pending_output = _pending_trace(pending_artifacts)
-            if invocation.tool_name == "dashboard_build" and isinstance(
-                outcome.metadata.get("dashboard_artifact"), dict
-            ):
-                pending_artifacts.append(PendingArtifact(
-                    kind="dashboard", payload=outcome.metadata["dashboard_artifact"],
-                    tool_call_id=invocation.tool_call_id,
-                ))
                 context.pending_output = _pending_trace(pending_artifacts)
             if outcome.citations:
                 for citation in outcome.citations:
@@ -4693,7 +4681,7 @@ def _tag_safe(payload: str) -> str:
 
 #: Governed sources: answers built on them are labelled trusted.
 _SEMANTIC_SOURCES = frozenset(
-    {"semantic_query", "semantic_view_query", "dataviz_query", "native_dataset_query"}
+    {"semantic_query", "semantic_view_query", "native_dataset_query"}
 )
 _GLOSSARY_SOURCES = frozenset({"ontology_resolve", "ontology_explain", "ontology_status"})
 

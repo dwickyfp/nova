@@ -1,23 +1,43 @@
 # Architecture 19: Studio Agent + Dataviz
 
-> Status: **accepted; implementation in progress on `feat/dataviz`.** This is
-> the technical decision record for the Agent / Dataviz split of Nova Studio.
-> It refines [Architecture 17](arch-17-superset.md) (Superset as Studio's BI
-> surface) and links every Dataviz context and action to the
-> [Supernova Business Ontology](arch-18-business-ontology.md). Requirement IDs
-> (`UX-`, `ART-`, `AI-`, `OPS-`) come from the product package
-> *NOVA STUDIO — Agent + Dataviz, v1.0 (2026-11-08)*; the delivery report at the
-> end of this file traces each one to code and tests.
+> Status: **partly historical.** Apache Superset was decommissioned on
+> 2026-11-16 ([Architecture 17](arch-17-superset.md), historical). The
+> Agent / Dataviz split, the active-role rule and the Dataviz assistant remain;
+> everything below that describes Superset, `/bi/`, Superset roles, the
+> Superset bridge or its deployment is the record of the earlier design, not
+> current behavior. Requirement IDs (`UX-`, `ART-`, `AI-`, `OPS-`) come from the
+> product package *NOVA STUDIO — Agent + Dataviz, v1.0 (2026-11-08)*.
+
+## Current state
 
 Studio has two top-level tabs. **Agent** is the existing native chat: one
 selected agent per turn, the shared bounded `AssistantLoop`, native charts,
-maps, tables and Intelligent UI. **Dataviz** is the full authenticated Superset
-application at same-origin `/bi/`, with a collapsible Nova assistant on the
-right. Superset stays the only BI engine; Nova owns identity, the active role,
-data authorization, provenance, ontology meaning, audit and the one publishing
-pipeline both tabs use.
+maps, tables and Intelligent UI. **Dataviz** opens native dashboards: governed
+datasets, charts and dashboards stored as native Nova documents and rendered
+by `frontend/src/features/native-dataviz/`, with the Dataviz assistant (Neva)
+on the right. Native Dataviz is the only dashboard engine. Every chart query
+runs as the viewer with exactly one active role through Nova's SQL path, so
+Ranger filters, masks and audit apply. Nova owns identity, the active role,
+data authorization, provenance, ontology meaning
+([Supernova Business Ontology](arch-18-business-ontology.md)) and audit.
 
-## Inventory before change (M0)
+**Add to Dataviz** on an Agent answer is native too.
+`backend/app/modules/viz/studio_publish.py` (routes in
+`studio_publish_router.py`) checks each chart with a signed, caller-bound
+preview reference, then publishes it as the caller: it inspects the answer's
+SQL as a governed dataset, attaches it to the chosen or a new personal
+dashboard, builds the chart and places it in the first free slot. Every step's
+operation ID derives from the caller, the idempotency key and the request, so a
+retry returns the first outcome. Maps, results that changed after the query,
+and SQL that names no database are refused in plain language.
+
+The document, dataset, query and publication contracts are owned by the
+[native visualization guide](../backend/app/modules/viz/AGENTS.md) and the
+[implementation boundary](architecture/native-dataviz/IMPLEMENTATION.md).
+
+## Historical design (Superset, 2026-11-08 to 2026-11-16)
+
+### Inventory before change (M0)
 
 Verified in code on 2026-11-08 at `7261701`:
 
@@ -36,7 +56,7 @@ Verified in code on 2026-11-08 at `7261701`:
 | Ontology on results | `semantic_query` builds `business_context` (release, concepts, bindings) but it lived only in the in-memory evidence tracker | Persisted on the tool step so publications and Dataviz answers can carry it |
 | Superset worker | `nova-superset-worker` stopped since 2026-11-07 13:19Z while `superset-beat` kept enqueuing: **1 323 queued `reports.scheduler` ticks** in shared Redis db 6, none with `expires` | OPS finding, see [Lean deployment](#lean-deployment) |
 
-## Decisions
+## Historical decisions (Superset design)
 
 ### D1. A preview reference is a signed pointer to Nova's own record
 
@@ -294,13 +314,7 @@ assistant's header (61px, the bar's height) then read as one top bar.
   transition pauses while the edge is dragged, is off under reduced motion,
   and the docked group re-measures when it ends.
 
-## Lean deployment
-
-See [operations/superset-feature-inventory.md](operations/superset-feature-inventory.md),
-[operations/superset-lean-deployment.md](operations/superset-lean-deployment.md)
-and [benchmarks/superset-lean/](benchmarks/superset-lean/).
-
-## Limitations
+## Limitations of the historical Superset design
 
 - **Manual edits elsewhere.** Superset's editor saves a whole layout with no
   base revision. A stale editor in another tab can still overwrite a change

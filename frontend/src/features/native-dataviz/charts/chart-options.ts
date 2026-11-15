@@ -1,6 +1,6 @@
 import type { EChartsCoreOption } from 'echarts/core'
 import type { ChartDefinition, DatasetQueryResult } from '../contracts'
-import { cellLabel, cellNumber, formatNumber, hasSplit } from './chart-query'
+import { cellLabel, cellNumber, columnLabel, formatNumber, hasSplit, humanize } from './chart-query'
 import type { VizTokens } from './echart-host'
 
 type Result = DatasetQueryResult
@@ -36,7 +36,8 @@ function common(tokens: VizTokens, style: Style | undefined, legend: boolean) {
 }
 
 /** Build one ECharts option from a governed query result. Values are never invented. */
-export function buildChartOption(chart: ChartDefinition, result: Result, tokens: VizTokens, selected: string | null = null): EChartsCoreOption {
+export function buildChartOption(chart: ChartDefinition, result: Result, tokens: VizTokens, selected: string | null = null,
+  width?: number): EChartsCoreOption {
   const columns = result.columns
   const rows = result.rows
   const style = chart.style
@@ -83,7 +84,7 @@ export function buildChartOption(chart: ChartDefinition, result: Result, tokens:
           const key = encoding.dimensions.map((_, i) => cellLabel(row[i], columns[i])).join(' · ')
           data[seen.get(key)!] = cellNumber(row[dimensionCount + index])
         }
-        series.push({ name: `${column.name}${column.aggregation ? ` (${column.aggregation.replace('_', ' ')})` : ''}`,
+        series.push({ name: columnLabel(column),
           data, type: kind === 'bar' ? 'bar' : 'line', axis: declared?.axis === 'right' ? 1 : 0, area: kind === 'area' })
       })
     }
@@ -95,9 +96,16 @@ export function buildChartOption(chart: ChartDefinition, result: Result, tokens:
     }
     const colors = palette(tokens, style, series.length)
     const horizontal = encoding.orientation === 'horizontal'
+    const rotated = !horizontal && categories.length > 8
+    // A category axis title would collide with rotated labels; the chart title names it instead.
     const categoryAxis = { ...axisBase(tokens), type: 'category', data: categories,
-      name: axisTitles ? categoryColumn?.name : undefined, nameLocation: 'middle', nameGap: 28,
-      splitLine: { show: false }, axisLabel: { ...axisBase(tokens).axisLabel, rotate: !horizontal && categories.length > 8 ? 30 : 0 } }
+      name: axisTitles && !rotated && categoryColumn ? humanize(categoryColumn.name) : undefined,
+      nameLocation: 'middle', nameGap: 28,
+      splitLine: { show: false }, axisLabel: { ...axisBase(tokens).axisLabel, rotate: rotated ? 30 : 0,
+        // A few categories keep every label, shortened to its band, rather than dropping some.
+        ...(!horizontal && !rotated && width && categories.length
+          ? { interval: 0, hideOverlap: false, overflow: 'truncate', width: Math.max(32, Math.floor((width - 56) / categories.length) - 4) }
+          : {}) } }
     const valueAxis = (index: number) => ({ ...axisBase(tokens), type: 'value', scale: false,
       name: axisTitles ? (index === 0 ? chart.left_axis?.title : chart.right_axis?.title) ?? undefined : undefined,
       axisLabel: { ...axisBase(tokens).axisLabel, formatter: (value: number) => encoding.stack === 'percent' ? `${value}%` : formatNumber(value, 'compact') } })
@@ -108,7 +116,7 @@ export function buildChartOption(chart: ChartDefinition, result: Result, tokens:
       color: colors,
       tooltip: { trigger: 'axis', confine: true, axisPointer: { type: horizontal ? 'shadow' : 'line' },
         valueFormatter: (value: unknown) => typeof value === 'number' ? formatNumber(value) : '–' },
-      grid: { left: 8, right: 16, top: 24, bottom: series.length > 1 ? 36 : 8, containLabel: true },
+      grid: { left: 8, right: 16, top: 24, bottom: (series.length > 1 ? 36 : 8) + (categoryAxis.name && !horizontal ? 20 : 0), containLabel: true },
       xAxis: horizontal ? valueAxes : categoryAxis,
       yAxis: horizontal ? categoryAxis : valueAxes,
       dataZoom: categories.length > 60 ? [{ type: 'inside' }] : undefined,
@@ -168,8 +176,8 @@ export function buildChartOption(chart: ChartDefinition, result: Result, tokens:
       ...common(tokens, style, groups.size > 1),
       color: palette(tokens, style, groups.size),
       grid: { left: 8, right: 16, top: 16, bottom: groups.size > 1 ? 36 : 8, containLabel: true },
-      xAxis: { ...axisBase(tokens), type: 'value', scale: true, name: axisTitles ? columns[encoding.kind === 'map' ? 1 : 0]?.name : undefined, nameLocation: 'middle', nameGap: 28 },
-      yAxis: { ...axisBase(tokens), type: 'value', scale: true, name: axisTitles ? columns[encoding.kind === 'map' ? 0 : 1]?.name : undefined },
+      xAxis: { ...axisBase(tokens), type: 'value', scale: true, name: axisTitles ? humanize(columns[encoding.kind === 'map' ? 1 : 0]?.name ?? '') : undefined, nameLocation: 'middle', nameGap: 28 },
+      yAxis: { ...axisBase(tokens), type: 'value', scale: true, name: axisTitles ? humanize(columns[encoding.kind === 'map' ? 0 : 1]?.name ?? '') : undefined },
       series: [...groups.entries()].map(([name, data]) => ({
         type: 'scatter', name, data,
         symbolSize: sized ? (point: number[]) => 6 + 24 * Math.sqrt((point[2] ?? 0) / maxSize) : 8,
