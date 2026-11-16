@@ -935,7 +935,7 @@ async def apply_changes(
         changes = build(dashboard)
         if first is None:
             first = dashboard
-        elif _touched(first, changes) != _touched(dashboard, changes):
+        elif _touched(first, changes, dashboard) != _touched(dashboard, changes, dashboard):
             # Someone changed what this change touches: never overwrite their edit.
             raise Refusal("Someone else changed that part of the dashboard at the same time. "
                           "Look at it again, then ask me to make the change.")
@@ -960,9 +960,19 @@ async def apply_changes(
     raise Refusal("The dashboard keeps changing while this is saved. Try again shortly.")
 
 
-def _touched(dashboard: DashboardDefinition, changes: list[Any]) -> dict[str, Any]:
-    """The current state of every widget a change names, to detect a concurrent edit."""
+def _touched(
+    dashboard: DashboardDefinition, changes: list[Any], current: DashboardDefinition,
+) -> dict[str, Any]:
+    """The state of what a change alters, to detect a concurrent edit of the same thing.
+
+    A change naming a widget compares that whole widget. A placement compares
+    only the layout of a widget it really moves in ``current``, so arranging the
+    page does not collide with someone editing another widget's title or text.
+    """
     named: set[str] = set()
+    placed: set[str] = set()
+    layouts = {str(widget.widget_id): widget.layout.model_dump(mode="json")
+               for page in current.pages for widget in page.widgets}
     for change in changes:
         data = change.model_dump(mode="json") if hasattr(change, "model_dump") else dict(change)
         if data.get("widget_id"):
@@ -970,12 +980,18 @@ def _touched(dashboard: DashboardDefinition, changes: list[Any]) -> dict[str, An
         if isinstance(data.get("widget"), dict) and data["widget"].get("widget_id"):
             named.add(str(data["widget"]["widget_id"]))
         for placement in data.get("placements") or ():
-            named.add(str(placement.get("widget_id")))
-    return {
-        str(widget.widget_id): widget.model_dump(mode="json")
-        for page in dashboard.pages for widget in page.widgets
-        if str(widget.widget_id) in named
-    }
+            identity = str(placement.get("widget_id"))
+            if layouts.get(identity) != placement.get("layout"):
+                placed.add(identity)
+    state: dict[str, Any] = {}
+    for page in dashboard.pages:
+        for widget in page.widgets:
+            identity = str(widget.widget_id)
+            if identity in named:
+                state[identity] = widget.model_dump(mode="json")
+            elif identity in placed:
+                state[identity] = widget.layout.model_dump(mode="json")
+    return state
 
 
 def _check_operation(dashboard: DashboardDefinition, operation: Operation) -> None:

@@ -73,6 +73,17 @@ previous**, **Rank**, **Dense rank** or **Moving average** (choose how many
 - A missing value stays empty. Tables and pivots show no total for a
   calculated value, since adding up running totals or ranks means nothing.
 
+A few rules apply to every chart:
+
+- On a line, area or bar chart over dates, every period between the first and
+  the last one is on the axis. A month with no data is a gap in the line,
+  rather than disappearing, unless the chart is set to show missing values as
+  zero. A chart sorted by its value keeps that order instead.
+- When a chart is split by a field, each value keeps its own colour. Filtering
+  out **North** does not repaint **West**.
+- A KPI with nothing to show for the current filters says **No data for the
+  current filters** under its dash.
+
 Downloads, printed reports and scheduled files show the same calculated values.
 
 ### Pivot tables
@@ -125,8 +136,10 @@ Click **Text** to add a heading or paragraph. Text is shown exactly as typed.
   resize it. Each completed move is saved as a new revision.
 - Use **Undo** and **Redo** in the toolbar, or Ctrl+Z / Ctrl+Shift+Z
   (⌘Z / ⌘⇧Z on a Mac). Undo saves the previous layout as a new revision.
-- Select a widget and press Alt with an arrow key to nudge it, or Alt+Shift
-  with an arrow key to resize it.
+- Select a widget, by clicking it or moving to it with Tab, and press Alt with
+  an arrow key to nudge it, or Alt+Shift with an arrow key to resize it.
+- Empty rows you leave between widgets stay where you put them; widgets never
+  slide up on their own.
 - Open a widget's **…** menu for **Edit chart**, **Duplicate** or **Remove**.
 - Click **+** next to the page name to add a page.
 - Click **Done** to return to the view.
@@ -146,6 +159,12 @@ larger screens.
 
 Filters apply to every chart built on the same dataset. The values in a list
 come from your role's own data. **Reset** clears all filters and selections.
+
+Charts reuse a result for up to 30 seconds when you return to the same view,
+so moving between pages is quick. Click **Refresh data** (the circular arrows
+in the header) to run every chart again now, for example after a data load or
+after an administrator changed what your role may read. Switching your role
+always runs every chart again.
 
 Click a bar, point or slice to see what you can do with that value:
 
@@ -226,9 +245,11 @@ shown exactly as written and never change the dashboard or its data.
   categories and values never depend on colour alone.
 - When your system is set to reduce motion, charts appear without animation
   and other people's pointers jump instead of gliding.
-- In **Edit**, select a widget and press **Alt** with an arrow key to move it,
-  or **Alt** and **Shift** with an arrow key to resize it. A screen reader
-  announces the new position, or that another widget is in the way.
+- In **Edit**, press Tab to move from widget to widget; the focused widget is
+  selected. Press **Alt** with an arrow key to move it, or **Alt** and
+  **Shift** with an arrow key to resize it. A screen reader announces the new
+  position, or that another widget is in the way.
+- Closing the **Filters** window returns you to the button that opened it.
 
 ## See who else is here
 

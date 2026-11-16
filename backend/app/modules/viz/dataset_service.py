@@ -526,6 +526,11 @@ class NativeDatasetService:
         if request.source.columns is not None:
             available = {column.name.casefold(): column for column in columns}
             if any(name.casefold() not in available for name in request.source.columns):
+                if saved is not None:
+                    # A saved dataset's column was renamed or dropped since it
+                    # was saved: the source changed, not the request.
+                    raise NovaException("SCHEMA_STALE: inspect the source again",
+                                        status_code=409)
                 raise SemanticError("Selected column is unavailable")
             columns = tuple(available[name.casefold()] for name in request.source.columns)
         if not 1 <= len(columns) <= 512:

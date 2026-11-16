@@ -551,3 +551,59 @@ a passed dependency.
   The one failure is the notebook Markdown-cell test timing out at 15 s under
   full-suite load; it passes alone (36/36, three times) and no notebook source
   changed. Engine-backed suites run in CI on the pull request.
+
+## Release QA round 3 (2026-11-16)
+
+Of the 158 open scenarios, 69 now pass and 89 stay `NOT_RUN`. The matrix
+counts are 148 PASS, 89 NOT_RUN and 17 OUT_OF_SCOPE.
+
+- **New evidence:**
+  - PG17 refusals and races: `backend/tests/integration/test_metadata_viz_qa.py`.
+  - A live governed run as alice, bob and the marketing and finance roles:
+    `qa-live-attempt-6.json`. Attempts 1 to 5 are kept as failures; they were
+    script bugs and missing dataset grants.
+  - Unit and trajectory tests: `backend/tests/unit/test_native_viz_qa_*.py` and
+    `backend/tests/eval/test_native_dataviz_qa_trajectories.py`.
+  - Browser tests: `frontend/src/features/native-dataviz/*/qa-*.test.ts(x)`.
+  - A gzipped bundle budget, `pnpm check:bundle`, which runs in CI after the
+    build.
+- **Defects found and fixed, each with a test that fails without the fix:**
+  - A saved gap between widgets closed up on reload. GridStack now keeps the
+    saved x and y.
+  - An existing widget could not be selected from the keyboard. Widgets now
+    take focus in Edit.
+  - Focus was lost after closing the Filters window. It now returns to the
+    button that opened it.
+  - A missing month disappeared from a time axis. It is now a gap, or zero
+    when the chart asks for it.
+  - Series colours moved when a filter removed a series. Colours now follow
+    the series name.
+  - A KPI with no data showed only a dash. It now also says **No data for the
+    current filters**.
+  - A renamed saved column returned 422. It now returns `SCHEMA_STALE` 409.
+  - Derived semantic ratios had no zero guard. Every divisor is now wrapped in
+    `NULLIF`.
+  - Neva's arrange was refused when anyone changed any other widget. Now only a
+    concurrent change to a widget that Neva moves conflicts.
+  - Also added: a **Refresh data** button that runs every chart again.
+- **Still open:**
+  - STORE-003, a defect: scheduled-export retries are not idempotent.
+  - Missing features: CHART-016 (server pagination), AGENT-007 and AGENT-009
+    (approval previews that name widgets) and FILTER-008 (a null option for
+    true/false filters).
+  - Partly done: INTER-003 (no explanation is shown), AGENT-021 (a
+    direct-answer turn can still claim a change), METRIC-015 (engine week check)
+    and PERF-003 and CACHE-011 (load runs).
+  - OSS-008: pip-audit reports 93 advisories in 11 Python packages
+    (`backend-vulnerability-audit-1.json`). Upgrading them is a separate change.
+- **Gates:**
+  - Backend gate attempt 24: mypy, changed-file Ruff, 12,054 unit tests,
+    scorecard and boundary passed. `tests/eval`: 359 passed.
+  - PG17 suite: 1,059 passed and 8 skipped. The fixture's server crashed
+    (exit code 2) while the frontend suite ran alongside it, which caused 25
+    connection errors in `test_metadata_workspaces.py`. The leftover fixture
+    state was removed and the file was rerun alone: 42 passed.
+  - Frontend: lint (0 errors), typecheck, build and the bundle budget passed.
+    The full suite passed 1,882 of 1,883. The failure was a long drill-down
+    test that timed out under load; it now has a 30 s limit and passes.
+  - Record: `release-qa-attempt-3.json`.

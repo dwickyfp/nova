@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, BarChart3, CalendarClock, Check, Download, FileSpreadsheet, Filter, Hash, History, Loader2, Pencil, Plus,
-  MessageSquare, Printer, Redo2, Share2, Sparkles, Table2, Type, Undo2, Upload,
+  MessageSquare, Printer, Redo2, RefreshCw, Share2, Sparkles, Table2, Type, Undo2, Upload,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
@@ -136,6 +136,13 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
   const [crossFilters, setCrossFilters] = useState<CrossFilter[]>(() =>
     (initialSelections ?? []).map(item => ({ ...item, source_widget_id: LINKED_SOURCE })))
   const [filtersOpen, setFiltersOpen] = useState(false)
+  // Closing the filters dialog returns focus to whatever opened it.
+  const filtersOpener = useRef<HTMLElement | null>(null)
+  const openFilters = () => { filtersOpener.current = document.activeElement as HTMLElement | null; setFiltersOpen(true) }
+  const closeFilters = (open: boolean) => {
+    setFiltersOpen(open)
+    if (!open) setTimeout(() => filtersOpener.current?.focus())
+  }
   const [publishOpen, setPublishOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [scheduleOpen, setScheduleOpen] = useState(false)
@@ -620,6 +627,9 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
             <DropdownMenuItem onSelect={() => setScheduleOpen(true)}><CalendarClock />Schedule Excel export…</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>}
+        <Tooltip><TooltipTrigger asChild><Button variant='ghost' size='icon' className='size-9' aria-label='Refresh data'
+          onClick={() => void client.invalidateQueries({ queryKey: ['native-dataviz', 'chart-data'] })}><RefreshCw /></Button>
+        </TooltipTrigger><TooltipContent>Refresh data</TooltipContent></Tooltip>
         <Tooltip><TooltipTrigger asChild><Button variant='ghost' size='icon' className='relative size-9'
           aria-label={openComments ? `Comments, ${openComments} open` : 'Comments'} onClick={() => setCommentsOpen(true)}>
           <MessageSquare />
@@ -663,7 +673,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
         <Button variant='ghost' size='sm' onClick={() => setInspector({ mode: 'new', visual: 'kpi' })}><Hash />KPI</Button>
         <Button variant='ghost' size='sm' onClick={() => setInspector({ mode: 'new', visual: 'table' })}><Table2 />Table</Button>
         <Button variant='ghost' size='sm' onClick={() => setTextOpen(true)}><Type />Text</Button>
-        <Button variant='ghost' size='sm' onClick={() => setFiltersOpen(true)}><Filter />Filters</Button>
+        <Button variant='ghost' size='sm' onClick={openFilters}><Filter />Filters</Button>
         <span className='mx-1 h-5 w-px bg-border' aria-hidden />
         <Tooltip><TooltipTrigger asChild><Button variant='ghost' size='icon' className='size-8' aria-label='Undo' disabled={!undo.length || status === 'saving'} onClick={undoLast}><Undo2 /></Button></TooltipTrigger><TooltipContent>Undo</TooltipContent></Tooltip>
         <Tooltip><TooltipTrigger asChild><Button variant='ghost' size='icon' className='size-8' aria-label='Redo' disabled={!redo.length || status === 'saving'} onClick={redoLast}><Redo2 /></Button></TooltipTrigger><TooltipContent>Redo</TooltipContent></Tooltip>
@@ -681,7 +691,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
               return next
             })}
             crossFilters={crossFilters} onClearCross={index => setCrossFilters(index === null ? [] : crossFilters.filter((_, i) => i !== index))}
-            editing={editing} onEdit={() => setFiltersOpen(true)} readOnly={!canInteract && !editing} />
+            editing={editing} onEdit={openFilters} readOnly={!canInteract && !editing} />
           <DashboardCanvas definition={definition} page={page} draft={editing} editing={editing}
             collaborators={presence.others} onPointer={presence.point}
             selectedId={selected} onSelect={setSelected} onLayout={onLayout}
@@ -707,8 +717,8 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
         </div>}
       </div>}
 
-    {filtersOpen && <FilterBuilder open onOpenChange={setFiltersOpen} definition={definition} datasets={sources} saving={status === 'saving'}
-      onApply={(filters: FilterDefinition[]) => void apply([{ op: 'filters.replace', filters }]).then(ok => { if (ok) setFiltersOpen(false) })} />}
+    {filtersOpen && <FilterBuilder open onOpenChange={closeFilters} definition={definition} datasets={sources} saving={status === 'saving'}
+      onApply={(filters: FilterDefinition[]) => void apply([{ op: 'filters.replace', filters }]).then(ok => { if (ok) closeFilters(false) })} />}
     <PublishDialog open={publishOpen} onOpenChange={setPublishOpen} onPublish={async notes => {
       try {
         await documents.publish('dashboards', dashboardId, { operation_id: crypto.randomUUID(), expected_revision: revision, release_notes: notes })

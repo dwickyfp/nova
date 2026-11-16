@@ -141,7 +141,11 @@ function WidgetFrame({ widget, title, props, chart, download, canImage = false, 
     props.editing && 'cursor-grab active:cursor-grabbing',
     selected && 'outline-2 outline-offset-2 outline-ring',
     highlighted && 'ring-2 ring-primary/60 transition-shadow')}
-  onClick={event => { if (props.editing) { event.stopPropagation(); props.onSelect(widget.widget_id) } }}>
+  onClick={event => { if (props.editing) { event.stopPropagation(); props.onSelect(widget.widget_id) } }}
+  // In Edit, Tab reaches every widget and focusing one selects it, so Alt+arrows can move it.
+  tabIndex={props.editing ? 0 : undefined}
+  aria-label={props.editing ? `${title || (widget.kind === 'text' ? 'Text' : 'Widget')}, press Alt and an arrow key to move it` : undefined}
+  onFocus={event => { if (props.editing && event.target === event.currentTarget) props.onSelect(widget.widget_id) }}>
     {(title || props.editing) && <div className='flex h-7 shrink-0 items-center justify-between gap-2'>
       <div className='flex min-w-0 items-center gap-1'>
         {drill && <Button variant='ghost' size='icon' className='-ml-1 size-7 shrink-0' aria-label='Back up one level'
@@ -236,7 +240,8 @@ export function DashboardCanvas(props: CanvasProps) {
     const node = host.current
     if (!node) return
     const instance = GridStack.init({
-      column: 12, cellHeight: 72, margin: 6, animate: true,
+      // The saved x/y is authoritative: never pull widgets up into empty rows.
+      column: 12, cellHeight: 72, margin: 6, animate: true, mode: 'float',
       staticGrid: true, disableResize: false, resizable: { handles: 'se,e,s' },
     }, node)
     if (!instance) return

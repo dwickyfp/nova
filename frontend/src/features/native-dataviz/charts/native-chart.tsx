@@ -62,8 +62,9 @@ function Kpi({ chart, result }: { chart: ChartDefinition; result: DatasetQueryRe
   const delta = value !== null && base ? (value - base) / Math.abs(base) : null
   return <div className='flex min-h-0 flex-1 flex-col justify-center gap-1 px-1'>
     <p className='viz-numerals truncate text-3xl font-medium tabular-nums' data-testid='kpi-value'>
-      {value === null ? '–' : formatter.format(value)}
+      {value === null ? <span aria-hidden>–</span> : formatter.format(value)}
     </p>
+    {value === null && <p className='text-sm text-muted-foreground' role='status'>No data for the current filters</p>}
     {delta !== null && Number.isFinite(delta) && <p className={cn('flex items-center gap-1 text-sm',
       delta >= 0 ? 'text-success-strong' : 'text-destructive')}>
       {delta >= 0 ? <ArrowUp className='size-4' aria-hidden /> : <ArrowDown className='size-4' aria-hidden />}

@@ -173,6 +173,51 @@ describe('native dashboard editor', () => {
     expect(operations).toHaveLength(0)
   })
 
+  it('keeps a saved gap: a widget saved lower down reloads exactly where it was saved', async () => {
+    const page0 = (definition.pages as { widgets: { widget_id: string; layout: Record<string, number> }[] }[])[0]
+    page0.widgets[1].layout = { x: 3, y: 3, w: 9, h: 2 }
+    const screen = await mount()
+    await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
+    const item = () => document.querySelector(`[gs-id="${TEXT_WIDGET}"]`)
+    await expect.poll(() => [item()?.getAttribute('gs-x'), item()?.getAttribute('gs-y')]).toEqual(['3', '3'])
+    expect(operations).toHaveLength(0)
+  })
+
+  it('returns focus to the button that opened the filters dialog', async () => {
+    const screen = await mount()
+    await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
+    await screen.getByRole('button', { name: 'Edit' }).click()
+    const opener = screen.getByRole('button', { name: 'Filters', exact: true })
+    await opener.click()
+    await expect.element(page.getByRole('dialog', { name: 'Dashboard filters' })).toBeVisible()
+    await userEvent.keyboard('{Escape}')
+    await expect.element(page.getByRole('dialog', { name: 'Dashboard filters' })).not.toBeInTheDocument()
+    await expect.element(opener).toHaveFocus()
+  })
+
+  it('reaches an existing widget with Tab and moves it with Alt and an arrow', async () => {
+    const screen = await mount()
+    await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
+    await screen.getByRole('button', { name: 'Edit' }).click()
+    const frame = document.querySelector<HTMLElement>(`[gs-id="${TEXT_WIDGET}"] .grid-stack-item-content`)!
+    expect(frame.tabIndex).toBe(0)
+    frame.focus()
+    await userEvent.keyboard('{Alt>}{ArrowDown}{/Alt}')
+    await expect.poll(() => operations.length).toBe(1)
+    expect(operations[0]).toMatchObject({ changes: [{ op: 'layout.apply', placements: expect.arrayContaining([
+      { widget_id: TEXT_WIDGET, layout: { x: 3, y: 1, w: 9, h: 2 } }]) }] })
+  })
+
+  it('runs every chart again when asked to refresh the data', async () => {
+    const screen = await mount()
+    await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
+    const queries = () => fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/query')).length
+    const before = queries()
+    await screen.getByRole('button', { name: 'Refresh data' }).click()
+    await expect.poll(queries).toBe(before + 1)
+    expect(operations).toHaveLength(0)
+  })
+
   it('reloads when Neva reports a committed change to this dashboard', async () => {
     const screen = await mount()
     await expect.element(screen.getByTestId('kpi-value')).toBeVisible()

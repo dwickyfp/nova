@@ -1,6 +1,6 @@
 import type { EChartsCoreOption } from 'echarts/core'
 import type { ChartDefinition, DatasetQueryResult } from '../contracts'
-import { cellLabel, cellNumber, columnLabel, formatNumber, hasSplit, humanize } from './chart-query'
+import { cellLabel, cellNumber, columnLabel, formatNumber, hasSplit, humanize, periodEnd } from './chart-query'
 import type { VizTokens } from './echart-host'
 
 type Result = DatasetQueryResult
@@ -11,6 +11,55 @@ function palette(tokens: VizTokens, style: Style | undefined, count: number): st
   if (kind === 'single_tone') return tokens.tones
   if (kind === 'neutral' && count <= 1) return [tokens.mark]
   return tokens.series
+}
+
+/** The most periods a time axis is filled to; a wider range keeps only returned periods. */
+const MAX_FILLED_PERIODS = 1000
+
+type Row = Result['rows'][number]
+
+/**
+ * Every period from the first to the last returned one, so a missing month is a
+ * gap on the axis rather than vanishing. Only for one ascending date dimension.
+ */
+function filledPeriods(rows: readonly Row[], column: Result['columns'][number] | undefined): Row[number][] | null {
+  const grain = column?.date_grain
+  const first = rows[0]?.[0]
+  if (!grain || !first || (first.type !== 'date' && first.type !== 'timestamp')) return null
+  const starts: string[] = []
+  for (const row of rows) {
+    const cell = row[0]
+    if (!cell || (cell.type !== 'date' && cell.type !== 'timestamp')) return null
+    const start = cell.value.slice(0, 10)
+    if (starts.length && start < starts[starts.length - 1]) return null
+    if (starts[starts.length - 1] !== start) starts.push(start)
+  }
+  const cells: Row[number][] = []
+  for (let start = starts[0]; start <= starts[starts.length - 1]; start = periodEnd(start, grain)) {
+    if (cells.length >= MAX_FILLED_PERIODS) return null
+    cells.push({ ...first, value: first.type === 'timestamp' ? `${start}${first.value.slice(10)}` : start } as Row[number])
+  }
+  return cells
+}
+
+/** Small stable hash, so a series keeps its colour whatever else is filtered out. */
+function hash(text: string): number {
+  let value = 2166136261
+  for (let i = 0; i < text.length; i++) value = Math.imul(value ^ text.charCodeAt(i), 16777619)
+  return value >>> 0
+}
+
+/** A colour per series name; collisions take the next free colour in name order. */
+function stableColors(names: readonly string[], colors: readonly string[]): string[] {
+  const taken = new Map<number, string>()
+  const chosen = new Map<string, string>()
+  for (const name of [...names].sort()) {
+    let slot = hash(name) % colors.length
+    for (let tries = 0; taken.has(slot) && tries < colors.length; tries++) slot = (slot + 1) % colors.length
+    taken.set(slot, name)
+    chosen.set(name, colors[slot])
+  }
+  return names.map(name => chosen.get(name)!)
 }
 
 function axisBase(tokens: VizTokens) {
@@ -55,6 +104,11 @@ export function buildChartOption(chart: ChartDefinition, result: Result, tokens:
     const categoryColumn = columns[0]
     const categories: string[] = []
     const seen = new Map<string, number>()
+    const periods = encoding.dimensions.length === 1 ? filledPeriods(rows, categoryColumn) : null
+    for (const cell of periods ?? []) {
+      const key = cellLabel(cell, categoryColumn)
+      if (!seen.has(key)) { seen.set(key, categories.length); categories.push(key) }
+    }
     for (const row of rows) {
       const key = encoding.dimensions.map((_, i) => cellLabel(row[i], columns[i])).join(' · ')
       if (!seen.has(key)) { seen.set(key, categories.length); categories.push(key) }
@@ -97,7 +151,10 @@ export function buildChartOption(chart: ChartDefinition, result: Result, tokens:
         series.forEach(item => { if (item.data[i] !== null && total) item.data[i] = (item.data[i]! / total) * 100 })
       })
     }
-    const colors = palette(tokens, style, series.length)
+    if (encoding.nulls === 'zero') series.forEach(item => { item.data = item.data.map(value => value ?? 0) })
+    const base = palette(tokens, style, series.length)
+    // A split series is coloured by its name, so filtering others never repaints it.
+    const colors = colorIndex >= 0 && base.length > 1 ? stableColors(series.map(item => item.name), base) : base
     const horizontal = encoding.orientation === 'horizontal'
     const rotated = !horizontal && categories.length > 8
     // A category axis title would collide with rotated labels, or with the labels

@@ -1,0 +1,299 @@
+{
+  "started_at": "2026-11-16T09:04:32.759235+00:00",
+  "result": "FAIL",
+  "cleanup": "REMOVED",
+  "scenarios": {
+    "NDV-METRIC-001": "PASS",
+    "NDV-METRIC-004": "PASS",
+    "NDV-METRIC-005": "PASS"
+  },
+  "error_type": "AssertionError",
+  "error": "bob reads phone options",
+  "steps": [
+    {
+      "check": "alice login",
+      "passed": true
+    },
+    {
+      "check": "bob login",
+      "passed": true
+    },
+    {
+      "check": "alice login",
+      "passed": true
+    },
+    {
+      "request": "author uses regional_manager",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "author uses regional_manager",
+      "passed": true
+    },
+    {
+      "check": "author active role regional_manager",
+      "passed": true
+    },
+    {
+      "request": "bob uses marketing",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "bob uses marketing",
+      "passed": true
+    },
+    {
+      "check": "bob active role marketing",
+      "passed": true
+    },
+    {
+      "request": "workspace",
+      "status": 201,
+      "expected": 201
+    },
+    {
+      "check": "workspace",
+      "passed": true
+    },
+    {
+      "request": "share",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "share",
+      "passed": true
+    },
+    {
+      "request": "inspect Sales QA",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "inspect Sales QA",
+      "passed": true
+    },
+    {
+      "request": "create Sales QA",
+      "status": 201,
+      "expected": 201
+    },
+    {
+      "check": "create Sales QA",
+      "passed": true
+    },
+    {
+      "request": "publish Sales QA",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "publish Sales QA",
+      "passed": true
+    },
+    {
+      "request": "grants Sales QA",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "grants Sales QA",
+      "passed": true
+    },
+    {
+      "request": "share Sales QA",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "share Sales QA",
+      "passed": true
+    },
+    {
+      "request": "native grouped",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "native grouped",
+      "passed": true
+    },
+    {
+      "request": "oracle grouped",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "oracle grouped",
+      "passed": true
+    },
+    {
+      "check": "oracle ran",
+      "passed": true,
+      "error": null
+    },
+    {
+      "check": "grouped aggregates equal the SQL oracle",
+      "passed": true,
+      "native": [
+        [
+          "Bandung",
+          "600.00",
+          "2",
+          "300.000000",
+          "200.00",
+          "400.00",
+          "600.00",
+          "2",
+          "300.000000",
+          "1"
+        ],
+        [
+          "Jakarta",
+          "400.00",
+          "2",
+          "200.000000",
+          "100.00",
+          "300.00",
+          null,
+          "0",
+          null,
+          "1"
+        ]
+      ],
+      "oracle": [
+        [
+          "Bandung",
+          "600.00",
+          "2",
+          "300.00000000",
+          "200.00",
+          "400.00",
+          "600.00",
+          "2",
+          "300.00000000",
+          "1"
+        ],
+        [
+          "Jakarta",
+          "400.00",
+          "2",
+          "200.00000000",
+          "100.00",
+          "300.00",
+          null,
+          "0",
+          null,
+          "1"
+        ]
+      ]
+    },
+    {
+      "check": "an all-NULL group sums to NULL and counts 0",
+      "passed": true
+    },
+    {
+      "request": "native total",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "native total",
+      "passed": true
+    },
+    {
+      "request": "oracle total",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "oracle total",
+      "passed": true
+    },
+    {
+      "check": "totals equal the SQL oracle",
+      "passed": true
+    },
+    {
+      "request": "inspect Customers QA",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "inspect Customers QA",
+      "passed": true
+    },
+    {
+      "request": "create Customers QA",
+      "status": 201,
+      "expected": 201
+    },
+    {
+      "check": "create Customers QA",
+      "passed": true
+    },
+    {
+      "request": "publish Customers QA",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "publish Customers QA",
+      "passed": true
+    },
+    {
+      "request": "grants Customers QA",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "grants Customers QA",
+      "passed": true
+    },
+    {
+      "request": "share Customers QA",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "share Customers QA",
+      "passed": true
+    },
+    {
+      "request": "bob permissions",
+      "status": 404,
+      "permissions": null
+    },
+    {
+      "request": "bob reads phone options",
+      "status": 404,
+      "expected": 200,
+      "detail": "Document not found"
+    },
+    {
+      "check": "bob reads phone options",
+      "passed": false
+    },
+    {
+      "request": "delete dataset",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "delete dataset",
+      "passed": true
+    },
+    {
+      "request": "delete workspace",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "delete workspace",
+      "passed": true
+    }
+  ],
+  "finished_at": "2026-11-16T09:04:39.737139+00:00"
+}

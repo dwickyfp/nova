@@ -417,6 +417,40 @@ async def test_a_concurrent_edit_of_the_same_widget_is_reported_not_overwritten(
 
 
 @pytest.mark.asyncio
+async def test_a_person_editing_another_widget_and_neva_moving_one_both_survive(docs):
+    """NDV-AGENT-003: the person moves widget A while Neva moves widget B."""
+    from app.modules.viz.contracts.commands import LayoutChange, Operation
+    from app.modules.viz.operations import apply_operation
+
+    other = UUID("66666666-6666-4666-8666-666666666666")
+    start = docs.docs[DASHBOARD][0]
+    page = start.pages[0]
+    from app.modules.viz.contracts.dashboards import Layout, TextWidget
+
+    note = TextWidget(widget_id=other, title="Notes", text="Q3 plan",
+                      layout=Layout(x=6, y=0, w=6, h=2))
+    docs.docs[DASHBOARD][0] = start.model_copy(update={"pages": (
+        page.model_copy(update={"widgets": (*page.widgets, note)}),)})
+
+    def edited_by_a_person(document):
+        return apply_operation(document, Operation(
+            operation_id=uuid4(), expected_revision=1, changes=(LayoutChange(
+                page_id=document.pages[0].page_id,
+                placements=({"widget_id": WIDGET, "layout": {"x": 0, "y": 0, "w": 6, "h": 4}},
+                            {"widget_id": other,
+                             "layout": {"x": 6, "y": 4, "w": 6, "h": 2}})),)))
+
+    docs.someone_else = edited_by_a_person
+    docs.conflicts = 1
+    outcome = await _run("native_dashboard_arrange",
+                         {"move": [{"widget_id": str(WIDGET), "x": 0, "y": 8}]})
+    assert outcome.ok, outcome.error
+    final = {w.widget_id: w.layout for w in docs.docs[DASHBOARD][-1].pages[0].widgets}
+    assert (final[WIDGET].x, final[WIDGET].y) == (0, 8)
+    assert (final[other].x, final[other].y) == (6, 4)
+
+
+@pytest.mark.asyncio
 async def test_an_unknown_outcome_is_resolved_by_its_receipt_not_replayed(docs):
     spec = {"charts": [{"title": "K", "visual": "kpi", "measures": [{"field": "revenue"}]}]}
     docs.crash = ConnectionResetError("connection lost")
