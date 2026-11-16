@@ -831,7 +831,8 @@ async def test_legacy_semantic_models_are_read_only_but_count_usage(iq):
 
 
 FEATURE_READERS = {"web"}
-ENTITY_READERS = {"web", "agent", "maintenance", "query"}
+# The task login reads entities for Semantic View datasets in scheduled exports (0054).
+ENTITY_READERS = {"web", "agent", "maintenance", "query", "task"}
 
 
 @pytest.mark.parametrize("workload", [role.removeprefix("nova_meta_") for role in WORKLOAD_ROLES])

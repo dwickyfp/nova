@@ -88,16 +88,22 @@ export function chartContext(input: {
     const expression = binding && expressionFor(binding, value)
     if (expression) parts.push(expression)
   }
+  // Values selected together in one chart are alternatives (OR); different
+  // charts and fields narrow each other (AND).
+  const groups = new Map<string, Expression[]>()
   for (const cross of input.crossFilters) {
     if (cross.source_widget_id === input.widgetId || !sameDataset(cross.field, input.chart)) continue
-    if (cross.period) {
-      parts.push({ type: 'and', children: [
+    const expression: Expression = cross.period
+      ? { type: 'and', children: [
         predicate(cross.field, 'gte', [{ type: 'date', value: cross.period.from }]),
         predicate(cross.field, 'lt', [{ type: 'date', value: cross.period.to }]),
-      ] })
-      continue
-    }
-    parts.push(cross.value === null ? predicate(cross.field, 'is_null') : predicate(cross.field, 'eq', [cross.value]))
+      ] }
+      : cross.value === null ? predicate(cross.field, 'is_null') : predicate(cross.field, 'eq', [cross.value])
+    const key = `${cross.source_widget_id}|${cross.field.field_id}`
+    groups.set(key, [...(groups.get(key) ?? []), expression])
+  }
+  for (const alternatives of groups.values()) {
+    parts.push(alternatives.length === 1 ? alternatives[0] : { type: 'or', children: alternatives })
   }
   if (!parts.length) return undefined
   return { expression: parts.length === 1 ? parts[0] : { type: 'and', children: parts } }

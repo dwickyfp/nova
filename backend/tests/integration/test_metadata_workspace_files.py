@@ -167,7 +167,8 @@ async def test_namespace_aliases_are_refused(files):
 @pytest.mark.parametrize("workload", [role.removeprefix("nova_meta_") for role in WORKLOAD_ROLES])
 async def test_workload_privileges(files, workload):
     entry = await create_file(files)
-    if workload not in {"web", "query", "agent", "notebook"}:
+    # The task login reads entries for scheduled exports (0054); it never updates them.
+    if workload not in {"web", "query", "agent", "notebook", "task"}:
         with pytest.raises(MetadataPermissionDenied):
             async with files.transaction(workload=workload) as (repo, _):
                 await repo.get_entry(ALICE, entry["id"])

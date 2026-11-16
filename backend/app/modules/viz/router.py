@@ -11,7 +11,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
-from pydantic import AwareDatetime, BaseModel, ConfigDict
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from app.common.responses import SanitizingJSONResponse
 from app.core.deps import get_current_user
@@ -362,6 +362,51 @@ async def presence_beat(identity: UUID, body: PresenceBeat, user: User) -> Any:
 @router.delete("/dashboards/{identity}/presence", status_code=204)
 async def presence_leave(identity: UUID, user: User) -> Response:
     await presence.leave(user, identity)
+    return Response(status_code=204)
+
+
+class CommentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    comment_id: UUID
+    body: Annotated[str, Field(min_length=1, max_length=2000)]
+    page_id: UUID | None = None
+    widget_id: UUID | None = None
+
+
+class CommentChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    resolved: bool
+
+
+@router.get("/dashboards/{identity}/comments")
+async def dashboard_comments(identity: UUID, user: User) -> Any:
+    """Comments on a dashboard the caller can view; text is shown exactly as written."""
+    await service.require_kind(user, identity, KINDS["dashboards"])
+    return await service.comments(user, identity)
+
+
+@router.post("/dashboards/{identity}/comments", status_code=201)
+async def add_dashboard_comment(identity: UUID, body: CommentCreate, user: User) -> Any:
+    if not body.body.strip():
+        raise NovaException("Write something before posting", status_code=422)
+    if body.widget_id is not None and body.page_id is None:
+        raise NovaException("A widget comment needs its page", status_code=422)
+    await service.require_kind(user, identity, KINDS["dashboards"])
+    return await service.add_comment(user, identity, body.comment_id, body.body.strip(),
+                                     page_id=body.page_id, widget_id=body.widget_id)
+
+
+@router.patch("/dashboards/{identity}/comments/{comment_id}")
+async def change_dashboard_comment(identity: UUID, comment_id: UUID, body: CommentChange,
+                                   user: User) -> Any:
+    await service.require_kind(user, identity, KINDS["dashboards"])
+    return await service.resolve_comment(user, identity, comment_id, body.resolved)
+
+
+@router.delete("/dashboards/{identity}/comments/{comment_id}", status_code=204)
+async def delete_dashboard_comment(identity: UUID, comment_id: UUID, user: User) -> Response:
+    await service.require_kind(user, identity, KINDS["dashboards"])
+    await service.delete_comment(user, identity, comment_id)
     return Response(status_code=204)
 
 

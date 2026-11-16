@@ -229,6 +229,33 @@ class NativeDocumentService:
         ) as repository:
             return await repository.permissions(identity)
 
+    async def comments(self, user: Mapping[str, Any], identity: UUID) -> list[dict[str, Any]]:
+        async with document_transaction(
+            user, action="READ_COMMENTS", identity=identity, read_only=True,
+        ) as repository:
+            return await repository.comments(identity)
+
+    async def add_comment(self, user: Mapping[str, Any], identity: UUID, comment_id: UUID,
+                          body: str, *, page_id: UUID | None,
+                          widget_id: UUID | None) -> dict[str, Any]:
+        async with document_transaction(user, action="COMMENT", identity=identity) as repository:
+            return await repository.add_comment(identity, comment_id, body,
+                                                page_id=page_id, widget_id=widget_id)
+
+    async def resolve_comment(self, user: Mapping[str, Any], identity: UUID, comment_id: UUID,
+                              resolved: bool) -> dict[str, Any]:
+        async with document_transaction(
+            user, action="RESOLVE_COMMENT", identity=identity,
+        ) as repository:
+            return await repository.resolve_comment(identity, comment_id, resolved)
+
+    async def delete_comment(self, user: Mapping[str, Any], identity: UUID,
+                             comment_id: UUID) -> None:
+        async with document_transaction(
+            user, action="DELETE_COMMENT", identity=identity,
+        ) as repository:
+            await repository.delete_comment(identity, comment_id)
+
     async def scheduled_permissions(self, account: str, role: str, identity: UUID) -> set[str]:
         """What a scheduled run as ``account`` under ``role`` may do with a document.
 

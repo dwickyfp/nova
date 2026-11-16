@@ -51,3 +51,18 @@ describe('chart states', () => {
     await expect.element(timedOut.getByRole('alert')).toHaveTextContent('The query timed out. Add a filter or reduce the row limit.')
   })
 })
+
+describe('chart text alternative', () => {
+  it('gives a drawn chart a table of its governed rows for screen readers', async () => {
+    respond(200, { dataset_id: DATASET, revision: 1, truncated: false, columns: [
+      { key: 'd0', name: 'region', logical_type: 'string', role: 'dimension', field_id: 'region' },
+      { key: 'm0', name: 'revenue', logical_type: 'decimal', role: 'measure', field_id: 'revenue', aggregation: 'sum' }],
+    rows: [[{ type: 'string', value: 'Jakarta' }, { type: 'decimal', value: '400' }], [{ type: 'string', value: 'Bandung' }, { type: 'decimal', value: '600' }]] })
+    const screen = await show()
+    const table = screen.getByRole('table', { name: 'Data for Revenue by region' })
+    await expect.element(table).toBeInTheDocument()
+    await expect.element(table.getByRole('columnheader', { name: 'Sum of revenue' })).toBeInTheDocument()
+    await expect.element(table.getByRole('cell', { name: 'Bandung' })).toBeInTheDocument()
+    await expect.element(table.getByRole('cell', { name: '600' })).toBeInTheDocument()
+  })
+})

@@ -15,6 +15,7 @@ import type {
 } from '../contracts'
 import { nativeDocuments } from '../documents'
 import { cellLabel, type Cell } from '../charts/chart-query'
+import { describeFilterValue } from './filter-describe'
 import { useDatasetDefinition } from '../charts/chart-data'
 import { capacityDelay, capacityRetry, queuedQuery } from '../charts/query-queue'
 import { isNumeric, isTemporal } from '../charts/builder-model'
@@ -23,28 +24,6 @@ import { predicate, type CrossFilter, type FilterDefinition, type FilterValue } 
 
 export type { CrossFilter, FilterDefinition, FilterValue }
 type Scalar = NonNullable<Cell>
-
-function shortValue(cell: Scalar | null): string {
-  if (cell && (cell.type === 'date' || cell.type === 'timestamp')) {
-    const [year, month, day] = cell.value.slice(0, 10).split('-').map(Number)
-    return new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
-      .format(new Date(Date.UTC(year, month - 1, day)))
-  }
-  return cellLabel(cell)
-}
-
-function describe(value: FilterValue | undefined, field?: DatasetField): string {
-  if (!value) return 'All'
-  switch (value.kind) {
-    case 'members': return value.values.length ? value.values.length === 1 ? cellLabel(value.values[0]) : `${value.values.length} selected` : 'All'
-    case 'range': return value.from || value.to ? value.from && value.to ? `${shortValue(value.from)} – ${shortValue(value.to)}`
-      : value.from ? `from ${shortValue(value.from)}` : `until ${shortValue(value.to)}` : 'All'
-    case 'text': return value.value ? `Contains “${value.value}”` : 'All'
-    case 'relative': return `${value.mode === 'previous' ? 'Previous' : value.mode === 'to_date' ? 'This' : 'Last'} ${value.mode === 'to_date' ? value.unit : `${value.count} ${value.unit}${value.count > 1 ? 's' : ''}`}${value.mode === 'to_date' ? ' to date' : ''}`
-    case 'boolean': return value.value ? 'True' : 'False'
-  }
-  return field ? field.name : 'All'
-}
 
 function useFilterOptions(filter: FilterDefinition, search: string, enabled: boolean, draft: boolean) {
   const epoch = useAuthStore(state => state.securityEpoch)
@@ -77,7 +56,7 @@ function MembersControl({ filter, value, onChange, field, draft }: ControlProps)
   return <Popover open={open} onOpenChange={setOpen}>
     <PopoverTrigger asChild>
       <Button variant='outline' size='sm' className={CHIP} aria-label={`${filter.title} filter`}>
-        <span className='truncate'><span className='text-muted-foreground'>{filter.title}</span> {describe(value, field)}</span>
+        <span className='truncate'><span className='text-muted-foreground'>{filter.title}</span> {describeFilterValue(value, field)}</span>
         <ChevronDown className='size-4 opacity-60' />
       </Button>
     </PopoverTrigger>
@@ -125,7 +104,7 @@ function RangeControl({ filter, value, onChange, field }: ControlProps) {
     const next = { ...range, [side]: scalar(text) }
     onChange(next.from || next.to ? next : undefined)
   }
-  const summary = range.from || range.to ? describe(range) : date ? 'Any time' : 'Any value'
+  const summary = range.from || range.to ? describeFilterValue(range) : date ? 'Any time' : 'Any value'
   return <Popover>
     <PopoverTrigger asChild>
       <Button variant='outline' size='sm' className={CHIP} aria-label={`${filter.title} filter`}>
@@ -214,7 +193,7 @@ function FilterControl(props: Omit<ControlProps, 'field'>) {
   }
 }
 
-export function FilterBar({ definition, values, onChange, crossFilters, onClearCross, editing, onEdit, draft }: {
+export function FilterBar({ definition, values, onChange, crossFilters, onClearCross, editing, onEdit, draft, readOnly = false }: {
   definition: DashboardDefinition
   values: Record<string, FilterValue>
   onChange: (filterId: string, value: FilterValue | undefined) => void
@@ -223,19 +202,26 @@ export function FilterBar({ definition, values, onChange, crossFilters, onClearC
   editing: boolean
   onEdit: () => void
   draft: boolean
+  /** View-only access: the published defaults are shown, never changed. */
+  readOnly?: boolean
 }) {
   const filters = definition.filters ?? []
   if (!filters.length && !crossFilters.length && !editing) return null
   const active = Object.keys(values).length
   return <div role='toolbar' aria-label='Dashboard filters' className='flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b px-4 py-1.5'>
     <Filter className='size-4 shrink-0 text-muted-foreground' aria-hidden />
-    {filters.map(filter => <FilterControl key={filter.filter_id} filter={filter} value={values[filter.filter_id]} draft={draft}
-      onChange={value => onChange(filter.filter_id, value)} />)}
+    {readOnly ? filters.map(filter => <span key={filter.filter_id} aria-label={`${filter.title} filter, set by the dashboard`}
+      className='inline-flex h-8 max-w-72 items-center gap-1 truncate rounded-md border border-dashed px-3 text-sm'>
+      <span className='text-muted-foreground'>{filter.title}</span> {describeFilterValue(values[filter.filter_id])}
+    </span>)
+      : filters.map(filter => <FilterControl key={filter.filter_id} filter={filter} value={values[filter.filter_id]} draft={draft}
+        onChange={value => onChange(filter.filter_id, value)} />)}
     {crossFilters.map((cross, index) => <Badge key={`${cross.source_widget_id}:${index}`} variant='secondary' className='h-8 gap-1 rounded-md pr-1 pl-3 font-normal'>
       <span className='text-muted-foreground'>Selected</span> {cross.label}
       <Button variant='ghost' size='icon' className='size-6' aria-label={`Clear selection ${cross.label}`} onClick={() => onClearCross(index)}><X /></Button>
     </Badge>)}
-    {(active > 0 || crossFilters.length > 0) && <Button variant='ghost' size='sm' className='h-8 text-muted-foreground' onClick={() => {
+    {readOnly && filters.length > 0 && <span className='text-xs text-muted-foreground'>Your access shows the dashboard as published</span>}
+    {!readOnly && (active > 0 || crossFilters.length > 0) && <Button variant='ghost' size='sm' className='h-8 text-muted-foreground' onClick={() => {
       for (const filter of filters) onChange(filter.filter_id, undefined)
       onClearCross(null)
     }}>Reset</Button>}

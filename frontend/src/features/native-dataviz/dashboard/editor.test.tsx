@@ -57,11 +57,11 @@ async function route(url: string, options: RequestInit = {}) {
   throw new Error(`Unexpected request ${url}`)
 }
 
-async function mount() {
+async function mount(width = 1200) {
   const client = new QueryClient()
   clients.push(client)
   return render(<QueryClientProvider client={client}><TooltipProvider>
-    <div style={{ height: 720, width: 1200, display: 'flex' }}>
+    <div data-testid='frame' style={{ height: 720, width, display: 'flex' }}>
       <DashboardEditor dashboardId={DASHBOARD} workspaceId='personal' onBack={() => undefined} />
     </div>
   </TooltipProvider></QueryClientProvider>)
@@ -138,6 +138,39 @@ describe('native dashboard editor', () => {
     await userEvent.keyboard('{Alt>}{Shift>}{ArrowRight}{/Shift}{/Alt}')
     await expect.element(screen.getByText('Another widget is in the way')).toBeInTheDocument()
     expect(operations).toHaveLength(1)
+  })
+
+  it('shows the published defaults read-only to someone who may view but not interact', async () => {
+    permissionList = ['view']
+    definition.filters = [{
+      filter_id: 'f0000000-0000-4000-8000-000000000001', title: 'Region', kind: 'multi_value',
+      field: { dataset_id: DATASET, dataset_revision: 1, field_id: 'region' }, scope: { kind: 'global' },
+      mappings: [], defaults: [{ type: 'string', value: 'Jakarta' }], allow_all: true, include_null: false,
+      searchable: true, depends_on: [],
+    }]
+    const screen = await mount()
+    await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
+    await expect.element(screen.getByLabelText('Region filter, set by the dashboard')).toHaveTextContent('Jakarta')
+    await expect.element(screen.getByText('Your access shows the dashboard as published')).toBeVisible()
+    await expect.element(screen.getByRole('button', { name: 'Region filter' })).not.toBeInTheDocument()
+    await expect.element(screen.getByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+    // The chart runs with the dashboard's default, which a view-only person cannot change.
+    await expect.poll(() => fetchMock.mock.calls.some(([url, init]) =>
+      String(url).endsWith('/query') && String(init?.body).includes('Jakarta'))).toBe(true)
+  })
+
+  it('shows a six-column tablet view scaled from the saved layout and never saves it', async () => {
+    const screen = await mount(760)
+    await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
+    const grid = () => (document.querySelector('.grid-stack') as unknown as { gridstack: { getColumn: () => number } }).gridstack
+    const width = (id: string) => document.querySelector(`[gs-id="${id}"]`)?.getAttribute('gs-w')
+    await expect.poll(() => grid().getColumn()).toBe(6)
+    expect(Number(width(TEXT_WIDGET))).toBeLessThanOrEqual(6)
+    // Back at desktop width the saved 12-column layout returns unchanged.
+    ;(screen.getByTestId('frame').element() as HTMLElement).style.width = '1200px'
+    await expect.poll(() => grid().getColumn()).toBe(12)
+    await expect.poll(() => [width(KPI_WIDGET), width(TEXT_WIDGET)]).toEqual(['3', '9'])
+    expect(operations).toHaveLength(0)
   })
 
   it('reloads when Neva reports a committed change to this dashboard', async () => {

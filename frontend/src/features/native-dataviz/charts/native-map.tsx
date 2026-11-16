@@ -23,7 +23,7 @@ function colours(chart: ChartDefinition, groups: string[]) {
   return { single: mapColor('--viz-mark'), byGroup: groups.map((_, i) => mapColor(names[i % names.length])) }
 }
 
-function Points({ model, chart, selected, onPick }: { model: MapModel; chart: ChartDefinition; selected: string | null; onPick: (row: number) => void }) {
+function Points({ model, chart, selected, onPick }: { model: MapModel; chart: ChartDefinition; selected: string[] | null; onPick: (row: number) => void }) {
   const { map, isLoaded } = useMap()
   const { resolvedTheme } = useTheme()
   const touched = useRef(false)
@@ -44,7 +44,7 @@ function Points({ model, chart, selected, onPick }: { model: MapModel; chart: Ch
     map.addLayer({
       id: LAYER, type: 'circle', source: SOURCE,
       paint: {
-        'circle-color': color as never, 'circle-radius': radius as never, 'circle-opacity': (selected === null ? 0.8 : ['case', ['==', ['get', 'group'], selected], 0.9, 0.2]) as never,
+        'circle-color': color as never, 'circle-radius': radius as never, 'circle-opacity': (selected === null ? 0.8 : ['case', ['in', ['get', 'group'], ['literal', selected]], 0.9, 0.2]) as never,
         'circle-stroke-color': mapColor('--card'), 'circle-stroke-width': 1,
       },
     })
@@ -62,7 +62,7 @@ function Points({ model, chart, selected, onPick }: { model: MapModel; chart: Ch
       map.off('mouseenter', LAYER, enter)
       map.off('mouseleave', LAYER, leave)
     }
-  }, [map, isLoaded, data, chart, model.groups, model.sized, selected, resolvedTheme])
+  }, [map, isLoaded, data, chart, model.groups, model.sized, selected?.join('\u0000'), resolvedTheme])
 
   // Credits stay one click away behind the info button instead of covering a small card.
   useEffect(() => {
@@ -93,7 +93,7 @@ export function NativeMap({ chart, result, onSelectGroup, selectedLabel = null, 
   result: DatasetQueryResult
   onSelectGroup?: (row: number) => void
   /** The group a cross-filter selected; other groups are dimmed. */
-  selectedLabel?: string | null
+  selectedLabel?: string | readonly string[] | null
   label: string
 }) {
   const { resolvedTheme } = useTheme()
@@ -122,7 +122,7 @@ export function NativeMap({ chart, result, onSelectGroup, selectedLabel = null, 
           // Keeps the drawn map readable for PNG and print exports.
           canvasContextAttributes={{ preserveDrawingBuffer: true }}
           onMapError={() => setFailed(true)}>
-          <Points model={model} chart={chart} selected={model.groups.length ? selectedLabel : null} onPick={row => { setPopup(row); onSelectGroup?.(row) }} />
+          <Points model={model} chart={chart} selected={model.groups.length && selectedLabel !== null && selectedLabel.length ? (typeof selectedLabel === 'string' ? [selectedLabel] : [...selectedLabel]) : null} onPick={row => { setPopup(row); onSelectGroup?.(row) }} />
           {point && <MapPopup longitude={point.longitude} latitude={point.latitude} onClose={() => setPopup(null)} closeButton>
             <div className='space-y-0.5 text-xs'>
               {point.group !== null && <p className='font-medium'>{point.group}</p>}

@@ -51,6 +51,30 @@ You can also build a dataset from a SQL query, with named parameters. See
    format.
 5. Click **Add to dashboard**. The chart is placed in the first free space.
 
+### Show a value as a calculation
+
+For a bar, line, area, combo, pie, funnel or table chart, each value has a
+**Show as** choice under its field: **Value** (the default), **Running total**,
+**Percent of total**, **Difference from previous**, **Percent difference from
+previous**, **Rank**, **Dense rank** or **Moving average** (choose how many
+**Rows** it averages).
+
+- The calculation runs over the rows the chart shows, after your role's data
+  access and the filters, so it never adds data you cannot read.
+- It goes along the first field you group by, in ascending order, and starts
+  again for each series or other grouping. For example, a running total of
+  revenue by month split by region adds up each region's months separately.
+- Percent of total divides by the total of the rows shown in that series; it is
+  labelled **(%)**.
+- Equal values share a rank: **Rank** gives 1, 1, 3 and **Dense rank** gives
+  1, 1, 2, with the highest value ranked first.
+- A moving average uses the previous rows in order, not calendar days, so a
+  month with no data is skipped rather than counted as zero.
+- A missing value stays empty. Tables and pivots show no total for a
+  calculated value, since adding up running totals or ranks means nothing.
+
+Downloads, printed reports and scheduled files show the same calculated values.
+
 ### Pivot tables
 
 A **Pivot** puts one or more fields down the side (**Rows**) and others across
@@ -107,8 +131,10 @@ Click **Text** to add a heading or paragraph. Text is shown exactly as typed.
 - Click **+** next to the page name to add a page.
 - Click **Done** to return to the view.
 
-On narrow windows, widgets stack in one column and the layout cannot be
-changed; the saved layout is kept for larger screens.
+On a medium-width window, such as a tablet, the canvas shows six columns
+scaled from the full layout. On a phone-width window, widgets stack in one
+column. In both, the layout cannot be changed and the saved layout is kept for
+larger screens.
 
 ## Filters and selections
 
@@ -134,6 +160,14 @@ Click a bar, point or slice to see what you can do with that value:
 
 A chart with nothing to drill into filters the dashboard straight away.
 
+To select several values from one chart, hold **Shift** (or **Ctrl**, or
+**Cmd** on a Mac) while you click. The other charts then show rows matching any
+of the selected values, still narrowed by the dashboard filters and by
+selections in other charts. Each value appears as its own **Selected:** chip.
+
+When a chart has a legend, for example bars split by channel or a pie, clicking
+a legend entry selects that group in the same way.
+
 ### Link a chart to another dashboard
 
 1. In **Edit**, open a chart's **⋯** menu and choose **Link to a dashboard…**.
@@ -157,12 +191,44 @@ chart also removes its link.
 2. Click **Share** to give a user or a role **Can view**, **Can edit**,
    **Can edit and publish** or **Can manage**, and optionally **Export**.
    Sharing also lets them open the charts and datasets the dashboard uses.
+   **Can view** includes using filters, selections, drill-down and links. Access
+   given as view only, without that, shows the published dashboard with its
+   default filters: the filters appear as fixed labels and clicking a chart does
+   nothing.
 3. Click **Version history** (the clock icon) to see every saved version, who
    saved it and when. **Current** marks the version you are editing and
    **Published** the one viewers see.
 
 > **Note:** Sharing never grants access to data. Each viewer sees only the rows
 > and columns their own role can read.
+
+## Comments
+
+Click **Comments** (the speech-bubble icon) in the dashboard header to read
+and write notes about the dashboard. The number on the icon counts open
+comments.
+
+- Under **About**, choose **The whole dashboard**, **This page**, or, when a
+  widget is selected in **Edit**, **The selected widget**. Each comment shows
+  who wrote it, when, and what it is about.
+- **Resolve** marks a comment as done; **Show resolved** brings resolved
+  comments back, and **Reopen** opens one again.
+- The bin icon removes a comment. You can remove your own; people who manage
+  the dashboard can remove any.
+
+Anyone who can open the dashboard can read its comments. Writing and resolving
+need **Comment** access, which **Can edit** and higher include. Comments are
+shown exactly as written and never change the dashboard or its data.
+
+## Accessibility
+
+- Every drawn chart also carries a table of its rows for screen readers, so
+  categories and values never depend on colour alone.
+- When your system is set to reduce motion, charts appear without animation
+  and other people's pointers jump instead of gliding.
+- In **Edit**, select a widget and press **Alt** with an arrow key to move it,
+  or **Alt** and **Shift** with an arrow key to resize it. A screen reader
+  announces the new position, or that another widget is in the way.
 
 ## See who else is here
 
@@ -194,8 +260,10 @@ read, exactly as the charts show them with the filters you chose.
   header.
   - **Data of this page (Excel)** makes one workbook with a sheet per chart.
   - **Print or save as PDF** opens your browser's print window with a clean,
-    light page: the title, when it was made, then every chart, KPI, table and
-    note in reading order. Choose **Save as PDF** there to keep a file.
+    light report: the title, when the data was read, the filters and
+    selections in effect, then every page of the dashboard, each starting on a
+    new sheet, with its charts, KPIs, tables and notes in reading order. Choose
+    **Save as PDF** there to keep a file.
 
 If the icons are missing, your access does not include **Export**; ask the
 dashboard's owner. If access changed after you opened the page, the download is

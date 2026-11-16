@@ -83,4 +83,18 @@ describe('chart downloads', () => {
     expect(html).toContain('<td>&lt;b&gt;</td>')
     expect(html).toMatch(/<td class="num">1,234.5<\/td>/)
   })
+
+  it('starts every dashboard page on a new sheet and lists the filters in effect', () => {
+    const html = reportHtml({
+      title: 'Sales', subtitle: '2 pages · Data as of today', filters: ['Region: Jakarta', 'Selected <Online>'],
+      items: [
+        { kind: 'page', title: 'Overview' }, { kind: 'kpi', title: 'Units', value: '1' },
+        { kind: 'page', title: 'Detail' }, { kind: 'text', title: '', text: 'Notes' },
+      ],
+    })
+    expect(html).toContain('<p class="meta">Filters: Region: Jakarta · Selected &lt;Online&gt;</p>')
+    expect(html).toContain('<h2 class="page">Overview</h2>')
+    expect(html).toContain('<h2 class="page break">Detail</h2>')
+    expect(html.indexOf('Overview')).toBeLessThan(html.indexOf('Detail'))
+  })
 })

@@ -239,6 +239,64 @@ class VizDocumentRepository(WorkspaceMetadataScope):
         # publication visible to this actor. A resource grant alone is not enough.
         return await self._definition(identity, revision, head["kind"])
 
+    _COMMENT_COLUMNS = ("comment_id,resource_id,page_id,widget_id,author,body,created_at,"
+                        "resolved_at,resolved_by,"
+                        "author=current_setting('nova.principal',true) AS mine")
+
+    async def comments(self, identity: UUID) -> list[dict[str, Any]]:
+        """Comments on a document the caller can view, oldest first."""
+        await self._head(identity)
+        await self._permission(identity, "view")
+        cursor = await self.connection.execute(
+            f"SELECT {self._COMMENT_COLUMNS} FROM nova_meta.viz_comments "
+            "WHERE resource_id=%s AND deleted_at IS NULL ORDER BY created_at,comment_id LIMIT 500",
+            (identity,),
+        )
+        return list(await cursor.fetchall())
+
+    async def add_comment(self, identity: UUID, comment_id: UUID, body: str, *,
+                          page_id: UUID | None, widget_id: UUID | None) -> dict[str, Any]:
+        await self._head(identity)
+        await self._permission(identity, "comment")
+        # A retried post with the same id returns the comment it already saved.
+        await self.connection.execute(
+            "INSERT INTO nova_meta.viz_comments "
+            "(comment_id,resource_id,page_id,widget_id,author,body) "
+            "VALUES (%s,%s,%s,%s,current_setting('nova.principal',true),%s) "
+            "ON CONFLICT (comment_id) DO NOTHING", (comment_id, identity, page_id, widget_id, body),
+        )
+        return await self._comment(identity, comment_id)
+
+    async def _comment(self, identity: UUID, comment_id: UUID) -> dict[str, Any]:
+        cursor = await self.connection.execute(
+            f"SELECT {self._COMMENT_COLUMNS} FROM nova_meta.viz_comments "
+            "WHERE resource_id=%s AND comment_id=%s AND deleted_at IS NULL", (identity, comment_id),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            raise NovaException("Comment not found", status_code=404)
+        return dict(row)
+
+    async def resolve_comment(self, identity: UUID, comment_id: UUID,
+                              resolved: bool) -> dict[str, Any]:
+        await self._head(identity)
+        await self._comment(identity, comment_id)
+        await self.connection.execute(
+            "UPDATE nova_meta.viz_comments SET resolved_by=CASE WHEN %s "
+            "THEN current_setting('nova.principal',true) END,"
+            "resolved_at=CASE WHEN %s THEN clock_timestamp() END "
+            "WHERE resource_id=%s AND comment_id=%s", (resolved, resolved, identity, comment_id),
+        )
+        return await self._comment(identity, comment_id)
+
+    async def delete_comment(self, identity: UUID, comment_id: UUID) -> None:
+        await self._head(identity)
+        await self._comment(identity, comment_id)
+        await self.connection.execute(
+            "UPDATE nova_meta.viz_comments SET deleted_at=clock_timestamp() "
+            "WHERE resource_id=%s AND comment_id=%s", (identity, comment_id),
+        )
+
     async def permissions(self, identity: UUID) -> list[str]:
         await self._head(identity)
         cursor = await self.connection.execute(

@@ -463,3 +463,71 @@ async def test_a_run_saves_nothing_once_the_role_loses_export(monkeypatch):
         await scheduled_export.run(record_for(DASHBOARD, PAGE, "UTC"), {"username": "acct"})
     documents.read.assert_not_awaited()
     files.create_file_bytes.assert_not_awaited()
+
+
+# ── Table calculations match the editor (calculations.test.ts) ──────────────
+
+def calculated(kind: str, **extra):
+    return ChartDefinition.model_validate({
+        "chart_id": str(CHART), "title": "Revenue", "dataset_id": str(DATASET),
+        "dataset_revision": 1, "visual": "line",
+        "encoding": {"kind": "cartesian",
+                     "dimensions": [{"field_id": "month", "date_grain": "month"}],
+                     "measures": [{"field_id": "revenue", "aggregation": "sum"}],
+                     "color": {"field_id": "region"}},
+        "table_calculations": [{
+            "calculation_id": str(uuid4()), "name": "c", "kind": kind,
+            "measure": {"field_id": "revenue", "aggregation": "sum"},
+            "addressing": ["month"], "partition_by": ["region"],
+            "order": [{"field_id": "month", "direction": "asc"}], **extra}],
+    })
+
+
+def monthly(rows):
+    return DatasetQueryResult.model_validate({
+        "dataset_id": str(DATASET), "revision": 1, "truncated": False,
+        "columns": [
+            {"key": "d0", "name": "month", "logical_type": "date", "role": "dimension",
+             "field_id": "month", "date_grain": "month"},
+            {"key": "d1", "name": "region", "logical_type": "string", "role": "dimension",
+             "field_id": "region"},
+            {"key": "m0", "name": "revenue", "logical_type": "decimal", "role": "measure",
+             "field_id": "revenue", "aggregation": "sum"}],
+        "rows": [[{"type": "date", "value": m}, {"type": "string", "value": r},
+                  None if v is None else {"type": "decimal", "value": str(v)}] for m, r, v in rows],
+    })
+
+
+SHUFFLED = [("2026-02-01", "Jakarta", 20), ("2026-01-01", "Jakarta", 10),
+            ("2026-03-01", "Jakarta", None), ("2026-04-01", "Jakarta", 40),
+            ("2026-01-01", "Bandung", 5), ("2026-02-01", "Bandung", 5)]
+
+
+def by_region(sheet, region):
+    rows = [row for row in sheet[2] if row[1] == region]
+    rows.sort(key=lambda row: ["Jan", "Feb", "Mar", "Apr"].index(row[0][:3]))
+    return [row[2] for row in rows]
+
+
+@pytest.mark.parametrize("kind, extra, jakarta, bandung", [
+    ("running_total", {}, [10, 30, None, 70], [5, 10]),
+    ("running_total", {"nulls": "zero"}, [10, 30, 30, 70], [5, 10]),
+    ("difference", {}, [None, 10, None, None], [None, 0]),
+    ("percent_difference", {}, [None, 100, None, None], [None, 0]),
+    ("moving_average", {"window_size": 2}, [10, 15, None, 40], [5, 5]),
+    ("percent_of_total", {}, [round(10 / 70 * 100, 9), round(20 / 70 * 100, 9), None,
+                              round(40 / 70 * 100, 9)], [50, 50]),
+])
+def test_scheduled_files_show_the_same_calculations_as_the_screen(kind, extra, jakarta, bandung):
+    sheet = result_sheet("Revenue", monthly(SHUFFLED), calculated(kind, **extra))
+    assert by_region(sheet, "Jakarta") == jakarta
+    assert by_region(sheet, "Bandung") == bandung
+
+
+def test_ties_share_a_rank_in_files_too():
+    tied = monthly([("2026-01-01", "A", 7), ("2026-02-01", "A", 9), ("2026-03-01", "A", 9),
+                    ("2026-04-01", "A", 3)])
+    assert by_region(result_sheet("R", tied, calculated("rank")), "A") == [3, 1, 1, 4]
+    assert by_region(result_sheet("R", tied, calculated("dense_rank")), "A") == [2, 1, 1, 3]
+    header = result_sheet("R", tied, calculated("percent_of_total"))[1][2]
+    assert header == "Percent of total of revenue (%)"

@@ -133,6 +133,8 @@ export type ReportItem =
   | { kind: 'table'; title: string; table: ResultTable }
   | { kind: 'kpi'; title: string; value: string }
   | { kind: 'text'; title: string; text: string }
+  /** Starts a dashboard page on a new sheet of paper. */
+  | { kind: 'page'; title: string }
 
 function escape(text: string): string {
   return text.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!)
@@ -150,8 +152,13 @@ function tableHtml(table: ResultTable): string {
 }
 
 /** A printer-friendly page: title, when it was made, then each widget in reading order. */
-export function reportHtml(report: { title: string; subtitle: string; items: ReportItem[] }): string {
+export function reportHtml(report: { title: string; subtitle: string; items: ReportItem[]; filters?: string[] }): string {
+  let pages = 0
   const sections = report.items.map(item => {
+    if (item.kind === 'page') {
+      pages += 1
+      return `<h2 class="page${pages > 1 ? ' break' : ''}">${escape(item.title)}</h2>`
+    }
     const heading = item.title ? `<h2>${escape(item.title)}</h2>` : ''
     const body = item.kind === 'image' ? `<img alt="${escape(item.title)}" src="${item.src}" width="${item.width}">`
       : item.kind === 'table' ? tableHtml(item.table)
@@ -179,7 +186,10 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .kpi { margin: 0; font-size: 32px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .text { margin: 0; white-space: pre-wrap; }
 .note { margin: 4px 0 0; color: ${muted}; font-size: 11px; }
-</style></head><body><h1>${escape(report.title)}</h1><p class="meta">${escape(report.subtitle)}</p>${sections}</body></html>`
+h2.page { margin: 0 0 12px; padding-bottom: 6px; border-bottom: 1px solid ${line}; font-size: 16px; }
+h2.break { break-before: page; }
+</style></head><body><h1>${escape(report.title)}</h1><p class="meta">${escape(report.subtitle)}</p>${
+  report.filters?.length ? `<p class="meta">Filters: ${report.filters.map(escape).join(' · ')}</p>` : ''}${sections}</body></html>`
 }
 
 /** Print a page from a hidden frame, so the open dashboard is left as it is. */

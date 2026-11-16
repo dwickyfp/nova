@@ -4,6 +4,7 @@ import { ApiError } from '@/lib/api-client'
 import { useAuthStore } from '@/stores/auth-store'
 import type { ChartDefinition, DatasetDefinition, FilterTree, ParameterInput } from '../contracts'
 import { nativeDocuments } from '../documents'
+import { applyCalculations } from './calculations'
 import { chartQueryShape, ChartQueryError, combineFilters } from './chart-query'
 import { capacityDelay, capacityRetry, queuedQuery } from './query-queue'
 
@@ -42,9 +43,12 @@ export function chartRequest({ chart, draft, context, parameters }: ChartRequest
 /** One cache entry per chart request, shared by the chart and its downloads. */
 export function chartDataQuery(epoch: number, chart: ChartDefinition, request: NonNullable<ReturnType<typeof chartRequest>>) {
   return {
-    queryKey: ['native-dataviz', 'chart-data', epoch, chart.dataset_id, JSON.stringify(request)],
+    queryKey: ['native-dataviz', 'chart-data', epoch, chart.dataset_id, JSON.stringify(request),
+      JSON.stringify(chart.table_calculations ?? [])],
+    // Table calculations run on the governed result, so charts, downloads and print agree.
     queryFn: ({ signal }: { signal: AbortSignal }) =>
-      queuedQuery(() => nativeDocuments(epoch).queryDataset(chart.dataset_id, request, { signal }), signal),
+      queuedQuery(() => nativeDocuments(epoch).queryDataset(chart.dataset_id, request, { signal }), signal)
+        .then(result => applyCalculations(chart, result)),
     retry: capacityRetry,
     retryDelay: capacityDelay,
     staleTime: 30_000,

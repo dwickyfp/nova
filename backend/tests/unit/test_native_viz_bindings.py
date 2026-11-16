@@ -277,3 +277,31 @@ def test_explicit_cross_dataset_mapping_requires_compatible_units_and_types():
         payload["target"]["field_id"] = target
         with pytest.raises(ValueError, match="matching types"):
             validate_document_controls(FieldMapping.model_validate(payload), sources)
+
+
+def test_a_shown_as_calculation_from_the_builder_binds_to_its_chart():
+    """The builder saves 'Show as' along the first grouping, per series (calculations.ts)."""
+    from app.modules.viz.bindings import validate_chart_binding
+    from app.modules.viz.contracts.charts import ChartDefinition
+
+    source = dataset()
+    measure = {"field_id": "amount", "aggregation": "sum", "axis": "left",
+               "format": {"kind": "currency", "decimals": 2, "currency": "IDR", "locale": "en-US"}}
+    definition = {
+        "chart_id": str(uuid4()), "title": "Running revenue", "dataset_id": str(source.dataset_id),
+        "dataset_revision": 1, "visual": "line",
+        "encoding": {"kind": "cartesian",
+                     "dimensions": [{"field_id": "date", "date_grain": "month"}],
+                     "measures": [measure], "color": {"field_id": "region"}},
+        "table_calculations": [{
+            "calculation_id": "00000000-0000-4000-8000-000000000001",
+            "name": "running_total amount sum", "kind": "running_total", "measure": measure,
+            "addressing": ["date"], "partition_by": ["region"],
+            "order": [{"field_id": "date", "direction": "asc"}], "nulls": "preserve"}],
+    }
+    validate_chart_binding(ChartDefinition.model_validate(definition), source)
+    # A calculation that leaves out one of the chart's groupings is refused.
+    broken = {**definition, "table_calculations": [
+        {**definition["table_calculations"][0], "partition_by": []}]}
+    with pytest.raises(ValueError, match="cover chart dimensions"):
+        validate_chart_binding(ChartDefinition.model_validate(broken), source)

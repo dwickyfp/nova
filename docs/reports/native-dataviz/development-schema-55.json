@@ -1,0 +1,23 @@
+{
+  "baseline_commit": "09df012246f78d4213c4acce97e0f58d916a7e47",
+  "schema_before": 54,
+  "schema_after": 55,
+  "migration": "0055_viz_comments.sql",
+  "migration_sha256": "01e5f5d66910855fbdd58d039b3eadca1d5d92df8bbc36ea5107ee1eeebe52ca",
+  "metadata_epoch_preserved": true,
+  "existing_tables_count_checked": 192,
+  "all_existing_counts_preserved": true,
+  "new_tables": {
+    "viz_comments": 0
+  },
+  "backup": {
+    "bytes": 124214306,
+    "sha256": "d1c64fd3e3aac738c3fb24bed56ba12a114f822efd2fe68b7de0a58573342139",
+    "toc_verified": true
+  },
+  "fixture_evidence": "tests/integration/test_metadata_viz_comments.py (5 passed) on disposable PG17",
+  "attempts": [
+    "Scripted count check refused because the new empty table changed the key set; counts compared by hand: no existing table changed, the new table is empty; then configuration bumped and unfrozen"
+  ],
+  "recorded_at": "2026-11-16T07:37:34.644751+00:00"
+}

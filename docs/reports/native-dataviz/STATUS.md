@@ -1,6 +1,6 @@
 # Native Dataviz delivery record
 
-Status: **in progress; not production ready; no cutover**. Release QA attempt 1 leaves 169 of 254 scenarios open.
+Status: **in progress; not production ready; no cutover**. Release QA attempt 2 leaves 158 of 254 scenarios open.
 Branch: `feat/dataviz-native`.
 Baseline: `1ee12694e0ecb6ecfd8135965943be08f5195967`.
 
@@ -10,9 +10,9 @@ Baseline: `1ee12694e0ecb6ecfd8135965943be08f5195967`.
 | --- | --- | --- |
 | WP00 baseline/inventory | DONE — baseline inventory only | Source callers, assets/identities, recognized links, PG epoch, topology and baseline OSS SBOM verified; release distribution/notice checks belong to WP16 |
 | WP01 contracts/design | In progress | Full spec coverage, complete compatibility conversion, real shared UI composition |
-| WP02 metadata/ACL | In progress | Schema 54 deployed in development (0053 export task handler, 0054 task-login reads and workspace entry insert for scheduled exports); final application and release gates remain |
+| WP02 metadata/ACL | In progress | Schema 55 deployed in development (0053 export task handler, 0054 task-login reads and workspace entry insert for scheduled exports, 0055 dashboard comments); final application and release gates remain |
 | WP03 datasets | In progress | Table/view, SQL (including declared non-sensitive parameters) and published Semantic View inspection/create/preview/source-update APIs active; parameter declaration editor and preview inputs prepared in unmounted components; local metrics, relationships, sensitive-input engine boundary and product-shell Data tab remain open |
-| WP04 calculations | In progress | Exact governed aggregates (sum/avg/min/max/count/distinct, date grains) active; ratio/weighted, window calculations, time intelligence and golden results open |
+| WP04 calculations | In progress | Exact governed aggregates (sum/avg/min/max/count/distinct, date grains) active; table calculations (running total, percent of total, difference, percent difference, rank, dense rank, moving average) over the governed result, mirrored in scheduled files; ratio/weighted, window calculations, time intelligence and golden results open |
 | WP05 chart builder | In progress | Inspector (Configure/Style) and ECharts/KPI/table rendering for 15 visuals including a cross-tab pivot (row/column groups, totals, subtotals) and conditional formatting (colour scale, threshold highlight) for tables and pivots; point map on the street basemap (size by value, colour by group, legend, popups, cross-filter by group, PNG and print from the drawn map); remaining visual QA open |
 | WP06 canvas | In progress | 12-column GridStack canvas with drag/resize commits, pages, undo/redo, keyboard nudge, one-column phone view, mounted in Dataviz and Studio Artifacts; Neva cursor overlay and 100-widget load open |
 | WP07 filters | In progress | Typed predicate compilation, multi/single value, date range, relative date, number range, text and Boolean controls with governed options; cascading, explicit cross-dataset mapping UI and parameter controls open |
@@ -24,7 +24,7 @@ Baseline: `1ee12694e0ecb6ecfd8135965943be08f5195967`.
 | WP13 export/report/schedules | In progress | Chart PNG/CSV/Excel, page Excel workbook and a printable report, behind the Export permission with an audited server check; CSV formula guard; scheduled Excel exports of a page run on the task scheduler as the role's scheduled-task account and save into the dashboard's shared workspace; server-rendered PDF/image exports open |
 | WP14 conversion | Not started | Complete asset mapping and semantic/visual comparisons |
 | WP15 security/resilience | In progress | Shared native dataset read by three people under Ranger row filters (`row-filters-live-attempt-8.json`); reflection policy for every user; faults, restore and metrics open |
-| WP16 release QA | In progress | Attempt 1 (`release-qa-attempt-1.json`): 68 PASS, 17 out of scope by the Superset decision, 169 open (31 CRITICAL) with the missing feature, infrastructure or test noted per row in `QA_MATRIX.csv`; five defects found and fixed in the pass |
+| WP16 release QA | In progress | Attempt 2 (`release-qa-attempt-2.json`): 79 PASS after view-only access, multi-value/legend selection, tablet view, chart text alternatives, multi-page reports, table calculations and comments. Attempt 1: 68 PASS, 17 out of scope by the Superset decision, 169 open (31 CRITICAL) with the missing feature, infrastructure or test noted per row in `QA_MATRIX.csv`; five defects found and fixed in the pass |
 | WP17 decommission | Done by user decision (2026-11-16), ahead of WP14/WP16 | Superset services, image, gateway route, backend module, frontend and docs removed; development Superset metadata backed up outside Git before deletion; no assets converted |
 
 WP00 completion records the verified baseline, not a product release. WP01–WP17

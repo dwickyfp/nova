@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, BarChart3, CalendarClock, Check, Download, FileSpreadsheet, Filter, Hash, History, Loader2, Pencil, Plus,
-  Printer, Redo2, Share2, Sparkles, Table2, Type, Undo2, Upload,
+  MessageSquare, Printer, Redo2, Share2, Sparkles, Table2, Type, Undo2, Upload,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
@@ -35,12 +35,15 @@ import { printImage } from '../charts/print-image'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { readToken } from '@/lib/read-token'
 import { FilterBar, FilterBuilder } from './filters'
+import { describeFilterValue } from './filter-describe'
 import { chartContext, defaultValue, type CrossFilter, type FilterDefinition, type FilterValue } from './filter-model'
 import { firstFreeSlot, sizeFor, type Layout, type Widget } from './layout'
 import { NATIVE_DASHBOARD_CHANGED, NATIVE_DASHBOARD_OPEN, type LinkedSelection, type NativeDashboardChanged, type NativeDashboardOpen } from './events'
 import { applyLocal, inverse, sameLayout, type Change } from './operations'
 import { ShareDialog } from './share-dialog'
 import { ScheduleDialog } from './schedule-dialog'
+import { CommentsPanel } from './comments-panel'
+import { useComments } from './comments'
 import { usePresence } from './presence'
 import { PresenceAvatars } from './presence-ui'
 
@@ -98,6 +101,9 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
   const canPublish = permissions.data?.includes('publish') ?? false
   const canManage = permissions.data?.includes('manage') ?? false
   const canExport = permissions.data?.includes('export') ?? false
+  // Interact covers filters, selections, drill-down and links; editing implies it.
+  const canInteract = canEdit || (permissions.data?.includes('interact') ?? false)
+  const canComment = canEdit || (permissions.data?.includes('comment') ?? false)
   const snapshot = useQuery({
     queryKey: ['native-dataviz', 'dashboard', epoch, dashboardId, canEdit],
     queryFn: ({ signal }) => documents.read('dashboards', dashboardId, { draft: canEdit, signal }),
@@ -133,6 +139,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
   const [publishOpen, setPublishOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [scheduleOpen, setScheduleOpen] = useState(false)
+  const [commentsOpen, setCommentsOpen] = useState(false)
   // Screen readers hear where a keyboard move or resize put the widget.
   const [announcement, setAnnouncement] = useState('')
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -166,6 +173,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
     if (definition && !definition.pages.some(item => item.page_id === pageId)) setPageId(definition.pages[0]?.page_id ?? null)
   }, [definition, pageId])
   const presence = usePresence({ dashboardId, pageId: page?.page_id ?? null, editing })
+  const openComments = (useComments(dashboardId).data ?? []).filter(item => !item.resolved_at).length
 
   // Default filter values apply once per loaded definition.
   const filterSignature = JSON.stringify(definition?.filters ?? [])
@@ -404,10 +412,12 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
   const onSelectValue = useCallback((widget: Widget, _chart: ChartDefinition, selection: ValueSelection) => {
     const chart = _chart
     setCrossFilters(current => {
-      const exists = current.findIndex(item => item.source_widget_id === widget.widget_id
-        && JSON.stringify(item.value) === JSON.stringify(selection.value))
-      if (exists >= 0) return current.filter((_, index) => index !== exists)
-      const others = current.filter(item => item.source_widget_id !== widget.widget_id)
+      const same = (item: CrossFilter) => item.source_widget_id === widget.widget_id
+        && item.field.field_id === selection.field_id && JSON.stringify(item.value) === JSON.stringify(selection.value)
+      // Clicking a selected value again clears it; Shift/Ctrl/Cmd adds values on the same field.
+      if (current.some(same)) return current.filter(item => !same(item))
+      const others = current.filter(item => item.source_widget_id !== widget.widget_id
+        || (selection.additive && item.field.field_id === selection.field_id))
       return [...others, { source_widget_id: widget.widget_id, label: selection.label, value: selection.value,
         ...(selection.period ? { period: selection.period } : {}),
         field: { dataset_id: chart.dataset_id, dataset_revision: chart.dataset_revision, field_id: selection.field_id } }]
@@ -512,7 +522,10 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
     try {
       await authorizeExport(dashboardId, 'pdf')
       const items: ReportItem[] = []
-      const ordered = [...(page.widgets ?? [])].sort((a, b) => a.layout.y - b.layout.y || a.layout.x - b.layout.x)
+      const many = definition.pages.length > 1
+      for (const sheet of definition.pages) {
+      if (many) items.push({ kind: 'page', title: sheet.title })
+      const ordered = [...(sheet.widgets ?? [])].sort((a, b) => a.layout.y - b.layout.y || a.layout.x - b.layout.x)
       for (const widget of ordered) {
         if (widget.kind === 'text' && 'text' in widget) {
           items.push({ kind: 'text', title: widget.title ?? '', text: widget.text })
@@ -521,7 +534,9 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
         if (widget.kind !== 'chart' || !('chart_ref' in widget)) continue
         const chart = await client.fetchQuery(chartDocumentQuery(epoch, widget.chart_ref.chart_id, widget.chart_ref.revision, editing))
         const title = widget.title || chart.title
-        const request = chartRequest({ chart, draft: editing, context: contextFor(widget, chart) })
+        // Each page with the filters and selections that apply to it.
+        const context = chartContext({ definition, chart, widgetId: widget.widget_id, pageId: sheet.page_id, values: appliedValues, crossFilters })
+        const request = chartRequest({ chart, draft: editing, context })
         if (!request) continue
         const result = await client.fetchQuery(chartDataQuery(epoch, chart, request))
         if (chart.visual === 'map') {
@@ -546,8 +561,13 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
           ? { kind: 'kpi', title, value: new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(first) }
           : { kind: 'table', title, table })
       }
+      }
       const made = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date())
-      await printHtml(reportHtml({ title: definition.title, subtitle: `${page.title} · ${made}`, items }))
+      const filters = [
+        ...(definition.filters ?? []).filter(item => appliedValues[item.filter_id]).map(item => `${item.title}: ${describeFilterValue(appliedValues[item.filter_id])}`),
+        ...crossFilters.map(item => `Selected ${item.label}`),
+      ]
+      await printHtml(reportHtml({ title: definition.title, subtitle: `${many ? `${definition.pages.length} pages` : page.title} · Data as of ${made}`, items, filters }))
     } catch (error) {
       exportFailed(error)
     } finally {
@@ -600,6 +620,11 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
             <DropdownMenuItem onSelect={() => setScheduleOpen(true)}><CalendarClock />Schedule Excel export…</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>}
+        <Tooltip><TooltipTrigger asChild><Button variant='ghost' size='icon' className='relative size-9'
+          aria-label={openComments ? `Comments, ${openComments} open` : 'Comments'} onClick={() => setCommentsOpen(true)}>
+          <MessageSquare />
+          {openComments > 0 && <span aria-hidden className='absolute top-1 right-1 flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] leading-4 text-primary-foreground tabular-nums'>{openComments > 99 ? '99+' : openComments}</span>}
+        </Button></TooltipTrigger><TooltipContent>Comments</TooltipContent></Tooltip>
         {canEdit && <Tooltip><TooltipTrigger asChild><Button variant='ghost' size='icon' className='size-9' aria-label='Version history' onClick={() => setHistoryOpen(true)}><History /></Button></TooltipTrigger><TooltipContent>Version history</TooltipContent></Tooltip>}
         {canManage && <Button variant='outline' size='sm' className='h-9' aria-label='Share' onClick={() => setShareOpen(true)}><Share2 /><span className={label}>Share</span></Button>}
         {canEdit && <Button variant='outline' size='sm' className='h-9' aria-label={editing ? 'Done' : 'Edit'}
@@ -656,7 +681,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
               return next
             })}
             crossFilters={crossFilters} onClearCross={index => setCrossFilters(index === null ? [] : crossFilters.filter((_, i) => i !== index))}
-            editing={editing} onEdit={() => setFiltersOpen(true)} />
+            editing={editing} onEdit={() => setFiltersOpen(true)} readOnly={!canInteract && !editing} />
           <DashboardCanvas definition={definition} page={page} draft={editing} editing={editing}
             collaborators={presence.others} onPointer={presence.point}
             selectedId={selected} onSelect={setSelected} onLayout={onLayout}
@@ -665,8 +690,11 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
             linksFor={linksFor} onOpenLink={openLink}
             onEditLink={canEdit ? (widget, chart) => setLinking({ widget, chart }) : undefined}
             onAskNeva={onAskNeva ? (_widget, chart) => onAskNeva(chart ? `Explain the chart “${chart.title}” on this dashboard and suggest improvements.` : 'Help me with this widget.') : undefined}
-            contextFor={contextFor} onSelectValue={onSelectValue}
-            selectedValueFor={widget => crossFilters.find(item => item.source_widget_id === widget.widget_id)?.label ?? null}
+            contextFor={contextFor} onSelectValue={onSelectValue} interactive={canInteract}
+            selectedValueFor={widget => {
+              const labels = crossFilters.filter(item => item.source_widget_id === widget.widget_id).map(item => item.label)
+              return labels.length ? labels : null
+            }}
             highlighted={nevaChanged} onDownload={canExport ? (chart, context, format, root) => void downloadChart(chart, context, format, root) : undefined} />
         </div>
         {inspector && <div className={cn('flex min-h-0 border-l bg-card',
@@ -690,6 +718,8 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
         await published.refetch()
       } catch (error) { toast.error(message(error)) }
     }} />
+    {commentsOpen && page && <CommentsPanel open onOpenChange={setCommentsOpen} dashboardId={dashboardId} definition={definition}
+      pageId={page.page_id} selectedWidgetId={selected} canComment={canComment} canManage={canManage} />}
     {scheduleOpen && page && <ScheduleDialog open onOpenChange={setScheduleOpen} dashboardId={dashboardId}
       pages={definition.pages} pageId={page.page_id} />}
     {shareOpen && <ShareDialog open onOpenChange={setShareOpen} dashboardId={dashboardId} workspaceId={workspaceId} definition={definition} />}

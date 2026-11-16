@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { describeSchedule } from './schedule-dialog'
+import { describeSchedule } from './schedule'
 
 describe('schedule descriptions', () => {
   it('reads each cadence in plain words with its time zone', () => {

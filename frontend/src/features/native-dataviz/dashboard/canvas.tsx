@@ -35,7 +35,9 @@ type CanvasProps = {
   onAskNeva?: (widget: Widget, chart: ChartDefinition | undefined) => void
   contextFor: (widget: Widget, chart: ChartDefinition) => FilterTree | undefined
   onSelectValue: (widget: Widget, chart: ChartDefinition, selection: ValueSelection) => void
-  selectedValueFor?: (widget: Widget) => string | null
+  /** Without Interact access, charts do not filter, drill or open links on click. */
+  interactive?: boolean
+  selectedValueFor?: (widget: Widget) => string[] | null
   /** Widgets Neva just changed; they carry a brief "Neva" marker. */
   highlighted?: string[]
   /** Links from a chart to other dashboards (drill-through). */
@@ -77,7 +79,10 @@ function ChartBody({ widget, props }: { widget: ChartWidget; props: CanvasProps 
   const select = (selection: ValueSelection) => {
     if (!effective || !shown) return
     // Without anything to drill into or open, a click filters the dashboard as before.
-    if (!options.length && !active.length && !links.length) props.onSelectValue(widget, effective, selection)
+    // Adding to a selection or picking a legend entry filters directly, with no menu.
+    if (selection.additive || selection.fromLegend || (!options.length && !active.length && !links.length)) {
+      props.onSelectValue(widget, effective, selection)
+    }
     else setPending(selection)
   }
   const openable = pending ? links.filter(link => link.mappings?.some(mapping => mapping.source.field_id === pending.field_id)) : []
@@ -90,7 +95,7 @@ function ChartBody({ widget, props }: { widget: ChartWidget; props: CanvasProps 
         : <div className='relative flex min-h-0 flex-1 flex-col'>
           <NativeChart chart={shown} draft={props.draft} context={context}
             selectedLabel={active.length ? null : props.selectedValueFor?.(widget) ?? null}
-            onSelectValue={props.editing ? undefined : select} />
+            onSelectValue={props.editing || props.interactive === false ? undefined : select} />
           {pending && <DropdownMenu open onOpenChange={open => { if (!open) setPending(null) }}>
             <DropdownMenuTrigger asChild>
               <span aria-hidden className='pointer-events-none absolute size-px'
@@ -191,6 +196,24 @@ function WidgetBody({ widget, props }: { widget: Widget; props: CanvasProps }) {
   return <WidgetFrame widget={widget} title={widget.title ?? ''} props={props}><span /></WidgetFrame>
 }
 
+function columnsFor(width: number): 1 | 6 | 12 {
+  return width < 520 ? 1 : width < 900 ? 6 : 12
+}
+
+/**
+ * Show the saved 12-column layout at the current width. The saved layout is
+ * always restored first, so a narrower view is derived from it and never drifts.
+ */
+function applyColumns(instance: GridStack, node: HTMLElement, widgets: Widget[], columns: 1 | 6 | 12) {
+  if (instance.getColumn() !== 12) instance.column(12, 'none')
+  for (const element of node.querySelectorAll<HTMLElement>(':scope > .grid-stack-item')) {
+    const widget = widgets.find(item => item.widget_id === element.getAttribute('gs-id'))
+    if (widget) instance.update(element, { ...widget.layout })
+  }
+  if (columns === 6) instance.column(6, 'moveScale')
+  if (columns === 1) instance.column(1, 'list')
+}
+
 /**
  * The 12-column canvas. React owns each widget element; GridStack only measures
  * and moves them. The saved x/y/w/h is authoritative, and a layout is committed
@@ -200,9 +223,13 @@ export function DashboardCanvas(props: CanvasProps) {
   const host = useRef<HTMLDivElement | null>(null)
   const grid = useRef<GridStack | null>(null)
   const commit = useRef(props.onLayout)
-  const [narrow, setNarrow] = useState(false)
+  // Phone: one column; tablet: six columns scaled from the saved twelve.
+  const [columns, setColumns] = useState<1 | 6 | 12>(12)
+  const narrow = columns !== 12
   useEffect(() => { commit.current = props.onLayout }, [props.onLayout])
   const widgets = props.page.widgets ?? []
+  const layoutsRef = useRef(widgets)
+  layoutsRef.current = widgets
   const signature = widgets.map(item => `${item.widget_id}:${item.layout.x},${item.layout.y},${item.layout.w},${item.layout.h}:${item.locked}`).join('|')
 
   useLayoutEffect(() => {
@@ -221,7 +248,7 @@ export function DashboardCanvas(props: CanvasProps) {
     }
     instance.on('dragstop', save)
     instance.on('resizestop', save)
-    const observer = new ResizeObserver(() => setNarrow(node.clientWidth < 520))
+    const observer = new ResizeObserver(() => setColumns(columnsFor(node.clientWidth)))
     observer.observe(node)
     return () => {
       observer.disconnect()
@@ -245,34 +272,24 @@ export function DashboardCanvas(props: CanvasProps) {
       const widget = widgets.find(item => item.widget_id === element.getAttribute('gs-id'))
       if (!widget) continue
       if (!(element as GridItemHTMLElement).gridstackNode) instance.makeWidget(element)
-      instance.update(element, instance.getColumn() === 1
-        ? { noMove: widget.locked, noResize: widget.locked }
-        : { ...widget.layout, noMove: widget.locked, noResize: widget.locked })
+      instance.update(element, { noMove: widget.locked, noResize: widget.locked })
     }
+    applyColumns(instance, node, layoutsRef.current, columnsRef.current)
     instance.batchUpdate(false)
   }, [signature])
 
   // The canvas, not GridStack, decides the column count, so a narrow view and
   // the saved 12-column layout never drift apart.
-  const layouts = useRef(widgets)
-  layouts.current = widgets
+  const columnsRef = useRef(columns)
+  columnsRef.current = columns
   useLayoutEffect(() => {
     const instance = grid.current
     const node = host.current
     if (!instance || !node) return
     instance.batchUpdate()
-    if (narrow) {
-      instance.column(1, 'list')
-    } else {
-      instance.column(12, 'none')
-      // Back from one column: the saved layout is authoritative, not a re-flow.
-      for (const element of node.querySelectorAll<HTMLElement>(':scope > .grid-stack-item')) {
-        const widget = layouts.current.find(item => item.widget_id === element.getAttribute('gs-id'))
-        if (widget) instance.update(element, { ...widget.layout })
-      }
-    }
+    applyColumns(instance, node, layoutsRef.current, columns)
     instance.batchUpdate(false)
-  }, [narrow])
+  }, [columns])
 
   useEffect(() => {
     grid.current?.setStatic(!props.editing || narrow)
@@ -280,7 +297,7 @@ export function DashboardCanvas(props: CanvasProps) {
 
   return <div className='min-h-0 flex-1 overflow-y-auto p-2.5' onClick={() => props.editing && props.onSelect(null)}>
     {props.editing && narrow && <p role='status' className='m-1.5 rounded-md border border-dashed p-2 text-xs text-muted-foreground'>
-      Widen the window to move or resize widgets. Your layout is kept for larger screens.
+      {columns === 1 ? 'Widen the window to move or resize widgets.' : 'Widen the window to move or resize widgets; this narrower view is scaled from the full layout.'} Your layout is kept for larger screens.
     </p>}
     {!widgets.length && <div className='m-1.5 flex flex-col items-center gap-2 rounded-lg border border-dashed px-6 py-12 text-center'>
       <p className='text-sm font-medium'>This page is empty</p>

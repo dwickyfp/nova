@@ -36,8 +36,11 @@ function common(tokens: VizTokens, style: Style | undefined, legend: boolean) {
 }
 
 /** Build one ECharts option from a governed query result. Values are never invented. */
-export function buildChartOption(chart: ChartDefinition, result: Result, tokens: VizTokens, selected: string | null = null,
-  width?: number): EChartsCoreOption {
+export function buildChartOption(chart: ChartDefinition, result: Result, tokens: VizTokens,
+  selected: string | readonly string[] | null = null, width?: number): EChartsCoreOption {
+  // One or more selected labels: the rest are dimmed.
+  const chosen = selected === null ? null : new Set(typeof selected === 'string' ? [selected] : selected)
+  if (chosen && !chosen.size) return buildChartOption(chart, result, tokens, null, width)
   const columns = result.columns
   const rows = result.rows
   const style = chart.style
@@ -112,6 +115,7 @@ export function buildChartOption(chart: ChartDefinition, result: Result, tokens:
       axisLabel: { ...axisBase(tokens).axisLabel, formatter: (value: number) => encoding.stack === 'percent' ? `${value}%` : formatNumber(value, 'compact') } })
     const hasRight = series.some(item => item.axis === 1)
     const valueAxes = hasRight ? [valueAxis(0), { ...valueAxis(1), splitLine: { show: false } }] : [valueAxis(0)]
+    const bySeries = chosen !== null && series.some(item => chosen.has(item.name))
     return {
       ...common(tokens, style, series.length > 1),
       color: colors,
@@ -123,9 +127,12 @@ export function buildChartOption(chart: ChartDefinition, result: Result, tokens:
       dataZoom: categories.length > 60 ? [{ type: 'inside' }] : undefined,
       series: series.map(item => ({
         name: item.name, type: item.type,
-        data: selected === null ? item.data : item.data.map((value, index) => ({
-          value, itemStyle: { opacity: categories[index] === selected ? 1 : 0.3 },
+        // A legend selection picks whole series; a mark selection picks categories.
+        data: chosen === null || bySeries ? item.data : item.data.map((value, index) => ({
+          value, itemStyle: { opacity: chosen.has(categories[index]) ? 1 : 0.3 },
         })),
+        ...(bySeries ? { itemStyle: { ...(item.type === 'bar' ? { borderRadius: horizontal ? [0, 3, 3, 0] : [3, 3, 0, 0] } : {}),
+          opacity: chosen!.has(item.name) ? 1 : 0.3 }, lineStyle: { opacity: chosen!.has(item.name) ? 1 : 0.3 } } : {}),
         stack: encoding.stack && encoding.stack !== 'none' ? 'total' : undefined,
         [horizontal ? 'xAxisIndex' : 'yAxisIndex']: item.axis,
         smooth: encoding.interpolation === 'smooth', step: encoding.interpolation === 'step' ? 'middle' : undefined,
@@ -144,7 +151,7 @@ export function buildChartOption(chart: ChartDefinition, result: Result, tokens:
   if (encoding.kind === 'category') {
     const data = rows.map(row => {
       const name = cellLabel(row[0], columns[0])
-      return { name, value: cellNumber(row[1]), ...(selected !== null ? { itemStyle: { opacity: name === selected ? 1 : 0.3 } } : {}) }
+      return { name, value: cellNumber(row[1]), ...(chosen !== null ? { itemStyle: { opacity: chosen.has(name) ? 1 : 0.3 } } : {}) }
     })
     const funnel = chart.visual === 'funnel'
     return {

@@ -123,6 +123,23 @@ describe('dashboard filters', () => {
       .toMatchObject({ op: 'eq', values: [{ value: 'Medan' }] })
   })
 
+  it('ORs values chosen together in one chart and ANDs them with other charts and filters', () => {
+    const field = (id: string) => ({ dataset_id: DATASET, dataset_revision: 3, field_id: id })
+    const pick = (widget: string, id: string, value: string) =>
+      ({ source_widget_id: widget, field: field(id), value: { type: 'string' as const, value }, label: value })
+    const cross = [pick('w1', 'region', 'Jakarta'), pick('w1', 'region', 'Bandung'), pick('w3', 'channel', 'Online')]
+    const values = { f1: { kind: 'text' as const, value: 'a' } }
+    const tree = chartContext({ definition: definition([filter()]), chart: target, widgetId: 'w2', pageId: 'p1', values, crossFilters: cross })
+    expect(tree?.expression).toMatchObject({ type: 'and', children: [
+      { op: 'like_literal' },
+      { type: 'or', children: [{ op: 'eq', values: [{ value: 'Jakarta' }] }, { op: 'eq', values: [{ value: 'Bandung' }] }] },
+      { op: 'eq', values: [{ value: 'Online' }] },
+    ] })
+    // Clearing every selection leaves only the dashboard filter.
+    expect(chartContext({ definition: definition([filter()]), chart: target, widgetId: 'w2', pageId: 'p1', values, crossFilters: [] })?.expression)
+      .toMatchObject({ op: 'like_literal' })
+  })
+
   it('includes the whole end day of a date range, across month and leap-year ends', () => {
     const tree = chartContext({ definition: definition([filter({ kind: 'date_range' })]), chart: target, widgetId: 'w1', pageId: 'p1',
       values: { f1: { kind: 'range', from: { type: 'date', value: '2024-02-01' }, to: { type: 'date', value: '2024-02-29' } } }, crossFilters: [] })
@@ -218,6 +235,16 @@ describe('chart options', () => {
     expect(option.xAxis.data).toEqual(['Jakarta', 'Medan'])
     expect(option.series[0].data).toEqual([{ value: 979755000, itemStyle: { opacity: 1 } }, { value: null, itemStyle: { opacity: 0.3 } }])
     expect(option.color).toEqual(['mark'])
+  })
+
+  it('highlights several selected categories, or whole series picked from the legend', () => {
+    const data = result([column('d0', 'string', 'dimension'), column('m0', 'decimal', 'measure')],
+      [[{ type: 'string', value: 'Jakarta' }, { type: 'decimal', value: '1' }], [{ type: 'string', value: 'Medan' }, { type: 'decimal', value: '2' }],
+        [{ type: 'string', value: 'Bandung' }, { type: 'decimal', value: '3' }]])
+    const option = buildChartOption(chart(), data, tokens, ['Jakarta', 'Bandung']) as { series: { data: { itemStyle: { opacity: number } }[] }[] }
+    expect(option.series[0].data.map(item => item.itemStyle.opacity)).toEqual([1, 0.3, 1])
+    const none = buildChartOption(chart(), data, tokens, []) as { series: { data: unknown[] }[] }
+    expect(none.series[0].data).toEqual([1, 2, 3])
   })
 
   it('keeps every category label of a short axis, shortened to its band', () => {

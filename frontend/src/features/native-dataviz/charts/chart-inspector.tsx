@@ -13,9 +13,10 @@ import { cn } from '@/lib/utils'
 import type { ChartDefinition, ConditionalFormat, DatasetField, DatasetReferenceSummary } from '../contracts'
 import { useDatasetDefinition } from './chart-data'
 import {
-  AGGREGATION_LABELS, defaultAggregation, fromChart, initialState, isNumeric, isTemporal, kindOf, missing,
+  AGGREGATION_LABELS, canCalculate, defaultAggregation, fromChart, initialState, isNumeric, isTemporal, kindOf, missing,
   switchVisual, toChart, VISUALS, type BuilderDimension, type BuilderMeasure, type BuilderState, type Visual,
 } from './builder-model'
+import { CALCULATION_LABELS, type CalculationKind } from './calculations'
 import { humanize, type DateGrain, type SupportedAggregation } from './chart-query'
 import { NativeChart } from './native-chart'
 
@@ -74,9 +75,9 @@ function DimensionRow({ label, fields, value, onChange, onRemove }: {
   </div>
 }
 
-function MeasureRow({ label, fields, value, onChange, onRemove, combo }: {
+function MeasureRow({ label, fields, value, onChange, onRemove, combo, calculable }: {
   label: string; fields: DatasetField[]; value: BuilderMeasure; onChange: (value: BuilderMeasure) => void
-  onRemove?: () => void; combo?: boolean
+  onRemove?: () => void; combo?: boolean; calculable?: boolean
 }) {
   const field = fields.find(item => item.field_id === value.field_id)
   const aggregations = (Object.keys(AGGREGATION_LABELS) as SupportedAggregation[]).filter(item =>
@@ -94,6 +95,23 @@ function MeasureRow({ label, fields, value, onChange, onRemove, combo }: {
       </div>
       {onRemove && <Button variant='ghost' size='icon' className='size-9 shrink-0' aria-label={`Remove ${label}`} onClick={onRemove}><Trash2 /></Button>}
     </div>
+    {calculable && <div className='flex items-end gap-2'>
+      <div className='min-w-0 flex-1 space-y-1'>
+        <Label className='text-xs text-muted-foreground'>Show as</Label>
+        <Select value={value.showAs ?? NONE} onValueChange={kind => onChange({ ...value, showAs: kind === NONE ? null : kind as CalculationKind })}>
+          <SelectTrigger aria-label={`${label} shown as`} className='h-8 w-full'><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NONE}>Value</SelectItem>
+            {(Object.keys(CALCULATION_LABELS) as CalculationKind[]).map(kind => <SelectItem key={kind} value={kind}>{CALCULATION_LABELS[kind]}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      {value.showAs === 'moving_average' && <div className='w-24 shrink-0 space-y-1'>
+        <Label className='text-xs text-muted-foreground'>Rows</Label>
+        <Input type='number' min={2} max={1000} value={value.window ?? 3} aria-label={`${label} moving average rows`} className='h-8'
+          onChange={event => onChange({ ...value, window: Math.max(2, Math.min(1000, Number(event.target.value) || 3)) })} />
+      </div>}
+    </div>}
     {combo && <div className='flex gap-2'>
       <Select value={value.series} onValueChange={series => onChange({ ...value, series: series as BuilderMeasure['series'] })}>
         <SelectTrigger aria-label={`${label} mark`} className='h-8 w-28'><SelectValue /></SelectTrigger>
@@ -334,7 +352,7 @@ function Builder({ datasets, chart, initialVisual, saving, error, onSave, fields
           <Section title={kind === 'single_measure' ? 'Value' : 'Values'}>
             {state.measures.map((item, index) => <MeasureRow key={index}
               label={kind === 'single_measure' ? (index === 0 ? 'Value' : 'Compare with') : kind === 'cartesian' ? `Y axis ${index + 1}` : `Value ${index + 1}`}
-              fields={fields} value={item} combo={state.visual === 'combo'}
+              fields={fields} value={item} combo={state.visual === 'combo'} calculable={canCalculate(state)}
               onChange={value => set({ measures: state.measures.map((old, i) => i === index ? value : old) })}
               onRemove={state.measures.length > (kind === 'table' ? 0 : 1) ? () => set({ measures: state.measures.filter((_, i) => i !== index) }) : undefined} />)}
             {state.measures.length < maxMeasures && <Button variant='outline' size='sm' onClick={addMeasure}><Plus />{kind === 'single_measure' ? 'Add comparison' : 'Add value'}</Button>}

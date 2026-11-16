@@ -14,6 +14,7 @@ defaults mirror ``filter-model.ts``; their unit tests pin the same cases.
 from __future__ import annotations
 
 import io
+import json
 import re
 import zipfile
 from collections.abc import Mapping, Sequence
@@ -373,10 +374,124 @@ def workbook(sheets: Sequence[tuple[str, Sequence[str], Sequence[Sequence[Any]]]
     return buffer.getvalue()
 
 
-def result_sheet(title: str, result: DatasetQueryResult) -> tuple[str, list[str], list[list[Any]]]:
+_CALCULATION_LABELS = {
+    "running_total": "Running total", "percent_of_total": "Percent of total",
+    "difference": "Difference from previous",
+    "percent_difference": "Percent difference from previous",
+    "rank": "Rank", "dense_rank": "Dense rank", "moving_average": "Moving average",
+}
+_PERCENT = {"percent_of_total", "percent_difference"}
+
+
+def _number(cell: Any) -> float | None:
+    if cell is None or cell.type not in {"integer", "decimal", "float"}:
+        return None
+    return float(cell.value)
+
+
+def _order_key(cell: Any) -> tuple[int, Any]:
+    if cell is None:
+        return (1, "")
+    number = _number(cell)
+    return (0, number) if number is not None else (0, str(cell.value))
+
+
+def apply_calculations(chart: ChartDefinition, result: DatasetQueryResult) -> list[list[Any]]:
+    """The chart's table calculations over its rows, as the editor shows them.
+
+    Mirrors ``calculations.ts``: along the addressing fields, per partition;
+    ties share a rank; a moving average uses previous rows in order. Returns
+    the cells with calculated values as plain numbers, so the workbook and the
+    screen agree. Column names change in ``calculated_labels``.
+    """
+    rows: list[list[Any]] = [list(row) for row in result.rows]
     columns = result.columns
-    return (title, [column_label(column) for column in columns],
-            [[cell_value(cell, columns[i]) for i, cell in enumerate(row)] for row in result.rows])
+    for calculation in chart.table_calculations:
+        target = next((i for i, column in enumerate(columns) if column.role == "measure"
+                       and column.field_id == calculation.measure.field_id
+                       and column.aggregation == calculation.measure.aggregation), None)
+
+        def at(field: str) -> int | None:
+            return next((i for i, column in enumerate(columns)
+                         if column.role == "dimension" and column.field_id == field), None)
+
+        order = [(at(item.field_id), item.direction == "desc") for item in calculation.order]
+        partition = [at(field) for field in calculation.partition_by]
+        if target is None or any(i is None for i, _ in order) or any(i is None for i in partition):
+            continue
+        raw: list[float | None] = []
+        for row in rows:
+            cell = row[target]
+            number = float(cell) if isinstance(cell, int | float) else _number(cell)
+            raw.append(0.0 if number is None and calculation.nulls == "zero" else number)
+        groups: dict[str, list[int]] = {}
+        for index, row in enumerate(rows):
+            key = json.dumps([row[i].model_dump(mode="json") if row[i] is not None else None
+                              for i in partition if i is not None])
+            groups.setdefault(key, []).append(index)
+        for members in groups.values():
+            ordered = list(members)
+            for column_index, desc in reversed(order):
+                if column_index is None:
+                    continue
+
+                def sort_key(member: int, i: int = column_index) -> tuple[int, Any]:
+                    return _order_key(rows[member][i])
+
+                ordered.sort(key=sort_key, reverse=desc)
+            present: list[float] = [n for n in (raw[i] for i in ordered) if n is not None]
+            total = sum(present)
+            ranked = sorted(set(present), reverse=True)
+            running = 0.0
+            for position, index in enumerate(ordered):
+                own = raw[index]
+                previous = raw[ordered[position - 1]] if position else None
+                value: float | None = None
+                kind = calculation.kind
+                if kind == "running_total":
+                    if own is not None:
+                        running += own
+                    value = None if own is None else running
+                elif kind == "percent_of_total":
+                    value = None if own is None or total == 0 else own / total * 100
+                elif kind == "difference":
+                    value = None if own is None or previous is None else own - previous
+                elif kind == "percent_difference":
+                    value = (None if own is None or previous is None or previous == 0
+                             else (own - previous) / abs(previous) * 100)
+                elif kind == "rank":
+                    value = None if own is None else 1.0 + len([n for n in present if n > own])
+                elif kind == "dense_rank":
+                    value = None if own is None else 1 + ranked.index(own)
+                elif kind == "moving_average":
+                    size = calculation.window_size or 3
+                    span = ordered[max(0, position - size + 1):position + 1]
+                    window = [n for n in (raw[m] for m in span) if n is not None]
+                    value = None if own is None or not window else sum(window) / len(window)
+                rows[index][target] = None if value is None else round(value, 9)
+    return rows
+
+
+def calculated_label(chart: ChartDefinition, column: QueryColumn) -> str | None:
+    for calculation in chart.table_calculations:
+        if (column.role == "measure" and column.field_id == calculation.measure.field_id
+                and column.aggregation == calculation.measure.aggregation):
+            window = f" ({calculation.window_size})" if calculation.kind == "moving_average" else ""
+            percent = " (%)" if calculation.kind in _PERCENT else ""
+            name, field = _CALCULATION_LABELS[calculation.kind], humanize(column.name)
+            return f"{name}{window} of {field[:1].lower()}{field[1:]}{percent}"
+    return None
+
+
+def result_sheet(title: str, result: DatasetQueryResult,
+                 chart: ChartDefinition | None = None) -> tuple[str, list[str], list[list[Any]]]:
+    columns = result.columns
+    rows = apply_calculations(chart, result) if chart and chart.table_calculations else result.rows
+    headers = [(calculated_label(chart, column) if chart else None) or column_label(column)
+               for column in columns]
+    return (title, headers,
+            [[cell if isinstance(cell, int | float) and not isinstance(cell, bool)
+              else cell_value(cell, columns[i]) for i, cell in enumerate(row)] for row in rows])
 
 
 # ── One run ────────────────────────────────────────────────────────────────
@@ -447,7 +562,7 @@ async def page_workbook(user: Mapping[str, Any], target: ExportTarget, *,
             continue
         request = chart_request(dashboard, chart, widget.widget_id, page.page_id, timezone)
         result = await datasets.query(user, chart.dataset_id, request)
-        sheets.append(result_sheet(widget.title or chart.title, result))
+        sheets.append(result_sheet(widget.title or chart.title, result, chart))
     return dashboard, page, workbook(sheets)
 
 

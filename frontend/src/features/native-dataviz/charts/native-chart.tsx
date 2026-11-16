@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { ChartDefinition, DatasetQueryResult, FilterTree, ParameterInput, QueryColumn } from '../contracts'
 import { buildChartOption } from './chart-options'
-import { cellLabel, cellNumber, chartQueryShape, columnLabel, periodEnd, type Cell } from './chart-query'
+import { cellLabel, cellNumber, chartQueryShape, columnLabel, hasSplit, periodEnd, type Cell } from './chart-query'
 import { queryError, useChartData } from './chart-data'
 import { EChartHost, type MarkSelection, type VizTokens } from './echart-host'
 import { cellStyle, MAX_PIVOT_COLUMNS, pivotModel, ranges } from './pivot'
@@ -18,6 +18,10 @@ export type ValueSelection = {
   period?: { from: string; to: string }
   /** Where the mark was clicked inside the chart, for a menu beside it. */
   anchor?: { x: number; y: number }
+  /** Add to this chart's selection (Shift, Ctrl or Cmd) instead of replacing it. */
+  additive?: boolean
+  /** Chosen from the legend: it filters directly, with no drill menu. */
+  fromLegend?: boolean
 }
 
 type Props = {
@@ -28,7 +32,7 @@ type Props = {
   parameters?: ParameterInput[]
   onSelectValue?: (selection: ValueSelection) => void
   /** The category this chart's selection cross-filters by; other marks are dimmed. */
-  selectedLabel?: string | null
+  selectedLabel?: string | readonly string[] | null
   className?: string
 }
 
@@ -191,24 +195,31 @@ export function NativeChart({ chart, draft, context, parameters, onSelectValue, 
   const select = useCallback((mark: MarkSelection) => {
     if (!result || !onSelectValue) return
     const encoding = chart.encoding
-    const columnIndex = 0
+    let columnIndex = 0
+    if (mark.legend) {
+      // Split series are named by the colour field; slices by the category field.
+      if (encoding.kind === 'cartesian' && hasSplit(encoding)) columnIndex = encoding.dimensions.length
+      else if (encoding.kind !== 'category') return
+    }
     const column = result.columns[columnIndex]
     if (!column?.field_id || column.role !== 'dimension') return
     let row: DatasetQueryResult['rows'][number] | undefined
-    if (encoding.kind === 'category' || encoding.kind === 'heatmap') row = result.rows[mark.dataIndex]
+    if (mark.legend) row = result.rows.find(item => cellLabel(item[columnIndex], column) === mark.name)
+    else if (encoding.kind === 'category' || encoding.kind === 'heatmap') row = result.rows[mark.dataIndex]
     else if (encoding.kind === 'cartesian') {
       row = result.rows.find(item => encoding.dimensions.map((_, i) => cellLabel(item[i], result.columns[i])).join(' · ') === mark.name)
     }
     if (!row) return
     const cell = row[columnIndex]
     const anchor = mark.x !== undefined && mark.y !== undefined ? { x: mark.x, y: mark.y } : undefined
+    const how = { ...(mark.additive ? { additive: true } : {}), ...(mark.legend ? { fromLegend: true } : {}) }
     if (column.date_grain && cell && (cell.type === 'date' || cell.type === 'timestamp')) {
       const from = cell.value.slice(0, 10)
       onSelectValue({ field_id: column.field_id, value: cell, label: cellLabel(cell, column),
-        period: { from, to: periodEnd(from, column.date_grain) }, anchor })
+        period: { from, to: periodEnd(from, column.date_grain) }, anchor, ...how })
       return
     }
-    onSelectValue({ field_id: column.field_id, value: cell, label: cellLabel(cell, column), anchor })
+    onSelectValue({ field_id: column.field_id, value: cell, label: cellLabel(cell, column), anchor, ...how })
   }, [chart, result, onSelectValue])
   // A map point cross-filters by its group; coordinates alone are not a useful filter.
   const selectGroup = useCallback((row: number) => {
@@ -234,12 +245,27 @@ export function NativeChart({ chart, draft, context, parameters, onSelectValue, 
           : chart.visual === 'pivot' ? <PivotTable chart={chart} result={result} />
           : chart.visual === 'table' ? <ResultTable chart={chart} result={result} />
           : chart.visual === 'map' ? <NativeMap chart={chart} result={result} label={label} selectedLabel={selectedLabel} onSelectGroup={onSelectValue ? selectGroup : undefined} />
-            : <EChartHost build={build} label={label} onSelect={onSelectValue ? select : undefined} />}
+            : <>
+              <EChartHost build={build} label={label} onSelect={onSelectValue ? select : undefined} />
+              <DataAlternative title={chart.title} result={result} />
+            </>}
     </div>
     {result.truncated && <p className='shrink-0 pt-1 text-xs text-warning-strong'>
       Showing the first {result.rows.length.toLocaleString()} rows. Add a filter to see everything.
     </p>}
   </div>
+}
+
+const ALTERNATIVE_ROWS = 50
+
+/** The drawn chart's rows as a table for screen readers; colour never carries meaning alone. */
+function DataAlternative({ title, result }: { title: string; result: DatasetQueryResult }) {
+  const rows = result.rows.slice(0, ALTERNATIVE_ROWS)
+  return <table className='sr-only'>
+    <caption>{`Data for ${title}${result.rows.length > rows.length ? `, first ${rows.length} of ${result.rows.length} rows` : ''}`}</caption>
+    <thead><tr>{result.columns.map(column => <th key={column.key} scope='col'>{columnLabel(column)}</th>)}</tr></thead>
+    <tbody>{rows.map((row, r) => <tr key={r}>{row.map((cell, c) => <td key={c}>{cellLabel(cell, result.columns[c])}</td>)}</tr>)}</tbody>
+  </table>
 }
 
 function State({ text, tone, retry }: { text: string; tone: 'muted' | 'error'; retry?: () => void }) {

@@ -16,7 +16,13 @@ export type VizTokens = {
 }
 
 /** A clicked mark, with where it was clicked inside the chart, in CSS pixels. */
-export type MarkSelection = { seriesIndex: number; dataIndex: number; name: string; x?: number; y?: number }
+export type MarkSelection = {
+  seriesIndex: number; dataIndex: number; name: string; x?: number; y?: number
+  /** Shift, Ctrl or Cmd was held: add to the selection instead of replacing it. */
+  additive?: boolean
+  /** The click was on a legend entry: `name` is the series. */
+  legend?: boolean
+}
 
 /** Chart colours from theme.css: the page's current theme, or light for printing. */
 export function readTokens(mode: 'current' | 'light' = 'current'): VizTokens {
@@ -93,11 +99,20 @@ export function EChartHost({ build, label, onSelect, className }: {
       const chart = core.init(node, undefined, { renderer: 'canvas' })
       instance.current = chart
       chart.on('click', params => {
-        const event = params as { seriesIndex?: number; dataIndex?: number; name?: string; event?: { offsetX?: number; offsetY?: number } }
+        const event = params as { seriesIndex?: number; dataIndex?: number; name?: string
+          event?: { offsetX?: number; offsetY?: number; event?: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean } } }
+        const keys = event.event?.event
         if (typeof event.dataIndex === 'number') {
           select.current?.({ seriesIndex: event.seriesIndex ?? 0, dataIndex: event.dataIndex, name: String(event.name ?? ''),
-            x: event.event?.offsetX, y: event.event?.offsetY })
+            x: event.event?.offsetX, y: event.event?.offsetY, additive: Boolean(keys?.shiftKey || keys?.ctrlKey || keys?.metaKey) })
         }
+      })
+      // While the chart can filter, a legend entry selects its group instead of hiding it.
+      chart.on('legendselectchanged', params => {
+        const { name } = params as { name: string }
+        if (!select.current) return
+        chart.dispatchAction({ type: 'legendSelect', name })
+        select.current({ seriesIndex: -1, dataIndex: -1, name, legend: true })
       })
       observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
         chart.resize()
@@ -119,7 +134,10 @@ export function EChartHost({ build, label, onSelect, className }: {
     void loadEcharts().then(() => {
       if (cancelled || !instance.current) return
       try {
-        instance.current.setOption({ aria: { enabled: true, label: { description: label } }, ...build(readTokens(), width) }, true)
+        // Reduced motion: charts appear without their entry and update animation.
+        const still = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        instance.current.setOption({ aria: { enabled: true, label: { description: label } }, ...build(readTokens(), width),
+          ...(still ? { animation: false } : {}) }, true)
       } catch {
         setFailed(true)
       }

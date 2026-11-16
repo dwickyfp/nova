@@ -1,0 +1,40 @@
+{
+  "attempt": 2,
+  "date": "2026-11-16",
+  "builds_on": "release-qa-attempt-1.json",
+  "features_added": [
+    "view-only enforcement",
+    "multi-value and legend cross-filtering",
+    "six-column tablet view",
+    "chart text alternatives and reduced motion",
+    "multi-page report with filters",
+    "table calculations (Show as)",
+    "dashboard comments (migration 0055)"
+  ],
+  "closed": [
+    "NDV-A11Y-008",
+    "NDV-ACL-019",
+    "NDV-ACL-021",
+    "NDV-GRID-007",
+    "NDV-INTER-002",
+    "NDV-INTER-005",
+    "NDV-METRIC-009",
+    "NDV-METRIC-010",
+    "NDV-METRIC-011",
+    "NDV-METRIC-012",
+    "NDV-STORE-005"
+  ],
+  "counts": {
+    "NOT_RUN": 158,
+    "PASS": 79,
+    "OUT_OF_SCOPE": 17
+  },
+  "environment_incident": "The development StarRocks FE container exited (code 255, not OOM) at 13:24 WIB during parallel test runs; restarted with its data, processes recovered; gates afterwards run one at a time.",
+  "verification": {
+    "backend_gate_23": "11,972 unit, mypy, scorecard, boundary passed; changed-file Ruff failed on one long test line, fixed and rerun clean",
+    "pg17_full": "1,075 passed, 8 skipped (PgBouncer acceptance needs the pinned pooler binary, run in CI), 0 failed; two privilege tests updated for 0054",
+    "eval": "350 passed",
+    "frontend": "lint 0 errors, build, full suite 1,837/1,837; helpers moved out of component files afterwards and the Dataviz suites rerun (219 passed)",
+    "live": "comments posted in the app; alice read it and her post was refused"
+  }
+}

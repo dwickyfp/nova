@@ -1,9 +1,16 @@
 import type { ChartDefinition, ConditionalFormat, DatasetField } from '../contracts'
+import type { CalculationKind } from './calculations'
 import type { DateGrain, SupportedAggregation } from './chart-query'
 
 export type Visual = ChartDefinition['visual']
 export type BuilderDimension = { field_id: string; date_grain: DateGrain | null }
-export type BuilderMeasure = { field_id: string; aggregation: SupportedAggregation; series: 'bar' | 'line' | 'area'; axis: 'left' | 'right' }
+export type BuilderMeasure = {
+  field_id: string; aggregation: SupportedAggregation; series: 'bar' | 'line' | 'area'; axis: 'left' | 'right'
+  /** Shown as a table calculation over the chart's rows instead of the plain value. */
+  showAs?: CalculationKind | null
+  /** Rows in a moving average. */
+  window?: number
+}
 export type NumberStyle = { kind: 'number' | 'currency' | 'percent'; decimals: number; currency: string }
 
 export type BuilderState = {
@@ -170,6 +177,7 @@ export function toChart(state: BuilderState): ChartDefinition {
         measures: state.measures.map(item => meas(item, number)), ...(state.color ? { color: dim(state.color) } : {}),
         orientation: state.orientation, stack: state.stack, interpolation: state.smooth ? 'smooth' : 'linear', nulls: 'gap' }
   }
+  const calculations = calculationsFor(state, kind, number)
   const sortTarget = state.measures[0]
   // Formats shade measures of a table or pivot; a removed measure drops its rules.
   const measured = new Set(state.measures.map(item => item.field_id))
@@ -184,7 +192,33 @@ export function toChart(state: BuilderState): ChartDefinition {
     sort: state.sort !== 'none' && sortTarget
       ? [{ field_id: sortTarget.field_id, direction: state.sort, aggregation: sortTarget.aggregation }] : [],
     row_limit: state.rowLimit, result_overflow: 'truncate_with_warning',
+    ...(calculations.length ? { table_calculations: calculations } : {}),
   }
+}
+
+/** Visuals whose measures can be shown as a calculation along their first grouping. */
+export function canCalculate(state: BuilderState): boolean {
+  const kind = kindOf(state.visual)
+  return (kind === 'cartesian' || kind === 'category' || (kind === 'table' && state.visual === 'table')) && state.dimensions.length > 0
+}
+
+function calculationsFor(state: BuilderState, kind: string, number: NumberStyle): NonNullable<ChartDefinition['table_calculations']> {
+  if (!canCalculate(state)) return []
+  // Along the first grouping, in its order; separately for every other grouping (series, columns).
+  const dimensions = kind === 'category' ? state.dimensions.slice(0, 1)
+    : kind === 'cartesian' ? [...state.dimensions.slice(0, 2), ...(state.color && !state.dimensions.some(d => d.field_id === state.color!.field_id) ? [state.color] : [])]
+      : state.dimensions
+  const [along, ...rest] = dimensions.map(item => item.field_id)
+  const measures = kind === 'category' ? state.measures.slice(0, 1) : state.measures
+  return measures.filter(item => item.showAs).map(item => ({
+    calculation_id: `00000000-0000-4000-8000-${(measures.indexOf(item) + 1).toString(16).padStart(12, '0')}`,
+    name: `${item.showAs} ${item.field_id} ${item.aggregation}`.slice(0, 256),
+    kind: item.showAs!, measure: meas(item, number),
+    addressing: [along], partition_by: [...new Set(rest)].filter(field => field !== along),
+    order: [{ field_id: along, direction: 'asc' as const }],
+    ...(item.showAs === 'moving_average' ? { window_size: item.window ?? 3 } : {}),
+    nulls: 'preserve' as const,
+  }))
 }
 
 type Measure = { field_id: string; aggregation: string; series?: string | null; axis?: string | null; format?: { kind?: string | null; decimals?: number | null; currency?: string | null } | null }
@@ -217,6 +251,13 @@ export function fromChart(chart: ChartDefinition, fields: DatasetField[]): Build
     number: { kind: (first?.format?.kind === 'currency' || first?.format?.kind === 'percent') ? first.format.kind : 'number',
       decimals: first?.format?.decimals ?? 2, currency: first?.format?.currency ?? 'USD' },
   })
+  const shown = (state: BuilderState) => {
+    for (const calculation of chart.table_calculations ?? []) {
+      const measure = state.measures.find(item => item.field_id === calculation.measure.field_id
+        && item.aggregation === calculation.measure.aggregation && !item.showAs)
+      if (measure) Object.assign(measure, { showAs: calculation.kind, window: calculation.window_size ?? undefined })
+    }
+  }
   switch (encoding.kind) {
     case 'cartesian':
       state.dimensions = encoding.dimensions.map(fromDim)
@@ -267,6 +308,7 @@ export function fromChart(chart: ChartDefinition, fields: DatasetField[]): Build
       state.color = encoding.group ? fromDim(encoding.group) : null
       break
   }
+  shown(state)
   return state
 }
 
