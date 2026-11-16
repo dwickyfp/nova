@@ -1,7 +1,7 @@
 """Unit tests for security — JWT + Fernet encryption. No engine needed."""
 
 import pytest
-from jose import JWTError
+from jwt import InvalidTokenError
 
 from app.core.security import (
     create_access_token,
@@ -20,7 +20,7 @@ class TestJWT:
         assert "exp" in payload
 
     def test_decode_invalid_token_raises(self):
-        with pytest.raises(JWTError):
+        with pytest.raises(InvalidTokenError):
             decode_token("invalid.token.here")
 
     def test_different_users_different_tokens(self):

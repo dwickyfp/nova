@@ -23,7 +23,7 @@ export function describeFilterValue(value: FilterValue | undefined, field?: Data
       : value.from ? `from ${shortValue(value.from)}` : `until ${shortValue(value.to)}` : 'All'
     case 'text': return value.value ? `Contains “${value.value}”` : 'All'
     case 'relative': return `${value.mode === 'previous' ? 'Previous' : value.mode === 'to_date' ? 'This' : 'Last'} ${value.mode === 'to_date' ? value.unit : `${value.count} ${value.unit}${value.count > 1 ? 's' : ''}`}${value.mode === 'to_date' ? ' to date' : ''}`
-    case 'boolean': return value.value ? 'True' : 'False'
+    case 'boolean': return value.value === null ? 'No value' : value.value ? 'True' : 'False'
   }
   return field ? field.name : 'All'
 }

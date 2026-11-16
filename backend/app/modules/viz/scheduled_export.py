@@ -13,6 +13,7 @@ defaults mirror ``filter-model.ts``; their unit tests pin the same cases.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import re
@@ -20,8 +21,9 @@ import zipfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
-from uuid import UUID
+from typing import Any, Literal
+from uuid import UUID, uuid4
+from xml.etree import ElementTree
 from xml.sax.saxutils import escape
 from zoneinfo import ZoneInfo
 
@@ -330,47 +332,118 @@ def _sheet(headers: Sequence[str], rows: Sequence[Sequence[Any]]) -> str:
             f'<sheetData>{"".join(lines)}</sheetData></worksheet>')
 
 
-def workbook(sheets: Sequence[tuple[str, Sequence[str], Sequence[Sequence[Any]]]]) -> bytes:
-    """A minimal Office Open XML workbook: one sheet per (name, headers, rows)."""
+RECEIPT_PART = "docProps/custom.xml"
+_PROPERTIES = "http://schemas.openxmlformats.org/officeDocument/2006/custom-properties"
+_VALUE_TYPES = "http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"
+#: Custom document properties: the run that saved the file and a digest of its content.
+RUN_PROPERTY = "Nova scheduled run"
+DIGEST_PROPERTY = "Nova content SHA-256"
+
+
+def content_digest(parts: Mapping[str, bytes]) -> str:
+    """SHA-256 over every part but the receipt, by part name, so any change shows."""
+    digest = hashlib.sha256()
+    for name in sorted(parts):
+        if name == RECEIPT_PART:
+            continue
+        for chunk in (name.encode(), parts[name]):
+            digest.update(len(chunk).to_bytes(8, "big"))
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _receipt(run: str, digest: str) -> str:
+    properties = "".join(
+        f'<property fmtid="{{D5CDD505-2E9C-101B-9397-08002B2CF9AE}}" pid="{pid}" '
+        f'name="{name}"><vt:lpwstr>{escape(value)}</vt:lpwstr></property>'
+        for pid, (name, value) in enumerate(((RUN_PROPERTY, run), (DIGEST_PROPERTY, digest)),
+                                            start=2))
+    return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            f'<Properties xmlns="{_PROPERTIES}" xmlns:vt="{_VALUE_TYPES}">{properties}'
+            "</Properties>")
+
+
+def read_receipt(data: bytes) -> tuple[dict[str, str], str] | None:
+    """A saved workbook's receipt properties and its recomputed content digest.
+
+    ``None`` when the file is not a readable workbook: a truncated or damaged
+    archive, or a part whose checksum no longer matches.
+    """
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            if archive.testzip() is not None:
+                return None
+            parts = {name: archive.read(name) for name in archive.namelist()}
+        if "xl/workbook.xml" not in parts:
+            return None
+        properties: dict[str, str] = {}
+        if RECEIPT_PART in parts:
+            root = ElementTree.fromstring(parts[RECEIPT_PART])
+            for item in root.findall(f"{{{_PROPERTIES}}}property"):
+                value = item.find(f"{{{_VALUE_TYPES}}}lpwstr")
+                properties[item.get("name", "")] = (value.text or "") if value is not None else ""
+    except (zipfile.BadZipFile, zipfile.LargeZipFile, ElementTree.ParseError, ValueError,
+            EOFError, OSError):
+        return None
+    return properties, content_digest(parts)
+
+
+def workbook(sheets: Sequence[tuple[str, Sequence[str], Sequence[Sequence[Any]]]], *,
+             run: str | None = None) -> bytes:
+    """A minimal Office Open XML workbook: one sheet per (name, headers, rows).
+
+    ``run`` records which scheduled run saved the file, with a digest of the
+    content, as custom document properties, so a retry can recognise its file.
+    """
     if not sheets:
         raise ExportUnavailable("The page has no charts to export")
     names = sheet_names([name for name, _, _ in sheets])
     main = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    parts: dict[str, str] = {}
+    parts["[Content_Types].xml"] = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="rels" '
+        'ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        '<Override PartName="/xl/workbook.xml" ContentType="application/'
+        'vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+        + "".join(
+            f'<Override PartName="/xl/worksheets/sheet{i}.xml" ContentType="application/'
+            'vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+            for i in range(1, len(sheets) + 1))
+        + ('<Override PartName="/docProps/custom.xml" ContentType="application/'
+           'vnd.openxmlformats-officedocument.custom-properties+xml"/>' if run else "")
+        + "</Types>")
+    parts["_rels/.rels"] = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        f'<Relationship Id="rId1" Type="{main}/officeDocument" Target="xl/workbook.xml"/>'
+        + (f'<Relationship Id="rId2" Type="{main}/custom-properties" '
+           'Target="docProps/custom.xml"/>' if run else "")
+        + "</Relationships>")
+    parts["xl/workbook.xml"] = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+        f'xmlns:r="{main}"><sheets>'
+        + "".join(f'<sheet name="{escape(name, {chr(34): "&quot;"})}" sheetId="{i}" '
+                  f'r:id="rId{i}"/>' for i, name in enumerate(names, start=1))
+        + "</sheets></workbook>")
+    parts["xl/_rels/workbook.xml.rels"] = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        + "".join(f'<Relationship Id="rId{i}" Type="{main}/worksheet" '
+                  f'Target="worksheets/sheet{i}.xml"/>' for i in range(1, len(sheets) + 1))
+        + "</Relationships>")
+    for i, (_, headers, rows) in enumerate(sheets, start=1):
+        parts[f"xl/worksheets/sheet{i}.xml"] = _sheet(headers, rows)
+    encoded = {name: text.encode("utf-8") for name, text in parts.items()}
+    if run:
+        encoded[RECEIPT_PART] = _receipt(run, content_digest(encoded)).encode("utf-8")
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("[Content_Types].xml", (
-            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-            '<Default Extension="rels" '
-            'ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
-            '<Default Extension="xml" ContentType="application/xml"/>'
-            '<Override PartName="/xl/workbook.xml" ContentType="application/'
-            'vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
-            + "".join(
-                f'<Override PartName="/xl/worksheets/sheet{i}.xml" ContentType="application/'
-                'vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
-                for i in range(1, len(sheets) + 1))
-            + "</Types>"))
-        archive.writestr("_rels/.rels", (
-            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-            f'<Relationship Id="rId1" Type="{main}/officeDocument" Target="xl/workbook.xml"/>'
-            "</Relationships>"))
-        archive.writestr("xl/workbook.xml", (
-            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
-            f'xmlns:r="{main}"><sheets>'
-            + "".join(f'<sheet name="{escape(name, {chr(34): "&quot;"})}" sheetId="{i}" '
-                      f'r:id="rId{i}"/>' for i, name in enumerate(names, start=1))
-            + "</sheets></workbook>"))
-        archive.writestr("xl/_rels/workbook.xml.rels", (
-            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-            + "".join(f'<Relationship Id="rId{i}" Type="{main}/worksheet" '
-                      f'Target="worksheets/sheet{i}.xml"/>' for i in range(1, len(sheets) + 1))
-            + "</Relationships>"))
-        for i, (_, headers, rows) in enumerate(sheets, start=1):
-            archive.writestr(f"xl/worksheets/sheet{i}.xml", _sheet(headers, rows))
+        for name, body in encoded.items():
+            archive.writestr(name, body)
     return buffer.getvalue()
 
 
@@ -531,17 +604,99 @@ def parse_record(record_id: str) -> tuple[ExportTarget, str]:
     return ExportTarget.parse(head), timezone
 
 
-def file_name(title: str, page: str, when: datetime) -> str:
+def file_name(title: str, page: str, when: datetime, tag: str = "") -> str:
     base = re.sub(r"[^\w \-]+", " ", f"{title} {page}".strip(), flags=re.UNICODE)
     base = re.sub(r"\s+", " ", base).strip()[:80] or "Dashboard"
-    return f"{base} {when:%Y-%m-%d %H%M}.xlsx"
+    return f"{base} {when:%Y-%m-%d %H%M}{f' {tag}' if tag else ''}.xlsx"
 
 
 FOLDER = "Scheduled exports"
 
 
+@dataclass(frozen=True)
+class Occurrence:
+    """One scheduled run, as the task scheduler persisted it before the run started.
+
+    ``key`` is the durable run identity every retry keeps; ``due`` is the time the
+    scheduler recorded for it. The file is named from ``due`` and carries ``key``.
+    """
+
+    key: str
+    due: datetime
+
+    @property
+    def tag(self) -> str:
+        """A short form of the key, to tell apart two runs due in the same minute."""
+        return re.sub(r"[^0-9a-z]", "", self.key.lower())[:8] or "run"
+
+    def names(self, timezone: str) -> tuple[str, str]:
+        """The date stamp in file names, and its form with the run's tag."""
+        stamp = f"{self.due.astimezone(ZoneInfo(timezone)):%Y-%m-%d %H%M}"
+        return f" {stamp}.xlsx", f" {stamp} {self.tag}.xlsx"
+
+
+Check = Literal["saved", "other", "damaged"]
+
+
+def check_saved(entry: Mapping[str, Any], data: bytes, occurrence: Occurrence) -> Check:
+    """Whether a file already in the folder is this run's complete workbook.
+
+    ``saved``: its size matches what the workspace recorded, every part passes
+    its checksum, it names this run and its content digest matches the one it
+    carries. ``other``: an intact workbook saved by another run or by hand.
+    ``damaged``: anything else, which is never reported as this run's file.
+    """
+    if not data or int(entry.get("size_bytes") or 0) != len(data):
+        return "damaged"
+    receipt = read_receipt(data)
+    if receipt is None:
+        return "damaged"
+    properties, digest = receipt
+    if properties.get(RUN_PROPERTY) != occurrence.key:
+        return "other"
+    return "saved" if properties.get(DIGEST_PROPERTY) == digest else "damaged"
+
+
+async def find_saved(namespace: str, occurrence: Occurrence,
+                     timezone: str) -> tuple[dict[str, Any], Check] | None:
+    """This run's file in the export folder, if a previous attempt saved one.
+
+    Only files dated with this run's due time can be its own. The run's file
+    wins; otherwise a damaged candidate is reported so the run stops.
+    """
+    from app.modules.workspaces.service import workspace_service
+
+    endings = occurrence.names(timezone)
+    damaged: dict[str, Any] | None = None
+    for entry in await workspace_service.list_entries(namespace):
+        name = str(entry.get("name") or "")
+        if (entry.get("entry_type") != "file" or entry.get("parent_path") != FOLDER
+                or not name.endswith(endings)):
+            continue
+        _, data = await workspace_service.read_entry_bytes(namespace, str(entry["id"]))
+        verdict = check_saved(entry, data, occurrence)
+        if verdict == "saved":
+            return entry, verdict
+        if verdict == "damaged":
+            damaged = damaged or entry
+    return (damaged, "damaged") if damaged is not None else None
+
+
+def _saved(entry: Mapping[str, Any], *, existing: bool) -> dict[str, Any]:
+    return {"status": "saved", "entry_id": str(entry.get("id", "")),
+            "bytes": int(entry.get("size_bytes") or 0), "existing": existing}
+
+
+def _damaged(entry: Mapping[str, Any]) -> ExportUnavailable:
+    return ExportUnavailable(
+        f"The file {entry.get('name')} in {FOLDER} has this run's date but is incomplete or "
+        "was changed, so the run was not marked done. The next scheduled run saves its own "
+        "file.")
+
+
 async def page_workbook(user: Mapping[str, Any], target: ExportTarget, *,
-                        timezone: str) -> tuple[DashboardDefinition, Page, bytes]:
+                        timezone: str,
+                        run: str | None = None) -> tuple[DashboardDefinition, Page, bytes]:
     """Query every chart on the page as ``user`` and build the workbook."""
     from .dataset_service import native_dataset_service as datasets
     from .document_service import native_document_service as documents
@@ -563,12 +718,21 @@ async def page_workbook(user: Mapping[str, Any], target: ExportTarget, *,
         request = chart_request(dashboard, chart, widget.widget_id, page.page_id, timezone)
         result = await datasets.query(user, chart.dataset_id, request)
         sheets.append(result_sheet(widget.title or chart.title, result, chart))
-    return dashboard, page, workbook(sheets)
+    return dashboard, page, workbook(sheets, run=run)
 
 
 async def run(record_id: str, user: Mapping[str, Any], *,
+              occurrence: Occurrence | None = None,
               now: datetime | None = None) -> dict[str, Any]:
-    """One scheduled run: build the workbook and save it in the dashboard's workspace."""
+    """One scheduled run: save the page's workbook once for its occurrence.
+
+    The occurrence is persisted by the task scheduler before the run starts, and
+    the file is named from it and carries its key. A retry after a crash (before
+    or after the save, in the same minute or later) first looks for that file:
+    a verified one is reported as saved without writing again, and a damaged one
+    fails the run instead of being reported. ``occurrence`` is absent only for a
+    direct call, which is then its own one-off occurrence.
+    """
     from app.core.exceptions import StorageError
     from app.modules.workspaces.actor import acting_as
     from app.modules.workspaces.service import workspace_service
@@ -577,21 +741,49 @@ async def run(record_id: str, user: Mapping[str, Any], *,
     from .document_service import native_document_service as documents
 
     target, timezone = parse_record(record_id)
+    occurrence = occurrence or Occurrence(key=str(uuid4()), due=now or datetime.now(UTC))
     # Access can change after the schedule was saved: every run needs Export again.
     if "export" not in await documents.permissions(user, target.dashboard_id):
         raise ExportUnavailable("This role's access to the dashboard no longer includes Export")
-    dashboard, page, data = await page_workbook(user, target, timezone=timezone)
     workspace = await documents.workspace_of(user, target.dashboard_id)
     if workspace == "personal":
         raise ExportUnavailable("Scheduled exports need a dashboard in a shared workspace")
     space = await space_service.resolve(dict(user), workspace, edit=True)
-    when = (now or datetime.now(UTC)).astimezone(ZoneInfo(timezone))
+    with acting_as(dict(user)):
+        found = await find_saved(space.namespace, occurrence, timezone)
+    if found is not None:
+        entry, verdict = found
+        if verdict != "saved":
+            raise _damaged(entry)
+        return _saved(entry, existing=True)
+    dashboard, page, data = await page_workbook(user, target, timezone=timezone,
+                                                run=occurrence.key)
+    when = occurrence.due.astimezone(ZoneInfo(timezone))
     with acting_as(dict(user)):
         try:
             await workspace_service.create_folder(space.namespace, "", FOLDER)
         except StorageError as exc:
             if exc.status_code != 409:
                 raise
-        entry = await workspace_service.create_file_bytes(
-            space.namespace, FOLDER, file_name(dashboard.title, page.title, when), data)
-    return {"status": "saved", "entry_id": str(entry.get("id", "")), "bytes": len(data)}
+        for tag in ("", occurrence.tag):
+            try:
+                entry = await workspace_service.create_file_bytes(
+                    space.namespace, FOLDER, file_name(dashboard.title, page.title, when, tag),
+                    data)
+            except StorageError as exc:
+                if exc.status_code != 409:
+                    raise
+                # The name is taken: by this run's own concurrent attempt, by a
+                # damaged file, or by another run's file (then use the tagged name).
+                found = await find_saved(space.namespace, occurrence, timezone)
+                if found is not None:
+                    entry, verdict = found
+                    if verdict != "saved":
+                        raise _damaged(entry) from None
+                    return _saved(entry, existing=True)
+                continue
+            return {"status": "saved", "entry_id": str(entry.get("id", "")),
+                    "bytes": len(data), "existing": False}
+    raise ExportUnavailable(
+        f"Files with this run's names are already in {FOLDER} and belong to other runs, "
+        "so nothing was saved. Rename or remove them before the next scheduled run.")

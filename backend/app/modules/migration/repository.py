@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncmy
 import asyncmy.cursors
 
+from app import mysql_driver_guard  # noqa: F401 - refuse mapping parameters
 from app.core.config import settings
 
 CONFIG_MIGRATION_SOURCES_DDL = """

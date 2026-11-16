@@ -793,10 +793,19 @@ input:-webkit-autofill:active {
 
 /* Native Dataviz canvas. The dotted grid is an editing affordance only; widget
    geometry comes from the saved 12-column layout, never from these pixels. */
-.nova-dataviz-edit-grid {
-  background-image: radial-gradient(circle, var(--viz-axis) 1px, transparent 1.5px);
-  background-size: calc(100% / 12) 72px;
-  background-position: 0 0;
+/* Every cell of the 12-column canvas while editing, behind the widgets. The
+   inset matches GridStack's item margin, so a widget covers whole cells. */
+.nova-dataviz-cells {
+  position: absolute;
+  inset: 0 0 auto 0;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  pointer-events: none;
+}
+.nova-dataviz-cells > span {
+  margin: 6px;
+  border-radius: calc(var(--radius) - 2px);
+  background: color-mix(in oklab, var(--primary) 7%, var(--muted));
 }
 .nova-dataviz-canvas .grid-stack-placeholder > .placeholder-content {
   border: 1px dashed var(--ring);

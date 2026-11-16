@@ -5,6 +5,7 @@ from contextlib import suppress
 import asyncmy
 import asyncmy.errors
 
+from app import mysql_driver_guard  # noqa: F401 - refuse mapping parameters
 from app.common.audit import write_audit_log
 from app.common.nova_system import is_setup_complete, mark_setup_complete
 from app.common.user_flags import (

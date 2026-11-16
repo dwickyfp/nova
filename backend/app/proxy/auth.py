@@ -54,6 +54,7 @@ from dataclasses import dataclass, field
 
 import asyncmy
 
+from app import mysql_driver_guard  # noqa: F401 - refuse mapping parameters
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)

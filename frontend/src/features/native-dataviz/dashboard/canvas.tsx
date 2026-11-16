@@ -200,6 +200,9 @@ function WidgetBody({ widget, props }: { widget: Widget; props: CanvasProps }) {
   return <WidgetFrame widget={widget} title={widget.title ?? ''} props={props}><span /></WidgetFrame>
 }
 
+/** Empty rows kept below the lowest widget while editing, to drag or resize into. */
+const ROOM_ROWS = 3
+
 function columnsFor(width: number): 1 | 6 | 12 {
   return width < 520 ? 1 : width < 900 ? 6 : 12
 }
@@ -300,7 +303,38 @@ export function DashboardCanvas(props: CanvasProps) {
     grid.current?.setStatic(!props.editing || narrow)
   }, [props.editing, narrow])
 
-  return <div className='min-h-0 flex-1 overflow-y-auto p-2.5' onClick={() => props.editing && props.onSelect(null)}>
+  // While editing, the canvas shows every cell of its 12-column grid, filling
+  // the view and a few rows below the lowest widget, so its width and height
+  // are visible. GridStack keeps that many rows open to drop into.
+  const scroller = useRef<HTMLDivElement | null>(null)
+  const [rows, setRows] = useState(0)
+  const tiles = props.editing && !narrow
+  useLayoutEffect(() => {
+    const instance = grid.current
+    if (!instance) return
+    if (!tiles) {
+      instance.updateOptions({ minRow: 0 })
+      setRows(0)
+      return
+    }
+    const fit = () => {
+      const used = Math.max(0, ...(instance.engine.nodes as GridStackNode[]).map(item => (item.y ?? 0) + (item.h ?? 0)))
+      const view = Math.floor((scroller.current?.clientHeight ?? 0) / ROW_PX)
+      const target = Math.max(used + ROOM_ROWS, view)
+      instance.updateOptions({ minRow: target })
+      setRows(target)
+    }
+    fit()
+    instance.on('change', fit)
+    const observer = new ResizeObserver(fit)
+    if (scroller.current) observer.observe(scroller.current)
+    return () => {
+      instance.off('change')
+      observer.disconnect()
+    }
+  }, [tiles, signature])
+
+  return <div ref={scroller} className='min-h-0 flex-1 overflow-y-auto p-2.5' onClick={() => props.editing && props.onSelect(null)}>
     {props.editing && narrow && <p role='status' className='m-1.5 rounded-md border border-dashed p-2 text-xs text-muted-foreground'>
       {columns === 1 ? 'Widen the window to move or resize widgets.' : 'Widen the window to move or resize widgets; this narrower view is scaled from the full layout.'} Your layout is kept for larger screens.
     </p>}
@@ -314,8 +348,12 @@ export function DashboardCanvas(props: CanvasProps) {
         if (box?.width) props.onPointer?.({ x: (event.clientX - box.left) / box.width, y: (event.clientY - box.top) / ROW_PX })
       } : undefined}
       onPointerLeave={props.onPointer ? () => props.onPointer?.(null) : undefined}>
+    {tiles && rows > 0 && <div aria-hidden data-testid='canvas-cells' className='nova-dataviz-cells'
+      style={{ gridTemplateRows: `repeat(${rows}, ${ROW_PX}px)` }}>
+      {Array.from({ length: rows * 12 }, (_, index) => <span key={index} />)}
+    </div>}
     <div ref={host} data-mode={props.editing ? 'edit' : 'view'} aria-label={`${props.page.title} canvas`}
-      className={cn('grid-stack nova-dataviz-canvas min-h-24', props.editing && !narrow && 'nova-dataviz-edit-grid')}>
+      className='grid-stack nova-dataviz-canvas min-h-24'>
       {widgets.map(widget => <div key={widget.widget_id} className='grid-stack-item group/widget' gs-id={widget.widget_id}
         gs-x={widget.layout.x} gs-y={widget.layout.y} gs-w={widget.layout.w} gs-h={widget.layout.h}
         gs-min-w={2} gs-min-h={2} aria-label={widget.title || undefined}>

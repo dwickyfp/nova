@@ -66,6 +66,7 @@ from app.modules.assistant.intelligence import (
     TurnIntent,
     TurnRoute,
     TurnState,
+    dashboard_change_claims,
     display_title,
     enforce_evidence,
     state_step,
@@ -366,6 +367,7 @@ REPAIR_LIMITS = {
     "unverified_number": 1,
     "split_request": 1,
     "split_followup": 1,
+    "unconfirmed_dashboard_change": 1,
 }
 MAX_TURN_REPAIRS = 6
 
@@ -938,6 +940,8 @@ class AssistantLoop:
             context.agent_scope = planning_scope(context)
         repairs = repair_budget or RepairBudget((resume_state or {}).get("repairs"))
         completed_capabilities: set[str] = set()
+        #: Native dashboard changes this turn committed, from their operation receipts.
+        dashboard_receipts: list[dict[str, Any]] = []
         #: Capabilities that ran in this turn and failed (not ones the model skipped).
         failed_capabilities: set[str] = set()
         composing_final = False
@@ -1840,6 +1844,34 @@ class AssistantLoop:
                         str(uuid4()), finish_reason="required_capability_incomplete"
                     )
                     return
+                unconfirmed = _unconfirmed_dashboard_claims(
+                    context, "".join(buffered_text), dashboard_receipts
+                )
+                if unconfirmed:
+                    # The answer says the dashboard changed or was published, but
+                    # no committed receipt in this turn shows it.
+                    if repairs.take("unconfirmed_dashboard_change"):
+                        _record_step(context, {
+                            "kind": "runtime_decision",
+                            "answer_repair": "unconfirmed_dashboard_change",
+                            "claims": sorted(unconfirmed), "status": "done",
+                        })
+                        _transition(context, TurnState.REPAIRING)
+                        composing_final = False
+                        messages.append({"role": "system", "content": _UNCONFIRMED_CHANGE_PROMPT})
+                        continue
+                    # Nova's own words replace the claim, so nothing unconfirmed is shown.
+                    yield events.text_delta(" ".join(
+                        say(f"loop.{kind}_unconfirmed", language)
+                        for kind in ("change", "publish") if kind in unconfirmed
+                    ))
+                    _record_step(context, {"kind": "answer", "unconfirmed_dashboard_change":
+                                           sorted(unconfirmed)})
+                    _transition(context, TurnState.FAILED)
+                    yield events.done(
+                        str(uuid4()), finish_reason="required_capability_incomplete"
+                    )
+                    return
                 business_request = (
                     route.intent in {TurnIntent.SEMANTIC_ANALYTICS, TurnIntent.COMPOUND_ANALYTICS}
                     and (
@@ -2239,6 +2271,7 @@ class AssistantLoop:
             yield _thinking_step(context, "act", f"Using {invocation.tool_name}", status="done")
 
             preview = "" if invocation.tool_name == "load_skill" else tool.preview(invocation)
+            preview = await _consent_preview(tool, invocation, context, preview)
             from app.modules.assistant.tools import invocation_classification
 
             classification = invocation_classification(tool, invocation)
@@ -2746,6 +2779,7 @@ class AssistantLoop:
             if isinstance(dashboard_change, dict):
                 # The tool's operation receipt confirmed a new dashboard
                 # revision: the page reloads it.
+                dashboard_receipts.append(dashboard_change)
                 yield events.dashboard_changed(invocation.tool_call_id, dashboard_change)
             client_action = outcome.metadata.get("client_action")
             if (
@@ -3597,6 +3631,61 @@ _SPLIT_REQUEST_PROMPT = (
     "step with ml_execute or data_to_chart. Answer from the parts that return data and "
     "name any part that is still not covered."
 )
+
+#: A tool's fuller approval text reads current state; it never holds up a turn.
+CONSENT_PREVIEW_SECONDS = 10.0
+MAX_CONSENT_PREVIEW_CHARS = 2000
+
+
+async def _consent_preview(
+    tool: Any, invocation: ToolInvocation, context: LoopContext, preview: str,
+) -> str:
+    """The approval text: the tool's ``consent_preview`` when it has one, else ``preview``.
+
+    A tool may describe its change from current state (for a dashboard, the widgets
+    it touches by name). That read runs as the caller and is bounded; any failure
+    keeps the plain preview, and consent is still asked the same way.
+    """
+    describe = getattr(tool, "consent_preview", None)
+    if not callable(describe):
+        return preview
+    try:
+        text = await asyncio.wait_for(describe(invocation, context),
+                                      timeout=CONSENT_PREVIEW_SECONDS)
+    except Exception as exc:  # noqa: BLE001 - the plain preview still describes the call
+        logger.warning("Approval text for %s unavailable: %s",
+                       invocation.tool_name, type(exc).__name__)
+        return preview
+    return str(text)[:MAX_CONSENT_PREVIEW_CHARS] if text else preview
+
+
+_UNCONFIRMED_CHANGE_PROMPT = (
+    "Your draft says the dashboard was changed or published, but no change or "
+    "publication was saved in this turn. If the user asked for one, call the matching "
+    "dashboard tool now (it asks for their approval). Otherwise answer again without "
+    "saying anything was changed or published; describe only what the dashboard and "
+    "its data show."
+)
+
+
+def _unconfirmed_dashboard_claims(
+    context: LoopContext, answer: str, receipts: list[dict[str, Any]],
+) -> frozenset[str]:
+    """Claims in a native dashboard turn's answer that no committed receipt confirms.
+
+    ``change`` needs a committed dashboard change; ``publish`` a committed
+    publication. Turns outside a native dashboard are not checked here.
+    """
+    if not isinstance((context.dataviz or {}).get("native_dashboard"), dict):
+        return frozenset()
+    claims = dashboard_change_claims(answer)
+    if not claims:
+        return claims
+    confirmed: set[str] = set()
+    for receipt in receipts:
+        confirmed.add("publish" if receipt.get("published") else "change")
+    return frozenset(claims - confirmed)
+
 
 _SPLIT_FOLLOWUP_PROMPT = (
     "Do not ask the user yet. Call semantic_query now for the data parts, one short "

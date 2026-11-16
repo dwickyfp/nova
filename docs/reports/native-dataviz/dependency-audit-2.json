@@ -1,0 +1,47 @@
+{
+  "date": "2026-11-16",
+  "builds_on": "backend-vulnerability-audit-1.json",
+  "backend": {
+    "tool": "pip-audit 2.10.1 (uvx), runtime requirements exported from the new uv.lock without dev groups",
+    "packages_audited": 104,
+    "upgraded": {
+      "anyio": "4.14.0 -> 4.14.2",
+      "cryptography": "49.0.0 -> 50.0.2",
+      "filelock": "3.29.4 -> 4.2.10",
+      "pillow": "12.3.0 -> 13.0.0 (pin lifted to <14)",
+      "pydantic-settings": "2.14.1 -> 2.16.3",
+      "pypdf": "6.19.0 -> 6.21.4",
+      "urllib3": "2.7.0 -> 2.8.0"
+    },
+    "removed": {
+      "python-jose": "replaced by PyJWT 2.15.1 for HS256 session tokens; tokens signed by either library verify with the other",
+      "ecdsa": "only python-jose needed it",
+      "pyasn1": "only python-jose needed it",
+      "rsa": "only python-jose needed it"
+    },
+    "remaining": [
+      {
+        "package": "asyncmy",
+        "version": "0.2.11",
+        "advisory": "PYSEC-2026-286",
+        "fix": "none released",
+        "exposure": "a dict passed as a query parameter value has its keys spliced into SQL unescaped",
+        "mitigation": "app/mysql_driver_guard.py replaces the driver's dict encoder so any mapping parameter value is refused before SQL text is built; every module that opens a MySQL connection imports it first (enforced by tests/unit/test_mysql_driver_guard.py, which also shows the driver accepts mappings without the guard)",
+        "decision": "Mitigated, not reachable; replace when asyncmy ships a fix"
+      }
+    ]
+  },
+  "frontend": {
+    "tool": "pnpm audit --prod (pnpm 11.8.0)",
+    "before": [
+      "katex <0.18.2 (low, prototype pollution)",
+      "esbuild <0.28.1 (low, dev server file read)"
+    ],
+    "upgraded": {
+      "katex": "0.16.22 -> 0.18.11 (formula rendering checked: MathML output, javascript links refused, expansion bounded)",
+      "esbuild": "0.27.4 -> 0.28.2"
+    },
+    "after": "No known vulnerabilities found"
+  },
+  "result": "PASS: no unaccepted reachable vulnerability"
+}

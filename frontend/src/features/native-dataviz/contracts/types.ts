@@ -208,6 +208,7 @@ export type DatasetQueryRequest = {
   "filters"?: FilterTree | null;
   "sort"?: Array<QuerySort>;
   "limit"?: number;
+  "offset"?: number;
   "parameters"?: Array<ParameterInput>;
 };
 
@@ -217,6 +218,8 @@ export type DatasetQueryResult = {
   "columns": Array<QueryColumn>;
   "rows": Array<Array<StringValue | IntegerValue | DecimalValue | FloatValue | BooleanValue | DateValue | TimestampValue | null>>;
   "truncated": boolean;
+  "offset"?: number;
+  "next_offset"?: number | null;
 };
 
 export type DatasetReference = {

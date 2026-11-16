@@ -33,7 +33,7 @@ function useFilterOptions(filter: FilterDefinition, search: string, enabled: boo
     queryFn: ({ signal }) => queuedQuery(() => nativeDocuments(epoch).queryDataset(field!.dataset_id, {
       revision: field!.dataset_revision, draft, dimensions: [{ field_id: field!.field_id }], limit: 200,
       ...(search.trim() ? { filters: { expression: predicate(field!, 'like_literal', [{ type: 'string', value: search.trim() }]) } } : {}),
-    }, { signal }), signal),
+    }), signal),
     enabled: enabled && Boolean(field),
     staleTime: 60_000, retry: capacityRetry, retryDelay: capacityDelay,
   })
@@ -164,12 +164,13 @@ function TextControl({ filter, value, onChange }: ControlProps) {
 }
 
 function BooleanControl({ filter, value, onChange }: ControlProps) {
-  const current = value?.kind === 'boolean' ? String(value.value) : 'all'
-  return <Select value={current} onValueChange={next => onChange(next === 'all' ? undefined : { kind: 'boolean', value: next === 'true' })}>
+  const current = value?.kind === 'boolean' ? value.value === null ? 'none' : String(value.value) : 'all'
+  return <Select value={current} onValueChange={next => onChange(next === 'all' ? undefined
+    : { kind: 'boolean', value: next === 'none' ? null : next === 'true' })}>
     <SelectTrigger aria-label={`${filter.title} filter`} size='sm' className='h-8 w-auto gap-2 px-3'>
       <span className='truncate'><span className='text-muted-foreground'>{filter.title}</span> <SelectValue /></span>
     </SelectTrigger>
-    <SelectContent><SelectItem value='all'>All</SelectItem><SelectItem value='true'>True</SelectItem><SelectItem value='false'>False</SelectItem></SelectContent>
+    <SelectContent><SelectItem value='all'>All</SelectItem><SelectItem value='true'>True</SelectItem><SelectItem value='false'>False</SelectItem><SelectItem value='none'>No value</SelectItem></SelectContent>
   </Select>
 }
 

@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { ApiError } from '@/lib/api-client'
 import { useAuthStore } from '@/stores/auth-store'
-import type { ChartDefinition, DatasetDefinition, FilterTree, ParameterInput } from '../contracts'
+import type { ChartDefinition, DatasetDefinition, FilterTree, ParameterInput, QuerySort } from '../contracts'
 import { nativeDocuments } from '../documents'
 import { applyCalculations } from './calculations'
 import { chartQueryShape, ChartQueryError, combineFilters } from './chart-query'
@@ -24,6 +24,12 @@ export function queryError(error: unknown): string {
 type ChartRequestInput = {
   chart: ChartDefinition; draft: boolean; context?: FilterTree; parameters?: ParameterInput[]
 }
+
+/** One server page of a table: where it starts, how many rows, and a viewer's column sort. */
+export type TablePage = { offset: number; limit: number; sort?: QuerySort | null }
+
+/** The server's last page start; a table never asks beyond it. */
+export const MAX_PAGE_OFFSET = 10_000
 
 /** The aggregate request a chart sends, or null when its configuration cannot run. */
 export function chartRequest({ chart, draft, context, parameters }: ChartRequestInput) {
@@ -47,7 +53,7 @@ export function chartDataQuery(epoch: number, chart: ChartDefinition, request: N
       JSON.stringify(chart.table_calculations ?? [])],
     // Table calculations run on the governed result, so charts, downloads and print agree.
     queryFn: ({ signal }: { signal: AbortSignal }) =>
-      queuedQuery(() => nativeDocuments(epoch).queryDataset(chart.dataset_id, request, { signal }), signal)
+      queuedQuery(() => nativeDocuments(epoch).queryDataset(chart.dataset_id, request), signal)
         .then(result => applyCalculations(chart, result)),
     retry: capacityRetry,
     retryDelay: capacityDelay,
@@ -56,16 +62,55 @@ export function chartDataQuery(epoch: number, chart: ChartDefinition, request: N
   }
 }
 
-export function useChartData({ chart, draft, context, parameters }: ChartRequestInput) {
+/** The same governed request narrowed to one page; a viewer sort replaces the chart's. */
+export function pagedRequest(request: NonNullable<ReturnType<typeof chartRequest>>, page: TablePage) {
+  return {
+    ...request,
+    ...(page.sort ? { sort: [page.sort] } : {}),
+    limit: page.limit,
+    ...(page.offset ? { offset: page.offset } : {}),
+  }
+}
+
+/** The measure totals over every matching row, for a table read one page at a time. */
+export function totalsRequest(request: NonNullable<ReturnType<typeof chartRequest>>) {
+  if (!request.measures?.length) return null
+  const { dimensions: _dimensions, sort: _sort, ...rest } = request
+  return { ...rest, limit: 1 }
+}
+
+export function useChartData({ chart, draft, context, parameters, page }: ChartRequestInput & { page?: TablePage | null }) {
   const epoch = useAuthStore(state => state.securityEpoch)
-  const request = useMemo(() => chartRequest({ chart, draft, context, parameters }),
-    [chart, draft, context, parameters])
+  const request = useMemo(() => {
+    const full = chartRequest({ chart, draft, context, parameters })
+    return full && page ? pagedRequest(full, page) : full
+  }, [chart, draft, context, parameters, page])
   const options = request ? chartDataQuery(epoch, chart, request) : null
   return useQuery({
     queryKey: options?.queryKey ?? ['native-dataviz', 'chart-data', epoch, chart.dataset_id, 'null'],
     queryFn: options?.queryFn ?? (() => Promise.reject(new Error('unreachable'))),
     enabled: request !== null,
     placeholderData: keepPreviousData,
+    retry: capacityRetry,
+    retryDelay: capacityDelay,
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  })
+}
+
+/** Grand totals for a paged table: one measures-only query, shared by every page. */
+export function useTableTotals({ chart, draft, context, parameters, enabled }: ChartRequestInput & { enabled: boolean }) {
+  const epoch = useAuthStore(state => state.securityEpoch)
+  const request = useMemo(() => {
+    const full = chartRequest({ chart, draft, context, parameters })
+    return full ? totalsRequest(full) : null
+  }, [chart, draft, context, parameters])
+  return useQuery({
+    queryKey: ['native-dataviz', 'chart-totals', epoch, chart.dataset_id, JSON.stringify(request)],
+    queryFn: ({ signal }) =>
+      queuedQuery(() => nativeDocuments(epoch).queryDataset(chart.dataset_id, request!), signal),
+    enabled: enabled && request !== null,
     retry: capacityRetry,
     retryDelay: capacityDelay,
     staleTime: 30_000,

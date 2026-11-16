@@ -9,7 +9,10 @@ tools over the faked document and dataset services.
   data; publishing still needs the person's approval.
 * NDV-AGENT-015: stopping between two changes keeps the committed one and never
   applies the next.
-* NDV-AGENT-021: when the change was refused, the answer cannot claim it.
+* NDV-AGENT-021: an answer cannot claim a dashboard change or a publication
+  that no committed receipt in the turn confirms: refused, declined, dropped or
+  never-attempted changes end the turn as incomplete with Nova's own words.
+* NDV-AGENT-009: the approval card names each widget a layout change touches.
 """
 
 from __future__ import annotations
@@ -296,3 +299,99 @@ async def test_a_planned_change_claimed_without_any_call_is_not_shown(docs):
     assert asked == [] and not docs.applied
     assert _finish(frames) == "required_capability_incomplete"
     assert "I added" not in _answer(frames)
+
+
+DIRECT = _plan("direct_answer", ["native_dashboard_read"], [])
+
+
+async def test_a_direct_answer_that_claims_a_change_is_not_shown(docs):
+    # No change tool ran: the model's claim cannot reach the person as a success.
+    frames, asked, context = await _turn([text_frame(CLAIM)], "add a revenue KPI", plan=DIRECT)
+    assert asked == [] and not docs.applied
+    assert not _events(frames, "dashboard_changed")
+    assert _finish(frames) == "required_capability_incomplete"
+    answer = _answer(frames)
+    assert "I added" not in answer and "version 2" not in answer
+    assert "No change was saved" in answer
+    decisions = [step for step in context.steps
+                 if step.get("answer_repair") == "unconfirmed_dashboard_change"]
+    assert decisions and decisions[0]["claims"] == ["change"]
+
+
+async def test_a_claim_the_model_withdraws_after_the_check_is_answered_truthfully(docs):
+    honest = "I have not changed the dashboard yet. Shall I add a Total revenue KPI?"
+    frames, asked, _ = await _turn([text_frame(CLAIM), text_frame(honest)],
+                                   "add a revenue KPI", plan=DIRECT)
+    assert asked == [] and not docs.applied
+    assert _finish(frames) == "stop"
+    assert _answer(frames) == honest
+
+
+async def test_a_dropped_publish_call_is_not_claimed(docs, injected):
+    # The publish call is dropped (not offered for this question); "Published." is
+    # then a claim with no receipt.
+    frames, asked, _ = await _turn([
+        tool_call_frame("q1", name="native_dataset_query", arguments=QUERY),
+        tool_call_frame("p1", name="native_dashboard_publish", arguments={}),
+        text_frame("Published."),
+    ], "list the cities with their notes", plan=QUESTION, consent=True)
+    assert asked == [] and not docs.published
+    assert not _events(frames, "dashboard_changed")
+    assert _finish(frames) == "required_capability_incomplete"
+    answer = _answer(frames)
+    assert not answer.startswith("Published") and "was not published" in answer
+
+
+async def test_a_description_of_the_dashboard_is_answered_unchanged(docs):
+    text = ("This dashboard has one bar chart, Revenue by city, on the Overview page. "
+            "It was published last week.")
+    frames, asked, _ = await _turn([text_frame(text)], "what is on this dashboard?",
+                                   plan=DIRECT)
+    assert asked == [] and _finish(frames) == "stop"
+    assert _answer(frames) == text
+
+
+async def test_a_change_with_its_receipt_is_claimed(docs):
+    frames, asked, _ = await _turn([
+        tool_call_frame("c1", name="native_dashboard_add_charts", arguments={"charts": [KPI]}),
+        text_frame(CLAIM),
+    ], "add a revenue KPI", plan=CHANGE)
+    assert asked == ["native_dashboard_add_charts"] and len(docs.applied) == 1
+    assert _finish(frames) == "stop" and _answer(frames) == CLAIM
+
+
+async def test_a_change_receipt_does_not_confirm_a_publication(docs):
+    frames, asked, _ = await _turn([
+        tool_call_frame("c1", name="native_dashboard_add_charts", arguments={"charts": [KPI]}),
+        text_frame("I added the Total revenue KPI and published the dashboard (version 2)."),
+    ], "add a revenue KPI", plan=CHANGE)
+    assert len(docs.applied) == 1 and not docs.published
+    assert len(_events(frames, "dashboard_changed")) == 1
+    assert _finish(frames) == "required_capability_incomplete"
+    answer = _answer(frames)
+    # The saved change is not denied; only the publication is said not to have happened.
+    assert "published the dashboard" not in answer and "No change was saved" not in answer
+    assert "was not published" in answer
+
+
+# ── NDV-AGENT-009: the approval names every widget change ───────────────
+
+
+async def test_the_layout_approval_names_each_widget_and_its_change(docs):
+    from tests.unit.test_native_dataviz_assistant_tools import NOTES, WIDGET, _note, _with_widgets
+
+    _with_widgets(docs, _note(NOTES, "Notes", 6, 0))
+    frames, asked, _ = await _turn([
+        tool_call_frame("a1", name="native_dashboard_arrange", arguments={
+            "move": [{"widget_id": str(WIDGET), "y": 4, "w": 12}], "remove": [str(NOTES)]}),
+        text_frame("Moved Revenue by city below and removed Notes (version 2)."),
+    ], "put the revenue chart full width and drop the notes",
+        plan=_plan("ui_operation", ["native_dashboard_arrange"], ["native_dashboard_arrange"]))
+    assert asked == ["native_dashboard_arrange"]
+    (card,) = [call for call in _events(frames, "tool_call")
+               if call["tool_name"] == "native_dashboard_arrange"]
+    preview = card["sql_preview"]
+    assert "'Revenue by city' moved" in preview and "resized" in preview
+    assert "'Notes' removed" in preview
+    assert str(WIDGET) not in preview and str(NOTES) not in preview
+    assert _finish(frames) == "stop" and len(docs.applied) == 1

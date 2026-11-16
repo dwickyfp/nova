@@ -13,6 +13,8 @@ from app.core.metadata_db import (
     MetadataIntegrityViolation,
     MetadataPermissionDenied,
 )
+from app.modules.access_control.security_context import SecurityContext
+from app.modules.task_orchestration.metadata_repository import TaskMetadataRepository
 from app.modules.task_orchestration.metadata_scheduler import (
     ScheduledOccurrence,
     SchedulerRepository,
@@ -151,6 +153,19 @@ async def test_scheduled_context_cannot_cross_principal_role_or_version(jobs, ot
         ).fetchall()
     with pytest.raises(MetadataConflict):
         await reserve(jobs, leader, due, other)
+
+
+async def test_task_worker_reads_the_due_time_its_occurrence_was_reserved_for(jobs):  # noqa: F811
+    """A scheduled export names its file from this time, not the clock at run time."""
+    leader = await control(jobs, "acquire", "tasks", uuid4())
+    due = occurrence()
+    await reserve(jobs, leader, due)
+    worker = SecurityContext(principal="runtime-task", active_role="NOVA_WORKER",
+                             principal_type="SERVICE")
+    async with jobs("task", worker) as connection:
+        tasks = TaskMetadataRepository(connection, worker)
+        assert await tasks.scheduled_occurrence_time(due.graph_run_id) == due.scheduled_at
+        assert await tasks.scheduled_occurrence_time(uuid4().hex) is None
 
 
 @pytest.mark.parametrize("role", ["web", "task", "agent", "outbox"])

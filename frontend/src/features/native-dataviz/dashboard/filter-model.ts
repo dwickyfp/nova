@@ -11,7 +11,8 @@ export type FilterValue =
   | { kind: 'range'; from: Scalar | null; to: Scalar | null }
   | { kind: 'text'; value: string }
   | { kind: 'relative'; unit: 'day' | 'week' | 'month' | 'quarter' | 'year'; count: number; mode: 'previous' | 'rolling' | 'to_date' }
-  | { kind: 'boolean'; value: boolean }
+  /** `null` keeps only rows with no value; True and False never match them. */
+  | { kind: 'boolean'; value: boolean | null }
 
 export type CrossFilter = { source_widget_id: string; field: Binding; value: Scalar | null; label: string; period?: { from: string; to: string } }
 
@@ -24,7 +25,7 @@ export function predicate(field: Binding, op: string, values: Scalar[] = [], ext
   return { type: 'predicate', field, op, values, source: 'global', stage: 'row', ...extra } as Expression
 }
 
-function expressionFor(field: Binding, value: FilterValue): Expression | null {
+function expressionFor(field: Binding, value: FilterValue, includeNull = false): Expression | null {
   switch (value.kind) {
     case 'members': {
       if (!value.values.length) return null
@@ -52,8 +53,13 @@ function expressionFor(field: Binding, value: FilterValue): Expression | null {
         unit: value.unit, count: value.count, mode: value.mode,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', week_start: 'iso', fiscal_start_month: 1,
       } })
-    case 'boolean':
-      return predicate(field, 'eq', [{ type: 'boolean', value: value.value }])
+    case 'boolean': {
+      // SQL three-valued logic: `= false` never matches a missing value, so
+      // rows with no value are kept only when asked for.
+      if (value.value === null) return predicate(field, 'is_null')
+      const match = predicate(field, 'eq', [{ type: 'boolean', value: value.value }])
+      return includeNull ? { type: 'or', children: [match, predicate(field, 'is_null')] } : match
+    }
   }
 }
 
@@ -85,7 +91,7 @@ export function chartContext(input: {
     const value = input.values[filter.filter_id]
     if (!value || !inScope(filter, input.widgetId, input.pageId)) continue
     const binding = targetBinding(filter, input.chart)
-    const expression = binding && expressionFor(binding, value)
+    const expression = binding && expressionFor(binding, value, filter.include_null === true)
     if (expression) parts.push(expression)
   }
   // Values selected together in one chart are alternatives (OR); different

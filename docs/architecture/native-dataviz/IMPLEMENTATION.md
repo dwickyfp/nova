@@ -401,6 +401,30 @@ transport fixture uses the explicit cast to establish its stored input, not a
 production SQL rewrite. Both the failed literal attempt and the direct engine
 comparison are retained. This is not evidence of general numeric SQL correctness.
 
+### Paged aggregate queries
+
+`DatasetQueryRequest` accepts an optional `offset` (strict integer, 0 to
+10,000, default 0) beside `limit` (1 to 10,000). Unknown fields, including any
+cursor, remain refused. The aggregate planner keeps its total order: explicit
+sort keys, then every dimension ascending. Grouping makes the dimensions unique
+per row, so pages are disjoint and complete for an unchanged source. The planner
+appends `LIMIT limit+1 OFFSET offset`; the lookahead row sets `truncated`, and
+`DatasetQueryResult` echoes `offset` and returns `next_offset`, or null when no
+further page exists or it would pass 10,000. At most 10,001 rows and 4 MiB cross
+the stream per page, and the engine's ordered window is at most 20,001 rows.
+Each page is a new query, not a repeatable-read snapshot: a data load between
+pages can shift rows. Keyset paging was not used because nullable, mixed-direction
+and date-grain sort keys would need typed seek predicates in the planner.
+
+A page uses the same admission, pinned revision, caller session and active
+role, source identity checks before and after execution (`SCHEMA_STALE`) and
+error mapping as any dataset query. The browser Table visual requests one page
+per `page_size`, bounded by the chart's `row_limit`, keyed by offset and viewer
+sort so pages cache. A grand total on a multi-page table is a separate
+measures-only query over all matching rows. Tables with table calculations and
+all downloads still read the full `row_limit` result. Conditional-format ranges
+on a paged table are computed from the page on screen.
+
 ### Next required source boundaries
 
 Dashboard definitions now include an optional bounded `datasets` registry of

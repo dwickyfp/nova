@@ -1,0 +1,296 @@
+{
+  "started_at": "2026-11-16T12:10:26.002191+00:00",
+  "result": "FAIL",
+  "cleanup": "REMOVED",
+  "scenarios": {},
+  "copies": 9,
+  "error_type": "AssertionError",
+  "error": "a page equals the same SQL with LIMIT and OFFSET",
+  "steps": [
+    {
+      "check": "alice login",
+      "passed": true
+    },
+    {
+      "request": "author uses regional_manager",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "author uses regional_manager",
+      "passed": true
+    },
+    {
+      "check": "author active role regional_manager",
+      "passed": true
+    },
+    {
+      "request": "workspace",
+      "status": 201,
+      "expected": 201
+    },
+    {
+      "check": "workspace",
+      "passed": true
+    },
+    {
+      "request": "inspect Large QA",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "inspect Large QA",
+      "passed": true
+    },
+    {
+      "request": "create Large QA",
+      "status": 201,
+      "expected": 201
+    },
+    {
+      "check": "create Large QA",
+      "passed": true
+    },
+    {
+      "request": "publish Large QA",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "publish Large QA",
+      "passed": true
+    },
+    {
+      "request": "grants Large QA",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "grants Large QA",
+      "passed": true
+    },
+    {
+      "request": "share Large QA",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "share Large QA",
+      "passed": true
+    },
+    {
+      "request": "page at 0",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "page at 0",
+      "passed": true
+    },
+    {
+      "check": "page at 0 has a full page in order",
+      "passed": true
+    },
+    {
+      "request": "page at 1000",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "page at 1000",
+      "passed": true
+    },
+    {
+      "check": "page at 1000 has a full page in order",
+      "passed": true
+    },
+    {
+      "request": "page at 2000",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "page at 2000",
+      "passed": true
+    },
+    {
+      "check": "page at 2000 has a full page in order",
+      "passed": true
+    },
+    {
+      "request": "page at 3000",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "page at 3000",
+      "passed": true
+    },
+    {
+      "check": "page at 3000 has a full page in order",
+      "passed": true
+    },
+    {
+      "request": "page at 4000",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "page at 4000",
+      "passed": true
+    },
+    {
+      "check": "page at 4000 has a full page in order",
+      "passed": true
+    },
+    {
+      "request": "page at 5000",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "page at 5000",
+      "passed": true
+    },
+    {
+      "check": "page at 5000 has a full page in order",
+      "passed": true
+    },
+    {
+      "request": "page at 6000",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "page at 6000",
+      "passed": true
+    },
+    {
+      "check": "page at 6000 has a full page in order",
+      "passed": true
+    },
+    {
+      "request": "page at 7000",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "page at 7000",
+      "passed": true
+    },
+    {
+      "check": "page at 7000 has a full page in order",
+      "passed": true
+    },
+    {
+      "request": "page at 8000",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "page at 8000",
+      "passed": true
+    },
+    {
+      "check": "page at 8000 has a full page in order",
+      "passed": true
+    },
+    {
+      "request": "page at 9000",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "page at 9000",
+      "passed": true
+    },
+    {
+      "check": "page at 9000 has a full page in order",
+      "passed": true
+    },
+    {
+      "request": "page at 10000",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "page at 10000",
+      "passed": true
+    },
+    {
+      "check": "page at 10000 has a full page in order",
+      "passed": true
+    },
+    {
+      "check": "pages never overlap",
+      "passed": true,
+      "keys": 11000
+    },
+    {
+      "check": "each page follows the last",
+      "passed": true
+    },
+    {
+      "request": "page at the cap",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "page at the cap",
+      "passed": true
+    },
+    {
+      "check": "the page at the offset cap offers no further page",
+      "passed": true
+    },
+    {
+      "request": "page past the cap",
+      "status": 422
+    },
+    {
+      "check": "a page past the cap is refused",
+      "passed": true
+    },
+    {
+      "request": "oracle page",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "oracle page",
+      "passed": true
+    },
+    {
+      "request": "third page",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "third page",
+      "passed": true
+    },
+    {
+      "check": "a page equals the same SQL with LIMIT and OFFSET",
+      "passed": false
+    },
+    {
+      "request": "delete dataset",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "delete dataset",
+      "passed": true
+    },
+    {
+      "request": "delete workspace",
+      "status": 200,
+      "expected": 200
+    },
+    {
+      "check": "delete workspace",
+      "passed": true
+    }
+  ],
+  "finished_at": "2026-11-16T12:10:54.996981+00:00"
+}

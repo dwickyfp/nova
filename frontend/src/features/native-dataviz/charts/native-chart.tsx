@@ -1,11 +1,11 @@
-import { Fragment, useCallback, useState } from 'react'
+import { Fragment, useCallback, useMemo, useState } from 'react'
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import type { ChartDefinition, DatasetQueryResult, FilterTree, ParameterInput, QueryColumn } from '../contracts'
+import type { ChartDefinition, DatasetQueryResult, FilterTree, ParameterInput, QueryColumn, QuerySort } from '../contracts'
 import { buildChartOption } from './chart-options'
 import { cellLabel, cellNumber, chartQueryShape, columnLabel, hasSplit, periodEnd, type Cell } from './chart-query'
-import { queryError, useChartData } from './chart-data'
+import { chartRequest, MAX_PAGE_OFFSET, queryError, useChartData, useTableTotals, type TablePage } from './chart-data'
 import { EChartHost, type MarkSelection, type VizTokens } from './echart-host'
 import { cellStyle, MAX_PIVOT_COLUMNS, pivotModel, ranges } from './pivot'
 import { NativeMap } from './native-map'
@@ -126,16 +126,45 @@ function PivotTable({ chart, result }: { chart: ChartDefinition; result: Dataset
   </div>
 }
 
-function ResultTable({ chart, result }: { chart: ChartDefinition; result: DatasetQueryResult }) {
+type TablePaging = {
+  /** Where the shown page starts in the server's order. */
+  offset: number
+  hasNext: boolean
+  busy: boolean
+  onPrevious: () => void
+  onNext: () => void
+}
+
+type TableProps = {
+  chart: ChartDefinition
+  result: DatasetQueryResult
+  /** Server pages; without it the whole result is paged in the browser. */
+  paging: TablePaging | null
+  sort: QuerySort | null
+  onSort: (column: string) => void
+  /** Measure totals over every matching row, when the rows arrive a page at a time. */
+  totalsResult?: DatasetQueryResult
+}
+
+function ResultTable({ chart, result, paging, sort, onSort, totalsResult }: TableProps) {
   const pageSize = chart.encoding.kind === 'table' ? chart.encoding.page_size ?? 100 : 100
-  const [page, setPage] = useState(0)
-  const pages = Math.max(1, Math.ceil(result.rows.length / pageSize))
-  const visible = result.rows.slice(page * pageSize, (page + 1) * pageSize)
+  const [localPage, setLocalPage] = useState(0)
+  const localPages = Math.max(1, Math.ceil(result.rows.length / pageSize))
+  const page = Math.min(localPage, localPages - 1)
+  const visible = paging ? result.rows : result.rows.slice(page * pageSize, (page + 1) * pageSize)
+  const first = paging ? paging.offset : page * pageSize
   const measureIndex = (column: QueryColumn) => result.columns.filter(c => c.role === 'measure').indexOf(column)
   const formatters = result.columns.map(column => column.role === 'measure' ? measureFormatter(chart, measureIndex(column)) : null)
   const showTotal = chart.encoding.kind === 'table' && chart.encoding.grand_total
-  const totals = result.columns.map(column => column.role === 'measure' && ['sum', 'count'].includes(column.aggregation ?? '')
-    ? result.rows.reduce((sum, row) => sum + (cellNumber(row[result.columns.indexOf(column)]) ?? 0), 0) : null)
+  const additive = (column: QueryColumn) => column.role === 'measure' && ['sum', 'count'].includes(column.aggregation ?? '')
+  const totals = result.columns.map(column => {
+    if (!additive(column)) return null
+    if (totalsResult) {
+      const index = totalsResult.columns.findIndex(item => item.key === column.key)
+      return index < 0 ? null : cellNumber(totalsResult.rows[0]?.[index] ?? null)
+    }
+    return result.rows.reduce((sum, row) => sum + (cellNumber(row[result.columns.indexOf(column)]) ?? 0), 0)
+  })
   const text = (cell: Cell, index: number) => {
     const number = cellNumber(cell)
     return number !== null && formatters[index] ? formatters[index]!.format(number) : cellLabel(cell, result.columns[index])
@@ -148,15 +177,27 @@ function ResultTable({ chart, result }: { chart: ChartDefinition; result: Datase
     if (column.role !== 'measure' || !column.field_id) return undefined
     return cellStyle(formats, column.field_id, cellNumber(cell), span?.get(column.field_id))
   }
+  const hasPrevious = paging ? paging.offset > 0 : page > 0
+  const hasNext = paging ? paging.hasNext : page < localPages - 1
+  const range = `Rows ${(first + 1).toLocaleString()}–${(first + visible.length).toLocaleString()}`
   return <div className='flex min-h-0 flex-1 flex-col'>
     <div className='min-h-0 flex-1 overflow-auto'>
       <table className='w-full border-collapse text-sm'>
         <thead className='sticky top-0 bg-card'>
-          <tr>{result.columns.map(column => <th key={column.key} scope='col'
-            className={cn('border-b px-2 py-1.5 text-left font-medium text-muted-foreground whitespace-nowrap',
-              column.role === 'measure' && 'text-right')}>
-            {columnLabel(column)}
-          </th>)}</tr>
+          <tr>{result.columns.map(column => {
+            const direction = sort?.column === column.key ? sort.direction : null
+            const Arrow = direction === 'desc' ? ArrowDown : ArrowUp
+            return <th key={column.key} scope='col'
+              aria-sort={direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : undefined}
+              className={cn('border-b px-2 py-1.5 text-left font-medium text-muted-foreground whitespace-nowrap',
+                column.role === 'measure' && 'text-right')}>
+              <button type='button' onClick={() => onSort(column.key)}
+                className='inline-flex items-center gap-1 rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'>
+                {columnLabel(column)}
+                {direction && <Arrow className='size-3.5' aria-hidden />}
+              </button>
+            </th>
+          })}</tr>
         </thead>
         <tbody>
           {visible.map((row, r) => <tr key={r} className='border-b last:border-b-0 hover:bg-muted/40'>
@@ -172,14 +213,52 @@ function ResultTable({ chart, result }: { chart: ChartDefinition; result: Datase
         </tbody>
       </table>
     </div>
-    {pages > 1 && <div className='flex shrink-0 items-center justify-end gap-1 pt-1 text-xs text-muted-foreground'>
-      <span>Page {page + 1} of {pages}</span>
-      <Button variant='ghost' size='icon' className='size-8' aria-label='Previous page' disabled={page === 0}
-        onClick={() => setPage(page - 1)}><ChevronLeft /></Button>
-      <Button variant='ghost' size='icon' className='size-8' aria-label='Next page' disabled={page >= pages - 1}
-        onClick={() => setPage(page + 1)}><ChevronRight /></Button>
+    {(hasPrevious || hasNext) && <div className='flex shrink-0 items-center justify-end gap-1 pt-1 text-xs text-muted-foreground'>
+      <span className='viz-numerals'>{paging ? range : `${range} of ${result.rows.length.toLocaleString()}`}</span>
+      <Button variant='ghost' size='icon' className='size-8' aria-label='Previous page' disabled={!hasPrevious || paging?.busy}
+        onClick={() => paging ? paging.onPrevious() : setLocalPage(page - 1)}><ChevronLeft /></Button>
+      <Button variant='ghost' size='icon' className='size-8' aria-label='Next page' disabled={!hasNext || paging?.busy}
+        onClick={() => paging ? paging.onNext() : setLocalPage(page + 1)}><ChevronRight /></Button>
     </div>}
   </div>
+}
+
+/** A table over a large result reads one server page at a time, in the query's total order. */
+function useTableView(chart: ChartDefinition, base: string) {
+  const pageSize = chart.encoding.kind === 'table' ? chart.encoding.page_size ?? 100 : 100
+  const rowLimit = Math.min(chart.row_limit ?? 1000, MAX_PAGE_OFFSET)
+  // Table calculations need every row at once, so those tables keep browser paging.
+  const paged = chart.visual === 'table' && !chart.table_calculations?.length
+  const sortScope = `${chart.chart_id}:${JSON.stringify(chart.encoding)}:${JSON.stringify(chart.sort ?? [])}`
+  const [position, setPosition] = useState({ base, index: 0 })
+  const [sorting, setSorting] = useState<{ scope: string; sort: QuerySort } | null>(null)
+  const viewerSort = sorting?.scope === sortScope ? sorting.sort : null
+  // New filters, parameters or a new definition start again at the first page.
+  const index = position.base === base ? position.index : 0
+  const offset = paged ? index * pageSize : 0
+  const page = useMemo<TablePage | null>(() => {
+    if (chart.visual !== 'table') return null
+    if (paged) return { offset, limit: Math.min(pageSize, rowLimit - offset), sort: viewerSort }
+    return viewerSort ? { offset: 0, limit: rowLimit, sort: viewerSort } : null
+  }, [chart.visual, paged, offset, pageSize, rowLimit, viewerSort])
+  let chartSort: QuerySort | null = null
+  try {
+    chartSort = chartQueryShape(chart).sort?.[0] ?? null
+  } catch {
+    chartSort = null
+  }
+  return {
+    paged, page, offset, rowLimit,
+    sort: viewerSort ?? chartSort,
+    goTo: (next: number) => setPosition({ base, index: Math.max(0, next) }),
+    index,
+    sortBy: (column: string) => {
+      const current = viewerSort ?? chartSort
+      const direction = current?.column === column && current.direction === 'asc' ? 'desc' : 'asc'
+      setSorting({ scope: sortScope, sort: { column, direction } })
+      setPosition({ base, index: 0 })
+    },
+  }
 }
 
 /** Renders one native chart from a governed query under the viewer's active role. */
@@ -190,8 +269,17 @@ export function NativeChart({ chart, draft, context, parameters, onSelectValue, 
   } catch (error) {
     shapeError = queryError(error)
   }
-  const query = useChartData({ chart, draft, context, parameters })
+  const base = useMemo(() => JSON.stringify(chartRequest({ chart, draft, context, parameters })),
+    [chart, draft, context, parameters])
+  const table = useTableView(chart, base)
+  const query = useChartData({ chart, draft, context, parameters, page: table.page })
   const result = query.data
+  const pageOffset = result?.offset ?? 0
+  const pageEnd = pageOffset + (result?.rows.length ?? 0)
+  const hasNextPage = Boolean(table.paged && result?.truncated && result.next_offset != null && pageEnd < table.rowLimit)
+  const multiPage = table.paged && (pageOffset > 0 || Boolean(result?.truncated))
+  const showTotal = chart.encoding.kind === 'table' && Boolean(chart.encoding.grand_total)
+  const totals = useTableTotals({ chart, draft, context, parameters, enabled: showTotal && multiPage })
   const build = useCallback((tokens: VizTokens, width: number) => buildChartOption(chart, result!, tokens, selectedLabel ?? null, width || undefined), [chart, result, selectedLabel])
   const select = useCallback((mark: MarkSelection) => {
     if (!result || !onSelectValue) return
@@ -238,26 +326,34 @@ export function NativeChart({ chart, draft, context, parameters, onSelectValue, 
   if (query.isError) return <State tone='error' text={queryError(query.error)} retry={() => void query.refetch()} />
   if (!result) return null
   const empty = !result.rows.length
-  return <div className={cn('relative flex min-h-0 flex-1 flex-col', className)}>
+  // Clicking filters other charts by a category; a chart of totals alone has none to give.
+  const unfilterable = onSelectValue && !result.columns.some(column => column.role === 'dimension' && column.field_id)
+    ? NO_CATEGORY : undefined
+  return <div className={cn('relative flex min-h-0 flex-1 flex-col', className)} title={unfilterable}>
     {query.isFetching && <span role='status' className='sr-only'>Updating {chart.title}</span>}
     <div className={cn('flex min-h-0 flex-1 flex-col transition-opacity', query.isFetching && 'opacity-60')}>
       {empty && chart.visual !== 'kpi' ? <State tone='muted' text='No rows match the current filters.' />
         : chart.visual === 'kpi' ? <Kpi chart={chart} result={result} />
           : chart.visual === 'pivot' ? <PivotTable chart={chart} result={result} />
-          : chart.visual === 'table' ? <ResultTable chart={chart} result={result} />
+          : chart.visual === 'table' ? <ResultTable chart={chart} result={result} sort={table.sort} onSort={table.sortBy}
+            totalsResult={multiPage ? totals.data : undefined}
+            paging={table.paged ? { offset: pageOffset, hasNext: hasNextPage, busy: query.isPlaceholderData,
+              onPrevious: () => table.goTo(table.index - 1), onNext: () => table.goTo(table.index + 1) } : null} />
           : chart.visual === 'map' ? <NativeMap chart={chart} result={result} label={label} selectedLabel={selectedLabel} onSelectGroup={onSelectValue ? selectGroup : undefined} />
             : <>
               <EChartHost build={build} label={label} onSelect={onSelectValue ? select : undefined} />
               <DataAlternative title={chart.title} result={result} />
             </>}
     </div>
-    {result.truncated && <p className='shrink-0 pt-1 text-xs text-warning-strong'>
-      Showing the first {result.rows.length.toLocaleString()} rows. Add a filter to see everything.
+    {result.truncated && !hasNextPage && <p className='shrink-0 pt-1 text-xs text-warning-strong'>
+      Showing the first {(table.paged ? pageEnd : result.rows.length).toLocaleString()} rows. Add a filter to see everything.
     </p>}
   </div>
 }
 
 const ALTERNATIVE_ROWS = 50
+
+const NO_CATEGORY = 'This chart shows totals only, so clicking it cannot filter other charts.'
 
 /** The drawn chart's rows as a table for screen readers; colour never carries meaning alone. */
 function DataAlternative({ title, result }: { title: string; result: DatasetQueryResult }) {

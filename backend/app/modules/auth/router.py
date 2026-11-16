@@ -5,7 +5,7 @@ from typing import Annotated
 from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError
+from jwt import InvalidTokenError
 
 from app.common.news_entitlement import is_news_enabled
 from app.common.user_flags import is_must_change_password
@@ -98,7 +98,7 @@ async def renew(
     """
     try:
         payload = decode_renewable_token(credentials.credentials)
-    except JWTError:
+    except InvalidTokenError:
         raise HTTPException(status_code=401, detail="Sign in again") from None
     session = await session_store.get(payload["sid"])
     if not session or session.get("username") != payload.get("sub"):

@@ -86,6 +86,24 @@ A few rules apply to every chart:
 
 Downloads, printed reports and scheduled files show the same calculated values.
 
+### Tables
+
+A **Table** shows 100 rows at a time. When there are more rows, a label such as
+**Rows 101–200** and two arrows, **Previous page** and **Next page**, appear
+under the table. Each page is read when you open it, so a long table loads
+quickly, and a page you already opened shows again without waiting.
+
+- Click a column heading to sort by it; click it again to reverse the order.
+  Sorting starts again at the first page.
+- Rows with the same value keep a fixed order, so moving between pages never
+  shows a row twice or skips one.
+- The table pages through rows up to the chart's **Row limit**. A note under
+  the table says when more rows exist beyond it.
+- With **Show a total row**, the total covers every row that matches the
+  filters, not only the page on screen.
+- A table with a **Show as** calculation reads all its rows at once, up to the
+  row limit, because the calculation needs every row.
+
 ### Pivot tables
 
 A **Pivot** puts one or more fields down the side (**Rows**) and others across
@@ -132,6 +150,9 @@ Click **Text** to add a heading or paragraph. Text is shown exactly as typed.
 
 ## Arrange the canvas
 
+- In **Edit**, the canvas shows its grid as light squares: 12 across, filling
+  the window and a few rows below the lowest widget. A widget always covers
+  whole squares. The squares disappear when you click **Done**.
 - In **Edit**, drag a widget to move it and drag its lower-right corner to
   resize it. Each completed move is saved as a new revision.
 - Use **Undo** and **Redo** in the toolbar, or Ctrl+Z / Ctrl+Shift+Z
@@ -160,6 +181,10 @@ larger screens.
 Filters apply to every chart built on the same dataset. The values in a list
 come from your role's own data. **Reset** clears all filters and selections.
 
+A **True / false** filter offers **All**, **True**, **False** and **No value**.
+**True** and **False** never include rows where the field is empty; choose
+**No value** to see only those rows.
+
 Charts reuse a result for up to 30 seconds when you return to the same view,
 so moving between pages is quick. Click **Refresh data** (the circular arrows
 in the header) to run every chart again now, for example after a data load or
@@ -178,6 +203,9 @@ Click a bar, point or slice to see what you can do with that value:
   the start. Drilling only changes your view; the saved chart stays the same.
 
 A chart with nothing to drill into filters the dashboard straight away.
+
+A KPI, or a chart that shows only totals, has no value to filter by, so
+clicking it does nothing. Point at it to see why.
 
 To select several values from one chart, hold **Shift** (or **Ctrl**, or
 **Cmd** on a Mac) while you click. The other charts then show rows matching any
@@ -301,9 +329,17 @@ this dashboard, with the role it runs as; click the bin icon to remove one of
 yours.
 
 Each file appears in the dashboard's workspace, in the folder **Scheduled
-exports**, named after the dashboard, the page and the time it ran. Charts use
-the dashboard filters' default values, as when you open the page, and nothing
-is selected.
+exports**, named after the dashboard, the page and the time it was scheduled
+for. Charts use the dashboard filters' default values, as when you open the
+page, and nothing is selected.
+
+Each scheduled time saves one file. If a run is interrupted and tried again,
+even minutes later, Nova finds the file the first attempt saved, checks that it
+is complete and unchanged, and keeps it instead of saving a copy. If that file
+is incomplete or was changed, the run fails rather than counting it as saved;
+the next scheduled time saves its own file. If another file already has the
+name, for example from another role's schedule at the same time, the new
+file's name ends with a short code.
 
 A schedule runs as your current role, through that role's scheduled-task
 account, not as you. Each file holds what the role can read, with its row

@@ -5,6 +5,7 @@ import { buildChartOption } from '../charts/chart-options'
 import { cellLabel, chartQueryShape, ChartQueryError, columnLabel, combineFilters, formatNumber, hasSplit, humanize, periodEnd } from '../charts/chart-query'
 import type { VizTokens } from '../charts/echart-host'
 import { capacityRetry, MAX_CONCURRENT_QUERIES, queuedQuery } from '../charts/query-queue'
+import { chartDataQuery } from '../charts/chart-data'
 import { chartContext, defaultValue, targetBinding, type FilterDefinition } from './filter-model'
 import { firstFreeSlot, validPlacements, type Widget } from './layout'
 import { applyLocal, inverse, sameLayout } from './operations'
@@ -220,6 +221,50 @@ describe('query queue', () => {
     expect(capacityRetry(0, { status: 429 })).toBe(true)
     expect(capacityRetry(5, { status: 429 })).toBe(false)
     expect(capacityRetry(0, { status: 403 })).toBe(false)
+  })
+
+  it('keeps the slot of a sent query that is aborted until the server answers', async () => {
+    // Switching pages aborts the old page's queries, but the server keeps running
+    // them; releasing their slots early sent more than the server admits (429s).
+    const releases: (() => void)[] = []
+    const run = vi.fn(() => new Promise<string>(resolve => releases.push(() => resolve('done'))))
+    const old = new AbortController()
+    const sent = Array.from({ length: MAX_CONCURRENT_QUERIES }, () => queuedQuery(run, old.signal))
+    old.abort()
+    const next = queuedQuery(run)
+    await Promise.resolve()
+    expect(run).toHaveBeenCalledTimes(MAX_CONCURRENT_QUERIES)
+    releases.shift()!()
+    await expect(sent[0]).resolves.toBe('done')
+    await Promise.resolve()
+    expect(run).toHaveBeenCalledTimes(MAX_CONCURRENT_QUERIES + 1)
+    while (releases.length) releases.shift()!()
+    await Promise.all([...sent, next])
+  })
+
+  it('lets a chart request that was sent finish when its chart goes away', async () => {
+    const signals: (AbortSignal | null | undefined)[] = []
+    let answer: (response: Response) => void = () => undefined
+    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit = {}) => {
+      signals.push(init.signal)
+      return new Promise<Response>(resolve => { answer = resolve })
+    }))
+    try {
+      const chart = { chart_id: 'c', dataset_id: 'aaaaaaaa-0000-4000-8000-000000000009', dataset_revision: 1 } as ChartDefinition
+      const options = chartDataQuery(0, chart, { revision: 1, draft: false, measures: [{ field_id: 'f', aggregation: 'sum' }] } as never)
+      const leaving = new AbortController()
+      const pending = options.queryFn({ signal: leaving.signal })
+      await vi.waitFor(() => expect(signals).toHaveLength(1))
+      leaving.abort()
+      // The request the server is running is not cut off.
+      expect(signals[0]?.aborted ?? false).toBe(false)
+      answer(new Response(JSON.stringify({ dataset_id: chart.dataset_id, revision: 1, truncated: false, offset: 0, next_offset: null, rows: [],
+        columns: [{ key: 'm0', name: 'f', logical_type: 'decimal', role: 'measure', field_id: 'f', aggregation: 'sum' }] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      await expect(pending).resolves.toMatchObject({ rows: [] })
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })
 

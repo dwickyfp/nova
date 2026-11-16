@@ -67,6 +67,12 @@ async def _run(consent) -> TurnResult:
     return TurnResult(frames=frames)
 
 
+def _answer(result: TurnResult) -> str:
+    """The answer as streamed to the person (``TurnResult.text`` is never filled)."""
+    return "".join(json.loads(frame.split("data: ", 1)[1]).get("text", "")
+                   for frame in result.frames if frame.startswith("event: text_delta\n"))
+
+
 def _changes(result: TurnResult) -> list[dict]:
     return [json.loads(frame.split("data: ", 1)[1]) for frame in result.frames
             if frame.startswith("event: dashboard_changed")]
@@ -210,5 +216,7 @@ async def test_a_query_mistake_is_corrected_within_the_turn(monkeypatch):
     joined = "".join(result.frames)
     assert result.finish_reason == "stop", joined[-600:]
     assert len(data.requests) == 1
-    assert "native_dataset_query" not in result.text
+    answer = _answer(result)
+    assert "Surabaya" in answer, joined[-600:]
+    assert "native_dataset_query" not in answer
 

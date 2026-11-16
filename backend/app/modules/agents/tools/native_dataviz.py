@@ -20,6 +20,7 @@ dashboard: no internal names, addresses or status codes.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 from collections.abc import Awaitable, Callable
@@ -94,6 +95,9 @@ MAX_WORKSPACES = 20
 MAX_CHART_READS = 24
 MAX_FIELDS = 80
 MAX_QUERY_ROWS = 200
+#: Bounds on an approval text: widgets listed by name, and charts read to name them.
+MAX_LISTED = 10
+MAX_PREVIEW_CHART_READS = 60
 NUMERIC = frozenset({"integer", "decimal", "float"})
 TEMPORAL = frozenset({"date", "timestamp"})
 VISUAL_WORDS = {
@@ -939,16 +943,7 @@ async def apply_changes(
             # Someone changed what this change touches: never overwrite their edit.
             raise Refusal("Someone else changed that part of the dashboard at the same time. "
                           "Look at it again, then ask me to make the change.")
-        try:
-            operation = Operation(operation_id=operation_id, expected_revision=revision,
-                                  changes=tuple(changes))
-        except ValidationError as exc:
-            reason = exc.errors(include_input=False)[0].get("msg", "invalid change")
-            raise Refusal(
-                f"The dashboard cannot take this change: "
-                f"{str(reason).removeprefix('Value error, ')}."
-            ) from None
-        _check_operation(dashboard, operation)
+        operation = _validated(dashboard, operation_id, revision, changes)
         try:
             return await _settle(
                 user, operation_id, partial(_documents().apply, user, dashboard_id, operation),
@@ -994,6 +989,23 @@ def _touched(
     return state
 
 
+def _validated(
+    dashboard: DashboardDefinition, operation_id: UUID, revision: int, changes: list[Any],
+) -> Operation:
+    """The operation for ``changes``, checked against ``dashboard`` before it is sent."""
+    try:
+        operation = Operation(operation_id=operation_id, expected_revision=revision,
+                              changes=tuple(changes))
+    except ValidationError as exc:
+        reason = exc.errors(include_input=False)[0].get("msg", "invalid change")
+        raise Refusal(
+            f"The dashboard cannot take this change: "
+            f"{str(reason).removeprefix('Value error, ')}."
+        ) from None
+    _check_operation(dashboard, operation)
+    return operation
+
+
 def _check_operation(dashboard: DashboardDefinition, operation: Operation) -> None:
     """Apply locally first, so a refusal can say why in plain words."""
     from app.modules.viz.operations import apply_operation
@@ -1021,6 +1033,79 @@ def _outcome(summary: str, data: dict[str, Any], change: dict[str, Any]) -> Tool
     )
 
 
+# ── Naming widgets for approvals and results ─────────────────────────
+
+_KIND_WORDS = {"chart": "chart", "text": "text box", "image": "image",
+               "filter": "filter control", "spacer": "spacer"}
+
+
+async def _charts(user: dict[str, Any], widgets: list[Any]) -> dict[UUID, ChartDefinition]:
+    """The draft chart behind each chart widget, read as the caller (bounded)."""
+    charts: dict[UUID, ChartDefinition] = {}
+    for widget in [item for item in widgets if isinstance(item, ChartWidget)][
+            :MAX_PREVIEW_CHART_READS]:
+        try:
+            snapshot = await _documents().read(user, widget.chart_ref.chart_id, draft=True,
+                                               revision=widget.chart_ref.revision)
+        except NovaException:
+            continue
+        if isinstance(snapshot["definition"], ChartDefinition):
+            charts[widget.widget_id] = snapshot["definition"]
+    return charts
+
+
+def _widget_name(widget: Any, charts: dict[UUID, ChartDefinition]) -> str:
+    """What the person sees on the widget: its title, else its chart's, else its kind."""
+    chart = charts.get(widget.widget_id)
+    title = widget.title or (chart.title if chart is not None else "")
+    if title:
+        return f"'{title[:60]}'"
+    return f"an untitled {_KIND_WORDS.get(widget.kind, 'widget')}"
+
+
+def _bounded(items: list[str], noun: str = "widgets") -> str:
+    """Up to ``MAX_LISTED`` items, then how many more."""
+    text = "; ".join(items[:MAX_LISTED])
+    if len(items) > MAX_LISTED:
+        text += f"; and {len(items) - MAX_LISTED} more {noun}"
+    return text
+
+
+def _filter_reaches(item: FilterDefinition, chart: ChartDefinition, page: UUID,
+                    widget: UUID) -> bool:
+    """Whether a dashboard filter applies to one chart widget, as the dashboard applies it:
+    in scope, and bound to the chart's own dataset revision or mapped to it."""
+    scope = item.scope
+    if scope.kind == "page" and scope.page_id != page:
+        return False
+    if scope.kind in {"widget_subset", "chart_local"} and widget not in scope.widget_ids:
+        return False
+
+    def same(binding: FieldBinding) -> bool:
+        return (binding.dataset_id, binding.dataset_revision) == (
+            chart.dataset_id, chart.dataset_revision)
+
+    return bool((item.field is not None and same(item.field))
+                or any(same(mapping.target) for mapping in item.mappings))
+
+
+async def _filter_targets(
+    user: dict[str, Any], dashboard: DashboardDefinition, filters: list[FilterDefinition],
+) -> list[list[str]]:
+    """For each filter, the titles of the chart widgets it filters."""
+    placed = [(page.page_id, widget) for page in dashboard.pages for widget in page.widgets]
+    charts = await _charts(user, [widget for _, widget in placed])
+    targets: list[list[str]] = []
+    for item in filters:
+        names = []
+        for page_id, widget in placed:
+            chart = charts.get(widget.widget_id)
+            if chart is not None and _filter_reaches(item, chart, page_id, widget.widget_id):
+                names.append(_widget_name(widget, charts).strip("'"))
+        targets.append(names)
+    return targets
+
+
 # ── Tools ────────────────────────────────────────────────────────────
 
 
@@ -1035,6 +1120,29 @@ class _Tool:
 
     def preview(self, invocation: ToolInvocation) -> str:
         return "Read the dashboard"
+
+    async def consent_preview(self, invocation: ToolInvocation, context: Any) -> str:
+        """The approval text, from the dashboard as it is now and checked like the change.
+
+        Read-only, as the caller. Without a readable dashboard it is ``preview``.
+        """
+        plain = self.preview(invocation)
+        user = _user(context)
+        if not user:
+            return plain
+        try:
+            args = _parse(self.args_model, invocation.arguments)
+            return await self.describe(args, invocation, context, user) or plain
+        except Refusal as exc:
+            return f"{plain}. This cannot be saved as proposed: {exc}"
+        except (NovaException, ValidationError):
+            return plain
+
+    async def describe(
+        self, args: Any, invocation: ToolInvocation, context: Any, user: dict[str, Any],
+    ) -> str | None:
+        """A fuller approval text from the current dashboard; ``None`` keeps ``preview``."""
+        return None
 
     async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
         user = _user(context)
@@ -1619,50 +1727,84 @@ class ArrangeTool(_Change):
         text = " and ".join(parts) or "rearrange the layout"
         return f"Dashboard layout: {text}"
 
+    @staticmethod
+    def _changes(args: ArrangeArgs, dashboard: DashboardDefinition) -> tuple[Page, list[Any]]:
+        """The page the named widgets are on and the changes, checked as the editor would."""
+        named = {item.widget_id for item in args.move} | set(args.remove)
+        pages = [page for page in dashboard.pages
+                 if named & {widget.widget_id for widget in page.widgets}]
+        if len(pages) != 1:
+            raise Refusal("Name widgets from one page of this dashboard.")
+        page = pages[0]
+        present = {widget.widget_id: widget for widget in page.widgets}
+        missing = named - set(present)
+        if missing:
+            raise Refusal(
+                "Some of those widgets are not on the page. Read the dashboard again."
+            )
+        changes: list[Any] = [WidgetRemove(page_id=page.page_id, widget_id=widget_id)
+                              for widget_id in args.remove]
+        if args.move:
+            moves = {item.widget_id: item for item in args.move}
+            placements = []
+            for widget_id, widget in present.items():
+                if widget_id in set(args.remove):
+                    continue
+                layout = widget.layout
+                move = moves.get(widget_id)
+                if move is not None:
+                    if widget.locked:
+                        raise Refusal("A locked widget cannot be moved; unlock it first.")
+                    updates = {key: getattr(move, key) for key in ("x", "y", "w", "h")
+                               if getattr(move, key) is not None}
+                    try:
+                        layout = Layout(**{**layout.model_dump(), **updates})
+                    except ValidationError:
+                        raise Refusal(
+                            "A widget would extend past the 12 columns; make it narrower "
+                            "or move it left."
+                        ) from None
+                placements.append(Placement(widget_id=widget_id, layout=layout))
+            for index, item in enumerate(placements):
+                if any(item.layout.overlaps(other.layout) for other in placements[:index]):
+                    raise Refusal("Widgets would overlap there. Choose free positions.")
+            changes.append(LayoutChange(page_id=page.page_id, placements=tuple(placements)))
+        return page, changes
+
+    async def describe(self, args: ArrangeArgs, invocation, context, user) -> str:
+        """Each widget the change touches, by name, and what happens to it."""
+        identity = _dashboard_id(args.dashboard_id, context)
+        revision, dashboard = await _draft(user, identity)
+        page, changes = self._changes(args, dashboard)
+        # The same local check the change runs before it is sent.
+        _validated(dashboard, uuid5(_base(invocation), "preview"), revision, changes)
+        present = {widget.widget_id: widget for widget in page.widgets}
+        touched = [present[item.widget_id] for item in args.move]
+        touched += [present[widget_id] for widget_id in args.remove]
+        charts = await _charts(user, touched[:MAX_LISTED])
+        lines = []
+        for move in args.move:
+            widget = present[move.widget_id]
+            old = widget.layout
+            new = Layout(**{**old.model_dump(), **{
+                key: getattr(move, key) for key in ("x", "y", "w", "h")
+                if getattr(move, key) is not None}})
+            what = []
+            if (new.x, new.y) != (old.x, old.y):
+                what.append(f"moved to column {new.x + 1}, row {new.y + 1}")
+            if (new.w, new.h) != (old.w, old.h):
+                what.append(f"resized to {new.w} columns wide and {new.h} rows high")
+            lines.append(f"{_widget_name(widget, charts)} "
+                         + (" and ".join(what) or "stays where it is"))
+        lines += [f"{_widget_name(present[widget_id], charts)} removed"
+                  for widget_id in args.remove]
+        return f"Dashboard layout on page '{page.title[:60]}': {_bounded(lines)}"
+
     async def act(self, args: ArrangeArgs, invocation, context, user) -> ToolOutcome:
         identity = _dashboard_id(args.dashboard_id, context)
-        named = {item.widget_id for item in args.move} | set(args.remove)
 
         def build(dashboard: DashboardDefinition) -> list[Any]:
-            pages = [page for page in dashboard.pages
-                     if named & {widget.widget_id for widget in page.widgets}]
-            if len(pages) != 1:
-                raise Refusal("Name widgets from one page of this dashboard.")
-            page = pages[0]
-            present = {widget.widget_id: widget for widget in page.widgets}
-            missing = named - set(present)
-            if missing:
-                raise Refusal(
-                    "Some of those widgets are not on the page. Read the dashboard again."
-                )
-            changes: list[Any] = [WidgetRemove(page_id=page.page_id, widget_id=widget_id)
-                                  for widget_id in args.remove]
-            if args.move:
-                moves = {item.widget_id: item for item in args.move}
-                placements = []
-                for widget_id, widget in present.items():
-                    if widget_id in set(args.remove):
-                        continue
-                    layout = widget.layout
-                    move = moves.get(widget_id)
-                    if move is not None:
-                        if widget.locked:
-                            raise Refusal("A locked widget cannot be moved; unlock it first.")
-                        updates = {key: getattr(move, key) for key in ("x", "y", "w", "h")
-                                   if getattr(move, key) is not None}
-                        try:
-                            layout = Layout(**{**layout.model_dump(), **updates})
-                        except ValidationError:
-                            raise Refusal(
-                                "A widget would extend past the 12 columns; make it narrower "
-                                "or move it left."
-                            ) from None
-                    placements.append(Placement(widget_id=widget_id, layout=layout))
-                for index, item in enumerate(placements):
-                    if any(item.layout.overlaps(other.layout) for other in placements[:index]):
-                        raise Refusal("Widgets would overlap there. Choose free positions.")
-                changes.append(LayoutChange(page_id=page.page_id, placements=tuple(placements)))
-            return changes
+            return self._changes(args, dashboard)[1]
 
         receipt = await apply_changes(user, identity, _base(invocation), build)
         change = _changed(identity, receipt)
@@ -1719,10 +1861,14 @@ class FiltersTool(_Change):
             return "Replace the dashboard's filters with: " + (", ".join(titles) or "none")
         return "Add dashboard filters: " + ", ".join(titles)
 
-    async def act(self, args: FiltersArgs, invocation, context, user) -> ToolOutcome:
+    @staticmethod
+    async def _resolve(
+        args: FiltersArgs, context: Any, user: dict[str, Any],
+    ) -> tuple[UUID, int, DashboardDefinition, dict[tuple[UUID, int], Dataset],
+               list[tuple[FilterArg, DatasetReference, DatasetField]]]:
+        """The dashboard draft and each filter's field in the dataset it is pinned to."""
         identity = _dashboard_id(args.dashboard_id, context)
-        base = _base(invocation)
-        _, dashboard = await _draft(user, identity)
+        revision, dashboard = await _draft(user, identity)
         datasets: dict[tuple[UUID, int], Dataset] = {}
         resolved: list[tuple[FilterArg, DatasetReference, DatasetField]] = []
         for item in args.filters:
@@ -1732,45 +1878,89 @@ class FiltersTool(_Change):
                 datasets[key] = (await _dataset(user, *key))[1]
             field = Fields(datasets[key]).field(item.field)
             resolved.append((item, reference, field))
+        return identity, revision, dashboard, datasets, resolved
+
+    @staticmethod
+    def _build(
+        args: FiltersArgs, base: UUID, context: Any, current: DashboardDefinition,
+        datasets: dict[tuple[UUID, int], Dataset],
+        resolved: list[tuple[FilterArg, DatasetReference, DatasetField]],
+    ) -> tuple[list[Any], list[FilterDefinition]]:
+        """The change and the filters it creates, checked against their fields."""
+        created: list[FilterDefinition] = []
+        for index, (item, reference, field) in enumerate(resolved):
+            binding = FieldBinding(dataset_id=reference.dataset_id,
+                                   dataset_revision=reference.revision,
+                                   field_id=field.field_id)
+            page = _page(current, item.page_id, context) if item.scope == "page" else None
+            try:
+                created.append(FilterDefinition(
+                    filter_id=uuid5(base, f"filter:{index}"), title=item.title,
+                    kind=item.kind, field=binding,
+                    scope=FilterScope(kind=item.scope,
+                                      page_id=page.page_id if page else None),
+                    defaults=tuple(scalar(value, field) for value in item.defaults),
+                ))
+            except ValidationError as exc:
+                reason = exc.errors(include_input=False)[0].get("msg", "invalid filter")
+                raise Refusal(f"The filter '{item.title}' is not valid: "
+                              f"{str(reason).removeprefix('Value error, ')}.") from None
+        kept: list[FilterDefinition] = []
+        if args.mode == "add":
+            bound = {(item.field.dataset_id, item.field.field_id) for item in created
+                     if item.field is not None}
+            kept = [item for item in current.filters if item.field is None
+                    or (item.field.dataset_id, item.field.field_id) not in bound]
+            # A dropped filter must not leave a dependent behind.
+            ids = {item.filter_id for item in kept}
+            kept = [item.model_copy(update={"depends_on": tuple(
+                parent for parent in item.depends_on if parent in ids)}) for item in kept]
+        final = (*kept, *created)
+        _check_controls(current, final, datasets)
+        return [FiltersReplace(filters=final)], created
+
+    async def describe(self, args: FiltersArgs, invocation, context, user) -> str:
+        """Each filter with its field and the widgets it will filter, by name."""
+        _, revision, dashboard, datasets, resolved = await self._resolve(args, context, user)
+        base = _base(invocation)
+        changes, created = self._build(args, base, context, dashboard, datasets, resolved)
+        _validated(dashboard, uuid5(base, "preview"), revision, changes)
+        targets = await _filter_targets(user, dashboard, created)
+        lines = []
+        for (item, _, field), names in zip(resolved, targets, strict=True):
+            quoted = ["'" + name[:60] + "'" for name in names]
+            reach = (f"filters {_bounded(quoted, 'charts')}" if names
+                     else "filters no widget on the dashboard yet")
+            lines.append(f"'{item.title[:60]}' on {field.name[:60]}, {reach}")
+        if args.mode == "replace":
+            return ("Replace the dashboard's filters with: " + "; ".join(lines)
+                    if lines else "Remove all of the dashboard's filters")
+        return "Add dashboard filters: " + "; ".join(lines)
+
+    async def act(self, args: FiltersArgs, invocation, context, user) -> ToolOutcome:
+        identity, _, _, datasets, resolved = await self._resolve(args, context, user)
+        base = _base(invocation)
+        saved: dict[str, Any] = {}
 
         def build(current: DashboardDefinition) -> list[Any]:
-            created: list[FilterDefinition] = []
-            for index, (item, reference, field) in enumerate(resolved):
-                binding = FieldBinding(dataset_id=reference.dataset_id,
-                                       dataset_revision=reference.revision,
-                                       field_id=field.field_id)
-                page = _page(current, item.page_id, context) if item.scope == "page" else None
-                try:
-                    created.append(FilterDefinition(
-                        filter_id=uuid5(base, f"filter:{index}"), title=item.title,
-                        kind=item.kind, field=binding,
-                        scope=FilterScope(kind=item.scope,
-                                          page_id=page.page_id if page else None),
-                        defaults=tuple(scalar(value, field) for value in item.defaults),
-                    ))
-                except ValidationError as exc:
-                    reason = exc.errors(include_input=False)[0].get("msg", "invalid filter")
-                    raise Refusal(f"The filter '{item.title}' is not valid: "
-                                  f"{str(reason).removeprefix('Value error, ')}.") from None
-            kept: list[FilterDefinition] = []
-            if args.mode == "add":
-                bound = {(item.field.dataset_id, item.field.field_id) for item in created
-                         if item.field is not None}
-                kept = [item for item in current.filters if item.field is None
-                        or (item.field.dataset_id, item.field.field_id) not in bound]
-                # A dropped filter must not leave a dependent behind.
-                ids = {item.filter_id for item in kept}
-                kept = [item.model_copy(update={"depends_on": tuple(
-                    parent for parent in item.depends_on if parent in ids)}) for item in kept]
-            final = (*kept, *created)
-            _check_controls(current, final, datasets)
-            return [FiltersReplace(filters=final)]
+            changes, created = self._build(args, base, context, current, datasets, resolved)
+            saved.update(dashboard=current, created=created)
+            return changes
 
         receipt = await apply_changes(user, identity, base, build)
         change = _changed(identity, receipt)
+        targets: list[list[str]] = [[] for _ in args.filters]
+        if saved:
+            # Already saved: naming the widgets is a courtesy that cannot undo it.
+            with contextlib.suppress(NovaException):
+                targets = await _filter_targets(user, saved["dashboard"], saved["created"])
+        reach = [f"'{item.title}' filters " + (", ".join(names[:MAX_LISTED]) or "no widget yet")
+                 for item, names in zip(args.filters, targets, strict=True)]
         return _outcome(
-            f"Saved dashboard filters (version {change['revision']})",
-            {"filters": [item.title for item in args.filters], "mode": args.mode}, change,
+            f"Saved dashboard filters (version {change['revision']}). " + "; ".join(reach),
+            {"filters": [{"title": item.title, "applies_to": names}
+                         for item, names in zip(args.filters, targets, strict=True)],
+             "mode": args.mode}, change,
         )
 
 

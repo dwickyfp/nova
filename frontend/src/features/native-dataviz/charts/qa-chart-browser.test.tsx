@@ -177,6 +177,8 @@ describe('NDV-CHART-014 theme switch', () => {
   })
 })
 
+const NO_CATEGORY = 'This chart shows totals only, so clicking it cannot filter other charts.'
+
 describe('NDV-INTER-003 measure-only charts', () => {
   it('emits no selection when a KPI is clicked', async () => {
     const onSelect = vi.fn()
@@ -188,6 +190,8 @@ describe('NDV-INTER-003 measure-only charts', () => {
     await userEvent.click(screen.container.firstElementChild as HTMLElement)
     expect(onSelect).not.toHaveBeenCalled()
     expect(screen.container.querySelector('button, [role="button"], [tabindex]')).toBeNull()
+    // Pointing at it says why it cannot filter.
+    await expect.element(screen.getByTitle(NO_CATEGORY)).toBeInTheDocument()
   })
 
   it('emits no selection when a bar of a chart without a grouping is clicked', async () => {
@@ -202,6 +206,7 @@ describe('NDV-INTER-003 measure-only charts', () => {
     await expect.poll(() => hits).toEqual([0])
     await new Promise(resolve => setTimeout(resolve, 200))
     expect(onSelect).not.toHaveBeenCalled()
+    await expect.element(screen.getByTitle(NO_CATEGORY)).toBeInTheDocument()
   })
 })
 

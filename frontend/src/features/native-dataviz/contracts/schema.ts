@@ -1467,6 +1467,13 @@ const schema = {
           "title": "Measures",
           "type": "array"
         },
+        "offset": {
+          "default": 0,
+          "maximum": 10000,
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
         "parameters": {
           "default": [],
           "items": {
@@ -1512,6 +1519,27 @@ const schema = {
           "format": "uuid",
           "title": "Dataset Id",
           "type": "string"
+        },
+        "next_offset": {
+          "anyOf": [
+            {
+              "maximum": 10000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Next Offset"
+        },
+        "offset": {
+          "default": 0,
+          "maximum": 10000,
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
         },
         "revision": {
           "maximum": 9007199254740991,

@@ -19,7 +19,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 #: Bump when any source text changes, so cached translations are redone.
-VERSION = 4
+VERSION = 5
 
 MESSAGES: dict[str, str] = {
     "render.lead": "Here is what the results show.",
@@ -61,6 +61,14 @@ MESSAGES: dict[str, str] = {
     "loop.capability_missing": (
         "I can't do this part from Neva yet, so I won't guess. I can explain where "
         "to find it in Nova, or help with a related question."
+    ),
+    "loop.change_unconfirmed": (
+        "No change was saved to the dashboard in this reply, so I won't say it changed. "
+        "Ask me again to make the change, and I'll ask for your approval before saving it."
+    ),
+    "loop.publish_unconfirmed": (
+        "The dashboard was not published in this reply, so I won't say it was. Ask me "
+        "to publish it, and I'll ask for your approval first."
     ),
     "loop.lookup_failed": (
         "I couldn't look this up in Nova just now, so I won't guess. Try again, or "
@@ -139,6 +147,16 @@ BUILTIN: dict[str, dict[str, str]] = {
         "loop.capability_missing": (
             "Bagian ini belum bisa saya kerjakan dari Neva, jadi saya tidak akan menebak. "
             "Saya bisa jelaskan tempatnya di Nova, atau bantu pertanyaan terkait."
+        ),
+        "loop.change_unconfirmed": (
+            "Belum ada perubahan yang disimpan ke dasbor dalam balasan ini, jadi saya tidak "
+            "akan mengatakan dasbor berubah. Minta lagi perubahannya, dan saya akan meminta "
+            "persetujuan Anda sebelum menyimpannya."
+        ),
+        "loop.publish_unconfirmed": (
+            "Dasbor belum diterbitkan dalam balasan ini, jadi saya tidak akan mengatakan "
+            "sebaliknya. Minta saya menerbitkannya, dan saya akan meminta persetujuan Anda "
+            "terlebih dahulu."
         ),
         "loop.lookup_failed": (
             "Saya belum bisa mencarinya di Nova saat ini, jadi saya tidak akan menebak. "

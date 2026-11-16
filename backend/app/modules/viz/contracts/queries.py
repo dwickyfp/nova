@@ -15,6 +15,8 @@ from .common import Contract, FieldId, LogicalType, Name, Revision, Scalar
 from .filters import FilterTree
 from .parameters import ParameterInput
 
+MAX_QUERY_OFFSET = 10_000
+
 QueryAggregation = Literal["sum", "avg", "min", "max", "count", "count_distinct"]
 DateGrain = Literal["day", "week", "month", "quarter", "year"]
 
@@ -49,6 +51,10 @@ class DatasetQueryRequest(Contract):
     filters: FilterTree | None = None
     sort: tuple[QuerySort, ...] = Field(default=(), max_length=8)
     limit: int = Field(default=1000, strict=True, ge=1, le=10_000)
+    # A page starts this many rows into the total order. The planner always
+    # breaks sort ties by every dimension, so consecutive pages neither overlap
+    # nor skip rows; the cap keeps the engine's ordered window bounded.
+    offset: int = Field(default=0, strict=True, ge=0, le=MAX_QUERY_OFFSET)
     parameters: tuple[ParameterInput, ...] = Field(default=(), max_length=32)
 
     @model_validator(mode="after")
@@ -80,4 +86,8 @@ class DatasetQueryResult(Contract):
     revision: Revision
     columns: tuple[QueryColumn, ...]
     rows: tuple[tuple[Scalar | None, ...], ...]
+    # More rows follow this page in the same order.
     truncated: bool
+    offset: int = Field(default=0, strict=True, ge=0, le=MAX_QUERY_OFFSET)
+    # Where the next page starts, or null when no further page can be requested.
+    next_offset: int | None = Field(default=None, strict=True, ge=1, le=MAX_QUERY_OFFSET)

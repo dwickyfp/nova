@@ -10,6 +10,8 @@ Run against the development stack with QA users only (no administrator):
   results and in filter options; the clear numbers never appear.
 - Table denial (NDV-ACL-003): a role that may open the shared dataset but
   cannot read its table gets a refusal and no rows.
+- ISO weeks (NDV-METRIC-015): a week grain over dates around three new years
+  groups by the ISO Monday, the same as the engine's own date_trunc('week').
 
 Credentials come from NOVA_QA_OWNER_PASSWORD (alice) and
 NOVA_QA_OUTSIDER_PASSWORD (bob). Everything created is removed afterwards.
@@ -21,7 +23,7 @@ import argparse
 import asyncio
 import json
 import os
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -181,6 +183,40 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                         == [number(cell) for cell in oracle_total["rows"][0]])
             report["scenarios"].update({"NDV-METRIC-001": "PASS", "NDV-METRIC-004": "PASS",
                                         "NDV-METRIC-005": "PASS"})
+
+            # ── ISO weeks across year boundaries, grouped by the engine ──
+            days = ["2020-12-31", "2021-01-01", "2021-01-03", "2021-01-04", "2024-12-29",
+                    "2024-12-30", "2025-01-01", "2026-01-01", "2026-01-04", "2026-01-05"]
+            # A SQL source reads a governed table, so the dates ride on one of its rows.
+            literal_days = " UNION ALL ".join(f"SELECT CAST('{day}' AS DATE) AS d"
+                                              for day in days)
+            weeks_sql = (f"SELECT t.d, 1 AS n FROM ({literal_days}) t "
+                         "CROSS JOIN (SELECT MIN(city) AS city FROM analytics.sales) s")
+            weeks = await dataset(probe, tokens["author"], space, weeks_sql, "Weeks QA")
+            created.append(weeks["dataset"])
+            by_week = (await probe.call(
+                "native weeks", "POST", f"/api/v1/viz/datasets/{weeks['dataset']}/query",
+                tokens["author"], body={
+                    "revision": 1, "draft": False,
+                    "dimensions": [{"field_id": weeks["d"], "date_grain": "week"}],
+                    "measures": [{"field_id": weeks["n"], "aggregation": "sum"}],
+                    "sort": [{"column": "d0", "direction": "asc"}]})).json()["rows"]
+            got_weeks = {row[0]["value"][:10]: int(number(row[1]) or 0) for row in by_week}
+            iso: dict[str, int] = {}
+            for day in days:
+                parsed = date.fromisoformat(day)
+                monday = (parsed - timedelta(days=parsed.weekday())).isoformat()
+                iso[monday] = iso.get(monday, 0) + 1
+            engine = (await probe.call("oracle weeks", "POST", "/api/v1/query/execute",
+                                       tokens["author"], body={"sql": (
+                                           "SELECT CAST(date_trunc('week', d) AS DATE), "
+                                           f"COUNT(*) FROM ({weeks_sql}) q GROUP BY 1 ORDER BY 1")}
+                                       )).json()[0]
+            want_engine = {str(row[0])[:10]: int(row[1]) for row in engine["rows"]}
+            probe.check("weeks start on the ISO Monday across year boundaries",
+                        got_weeks == iso == want_engine,
+                        native=got_weeks, iso=iso, engine=want_engine)
+            report["scenarios"]["NDV-METRIC-015"] = "PASS"
 
             # ── Ranger masks reach chart values and filter options ──
             customers = await dataset(probe, tokens["author"], space, CUSTOMERS, "Customers QA")

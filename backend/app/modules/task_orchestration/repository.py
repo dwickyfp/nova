@@ -427,6 +427,12 @@ class TaskOrchestrationRepository:
         async with self._store(read_only=True) as store:
             return self._run(await store.get_graph_run(run_id))
 
+    async def scheduled_occurrence_time(self, graph_run_id: str) -> datetime | None:
+        """The due time a scheduled graph run was reserved for (``None`` for other runs)."""
+        async with self._store(read_only=True) as store:
+            value = await store.scheduled_occurrence_time(graph_run_id)
+        return value if isinstance(value, datetime) else None
+
     async def existing_graph_run_ids(self, run_ids: list[str]) -> set[str]:
         if not run_ids:
             return set()

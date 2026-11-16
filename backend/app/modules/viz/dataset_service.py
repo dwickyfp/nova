@@ -71,7 +71,7 @@ from .contracts.datasets import (
     SemanticSource,
     SqlSource,
 )
-from .contracts.queries import DatasetQueryRequest, DatasetQueryResult
+from .contracts.queries import MAX_QUERY_OFFSET, DatasetQueryRequest, DatasetQueryResult
 from .document_service import (
     current_session,
     document_admission,
@@ -451,9 +451,11 @@ class NativeDatasetService:
         if result.error or not result.streamed or not sink.begun or result.rows:
             raise NovaException("Dataset query could not be completed", status_code=422)
         await self._verify_preview_source(user, document, selection)
+        next_offset = request.offset + len(sink.values)
         return DatasetQueryResult(
             dataset_id=identity, revision=request.revision, columns=plan.columns,
-            rows=tuple(sink.values), truncated=sink.has_more,
+            rows=tuple(sink.values), truncated=sink.has_more, offset=request.offset,
+            next_offset=next_offset if sink.has_more and next_offset <= MAX_QUERY_OFFSET else None,
         )
 
     async def inspect(

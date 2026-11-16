@@ -1,7 +1,9 @@
 /**
  * A per-page bound on concurrent dataset queries. The server admits a few
- * queries per person at a time; a dashboard with many widgets queues here
- * instead of being refused. A caller that is aborted while waiting never sends.
+ * queries at a time; a dashboard with many widgets queues here instead of
+ * being refused. A caller that is aborted while waiting never sends. A query
+ * already sent is never aborted: the server keeps running it either way, so
+ * its slot here is released only when the server answers.
  */
 export const MAX_CONCURRENT_QUERIES = 3
 

@@ -614,3 +614,52 @@ counts are 148 PASS, 89 NOT_RUN and 17 OUT_OF_SCOPE.
   commits. The repository now reports that specific trigger refusal as a
   revision conflict. A deterministic PG17 test fails without the fix. The file
   passes 42 tests and backend gate attempt 25 passes.
+
+## Release QA round 4 (2026-11-16)
+
+Eleven more scenarios pass: 159 PASS, 78 NOT_RUN and 17 OUT_OF_SCOPE. The
+record is `release-qa-attempt-4.json`.
+
+- **Built:**
+  - Server-side table pages: a Table shows **Rows X–Y** with previous and next
+    arrows, up to a 10,000-row offset (CHART-016).
+  - A **No value** choice for True / false filters (FILTER-008).
+  - A hover explanation on charts that cannot filter others (INTER-003).
+  - Neva's approval text names the charts a filter affects and each widget a
+    layout change moves, resizes or removes (AGENT-007, AGENT-009).
+  - On a dashboard turn, Neva's answer cannot claim a change or publication
+    that it did not save (AGENT-021).
+- **Defects fixed:**
+  - Scheduled-export retries now save one workbook per occurrence, verified
+    by a receipt inside the file (STORE-003).
+  - Switching dashboard pages aborted queries the server kept running, which
+    caused 429 storms. Sent queries now finish (PERF-003).
+- **Live evidence on the development stack:**
+  - `qa-live-attempt-8.json`: ISO weeks across three new years. Attempt 7 is
+    kept as a failure: a literal-only SQL source is refused.
+  - `load-live-attempt-3.json`: 262,144 keys paged against the SQL oracle,
+    and a burst of 40 queries (4 answered, 36 refused with 429, no errors).
+    Attempts 1 and 2 are kept as failures: the oracle returns at most 500 rows.
+  - `perf-live-attempt-1.json`: a 50-widget dashboard in the browser.
+- **Dependencies (`dependency-audit-2.json`):**
+  - Seven Python packages were upgraded, and python-jose was replaced by PyJWT.
+  - KaTeX and esbuild were upgraded.
+  - The frontend audit is clean.
+  - asyncmy has no fixed release. Its advisory is mitigated by a driver guard
+    that refuses mapping parameters.
+- **Environment:** the StarRocks FE container exited again (code 255) during
+  this work and was restarted with its data. Local scipy is 1.17.1, because the
+  locked 1.15.3 wheel used earlier was no longer present.
+- **Gates (round 4):**
+  - Backend gate attempt 26 failed: 4 MySQL driver guard tests had no event
+    loop in the full suite. Attempt 27 passed: 12,110 unit tests, mypy,
+    changed-file Ruff, scorecard and boundary.
+  - `tests/eval`: 366 passed. PG17: 1,085 passed and 8 skipped.
+  - Frontend: lint, build and bundle budget passed. No full browser run was
+    clean:
+    - Run 31 stopped on a test whose page reached the network; fixed.
+    - Runs 32 to 34 each had one timing failure in an unchanged test while the
+      host was heavily loaded by another session's build. Each passed alone.
+  - Record: `release-qa-attempt-4.json`.
+- **StarRocks compatibility audit (started 2026-11-16):** see
+  `docs/architecture/starrocks-compat/PLAN.md`.

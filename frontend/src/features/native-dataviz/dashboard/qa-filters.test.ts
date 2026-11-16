@@ -62,3 +62,25 @@ describe('NDV-FILTER-010 widget-subset scope', () => {
     expect(context([scoped, global], both, 'w2')?.expression).toMatchObject({ type: 'and', children: [{ op: 'in' }, { op: 'like_literal' }] })
   })
 })
+
+describe('NDV-FILTER-008 true/false filter over a column with missing values', () => {
+  const paid = filter({ title: 'Paid', kind: 'boolean_switch', field: field('paid') })
+  const eq = (value: boolean) => ({ type: 'predicate', field: field('paid'), op: 'eq', values: [{ type: 'boolean', value }],
+    source: 'global', stage: 'row' })
+  const isNull = { type: 'predicate', field: field('paid'), op: 'is_null', values: [], source: 'global', stage: 'row' }
+
+  it('matches only true or only false, never rows with no value, as SQL does', () => {
+    expect(context([paid], { f1: { kind: 'boolean', value: true } })?.expression).toEqual(eq(true))
+    expect(context([paid], { f1: { kind: 'boolean', value: false } })?.expression).toEqual(eq(false))
+  })
+
+  it('selects rows with no value through IS NULL, never through a false comparison', () => {
+    expect(context([paid], { f1: { kind: 'boolean', value: null } })?.expression).toEqual(isNull)
+  })
+
+  it('keeps rows with no value alongside the choice when the filter includes them', () => {
+    const withNull = filter({ title: 'Paid', kind: 'boolean_switch', field: field('paid'), include_null: true })
+    expect(context([withNull], { f1: { kind: 'boolean', value: false } })?.expression)
+      .toEqual({ type: 'or', children: [eq(false), isNull] })
+  })
+})

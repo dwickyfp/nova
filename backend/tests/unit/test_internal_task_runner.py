@@ -1,6 +1,7 @@
 """The task worker's internal-handler runner renews its leases and reports the
 handler's own error, not the task group around it."""
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -25,6 +26,7 @@ def setup(monkeypatch):
         get_task_run=AsyncMock(return_value={"state": "running"}),
         get_graph_run=AsyncMock(return_value={"state": "running"}),
         get_role_execution_user=AsyncMock(return_value="acct"),
+        scheduled_occurrence_time=AsyncMock(return_value=datetime(2026, 11, 16, 8, tzinfo=UTC)),
     )
     return task, job, repository
 

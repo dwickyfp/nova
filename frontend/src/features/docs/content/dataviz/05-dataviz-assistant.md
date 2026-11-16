@@ -51,6 +51,20 @@ dataset and publish. Before each change it shows what it will do with
 change is saved, the canvas loads the new version and marks the widgets that
 changed with **Changed by Neva**.
 
+What the approval shows:
+
+- **Rearranging widgets**: each widget by its title and what happens to it:
+  moved (with its new column and row), resized (with its new width and
+  height) or removed. A long list shows the first ten and how many more.
+- **Adding filters**: each filter, the field it uses, and the charts it will
+  filter. A filter that no chart uses yet says so.
+- If the change cannot be saved as asked, for example because widgets would
+  overlap, the approval says why before you allow anything.
+
+Neva says the dashboard changed, or was published, only after that change was
+saved. If it did not save one in its reply, it says so, for example: "No change
+was saved to the dashboard in this reply, so I won't say it changed."
+
 ## Panel buttons
 
 | Button | What it does |

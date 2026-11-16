@@ -379,6 +379,96 @@ def enforce_evidence(answer: str, *, needs_data: bool, evidence: EvidenceTracker
     return answer
 
 
+# ── Change claims ─────────────────────────────────────────────────────
+# An answer may say a dashboard changed or was published only when the turn
+# holds that tool's committed receipt. These patterns find completed-action
+# statements ("I added ...", "... has been published", "Published."), not
+# descriptions ("it was published last week"), offers ("I will add") or
+# refusals ("I have not changed"). English is the source; Indonesian ships too.
+_EN_CHANGE = (
+    "added|created|moved|resized|removed|deleted|renamed|updated|changed|replaced|"
+    "rearranged|arranged|applied|attached|saved|inserted|edited|modified|cleared|"
+    "placed|swapped|converted|turned"
+)
+_EN_PUBLISH = "published|republished"
+_EN_VERB = f"(?P<verb>{_EN_PUBLISH}|{_EN_CHANGE}|put|set up)"
+_EN_ADVERB = r"(?:\s+(?:just|also|now|already|successfully|then|went ahead and))*"
+_ID_CHANGE = (
+    "menambahkan|memindahkan|menghapus|mengubah|memperbarui|mengganti|menyimpan|membuat|"
+    "menata|memasang|menerapkan|ditambahkan|dipindahkan|dihapus|diubah|diperbarui|diganti|"
+    "disimpan|dibuat|ditata|dipasang|diterapkan"
+)
+_ID_PUBLISH = "menerbitkan|mempublikasikan|diterbitkan|dipublikasikan"
+_CLAIM_PATTERNS = (
+    # "I added", "I've moved", "we just published"
+    re.compile(rf"\b(?:i|we)(?:'ve|’ve|\s+have)?{_EN_ADVERB}\s+{_EN_VERB}\b", re.IGNORECASE),
+    # "has been removed", "have now been saved" (not "has been published since May")
+    re.compile(
+        rf"\b(?:has|have){_EN_ADVERB}\s+been{_EN_ADVERB}\s+{_EN_VERB}\b"
+        r"(?!\s+(?:since|before|previously|earlier|last|by)\b)",
+        re.IGNORECASE,
+    ),
+    re.compile(rf"\b(?:was|were)\s+successfully\s+{_EN_VERB}\b", re.IGNORECASE),
+    re.compile(r"\b(?:is|are)\s+now\s+(?P<verb>published|live)\b", re.IGNORECASE),
+    # A sentence that opens with the past tense: "Published.", "Added the KPI".
+    re.compile(
+        rf"^(?:[-*•]\s*)?(?:(?i:done)[,:;!]?\s+)?(?P<verb>(?i:{_EN_PUBLISH}|{_EN_CHANGE}))"
+        r"(?=\s*[.!;:,]|\s*$|\s+(?:(?i:the|a|an|it|them|your|this|these|both|all|one|two|"
+        r"three|as|to)\b|[A-Z0-9'\"‘“]))"
+    ),
+    re.compile(
+        rf"\b(?:saya|aku|kami)(?:\s+(?:sudah|telah|berhasil|baru\s+saja|juga))*\s+"
+        rf"(?P<verb>{_ID_PUBLISH}|{_ID_CHANGE})\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"\b(?:sudah|telah|berhasil)(?:\s+(?:berhasil|juga))*\s+"
+        rf"(?P<verb>{_ID_PUBLISH}|{_ID_CHANGE})\b",
+        re.IGNORECASE,
+    ),
+)
+#: "... and published it": a further action in a sentence that already claims one.
+_COORDINATED = re.compile(
+    rf"(?:\band|\bthen|\bdan|,)(?:\s+(?:then|also|juga|lalu))*\s+"
+    rf"(?P<verb>{_EN_PUBLISH}|{_EN_CHANGE}|{_ID_PUBLISH}|{_ID_CHANGE})\b",
+    re.IGNORECASE,
+)
+_PUBLISH_VERB = re.compile(rf"^(?:{_EN_PUBLISH}|live|{_ID_PUBLISH})$", re.IGNORECASE)
+#: A change claim is about the dashboard only when it names something on one.
+_DASHBOARD_OBJECT = re.compile(
+    r"\b(?:dashboards?|charts?|widgets?|kpis?|filters?|pages?|layout|tiles?|visuals?|graphs?|"
+    r"tables?|pivots?|versions?|revisions?|drafts?|titles?|datasets?|text box(?:es)?|notes?|"
+    r"dasbor|grafik|bagan|halaman|versi|tata letak|tabel|judul)\b",
+    re.IGNORECASE,
+)
+#: A sentence about a query or its result describes data, not the dashboard.
+_DATA_TALK = re.compile(r"\b(?:query|queries|queried|sql|results?|kueri|hasil)\b", re.IGNORECASE)
+_DASHBOARD_WORD = re.compile(r"\b(?:dashboard|dasbor)\b", re.IGNORECASE)
+
+
+def dashboard_change_claims(answer: str) -> frozenset[str]:
+    """What an answer says it did to a dashboard: ``change``, ``publish``, both or neither.
+
+    The loop compares these claims with the turn's committed dashboard receipts.
+    """
+    claims: set[str] = set()
+    for sentence in re.split(r"(?<=[.!?;])\s+|\n+", answer or ""):
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        matches = [match for pattern in _CLAIM_PATTERNS for match in pattern.finditer(sentence)]
+        if matches:
+            matches.extend(_COORDINATED.finditer(sentence))
+        for match in matches:
+            if _PUBLISH_VERB.match(match.group("verb")):
+                claims.add("publish")
+            elif _DASHBOARD_OBJECT.search(sentence) and not (
+                _DATA_TALK.search(sentence) and not _DASHBOARD_WORD.search(sentence)
+            ):
+                claims.add("change")
+    return frozenset(claims)
+
+
 @dataclass(frozen=True)
 class ValidationError:
     path: str

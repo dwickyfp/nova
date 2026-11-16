@@ -208,6 +208,27 @@ describe('native dashboard editor', () => {
       { widget_id: TEXT_WIDGET, layout: { x: 3, y: 1, w: 9, h: 2 } }]) }] })
   })
 
+  it('shows every grid cell while editing, lined up with the widgets, and none in view', async () => {
+    const screen = await mount()
+    await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
+    expect(document.querySelector('[data-testid="canvas-cells"]')).toBeNull()
+    await screen.getByRole('button', { name: 'Edit' }).click()
+    const cells = () => [...document.querySelectorAll<HTMLElement>('[data-testid="canvas-cells"] > span')]
+    await expect.poll(() => cells().length).toBeGreaterThan(0)
+    expect(cells().length % 12).toBe(0)
+    for (const item of document.querySelectorAll<HTMLElement>('.nova-dataviz-canvas > .grid-stack-item')) {
+      const [x, y, w, h] = ['gs-x', 'gs-y', 'gs-w', 'gs-h'].map(name => Number(item.getAttribute(name)))
+      // Room is kept below the lowest widget to drag or resize into.
+      expect(cells().length / 12).toBeGreaterThanOrEqual(y + h + 3)
+      const content = item.querySelector('.grid-stack-item-content')!.getBoundingClientRect()
+      const first = cells()[y * 12 + x].getBoundingClientRect()
+      const last = cells()[(y + h - 1) * 12 + x + w - 1].getBoundingClientRect()
+      expect([content.left - first.left, content.top - first.top, content.right - last.right, content.bottom - last.bottom]
+        .map(value => Math.abs(value) < 1)).toEqual([true, true, true, true])
+    }
+    expect(operations).toHaveLength(0)
+  })
+
   it('runs every chart again when asked to refresh the data', async () => {
     const screen = await mount()
     await expect.element(screen.getByTestId('kpi-value')).toBeVisible()

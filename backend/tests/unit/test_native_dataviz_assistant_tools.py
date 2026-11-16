@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
@@ -548,6 +549,149 @@ async def test_a_city_filter_binds_the_pinned_dataset_revision(docs):
     refused = await _run("native_dashboard_filters", {"filters": [
         {"title": "When", "field": "city", "kind": "date_range"}]}, call_id="c2")
     assert not refused.ok and not _leaks(refused.error)
+
+
+
+NOTES = UUID("66666666-6666-4666-8666-666666666666")
+UUID_TEXT = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-")
+
+
+def _with_widgets(docs: FakeDocuments, *widgets: Any) -> None:
+    """Put more widgets on the first page of the dashboard's first revision."""
+    start = docs.docs[DASHBOARD][0]
+    page = start.pages[0]
+    docs.docs[DASHBOARD][0] = start.model_copy(update={"pages": (
+        page.model_copy(update={"widgets": (*page.widgets, *widgets)}),)})
+
+
+def _note(widget_id: UUID, title: str, x: int, y: int) -> Any:
+    from app.modules.viz.contracts.dashboards import TextWidget
+
+    return TextWidget(widget_id=widget_id, title=title, text="Q3 plan",
+                      layout=Layout(x=x, y=y, w=6, h=2))
+
+
+async def _approval(name: str, arguments: dict[str, Any], context: Any = None) -> str:
+    """The text the person approves: the loop shows the tool's consent preview."""
+    tool = _tool(name)
+    return await tool.consent_preview(_call(name, arguments), context or _context())
+
+
+@pytest.mark.asyncio
+async def test_the_filter_approval_and_result_name_the_widgets_it_filters(docs):
+    """NDV-AGENT-007: field, scope and the affected widgets, by their titles."""
+    _with_widgets(docs, _note(NOTES, "Notes", 6, 0))
+    arguments = {"filters": [{"title": "City", "field": "city", "defaults": ["Surabaya"]}]}
+    approval = await _approval("native_dashboard_filters", arguments)
+    assert "'City'" in approval and "Revenue by city" in approval
+    assert "Notes" not in approval  # a text box is not filtered
+    assert not UUID_TEXT.search(approval) and not _leaks(approval)
+    assert not docs.applied  # showing the approval changes nothing
+
+    outcome = await _run("native_dashboard_filters", arguments)
+    assert outcome.ok, outcome.error
+    assert outcome.data["filters"] == [{"title": "City", "applies_to": ["Revenue by city"]}]
+    assert "Revenue by city" in outcome.summary
+    assert not _leaks(outcome.summary, json.dumps(outcome.data["filters"]))
+
+
+@pytest.mark.asyncio
+async def test_a_filter_no_widget_uses_says_so_and_a_bad_field_is_shown_before_approval(docs):
+    other = UUID("77777777-7777-4777-8777-777777777777")
+    start = docs.docs[DASHBOARD][0]
+    from app.modules.viz.contracts.dashboards import Page
+
+    docs.docs[DASHBOARD][0] = start.model_copy(update={"pages": (
+        *start.pages, Page(page_id=other, title="Notes page", widgets=(
+            _note(NOTES, "Notes", 0, 0),)))})
+    page_only = {"filters": [{"title": "City", "field": "city", "scope": "page",
+                              "page_id": str(other)}]}
+    approval = await _approval("native_dashboard_filters", page_only)
+    assert "no widget" in approval and "Revenue by city" not in approval
+    outcome = await _run("native_dashboard_filters", page_only)
+    assert outcome.ok and outcome.data["filters"] == [{"title": "City", "applies_to": []}]
+
+    wrong = {"filters": [{"title": "Province", "field": "province"}]}
+    approval = await _approval("native_dashboard_filters", wrong)
+    assert "cannot be saved" in approval and "province" in approval
+    assert not _leaks(approval)
+
+
+@pytest.mark.asyncio
+async def test_the_arrange_approval_names_each_widget_and_what_happens_to_it(docs):
+    """NDV-AGENT-009: every widget change is visible, and checked, before approval."""
+    _with_widgets(docs, _note(NOTES, "Notes", 6, 0))
+    arguments = {"move": [{"widget_id": str(WIDGET), "y": 4, "w": 12}],
+                 "remove": [str(NOTES)]}
+    approval = await _approval("native_dashboard_arrange", arguments)
+    assert "'Revenue by city'" in approval and "'Notes'" in approval
+    assert "moved" in approval and "resized" in approval and "removed" in approval
+    assert approval.index("Revenue by city") < approval.index("moved")
+    assert not UUID_TEXT.search(approval) and not _leaks(approval)
+    assert not docs.applied
+
+    resize_only = await _approval("native_dashboard_arrange",
+                                  {"move": [{"widget_id": str(WIDGET), "h": 6}]})
+    assert "'Revenue by city' resized" in resize_only and "moved" not in resize_only
+
+    # The same local check the change runs: an overlap is shown before approval.
+    overlap = await _approval("native_dashboard_arrange",
+                              {"move": [{"widget_id": str(WIDGET), "x": 4}]})
+    assert "cannot be saved" in overlap and "overlap" in overlap
+    assert not docs.applied
+
+    outcome = await _run("native_dashboard_arrange", arguments)
+    assert outcome.ok, outcome.error
+    assert {w.widget_id for w in docs.docs[DASHBOARD][-1].pages[0].widgets} == {WIDGET}
+
+
+@pytest.mark.asyncio
+async def test_a_large_layout_change_is_listed_within_bounds(docs):
+    notes = [UUID(f"88888888-8888-4888-8888-{index:012d}") for index in range(15)]
+    _with_widgets(docs, *(_note(item, f"Note {index}", 0, 4 + 2 * index)
+                          for index, item in enumerate(notes)))
+    approval = await _approval("native_dashboard_arrange", {"remove": [str(item)
+                                                                       for item in notes]})
+    assert "'Note 0' removed" in approval and "'Note 9' removed" in approval
+    assert "Note 10" not in approval and "and 5 more widgets" in approval
+    assert len(approval) < 800
+
+
+@pytest.mark.asyncio
+async def test_without_a_dashboard_the_approval_falls_back_to_the_plain_preview(docs):
+    context = SimpleNamespace(user=USER, dataviz=None, thread_id="t1")
+    arguments = {"remove": [str(WIDGET)]}
+    tool = _tool("native_dashboard_arrange")
+    approval = await _approval("native_dashboard_arrange", arguments, context)
+    assert approval.startswith(tool.preview(_call(tool.name, arguments)))
+    assert not _leaks(approval)
+
+
+@pytest.mark.parametrize(("answer", "claims"), [
+    ("I added the Total revenue KPI to the dashboard (version 2).", {"change"}),
+    ("I've moved the revenue chart below the KPI.", {"change"}),
+    ("Published.", {"publish"}),
+    ("Done. The dashboard has been published.", {"publish"}),
+    ("Added the City filter; it applies to Revenue by city.", {"change"}),
+    ("I added the KPI and published the dashboard.", {"change", "publish"}),
+    ("The chart has been removed from the page.", {"change"}),
+    ("Saya sudah menambahkan grafik pendapatan ke dasbor.", {"change"}),
+    ("Dasbor sudah diterbitkan.", {"publish"}),
+    # Descriptions, refusals, offers and data answers claim nothing.
+    ("This dashboard has a bar chart, Revenue by city, on the Overview page.", set()),
+    ("It was published last week by the sales team.", set()),
+    ("Created by Alice, the dashboard tracks revenue by city.", set()),
+    ("I have not changed the dashboard. Shall I add the KPI?", set()),
+    ("I couldn't add the chart because your role can only view this dashboard.", set()),
+    ("If you approve, I will add a Total revenue KPI to the dashboard.", set()),
+    ("Surabaya leads with revenue 1573810277.5; Malang follows with 12.", set()),
+    ("I filtered the query to Surabaya; revenue there is 1573810277.5.", set()),
+    ("The unpublished draft has two charts.", set()),
+])
+def test_change_and_publication_claims_are_recognized(answer, claims):
+    from app.modules.assistant.intelligence import dashboard_change_claims
+
+    assert dashboard_change_claims(answer) == frozenset(claims)
 
 
 @pytest.mark.asyncio

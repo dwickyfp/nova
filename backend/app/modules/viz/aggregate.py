@@ -326,5 +326,6 @@ def plan_aggregate(
     plan.sql = (
         f"SELECT {','.join(select)}\nFROM ({inner_sql}\n) AS `nova_dataset`"
         f"{where}{group}{order}\nLIMIT {request.limit + 1}"
+        + (f" OFFSET {request.offset}" if request.offset else "")
     )
     return plan
