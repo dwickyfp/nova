@@ -607,3 +607,10 @@ counts are 148 PASS, 89 NOT_RUN and 17 OUT_OF_SCOPE.
     The full suite passed 1,882 of 1,883. The failure was a long drill-down
     test that timed out under load; it now has a 30 s limit and passes.
   - Record: `release-qa-attempt-3.json`.
+- **CI fix after the round-3 push:** CI's PG17 job failed
+  `test_business_policy_revisions_have_one_winner`. One of three racing policy
+  saves got the insert trigger's "revision follows" check violation (23514)
+  instead of a conflict. That happens when its trigger runs after another save
+  commits. The repository now reports that specific trigger refusal as a
+  revision conflict. A deterministic PG17 test fails without the fix. The file
+  passes 42 tests and backend gate attempt 25 passes.

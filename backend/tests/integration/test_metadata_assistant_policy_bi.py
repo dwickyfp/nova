@@ -465,6 +465,25 @@ async def test_business_policy_revisions_have_one_winner(meta):
             await conn.execute("UPDATE nova_meta.config_business_policies SET revision=9")
 
 
+async def test_a_policy_save_that_read_before_another_commit_is_a_conflict(meta):
+    """The trigger refuses a save whose read predates a committed revision; that is a conflict."""
+    policy = {"id": "default", "revision": 1, "maximum_cost": 10, "automatic_cost_limit": 1,
+              "reviewer_roles": ["ACCOUNTADMIN"], "blocked_actions": [],
+              "allow_high_risk": False}
+    async with meta.transaction("access", name="owner", role="ACCOUNTADMIN") as (repo, _):
+        await repo.save_business_policy({**policy, "maximum_cost": 11})
+    with pytest.raises(MetadataConflict):
+        async with meta.transaction("access", name="owner", role="ACCOUNTADMIN") as (repo, _):
+            async def read_before_the_other_commit():
+                return None  # what this editor saw: no saved policy yet (revision 1)
+
+            repo.current_business_policy = read_before_the_other_commit
+            await repo.save_business_policy({**policy, "maximum_cost": 12})
+    async with meta.transaction("access", workload="agent", name="bob") as (repo, _):
+        current = await repo.current_business_policy()
+    assert current["revision"] == 2 and current["definition"]["maximum_cost"] == 11
+
+
 # ── Migration ─────────────────────────────────────────────────────────────
 
 
