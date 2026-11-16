@@ -1,9 +1,9 @@
 {
-  "result": "FAIL",
-  "owned_database": "ndv_src_6737d4c2b9fb",
+  "result": "PASS",
+  "owned_database": "ndv_src_d84f268475d4",
   "owned_roles": [
-    "ndv_read_6737d4c2b9fb",
-    "ndv_none_6737d4c2b9fb"
+    "ndv_read_d84f268475d4",
+    "ndv_none_d84f268475d4"
   ],
   "steps": [
     {
@@ -39,8 +39,56 @@
       "passed": true
     },
     {
-      "check": "typed source dataset and null-first preview",
-      "passed": false
+      "check": "parameterized SQL dataset through governed HTTP",
+      "passed": true
+    },
+    {
+      "check": "inactive role cannot discover view identity",
+      "passed": true
+    },
+    {
+      "check": "missing view is refused",
+      "passed": true
+    },
+    {
+      "check": "engine refuses NONE role metadata",
+      "passed": true
+    },
+    {
+      "check": "engine refuses ALL role metadata",
+      "passed": true
+    },
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "table rename retains physical identity",
+      "passed": true
+    },
+    {
+      "check": "old table name requires repair",
+      "passed": true
+    },
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "drop recreate never reuses source identity",
+      "passed": true
+    },
+    {
+      "check": "revoked role cannot read metadata",
+      "passed": true
     },
     {
       "check": "QA attributes unchanged",
@@ -52,6 +100,7 @@
     }
   ],
   "cleanup_errors": [],
+  "reflection_readiness_attempts": 1,
   "synthetic_view_schema": [
     {
       "name": "id",
@@ -64,23 +113,9 @@
       "nullable": true
     }
   ],
-  "error_type": "AssertionError",
-  "error_location": [
-    {
-      "file": "verify_native_source_identity_live.py",
-      "line": 357,
-      "function": "run"
-    },
-    {
-      "file": "verify_native_source_identity_live.py",
-      "line": 73,
-      "function": "check"
-    }
-  ],
   "engine_version": "4.1.4",
   "limits": [
     "ALTER VIEW RENAME is absent from the pinned grammar; table rename and view drop/recreate are verified separately"
   ],
-  "ranger_service": "nova_starrocks",
-  "evidence_note": "Fixture runner shadowed its output path; final fixture report overwrote the nested dataset report. Original intermediate report retained. This attempt failed; nested request detail is unavailable and must be rerun."
+  "ranger_service": "nova_starrocks"
 }

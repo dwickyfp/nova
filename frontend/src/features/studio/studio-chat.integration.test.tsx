@@ -955,7 +955,8 @@ describe("studio transcript click-through", () => {
     await expect
       .element(page.getByText(/SUM\(total_netto\)/))
       .not.toBeInTheDocument();
-    await page.getByRole("button", { name: /Ran a SQL query/ }).click();
+    // The summary names the query too; the step itself is the last match.
+    await page.getByRole("button", { name: /Ran a SQL query/ }).last().click();
     await expect.element(page.getByText(/SUM\(total_netto\)/)).toBeVisible();
 
     // The turn has settled: the tool row and its statement are present, and no
@@ -1093,7 +1094,8 @@ describe("studio transcript click-through", () => {
     await expect
       .element(page.getByText("Loading skill: revenue"))
       .toBeVisible();
-    await page.getByRole("button", { name: /Ran a SQL query/ }).click();
+    // The summary names the query too; the step itself is the last match.
+    await page.getByRole("button", { name: /Ran a SQL query/ }).last().click();
     await expect.element(page.getByText(/SUM\(total_netto\)/)).toBeVisible();
 
     await expect.element(page.getByText("Omzet per SKU").first()).toBeVisible();

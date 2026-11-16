@@ -159,7 +159,7 @@ export function AddToDatavizDialog({
       } catch {
         // The open Dataviz tab already switched; a reload starts on the list.
       }
-      toast.success(result.reused_chart ? "Chart placed on the dashboard" : "Chart added to Dataviz", {
+      toast.success(result.reused_chart ? "This chart is already on that dashboard" : "Chart added to Dataviz", {
         action: {
           label: "Open in Dataviz",
           onClick: () => void navigate({ to: "/studio", search: (prev) => ({ ...prev, tab: "dataviz" }) }),

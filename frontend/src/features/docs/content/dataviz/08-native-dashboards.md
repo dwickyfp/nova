@@ -43,13 +43,33 @@ You can also build a dataset from a SQL query, with named parameters. See
 2. Click **Chart**, **KPI** or **Table**. The chart panel opens on the right
    with a live preview.
 3. On **Configure**, type a **Chart name**, pick a visualization (KPI, Bar,
-   Line, Area, Combo, Pie, Funnel, Table, Scatter, Heatmap, Treemap, Flow,
-   Histogram or Gauge), and choose the fields. For a date field, **Group by**
+   Line, Area, Combo, Pie, Funnel, Table, Pivot, Scatter, Heatmap, Treemap,
+   Flow, Histogram or Gauge), and choose the fields. For a date field, **Group by**
    lets you pick day, week, month, quarter or year. **Aggregate** chooses Sum,
    Average, Minimum, Maximum, Count or Distinct count.
 4. On **Style**, choose the title, legend, data labels, colors and number
    format.
 5. Click **Add to dashboard**. The chart is placed in the first free space.
+
+### Pivot tables
+
+A **Pivot** puts one or more fields down the side (**Rows**) and others across
+the top (**Columns**), with a value in every cell. Choosing **Pivot** puts a
+date across the top when the dataset has one; change it under **Columns**.
+Under **Totals**, **Show totals** adds a total column and a total row, and
+**Subtotal each row group** adds a total after each group of the first row
+field. Totals add up sums and counts only; an average is never added up.
+
+### Conditional formatting
+
+For a **Table** or **Pivot**, open **Style** → **Conditional formatting** and
+click **Add formatting**:
+
+- **Colour scale** shades each value of the chosen measure from light to strong
+  by where it falls between the smallest and the largest value shown.
+- **Highlight when** colours a value that is **Above**, **At least**, **Below**,
+  **At most** or **Equal to** the limit you type, in **Blue**, **Green**,
+  **Red** or **Amber**. A matching highlight wins over a colour scale.
 
 Click **Text** to add a heading or paragraph. Text is shown exactly as typed.
 
@@ -79,9 +99,18 @@ changed; the saved layout is kept for larger screens.
 Filters apply to every chart built on the same dataset. The values in a list
 come from your role's own data. **Reset** clears all filters and selections.
 
-Click a bar or slice to filter the other charts on the same dataset by that
-value. The selection appears as **Selected:** with the value; click the **×**
-on it, or click the mark again, to clear it.
+Click a bar, point or slice to see what you can do with that value:
+
+- **Filter the dashboard to this** filters the other charts on the same
+  dataset by that value. The selection appears as **Selected:** with the value;
+  click the **×** on it, or click the mark again, to clear it.
+- **Drill into this by** shows the same chart for that value only, broken down
+  by another field you choose, for example one region by channel, or one month
+  by week. The chart title shows the path, such as **Revenue by region ›
+  Jakarta**. Click the back arrow to go up one level, or **Reset** to return to
+  the start. Drilling only changes your view; the saved chart stays the same.
+
+A chart with nothing to drill into filters the dashboard straight away.
 
 ## Publish and share
 
@@ -98,6 +127,27 @@ on it, or click the mark again, to clear it.
 
 > **Note:** Sharing never grants access to data. Each viewer sees only the rows
 > and columns their own role can read.
+
+## Download charts and data
+
+Downloads need **Export** access to the dashboard. The owner has it; others get
+it when the dashboard is shared with **Export** turned on. Every download is
+recorded in the audit log, and a file holds only the rows your current role can
+read, exactly as the charts show them with the filters you chose.
+
+- **One chart:** point at the chart and click the download icon at its top right.
+  Choose **Image (PNG)**, **Data (CSV)** or **Data (Excel)**. KPIs and tables
+  have no image; download their data instead.
+- **The whole page:** click **Download** (the arrow icon) in the dashboard
+  header.
+  - **Data of this page (Excel)** makes one workbook with a sheet per chart.
+  - **Print or save as PDF** opens your browser's print window with a clean,
+    light page: the title, when it was made, then every chart, KPI, table and
+    note in reading order. Choose **Save as PDF** there to keep a file.
+
+If the icons are missing, your access does not include **Export**; ask the
+dashboard's owner. If access changed after you opened the page, the download is
+refused and nothing is saved.
 
 ## Work with Neva
 

@@ -31,7 +31,9 @@ their own role allows.
    the **Dataviz** tab yourself: it now shows the dashboard the chart went to.
 
 Nova saves the query as a dataset of that dashboard, adds the chart in the
-first free space, and keeps both in the dashboard's history. You can then move,
+first free space, and keeps both in the dashboard's history. The chart gets a
+short title from what it shows, such as "Revenue by region"; rename it in the
+editor if you like. You can then move,
 resize or edit the chart like any other. See
 [Build a native dashboard](/docs/dataviz/native-dashboards).
 
@@ -41,5 +43,6 @@ resize or edit the chart like any other. See
   answer that was not produced by a query, or a map.
 - If the dashboard was changed by someone else at the same moment, Nova tries
   again once; if that also fails, the message asks you to try again.
-- Adding the same answer twice with one click (for example a double click) adds
-  it once.
+- Adding the same answer to the same dashboard again does not add a second
+  copy: the message says the chart is already there. A chart with a different
+  title from the same answer reuses the dashboard's existing dataset.

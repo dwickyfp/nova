@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowLeft, BarChart3, Check, Filter, Hash, History, Loader2, Pencil, Plus, Redo2, Share2, Sparkles,
-  Table2, Type, Undo2, Upload,
+  ArrowLeft, BarChart3, Check, Download, FileSpreadsheet, Filter, Hash, History, Loader2, Pencil, Plus,
+  Printer, Redo2, Share2, Sparkles, Table2, Type, Undo2, Upload,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
@@ -17,13 +17,22 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ApiError } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
-import type { ChartDefinition, DashboardDefinition, Operation } from '../contracts'
+import type { ChartDefinition, DashboardDefinition, FilterTree, Operation } from '../contracts'
 import { DashboardDataTab } from '../dashboard-data-tab'
 import { nativeDocuments } from '../documents'
 import { ChartInspector } from '../charts/chart-inspector'
 import type { Visual } from '../charts/builder-model'
 import type { ValueSelection } from '../charts/native-chart'
 import { DashboardCanvas } from './canvas'
+import {
+  authorizeExport, chartImage, fileName, hasImage, printHtml, reportHtml, resultTable, saveFile, toCsv, toXlsx,
+  type ChartFileFormat, type ReportItem, type ResultTable,
+} from './export'
+import { chartDocumentQuery } from './hooks'
+import { chartDataQuery, chartRequest } from '../charts/chart-data'
+import { printImage } from '../charts/print-image'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { readToken } from '@/lib/read-token'
 import { FilterBar, FilterBuilder } from './filters'
 import { chartContext, defaultValue, type CrossFilter, type FilterDefinition, type FilterValue } from './filter-model'
 import { firstFreeSlot, sizeFor, type Layout, type Widget } from './layout'
@@ -79,6 +88,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
   const canEdit = permissions.data?.includes('edit') ?? false
   const canPublish = permissions.data?.includes('publish') ?? false
   const canManage = permissions.data?.includes('manage') ?? false
+  const canExport = permissions.data?.includes('export') ?? false
   const snapshot = useQuery({
     queryKey: ['native-dataviz', 'dashboard', epoch, dashboardId, canEdit],
     queryFn: ({ signal }) => documents.read('dashboards', dashboardId, { draft: canEdit, signal }),
@@ -385,6 +395,32 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
     })
   }, [])
 
+  const [exporting, setExporting] = useState(false)
+  const exportFailed = (error: unknown) => toast.error(error instanceof ApiError && error.status === 403
+    ? 'Your access to this dashboard does not include downloading it.'
+    : 'The download could not be made. Try again in a moment.')
+  const downloadChart = useCallback(async (chart: ChartDefinition, context: FilterTree | undefined,
+    format: ChartFileFormat, root: HTMLElement) => {
+    try {
+      await authorizeExport(dashboardId, format, chart.chart_id)
+      if (format === 'png') {
+        const image = await chartImage(root, {
+          title: chart.title, background: readToken('--card', '#ffffff'),
+          color: readToken('--foreground', '#111111'), font: getComputedStyle(root).fontFamily,
+        })
+        if (!image) throw new Error('The chart has no image yet')
+        saveFile(image, fileName(chart.title, 'png'))
+        return
+      }
+      const request = chartRequest({ chart, draft: editing, context })
+      if (!request) throw new Error('The chart cannot run')
+      const table = resultTable(await client.fetchQuery(chartDataQuery(epoch, chart, request)))
+      saveFile(format === 'csv' ? toCsv(table) : await toXlsx([{ title: chart.title, table }]),
+        fileName(chart.title, format))
+    } catch (error) {
+      exportFailed(error)
+    }
+  }, [client, dashboardId, editing, epoch])
   if (permissions.isError || snapshot.isError) {
     return <div className='flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center'>
       <p className='font-medium'>This dashboard is unavailable</p>
@@ -398,6 +434,68 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
 
   const sources = datasets.data?.datasets ?? []
   const publishedRevision = published.data?.revision
+  const downloadWorkbook = async () => {
+    if (!definition || !page) return
+    setExporting(true)
+    try {
+      await authorizeExport(dashboardId, 'xlsx')
+      const sheets: { title: string; table: ResultTable }[] = []
+      for (const widget of page.widgets ?? []) {
+        if (widget.kind !== 'chart' || !('chart_ref' in widget)) continue
+        const chart = await client.fetchQuery(chartDocumentQuery(epoch, widget.chart_ref.chart_id, widget.chart_ref.revision, editing))
+        const request = chartRequest({ chart, draft: editing, context: contextFor(widget, chart) })
+        if (!request) continue
+        const result = await client.fetchQuery(chartDataQuery(epoch, chart, request))
+        sheets.push({ title: widget.title || chart.title, table: resultTable(result) })
+      }
+      if (!sheets.length) toast.info('This page has no charts to download yet.')
+      else saveFile(await toXlsx(sheets), fileName(`${definition.title} - ${page.title}`, 'xlsx'))
+    } catch (error) {
+      exportFailed(error)
+    } finally {
+      setExporting(false)
+    }
+  }
+  const printDashboard = async () => {
+    if (!definition || !page) return
+    setExporting(true)
+    try {
+      await authorizeExport(dashboardId, 'pdf')
+      const items: ReportItem[] = []
+      const ordered = [...(page.widgets ?? [])].sort((a, b) => a.layout.y - b.layout.y || a.layout.x - b.layout.x)
+      for (const widget of ordered) {
+        if (widget.kind === 'text' && 'text' in widget) {
+          items.push({ kind: 'text', title: widget.title ?? '', text: widget.text })
+          continue
+        }
+        if (widget.kind !== 'chart' || !('chart_ref' in widget)) continue
+        const chart = await client.fetchQuery(chartDocumentQuery(epoch, widget.chart_ref.chart_id, widget.chart_ref.revision, editing))
+        const title = widget.title || chart.title
+        const request = chartRequest({ chart, draft: editing, context: contextFor(widget, chart) })
+        if (!request) continue
+        const result = await client.fetchQuery(chartDataQuery(epoch, chart, request))
+        if (hasImage(chart)) {
+          // Same size as on screen, redrawn in the light theme for paper.
+          const box = document.querySelector<HTMLElement>(`[gs-id="${CSS.escape(widget.widget_id)}"] [role="img"]`)?.getBoundingClientRect()
+          const width = Math.round(Math.min(720, Math.max(360, box?.width ?? 640)))
+          const height = Math.round(Math.max(220, Math.min(420, box?.height ?? 320)))
+          items.push({ kind: 'image', title, src: await printImage(chart, result, width, height), width })
+          continue
+        }
+        const table = resultTable(result)
+        const first = table.rows[0]?.find(value => typeof value === 'number')
+        items.push(chart.visual === 'kpi' && typeof first === 'number'
+          ? { kind: 'kpi', title, value: new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(first) }
+          : { kind: 'table', title, table })
+      }
+      const made = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date())
+      await printHtml(reportHtml({ title: definition.title, subtitle: `${page.title} · ${made}`, items }))
+    } catch (error) {
+      exportFailed(error)
+    } finally {
+      setExporting(false)
+    }
+  }
   const state = !publicationId ? 'Draft' : publishedRevision === revision ? 'Published' : 'Unpublished changes'
   const compact = density === 'panel'
 
@@ -431,6 +529,15 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
           onClick={() => onAskNeva(`Help me improve the dashboard \u201c${definition.title}\u201d.`)}>
           <Sparkles /><span className={label}>Ask Neva</span>
         </Button>}
+        {canExport && tab === 'canvas' && <DropdownMenu>
+          <Tooltip><TooltipTrigger asChild><DropdownMenuTrigger asChild>
+            <Button variant='ghost' size='icon' className='size-9' aria-label='Download' disabled={exporting}><Download /></Button>
+          </DropdownMenuTrigger></TooltipTrigger><TooltipContent>Download</TooltipContent></Tooltip>
+          <DropdownMenuContent align='end'>
+            <DropdownMenuItem onSelect={() => void downloadWorkbook()}><FileSpreadsheet />Data of this page (Excel)</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => void printDashboard()}><Printer />Print or save as PDF</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>}
         {canEdit && <Tooltip><TooltipTrigger asChild><Button variant='ghost' size='icon' className='size-9' aria-label='Version history' onClick={() => setHistoryOpen(true)}><History /></Button></TooltipTrigger><TooltipContent>Version history</TooltipContent></Tooltip>}
         {canManage && <Button variant='outline' size='sm' className='h-9' aria-label='Share' onClick={() => setShareOpen(true)}><Share2 /><span className={label}>Share</span></Button>}
         {canEdit && <Button variant='outline' size='sm' className='h-9' aria-label={editing ? 'Done' : 'Edit'}
@@ -495,7 +602,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
             onAskNeva={onAskNeva ? (_widget, chart) => onAskNeva(chart ? `Explain the chart “${chart.title}” on this dashboard and suggest improvements.` : 'Help me with this widget.') : undefined}
             contextFor={contextFor} onSelectValue={onSelectValue}
             selectedValueFor={widget => crossFilters.find(item => item.source_widget_id === widget.widget_id)?.label ?? null}
-            highlighted={nevaChanged} />
+            highlighted={nevaChanged} onDownload={canExport ? (chart, context, format, root) => void downloadChart(chart, context, format, root) : undefined} />
         </div>
         {inspector && <div className={cn('flex min-h-0 border-l bg-card',
           // A side column only when the canvas keeps room for a multi-column layout;

@@ -6,6 +6,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from hashlib import sha256
 from typing import Any, Literal
 from uuid import UUID, uuid5
@@ -154,6 +155,25 @@ def _field(dataset_id: UUID, table: BoundTable, column: BoundColumn) -> DatasetF
     )
 
 
+def _as_saved(
+    columns: tuple[BoundColumn, ...], saved: tuple[DatasetField, ...] | None,
+) -> tuple[BoundColumn, ...]:
+    """Output columns with the saved nullability, when nothing else differs.
+
+    A row filter or column mask on the viewer's role makes the analyzer report
+    a NOT NULL column as nullable. Names, order and physical types must still
+    match the saved fields exactly; any other difference is left in place and
+    reported as a stale schema.
+    """
+    if saved is None or len(saved) != len(columns) or any(
+        column.name != field.source_column or column.data_type != field.physical_type
+        for column, field in zip(columns, saved, strict=True)
+    ):
+        return columns
+    return tuple(replace(column, nullable=field.nullable)
+                 for column, field in zip(columns, saved, strict=True))
+
+
 class NativeDatasetService:
     async def _preview_snapshot(
         self, user: Mapping[str, Any], identity: UUID, request: DatasetPreviewRequest
@@ -217,7 +237,8 @@ class NativeDatasetService:
         document: DatasetDefinition,
         selection: DatasetInspect,
     ) -> None:
-        inspected = await self._inspect(user, selection)
+        # Re-inspected as the viewer; their row filters may widen nullability.
+        inspected = await self._inspect(user, selection, saved=document.fields)
         if (
             inspected.source != document.source
             or inspected.schema_fingerprint != document.schema_fingerprint
@@ -460,9 +481,11 @@ class NativeDatasetService:
         self,
         user: Mapping[str, Any],
         request: DatasetInspect,
+        *,
+        saved: tuple[DatasetField, ...] | None = None,
     ) -> DatasetInspection:
         if isinstance(request, SemanticInspect):
-            return await self._inspect_semantic(user, request)
+            return await self._inspect_semantic(user, request, saved=saved)
         session = await current_session(user)
         encrypted = user.get("encrypted_password")
         if not isinstance(encrypted, str) or not encrypted:
@@ -480,7 +503,8 @@ class NativeDatasetService:
             QueryRepository(), context, lambda: decrypt_password(encrypted)
         )
         if isinstance(request, SqlInspect):
-            return await self._inspect_sql(user, request, provider, context, encrypted)
+            return await self._inspect_sql(user, request, provider, context, encrypted,
+                                           saved=saved)
         name = TableName(
             request.source.object_name,
             database=request.source.database,
@@ -518,7 +542,7 @@ class NativeDatasetService:
             session_id=context.session_id,
             security_context_version=context.security_context_version,
         )
-        output_columns = query_output_schema(result)
+        output_columns = _as_saved(query_output_schema(result), saved)
         if tuple(column.name for column in output_columns) != selected:
             raise SemanticError("Source projection changed during inspection")
         fields = tuple(_field(request.dataset_id, table, column) for column in output_columns)
@@ -553,6 +577,8 @@ class NativeDatasetService:
         provider: StarRocksCatalogProvider,
         context: ExecutionContext,
         encrypted: str,
+        *,
+        saved: tuple[DatasetField, ...] | None = None,
     ) -> SqlInspection:
         parsed = await parse_statement_async(request.source.sql)
         if request.parameters:
@@ -579,7 +605,7 @@ class NativeDatasetService:
             session_id=context.session_id,
             security_context_version=context.security_context_version,
         )
-        columns = query_output_schema(result)
+        columns = _as_saved(query_output_schema(result), saved)
         for table in tables:
             observed = await _source(provider, table.name)
             if (observed.physical_id, observed.schema_version) != (
@@ -680,10 +706,11 @@ class NativeDatasetService:
         return execution, model
 
     async def _inspect_semantic(
-        self, user: Mapping[str, Any], request: SemanticInspect
+        self, user: Mapping[str, Any], request: SemanticInspect,
+        *, saved: tuple[DatasetField, ...] | None = None,
     ) -> SemanticInspection:
         execution, model = await self._semantic_query(user, request)
-        inspected = await self._inspect(user, execution)
+        inspected = await self._inspect(user, execution, saved=saved)
         assert isinstance(inspected, SqlInspection)
         expected = (*request.source.dimensions, *request.source.metrics)
         if tuple(field.source_column for field in inspected.fields) != expected:

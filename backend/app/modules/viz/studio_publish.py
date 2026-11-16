@@ -542,6 +542,84 @@ async def _attach_sql(
                        code="CONFLICT")
 
 
+async def _already_on(
+    user: dict[str, Any], dashboard_id: UUID, sql: str, chart_title: str,
+) -> tuple[UUID | None, UUID | None]:
+    """(dataset, chart) already on the dashboard for this exact query, if any.
+
+    Adding the same answer again reuses its dataset, and does not add a second
+    copy of a chart with the same title over it.
+    """
+    from app.modules.agents.tools.native_dataviz import _dataset, _draft
+    from app.modules.viz.contracts.charts import ChartDefinition
+    from app.modules.viz.contracts.dashboards import ChartWidget
+    from app.modules.viz.contracts.datasets import SqlSource
+
+    _, dashboard = await _draft(user, dashboard_id)
+    dataset_id: UUID | None = None
+    for reference in dashboard.datasets:
+        try:
+            _, dataset = await _dataset(user, reference.dataset_id, reference.revision)
+        except NovaException:
+            continue
+        source = getattr(dataset, "source", None)
+        if isinstance(source, SqlSource) and normal_sql(source.sql) == sql:
+            dataset_id = reference.dataset_id
+            break
+    if dataset_id is None:
+        return None, None
+    for page in dashboard.pages:
+        for widget in page.widgets:
+            if not isinstance(widget, ChartWidget):
+                continue
+            try:
+                snapshot = await _documents().read(user, widget.chart_ref.chart_id,
+                                                   draft=True)
+            except NovaException:
+                continue
+            chart = snapshot.get("definition")
+            if (isinstance(chart, ChartDefinition) and chart.dataset_id == dataset_id
+                    and chart.title == chart_title[:256]):
+                return dataset_id, chart.chart_id
+    return dataset_id, None
+
+
+_TITLE_LIMIT = 60
+
+
+def _words(name: Any) -> str:
+    """``sell_out_units`` or ``t.stock_date`` → "sell out units", "stock date"."""
+    text = str(name or "").rsplit(".", 1)[-1].replace("_", " ").strip()
+    return " ".join(text.split())
+
+
+def short_title(asked: str | None, answer_title: str | None, chart: dict[str, Any]) -> str:
+    """A short chart title: the caller's own, the answer's when it is already a
+    short label, else the measure and grouping in plain words."""
+    if asked and asked.strip():
+        return asked.strip()[:256]
+    title = " ".join(str(answer_title or "").split())
+    if title and len(title) <= _TITLE_LIMIT and not title.endswith("?"):
+        return title
+    measures = [_words(item.get("field")) for item in chart.get("measures") or []
+                if isinstance(item, dict)]
+    if not measures and chart.get("y"):
+        measures = [_words(chart["y"].get("field") if isinstance(chart["y"], dict)
+                           else chart["y"])]
+    dimensions = [_words(item.get("field")) for item in chart.get("dimensions") or []
+                  if isinstance(item, dict)]
+    if not dimensions and chart.get("x"):
+        dimensions = [_words(chart["x"])]
+    measure = " and ".join(item for item in measures[:2] if item)
+    grouping = dimensions[0] if dimensions else ""
+    derived = f"{measure} by {grouping}" if measure and grouping else measure
+    if derived:
+        return (derived[0].upper() + derived[1:])[:_TITLE_LIMIT]
+    if len(title) > _TITLE_LIMIT:
+        return title[:_TITLE_LIMIT - 1].rstrip() + "…"
+    return title or "Chart"
+
+
 def build_native_chart(
     plan: dict[str, Any], *, title: str, chart_id: UUID, dataset_id: UUID, revision: int,
     dataset: Any,
@@ -602,6 +680,7 @@ async def publish(
         DEFAULT_SIZE,
         Refusal,
         _dataset,
+        already_applied,
         apply_changes,
         first_free,
     )
@@ -621,7 +700,7 @@ async def publish(
     result = capability(preview)
     if result.status != "SUPPORTED" or result.chart is None or not preview.sql:
         raise PublishError(result.message, code=result.reason_code)
-    chart_title = (title or "").strip() or preview.title or "Chart"
+    chart_title = short_title(title, preview.title, result.chart)
     base = operation_base(user, idempotency_key, ref, target, title)
     sql = normal_sql(preview.sql)
     try:
@@ -641,9 +720,29 @@ async def publish(
                 raise PublishError("Choose a dashboard to add the chart to.", code="BAD_TARGET")
             dashboard_id = target.dashboard_id
         workspace = await _documents().workspace_of(user, dashboard_id)
-        dataset_id = uuid5(base, "dataset")
-        await _attach_sql(user, dashboard_id, base, dataset_id=dataset_id, sql=sql,
-                          database=database, title=chart_title)
+        # A replay of a request already placed returns its own first outcome;
+        # only a new request looks for a copy already on the dashboard.
+        place_base = uuid5(base, "place")
+        replay = await already_applied(user, place_base)
+        reused_dataset, reused_chart = (
+            await _already_on(user, dashboard_id, sql, chart_title)
+            if target.mode == "existing" and not replay else (None, None)
+        )
+        if reused_chart is not None:
+            return {
+                "operation_id": str(base),
+                "status": "SUCCEEDED",
+                "dashboard_id": str(dashboard_id),
+                "workspace_id": workspace,
+                "chart_id": str(reused_chart),
+                "revision": None,
+                "reused_chart": True,
+                "concepts": _concepts(preview),
+            }
+        dataset_id = reused_dataset or uuid5(base, "dataset")
+        if reused_dataset is None:
+            await _attach_sql(user, dashboard_id, base, dataset_id=dataset_id, sql=sql,
+                              database=database, title=chart_title)
         revision, dataset = await _dataset(user, dataset_id, None)
         chart_id = uuid5(base, "chart")
         chart = build_native_chart(result.chart, title=chart_title, chart_id=chart_id,
@@ -662,7 +761,7 @@ async def publish(
                 chart_ref=ChartReference(chart_id=chart_id, revision=1),
             ))]
 
-        receipt = await apply_changes(user, dashboard_id, uuid5(base, "place"), place)
+        receipt = await apply_changes(user, dashboard_id, place_base, place)
     except Refusal as exc:
         raise PublishError(str(exc)) from exc
     except NovaException as exc:

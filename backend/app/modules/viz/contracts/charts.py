@@ -132,6 +132,24 @@ Encoding = Annotated[
 ]
 
 
+class ConditionalFormat(Contract):
+    """Shade a table or pivot measure: a colour scale over its values, or a rule."""
+
+    field_id: FieldId
+    kind: Literal["scale", "rule"]
+    operator: Literal["gt", "gte", "lt", "lte", "eq"] | None = None
+    value: DecimalValue | None = None
+    tone: Literal["accent", "positive", "negative", "warning"] = "accent"
+
+    @model_validator(mode="after")
+    def complete(self) -> Self:
+        if self.kind == "rule" and (self.operator is None or self.value is None):
+            raise ValueError("A formatting rule needs an operator and a value")
+        if self.kind == "scale" and (self.operator is not None or self.value is not None):
+            raise ValueError("A colour scale takes no operator or value")
+        return self
+
+
 class ChartStyle(Contract):
     show_title: bool = True
     show_legend: bool = True
@@ -139,6 +157,9 @@ class ChartStyle(Contract):
     show_axis_titles: bool = True
     palette: Literal["neutral", "categorical", "single_tone"] = "neutral"
     description: str = Field(default="", max_length=2000)
+    conditional_formats: tuple[ConditionalFormat, ...] = Field(
+        default=(), max_length=16, exclude_if=lambda value: not value,
+    )
 
 
 class ChartSort(Contract):
@@ -289,6 +310,12 @@ class ChartDefinition(Contract):
         if (self.visual == "table" and isinstance(self.encoding, TableEncoding)
                 and self.encoding.pivot_columns):
             raise ValueError("Pivot columns require the pivot visualization")
+        if self.style.conditional_formats:
+            if not isinstance(self.encoding, TableEncoding):
+                raise ValueError("Conditional formatting applies to tables and pivots")
+            measured = {item.field_id for item in self.encoding.measures}
+            if any(item.field_id not in measured for item in self.style.conditional_formats):
+                raise ValueError("Conditional formatting must name a measure of the table")
         if len({item.annotation_id for item in self.annotations}) != len(self.annotations):
             raise ValueError("Annotation IDs must be unique")
         if (len({item.calculation_id for item in self.table_calculations})

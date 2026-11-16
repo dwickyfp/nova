@@ -206,6 +206,34 @@ class NativeDocumentService:
         ) as repository:
             return await repository.permissions(identity)
 
+    async def authorize_export(
+        self, user: Mapping[str, Any], identity: UUID, *, file_format: str,
+        part: UUID | None = None,
+    ) -> dict[str, Any]:
+        """Allow a download only with the Export permission, and audit either way.
+
+        The file is built from results the caller already reads under their own
+        role; this check is the product permission and the audit record.
+        """
+        permitted = "export" in await self.permissions(user, identity)
+        actor = actor_for(user)
+        await write_audit_log(
+            event_type="viz", action=f"EXPORT_{file_format.upper()}",
+            object_type="viz_resource",
+            object_name=f"{identity}:{part}" if part else str(identity),
+            user_name=actor.principal, active_role=actor.active_role,
+            session_id=actor.session_id,
+            security_context_version=actor.security_context_version,
+            status="SUCCESS" if permitted else "DENIED",
+            decision="ALLOW" if permitted else "DENY",
+        )
+        if not permitted:
+            raise NovaException(
+                "Your access to this dashboard does not include downloading it.",
+                status_code=403,
+            )
+        return {"allowed": True, "format": file_format}
+
     async def grants(self, user: Mapping[str, Any], identity: UUID) -> list[dict[str, Any]]:
         async with document_transaction(
             user, action="READ_GRANTS", identity=identity, read_only=True,

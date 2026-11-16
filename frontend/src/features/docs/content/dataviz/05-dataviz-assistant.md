@@ -44,11 +44,12 @@ Ask for a change, for example:
 Add a line chart of total revenue per month to this dashboard.
 ```
 
-Neva can add or change charts, rearrange widgets, add filters, create a
-dashboard, add a dataset and publish. Before each change it shows what it will
-do with **Allow once** and **Deny**. Nothing is saved until you allow it. When
-the change is saved, the canvas loads the new revision and marks the widgets
-that changed with **Changed by Neva**.
+Neva can add or change charts (including pivot tables with totals, and tables
+with shaded values), rearrange widgets, add filters, create a dashboard, add a
+dataset and publish. Before each change it shows what it will do with
+**Allow once** and **Deny**. Nothing is saved until you allow it. When the
+change is saved, the canvas loads the new version and marks the widgets that
+changed with **Changed by Neva**.
 
 ## Panel buttons
 

@@ -182,6 +182,23 @@ def compile_mask_policy(
 BI_METADATA_TABLES = ("tables", "tables_config", "columns", "views", "materialized_views")
 
 
+def compile_reflection_policy(catalog: str = "default_catalog") -> RangerPolicy:
+    """Table reflection for every user, as the Ranger bootstrap provisions it.
+
+    Native Dataviz verifies a dataset's source identity and schema as each
+    viewer, through ``information_schema``. Granting the reflection views to
+    Ranger's ``public`` group adds no object access: rows in them still list
+    only what each person's own policies allow.
+    """
+    policy = compile_bi_metadata_policy(roles=["ACCOUNTADMIN"], catalog=catalog)
+    item = policy.policy_items[0].model_copy(update={"groups": ["public"]})
+    return policy.model_copy(update={
+        "description": "Managed by Nova. Table reflection for every user; rows follow each "
+                       "person's own object policies.",
+        "policy_items": [item],
+    })
+
+
 def compile_bi_metadata_policy(
     *, roles: list[str], catalog: str = "default_catalog"
 ) -> RangerPolicy:

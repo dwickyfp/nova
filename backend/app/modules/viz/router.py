@@ -11,7 +11,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
-from pydantic import AwareDatetime
+from pydantic import AwareDatetime, BaseModel, ConfigDict
 
 from app.common.responses import SanitizingJSONResponse
 from app.core.deps import get_current_user
@@ -309,6 +309,20 @@ async def replace_grants(
 ) -> Any:
     command_matches(body, key, revision)
     return await service.replace_grants(user, identity, body)
+
+
+class ExportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    format: Literal["png", "csv", "xlsx", "pdf"]
+    chart_id: UUID | None = None
+
+
+@router.post("/dashboards/{identity}/exports")
+async def authorize_export(identity: UUID, body: ExportRequest, user: User) -> Any:
+    """Check the Export permission and audit a download before the browser builds it."""
+    await service.require_kind(user, identity, KINDS["dashboards"])
+    return await service.authorize_export(user, identity, file_format=body.format,
+                                          part=body.chart_id)
 
 
 @router.get("/{collection}/{identity}/permissions", response_model=list[Permission])

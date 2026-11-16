@@ -327,3 +327,50 @@ def test_dataset_identity_and_unknown_grain_are_validated():
     payload["grain"] = ["unknown"]
     with pytest.raises(ValidationError, match="unknown field"):
         DatasetDefinition.model_validate(payload)
+
+
+def _table_chart(visual="table", **style):
+    encoding = {"kind": "table", "dimensions": [{"field_id": "region"}],
+                "measures": [{"field_id": "revenue", "aggregation": "sum"}]}
+    if visual == "pivot":
+        encoding["pivot_columns"] = [{"field_id": "channel"}]
+    return {"schema_version": 2, "chart_id": str(uuid4()), "title": "T", "visual": visual,
+            "dataset_id": str(uuid4()), "dataset_revision": 1, "encoding": encoding,
+            "style": style}
+
+
+@pytest.mark.parametrize("visual", ["table", "pivot"])
+def test_conditional_formats_shade_measures_of_tables_and_pivots(visual):
+    chart = ChartDefinition.model_validate(_table_chart(visual, conditional_formats=[
+        {"field_id": "revenue", "kind": "scale"},
+        {"field_id": "revenue", "kind": "rule", "operator": "lt",
+         "value": {"type": "decimal", "value": "0"}, "tone": "negative"},
+    ]))
+    assert [item.kind for item in chart.style.conditional_formats] == ["scale", "rule"]
+
+
+@pytest.mark.parametrize(("rule", "reason"), [
+    ({"field_id": "revenue", "kind": "rule"}, "operator and a value"),
+    ({"field_id": "revenue", "kind": "scale", "operator": "gt",
+      "value": {"type": "decimal", "value": "1"}}, "no operator or value"),
+    ({"field_id": "region", "kind": "scale"}, "must name a measure"),
+])
+def test_incomplete_or_misplaced_conditional_formats_are_refused(rule, reason):
+    with pytest.raises(ValidationError) as refused:
+        ChartDefinition.model_validate(_table_chart(conditional_formats=[rule]))
+    assert reason in str(refused.value)
+
+
+def test_conditional_formats_are_only_for_tables():
+    bar = {**_table_chart(), "visual": "bar", "encoding": {
+        "kind": "cartesian", "dimensions": [{"field_id": "region"}],
+        "measures": [{"field_id": "revenue", "aggregation": "sum"}]},
+        "style": {"conditional_formats": [{"field_id": "revenue", "kind": "scale"}]}}
+    with pytest.raises(ValidationError) as refused:
+        ChartDefinition.model_validate(bar)
+    assert "tables and pivots" in str(refused.value)
+
+
+def test_a_chart_without_formats_serializes_as_before():
+    chart = ChartDefinition.model_validate(_table_chart())
+    assert "conditional_formats" not in chart.model_dump(mode="json")["style"]

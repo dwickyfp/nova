@@ -97,9 +97,10 @@ export function buildChartOption(chart: ChartDefinition, result: Result, tokens:
     const colors = palette(tokens, style, series.length)
     const horizontal = encoding.orientation === 'horizontal'
     const rotated = !horizontal && categories.length > 8
-    // A category axis title would collide with rotated labels; the chart title names it instead.
+    // A category axis title would collide with rotated labels, or with the labels
+    // of a horizontal bar's vertical axis; the chart title names it instead.
     const categoryAxis = { ...axisBase(tokens), type: 'category', data: categories,
-      name: axisTitles && !rotated && categoryColumn ? humanize(categoryColumn.name) : undefined,
+      name: axisTitles && !rotated && !horizontal && categoryColumn ? humanize(categoryColumn.name) : undefined,
       nameLocation: 'middle', nameGap: 28,
       splitLine: { show: false }, axisLabel: { ...axisBase(tokens).axisLabel, rotate: rotated ? 30 : 0,
         // A few categories keep every label, shortened to its band, rather than dropping some.

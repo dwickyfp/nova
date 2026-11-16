@@ -15,6 +15,8 @@ const PAGE = 'eeeeeeee-0000-4000-8000-000000000001'
 const KPI_WIDGET = 'ffffffff-0000-4000-8000-000000000001'
 const TEXT_WIDGET = 'ffffffff-0000-4000-8000-000000000002'
 const fetchMock = vi.fn()
+let permissionList: string[] = []
+const exports: Record<string, unknown>[] = []
 const clients: QueryClient[] = []
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
@@ -31,7 +33,11 @@ function dashboard() {
 }
 
 async function route(url: string, options: RequestInit = {}) {
-  if (url.endsWith(`/viz/dashboards/${DASHBOARD}/permissions`)) return json(['view', 'interact', 'comment', 'edit', 'publish', 'manage'])
+  if (url.endsWith(`/viz/dashboards/${DASHBOARD}/permissions`)) return json(permissionList)
+  if (url.endsWith(`/viz/dashboards/${DASHBOARD}/exports`)) {
+    exports.push(JSON.parse(String(options.body)))
+    return permissionList.includes('export') ? json({ allowed: true }) : json({ detail: 'Not allowed' }, 403)
+  }
   if (url.includes(`/viz/dashboards/${DASHBOARD}/events`)) return json({ events: [], through: 0, next_sequence: 0 })
   if (url.includes(`/viz/dashboards/${DASHBOARD}/datasets`)) return json({ dashboard_id: DASHBOARD, revision, datasets: [{ dataset_id: DATASET, revision: 1, title: 'Orders' }] })
   if (url.endsWith(`/viz/dashboards/${DASHBOARD}/operations`)) {
@@ -62,6 +68,8 @@ async function mount() {
 }
 
 beforeEach(() => {
+  permissionList = ['view', 'interact', 'comment', 'edit', 'publish', 'manage']
+  exports.length = 0
   revision = 4
   operations.length = 0
   definition = {
@@ -129,5 +137,62 @@ describe('native dashboard editor', () => {
     await expect.element(screen.getByText('Neva wrote this')).toBeVisible()
     await expect.element(screen.getByText('Changed by Neva')).toBeVisible()
     expect(screen.container.querySelectorAll('[role="status"]').length).toBeGreaterThan(0)
+  })
+
+  it('offers downloads only with the Export permission', async () => {
+    const screen = await mount()
+    await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
+    expect(screen.container.querySelector('[aria-label="Download"]')).toBeNull()
+    expect(screen.container.querySelector('[aria-label^="Download "]')).toBeNull()
+  })
+
+  it('checks Export, then saves the chart data and the page workbook from governed results', async () => {
+    permissionList = [...permissionList, 'export']
+    const saved: { name: string; blob: Blob }[] = []
+    const blobs: Blob[] = []
+    vi.spyOn(URL, 'createObjectURL').mockImplementation(blob => { blobs.push(blob as Blob); return 'blob:test' })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      saved.push({ name: this.download, blob: blobs[blobs.length - 1] })
+    })
+    const screen = await mount()
+    await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
+    await screen.getByRole('button', { name: 'Download Units sold' }).click()
+    // A KPI is text, so it has no image to download.
+    await expect.element(page.getByRole('menuitem', { name: 'Data (CSV)' })).toBeVisible()
+    expect(document.querySelector('[role="menuitem"][aria-label="Image (PNG)"]')).toBeNull()
+    await page.getByRole('menuitem', { name: 'Data (CSV)' }).click()
+    await expect.poll(() => saved.length).toBe(1)
+    expect(saved[0].name).toBe('Units sold.csv')
+    // A byte-order mark first, so spreadsheet apps read the file as UTF-8.
+    expect([...new Uint8Array(await saved[0].blob.arrayBuffer()).slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf])
+    expect(await saved[0].blob.text()).toBe('Sum of units\r\n15257\r\n')
+    expect(exports[0]).toEqual({ format: 'csv', chart_id: CHART })
+
+    await screen.getByRole('button', { name: 'Download', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Data of this page (Excel)' }).click()
+    await expect.poll(() => saved.length).toBe(2)
+    expect(saved[1].name).toBe('Sales overview - Overview.xlsx')
+    expect(exports[1]).toEqual({ format: 'xlsx' })
+    const XLSX = await import('xlsx')
+    const book = XLSX.read(await saved[1].blob.arrayBuffer())
+    expect(book.SheetNames).toEqual(['Units sold'])
+    expect(XLSX.utils.sheet_to_json(book.Sheets['Units sold'], { header: 1 })).toEqual([['Sum of units'], [15257]])
+  })
+
+  it('saves nothing when the server refuses the download', async () => {
+    permissionList = [...permissionList, 'export']
+    const screen = await mount()
+    await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
+    // Access changed after the page loaded.
+    permissionList = permissionList.filter(item => item !== 'export')
+    const downloads: string[] = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      if (this.download) downloads.push(this.download)
+    })
+    await screen.getByRole('button', { name: 'Download Units sold' }).click()
+    await page.getByRole('menuitem', { name: 'Data (CSV)' }).click()
+    await expect.poll(() => exports.length).toBe(1)
+    await new Promise(resolve => setTimeout(resolve, 100))
+    expect(downloads).toEqual([])
   })
 })

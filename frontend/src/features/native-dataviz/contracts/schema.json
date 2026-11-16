@@ -642,6 +642,15 @@
     "ChartStyle": {
       "additionalProperties": false,
       "properties": {
+        "conditional_formats": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ConditionalFormat"
+          },
+          "maxItems": 16,
+          "title": "Conditional Formats",
+          "type": "array"
+        },
         "description": {
           "default": "",
           "maxLength": 2000,
@@ -737,6 +746,73 @@
         "chart_ref"
       ],
       "title": "ChartWidget",
+      "type": "object"
+    },
+    "ConditionalFormat": {
+      "additionalProperties": false,
+      "description": "Shade a table or pivot measure: a colour scale over its values, or a rule.",
+      "properties": {
+        "field_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Field Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "scale",
+            "rule"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "operator": {
+          "anyOf": [
+            {
+              "enum": [
+                "gt",
+                "gte",
+                "lt",
+                "lte",
+                "eq"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Operator"
+        },
+        "tone": {
+          "default": "accent",
+          "enum": [
+            "accent",
+            "positive",
+            "negative",
+            "warning"
+          ],
+          "title": "Tone",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DecimalValue"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "field_id",
+        "kind"
+      ],
+      "title": "ConditionalFormat",
       "type": "object"
     },
     "DashboardCreate": {

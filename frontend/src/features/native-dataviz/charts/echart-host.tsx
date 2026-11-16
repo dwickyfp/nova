@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ECharts, EChartsCoreOption } from 'echarts/core'
-import { readToken } from '@/lib/read-token'
+import { readLightToken, readToken } from '@/lib/read-token'
 
 export type VizTokens = {
   series: string[]
@@ -15,11 +15,13 @@ export type VizTokens = {
   reference: string
 }
 
-export type MarkSelection = { seriesIndex: number; dataIndex: number; name: string }
+/** A clicked mark, with where it was clicked inside the chart, in CSS pixels. */
+export type MarkSelection = { seriesIndex: number; dataIndex: number; name: string; x?: number; y?: number }
 
-function readTokens(): VizTokens {
+/** Chart colours from theme.css: the page's current theme, or light for printing. */
+export function readTokens(mode: 'current' | 'light' = 'current'): VizTokens {
   // theme.css owns every color; tokens are always defined where charts render.
-  const token = (name: string) => readToken(name, '')
+  const token = (name: string) => mode === 'light' ? readLightToken(name, '') : readToken(name, '')
   return {
     series: [4, 2, 3, 1, 5, 6, 8, 9, 7].map(index => token(`--chart-${index}`)),
     tones: [1, 2, 3, 4, 5, 6].map(index => token(`--chart-tone-${index}`)),
@@ -46,7 +48,7 @@ function useThemeVersion(): number {
 
 let modules: Promise<typeof import('echarts/core')> | null = null
 
-function loadEcharts() {
+export function loadEcharts() {
   // Registered once per page; only the marks native charts draw are bundled.
   modules ??= Promise.all([
     import('echarts/core'), import('echarts/charts'), import('echarts/components'), import('echarts/renderers'),
@@ -91,9 +93,10 @@ export function EChartHost({ build, label, onSelect, className }: {
       const chart = core.init(node, undefined, { renderer: 'canvas' })
       instance.current = chart
       chart.on('click', params => {
-        const event = params as { seriesIndex?: number; dataIndex?: number; name?: string }
+        const event = params as { seriesIndex?: number; dataIndex?: number; name?: string; event?: { offsetX?: number; offsetY?: number } }
         if (typeof event.dataIndex === 'number') {
-          select.current?.({ seriesIndex: event.seriesIndex ?? 0, dataIndex: event.dataIndex, name: String(event.name ?? '') })
+          select.current?.({ seriesIndex: event.seriesIndex ?? 0, dataIndex: event.dataIndex, name: String(event.name ?? ''),
+            x: event.event?.offsetX, y: event.event?.offsetY })
         }
       })
       observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {

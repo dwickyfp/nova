@@ -93,3 +93,52 @@ export function readModeToken(
   probe.remove()
   return toHex(value || fallback)
 }
+
+function rootDeclarations(): Map<string, string> {
+  const values = new Map<string, string>()
+  const visit = (rules: CSSRuleList) => {
+    for (const rule of Array.from(rules)) {
+      if (rule instanceof CSSStyleRule) {
+        if (rule.selectorText.split(',').some(selector => selector.trim() === ':root')) {
+          // Declarations after a nested rule live in nested-declaration children.
+          const blocks = [rule.style, ...Array.from(rule.cssRules ?? [])
+            .filter(child => !('selectorText' in child) && 'style' in child)
+            .map(child => (child as CSSRule & { style: CSSStyleDeclaration }).style)]
+          for (const style of blocks) {
+            for (let i = 0; i < style.length; i++) {
+              const property = style.item(i)
+              if (property.startsWith('--')) values.set(property, style.getPropertyValue(property).trim())
+            }
+          }
+        }
+      } else if ('cssRules' in rule && (rule as CSSGroupingRule).cssRules) {
+        visit((rule as CSSGroupingRule).cssRules)
+      }
+    }
+  }
+  for (const sheet of Array.from(document.styleSheets)) {
+    try {
+      visit(sheet.cssRules)
+    } catch {
+      // A cross-origin sheet cannot be read; theme tokens are never in one.
+    }
+  }
+  return values
+}
+
+/**
+ * A token's light-theme value even while the page is dark: read from the
+ * `:root` declarations themselves, since every element inherits the dark
+ * values from `<html class="dark">`. Used to draw printouts on white paper.
+ */
+export function readLightToken(name: string, fallback: string): string {
+  if (typeof document === 'undefined') return fallback
+  const declared = rootDeclarations()
+  let value = declared.get(name) ?? ''
+  for (let depth = 0; depth < 8; depth++) {
+    const reference = /^var\((--[\w-]+)(?:,\s*(.+))?\)$/.exec(value)
+    if (!reference) break
+    value = declared.get(reference[1]) ?? reference[2] ?? ''
+  }
+  return toHex(value || fallback)
+}

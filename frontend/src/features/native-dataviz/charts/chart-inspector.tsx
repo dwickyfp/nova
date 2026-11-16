@@ -10,18 +10,18 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
-import type { ChartDefinition, DatasetField, DatasetReferenceSummary } from '../contracts'
+import type { ChartDefinition, ConditionalFormat, DatasetField, DatasetReferenceSummary } from '../contracts'
 import { useDatasetDefinition } from './chart-data'
 import {
   AGGREGATION_LABELS, defaultAggregation, fromChart, initialState, isNumeric, isTemporal, kindOf, missing,
   switchVisual, toChart, VISUALS, type BuilderDimension, type BuilderMeasure, type BuilderState, type Visual,
 } from './builder-model'
-import type { DateGrain, SupportedAggregation } from './chart-query'
+import { humanize, type DateGrain, type SupportedAggregation } from './chart-query'
 import { NativeChart } from './native-chart'
 
 const VISUAL_ICONS: Record<string, typeof BarChart3> = {
   kpi: Hash, bar: BarChart3, line: LineChart, area: AreaChart, combo: TrendingUp, pie: PieChart, funnel: Filter,
-  table: Table2, scatter: ScatterChart, heatmap: Grid3x3, treemap: SquareStack, sankey: Workflow,
+  table: Table2, pivot: Grid3x3, scatter: ScatterChart, heatmap: Grid3x3, treemap: SquareStack, sankey: Workflow,
   histogram: BarChart3, gauge: Gauge,
 }
 const GRAINS: DateGrain[] = ['day', 'week', 'month', 'quarter', 'year']
@@ -104,6 +104,63 @@ function MeasureRow({ label, fields, value, onChange, onRemove, combo }: {
         <SelectContent><SelectItem value='left'>Left axis</SelectItem><SelectItem value='right'>Right axis</SelectItem></SelectContent>
       </Select>
     </div>}
+  </div>
+}
+
+const TONE_LABELS: Record<NonNullable<ConditionalFormat['tone']>, string> = {
+  accent: 'Blue', positive: 'Green', negative: 'Red', warning: 'Amber',
+}
+const OPERATOR_LABELS: Record<NonNullable<ConditionalFormat['operator']>, string> = {
+  gt: 'Above', gte: 'At least', lt: 'Below', lte: 'At most', eq: 'Equal to',
+}
+
+/** Shading rules for table and pivot values: a colour scale, or a highlight when a value passes a limit. */
+function FormatRules({ state, fields, onChange }: { state: BuilderState; fields: DatasetField[]; onChange: (formats: ConditionalFormat[]) => void }) {
+  const measures = state.measures.filter((item, index, all) => all.findIndex(other => other.field_id === item.field_id) === index)
+  const name = (fieldId: string) => fields.find(field => field.field_id === fieldId)?.name ?? fieldId
+  const update = (index: number, change: Partial<ConditionalFormat>) =>
+    onChange(state.formats.map((item, i) => i === index ? { ...item, ...change } as ConditionalFormat : item))
+  if (!measures.length) return <p className='text-xs text-muted-foreground'>Add a value first; formatting shades values.</p>
+  return <div className='space-y-3'>
+    {state.formats.map((format, index) => <div key={index} className='space-y-2 rounded-md border p-2.5'>
+      <div className='flex items-center gap-2'>
+        <Select value={format.field_id} onValueChange={field_id => update(index, { field_id })}>
+          <SelectTrigger aria-label='Value to shade' className='h-8 min-w-0 flex-1'><SelectValue /></SelectTrigger>
+          <SelectContent>{measures.map(item => <SelectItem key={item.field_id} value={item.field_id}>{humanize(name(item.field_id))}</SelectItem>)}</SelectContent>
+        </Select>
+        <Button variant='ghost' size='icon' className='size-8 shrink-0' aria-label='Remove formatting'
+          onClick={() => onChange(state.formats.filter((_, i) => i !== index))}><Trash2 /></Button>
+      </div>
+      <div className='flex flex-wrap items-center gap-2'>
+        <Select value={format.kind} onValueChange={kind => update(index, kind === 'scale'
+          ? { kind: 'scale', operator: null, value: null }
+          : { kind: 'rule', operator: 'gt', value: { type: 'decimal', value: '0' } })}>
+          <SelectTrigger aria-label='Formatting kind' className='h-8 w-36'><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value='scale'>Colour scale</SelectItem><SelectItem value='rule'>Highlight when</SelectItem></SelectContent>
+        </Select>
+        {format.kind === 'rule' && <>
+          <Select value={format.operator ?? 'gt'} onValueChange={operator => update(index, { operator: operator as ConditionalFormat['operator'] })}>
+            <SelectTrigger aria-label='Comparison' className='h-8 w-28'><SelectValue /></SelectTrigger>
+            <SelectContent>{Object.entries(OPERATOR_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
+          </Select>
+          <Input aria-label='Limit' inputMode='decimal' className='h-8 w-28' value={format.value?.value ?? ''}
+            onChange={event => {
+              const text = event.target.value.replace(/[^0-9.-]/g, '')
+              if (/^-?\d*\.?\d*$/.test(text)) update(index, { value: { type: 'decimal', value: text === '' || text === '-' ? '0' : text } })
+            }} />
+        </>}
+        <Select value={format.tone ?? 'accent'} onValueChange={tone => update(index, { tone: tone as ConditionalFormat['tone'] })}>
+          <SelectTrigger aria-label='Colour' className='h-8 w-24'><SelectValue /></SelectTrigger>
+          <SelectContent>{Object.entries(TONE_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>
+            <span aria-hidden className='size-2.5 rounded-full' style={{ backgroundColor: `var(--${value === 'accent' ? 'chart-4' : value === 'negative' ? 'destructive' : value === 'positive' ? 'success' : 'warning'})` }} />{label}
+          </SelectItem>)}</SelectContent>
+        </Select>
+      </div>
+    </div>)}
+    {state.formats.length < 16 && <Button variant='outline' size='sm'
+      onClick={() => onChange([...state.formats, { field_id: measures[0].field_id, kind: 'scale', tone: 'accent' }])}>
+      <Plus />Add formatting
+    </Button>}
   </div>
 }
 
@@ -244,12 +301,22 @@ function Builder({ datasets, chart, initialVisual, saving, error, onSave, fields
               onChange={event => set({ bins: Math.max(2, Math.min(200, Number(event.target.value) || 20)) })} />
           </div>}
         </Section> : <>
-          {kind !== 'single_measure' && <Section title={kind === 'table' ? 'Columns' : 'Group by'}>
+          {kind !== 'single_measure' && <Section title={state.visual === 'pivot' ? 'Rows' : kind === 'table' ? 'Columns' : 'Group by'}>
             {state.dimensions.map((item, index) => <DimensionRow key={index} label={dimensionLabels[index] ?? `Field ${index + 1}`}
               fields={fields} value={item}
               onChange={value => set({ dimensions: state.dimensions.map((old, i) => i === index ? value : old) })}
               onRemove={state.dimensions.length > (kind === 'table' ? 0 : 1) ? () => set({ dimensions: state.dimensions.filter((_, i) => i !== index) }) : undefined} />)}
             {state.dimensions.length < maxDimensions && <Button variant='outline' size='sm' onClick={addDimension}><Plus />Add field</Button>}
+          </Section>}
+          {state.visual === 'pivot' && <Section title='Columns'>
+            {state.pivotColumns.map((item, index) => <DimensionRow key={index} label={`Across ${index + 1}`} fields={fields} value={item}
+              onChange={value => set({ pivotColumns: state.pivotColumns.map((old, i) => i === index ? value : old) })}
+              onRemove={state.pivotColumns.length > 1 ? () => set({ pivotColumns: state.pivotColumns.filter((_, i) => i !== index) }) : undefined} />)}
+            {state.pivotColumns.length < 3 && <Button variant='outline' size='sm' onClick={() => {
+              const used = new Set([...state.dimensions, ...state.pivotColumns].map(item => item.field_id))
+              const field = fields.find(item => !used.has(item.field_id) && !isNumeric(item))
+              if (field) set({ pivotColumns: [...state.pivotColumns, { field_id: field.field_id, date_grain: isTemporal(field) ? 'month' : null }] })
+            }}><Plus />Add field</Button>}
           </Section>}
           <Section title={kind === 'single_measure' ? 'Value' : 'Values'}>
             {state.measures.map((item, index) => <MeasureRow key={index}
@@ -288,7 +355,10 @@ function Builder({ datasets, chart, initialVisual, saving, error, onSave, fields
               onChange={event => set({ maxCategories: Math.max(2, Math.min(100, Number(event.target.value) || 12)) })} />
           </div>
         </Section>}
-        {kind === 'table' && <Section title='Totals'><Toggle label='Show a total row' checked={state.grandTotal} onChange={grandTotal => set({ grandTotal })} /></Section>}
+        {kind === 'table' && <Section title='Totals'>
+          <Toggle label={state.visual === 'pivot' ? 'Show totals' : 'Show a total row'} checked={state.grandTotal} onChange={grandTotal => set({ grandTotal })} />
+          {state.visual === 'pivot' && state.dimensions.length > 1 && <Toggle label='Subtotal each row group' checked={state.subtotals} onChange={subtotals => set({ subtotals })} />}
+        </Section>}
         <Section title='Sort and limit'>
           <div className='flex flex-wrap gap-2'>
             <Select value={state.sort} onValueChange={value => set({ sort: value as BuilderState['sort'] })}>
@@ -315,6 +385,9 @@ function Builder({ datasets, chart, initialVisual, saving, error, onSave, fields
             <SelectContent><SelectItem value='neutral'>Neutral, highlight differences</SelectItem><SelectItem value='categorical'>Categorical</SelectItem><SelectItem value='single_tone'>Single tone</SelectItem></SelectContent>
           </Select>
         </Section>
+        {kind === 'table' && <Section title='Conditional formatting'>
+          <FormatRules state={state} fields={fields} onChange={formats => set({ formats })} />
+        </Section>}
         <Section title='Number format'>
           <div className='flex flex-wrap gap-2'>
             <Select value={state.number.kind} onValueChange={value => set({ number: { ...state.number, kind: value as BuilderState['number']['kind'] } })}>

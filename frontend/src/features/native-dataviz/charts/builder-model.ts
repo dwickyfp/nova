@@ -1,4 +1,4 @@
-import type { ChartDefinition, DatasetField } from '../contracts'
+import type { ChartDefinition, ConditionalFormat, DatasetField } from '../contracts'
 import type { DateGrain, SupportedAggregation } from './chart-query'
 
 export type Visual = ChartDefinition['visual']
@@ -26,6 +26,11 @@ export type BuilderState = {
   maxCategories: number
   bins: number
   grandTotal: boolean
+  /** Pivot: fields across the top, and a total row per first row group. */
+  pivotColumns: BuilderDimension[]
+  subtotals: boolean
+  /** Tables and pivots: shading for measure cells. */
+  formats: ConditionalFormat[]
   sort: 'none' | 'asc' | 'desc'
   rowLimit: number
   showTitle: boolean
@@ -46,6 +51,7 @@ export const VISUALS: { value: Visual; label: string; kind: ChartDefinition['enc
   { value: 'pie', label: 'Pie', kind: 'category' },
   { value: 'funnel', label: 'Funnel', kind: 'category' },
   { value: 'table', label: 'Table', kind: 'table' },
+  { value: 'pivot', label: 'Pivot', kind: 'table' },
   { value: 'scatter', label: 'Scatter', kind: 'scatter' },
   { value: 'heatmap', label: 'Heatmap', kind: 'heatmap' },
   { value: 'treemap', label: 'Treemap', kind: 'hierarchy' },
@@ -81,7 +87,7 @@ export function initialState(input: {
     measures: measure ? [{ field_id: measure.field_id, aggregation: 'sum', series: 'bar', axis: 'left' }]
       : [], color: null, x: measure?.field_id ?? '', y: input.fields.filter(isNumeric)[1]?.field_id ?? measure?.field_id ?? '', size: '',
     orientation: 'vertical', stack: 'none', smooth: false, donut: false, maxCategories: 12, bins: 20,
-    grandTotal: true, sort: 'none', rowLimit: 1000, showTitle: true, showLegend: true, showLabels: false,
+    grandTotal: true, pivotColumns: [], subtotals: false, formats: [], sort: 'none', rowLimit: 1000, showTitle: true, showLegend: true, showLabels: false,
     showAxisTitles: true, palette: 'neutral', number: { kind: 'number', decimals: 2, currency: 'USD' }, filters: null,
   }
 }
@@ -109,6 +115,11 @@ export function missing(state: BuilderState): string | null {
   if (['cartesian', 'single_measure', 'category', 'heatmap', 'hierarchy', 'flow'].includes(kind) && !state.measures.length) return 'Choose a value to measure'
   if (kind === 'scatter' && (!state.x || !state.y)) return 'Choose numeric fields for both axes'
   if (kind === 'distribution' && !state.x) return 'Choose a numeric field'
+  if (state.visual === 'pivot') {
+    if (!state.dimensions.length) return 'Choose a field for the rows'
+    if (!state.pivotColumns.length) return 'Choose a field for the columns'
+    if (!state.measures.length) return 'Choose a value to measure'
+  }
   if (kind === 'table' && !state.dimensions.length && !state.measures.length) return 'Add a column'
   return null
 }
@@ -138,6 +149,7 @@ export function toChart(state: BuilderState): ChartDefinition {
       break
     case 'table':
       encoding = { kind, dimensions: state.dimensions.map(dim), measures: state.measures.map(item => meas(item, number)),
+        ...(state.visual === 'pivot' ? { pivot_columns: state.pivotColumns.map(dim), subtotals: state.subtotals } : {}),
         grand_total: state.grandTotal, page_size: 100 }
       break
     case 'hierarchy':
@@ -152,12 +164,16 @@ export function toChart(state: BuilderState): ChartDefinition {
         orientation: state.orientation, stack: state.stack, interpolation: state.smooth ? 'smooth' : 'linear', nulls: 'gap' }
   }
   const sortTarget = state.measures[0]
+  // Formats shade measures of a table or pivot; a removed measure drops its rules.
+  const measured = new Set(state.measures.map(item => item.field_id))
+  const formats = kind === 'table' ? state.formats.filter(item => measured.has(item.field_id)) : []
   return {
     schema_version: 2, chart_id: state.chart_id, title: state.title.trim() || 'Untitled chart',
     dataset_id: state.dataset_id, dataset_revision: state.dataset_revision, visual: state.visual, encoding,
     ...(state.filters ? { filters: state.filters } : {}),
     style: { show_title: state.showTitle, show_legend: state.showLegend, show_labels: state.showLabels,
-      show_axis_titles: state.showAxisTitles, palette: state.palette, description: '' },
+      show_axis_titles: state.showAxisTitles, palette: state.palette, description: '',
+      ...(formats.length ? { conditional_formats: formats } : {}) },
     sort: state.sort !== 'none' && sortTarget
       ? [{ field_id: sortTarget.field_id, direction: state.sort, aggregation: sortTarget.aggregation }] : [],
     row_limit: state.rowLimit, result_overflow: 'truncate_with_warning',
@@ -189,6 +205,7 @@ export function fromChart(chart: ChartDefinition, fields: DatasetField[]): Build
     title: chart.title, filters: chart.filters ?? null, rowLimit: chart.row_limit ?? 1000,
     showTitle: style.show_title ?? true, showLegend: style.show_legend ?? true, showLabels: style.show_labels ?? false,
     showAxisTitles: style.show_axis_titles ?? true, palette: style.palette ?? 'neutral',
+    formats: [...(style.conditional_formats ?? [])],
     sort: chart.sort?.[0]?.direction ?? 'none', color: null, dimensions: [], measures: [],
     number: { kind: (first?.format?.kind === 'currency' || first?.format?.kind === 'percent') ? first.format.kind : 'number',
       decimals: first?.format?.decimals ?? 2, currency: first?.format?.currency ?? 'USD' },
@@ -226,6 +243,8 @@ export function fromChart(chart: ChartDefinition, fields: DatasetField[]): Build
       state.dimensions = (encoding.dimensions ?? []).map(fromDim)
       state.measures = (encoding.measures ?? []).map(fromMeasure)
       state.grandTotal = encoding.grand_total ?? false
+      state.pivotColumns = (encoding.pivot_columns ?? []).map(fromDim)
+      state.subtotals = encoding.subtotals ?? false
       break
     case 'hierarchy':
       state.dimensions = encoding.levels.map(fromDim)
@@ -253,6 +272,13 @@ export function switchVisual(state: BuilderState, visual: Visual, fields: Datase
   if (kind === 'single_measure' || kind === 'category') next.measures = next.measures.slice(0, kind === 'category' ? 1 : 2)
   if (visual === 'combo' && next.measures.length === 1 && numeric.length) {
     next.measures = [...next.measures, { ...next.measures[0], series: 'line', axis: 'right' }]
+  }
+  if (visual === 'pivot' && !next.pivotColumns.length) {
+    // A pivot needs a field across the top: prefer a date, then any other grouping.
+    const used = new Set(next.dimensions.map(item => item.field_id))
+    const candidates = fields.filter(field => field.semantic_role === 'dimension' && !isNumeric(field) && !used.has(field.field_id))
+    const across = candidates.find(isTemporal) ?? candidates[0]
+    if (across) next.pivotColumns = [{ field_id: across.field_id, date_grain: isTemporal(across) ? 'month' : null }]
   }
   if (visual === 'kpi' && !next.title) next.showLegend = false
   return next

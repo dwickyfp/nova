@@ -21,6 +21,7 @@ dashboard: no internal names, addresses or status codes.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from decimal import Decimal, InvalidOperation
 from functools import partial
@@ -37,6 +38,8 @@ from app.modules.viz.contracts.charts import (
     CategoryEncoding,
     ChartDefinition,
     ChartSort,
+    ChartStyle,
+    ConditionalFormat,
     Dimension,
     Measure,
     ScatterEncoding,
@@ -95,7 +98,7 @@ NUMERIC = frozenset({"integer", "decimal", "float"})
 TEMPORAL = frozenset({"date", "timestamp"})
 VISUAL_WORDS = {
     "bar": "bar chart", "line": "line chart", "area": "area chart", "pie": "pie chart",
-    "kpi": "KPI", "table": "table", "scatter": "scatter plot",
+    "kpi": "KPI", "table": "table", "pivot": "pivot table", "scatter": "scatter plot",
 }
 DEFAULT_SIZE = {"kpi": (3, 2)}
 
@@ -130,7 +133,7 @@ async def _spaces(user: dict[str, Any]) -> list[Any]:
 FieldName = Annotated[str, Field(min_length=1, max_length=256)]
 Grain = Literal["day", "week", "month", "quarter", "year"]
 Aggregation = Literal["sum", "avg", "min", "max", "count", "count_distinct"]
-VisualName = Literal["bar", "line", "area", "pie", "kpi", "table", "scatter"]
+VisualName = Literal["bar", "line", "area", "pie", "kpi", "table", "pivot", "scatter"]
 FilterValue = Annotated[str, Field(max_length=4096)] | int | float | bool
 Title = Annotated[str, Field(min_length=1, max_length=256)]
 
@@ -185,6 +188,12 @@ class ChartShape(_Args):
     stack: str | None = Field(default=None, max_length=16)
     donut: bool | None = None
     sort: SortArg | None = None
+    #: Pivot: the fields across the top.
+    columns: list[DimensionArg] | None = Field(default=None, max_length=3)
+    #: Table or pivot: a total row (and column, for a pivot).
+    totals: bool | None = None
+    #: Table or pivot: measures to shade with a colour scale.
+    shade: list[FieldName] | None = Field(default=None, max_length=8)
 
     @model_validator(mode="after")
     def known_stack(self) -> ChartShape:
@@ -395,8 +404,12 @@ def _query_refusal(exc: NovaException) -> str:
     return _explain(exc)
 
 
-def _fail(message: str) -> ToolOutcome:
-    return ToolOutcome(ok=False, summary="", error=message, safe_detail=message)
+def _fail(message: str, *, recoverable: bool = False) -> ToolOutcome:
+    """A refusal Neva can correct (a wrong field, a missing argument) stays in the turn."""
+    return ToolOutcome(
+        ok=False, summary="", error=message, safe_detail=message,
+        error_class="INVALID_REQUEST" if recoverable else None, recoverable=recoverable,
+    )
 
 
 def _user(context: Any) -> dict[str, Any] | None:
@@ -518,9 +531,11 @@ class Fields:
         field = self.field(arg.field)
         if field.logical_type == "geometry":
             raise Refusal(f"'{field.name}' is a location shape and cannot group a chart.")
-        if arg.date_grain and field.logical_type not in TEMPORAL:
-            raise Refusal(f"'{field.name}' is not a date, so it has no {arg.date_grain}.")
-        grain = arg.date_grain or ("month" if field.logical_type in TEMPORAL else None)
+        if field.logical_type not in TEMPORAL:
+            # A date level means nothing on text or numbers; models often send one
+            # anyway, so it is ignored rather than ending the question.
+            return Dimension(field_id=field.field_id, date_grain=None)
+        grain = arg.date_grain or "month"
         return Dimension(field_id=field.field_id, date_grain=grain)
 
     def measure(self, arg: MeasureArg, series: Literal["bar", "line", "area"] = "bar") -> Measure:
@@ -759,7 +774,14 @@ def build_chart(
     elif visual == "table":
         if not dims and not measures:
             raise Refusal("A table needs at least one field.")
-        encoding = TableEncoding(dimensions=tuple(dims), measures=tuple(measures))
+        encoding = TableEncoding(dimensions=tuple(dims), measures=tuple(measures),
+                                 grand_total=bool(spec.totals))
+    elif visual == "pivot":
+        across = [fields.dimension(item) for item in spec.columns or []]
+        if not dims or not across or not measures:
+            raise Refusal("A pivot table needs row fields, column fields (columns) and a measure.")
+        encoding = TableEncoding(dimensions=tuple(dims), pivot_columns=tuple(across),
+                                 measures=tuple(measures), grand_total=bool(spec.totals))
     else:
         if not spec.x or not spec.y:
             raise Refusal("A scatter plot needs two number fields, x and y.")
@@ -777,10 +799,21 @@ def build_chart(
     elif visual in {"bar", "pie"} and measures and dims and dims[0].date_grain is None:
         sort = (ChartSort(field_id=measures[0].field_id, direction="desc",
                           aggregation=measures[0].aggregation),)
+    style = ChartStyle()
+    if spec.shade:
+        if visual not in {"table", "pivot"}:
+            raise Refusal("Shading applies to tables and pivot tables.")
+        shaded = {fields.resolve(name) for name in spec.shade}
+        measured = {item.field_id for item in measures}
+        if not shaded <= measured:
+            raise Refusal("Shade only measures the table shows.")
+        style = ChartStyle(conditional_formats=tuple(
+            ConditionalFormat(field_id=field_id, kind="scale") for field_id in sorted(shaded)))
     try:
         chart = ChartDefinition(
             chart_id=chart_id, title=spec.title, dataset_id=dataset_id,
             dataset_revision=revision, visual=visual, encoding=encoding, sort=sort,
+            style=style,
         )
     except ValidationError as exc:
         reason = exc.errors(include_input=False)[0].get("msg", "invalid chart")
@@ -819,9 +852,17 @@ def spec_from_chart(chart: ChartDefinition) -> dict[str, Any]:
                     donut=encoding.donut)
     elif chart.visual == "kpi" and isinstance(encoding, SingleMeasureEncoding):
         spec.update(measures=[meas(encoding.measure)])
-    elif chart.visual == "table" and isinstance(encoding, TableEncoding):
+    elif chart.visual in {"table", "pivot"} and isinstance(encoding, TableEncoding):
         spec.update(dimensions=[dim(item) for item in encoding.dimensions],
-                    measures=[meas(item) for item in encoding.measures])
+                    measures=[meas(item) for item in encoding.measures],
+                    totals=encoding.grand_total)
+        if chart.visual == "pivot":
+            spec["columns"] = [dim(item) for item in encoding.pivot_columns]
+        scaled = [item.field_id for item in chart.style.conditional_formats if item.kind == "scale"]
+        if any(item.kind == "rule" for item in chart.style.conditional_formats):
+            raise Refusal("This table has highlight rules that can only be edited in the editor.")
+        if scaled:
+            spec["shade"] = scaled
     elif chart.visual == "scatter" and isinstance(encoding, ScatterEncoding):
         spec.update(x=encoding.x, y=encoding.y, size=encoding.size,
                     color=encoding.color.field_id if encoding.color else None)
@@ -864,6 +905,17 @@ async def _settle(
     return receipt
 
 
+def _attempts(base: UUID) -> list[UUID]:
+    """The operation ids ``apply_changes`` uses for one logical change."""
+    return [uuid5(base, f"apply:{attempt}") for attempt in (1, 2)]
+
+
+async def already_applied(user: dict[str, Any], base: UUID) -> bool:
+    """Whether the change ``apply_changes`` would make under ``base`` is committed."""
+    return any([await _receipt(user, operation_id) is not None
+                for operation_id in _attempts(base)])
+
+
 async def apply_changes(
     user: dict[str, Any], dashboard_id: UUID, base: UUID,
     build: Callable[[DashboardDefinition], list[Any]],
@@ -872,7 +924,7 @@ async def apply_changes(
 
     A retried tool call returns the receipt it already committed.
     """
-    attempts = [uuid5(base, f"apply:{attempt}") for attempt in (1, 2)]
+    attempts = _attempts(base)
     for operation_id in attempts:
         prior = await _receipt(user, operation_id)
         if prior is not None:
@@ -951,7 +1003,8 @@ class _Tool:
             args = _parse(self.args_model, invocation.arguments)
             return await self.act(args, invocation, context, user)
         except Refusal as exc:
-            return _fail(str(exc))
+            # A refusal names what to change; access and engine failures below do not.
+            return _fail(str(exc), recoverable=True)
         except NovaException as exc:
             return _fail(_explain(exc))
         except ValidationError:
@@ -974,7 +1027,10 @@ _DIM = {
     "type": "object",
     "properties": {
         "field": {"type": "string", "maxLength": 256},
-        "date_grain": {"type": "string", "enum": ["day", "week", "month", "quarter", "year"]},
+        "date_grain": {
+            "type": "string", "enum": ["day", "week", "month", "quarter", "year"],
+            "description": "Only for date fields; leave it out for any other field.",
+        },
     },
     "required": ["field"],
     "additionalProperties": False,
@@ -1010,6 +1066,11 @@ _SHAPE = {
     "stack": {"type": "string", "enum": list(STACKS)},
     "donut": {"type": "boolean"},
     "sort": _SORT,
+    "columns": {"type": "array", "items": _DIM, "maxItems": 3,
+                "description": "Pivot only: fields across the top; dimensions are the rows."},
+    "totals": {"type": "boolean", "description": "Table or pivot: show totals."},
+    "shade": {"type": "array", "items": {"type": "string", "maxLength": 256}, "maxItems": 8,
+              "description": "Table or pivot: measures to shade with a colour scale."},
 }
 _VISUAL = {"type": "string", "enum": list(VISUAL_WORDS)}
 
@@ -1122,6 +1183,9 @@ async def _pinned(user: dict[str, Any], context: Any, dataset_id: UUID) -> int |
 class QueryDatasetTool(_Tool):
     name = "native_dataset_query"
     args_model = QueryArgs
+
+    def preview(self, invocation: ToolInvocation) -> str:
+        return "Query the dashboard data"
     #: Governed rows from the dashboard's own dataset answer a data question.
     may_settle = frozenset({"semantic_query"})
     description = (
@@ -1177,7 +1241,8 @@ class QueryDatasetTool(_Tool):
             dimension = fields.dimension(item)
             dimensions.append(QueryDimension(
                 field_id=dimension.field_id,
-                date_grain=item.date_grain or dimension.date_grain,
+                # Resolved by the field: dates default to month, other fields have none.
+                date_grain=dimension.date_grain,
             ))
         measures = []
         for asked in args.measures:
@@ -1206,7 +1271,9 @@ class QueryDatasetTool(_Tool):
                 ) from None
         sort: tuple[QuerySort, ...] = ()
         if args.sort is not None:
-            identity = fields.resolve(args.sort.field)
+            # "sum(revenue)" names the measure the way SQL does; sort by its field.
+            asked_sort = re.sub(r"^\s*\w+\s*\(\s*(.+?)\s*\)\s*$", r"\1", args.sort.field)
+            identity = fields.resolve(asked_sort)
             key = next((f"m{i}" for i, item in enumerate(measures) if item.field_id == identity),
                        None) or next((f"d{i}" for i, item in enumerate(dimensions)
                                       if item.field_id == identity), None)
@@ -1364,7 +1431,7 @@ class AddChartsTool(_Change):
 
         receipt = await apply_changes(user, identity, base, build)
         change = _changed(identity, receipt)
-        return _outcome(f"Added {len(placed)} chart(s) (revision {change['revision']})",
+        return _outcome(f"Added {len(placed)} chart(s) (version {change['revision']})",
                         {"added": placed, "title": dashboard.title, "base_revision": revision},
                         change)
 
@@ -1391,9 +1458,11 @@ class UpdateChartTool(_Change):
 
     def preview(self, invocation: ToolInvocation) -> str:
         changed = [key for key in ("title", "visual", "dimensions", "measures", "color", "sort",
-                                   "orientation", "stack", "x", "y", "size", "donut")
+                                   "orientation", "stack", "x", "y", "size", "donut",
+                                   "columns", "totals", "shade")
                    if key in invocation.arguments]
-        words = {"visual": "chart type", "dimensions": "grouping", "measures": "numbers"}
+        words = {"visual": "chart type", "dimensions": "grouping", "measures": "numbers",
+                 "columns": "pivot columns", "shade": "shading"}
         parts = ", ".join(words.get(key, key) for key in changed) or "its settings"
         visual = invocation.arguments.get("visual")
         suffix = f" (to {VISUAL_WORDS.get(str(visual), 'chart')})" if visual else ""
@@ -1426,6 +1495,11 @@ class UpdateChartTool(_Change):
             if visual != spec_data["visual"]:
                 for key in ("orientation", "stack", "donut"):
                     spec_data.pop(key, None)
+                if visual != "pivot":
+                    spec_data.pop("columns", None)
+                if visual not in {"table", "pivot"}:
+                    spec_data.pop("totals", None)
+                    spec_data.pop("shade", None)
             spec_data.update(given)
             spec = _parse(ChartSpec, {key: value for key, value in spec_data.items()
                                       if value is not None})
@@ -1451,7 +1525,7 @@ class UpdateChartTool(_Change):
         receipt = await apply_changes(user, identity, base, build)
         change = _changed(identity, receipt)
         return _outcome(
-            f"Updated chart '{updated.title}' (revision {change['revision']})",
+            f"Updated chart '{updated.title}' (version {change['revision']})",
             {"widget_id": str(args.widget_id), "title": updated.title,
              "visual": updated.visual}, change,
         )
@@ -1493,12 +1567,16 @@ class ArrangeTool(_Change):
     def preview(self, invocation: ToolInvocation) -> str:
         move = invocation.arguments.get("move")
         remove = invocation.arguments.get("remove")
+        def items(count: int) -> str:
+            return "one item" if count == 1 else f"{count} items"
+
         parts = []
         if isinstance(move, list) and move:
-            parts.append(f"move or resize {len(move)} widget(s)")
+            parts.append(f"move or resize {items(len(move))}")
         if isinstance(remove, list) and remove:
-            parts.append(f"remove {len(remove)} widget(s)")
-        return "On the dashboard: " + (" and ".join(parts) or "rearrange widgets")
+            parts.append(f"remove {items(len(remove))}")
+        text = " and ".join(parts) or "rearrange the layout"
+        return f"Dashboard layout: {text}"
 
     async def act(self, args: ArrangeArgs, invocation, context, user) -> ToolOutcome:
         identity = _dashboard_id(args.dashboard_id, context)
@@ -1548,7 +1626,7 @@ class ArrangeTool(_Change):
         receipt = await apply_changes(user, identity, _base(invocation), build)
         change = _changed(identity, receipt)
         return _outcome(
-            f"Arranged the dashboard (revision {change['revision']})",
+            f"Arranged the dashboard (version {change['revision']})",
             {"moved": len(args.move), "removed": len(args.remove)}, change,
         )
 
@@ -1650,7 +1728,7 @@ class FiltersTool(_Change):
         receipt = await apply_changes(user, identity, base, build)
         change = _changed(identity, receipt)
         return _outcome(
-            f"Saved dashboard filters (revision {change['revision']})",
+            f"Saved dashboard filters (version {change['revision']})",
             {"filters": [item.title for item in args.filters], "mode": args.mode}, change,
         )
 
@@ -1791,7 +1869,7 @@ class CreateDashboardTool(_Change):
         if args.table is not None:
             receipt = await _attach_table(user, identity, base, args)
         change = _changed(identity, receipt, created=True)
-        return _outcome(f"Created dashboard '{args.title}' (revision {change['revision']})",
+        return _outcome(f"Created dashboard '{args.title}' (version {change['revision']})",
                         {"title": args.title, "page_id": str(uuid5(base, "page:1"))}, change)
 
 
@@ -1828,7 +1906,7 @@ class AttachDatasetTool(_Change):
             receipt = await _attach_table(user, identity, base, args)
             change = _changed(identity, receipt)
             return _outcome(f"Attached data from {args.table.table} "
-                            f"(revision {change['revision']})",
+                            f"(version {change['revision']})",
                             {"dataset_id": str(uuid5(base, "dataset"))}, change)
         assert args.dataset_id is not None
         reference = await _existing_reference(user, args.dataset_id)
@@ -1840,7 +1918,7 @@ class AttachDatasetTool(_Change):
 
         receipt = await apply_changes(user, identity, base, build)
         change = _changed(identity, receipt)
-        return _outcome(f"Attached the dataset (revision {change['revision']})",
+        return _outcome(f"Attached the dataset (version {change['revision']})",
                         {"dataset_id": str(reference.dataset_id),
                          "dataset_revision": reference.revision}, change)
 
@@ -1874,7 +1952,7 @@ class PublishTool(_Change):
             prior = await _settle(user, operation_id,
                                   lambda: _documents().publish(user, identity, request))
         change = _changed(identity, prior, published=True)
-        return _outcome(f"Published the dashboard (revision {change['revision']})",
+        return _outcome(f"Published the dashboard (version {change['revision']})",
                         {"published_revision": change["revision"]}, change)
 
 
@@ -1898,7 +1976,7 @@ PROMPT = """
 ## Native Dataviz dashboards
 
 Dataviz dashboards are built from datasets, charts and a 12-column page grid. Every change runs
-as the user's active role and is saved as a new revision.
+as the user's active role and is saved as a new version.
 - "This dashboard" is the dashboard on screen. Read it (native_dashboard_read) before changing
   it, and use its dataset and field names exactly.
 - To check numbers, call native_dataset_query on the dashboard's dataset and quote them exactly.
@@ -1907,7 +1985,8 @@ as the user's active role and is saved as a new revision.
   native_dashboard_arrange; filters, native_dashboard_filters.
 - If the data is not on the dashboard yet, attach a dataset first.
 - Publish only when the user asks to.
-- Say a dashboard changed only when a tool confirmed it, with the saved revision. If a tool
+- Say a dashboard changed only when a tool confirmed it, with the saved version number (call it
+  a version, as the app does). If a tool
   refused, say why in plain words and change nothing else.
 """.strip()
 

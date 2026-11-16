@@ -1,12 +1,18 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { GridStack, type GridItemHTMLElement, type GridStackNode } from 'gridstack'
 import 'gridstack/dist/gridstack.css'
-import { Copy, MoreHorizontal, Pencil, Sparkles, Trash2 } from 'lucide-react'
+import { ArrowLeft, ChevronsDown, Copy, Download, FileSpreadsheet, FileText, Filter, ImageIcon, MoreHorizontal, Pencil, Sparkles, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuSub,
+  DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import type { ChartDefinition, ChartWidget, DashboardDefinition, FilterTree, TextWidget } from '../contracts'
+import { hasImage, type ChartFileFormat } from './export'
 import { useChartDocument } from './hooks'
+import { useDatasetDefinition } from '../charts/chart-data'
+import { drillContext, drillDimension, drilledChart, drillOptions, type DrillStep } from '../charts/drill'
 import { NativeChart, type ValueSelection } from '../charts/native-chart'
 import type { Layout, Page, Widget } from './layout'
 
@@ -27,12 +33,17 @@ type CanvasProps = {
   selectedValueFor?: (widget: Widget) => string | null
   /** Widgets Neva just changed; they carry a brief "Neva" marker. */
   highlighted?: string[]
+  /** Present only with Export access: download one chart as a file. */
+  onDownload?: (chart: ChartDefinition, context: FilterTree | undefined, format: ChartFileFormat, root: HTMLElement) => void
 }
 
 function ChartBody({ widget, props }: { widget: ChartWidget; props: CanvasProps }) {
   const chart = useChartDocument(widget.chart_ref.chart_id, widget.chart_ref.revision, props.draft)
   const definition = chart.data
-  const title = widget.title || definition?.title || 'Chart'
+  const dataset = useDatasetDefinition(definition?.dataset_id, definition?.dataset_revision)
+  const [steps, setSteps] = useState<DrillStep[]>([])
+  const [pending, setPending] = useState<ValueSelection | null>(null)
+  const baseTitle = widget.title || definition?.title || 'Chart'
   const showTitle = widget.style?.show_title ?? definition?.style?.show_title ?? true
   const effective = definition && widget.style ? {
     ...definition,
@@ -42,22 +53,68 @@ function ChartBody({ widget, props }: { widget: ChartWidget; props: CanvasProps 
       ...(widget.style.palette ? { palette: widget.style.palette } : {}),
     },
   } as ChartDefinition : definition
-  return <WidgetFrame widget={widget} title={showTitle ? title : ''} props={props} chart={definition}>
+  // Editing shows the chart as saved; drilling is a way of reading it.
+  const active = props.editing ? [] : steps
+  const shown = effective ? drilledChart(effective, active) : undefined
+  const context = effective ? drillContext(effective, active, props.contextFor(widget, effective)) : undefined
+  const options = shown && !props.editing && dataset.data
+    ? drillOptions(shown, dataset.data.fields, [drillDimension(effective!)?.field_id ?? '', ...active.map(step => step.field_id)])
+    : []
+  const download = shown && props.onDownload
+    ? (format: ChartFileFormat, root: HTMLElement) => props.onDownload?.(shown, context, format, root)
+    : undefined
+  const select = (selection: ValueSelection) => {
+    if (!effective || !shown) return
+    // Without anything to drill into, a click filters the dashboard as before.
+    if (!options.length && !active.length) props.onSelectValue(widget, effective, selection)
+    else setPending(selection)
+  }
+  const title = active.length ? [baseTitle, ...active.map(step => step.label)].join(' › ') : baseTitle
+  return <WidgetFrame widget={widget} title={showTitle || active.length ? title : ''} props={props} chart={definition}
+    download={download} canImage={shown ? hasImage(shown) : false}
+    drill={active.length ? { back: () => setSteps(active.slice(0, -1)), reset: () => setSteps([]), depth: active.length } : undefined}>
     {chart.isPending ? <div aria-busy='true' className='min-h-0 flex-1 animate-pulse rounded bg-muted/60' />
-      : chart.isError || !effective ? <p role='alert' className='m-auto text-sm text-muted-foreground'>This chart is unavailable with your current role.</p>
-        : <NativeChart chart={effective} draft={props.draft} context={props.contextFor(widget, effective)}
-          selectedLabel={props.selectedValueFor?.(widget) ?? null}
-          onSelectValue={props.editing ? undefined : selection => props.onSelectValue(widget, effective, selection)} />}
+      : chart.isError || !shown ? <p role='alert' className='m-auto text-sm text-muted-foreground'>This chart is unavailable with your current role.</p>
+        : <div className='relative flex min-h-0 flex-1 flex-col'>
+          <NativeChart chart={shown} draft={props.draft} context={context}
+            selectedLabel={active.length ? null : props.selectedValueFor?.(widget) ?? null}
+            onSelectValue={props.editing ? undefined : select} />
+          {pending && <DropdownMenu open onOpenChange={open => { if (!open) setPending(null) }}>
+            <DropdownMenuTrigger asChild>
+              <span aria-hidden className='pointer-events-none absolute size-px'
+                style={{ left: pending.anchor?.x ?? 16, top: pending.anchor?.y ?? 16 }} />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align='start' className='w-64'>
+              <DropdownMenuLabel className='truncate text-xs font-normal text-muted-foreground'>{pending.label}</DropdownMenuLabel>
+              {!active.length && effective && <DropdownMenuItem onSelect={() => props.onSelectValue(widget, effective, pending)}>
+                <Filter />Filter the dashboard to this
+              </DropdownMenuItem>}
+              {options.length > 0 && <DropdownMenuSub>
+                <DropdownMenuSubTrigger><ChevronsDown />Drill into this by</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className='max-h-72 overflow-y-auto'>
+                  {options.map(option => <DropdownMenuItem key={`${option.field_id}:${option.date_grain ?? ''}`}
+                    onSelect={() => setSteps([...active, { field_id: pending.field_id, value: pending.value, label: pending.label,
+                      period: pending.period, by: { field_id: option.field_id, date_grain: option.date_grain } }])}>
+                    {option.label}
+                  </DropdownMenuItem>)}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>}
+            </DropdownMenuContent>
+          </DropdownMenu>}
+        </div>}
   </WidgetFrame>
 }
 
-function WidgetFrame({ widget, title, props, chart, children }: {
-  widget: Widget; title: string; props: CanvasProps; chart?: ChartDefinition; children: React.ReactNode
+function WidgetFrame({ widget, title, props, chart, download, canImage = false, drill, children }: {
+  widget: Widget; title: string; props: CanvasProps; chart?: ChartDefinition
+  download?: (format: ChartFileFormat, root: HTMLElement) => void; canImage?: boolean
+  drill?: { back: () => void; reset: () => void; depth: number }; children: React.ReactNode
 }) {
+  const root = useRef<HTMLDivElement>(null)
   const selected = props.selectedId === widget.widget_id
   const highlighted = props.highlighted?.includes(widget.widget_id) ?? false
   const appearance = widget.appearance
-  return <div className={cn('grid-stack-item-content flex flex-col overflow-hidden rounded-lg',
+  return <div ref={root} className={cn('grid-stack-item-content flex flex-col overflow-hidden rounded-lg',
     appearance?.surface === 'transparent' ? 'bg-transparent' : 'bg-card',
     appearance?.border !== false && 'border border-surface-border',
     appearance?.padding === 'none' ? 'p-0' : appearance?.padding === 'comfortable' ? 'p-4' : 'p-3',
@@ -66,10 +123,26 @@ function WidgetFrame({ widget, title, props, chart, children }: {
     highlighted && 'ring-2 ring-primary/60 transition-shadow')}
   onClick={event => { if (props.editing) { event.stopPropagation(); props.onSelect(widget.widget_id) } }}>
     {(title || props.editing) && <div className='flex h-7 shrink-0 items-center justify-between gap-2'>
-      <h3 className='min-w-0 truncate text-sm font-medium' title={title}>{title}</h3>
+      <div className='flex min-w-0 items-center gap-1'>
+        {drill && <Button variant='ghost' size='icon' className='-ml-1 size-7 shrink-0' aria-label='Back up one level'
+          onClick={event => { event.stopPropagation(); drill.back() }}><ArrowLeft className='size-4' /></Button>}
+        <h3 className='min-w-0 truncate text-sm font-medium' title={title}>{title}</h3>
+        {drill && drill.depth > 1 && <Button variant='link' size='sm' className='h-7 shrink-0 px-1 text-xs text-muted-foreground'
+          onClick={event => { event.stopPropagation(); drill.reset() }}>Reset</Button>}
+      </div>
       <div className={cn('flex shrink-0 items-center gap-0.5', !props.editing && 'opacity-0 focus-within:opacity-100 group-hover/widget:opacity-100')}>
         {props.onAskNeva && <Button variant='ghost' size='icon' className='size-7' aria-label={`Ask Neva about ${title || 'this widget'}`}
           onClick={event => { event.stopPropagation(); props.onAskNeva?.(widget, chart) }}><Sparkles className='size-4' /></Button>}
+        {download && <DropdownMenu>
+          <DropdownMenuTrigger asChild><Button variant='ghost' size='icon' className='size-7' aria-label={`Download ${title || 'chart'}`}
+            onClick={event => event.stopPropagation()}><Download className='size-4' /></Button></DropdownMenuTrigger>
+          <DropdownMenuContent align='end'>
+            <DropdownMenuLabel className='text-xs font-normal text-muted-foreground'>Download</DropdownMenuLabel>
+            {canImage && <DropdownMenuItem onSelect={() => root.current && download('png', root.current)}><ImageIcon />Image (PNG)</DropdownMenuItem>}
+            <DropdownMenuItem onSelect={() => root.current && download('csv', root.current)}><FileText />Data (CSV)</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => root.current && download('xlsx', root.current)}><FileSpreadsheet />Data (Excel)</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>}
         {props.editing && <DropdownMenu>
           <DropdownMenuTrigger asChild><Button variant='ghost' size='icon' className='size-7' aria-label={`${title || 'Widget'} actions`}
             onClick={event => event.stopPropagation()}><MoreHorizontal className='size-4' /></Button></DropdownMenuTrigger>
@@ -122,7 +195,6 @@ export function DashboardCanvas(props: CanvasProps) {
     const instance = GridStack.init({
       column: 12, cellHeight: 72, margin: 6, animate: true,
       staticGrid: true, disableResize: false, resizable: { handles: 'se,e,s' },
-      columnOpts: { breakpoints: [{ w: 520, c: 1 }] },
     }, node)
     if (!instance) return
     grid.current = instance
@@ -157,10 +229,34 @@ export function DashboardCanvas(props: CanvasProps) {
       const widget = widgets.find(item => item.widget_id === element.getAttribute('gs-id'))
       if (!widget) continue
       if (!(element as GridItemHTMLElement).gridstackNode) instance.makeWidget(element)
-      instance.update(element, { ...widget.layout, noMove: widget.locked, noResize: widget.locked })
+      instance.update(element, instance.getColumn() === 1
+        ? { noMove: widget.locked, noResize: widget.locked }
+        : { ...widget.layout, noMove: widget.locked, noResize: widget.locked })
     }
     instance.batchUpdate(false)
   }, [signature])
+
+  // The canvas, not GridStack, decides the column count, so a narrow view and
+  // the saved 12-column layout never drift apart.
+  const layouts = useRef(widgets)
+  layouts.current = widgets
+  useLayoutEffect(() => {
+    const instance = grid.current
+    const node = host.current
+    if (!instance || !node) return
+    instance.batchUpdate()
+    if (narrow) {
+      instance.column(1, 'list')
+    } else {
+      instance.column(12, 'none')
+      // Back from one column: the saved layout is authoritative, not a re-flow.
+      for (const element of node.querySelectorAll<HTMLElement>(':scope > .grid-stack-item')) {
+        const widget = layouts.current.find(item => item.widget_id === element.getAttribute('gs-id'))
+        if (widget) instance.update(element, { ...widget.layout })
+      }
+    }
+    instance.batchUpdate(false)
+  }, [narrow])
 
   useEffect(() => {
     grid.current?.setStatic(!props.editing || narrow)

@@ -612,16 +612,14 @@ export function applyEvent(
           kind: "tool",
           label: payload.tool_name,
           skillName: payload.skill_name || undefined,
-          // A call refused before it ran (consent or an agent guard) never
-          // queried anything, so its row says so instead of naming the work.
-          text:
-            payload.tool_name === "load_skill" || payload.status === "denied"
-              ? describeStatus(
-                  payload.tool_name,
-                  payload.status,
-                  payload.skill_name,
-                )
-              : describeTool(payload.tool_name),
+          // The row names the work in the tense of its status: a call still
+          // running or waiting for approval has not done anything yet, and a
+          // refused one never ran.
+          text: describeStatus(
+            payload.tool_name,
+            payload.status,
+            payload.skill_name,
+          ),
           status: payload.status,
           preview:
             payload.tool_name === "load_skill"
@@ -969,7 +967,7 @@ export function applyEvent(
 }
 
 /** A tool name turned into the line a reader understands. */
-function describeTool(name: string, skillName?: string | null): string {
+export function describeTool(name: string, skillName?: string | null): string {
   switch (name) {
     case "query_execute":
       return "Ran a SQL query";
@@ -981,6 +979,8 @@ function describeTool(name: string, skillName?: string | null): string {
       return "Searched the semantic model";
     case "data_to_chart":
       return "Built a chart";
+    case "compute_metrics":
+      return "Calculated from the results";
     case "native_dashboard_list":
       return "Listed your dashboards";
     case "native_dashboard_read":
@@ -1010,25 +1010,57 @@ function describeTool(name: string, skillName?: string | null): string {
   }
 }
 
+const ACTIVITY: Record<string, string> = {
+  query_execute: "Running a SQL query",
+  semantic_query: "Querying the semantic model",
+  semantic_search: "Searching the semantic model",
+  data_to_chart: "Building a chart",
+  compute_metrics: "Calculating from the results",
+  native_dashboard_list: "Listing your dashboards",
+  native_dashboard_read: "Reading the dashboard",
+  native_dataset_describe: "Reading the dataset's fields",
+  native_dataset_query: "Querying the dashboard data",
+  dataviz_query: "Querying the dashboard data",
+  native_dashboard_add_charts: "Adding charts to the dashboard",
+  native_chart_update: "Updating a chart",
+  native_dashboard_arrange: "Rearranging the dashboard",
+  native_dashboard_filters: "Updating the dashboard filters",
+  native_dashboard_create: "Creating a dashboard",
+  native_dashboard_attach_dataset: "Adding a dataset to the dashboard",
+  native_dashboard_publish: "Publishing the dashboard",
+};
+
+/** What a step is doing, in present tense, without the tool's identifier. */
+function describeActivity(name: string, skillName?: string | null): string {
+  if (name === "load_skill") return skillName ? `Loading skill: ${skillName}` : "Loading a skill";
+  const known = ACTIVITY[name];
+  if (known) return known;
+  const words = name.replace(/^native_/, "").replace(/_/g, " ").trim();
+  return words ? `Running: ${words}` : "Using a tool";
+}
+
 function describeStatus(
   name: string,
   status: string,
   skillName?: string | null,
 ): string {
+  // Status lines never show the tool's identifier to the reader.
+  const activity = describeActivity(name, skillName);
+  const lower = activity.charAt(0).toLowerCase() + activity.slice(1);
   switch (status) {
     case "running":
-      return name === "load_skill" && skillName
-        ? `Loading skill: ${skillName}`
-        : `Running ${name}`;
+    case "pending":
+      // Waiting for approval is not done yet.
+      return activity;
     case "done":
       return describeTool(name, skillName);
     case "failed":
-      return `${name} failed`;
+      return `Stopped: ${lower}`;
     case "denied":
-      return `${name} was denied`;
+      return `Not approved: ${lower}`;
     case "cancelled":
-      return `${name} was cancelled`;
+      return `Cancelled: ${lower}`;
     default:
-      return describeTool(name);
+      return describeTool(name, skillName);
   }
 }

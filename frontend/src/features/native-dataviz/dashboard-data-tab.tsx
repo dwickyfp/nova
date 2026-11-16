@@ -49,7 +49,7 @@ function DataTab({ dashboardId, workspaceId, revision, onCommitted, onReload, ep
   return <div className='@container/data flex min-h-0 min-w-0 flex-1 flex-col'>
     <div className='flex min-h-0 min-w-0 flex-1 flex-col @2xl/data:flex-row'>
     <aside aria-label='Dashboard datasets' className='flex min-h-0 shrink-0 flex-col border-b @2xl/data:w-60 @2xl/data:border-r @2xl/data:border-b-0'>
-      <div className='flex h-12 shrink-0 items-center justify-between gap-2 pr-2 pl-4'>
+      <div className='flex h-14 shrink-0 items-center justify-between gap-2 border-b pr-2 pl-4'>
         <h2 className='text-sm font-medium'>Datasets</h2>
         <DropdownMenu>
           <DropdownMenuTrigger asChild><Button aria-label='Add dataset' title='Add dataset' variant='ghost' size='icon'
@@ -128,13 +128,13 @@ function SavedDataset({ reference, epoch }: { reference: DatasetReferenceSummary
         : dataset.source.kind === 'table' ? 'Table' : 'View'
 
   return <section aria-label={`${dataset.title} dataset`} className='flex min-h-0 min-w-0 flex-1 flex-col'>
-    <header className='flex shrink-0 flex-wrap items-start justify-between gap-3 border-b p-4'>
+    <header className='flex min-h-14 shrink-0 items-center justify-between gap-3 border-b px-4 py-2'>
       <div className='min-w-0'>
-        <h3 className='break-words text-base font-medium'>{dataset.title}</h3>
+        <h3 className='truncate text-sm font-medium' title={dataset.title}>{dataset.title}</h3>
         <p className='text-xs text-muted-foreground'>{sourceLabel} · Version {reference.revision}</p>
       </div>
       <Sheet>
-        <SheetTrigger asChild><Button variant='outline' className='h-11 @5xl/data:hidden'><Columns3 />Fields and lineage</Button></SheetTrigger>
+        <SheetTrigger asChild><Button variant='outline' className='h-11 @2xl/data:h-9 @5xl/data:hidden'><Columns3 />Fields and lineage</Button></SheetTrigger>
         <SheetContent className='flex min-h-0 flex-col'>
           <SheetHeader><SheetTitle>Fields and lineage</SheetTitle>
             <SheetDescription>{dataset.title} · Version {reference.revision}</SheetDescription></SheetHeader>

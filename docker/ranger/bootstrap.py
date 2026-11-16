@@ -276,6 +276,30 @@ def main() -> None:
         }],
     })
 
+    # Native Dataviz re-checks a dataset's source as each viewer, so everyone
+    # may read the reflection views; their rows still list only the objects a
+    # person's own policies allow. The name is kept for deployments that hold it.
+    put_policy({
+        "name": "nova-managed/bi/metadata/default_catalog",
+        "description": "Managed by Nova. Table reflection for every user; rows follow "
+                       "each person's own object policies.",
+        "resources": {
+            "catalog": {"values": ["default_catalog"], "isRecursive": False, "isExcludes": False},
+            "database": {"values": ["information_schema"], "isRecursive": False,
+                         "isExcludes": False},
+            "table": {"values": ["tables", "tables_config", "columns", "views",
+                                 "materialized_views"],
+                      "isRecursive": False, "isExcludes": False},
+            "column": {"values": ["*"], "isRecursive": False, "isExcludes": False},
+        },
+        "policyItems": [{
+            "groups": ["public"],
+            "roles": ["ACCOUNTADMIN"],
+            "accesses": [{"type": "select", "isAllowed": True}],
+            "delegateAdmin": False,
+        }],
+    })
+
     table_resources = {
         "catalog": {"values": ["default_catalog"], "isRecursive": False, "isExcludes": False},
         "database": {"values": ["analytics"], "isRecursive": False, "isExcludes": False},

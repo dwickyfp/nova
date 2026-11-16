@@ -605,7 +605,7 @@ describe("harness guard decisions", () => {
     );
     expect(call).not.toBeNull();
     const turn = run([call as AssistantEvent]);
-    expect(turn.steps[0]).toMatchObject({ status: "denied", text: "semantic_query was denied" });
+    expect(turn.steps[0]).toMatchObject({ status: "denied", text: "Not approved: querying the semantic model" });
   });
 
   it("drops malformed guard frames and keeps locations without snippets", () => {

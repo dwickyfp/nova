@@ -154,3 +154,61 @@ async def test_a_data_question_on_a_native_dashboard_is_answered_from_its_datase
     assert result.finish_reason == "stop", joined[-600:]
     assert len(data.requests) == 1 and data.requests[0].revision == 1
     assert "required_capability" not in joined and not _changes(result)
+
+
+async def _question(monkeypatch, script, required):
+    from app.modules.agents.tools.compute_metrics import ComputeMetricsTool
+    from tests.unit.test_native_dataviz_assistant_tools import FakeDatasets
+
+    docs, data = FakeDocuments(), FakeDatasets()
+    monkeypatch.setattr(native_dataviz, "_documents", lambda: docs)
+    monkeypatch.setattr(native_dataviz, "_datasets", lambda: data)
+    registry = ToolRegistry()
+    native_dataviz.register(registry)
+    registry.register(ComputeMetricsTool())
+    context = LoopContext("alice", user=USER, thread_id="t1")
+    context.dataviz = {"native_dashboard": {"dashboard_id": str(DASHBOARD), "revision": 1}}
+    context.capability_aliases = {"semantic_query": "native_dataset_query"}
+    context.dashboard_tools = native_dataviz.TOOL_NAMES
+    context.settled_capabilities = ("native_dashboard_read",)
+    # The Dataviz assistant runs as an agent, like any Studio agent.
+    context.agent_scope = {"agent": "Dataviz assistant"}
+    provider = ScriptedProvider(script, turn_plan={
+        "intent": "semantic_analytics", "tools": list(required), "required_tools": required,
+        "skills": [], "ml_task": None,
+    })
+
+    async def consent(_invocation, _classification):
+        raise AssertionError("a read needs no approval")
+
+    result = TurnResult(frames=[
+        frame async for frame in AssistantLoop(
+            # As the router runs the Dataviz assistant: iterative, with analysis tools.
+            provider=provider, registry=registry, system_prompt="test", iterative=True,
+        ).run(
+            thread=AssistantThread("t1", "alice", "Dataviz"),
+            user_content="which city has the most revenue, and by how much does it lead?",
+            context=context, resolve_consent=consent,
+        )
+    ])
+    return result, data
+
+
+@pytest.mark.asyncio
+async def test_a_query_mistake_is_corrected_within_the_turn(monkeypatch):
+    # Live run 2026-11-16: one wrong argument ended the whole answer.
+    from tests.unit.test_native_dataviz_assistant_tools import DATASET
+
+    query = {"dataset_id": str(DATASET), "dimensions": [{"field": "City"}],
+             "measures": [{"field": "Revenue", "aggregation": "sum"}]}
+    result, data = await _question(monkeypatch, [
+        tool_call_frame("q1", name="native_dataset_query",
+                        arguments={**query, "sort": {"field": "profit", "direction": "desc"}}),
+        tool_call_frame("q2", name="native_dataset_query", arguments=query),
+        text_frame("Surabaya leads with revenue 1573810277.5; Malang follows with 12."),
+    ], ["semantic_query"])
+    joined = "".join(result.frames)
+    assert result.finish_reason == "stop", joined[-600:]
+    assert len(data.requests) == 1
+    assert "native_dataset_query" not in result.text
+

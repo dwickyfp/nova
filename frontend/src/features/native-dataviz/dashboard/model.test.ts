@@ -225,6 +225,11 @@ describe('chart options', () => {
       ['Bandung', 'Jakarta', 'Makassar'].map(value => [{ type: 'string', value }, { type: 'decimal', value: '1' }]))
     const option = buildChartOption(chart(), data, tokens, null, 300) as { xAxis: { axisLabel: Record<string, unknown> } }
     expect(option.xAxis.axisLabel).toMatchObject({ interval: 0, hideOverlap: false, overflow: 'truncate', width: 77 })
+    // A horizontal bar's vertical axis carries no title over its labels.
+    const sideways = { ...chart(), encoding: { ...(chart().encoding as CartesianEncoding), orientation: 'horizontal' } } as ChartDefinition
+    const side = (buildChartOption(sideways, data, tokens, null, 300) as { yAxis: { name?: string; data: string[] } }).yAxis
+    expect(side.data).toEqual(['Bandung', 'Jakarta', 'Makassar'])
+    expect(side.name).toBeUndefined()
     // Without a measured width ECharts keeps its own spacing.
     expect((buildChartOption(chart(), data, tokens) as { xAxis: { axisLabel: Record<string, unknown> } }).xAxis.axisLabel.interval).toBeUndefined()
   })
@@ -248,4 +253,35 @@ describe('result column labels', () => {
     expect(columnLabel({ name: 'rows', aggregation: 'count', field_id: null })).toBe('Rows')
   })
 
+})
+
+describe('pivot and conditional formats in the builder', () => {
+  const base = () => ({ ...initialState({ chart_id: 'c1', dataset_id: DATASET, dataset_revision: 3, fields: FIELDS }), title: 'Units' })
+
+  it('switching to a pivot puts a date across the top and saves pivot columns', () => {
+    const state = switchVisual(base(), 'pivot', FIELDS)
+    expect(state.pivotColumns).toEqual([{ field_id: 'day', date_grain: 'month' }])
+    expect(missing(state)).toBeNull()
+    const saved = toChart(state)
+    expect(saved.visual).toBe('pivot')
+    expect(saved.encoding).toMatchObject({ kind: 'table', dimensions: [{ field_id: 'region' }], pivot_columns: [{ field_id: 'day', date_grain: 'month' }] })
+    // A plain table never carries pivot columns.
+    expect('pivot_columns' in toChart({ ...state, visual: 'table' }).encoding).toBe(false)
+  })
+
+  it('names what a pivot still needs', () => {
+    expect(missing({ ...switchVisual(base(), 'pivot', FIELDS), pivotColumns: [] })).toBe('Choose a field for the columns')
+    expect(missing({ ...switchVisual(base(), 'pivot', FIELDS), measures: [] })).toBe('Choose a value to measure')
+  })
+
+  it('keeps formats for measures still in the table and drops them elsewhere', () => {
+    const state = { ...switchVisual(base(), 'table', FIELDS), formats: [
+      { field_id: 'revenue', kind: 'scale' as const, tone: 'accent' as const },
+      { field_id: 'gone', kind: 'scale' as const, tone: 'accent' as const },
+    ] }
+    expect(toChart(state).style?.conditional_formats).toEqual([{ field_id: 'revenue', kind: 'scale', tone: 'accent' }])
+    expect(toChart({ ...state, visual: 'bar' }).style?.conditional_formats).toBeUndefined()
+    const reopened = fromChart(toChart(state), FIELDS)
+    expect(reopened.formats).toEqual([{ field_id: 'revenue', kind: 'scale', tone: 'accent' }])
+  })
 })

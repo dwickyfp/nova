@@ -285,8 +285,6 @@ def test_each_visual_maps_to_its_encoding(spec, kind):
      "exactly one measure"),
     ({"visual": "bar", "dimensions": ["city"], "measures": [{"field": "city"}]},
      "not a number"),
-    ({"visual": "bar", "dimensions": [{"field": "city", "date_grain": "month"}],
-      "measures": [{"field": "revenue"}]}, "not a date"),
     ({"visual": "bar", "dimensions": ["province"], "measures": [{"field": "revenue"}]},
      "no field named 'province'"),
     ({"visual": "scatter", "x": "city", "y": "revenue"}, "not a number"),
@@ -300,6 +298,48 @@ def test_charts_that_do_not_fit_their_data_are_refused_in_plain_words(spec, reas
                            dataset=DATASET_DEF)
     assert reason in str(refused.value)
     assert not _leaks(str(refused.value))
+
+
+def _build(**spec):
+    return native.build_chart(native.ChartSpec.model_validate({"title": "T", **spec}),
+                              chart_id=uuid4(), dataset_id=DATASET, revision=1,
+                              dataset=DATASET_DEF)
+
+
+def test_neva_builds_a_shaded_pivot_with_totals_and_reads_it_back():
+    chart = _build(visual="pivot", dimensions=["City"],
+                   columns=[{"field": "Order date", "date_grain": "month"}],
+                   measures=[{"field": "Revenue"}], totals=True, shade=["Revenue"])
+    assert chart.visual == "pivot"
+    assert [item.field_id for item in chart.encoding.pivot_columns] == ["order_date"]
+    assert chart.encoding.pivot_columns[0].date_grain == "month" and chart.encoding.grand_total
+    formats = chart.style.conditional_formats
+    assert [(item.field_id, item.kind) for item in formats] == [("revenue", "scale")]
+    spec = native.spec_from_chart(chart)
+    assert spec["columns"] == [{"field": "order_date", "date_grain": "month"}]
+    assert spec["shade"] == ["revenue"] and spec["totals"] is True
+
+
+@pytest.mark.parametrize(("spec", "reason"), [
+    ({"visual": "pivot", "dimensions": ["City"], "measures": [{"field": "Revenue"}]},
+     "column fields"),
+    ({"visual": "bar", "dimensions": ["City"], "measures": [{"field": "Revenue"}],
+      "shade": ["Revenue"]}, "tables and pivot tables"),
+    ({"visual": "table", "dimensions": ["City"], "measures": [{"field": "Revenue"}],
+      "shade": ["Quantity"]}, "measures the table shows"),
+])
+def test_pivots_and_shading_that_do_not_fit_are_refused_plainly(spec, reason):
+    with pytest.raises(native.Refusal) as refused:
+        _build(**spec)
+    assert reason in str(refused.value) and not _leaks(str(refused.value))
+
+
+def test_a_date_level_on_a_text_field_is_ignored_in_a_chart():
+    chart = native.build_chart(native.ChartSpec.model_validate({
+        "title": "T", "visual": "bar", "dimensions": [{"field": "city", "date_grain": "month"}],
+        "measures": [{"field": "revenue"}]}), chart_id=uuid4(), dataset_id=DATASET, revision=1,
+        dataset=DATASET_DEF)
+    assert chart.encoding.dimensions[0].date_grain is None
 
 
 def test_placement_takes_the_first_free_slot():
@@ -539,6 +579,40 @@ async def test_a_query_refusal_is_plain(docs, data, monkeypatch):
         "dataset_id": str(DATASET), "measures": [{"field": "revenue"}]})
     assert not outcome.ok and "cannot be answered" in outcome.error
     assert not _leaks(outcome.error)
+
+
+@pytest.mark.asyncio
+async def test_a_wrong_argument_is_handed_back_for_neva_to_correct(docs, data):
+    # Live run 2026-11-16: a date level on a text field ended the turn.
+    outcome = await _run("native_dataset_query", {
+        "dataset_id": str(DATASET),
+        "dimensions": [{"field": "city", "date_grain": "year"}],
+        "measures": [{"field": "revenue", "aggregation": "sum"}],
+    })
+    # The date level on a text field is ignored, so the question is answered.
+    assert outcome.ok, outcome.error
+    assert data.requests[0].dimensions[0].date_grain is None
+    # A measure named the way SQL writes it still sorts by that measure.
+    sorted_sql = await _run("native_dataset_query", {
+        "dataset_id": str(DATASET), "dimensions": ["city"],
+        "measures": [{"field": "revenue", "aggregation": "sum"}],
+        "sort": {"field": "sum(revenue)", "direction": "desc"}})
+    assert sorted_sql.ok, sorted_sql.error
+    assert data.requests[-1].sort[0].column == "m0"
+    # A refusal the model can act on stays in the turn.
+    missing = await _run("native_dataset_query", {
+        "dataset_id": str(DATASET), "measures": [{"field": "no_such_field"}]})
+    assert not missing.ok and "no field named" in missing.error
+    assert missing.recoverable and missing.error_class == "INVALID_REQUEST"
+
+
+@pytest.mark.asyncio
+async def test_an_access_refusal_is_not_retried(docs):
+    docs.editable = False
+    outcome = await _run("native_dashboard_add_charts",
+                         {"charts": [{"title": "K", "visual": "kpi",
+                                      "measures": [{"field": "revenue"}]}]})
+    assert not outcome.ok and not outcome.recoverable
 
 
 # ── Leak-free wording and the turn context ───────────────────────────

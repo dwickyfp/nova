@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import HTTPException
@@ -496,7 +496,7 @@ async def test_a_conflict_is_read_again_and_retried_once(docs):
     docs.conflicts = 2
     with pytest.raises(PublishError) as caught:
         await studio_publish.publish(ALICE, ref=ref, idempotency_key=KEY.replace("5f", "6f"),
-                                     target=Target("existing", EXISTING))
+                                     target=Target("existing", EXISTING), title="Units again")
     assert caught.value.status == 409
 
 
@@ -621,3 +621,45 @@ def test_http_errors_carry_only_a_code_and_a_message():
     error = _error(PublishError("Nothing was changed.", status=403, code="NOT_PERMITTED"))
     assert isinstance(error, HTTPException) and error.status_code == 403
     assert error.detail == {"code": "NOT_PERMITTED", "message": "Nothing was changed."}
+
+
+async def test_adding_the_same_answer_again_reuses_its_chart_and_dataset(docs):
+    # 2026-11-16 walkthrough: a second click added a duplicate chart and dataset.
+    ref = await _ref(Locator("t1", "m1", "content-2", BAR_NODE))
+    first = await studio_publish.publish(ALICE, ref=ref, idempotency_key=KEY,
+                                         target=Target("existing", EXISTING))
+    revisions, inspected = len(docs.docs[EXISTING]), len(docs.datasets.inspected)
+    again = await studio_publish.publish(ALICE, ref=ref, idempotency_key=uuid4().hex,
+                                         target=Target("existing", EXISTING))
+    assert again["reused_chart"] is True and again["chart_id"] == first["chart_id"]
+    assert len(docs.docs[EXISTING]) == revisions
+    assert len(docs.datasets.inspected) == inspected
+    assert len(docs.docs[EXISTING][-1].datasets) == 1
+
+
+async def test_a_different_chart_of_the_same_query_shares_its_dataset(docs):
+    ref = await _ref(Locator("t1", "m1", "content-2", BAR_NODE))
+    first = await studio_publish.publish(ALICE, ref=ref, idempotency_key=KEY,
+                                         target=Target("existing", EXISTING))
+    other = await studio_publish.publish(ALICE, ref=ref, idempotency_key=uuid4().hex,
+                                         target=Target("existing", EXISTING),
+                                         title="Units, ranked")
+    assert other["reused_chart"] is False and other["chart_id"] != first["chart_id"]
+    dashboard = docs.docs[EXISTING][-1]
+    assert len(dashboard.datasets) == 1
+    assert (docs.docs[UUID(other["chart_id"])][0].dataset_id
+            == docs.docs[UUID(first["chart_id"])][0].dataset_id)
+
+
+@pytest.mark.parametrize(("asked", "answer", "chart", "title"), [
+    (None, "Berapa total sell-out unit per bulan dari Agustus sampai Oktober 2026?",
+     {"dimensions": [{"field": "outlet_stock_daily.stock_date"}],
+      "measures": [{"field": "sell_out_units"}]}, "Sell out units by stock date"),
+    (None, "Revenue by region", {"measures": [{"field": "revenue"}]}, "Revenue by region"),
+    ("My chart", "Anything?", {}, "My chart"),
+    (None, "How do prices relate to units?", {"x": "price", "y": "units"}, "Units by price"),
+    (None, "x" * 80, {}, "x" * 59 + "…"),
+    (None, None, {}, "Chart"),
+])
+def test_chart_titles_are_short_labels_not_questions(asked, answer, chart, title):
+    assert studio_publish.short_title(asked, answer, chart) == title

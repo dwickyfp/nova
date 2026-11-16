@@ -20,26 +20,46 @@ export function queryError(error: unknown): string {
   return 'The chart could not be loaded.'
 }
 
-export function useChartData({ chart, draft, context, parameters }: {
+type ChartRequestInput = {
   chart: ChartDefinition; draft: boolean; context?: FilterTree; parameters?: ParameterInput[]
-}) {
-  const epoch = useAuthStore(state => state.securityEpoch)
-  const request = useMemo(() => {
-    try {
-      const shape = chartQueryShape(chart)
-      const filters = combineFilters(chart.filters, context)
-      return {
-        revision: chart.dataset_revision, draft, ...shape,
-        ...(filters ? { filters } : {}),
-        ...(parameters?.length ? { parameters } : {}),
-      }
-    } catch {
-      return null
+}
+
+/** The aggregate request a chart sends, or null when its configuration cannot run. */
+export function chartRequest({ chart, draft, context, parameters }: ChartRequestInput) {
+  try {
+    const shape = chartQueryShape(chart)
+    const filters = combineFilters(chart.filters, context)
+    return {
+      revision: chart.dataset_revision, draft, ...shape,
+      ...(filters ? { filters } : {}),
+      ...(parameters?.length ? { parameters } : {}),
     }
-  }, [chart, draft, context, parameters])
-  return useQuery({
+  } catch {
+    return null
+  }
+}
+
+/** One cache entry per chart request, shared by the chart and its downloads. */
+export function chartDataQuery(epoch: number, chart: ChartDefinition, request: NonNullable<ReturnType<typeof chartRequest>>) {
+  return {
     queryKey: ['native-dataviz', 'chart-data', epoch, chart.dataset_id, JSON.stringify(request)],
-    queryFn: ({ signal }) => queuedQuery(() => nativeDocuments(epoch).queryDataset(chart.dataset_id, request!, { signal }), signal),
+    queryFn: ({ signal }: { signal: AbortSignal }) =>
+      queuedQuery(() => nativeDocuments(epoch).queryDataset(chart.dataset_id, request, { signal }), signal),
+    retry: capacityRetry,
+    retryDelay: capacityDelay,
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
+  }
+}
+
+export function useChartData({ chart, draft, context, parameters }: ChartRequestInput) {
+  const epoch = useAuthStore(state => state.securityEpoch)
+  const request = useMemo(() => chartRequest({ chart, draft, context, parameters }),
+    [chart, draft, context, parameters])
+  const options = request ? chartDataQuery(epoch, chart, request) : null
+  return useQuery({
+    queryKey: options?.queryKey ?? ['native-dataviz', 'chart-data', epoch, chart.dataset_id, 'null'],
+    queryFn: options?.queryFn ?? (() => Promise.reject(new Error('unreachable'))),
     enabled: request !== null,
     placeholderData: keepPreviousData,
     retry: capacityRetry,

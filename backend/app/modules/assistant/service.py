@@ -376,6 +376,23 @@ _RESULT_ANALYSIS_TOOLS = frozenset({
     "ml_execute", "data_to_chart", "compute_metrics", "diagnose_change",
 })
 
+def _answer_from_results(
+    missing_required: list[str], evidence: Any, failed: set[str] | frozenset[str] = frozenset(),
+) -> bool:
+    """Only derived steps that ran and failed are missing, and verified results are
+    in: answer from them. A step the model never ran still fails the turn."""
+    return bool(missing_required) and bool(evidence.business_tables) and all(
+        name in _RESULT_ANALYSIS_TOOLS and name in failed for name in missing_required
+    )
+
+
+_DERIVED_STEP_MISSING_PROMPT = (
+    "These steps could not be completed: {steps}. Answer from the verified results "
+    "already returned. State the numbers they contain, and say plainly that the derived "
+    "figure (a difference, share, chart or model) was not calculated; do not compute it "
+    "yourself."
+)
+
 
 async def _primary_plan_usable(registry: ToolRegistry, context: LoopContext) -> bool:
     """Run the first query early only from a plan that validates; otherwise the model
@@ -921,6 +938,8 @@ class AssistantLoop:
             context.agent_scope = planning_scope(context)
         repairs = repair_budget or RepairBudget((resume_state or {}).get("repairs"))
         completed_capabilities: set[str] = set()
+        #: Capabilities that ran in this turn and failed (not ones the model skipped).
+        failed_capabilities: set[str] = set()
         composing_final = False
         clarification_requested = False
         clarification_context: dict[str, Any] = {}
@@ -1742,6 +1761,18 @@ class AssistantLoop:
                             }
                         )
                         continue
+                    if _answer_from_results(missing_required, evidence, failed_capabilities):
+                        # Only a derived step (a calculation, a chart) is missing and
+                        # verified results are in: answer from them and say what
+                        # could not be derived, instead of leaving nothing.
+                        composing_final = True
+                        messages.append({
+                            "role": "system",
+                            "content": _DERIVED_STEP_MISSING_PROMPT.format(
+                                steps=", ".join(missing_required)),
+                        })
+                        messages.append(composer_message())
+                        continue
                     if (
                         # Studio agents, and Neva turns with governed views the
                         # caller can open, fall back to the governed query.
@@ -2205,7 +2236,7 @@ class AssistantLoop:
             # The reasoning for this iteration is done: it produced a call. Close
             # the ``act`` row here, or a panel that keys liveness on the last
             # ``running`` step shows a spinner that never stops.
-            yield _thinking_step(context, "act", f"Calling {invocation.tool_name}", status="done")
+            yield _thinking_step(context, "act", f"Using {invocation.tool_name}", status="done")
 
             preview = "" if invocation.tool_name == "load_skill" else tool.preview(invocation)
             from app.modules.assistant.tools import invocation_classification
@@ -2632,6 +2663,7 @@ class AssistantLoop:
             if not outcome.ok:
                 yield events.tool_status(invocation.tool_call_id, "failed")
                 _finish_tool_step(context, "failed", outcome.error)
+                failed_capabilities.add(invocation.tool_name)
                 terminal = (outcome.error_class or "").upper() in {
                     "PERMISSION_DENIED",
                     "AUTHORIZATION_FAILURE",

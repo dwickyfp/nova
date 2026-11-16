@@ -1,0 +1,111 @@
+{
+  "started_at": "2026-11-16T02:11:34.283074+00:00",
+  "resource_id": "d2883b98-1ff1-47ba-8bb4-0458aa67193a",
+  "scope": "shared native dataset read by three people under Ranger row filters",
+  "result": "FAIL",
+  "cleanup": "REMOVED",
+  "error_type": "AssertionError",
+  "error": "inspect",
+  "steps": [
+    {
+      "check": "alice login",
+      "passed": true
+    },
+    {
+      "check": "alice admitted",
+      "passed": true
+    },
+    {
+      "check": "alice login",
+      "passed": true
+    },
+    {
+      "check": "alice admitted",
+      "passed": true
+    },
+    {
+      "check": "bob login",
+      "passed": true
+    },
+    {
+      "check": "bob admitted",
+      "passed": true
+    },
+    {
+      "request": "author uses regional_manager",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "author uses regional_manager",
+      "passed": true
+    },
+    {
+      "check": "author role is regional_manager",
+      "passed": true
+    },
+    {
+      "request": "alice uses marketing",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "alice uses marketing",
+      "passed": true
+    },
+    {
+      "check": "alice active role is marketing",
+      "passed": true
+    },
+    {
+      "request": "bob uses marketing",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "bob uses marketing",
+      "passed": true
+    },
+    {
+      "check": "bob active role is marketing",
+      "passed": true
+    },
+    {
+      "request": "shared workspace",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "shared workspace",
+      "passed": true
+    },
+    {
+      "request": "share with marketing",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "share with marketing",
+      "passed": true
+    },
+    {
+      "request": "inspect",
+      "status": 403,
+      "expected_status": 200
+    },
+    {
+      "check": "inspect",
+      "passed": false
+    },
+    {
+      "request": "delete workspace",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "delete workspace",
+      "passed": true
+    }
+  ],
+  "finished_at": "2026-11-16T02:11:34.899556+00:00"
+}

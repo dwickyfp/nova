@@ -52,6 +52,18 @@ The FE patch adds `RangerAccessRequest.setUserRoles()` for access, row-filter,
 and mask requests. `active_role` mode rejects zero or multiple active role IDs.
 The upstream-compatible default remains `assigned_roles`; Nova's XML opts in.
 
+Under Ranger, `information_schema` itself is governed. The managed policy
+`nova-managed/bi/metadata/default_catalog` (provisioned by
+`docker/ranger/bootstrap.py`, defined by `compile_reflection_policy`) lets
+Ranger's `public` group read the reflection views `tables`, `tables_config`,
+`columns`, `views` and `materialized_views`. It adds no object access: the rows
+in those views still list only the objects each person's own policies allow.
+Native Dataviz needs it because a shared dataset's source identity and schema
+are re-verified as each viewer before their query runs. A Ranger row filter
+can make the analyzer report a column as nullable for a filtered viewer; that
+re-verification keeps the saved nullability when names, order and types match,
+and refuses every other difference as a stale schema.
+
 ## Integration Points
 
 - Auth and proxy: explicit default role and optional `nova_role` connection attribute.

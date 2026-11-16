@@ -13,17 +13,17 @@ Baseline: `1ee12694e0ecb6ecfd8135965943be08f5195967`.
 | WP02 metadata/ACL | In progress | Schema 52 deployed; draft registry dependency fix passes PG17 and live regression; final application and release gates remain |
 | WP03 datasets | In progress | Table/view, SQL (including declared non-sensitive parameters) and published Semantic View inspection/create/preview/source-update APIs active; parameter declaration editor and preview inputs prepared in unmounted components; local metrics, relationships, sensitive-input engine boundary and product-shell Data tab remain open |
 | WP04 calculations | In progress | Exact governed aggregates (sum/avg/min/max/count/distinct, date grains) active; ratio/weighted, window calculations, time intelligence and golden results open |
-| WP05 chart builder | In progress | Inspector (Configure/Style) and ECharts/KPI/table rendering for 14 visuals active in both shells; pivot, conditional formatting, map, export and remaining visual QA open |
+| WP05 chart builder | In progress | Inspector (Configure/Style) and ECharts/KPI/table rendering for 15 visuals including a cross-tab pivot (row/column groups, totals, subtotals) and conditional formatting (colour scale, threshold highlight) for tables and pivots; map and remaining visual QA open |
 | WP06 canvas | In progress | 12-column GridStack canvas with drag/resize commits, pages, undo/redo, keyboard nudge, one-column phone view, mounted in Dataviz and Studio Artifacts; Neva cursor overlay and 100-widget load open |
 | WP07 filters | In progress | Typed predicate compilation, multi/single value, date range, relative date, number range, text and Boolean controls with governed options; cascading, explicit cross-dataset mapping UI and parameter controls open |
-| WP08 interactions | In progress | Click-to-cross-filter on the same dataset revision with highlight and reset; drill, drill-through and breadcrumbs open |
+| WP08 interactions | In progress | A mark click offers filter-the-dashboard or drill-down (finer date level or another grouping, narrowed to the clicked value, with breadcrumb back/reset); drill-through to another dashboard open |
 | WP09 query orchestration | In progress | Client query queue (3 in flight), capacity retry, debounce, abort of superseded queries, epoch-scoped cache keys; server-side cache and large-table pagination open |
 | WP10 publish/share | In progress | Publish dialog, Published/unpublished-changes state, share dialog (user/role presets, grants on pinned charts/datasets) and history; multi-role governed E2E and restore UI open |
-| WP11 Neva tools | In progress | 11 native tools with approvals, receipts and dashboard_changed refresh; live add-chart verified; remaining tools need live runs and broader trajectories |
+| WP11 Neva tools | In progress | 11 native tools with approvals, receipts and dashboard_changed refresh; live runs on 2026-11-16: a data question with a verified difference, adding a chart, removing it, and building a shaded pivot with totals; correctable refusals stay in the turn; broader trajectories open |
 | WP12 collaboration | In progress | Event-polling refresh (4 s) and Neva change events update open editors; presence, cursor overlay and websocket replay open |
-| WP13 export/report/schedules | Not started | Durable jobs and verified private outputs |
+| WP13 export/report/schedules | In progress | Chart PNG/CSV/Excel, page Excel workbook and a printable report, behind the Export permission with an audited server check; CSV formula guard; scheduled and server-rendered exports open |
 | WP14 conversion | Not started | Complete asset mapping and semantic/visual comparisons |
-| WP15 security/resilience | Not started | Live governed acceptance, faults, restore and metrics |
+| WP15 security/resilience | In progress | Shared native dataset read by three people under Ranger row filters (`row-filters-live-attempt-8.json`); reflection policy for every user; faults, restore and metrics open |
 | WP16 release QA | Not started | All 254 scenarios, numerical SLOs and rollback evidence |
 | WP17 decommission | Done by user decision (2026-11-16), ahead of WP14/WP16 | Superset services, image, gateway route, backend module, frontend and docs removed; development Superset metadata backed up outside Git before deletion; no assets converted |
 
@@ -514,3 +514,40 @@ a passed dependency.
   which found and fixed 12 defects, including an empty dashboard list in
   **Add to Dataviz**. Engine-backed integration suites run in CI on the pull
   request.
+
+## Live Neva, governed viewers and new features (2026-11-16, later)
+
+- **Neva live:** the first live question ("which region leads, by how much")
+  failed on a date level sent for a text field, then on `sum(revenue)` as a
+  sort name, then on a garbled calculation label. Fixes: native tool refusals
+  are recoverable within the turn; a date level on a non-date field is ignored;
+  `agg(field)` sort names resolve; `compute_metrics` stays available on an open
+  dashboard; a required calculation that still fails leaves an answer from the
+  verified rows instead of an error. Final run: Jakarta 979,755,000 leads
+  Surabaya 803,480,000 by 176,275,000 (verified calculation). Tool identifiers
+  no longer appear in step labels.
+- **Governed viewers:** a steward-published dataset over `analytics.sales`
+  failed for every non-admin viewer. Two causes: Ranger hid the
+  `information_schema` reflection views from non-admin roles (only the removed
+  BI author list had them), and a row filter made the analyzer report columns
+  as nullable, so re-verification reported a stale schema. Fixes: the managed
+  reflection policy now covers Ranger's `public` group (bootstrap and compiler),
+  and re-verification keeps the saved nullability when names, order and types
+  match. Evidence: `row-filters-live-attempt-1.json` to `-8.json` (attempts 1–7
+  retained as failures; 8 passes 25 checks); source-identity attempt 20 and
+  parameter/aggregate attempt 8 pass.
+- **Add to Dataviz:** the same answer is no longer added twice to a dashboard,
+  a different chart from it reuses the dashboard's dataset, and charts get a
+  short title from their fields when the answer's title is a question.
+- **Export, drill-down, pivot, conditional formatting:** see WP05, WP08 and WP13
+  above; user docs updated in `/docs` (Native dashboards, Add to Dataviz,
+  Neva in Dataviz).
+- **Layout fix:** returning from the one-column narrow view restores each
+  widget's saved width (previously every widget stayed one column wide).
+- **Gates on the delivered source:** backend gate attempt 20 (mypy, changed-file
+  Ruff, 11,862 unit tests, scorecard 54/54, boundary); `tests/eval` 353 passed;
+  PG17 `test_metadata_viz` + `test_metadata_agents` 149 passed; frontend lint
+  (0 errors), typecheck, build and the full browser suite: 1,800 of 1,801 passed.
+  The one failure is the notebook Markdown-cell test timing out at 15 s under
+  full-suite load; it passes alone (36/36, three times) and no notebook source
+  changed. Engine-backed suites run in CI on the pull request.

@@ -41,12 +41,13 @@ TOOLS = (
 )
 #: With a dashboard open, numbers come only from its own datasets
 #: (``native_dataset_query``), so they match its charts.
-#: Planner requirements the dashboard's own query satisfies.
+#: Planner requirements the dashboard's own query satisfies. ``compute_metrics``
+#: stays: it only derives numbers (a lead, a share, a change) from results this
+#: turn already queried, so derived figures are verified too.
 DASHBOARD_ALIASES = {
     "semantic_query": "native_dataset_query",
     "semantic_view_query": "native_dataset_query",
     "diagnose_change": "native_dataset_query",
-    "compute_metrics": "native_dataset_query",
 }
 
 MISSION = (

@@ -1,3 +1,4 @@
+import { describeTool } from "./studio-transcript";
 import type { RailStep } from "./thought-turn";
 
 /**
@@ -14,7 +15,7 @@ export function processSummary(steps: RailStep[], running: boolean): string {
   for (const step of steps) {
     const verb =
       step.kind === "tool"
-        ? `ran ${step.label}`
+        ? lowerFirst(describeTool(step.label))
         : step.kind === "consent"
           ? "asked for approval"
           : step.kind === "note"
@@ -40,4 +41,8 @@ export function processSummary(steps: RailStep[], running: boolean): string {
 
 function capitalise(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
 }

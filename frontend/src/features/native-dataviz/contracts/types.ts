@@ -94,6 +94,7 @@ export type ChartStyle = {
   "show_axis_titles"?: boolean;
   "palette"?: "neutral" | "categorical" | "single_tone";
   "description"?: string;
+  "conditional_formats"?: Array<ConditionalFormat>;
 };
 
 export type ChartWidget = {
@@ -106,6 +107,14 @@ export type ChartWidget = {
   "chart_ref": ChartReference;
   "style"?: ChartOverrides;
   "filters"?: FilterTree | null;
+};
+
+export type ConditionalFormat = {
+  "field_id": string;
+  "kind": "scale" | "rule";
+  "operator"?: "gt" | "gte" | "lt" | "lte" | "eq" | null;
+  "value"?: DecimalValue | null;
+  "tone"?: "accent" | "positive" | "negative" | "warning";
 };
 
 export type DashboardCreate = {

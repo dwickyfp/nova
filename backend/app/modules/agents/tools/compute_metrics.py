@@ -507,7 +507,9 @@ class ComputeMetricsTool:
 
     def preview(self, invocation: ToolInvocation) -> str:
         args = invocation.arguments or {}
-        return f"compute_metrics: {args.get('operation', '')} of {args.get('value_column', '')}"
+        operation = str(args.get("operation") or "calculation").replace("_", " ")
+        column = str(args.get("value_column") or "").replace("_", " ")
+        return f"Calculate the {operation} of {column}" if column else f"Calculate the {operation}"
 
     async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
         args = dict(invocation.arguments or {})

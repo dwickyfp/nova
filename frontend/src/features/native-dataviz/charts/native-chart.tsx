@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { Fragment, useCallback, useState } from 'react'
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -7,6 +7,7 @@ import { buildChartOption } from './chart-options'
 import { cellLabel, cellNumber, chartQueryShape, columnLabel, periodEnd, type Cell } from './chart-query'
 import { queryError, useChartData } from './chart-data'
 import { EChartHost, type MarkSelection, type VizTokens } from './echart-host'
+import { cellStyle, MAX_PIVOT_COLUMNS, pivotModel, ranges } from './pivot'
 
 export type ValueSelection = {
   field_id: string
@@ -14,6 +15,8 @@ export type ValueSelection = {
   label: string
   /** A date-grain mark selects its whole period: [from, to). */
   period?: { from: string; to: string }
+  /** Where the mark was clicked inside the chart, for a menu beside it. */
+  anchor?: { x: number; y: number }
 }
 
 type Props = {
@@ -65,6 +68,58 @@ function Kpi({ chart, result }: { chart: ChartDefinition; result: DatasetQueryRe
   </div>
 }
 
+function PivotTable({ chart, result }: { chart: ChartDefinition; result: DatasetQueryResult }) {
+  const model = pivotModel(chart, result)
+  const formatters = model.measures.map((_, index) => measureFormatter(chart, index))
+  const formats = chart.style?.conditional_formats
+  const span = formats?.length ? ranges(model.rows.filter(row => !row.subtotal).flatMap(row =>
+    row.values.flatMap(cells => cells.map((value, m) => ({ field_id: model.measures[m].field_id, value }))))) : undefined
+  const many = model.measures.length > 1
+  const cell = (value: number | null, m: number, shaded: boolean) => <td key={m} style={shaded ? cellStyle(formats, model.measures[m].field_id, value,
+    span?.get(model.measures[m].field_id ?? '')) : undefined}
+    className='px-2 py-1.5 text-right whitespace-nowrap viz-numerals'>{value === null ? '' : formatters[m].format(value)}</td>
+  const head = 'border-b px-2 py-1.5 font-medium text-muted-foreground whitespace-nowrap'
+  return <div className='flex min-h-0 flex-1 flex-col'>
+    <div className='min-h-0 flex-1 overflow-auto'>
+      <table className='w-full border-collapse text-sm'>
+        <thead className='sticky top-0 bg-card'>
+          <tr>
+            {model.rowHeaders.map(header => <th key={header} scope='col' rowSpan={many ? 2 : 1} className={cn(head, 'text-left align-bottom')}>{header}</th>)}
+            {model.columnKeys.map(key => <th key={key.join('|')} scope='colgroup' colSpan={model.measures.length}
+              className={cn(head, many ? 'text-center' : 'text-right')}>{key.join(' · ')}</th>)}
+            {model.rowTotals && <th scope='colgroup' colSpan={model.measures.length} className={cn(head, many ? 'text-center' : 'text-right')}>Total</th>}
+          </tr>
+          {many && <tr>
+            {[...model.columnKeys, ...(model.rowTotals ? [['Total']] : [])].flatMap(key => model.measures.map(measure =>
+              <th key={`${key.join('|')}:${measure.label}`} scope='col' className={cn(head, 'text-right')}>{measure.label}</th>))}
+          </tr>}
+        </thead>
+        <tbody>
+          {model.rows.map((row, r) => <tr key={r} className={cn('border-b last:border-b-0 hover:bg-muted/40', row.subtotal && 'bg-muted/30 font-medium')}>
+            {row.key.map((label, k) => k === 0 || !row.subtotal
+              ? <th key={k} scope='row' className='px-2 py-1.5 text-left font-normal whitespace-nowrap'>{row.subtotal ? `${label} total` : label}</th>
+              : <td key={k} />)}
+            {row.values.flatMap((cells, c) => cells.map((value, m) => <Fragment key={`${c}:${m}`}>{cell(value, m, !row.subtotal)}</Fragment>))}
+            {model.rowTotals && model.rowTotals[r].map((value, m) => <Fragment key={`t:${m}`}>{cell(value, m, false)}</Fragment>)}
+          </tr>)}
+          {model.columnTotals && <tr className='font-medium'>
+            {model.rowHeaders.map((_, k) => <th key={k} scope='row' className='border-t px-2 py-1.5 text-left font-medium'>{k === 0 ? 'Total' : ''}</th>)}
+            {model.columnTotals.flatMap((cells, c) => cells.map((value, m) => <td key={`${c}:${m}`}
+              className='border-t px-2 py-1.5 text-right whitespace-nowrap viz-numerals'>{value === null ? '' : formatters[m].format(value)}</td>))}
+            {model.rowTotals && model.measures.map((_, m) => {
+              const total = model.columnTotals!.reduce<number | null>((sum, cells) => cells[m] === null ? sum : (sum ?? 0) + cells[m]!, null)
+              return <td key={`g:${m}`} className='border-t px-2 py-1.5 text-right whitespace-nowrap viz-numerals'>{total === null ? '' : formatters[m].format(total)}</td>
+            })}
+          </tr>}
+        </tbody>
+      </table>
+    </div>
+    {model.truncatedColumns && <p className='shrink-0 pt-1 text-xs text-muted-foreground'>
+      Showing the first {MAX_PIVOT_COLUMNS} column groups. Add a filter to narrow them.
+    </p>}
+  </div>
+}
+
 function ResultTable({ chart, result }: { chart: ChartDefinition; result: DatasetQueryResult }) {
   const pageSize = chart.encoding.kind === 'table' ? chart.encoding.page_size ?? 100 : 100
   const [page, setPage] = useState(0)
@@ -79,6 +134,14 @@ function ResultTable({ chart, result }: { chart: ChartDefinition; result: Datase
     const number = cellNumber(cell)
     return number !== null && formatters[index] ? formatters[index]!.format(number) : cellLabel(cell, result.columns[index])
   }
+  const formats = chart.style?.conditional_formats
+  const span = formats?.length ? ranges(result.rows.flatMap(row => row.map((cell, c) =>
+    ({ field_id: result.columns[c].role === 'measure' ? result.columns[c].field_id ?? null : null, value: cellNumber(cell) })))) : undefined
+  const shade = (cell: Cell, c: number) => {
+    const column = result.columns[c]
+    if (column.role !== 'measure' || !column.field_id) return undefined
+    return cellStyle(formats, column.field_id, cellNumber(cell), span?.get(column.field_id))
+  }
   return <div className='flex min-h-0 flex-1 flex-col'>
     <div className='min-h-0 flex-1 overflow-auto'>
       <table className='w-full border-collapse text-sm'>
@@ -91,7 +154,7 @@ function ResultTable({ chart, result }: { chart: ChartDefinition; result: Datase
         </thead>
         <tbody>
           {visible.map((row, r) => <tr key={r} className='border-b last:border-b-0 hover:bg-muted/40'>
-            {row.map((cell, c) => <td key={c} className={cn('px-2 py-1.5 whitespace-nowrap',
+            {row.map((cell, c) => <td key={c} style={shade(cell, c)} className={cn('px-2 py-1.5 whitespace-nowrap',
               result.columns[c].role === 'measure' && 'text-right viz-numerals')}>{text(cell, c)}</td>)}
           </tr>)}
           {showTotal && <tr className='font-medium'>
@@ -137,13 +200,14 @@ export function NativeChart({ chart, draft, context, parameters, onSelectValue, 
     }
     if (!row) return
     const cell = row[columnIndex]
+    const anchor = mark.x !== undefined && mark.y !== undefined ? { x: mark.x, y: mark.y } : undefined
     if (column.date_grain && cell && (cell.type === 'date' || cell.type === 'timestamp')) {
       const from = cell.value.slice(0, 10)
       onSelectValue({ field_id: column.field_id, value: cell, label: cellLabel(cell, column),
-        period: { from, to: periodEnd(from, column.date_grain) } })
+        period: { from, to: periodEnd(from, column.date_grain) }, anchor })
       return
     }
-    onSelectValue({ field_id: column.field_id, value: cell, label: cellLabel(cell, column) })
+    onSelectValue({ field_id: column.field_id, value: cell, label: cellLabel(cell, column), anchor })
   }, [chart, result, onSelectValue])
 
   const label = `${chart.title}: ${chart.visual} chart`
@@ -159,7 +223,8 @@ export function NativeChart({ chart, draft, context, parameters, onSelectValue, 
     <div className={cn('flex min-h-0 flex-1 flex-col transition-opacity', query.isFetching && 'opacity-60')}>
       {empty && chart.visual !== 'kpi' ? <State tone='muted' text='No rows match the current filters.' />
         : chart.visual === 'kpi' ? <Kpi chart={chart} result={result} />
-          : chart.visual === 'table' || chart.visual === 'pivot' ? <ResultTable chart={chart} result={result} />
+          : chart.visual === 'pivot' ? <PivotTable chart={chart} result={result} />
+          : chart.visual === 'table' ? <ResultTable chart={chart} result={result} />
             : <EChartHost build={build} label={label} onSelect={onSelectValue ? select : undefined} />}
     </div>
     {result.truncated && <p className='shrink-0 pt-1 text-xs text-warning-strong'>

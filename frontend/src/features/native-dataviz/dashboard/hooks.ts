@@ -5,15 +5,21 @@ import { useAuthStore } from '@/stores/auth-store'
 import type { ChartDefinition, DocumentSummary } from '../contracts'
 import { nativeDocuments } from '../documents'
 
-export function useChartDocument(chartId: string, revision: number, draft: boolean) {
-  const epoch = useAuthStore(state => state.securityEpoch)
-  return useQuery({
+/** One chart definition at a pinned revision, shared by the canvas and downloads. */
+export function chartDocumentQuery(epoch: number, chartId: string, revision: number, draft: boolean) {
+  return {
     queryKey: ['native-dataviz', 'chart', epoch, chartId, revision, draft],
     // Pinned revisions are immutable; draft scope requires edit access, otherwise
     // the publication that pins this revision must be visible to the viewer.
-    queryFn: async ({ signal }) => (await nativeDocuments(epoch).read('charts', chartId, { draft, revision, signal })).definition as ChartDefinition,
+    queryFn: async ({ signal }: { signal: AbortSignal }) =>
+      (await nativeDocuments(epoch).read('charts', chartId, { draft, revision, signal })).definition as ChartDefinition,
     staleTime: Infinity, retry: false,
-  })
+  }
+}
+
+export function useChartDocument(chartId: string, revision: number, draft: boolean) {
+  const epoch = useAuthStore(state => state.securityEpoch)
+  return useQuery(chartDocumentQuery(epoch, chartId, revision, draft))
 }
 
 export type DashboardEntry = DocumentSummary & { editable: boolean; space: WorkspaceSpace }

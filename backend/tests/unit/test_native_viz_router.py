@@ -429,3 +429,51 @@ async def test_dashboard_dataset_creation_refuses_invalid_authority_and_revision
     assert response.status_code == status
     assert "private_marker" not in response.text and "another-workspace" not in response.text
     create.assert_not_awaited()
+
+
+async def test_an_export_is_checked_for_the_dashboard_kind_and_caller(api, document):
+    client, service, _ = api
+    service.authorize_export = AsyncMock(return_value={"allowed": True, "format": "xlsx"})
+    chart = uuid4()
+    response = await client.post(f"/viz/dashboards/{document.dashboard_id}/exports",
+                                 json={"format": "xlsx", "chart_id": str(chart)})
+    assert response.status_code == 200 and response.json()["allowed"] is True
+    service.require_kind.assert_awaited_once()
+    assert service.require_kind.await_args.args[1:] == (document.dashboard_id, "dashboard")
+    kwargs = service.authorize_export.await_args.kwargs
+    assert kwargs == {"file_format": "xlsx", "part": chart}
+
+
+@pytest.mark.parametrize("body", [{"format": "exe"}, {"format": "csv", "sql": "SELECT 1"}, {}])
+async def test_an_export_request_is_bounded(api, document, body):
+    client, service, _ = api
+    service.authorize_export = AsyncMock()
+    response = await client.post(f"/viz/dashboards/{document.dashboard_id}/exports", json=body)
+    assert response.status_code == 422 and "SELECT" not in response.text
+    service.authorize_export.assert_not_awaited()
+
+
+async def test_export_needs_the_export_permission_and_is_audited(monkeypatch):
+    from app.modules.viz import document_service as documents
+
+    audits: list[dict] = []
+
+    async def audit(**kwargs):
+        audits.append(kwargs)
+        return "q"
+
+    monkeypatch.setattr(documents, "write_audit_log", audit)
+    service = documents.NativeDocumentService()
+    user = {"username": "alice", "active_role": "ANALYST", "session_id": "s",
+            "assigned_roles": ["ANALYST"], "security_context_version": 1}
+    dashboard = uuid4()
+    monkeypatch.setattr(service, "permissions", AsyncMock(return_value=["view", "export"]))
+    assert (await service.authorize_export(user, dashboard, file_format="png"))["allowed"]
+    monkeypatch.setattr(service, "permissions", AsyncMock(return_value=["view", "edit"]))
+    with pytest.raises(module.NovaException) as refused:
+        await service.authorize_export(user, dashboard, file_format="csv")
+    assert refused.value.status_code == 403 and "downloading" in refused.value.message
+    assert [(item["action"], item["decision"]) for item in audits] == [
+        ("EXPORT_PNG", "ALLOW"), ("EXPORT_CSV", "DENY")]
+    assert all(item["user_name"] == "alice" and item["active_role"] == "ANALYST"
+               for item in audits)
