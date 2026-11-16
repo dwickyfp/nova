@@ -2782,6 +2782,20 @@ const schema = {
           "title": "Kind",
           "type": "string"
         },
+        "label": {
+          "anyOf": [
+            {
+              "maxLength": 120,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
         "mappings": {
           "default": [],
           "items": {
@@ -2805,6 +2819,19 @@ const schema = {
           "title": "Source Widget Id",
           "type": "string"
         },
+        "target_dashboard_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Dashboard Id"
+        },
         "target_page_id": {
           "anyOf": [
             {
@@ -2827,6 +2854,20 @@ const schema = {
           "maxItems": 100,
           "title": "Target Widget Ids",
           "type": "array"
+        },
+        "target_workspace_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Workspace Id"
         }
       },
       "required": [

@@ -1,4 +1,4 @@
-import { api } from "@/lib/api-client";
+import { api, apiBase, authHeaders, errorDetail } from "@/lib/api-client";
 import type { WorkspaceEntry, WorkspaceTreeResponse } from "../types";
 
 export const PERSONAL = "personal";
@@ -20,6 +20,23 @@ export type WorkspaceShare = {
 
 export const canEditSpace = (space: WorkspaceSpace | undefined) =>
   !space || space.permission !== "view";
+
+/** A file's bytes, saved under its own name: workbooks, uploads and other binary files. */
+export async function downloadEntry(entry: Pick<WorkspaceEntry, "id" | "name">): Promise<void> {
+  const response = await fetch(`${apiBase()}/workspaces/files/${encodeURIComponent(entry.id)}/download`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(errorDetail(body?.detail, "The file could not be downloaded."));
+  }
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = entry.name;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 export const workspaceApi = {
   spaces: () => api.get<{ spaces: WorkspaceSpace[] }>("/workspaces/spaces"),

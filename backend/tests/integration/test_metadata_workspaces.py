@@ -26,7 +26,7 @@ from app.modules.workspaces.metadata_sharing import WorkspaceSharingRepository
 from tests.integration.test_metadata_bootstrap import environment  # noqa: F401
 
 pytestmark = pytest.mark.metadata_pg
-READERS = {"web", "query", "agent", "notebook"}
+READERS = {"web", "query", "agent", "notebook", "task"}
 
 
 def session(name="workspace-alice", *, active="ANALYST", roles=None, **changes):

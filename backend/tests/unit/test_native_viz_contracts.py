@@ -374,3 +374,63 @@ def test_conditional_formats_are_only_for_tables():
 def test_a_chart_without_formats_serializes_as_before():
     chart = ChartDefinition.model_validate(_table_chart())
     assert "conditional_formats" not in chart.model_dump(mode="json")["style"]
+
+
+def _linked(**action):
+    source, chart, page = uuid4(), uuid4(), uuid4()
+    binding = {"dataset_id": str(uuid4()), "dataset_revision": 1, "field_id": "region"}
+    return {
+        "dashboard_id": str(uuid4()), "title": "Sales",
+        "pages": [{"page_id": str(page), "title": "Overview", "widgets": [{
+            "kind": "chart", "widget_id": str(source),
+            "layout": {"x": 0, "y": 0, "w": 6, "h": 4},
+            "chart_ref": {"chart_id": str(chart), "revision": 1}}]}],
+        "actions": [{"action_id": str(uuid4()), "kind": "navigate",
+                     "source_widget_id": str(source), "run_on": "menu",
+                     "mappings": [{"source": binding, "target": {**binding,
+                                                                  "dataset_id": str(uuid4())}}],
+                     **action}],
+    }
+
+
+def test_a_chart_can_link_to_another_dashboard():
+    target = uuid4()
+    linked = DashboardDefinition.model_validate(_linked(
+        target_dashboard_id=str(target), target_workspace_id="abc", label="Regional detail"))
+    assert linked.actions[0].target_dashboard_id == target
+    plain = DashboardDefinition.model_validate(dashboard())
+    assert "target_dashboard_id" not in str(plain.model_dump(mode="json"))
+
+
+@pytest.mark.parametrize(("extra", "reason"), [
+    ({"target_dashboard_id": str(uuid4())}, "workspace and at least one field mapping"),
+    ({"target_dashboard_id": str(uuid4()), "target_workspace_id": "abc", "kind": "drill"},
+     "navigate action"),
+    ({"target_workspace_id": "abc"}, "needs a target dashboard"),
+])
+def test_incomplete_dashboard_links_are_refused(extra, reason):
+    with pytest.raises(ValidationError) as refused:
+        DashboardDefinition.model_validate(_linked(**extra))
+    assert reason in str(refused.value)
+
+
+def test_removing_a_linked_chart_takes_its_link_with_it():
+    target = uuid4()
+    linked = DashboardDefinition.model_validate(_linked(
+        target_dashboard_id=str(target), target_workspace_id="abc", label="Detail"))
+    page = linked.pages[0]
+    widget = page.widgets[0]
+    operation = Operation.model_validate({
+        "operation_id": str(uuid4()), "expected_revision": 1,
+        "changes": [{"op": "widget.remove", "page_id": str(page.page_id),
+                     "widget_id": str(widget.widget_id)}]})
+    after = apply_operation(linked, operation)
+    assert after.actions == () and not after.pages[0].widgets
+
+
+def test_explicit_actions_naming_a_missing_widget_are_still_refused():
+    linked = _linked(target_dashboard_id=str(uuid4()), target_workspace_id="abc")
+    linked["actions"][0]["source_widget_id"] = str(uuid4())
+    with pytest.raises(ValidationError) as refused:
+        DashboardDefinition.model_validate(linked)
+    assert "Interaction source must be a chart widget" in str(refused.value)

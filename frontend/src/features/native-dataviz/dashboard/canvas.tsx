@@ -1,22 +1,27 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { GridStack, type GridItemHTMLElement, type GridStackNode } from 'gridstack'
 import 'gridstack/dist/gridstack.css'
-import { ArrowLeft, ChevronsDown, Copy, Download, FileSpreadsheet, FileText, Filter, ImageIcon, MoreHorizontal, Pencil, Sparkles, Trash2 } from 'lucide-react'
+import { ArrowLeft, ChevronsDown, Copy, Download, ExternalLink, FileSpreadsheet, FileText, Filter, ImageIcon, Link2, MoreHorizontal, Pencil, Sparkles, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuSub,
   DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import type { ChartDefinition, ChartWidget, DashboardDefinition, FilterTree, TextWidget } from '../contracts'
+import type { ChartDefinition, ChartWidget, DashboardDefinition, FilterTree, Interaction, TextWidget } from '../contracts'
 import { hasImage, type ChartFileFormat } from './export'
 import { useChartDocument } from './hooks'
 import { useDatasetDefinition } from '../charts/chart-data'
 import { drillContext, drillDimension, drilledChart, drillOptions, type DrillStep } from '../charts/drill'
 import { NativeChart, type ValueSelection } from '../charts/native-chart'
 import type { Layout, Page, Widget } from './layout'
+import { ROW_PX, type CanvasPoint, type Collaborator } from './presence'
+import { PresenceCursors } from './presence-ui'
 
 type CanvasProps = {
+  /** Other people on this dashboard, and where this viewer's pointer is. */
+  collaborators?: Collaborator[]
+  onPointer?: (point: CanvasPoint | null) => void
   definition: DashboardDefinition
   page: Page
   draft: boolean
@@ -33,6 +38,11 @@ type CanvasProps = {
   selectedValueFor?: (widget: Widget) => string | null
   /** Widgets Neva just changed; they carry a brief "Neva" marker. */
   highlighted?: string[]
+  /** Links from a chart to other dashboards (drill-through). */
+  linksFor?: (widget: Widget) => Interaction[]
+  onOpenLink?: (link: Interaction, selection: ValueSelection) => void
+  /** Edit mode: add or change a chart's link to another dashboard. */
+  onEditLink?: (widget: Widget, chart: ChartDefinition) => void
   /** Present only with Export access: download one chart as a file. */
   onDownload?: (chart: ChartDefinition, context: FilterTree | undefined, format: ChartFileFormat, root: HTMLElement) => void
 }
@@ -63,12 +73,14 @@ function ChartBody({ widget, props }: { widget: ChartWidget; props: CanvasProps 
   const download = shown && props.onDownload
     ? (format: ChartFileFormat, root: HTMLElement) => props.onDownload?.(shown, context, format, root)
     : undefined
+  const links = props.editing ? [] : props.linksFor?.(widget) ?? []
   const select = (selection: ValueSelection) => {
     if (!effective || !shown) return
-    // Without anything to drill into, a click filters the dashboard as before.
-    if (!options.length && !active.length) props.onSelectValue(widget, effective, selection)
+    // Without anything to drill into or open, a click filters the dashboard as before.
+    if (!options.length && !active.length && !links.length) props.onSelectValue(widget, effective, selection)
     else setPending(selection)
   }
+  const openable = pending ? links.filter(link => link.mappings?.some(mapping => mapping.source.field_id === pending.field_id)) : []
   const title = active.length ? [baseTitle, ...active.map(step => step.label)].join(' › ') : baseTitle
   return <WidgetFrame widget={widget} title={showTitle || active.length ? title : ''} props={props} chart={definition}
     download={download} canImage={shown ? hasImage(shown) : false}
@@ -89,6 +101,9 @@ function ChartBody({ widget, props }: { widget: ChartWidget; props: CanvasProps 
               {!active.length && effective && <DropdownMenuItem onSelect={() => props.onSelectValue(widget, effective, pending)}>
                 <Filter />Filter the dashboard to this
               </DropdownMenuItem>}
+              {openable.map(link => <DropdownMenuItem key={link.action_id} onSelect={() => props.onOpenLink?.(link, pending)}>
+                <ExternalLink /><span className='truncate'>{link.label ?? 'Open the linked dashboard'}</span>
+              </DropdownMenuItem>)}
               {options.length > 0 && <DropdownMenuSub>
                 <DropdownMenuSubTrigger><ChevronsDown />Drill into this by</DropdownMenuSubTrigger>
                 <DropdownMenuSubContent className='max-h-72 overflow-y-auto'>
@@ -148,6 +163,7 @@ function WidgetFrame({ widget, title, props, chart, download, canImage = false, 
             onClick={event => event.stopPropagation()}><MoreHorizontal className='size-4' /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align='end'>
             {widget.kind === 'chart' && chart && <DropdownMenuItem onSelect={() => props.onEditChart(widget, chart)}><Pencil />Edit chart</DropdownMenuItem>}
+            {widget.kind === 'chart' && chart && props.onEditLink && <DropdownMenuItem onSelect={() => props.onEditLink?.(widget, chart)}><Link2 />Link to a dashboard…</DropdownMenuItem>}
             <DropdownMenuItem onSelect={() => props.onDuplicate(widget)}><Copy />Duplicate</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant='destructive' onSelect={() => props.onRemove(widget)}><Trash2 />Remove</DropdownMenuItem>
@@ -270,6 +286,12 @@ export function DashboardCanvas(props: CanvasProps) {
       <p className='text-sm font-medium'>This page is empty</p>
       <p className='max-w-sm text-sm text-muted-foreground'>{props.editing ? 'Add a chart, KPI or text from the toolbar, or ask Neva to build one for you.' : 'Nothing has been added to this page yet.'}</p>
     </div>}
+    <div className='relative'
+      onPointerMove={props.onPointer ? event => {
+        const box = host.current?.getBoundingClientRect()
+        if (box?.width) props.onPointer?.({ x: (event.clientX - box.left) / box.width, y: (event.clientY - box.top) / ROW_PX })
+      } : undefined}
+      onPointerLeave={props.onPointer ? () => props.onPointer?.(null) : undefined}>
     <div ref={host} data-mode={props.editing ? 'edit' : 'view'} aria-label={`${props.page.title} canvas`}
       className={cn('grid-stack nova-dataviz-canvas min-h-24', props.editing && !narrow && 'nova-dataviz-edit-grid')}>
       {widgets.map(widget => <div key={widget.widget_id} className='grid-stack-item group/widget' gs-id={widget.widget_id}
@@ -277,6 +299,8 @@ export function DashboardCanvas(props: CanvasProps) {
         gs-min-w={2} gs-min-h={2} aria-label={widget.title || undefined}>
         <WidgetBody widget={widget} props={props} />
       </div>)}
+    </div>
+    {props.collaborators?.length ? <PresenceCursors others={props.collaborators} pageId={props.page.page_id} /> : null}
     </div>
   </div>
 }

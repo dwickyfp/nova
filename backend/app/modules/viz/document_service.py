@@ -31,11 +31,34 @@ from .contracts.http import dataset_publication
 from .documents import Kind, VizDocumentRepository, document_identity
 
 
+def _scheduled_session(expected: SecurityContext) -> dict[str, Any] | None:
+    """A scheduled run inside the task worker, which has no sign-in session.
+
+    The worker opens a ``task:`` session only after the engine impersonated
+    exactly this account with exactly this role active, and marks the
+    connection as delegated to it. Anything else still needs a live session.
+    """
+    from app.modules.query.service import delegated_username
+
+    if not (expected.session_id or "").startswith("task:"):
+        return None
+    if delegated_username() != expected.principal:
+        return None
+    return {
+        "username": expected.principal, "session_id": expected.session_id,
+        "active_role": expected.active_role, "assigned_roles": [expected.active_role],
+        "security_context_version": expected.security_context_version,
+    }
+
+
 async def current_session(user: Mapping[str, Any]) -> dict[str, Any]:
     """Revalidate the original caller; a role switch requires a new command."""
     expected = actor_for(user)
     if not expected.session_id:
         raise SessionExpiredError()
+    scheduled = _scheduled_session(expected)
+    if scheduled is not None:
+        return scheduled
     stored = await session_store.get(expected.session_id)
     if not stored:
         raise SessionExpiredError()
@@ -205,6 +228,24 @@ class NativeDocumentService:
             user, action="READ_PERMISSIONS", identity=identity, read_only=True,
         ) as repository:
             return await repository.permissions(identity)
+
+    async def scheduled_permissions(self, account: str, role: str, identity: UUID) -> set[str]:
+        """What a scheduled run as ``account`` under ``role`` may do with a document.
+
+        A read-only check before a schedule is saved, evaluated by the same
+        policy the run will meet; it reads no definition and no data.
+        """
+        session = {"username": account, "session_id": "schedule-check", "active_role": role,
+                   "assigned_roles": [role], "security_context_version": 1}
+        try:
+            actor = SecurityContext.from_session(session)
+            async with (
+                metadata_transaction(actor, read_only=True) as scope,
+                VizDocumentRepository.bind(scope.connection, session) as repository,
+            ):
+                return set(await repository.permissions(identity))
+        except (NovaException, MetadataPermissionDenied, SecurityContextError):
+            return set()
 
     async def authorize_export(
         self, user: Mapping[str, Any], identity: UUID, *, file_format: str,

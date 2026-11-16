@@ -1,7 +1,7 @@
 import { useId, useMemo, useState } from 'react'
 import {
   AreaChart, BarChart3, Calendar, Filter, Gauge, Grid3x3, Hash, LineChart, PieChart, Plus,
-  ScatterChart, SquareStack, Table2, Trash2, TrendingUp, Type, Workflow, X,
+  MapPin, ScatterChart, SquareStack, Table2, Trash2, TrendingUp, Type, Workflow, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -22,7 +22,7 @@ import { NativeChart } from './native-chart'
 const VISUAL_ICONS: Record<string, typeof BarChart3> = {
   kpi: Hash, bar: BarChart3, line: LineChart, area: AreaChart, combo: TrendingUp, pie: PieChart, funnel: Filter,
   table: Table2, pivot: Grid3x3, scatter: ScatterChart, heatmap: Grid3x3, treemap: SquareStack, sankey: Workflow,
-  histogram: BarChart3, gauge: Gauge,
+  histogram: BarChart3, gauge: Gauge, map: MapPin,
 }
 const GRAINS: DateGrain[] = ['day', 'week', 'month', 'quarter', 'year']
 const NONE = '__none__'
@@ -289,7 +289,20 @@ function Builder({ datasets, chart, initialVisual, saving, error, onSave, fields
             })}
           </div>
         </Section>
-        {kind === 'scatter' || kind === 'distribution' ? <Section title='Fields'>
+        {kind === 'map' ? <>
+          <Section title='Location'>
+            <FieldSelect label='Latitude' fields={fields} filter={isNumeric} value={state.y} onChange={y => set({ y })} />
+            <FieldSelect label='Longitude' fields={fields} filter={isNumeric} value={state.x} onChange={x => set({ x })} />
+          </Section>
+          <Section title='Point size'>
+            {state.measures[0] ? <MeasureRow label='Value' fields={fields} value={state.measures[0]}
+              onChange={value => set({ measures: [value] })} onRemove={() => set({ measures: [] })} />
+              : <>
+                <p className='text-xs text-muted-foreground'>Each point counts its rows.</p>
+                <Button variant='outline' size='sm' onClick={addMeasure}><Plus />Size by a value</Button>
+              </>}
+          </Section>
+        </> : kind === 'scatter' || kind === 'distribution' ? <Section title='Fields'>
           <FieldSelect label={kind === 'distribution' ? 'Value' : 'X axis'} fields={fields} filter={isNumeric} value={state.x} onChange={x => set({ x })} />
           {kind === 'scatter' && <>
             <FieldSelect label='Y axis' fields={fields} filter={isNumeric} value={state.y} onChange={y => set({ y })} />
@@ -327,7 +340,7 @@ function Builder({ datasets, chart, initialVisual, saving, error, onSave, fields
             {state.measures.length < maxMeasures && <Button variant='outline' size='sm' onClick={addMeasure}><Plus />{kind === 'single_measure' ? 'Add comparison' : 'Add value'}</Button>}
           </Section>
         </>}
-        {(kind === 'cartesian' || kind === 'scatter') && <Section title='Color / group by'>
+        {(kind === 'cartesian' || kind === 'scatter' || kind === 'map') && <Section title='Color / group by'>
           {state.color ? <DimensionRow label='Color' fields={fields} value={state.color} onChange={color => set({ color })} onRemove={() => set({ color: null })} />
             : <Button variant='outline' size='sm' onClick={() => {
               const field = fields.find(item => !isNumeric(item) && !state.dimensions.some(d => d.field_id === item.field_id))

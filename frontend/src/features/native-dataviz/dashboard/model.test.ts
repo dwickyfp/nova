@@ -285,3 +285,15 @@ describe('pivot and conditional formats in the builder', () => {
     expect(reopened.formats).toEqual([{ field_id: 'revenue', kind: 'scale', tone: 'accent' }])
   })
 })
+
+describe('dashboard links', () => {
+  it('replaces actions locally and undoes back to the previous set', () => {
+    const link = { action_id: 'a1', kind: 'navigate' as const, source_widget_id: 'w1', target_dashboard_id: 'd2',
+      target_workspace_id: 'personal', mappings: [], run_on: 'menu' as const }
+    const before = { schema_version: 2, dashboard_id: 'd1', title: 'Sales', columns: 12, filters: [], datasets: [],
+      actions: [], pages: [{ page_id: 'p1', title: 'Overview', widgets: [] }] } as unknown as DashboardDefinition
+    const change = { op: 'actions.replace' as const, actions: [link] }
+    expect(applyLocal(before, change).actions).toEqual([link])
+    expect(inverse(change, before)).toEqual({ op: 'actions.replace', actions: [] })
+  })
+})

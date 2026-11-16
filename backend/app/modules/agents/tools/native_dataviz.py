@@ -929,9 +929,16 @@ async def apply_changes(
         prior = await _receipt(user, operation_id)
         if prior is not None:
             return prior
+    first: DashboardDefinition | None = None
     for attempt, operation_id in enumerate(attempts, start=1):
         revision, dashboard = await _draft(user, dashboard_id)
         changes = build(dashboard)
+        if first is None:
+            first = dashboard
+        elif _touched(first, changes) != _touched(dashboard, changes):
+            # Someone changed what this change touches: never overwrite their edit.
+            raise Refusal("Someone else changed that part of the dashboard at the same time. "
+                          "Look at it again, then ask me to make the change.")
         try:
             operation = Operation(operation_id=operation_id, expected_revision=revision,
                                   changes=tuple(changes))
@@ -951,6 +958,24 @@ async def apply_changes(
                 continue
             raise
     raise Refusal("The dashboard keeps changing while this is saved. Try again shortly.")
+
+
+def _touched(dashboard: DashboardDefinition, changes: list[Any]) -> dict[str, Any]:
+    """The current state of every widget a change names, to detect a concurrent edit."""
+    named: set[str] = set()
+    for change in changes:
+        data = change.model_dump(mode="json") if hasattr(change, "model_dump") else dict(change)
+        if data.get("widget_id"):
+            named.add(str(data["widget_id"]))
+        if isinstance(data.get("widget"), dict) and data["widget"].get("widget_id"):
+            named.add(str(data["widget"]["widget_id"]))
+        for placement in data.get("placements") or ():
+            named.add(str(placement.get("widget_id")))
+    return {
+        str(widget.widget_id): widget.model_dump(mode="json")
+        for page in dashboard.pages for widget in page.widgets
+        if str(widget.widget_id) in named
+    }
 
 
 def _check_operation(dashboard: DashboardDefinition, operation: Operation) -> None:

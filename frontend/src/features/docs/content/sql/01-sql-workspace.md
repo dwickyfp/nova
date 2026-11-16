@@ -38,8 +38,10 @@ A few words used on this page:
 
 To rename, move, or delete a file or folder, right-click it in the file panel
 (or click its **...** button) and choose **Rename**, **Move to...**, or
-**Delete**. A tab's own menu (the three dots on the tab) has **Rename**,
-**Download SQL**, and **Close**.
+**Delete**. A file's menu also has **Download**, which saves the file to your
+computer under its own name. Use it for files that do not open as a tab, such
+as Excel workbooks from a scheduled dashboard export. A tab's own menu (the
+three dots on the tab) has **Rename**, **Download SQL**, and **Close**.
 
 > **Tip:** On a narrow screen the file panel folds away. Click the arrow button
 > at the top of the panel (**Expand file panel**) to open it again.

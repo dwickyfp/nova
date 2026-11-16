@@ -19,7 +19,7 @@ from collections.abc import Mapping
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from functools import partial
-from typing import Protocol
+from typing import Any, Protocol
 
 import asyncmy
 import asyncmy.cursors
@@ -248,6 +248,12 @@ class QueryResult:
         return self.error is None
 
 
+def _worker_session(connected: Any, username: str) -> bool:
+    from app.modules.query.service import delegated_connection_for
+
+    return delegated_connection_for(username) is connected
+
+
 class QueryRepository:
     """Execute SQL against StarRocks.
 
@@ -320,9 +326,14 @@ class QueryRepository:
         """
         if not role:
             raise StarRocksError("User-data execution requires exactly one explicit active role")
-        if parameters is not None and connected is not None:
+        # A client's connection carries its own session state, so private dataset
+        # SQL and bound values never run on it. The one exception is the task
+        # worker's delegated session: opened for a single scheduled run, as
+        # exactly this account and role, and shared with no client.
+        client_socket = connected is not None and not _worker_session(connected, username)
+        if parameters is not None and client_socket:
             raise StarRocksError("Bound queries require a managed session")
-        if current_dataset_query() is not None and connected is not None:
+        if current_dataset_query() is not None and client_socket:
             raise StarRocksError("Dataset queries require a managed session")
         start = time.monotonic()
         if connected is not None:

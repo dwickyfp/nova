@@ -414,10 +414,12 @@ class QueryService:
         Returns:
             QueryResult with columns, rows, metadata
         """
+        worker_session = False
         if connection is None:
             delegated = delegated_connection_for(username)
             if delegated is not None:
                 connection, encrypted_password = delegated, ""
+                worker_session = True
         # Normalize Nova's editor-friendly db.default.table notation to the
         # StarRocks-compatible db.table form before validation/execution.
         normalized_sql = await run_sql_cpu(
@@ -510,7 +512,7 @@ class QueryService:
                 if parameters is not None:
                     from app.sql_frontend.parameters import parameter_slots
 
-                    if client_transaction or connection is not None:
+                    if client_transaction or (connection is not None and not worker_session):
                         raise SemanticError("Bound queries require a managed session")
                     if type(max_rows) is not int or not 1 <= max_rows <= 100_000:
                         raise SemanticError("Bound queries require a bounded result limit")

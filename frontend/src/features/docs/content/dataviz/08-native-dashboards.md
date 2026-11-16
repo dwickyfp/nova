@@ -44,7 +44,7 @@ You can also build a dataset from a SQL query, with named parameters. See
    with a live preview.
 3. On **Configure**, type a **Chart name**, pick a visualization (KPI, Bar,
    Line, Area, Combo, Pie, Funnel, Table, Pivot, Scatter, Heatmap, Treemap,
-   Flow, Histogram or Gauge), and choose the fields. For a date field, **Group by**
+   Flow, Histogram, Gauge or Map), and choose the fields. For a date field, **Group by**
    lets you pick day, week, month, quarter or year. **Aggregate** chooses Sum,
    Average, Minimum, Maximum, Count or Distinct count.
 4. On **Style**, choose the title, legend, data labels, colors and number
@@ -59,6 +59,28 @@ date across the top when the dataset has one; change it under **Columns**.
 Under **Totals**, **Show totals** adds a total column and a total row, and
 **Subtotal each row group** adds a total after each group of the first row
 field. Totals add up sums and counts only; an average is never added up.
+
+### Maps
+
+A **Map** places each row of the dataset at its latitude and longitude on a
+street map. The dataset needs two number fields that hold them; fields named
+latitude and longitude are picked for you, and you can change them under
+**Location**.
+
+- **Point size:** each point is a plain dot until you click **Size by a value**
+  and choose a measure. Then the largest value gets the largest point, and the
+  point's area grows with its value.
+- **Color / group by:** colours the points by a field, such as country or
+  region. The legend names up to eight groups; click a point to see its group
+  and value.
+- Rows without a valid latitude and longitude are not placed. The map says how
+  many it left out.
+
+Drag to move the map and scroll to zoom. Clicking a point with a group narrows
+the other charts to that group, like clicking a bar. The street map is loaded
+from an online map service, which sees the area you are looking at but none of
+your data. If it cannot load, the chart says so and its data can still be
+downloaded.
 
 ### Conditional formatting
 
@@ -112,6 +134,20 @@ Click a bar, point or slice to see what you can do with that value:
 
 A chart with nothing to drill into filters the dashboard straight away.
 
+### Link a chart to another dashboard
+
+1. In **Edit**, open a chart's **⋯** menu and choose **Link to a dashboard…**.
+2. Choose the **Dashboard to open** and, under **Narrow it by**, the field there
+   whose values match this chart's grouping (for example **Region**).
+3. Optionally change the **Menu label**, then click **Save link**.
+
+Now clicking a value offers **Open ‹dashboard›**. The other dashboard opens with
+that value selected (for example **Selected Jakarta**); click the **×** on it to
+see everything. People only get there if they can open that dashboard, and
+they see only the rows their own role allows. To change or remove the link,
+choose **Link to a dashboard…** again; **Remove link** deletes it. Removing the
+chart also removes its link.
+
 ## Publish and share
 
 1. Click **Publish**, optionally describe what changed, and click **Publish**.
@@ -128,6 +164,21 @@ A chart with nothing to drill into filters the dashboard straight away.
 > **Note:** Sharing never grants access to data. Each viewer sees only the rows
 > and columns their own role can read.
 
+## See who else is here
+
+When other people have the same dashboard open, their initials appear in the
+header next to **Ask Neva**. A dot on an avatar means that person is editing;
+point at an avatar to see their name. On the page you are looking at, each
+person's pointer moves across the canvas with their name beside it.
+
+Only people who can open the dashboard take part, and others see only your
+user name and where your pointer is on the canvas, never your role or what you
+have selected. Someone who closes the dashboard or switches to another browser
+tab disappears within a few seconds. Two people can edit at the same time. If
+both save at the same moment, the later save is not applied: the dashboard
+reloads with the other person's change, the header says **Reloaded after
+someone else’s change**, and you can make your change again.
+
 ## Download charts and data
 
 Downloads need **Export** access to the dashboard. The owner has it; others get
@@ -136,8 +187,9 @@ recorded in the audit log, and a file holds only the rows your current role can
 read, exactly as the charts show them with the filters you chose.
 
 - **One chart:** point at the chart and click the download icon at its top right.
-  Choose **Image (PNG)**, **Data (CSV)** or **Data (Excel)**. KPIs and tables
-  have no image; download their data instead.
+  Choose **Image (PNG)**, **Data (CSV)** or **Data (Excel)**. KPIs, tables and
+  pivots have no image; download their data instead. A map's image is the map
+  as it is drawn on your screen, at its current position and zoom.
 - **The whole page:** click **Download** (the arrow icon) in the dashboard
   header.
   - **Data of this page (Excel)** makes one workbook with a sheet per chart.
@@ -148,6 +200,38 @@ read, exactly as the charts show them with the filters you chose.
 If the icons are missing, your access does not include **Export**; ask the
 dashboard's owner. If access changed after you opened the page, the download is
 refused and nothing is saved.
+
+### Schedule an Excel export
+
+A schedule saves one page as an Excel workbook, one sheet per chart, on a
+timetable. Click **Download** in the dashboard header, then **Schedule Excel
+export…**. Choose the **Page**, how often it should **Repeat** (every day, week
+or month), the day, the **Time** and the **Time zone**, then click **Save
+schedule**. **Current schedules** in the same window lists every schedule for
+this dashboard, with the role it runs as; click the bin icon to remove one of
+yours.
+
+Each file appears in the dashboard's workspace, in the folder **Scheduled
+exports**, named after the dashboard, the page and the time it ran. Charts use
+the dashboard filters' default values, as when you open the page, and nothing
+is selected.
+
+A schedule runs as your current role, through that role's scheduled-task
+account, not as you. Each file holds what the role can read, with its row
+filters and masks, even if you can see more. Because of that, Nova checks
+before saving that:
+
+- your current role is a business role, not an administration role;
+- an administrator has set up a scheduled-task account for the role;
+- the dashboard is published, and its published version has the page;
+- the dashboard is in a shared workspace, shared with the role with edit
+  access, so the files can be saved there;
+- the dashboard is shared with the role, including **Export**.
+
+If one of these is missing, the window says which one. Each run checks the
+role's access again: if the dashboard is no longer shared with the role
+including **Export**, the run saves nothing. Only people with the same role, or
+an administrator, can remove a schedule.
 
 ## Work with Neva
 

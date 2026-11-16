@@ -9,9 +9,9 @@ export type ExportFormat = ChartFileFormat | 'pdf'
 type Value = string | number | boolean | null
 export type ResultTable = { headers: string[]; rows: Value[][] }
 
-/** Visuals drawn on a canvas; KPIs and tables are text and have no image. */
+/** Visuals drawn on a canvas; KPIs, tables and pivots are text and have no image. */
 export function hasImage(chart: Pick<ChartDefinition, 'visual'>): boolean {
-  return chart.visual !== 'kpi' && chart.visual !== 'table'
+  return chart.visual !== 'kpi' && chart.visual !== 'table' && chart.visual !== 'pivot'
 }
 
 /**

@@ -490,6 +490,11 @@ class NativeDatasetService:
         encrypted = user.get("encrypted_password")
         if not isinstance(encrypted, str) or not encrypted:
             raise SessionExpiredError()
+        # A scheduled run has no password: the task worker's engine session,
+        # impersonating exactly this account with its role, answers catalog reads.
+        from app.modules.query.service import delegated_connection_for
+
+        delegated = delegated_connection_for(str(session["username"]))
         context = ExecutionContext(
             username=session["username"],
             role=session["active_role"],
@@ -498,9 +503,11 @@ class NativeDatasetService:
             database=request.source.database,
             schema=request.source.schema_name,
             encrypted_password=encrypted,
+            connection=delegated,
         )
         provider = StarRocksCatalogProvider(
-            QueryRepository(), context, lambda: decrypt_password(encrypted)
+            QueryRepository(), context,
+            (lambda: "") if delegated is not None else (lambda: decrypt_password(encrypted)),
         )
         if isinstance(request, SqlInspect):
             return await self._inspect_sql(user, request, provider, context, encrypted,

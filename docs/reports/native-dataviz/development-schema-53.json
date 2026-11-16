@@ -1,0 +1,18 @@
+{
+  "baseline_commit": "da4ab34c3ebbd379a001830a930ea77ac4df05cd",
+  "schema_before": 52,
+  "schema_after": 53,
+  "migration": "0053_viz_export_task_handler.sql",
+  "migration_sha256": "f5da150a5af47438660b366c85b5013694ca982dabcac19d51f3dcaf87ea520c",
+  "metadata_epoch_preserved": true,
+  "tables_count_checked": 192,
+  "all_counts_preserved": true,
+  "backup": {
+    "bytes": 124769190,
+    "sha256": "c00273530bff81d48b4db9797c94cf75e33a6a310de0d94cefcc70cf35fc3a9f",
+    "toc_verified": true
+  },
+  "fixture_evidence": "tests/integration/test_metadata_tasks.py and test_metadata_migrator.py on disposable PG17: 51 passed",
+  "launcher": "not stopped; processes refused metadata work while frozen and reloaded at 53",
+  "recorded_at": "2026-11-16T03:34:07.963256+00:00"
+}

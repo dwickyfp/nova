@@ -25,6 +25,8 @@ export function inverse(change: Change, before: DashboardDefinition): Change | n
     }
     case 'filters.replace':
       return { op: 'filters.replace', filters: before.filters ?? [] }
+    case 'actions.replace':
+      return { op: 'actions.replace', actions: before.actions ?? [] }
     case 'dashboard.rename':
       return { op: 'dashboard.rename', title: before.title }
     case 'page.add':
@@ -54,6 +56,7 @@ export function applyLocal(definition: DashboardDefinition, change: Change): Das
     case 'widget.remove': if (target) target.widgets = target.widgets.filter(widget => widget.widget_id !== change.widget_id); break
     case 'widget.replace': if (target) target.widgets = target.widgets.map(widget => widget.widget_id === change.widget.widget_id ? change.widget as Widget : widget); break
     case 'filters.replace': next.filters = change.filters; break
+    case 'actions.replace': next.actions = change.actions; break
     case 'dashboard.rename': next.title = change.title; break
     case 'page.add': pages.push({ ...change.page, widgets: [...(change.page.widgets ?? [])] }); break
     case 'page.rename': if (target) target.title = change.title; break

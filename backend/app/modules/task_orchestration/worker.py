@@ -500,7 +500,10 @@ class GraphRunWorker:
             from app.modules.task_orchestration.internal_handlers import run_internal_task
 
             try:
-                await run_internal_task(task, job, run_id, self._executor, self._repository)
+                await run_internal_task(
+                    task, job, run_id, self._executor, self._repository,
+                    renew=lambda: self._heartbeat(job, run_id, lease),
+                )
             except Exception as exc:
                 await self._finalize(
                     job, task, run_id, lease, owner, NodeState.FAILED, error=_safe_message(exc)

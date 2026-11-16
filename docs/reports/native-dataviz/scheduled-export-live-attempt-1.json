@@ -1,0 +1,29 @@
+{
+  "date": "2026-11-16",
+  "scope": "Scheduled Excel export of a native dashboard page, run by the task scheduler as the marketing role's scheduled-task account",
+  "environment": {
+    "stack": "development Compose stack (StarRocks 4.1.4 patched FE, Ranger, PG17) with host dev processes",
+    "schema": "development metadata upgraded 52 -> 53 -> 54 (development-schema-53.json, development-schema-54.json)",
+    "requester": "alice, active role marketing",
+    "runner": "nova_task_service_marketing, bound to marketing with scripts.provision_task_schedule_role"
+  },
+  "fixture": "Shared workspace shared with marketing (edit); dashboard with one bar chart over a SQL dataset on analytics.sales; dashboard, chart and dataset published and granted to marketing (dashboard: view, export)",
+  "attempts": [
+    {"step": "save as ACCOUNTADMIN in the dialog", "result": "REFUSED as intended", "evidence": "'Switch to a business role to schedule exports. Administration roles do not run scheduled work.'"},
+    {"step": "save as alice", "result": "FAIL", "cause": "document permission check revalidated a sign-in session the scheduled account never has", "fix": "read-only scheduled_permissions probe; task sessions accepted only inside the matching worker delegation"},
+    {"step": "save as alice", "result": "FAIL", "cause": "task guard allowlists handler names", "fix": "migration 0053"},
+    {"step": "scheduler run 03:36Z", "result": "FAIL", "cause": "task metadata login could not read Dataviz documents or workspaces", "fix": "migration 0054 (reads, workspace entry insert, audit) with PG17 grant/RLS tests"},
+    {"step": "reproduction", "result": "FAIL", "cause": "chart and dataset were not granted to the role (the Share dialog grants them; the API setup had not)", "fix": "fixture corrected"},
+    {"step": "reproduction", "result": "FAIL", "cause": "dataset schema check decrypted a sign-in password; native dataset and bound queries refused any supplied connection", "fix": "catalog reads and dataset queries use the worker's delegated session when it is exactly this account's; client connections still refused"},
+    {"step": "reproduction 05:48Z", "result": "PASS", "evidence": "workbook bdfa8908-87c5-4a2b-9a1f-0ae3b0bfc15f saved under Scheduled exports"},
+    {"step": "scheduler run 05:52Z", "result": "FAIL", "cause": "internal handler heartbeat called a repository method that no longer exists (affected every scheduled internal handler); recorded error was only 'unhandled errors in a TaskGroup'", "fix": "worker lease renewal passed to internal handlers; the handler's own error is recorded"},
+    {"step": "scheduler run 05:57Z", "result": "PASS", "evidence": "graph run success; workbook 8389444d-e34b-4223-a865-a67792d44c21 'Presence check Overview 2026-11-16 0557.xlsx' (1,597 bytes)"}
+  ],
+  "workbook_check": {
+    "download": "GET workspace file download as the workspace owner: 200, spreadsheet media type, attachment file name",
+    "content": "one sheet 'Amount by city', headers 'City' and 'Sum of amount', no data rows",
+    "governance": "Ranger row filters on analytics.sales are per person (alice Jakarta, bob Bandung); the role's own account reads no rows, so the file holds none. The same query run directly as the account returns no rows."
+  },
+  "audit": "SCHEDULE_EXPORT rows for alice with the dashboard and page",
+  "result": "PASS on the final attempt"
+}

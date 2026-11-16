@@ -58,6 +58,7 @@ export const VISUALS: { value: Visual; label: string; kind: ChartDefinition['enc
   { value: 'sankey', label: 'Flow', kind: 'flow' },
   { value: 'histogram', label: 'Histogram', kind: 'distribution' },
   { value: 'gauge', label: 'Gauge', kind: 'single_measure' },
+  { value: 'map', label: 'Map', kind: 'map' },
 ]
 
 export const AGGREGATION_LABELS: Record<SupportedAggregation, string> = {
@@ -115,6 +116,7 @@ export function missing(state: BuilderState): string | null {
   if (['cartesian', 'single_measure', 'category', 'heatmap', 'hierarchy', 'flow'].includes(kind) && !state.measures.length) return 'Choose a value to measure'
   if (kind === 'scatter' && (!state.x || !state.y)) return 'Choose numeric fields for both axes'
   if (kind === 'distribution' && !state.x) return 'Choose a numeric field'
+  if (kind === 'map' && (!state.y || !state.x)) return 'Choose the latitude and longitude fields'
   if (state.visual === 'pivot') {
     if (!state.dimensions.length) return 'Choose a field for the rows'
     if (!state.pivotColumns.length) return 'Choose a field for the columns'
@@ -157,6 +159,11 @@ export function toChart(state: BuilderState): ChartDefinition {
       break
     case 'flow':
       encoding = { kind, source: dim(state.dimensions[0]), target: dim(state.dimensions[1]), value: meas(state.measures[0], number) }
+      break
+    case 'map':
+      encoding = { kind, latitude: state.y, longitude: state.x,
+        ...(state.measures[0] ? { value: meas(state.measures[0], number) } : {}),
+        ...(state.color ? { group: dim(state.color) } : {}) }
       break
     default:
       encoding = { kind: 'cartesian', dimensions: state.dimensions.slice(0, 2).map(dim),
@@ -254,6 +261,11 @@ export function fromChart(chart: ChartDefinition, fields: DatasetField[]): Build
       state.dimensions = [fromDim(encoding.source), fromDim(encoding.target)]
       state.measures = [fromMeasure(encoding.value)]
       break
+    case 'map':
+      state.y = encoding.latitude; state.x = encoding.longitude
+      state.measures = encoding.value ? [fromMeasure(encoding.value)] : []
+      state.color = encoding.group ? fromDim(encoding.group) : null
+      break
   }
   return state
 }
@@ -279,6 +291,13 @@ export function switchVisual(state: BuilderState, visual: Visual, fields: Datase
     const candidates = fields.filter(field => field.semantic_role === 'dimension' && !isNumeric(field) && !used.has(field.field_id))
     const across = candidates.find(isTemporal) ?? candidates[0]
     if (across) next.pivotColumns = [{ field_id: across.field_id, date_grain: isTemporal(across) ? 'month' : null }]
+  }
+  if (kind === 'map') {
+    // Coordinates are numeric fields named for what they hold.
+    const named = (pattern: RegExp) => numeric.find(field => pattern.test(`${field.name} ${field.source_column}`))
+    next.y = named(/\b(lat|latitude)\b|latitude/i)?.field_id ?? ''
+    next.x = named(/\b(lng|lon|long|longitude)\b|longitude/i)?.field_id ?? ''
+    next.measures = next.measures.filter(item => item.field_id !== next.x && item.field_id !== next.y).slice(0, 1)
   }
   if (visual === 'kpi' && !next.title) next.showLegend = false
   return next

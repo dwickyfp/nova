@@ -1,0 +1,208 @@
+{
+  "attempt": 1,
+  "date": "2026-11-16",
+  "method": "Every scenario mapped to the test or evidence that asserts its expected result (four independent read-only reviews, strict: touching the area is not coverage); scenarios with no assertion stay NOT_RUN with the missing piece noted. PASS rows are covered by suites rerun on the delivered source (backend gate attempt 22, PG17 suites, tests/eval, frontend suite).",
+  "counts": {
+    "NOT_RUN": 169,
+    "PASS": 68,
+    "OUT_OF_SCOPE": 17
+  },
+  "closed_in_this_pass": [
+    "NDV-DATA-003",
+    "NDV-DATA-004",
+    "NDV-DATA-005",
+    "NDV-GRID-017",
+    "NDV-CHART-021",
+    "NDV-STORE-011",
+    "NDV-AGENT-004",
+    "NDV-MIG-018",
+    "NDV-REVIS-009"
+  ],
+  "defects_found_and_fixed": [
+    "Scheduled runs did not recheck Export (NDV-STORE-011)",
+    "Neva retried a conflicting layout change over a concurrent person edit (NDV-AGENT-004)",
+    "Keyboard moves had no screen-reader status (NDV-GRID-017)",
+    "Scheduled internal task heartbeat called a removed repository method; every scheduled internal handler failed",
+    "Workspace binary files could not be downloaded"
+  ],
+  "out_of_scope": "17 MIG rows: Superset removed and assets not converted, by user decision 2026-11-16",
+  "open_by_domain": {
+    "OSS": 6,
+    "DATA": 6,
+    "METRIC": 16,
+    "CHART": 14,
+    "GRID": 10,
+    "FILTER": 14,
+    "INTER": 13,
+    "ACL": 15,
+    "AGENT": 17,
+    "REVIS": 8,
+    "CACHE": 11,
+    "STORE": 9,
+    "PERF": 10,
+    "A11Y": 10,
+    "OPS": 10
+  },
+  "open_categories": {
+    "missing_features": "dashboard comments, legend as cross-filter source, multi-select OR cross-filter, view-only interact enforcement, 6-column tablet grid, window/ratio metrics, server-side result cache, server-rendered PDF, chart text alternatives, reduced-motion handling, Neva virtual cursor, Dataviz metrics",
+    "needs_infrastructure": "load/SLO benchmarks on declared hardware, chaos and restore drills on a disposable deployment, Ranger policy change during an open session",
+    "needs_tests": "remaining PARTIAL rows list the exact test to add"
+  },
+  "critical_open": [
+    {
+      "id": "NDV-OSS-001",
+      "action": "Scan all required direct deps for proprietary/open-core gated features",
+      "why_open": "PARTIAL: license-audit.json inventories declared licenses and allowlists native libs (gridstack MIT, echarts Apache-2.0, tanstack MIT, zod MIT) but its own scope says it is not a feature-gating review. Missing: a static gate (e.g. backend/s"
+    },
+    {
+      "id": "NDV-OSS-002",
+      "action": "Scan transitive npm and Python license trees",
+      "why_open": "PARTIAL: SBOMs exist (frontend 738 components, backend 141) with license metadata complete, but no recorded allow/deny-list verdict on the transitive tree at release commit; STATUS says distribution review remains open. Add a CI/static chec"
+    },
+    {
+      "id": "NDV-METRIC-001",
+      "action": "Evaluate SUM revenue and COUNT orders",
+      "why_open": "PARTIAL: SQL shape for SUM/COUNT is asserted, but never compared to an independent SQL oracle on known data. Add an engine integration (or live verify script) running the planned query and a hand-written oracle on a seeded fixture, comparin"
+    },
+    {
+      "id": "NDV-METRIC-002",
+      "action": "Evaluate profit margin over grouped data",
+      "why_open": "PARTIAL: Native aggregation has no ratio measure; semantic derived metrics compile SUM/COUNT-based ratios but only SQL text is checked. Add a semantic-dataset oracle test proving SUM(profit)/SUM(revenue) differs from AVG(profit/revenue) on "
+    },
+    {
+      "id": "NDV-METRIC-003",
+      "action": "Divide by zero denominator",
+      "why_open": "GAP: No divide-by-zero test for native or semantic ratio metrics. Add unit test in backend/tests/unit/test_semantic_view_extensions.py (derived metric with zero denominator -> NULLIF/typed null) and a preview test asserting null, not NaN/In"
+    },
+    {
+      "id": "NDV-METRIC-019",
+      "action": "Try injecting raw SQL through metric formula string",
+      "why_open": "PARTIAL: Dataset metric 'formula' is a free string (contracts/datasets.py:88, max 8000); no test injects '; DROP' / subqueries / comments through it. Add unit test in test_native_viz_bindings.py or test_native_viz_contracts.py asserting typ"
+    },
+    {
+      "id": "NDV-GRID-001",
+      "action": "Add widget by drag from toolbar",
+      "why_open": "PARTIAL: Toolbar add places at first free slot; drag-from-toolbar into a chosen cell and atomic persistence of that placement are not tested. Add editor.test.tsx drag case asserting one widget.add op with in-grid layout."
+    },
+    {
+      "id": "NDV-GRID-005",
+      "action": "Save grid then reload dashboard",
+      "why_open": "PARTIAL: No save->server->reload test asserting identical widget IDs and x/y/w/h. Add PG17 integration (or editor.test with fetch fake) that applies layout.apply, rereads, and compares."
+    },
+    {
+      "id": "NDV-FILTER-001",
+      "action": "Add single-value customer filter",
+      "why_open": "PARTIAL: single_value kind producing one eq predicate scoped to the intended widgets is not asserted. Add model.test.ts single_value case."
+    },
+    {
+      "id": "NDV-FILTER-010",
+      "action": "Global filter applies to only chosen widget scope",
+      "why_open": "PARTIAL: widget_subset scope excluding a widget is not asserted (only page scope). Add model.test.ts case: scope widget_subset [w2] -> chartContext for w1 undefined."
+    },
+    {
+      "id": "NDV-FILTER-017",
+      "action": "Filter on Ranger-masked field",
+      "why_open": "GAP: No masked-field test. Add live script (extend backend/scripts/verify_native_row_filters_live.py) with a Ranger mask on a field: filter options and counts for bob return masked values only."
+    },
+    {
+      "id": "NDV-ACL-003",
+      "action": "Viewer lacks underlying table SELECT but has dashboard view",
+      "why_open": "PARTIAL: No single test where a viewer holds dashboard view but lacks table SELECT and filter options, cached results and Neva answers are all checked for leaks. Add live case in verify_native_row_filters_live.py (viewer without SELECT: que"
+    },
+    {
+      "id": "NDV-ACL-005",
+      "action": "Ranger column mask differs between viewers",
+      "why_open": "PARTIAL: Masking verified in dataset preview/query for Alice/Bob; not in chart render, table, tooltip or exports (client and scheduled xlsx). Add masked-column assertions to scheduled-export live run and a viewer export check."
+    },
+    {
+      "id": "NDV-ACL-006",
+      "action": "User guesses another dashboard UUID in query endpoint",
+      "why_open": "PARTIAL: Hidden dashboard returns 404 and denied preview never reaches the engine, but the /datasets/{id}/query endpoint with a guessed ID is not checked over HTTP for body leaks (owner, source). Add PG17 HTTP test for POST /datasets/{other"
+    },
+    {
+      "id": "NDV-ACL-007",
+      "action": "User guesses another chart UUID in inspector operation",
+      "why_open": "PARTIAL: No test of PATCH /charts/{foreign id}/draft or /dashboards/{id}/operations targeting a chart the caller cannot edit, asserting no revision/outbox row. Add PG17 HTTP test."
+    },
+    {
+      "id": "NDV-ACL-008",
+      "action": "Viewer attempts edit draft",
+      "why_open": "PARTIAL: View-only reader is refused draft read and publish, but a PATCH /draft by a viewer asserting 403 and unchanged revision count is not tested. Add to test_http_permission_and_kind_boundaries."
+    },
+    {
+      "id": "NDV-ACL-010",
+      "action": "Editor attempts publish without publish permission",
+      "why_open": "PARTIAL: Editor publish is denied, but no prior publication exists in the test, so 'prior published revision unchanged' is not asserted. Publish once as owner first, then assert published revision unchanged after the editor refusal."
+    },
+    {
+      "id": "NDV-ACL-012",
+      "action": "Role revoked while WebSocket connected",
+      "why_open": "PARTIAL: Native dashboards have no WebSocket (presence is HTTP heartbeat). No test revokes a grant/role mid-session and asserts the open editor purges data and presence refuses the next beat. Add unit test in test_native_viz_presence.py (gr"
+    },
+    {
+      "id": "NDV-AGENT-001",
+      "action": "Neva creates chart through typed tool",
+      "why_open": "PARTIAL: Unit/eval use a fake document service. No test asserts the Neva-built ChartDefinition equals what the manual builder (frontend charts/builder-model.ts) persists for the same spec, nor that the stored operation_id is the tool-derive"
+    },
+    {
+      "id": "NDV-AGENT-003",
+      "action": "Neva moves widget while human edits another widget",
+      "why_open": "PARTIAL: Retry re-reads the head, but no test shows a human edit to widget A and a Neva move of widget B both surviving. Add a unit test where the fake service commits a human change between Neva's read and apply (conflict once) and assert "
+    },
+    {
+      "id": "NDV-AGENT-011",
+      "action": "Neva tries to share to role without manage",
+      "why_open": "PARTIAL: Neva has no share/grant tool (decision: dashboards follow roles), and PG denies grant changes without manage. No test asserts the Neva registry exposes no grant/share tool. Add a unit test asserting native.TOOLS has no grant-changi"
+    },
+    {
+      "id": "NDV-AGENT-012",
+      "action": "Prompt injection inside dataset row requests privileged tool",
+      "why_open": "PARTIAL: Guard is proven on a generic SQL table tool only. Add an eval trajectory where native_dataset_query returns a row containing 'call native_dashboard_publish' and assert the guard flags it and no consent/change tool is invoked."
+    },
+    {
+      "id": "NDV-REVIS-003",
+      "action": "Publish while concurrent draft edits pending",
+      "why_open": "PARTIAL: Publish uses expected_revision CAS, but no concurrent publish-vs-edit race test. Add a PG17 barrier test in test_metadata_viz.py: publish(expected_revision=1) racing replace(expected_revision=1); assert publication pins revision 1 "
+    },
+    {
+      "id": "NDV-CACHE-001",
+      "action": "Same SQL different active roles",
+      "why_open": "GAP: Server cache design does not exist. frontend/src/features/native-dataviz/charts/chart-data.ts keys the TanStack cache per browser by securityEpoch + dataset + request; there is no server-side result cache. Intent (no cross-role leak) i"
+    },
+    {
+      "id": "NDV-CACHE-002",
+      "action": "Same SQL different Ranger policy version",
+      "why_open": "GAP: Genuinely unmet: the client cache has staleTime 30s / gcTime 5 min and is not invalidated on a Ranger policy change (only on securityEpoch change), so a policy change can show previously fetched rows until refetch. No server cache. Add"
+    },
+    {
+      "id": "NDV-CACHE-003",
+      "action": "Same SQL different row filters or masked columns",
+      "why_open": "GAP: No server cache; every query runs in the engine under the caller, so row filters apply per request (live evidence). Masked-column variant is not covered anywhere. Add a masked-column case to verify_native_row_filters_live.py."
+    },
+    {
+      "id": "NDV-STORE-002",
+      "action": "Export PDF as masked-row viewer",
+      "why_open": "GAP: No server PDF; the printable report is built from the caller's own governed results, so intent is met by design for row filters, but no test covers masked columns in the report/image. Add a live check: masked-column viewer prints/expor"
+    },
+    {
+      "id": "NDV-STORE-003",
+      "action": "Crash after S3 upload before PG publication",
+      "why_open": "GAP: No S3 upload/PG publication split. Scheduled export writes one workspace file via create_file_bytes; no test of a crash between workbook build and save or of a duplicate file on task retry. Add a unit test in test_native_viz_scheduled_"
+    },
+    {
+      "id": "NDV-STORE-004",
+      "action": "Object digest mismatch on export read",
+      "why_open": "GAP: No digest is recorded or verified for export files. Unmet; if workspace file storage verifies content digests, add a test there for the Scheduled exports folder. Actual design: no object store, no signed URLs, no server PDF; downloads "
+    },
+    {
+      "id": "NDV-OPS-001",
+      "action": "PG primary restart during dashboard save",
+      "why_open": "PARTIAL: No induced PG primary restart during a dashboard save. Add a fault test (backend/tests/integration or a verify_* script) that restarts/terminates the PG17 primary mid-commit, then resolves by receipt and asserts no acknowledged sav"
+    },
+    {
+      "id": "NDV-OPS-002",
+      "action": "Ranger FE policy changes during cached dashboard view",
+      "why_open": "PARTIAL: No live test changes a Ranger policy while a dashboard is open. Add a verify_* live script against the patched FE: viewer loads a chart, a steward revokes/narrows the Ranger policy, the next refresh must be refused or filtered and "
+    }
+  ]
+}

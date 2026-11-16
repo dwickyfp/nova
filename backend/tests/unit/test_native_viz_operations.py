@@ -1,7 +1,7 @@
 """Document edits preserve identity and refuse dangling or ambiguous filter state."""
 
 from copy import deepcopy
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
@@ -108,7 +108,7 @@ def test_locked_widget_reflow_and_duplicate_add_are_rejected():
         apply(document, [{"op": "widget.replace", "page_id": PAGE, "widget": missing}])
 
 
-def test_removing_widget_requires_removing_its_action_in_the_same_atomic_batch():
+def test_removing_a_widget_removes_its_own_interactions_in_the_same_revision():
     payload = dashboard()
     field = filter_definition()["field"]
     action = {"action_id": str(uuid4()), "kind": "filter", "source_widget_id": WIDGET_A,
@@ -116,10 +116,12 @@ def test_removing_widget_requires_removing_its_action_in_the_same_atomic_batch()
     payload["actions"] = [action]
     document = DashboardDefinition.model_validate(payload)
     remove = {"op": "widget.remove", "page_id": PAGE, "widget_id": WIDGET_A}
-    with pytest.raises(ValueError, match="source"):
-        apply(document, [remove])
-    updated = apply(document, [remove, {"op": "actions.replace", "actions": []}])
-    assert len(updated.pages[0].widgets) == 1 and not updated.actions
+    # An interaction never outlives its source widget, alone or in an explicit batch.
+    for changes in ([remove], [remove, {"op": "actions.replace", "actions": []}]):
+        updated = apply(document, changes)
+        assert [w.widget_id for w in updated.pages[0].widgets] == [UUID(WIDGET_B)]
+        assert updated.actions == ()
+    assert len(document.actions) == 1  # the original document is unchanged
 
 
 def test_cascading_filters_require_existing_acyclic_parents():

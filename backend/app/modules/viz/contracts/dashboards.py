@@ -115,14 +115,37 @@ class Interaction(Contract):
     source_widget_id: UUID
     target_widget_ids: tuple[UUID, ...] = Field(default=(), max_length=100)
     target_page_id: UUID | None = None
+    #: Drill-through: open another dashboard, narrowed by ``mappings``.
+    target_dashboard_id: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
+    target_workspace_id: str | None = Field(
+        default=None, min_length=1, max_length=128, exclude_if=lambda value: value is None,
+    )
+    label: str | None = Field(
+        default=None, min_length=1, max_length=120, exclude_if=lambda value: value is None,
+    )
     mappings: tuple[FieldMapping, ...] = Field(default=(), max_length=32)
     run_on: Literal["select", "menu"] = "select"
+
+    @model_validator(mode="after")
+    def drill_through(self) -> Self:
+        if self.target_dashboard_id is None:
+            if self.target_workspace_id is not None:
+                raise ValueError("A target workspace needs a target dashboard")
+            return self
+        if self.kind != "navigate" or self.target_page_id is not None:
+            raise ValueError("Opening another dashboard is a navigate action without a page")
+        if self.target_workspace_id is None or not self.mappings:
+            raise ValueError("A dashboard link needs its workspace and at least one field mapping")
+        return self
 
     @model_validator(mode="after")
     def targets(self) -> Self:
         if len(set(self.target_widget_ids)) != len(self.target_widget_ids):
             raise ValueError("Interaction targets must be unique")
-        if self.kind == "navigate":
+        if self.kind == "navigate" and self.target_dashboard_id is not None:
+            if self.target_widget_ids:
+                raise ValueError("A dashboard link targets the other dashboard, not widgets")
+        elif self.kind == "navigate":
             if self.target_page_id is None or self.target_widget_ids or self.mappings:
                 raise ValueError("Navigation requires only a target page")
         elif not self.target_widget_ids:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from .contracts.commands import (
     ActionsReplace,
     DatasetsReplace,
@@ -24,6 +26,7 @@ def apply_operation(document: DashboardDefinition, operation: Operation) -> Dash
     """Validate the complete final layout so a reflow may move neighbors atomically."""
     data = document.model_dump(mode="json")
     pages = data["pages"]
+    removed: set[str] = set()
     for change in operation.changes:
         if isinstance(change, Rename):
             data["title"] = change.title
@@ -49,6 +52,7 @@ def apply_operation(document: DashboardDefinition, operation: Operation) -> Dash
                 raise ValueError("Unknown page")
             if isinstance(change, PageRemove):
                 pages.remove(page)
+                removed.update(widget["widget_id"] for widget in page["widgets"])
             elif isinstance(change, PageRename):
                 page["title"] = change.title
             elif isinstance(change, LayoutChange):
@@ -79,4 +83,26 @@ def apply_operation(document: DashboardDefinition, operation: Operation) -> Dash
                 if widget is None:
                     raise ValueError("Unknown widget")
                 page["widgets"].remove(widget)
+                removed.add(widget["widget_id"])
+    if removed:
+        data["actions"] = _without_widgets(data.get("actions") or [], removed, pages)
     return DashboardDefinition.model_validate(data)
+
+
+def _without_widgets(
+    actions: list[dict[str, Any]], removed: set[str], pages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Interactions after widgets this operation removed: an action from a removed
+    chart goes with it, and removed targets leave the actions that named them."""
+    page_ids = {page["page_id"] for page in pages}
+    kept = []
+    for action in actions:
+        if action["source_widget_id"] in removed:
+            continue
+        targets = [item for item in action.get("target_widget_ids") or [] if item not in removed]
+        if action.get("target_widget_ids") and not targets and action["kind"] != "navigate":
+            continue
+        if action.get("target_page_id") and action["target_page_id"] not in page_ids:
+            continue
+        kept.append({**action, "target_widget_ids": targets})
+    return kept

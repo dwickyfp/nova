@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { cleanup, render } from 'vitest-browser-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAuthStore } from '@/stores/auth-store'
@@ -119,6 +119,25 @@ describe('native dashboard editor', () => {
     expect(operations[1]).toMatchObject({ expected_revision: 5, changes: [{ op: 'widget.add', widget: { widget_id: TEXT_WIDGET } }] })
     await expect.element(screen.getByText('<b>Plain</b> notes')).toBeVisible()
     await expect.element(screen.getByRole('button', { name: 'Redo' })).toBeEnabled()
+  })
+
+  it('moves and resizes the selected widget from the keyboard, never into another widget', async () => {
+    const screen = await mount()
+    await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
+    await screen.getByRole('button', { name: 'Edit' }).click()
+    await screen.getByText('<b>Plain</b> notes').click()
+    await userEvent.keyboard('{Alt>}{ArrowDown}{/Alt}')
+    await expect.poll(() => operations.length).toBe(1)
+    expect(operations[0]).toMatchObject({ changes: [{ op: 'layout.apply', page_id: PAGE, placements: expect.arrayContaining([
+      { widget_id: TEXT_WIDGET, layout: { x: 3, y: 1, w: 9, h: 2 } },
+      { widget_id: KPI_WIDGET, layout: { x: 0, y: 0, w: 3, h: 2 } },
+    ]) }] })
+    await expect.element(screen.getByText('Moved: column 4, row 2, 9 columns wide, 2 rows tall')).toBeInTheDocument()
+    // Widening the KPI would overlap the text widget beside it: nothing is sent.
+    await screen.getByTestId('kpi-value').click()
+    await userEvent.keyboard('{Alt>}{Shift>}{ArrowRight}{/Shift}{/Alt}')
+    await expect.element(screen.getByText('Another widget is in the way')).toBeInTheDocument()
+    expect(operations).toHaveLength(1)
   })
 
   it('reloads when Neva reports a committed change to this dashboard', async () => {

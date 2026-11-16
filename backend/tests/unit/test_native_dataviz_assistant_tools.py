@@ -88,6 +88,8 @@ class FakeDocuments:
         self.receipts: dict[UUID, dict[str, Any]] = {}
         self.workspaces: dict[UUID, str] = {DASHBOARD: "abc", DATASET: "abc", CHART: "abc"}
         self.conflicts = 0
+        #: What the other person saved when a conflict happens.
+        self.someone_else = lambda document: document
         self.crash: Exception | None = None
         self.crash_commits = True
         self.applied: list[Any] = []
@@ -140,7 +142,7 @@ class FakeDocuments:
             return self.receipts[operation.operation_id]
         if self.conflicts:
             self.conflicts -= 1
-            self.docs[identity].append(self.docs[identity][-1])  # someone else saved
+            self.docs[identity].append(self.someone_else(self.docs[identity][-1]))
             raise MetadataConflict()
         if len(self.docs[identity]) != operation.expected_revision:
             raise MetadataConflict()
@@ -390,6 +392,28 @@ async def test_a_conflict_is_reread_and_retried_once_then_reported(docs):
     assert not outcome.ok
     assert "changed while this was being saved" in outcome.error
     assert not _leaks(outcome.error)
+
+
+@pytest.mark.asyncio
+async def test_a_concurrent_edit_of_the_same_widget_is_reported_not_overwritten(docs):
+    from app.modules.viz.contracts.commands import LayoutChange, Operation
+    from app.modules.viz.operations import apply_operation
+
+    def moved_by_a_person(document):
+        page = document.pages[0]
+        operation = Operation(operation_id=uuid4(), expected_revision=1, changes=(LayoutChange(
+            page_id=page.page_id, placements=({"widget_id": WIDGET,
+                                              "layout": {"x": 0, "y": 6, "w": 6, "h": 4}},)),))
+        return apply_operation(document, operation)
+
+    docs.someone_else = moved_by_a_person
+    docs.conflicts = 1
+    outcome = await _run("native_dashboard_arrange",
+                         {"move": [{"widget_id": str(WIDGET), "x": 6, "y": 0}]})
+    assert not outcome.ok
+    assert "Someone else changed that part of the dashboard" in outcome.error
+    assert docs.applied == []
+    assert docs.docs[DASHBOARD][-1].pages[0].widgets[0].layout.y == 6
 
 
 @pytest.mark.asyncio

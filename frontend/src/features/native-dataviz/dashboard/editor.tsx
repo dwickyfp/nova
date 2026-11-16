@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowLeft, BarChart3, Check, Download, FileSpreadsheet, Filter, Hash, History, Loader2, Pencil, Plus,
+  ArrowLeft, BarChart3, CalendarClock, Check, Download, FileSpreadsheet, Filter, Hash, History, Loader2, Pencil, Plus,
   Printer, Redo2, Share2, Sparkles, Table2, Type, Undo2, Upload,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -17,13 +17,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ApiError } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
-import type { ChartDefinition, DashboardDefinition, FilterTree, Operation } from '../contracts'
+import type { ChartDefinition, DashboardDefinition, FilterTree, Interaction, Operation } from '../contracts'
 import { DashboardDataTab } from '../dashboard-data-tab'
 import { nativeDocuments } from '../documents'
 import { ChartInspector } from '../charts/chart-inspector'
 import type { Visual } from '../charts/builder-model'
 import type { ValueSelection } from '../charts/native-chart'
 import { DashboardCanvas } from './canvas'
+import { LinkDialog } from './link-dialog'
 import {
   authorizeExport, chartImage, fileName, hasImage, printHtml, reportHtml, resultTable, saveFile, toCsv, toXlsx,
   type ChartFileFormat, type ReportItem, type ResultTable,
@@ -31,14 +32,17 @@ import {
 import { chartDocumentQuery } from './hooks'
 import { chartDataQuery, chartRequest } from '../charts/chart-data'
 import { printImage } from '../charts/print-image'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { readToken } from '@/lib/read-token'
 import { FilterBar, FilterBuilder } from './filters'
 import { chartContext, defaultValue, type CrossFilter, type FilterDefinition, type FilterValue } from './filter-model'
 import { firstFreeSlot, sizeFor, type Layout, type Widget } from './layout'
-import { NATIVE_DASHBOARD_CHANGED, type NativeDashboardChanged } from './events'
+import { NATIVE_DASHBOARD_CHANGED, NATIVE_DASHBOARD_OPEN, type LinkedSelection, type NativeDashboardChanged, type NativeDashboardOpen } from './events'
 import { applyLocal, inverse, sameLayout, type Change } from './operations'
 import { ShareDialog } from './share-dialog'
+import { ScheduleDialog } from './schedule-dialog'
+import { usePresence } from './presence'
+import { PresenceAvatars } from './presence-ui'
 
 export type NativeDashboardContext = {
   dashboard_id: string
@@ -57,7 +61,12 @@ type Props = {
   onAskNeva?: (prompt: string) => void
   /** The Agent panel uses compact chrome around the same editor. */
   density?: 'full' | 'panel'
+  /** Values carried in by a link from another dashboard. */
+  initialSelections?: LinkedSelection[]
 }
+
+/** Selections carried in by a dashboard link belong to no widget here. */
+const LINKED_SOURCE = 'linked'
 
 type Status = 'saved' | 'saving' | 'conflict' | 'error'
 type Inspector = { mode: 'new'; visual: Visual } | { mode: 'edit'; widget: Widget; chart: ChartDefinition }
@@ -77,7 +86,7 @@ export function DashboardEditor(props: Props) {
   return <Editor key={`${props.dashboardId}:${epoch}`} {...props} epoch={epoch} />
 }
 
-function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChange, onAskNeva, density = 'full', epoch }: Props & { epoch: number }) {
+function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChange, onAskNeva, density = 'full', initialSelections, epoch }: Props & { epoch: number }) {
   const documents = useMemo(() => nativeDocuments(epoch), [epoch])
   const client = useQueryClient()
   const permissions = useQuery({
@@ -118,10 +127,14 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
   const [inspectorError, setInspectorError] = useState<string>()
   const [savingChart, setSavingChart] = useState(false)
   const [filterValues, setFilterValues] = useState<Record<string, FilterValue>>({})
-  const [crossFilters, setCrossFilters] = useState<CrossFilter[]>([])
+  const [crossFilters, setCrossFilters] = useState<CrossFilter[]>(() =>
+    (initialSelections ?? []).map(item => ({ ...item, source_widget_id: LINKED_SOURCE })))
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [publishOpen, setPublishOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
+  const [scheduleOpen, setScheduleOpen] = useState(false)
+  // Screen readers hear where a keyboard move or resize put the widget.
+  const [announcement, setAnnouncement] = useState('')
   const [historyOpen, setHistoryOpen] = useState(false)
   const [textOpen, setTextOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)
@@ -152,6 +165,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
   useEffect(() => {
     if (definition && !definition.pages.some(item => item.page_id === pageId)) setPageId(definition.pages[0]?.page_id ?? null)
   }, [definition, pageId])
+  const presence = usePresence({ dashboardId, pageId: page?.page_id ?? null, editing })
 
   // Default filter values apply once per loaded definition.
   const filterSignature = JSON.stringify(definition?.filters ?? [])
@@ -310,7 +324,12 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
         const target = moved.find(item => item.widget_id === selected)!.layout
         const collides = moved.some(item => item.widget_id !== selected && item.layout.x < target.x + target.w && target.x < item.layout.x + item.layout.w
           && item.layout.y < target.y + target.h && target.y < item.layout.y + item.layout.h)
-        if (!collides) void apply([{ op: 'layout.apply', page_id: page.page_id, placements: moved }])
+        if (collides) {
+          setAnnouncement('Another widget is in the way')
+        } else {
+          void apply([{ op: 'layout.apply', page_id: page.page_id, placements: moved }])
+          setAnnouncement(`${event.shiftKey ? 'Resized' : 'Moved'}: column ${target.x + 1}, row ${target.y + 1}, ${target.w} columns wide, ${target.h} rows tall`)
+        }
       }
     }
     window.addEventListener('keydown', handler)
@@ -395,6 +414,37 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
     })
   }, [])
 
+  // Removing a chart also removes its links, in one change, so Undo restores both.
+  const removal = (widget: Widget): Change[] => {
+    const remove: Change = { op: 'widget.remove', page_id: page?.page_id ?? '', widget_id: widget.widget_id }
+    const actions = definition?.actions ?? []
+    const kept = actions.filter(action => action.source_widget_id !== widget.widget_id)
+    return kept.length === actions.length ? [remove] : [{ op: 'actions.replace', actions: kept }, remove]
+  }
+  const [linking, setLinking] = useState<{ widget: Widget; chart: ChartDefinition } | null>(null)
+  const [savingLink, setSavingLink] = useState(false)
+  const linksFor = useCallback((widget: Widget) => (definition?.actions ?? [])
+    .filter(action => action.source_widget_id === widget.widget_id && action.target_dashboard_id), [definition])
+  const openLink = useCallback((link: Interaction, selection: ValueSelection) => {
+    const mapping = link.mappings?.find(item => item.source.field_id === selection.field_id)
+    if (!mapping || !link.target_dashboard_id || !link.target_workspace_id) return
+    // The other dashboard opens under the viewer's own access; a dashboard they
+    // cannot open shows its usual "unavailable" state.
+    window.dispatchEvent(new CustomEvent<NativeDashboardOpen>(NATIVE_DASHBOARD_OPEN, { detail: {
+      dashboardId: link.target_dashboard_id, workspaceId: link.target_workspace_id,
+      selections: [{ field: mapping.target, value: selection.value, label: selection.label,
+        ...(selection.period ? { period: selection.period } : {}) }],
+    } }))
+  }, [])
+  const saveLink = async (link: Interaction | null) => {
+    if (!definition || !linking) return
+    setSavingLink(true)
+    const others = (definition.actions ?? []).filter(action =>
+      !(action.source_widget_id === linking.widget.widget_id && action.target_dashboard_id))
+    const ok = await apply([{ op: 'actions.replace', actions: link ? [...others, link] : others }])
+    setSavingLink(false)
+    if (ok) setLinking(null)
+  }
   const [exporting, setExporting] = useState(false)
   const exportFailed = (error: unknown) => toast.error(error instanceof ApiError && error.status === 403
     ? 'Your access to this dashboard does not include downloading it.'
@@ -474,7 +524,15 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
         const request = chartRequest({ chart, draft: editing, context: contextFor(widget, chart) })
         if (!request) continue
         const result = await client.fetchQuery(chartDataQuery(epoch, chart, request))
-        if (hasImage(chart)) {
+        if (chart.visual === 'map') {
+          // A map prints as drawn on screen, basemap included; off screen it prints its rows.
+          const canvas = document.querySelector<HTMLCanvasElement>(`[gs-id="${CSS.escape(widget.widget_id)}"] canvas`)
+          if (canvas?.width) {
+            const width = Math.round(Math.min(720, canvas.getBoundingClientRect().width || 640))
+            items.push({ kind: 'image', title, src: canvas.toDataURL('image/png'), width })
+            continue
+          }
+        } else if (hasImage(chart)) {
           // Same size as on screen, redrawn in the light theme for paper.
           const box = document.querySelector<HTMLElement>(`[gs-id="${CSS.escape(widget.widget_id)}"] [role="img"]`)?.getBoundingClientRect()
           const width = Math.round(Math.min(720, Math.max(360, box?.width ?? 640)))
@@ -504,6 +562,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
     : status === 'error' ? 'Last change not saved' : 'All changes saved'
   const label = '@max-3xl/editor:sr-only'
   return <div className='@container/editor flex min-h-0 min-w-0 flex-1 flex-col bg-background'>
+    <p role='status' className='sr-only'>{announcement}</p>
     <header className={cn('flex h-14 shrink-0 items-center gap-3 border-b', compact ? 'px-3' : 'pr-4 pl-2')}>
       {!compact && <Button variant='ghost' size='icon' className='size-9 shrink-0' aria-label='Back to dashboards' onClick={onBack}><ArrowLeft /></Button>}
       <div className='flex min-w-0 flex-1 flex-col justify-center'>
@@ -525,6 +584,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
         </p>
       </div>
       <div className='flex shrink-0 items-center gap-1.5'>
+        <PresenceAvatars others={presence.others} more={presence.more} />
         {onAskNeva && <Button variant='ghost' size='sm' className='h-9 @max-md/editor:hidden' aria-label='Ask Neva'
           onClick={() => onAskNeva(`Help me improve the dashboard \u201c${definition.title}\u201d.`)}>
           <Sparkles /><span className={label}>Ask Neva</span>
@@ -536,6 +596,8 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
           <DropdownMenuContent align='end'>
             <DropdownMenuItem onSelect={() => void downloadWorkbook()}><FileSpreadsheet />Data of this page (Excel)</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => void printDashboard()}><Printer />Print or save as PDF</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => setScheduleOpen(true)}><CalendarClock />Schedule Excel export…</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>}
         {canEdit && <Tooltip><TooltipTrigger asChild><Button variant='ghost' size='icon' className='size-9' aria-label='Version history' onClick={() => setHistoryOpen(true)}><History /></Button></TooltipTrigger><TooltipContent>Version history</TooltipContent></Tooltip>}
@@ -596,9 +658,12 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
             crossFilters={crossFilters} onClearCross={index => setCrossFilters(index === null ? [] : crossFilters.filter((_, i) => i !== index))}
             editing={editing} onEdit={() => setFiltersOpen(true)} />
           <DashboardCanvas definition={definition} page={page} draft={editing} editing={editing}
+            collaborators={presence.others} onPointer={presence.point}
             selectedId={selected} onSelect={setSelected} onLayout={onLayout}
             onEditChart={(widget, chart) => setInspector({ mode: 'edit', widget, chart })}
-            onDuplicate={duplicate} onRemove={widget => void apply([{ op: 'widget.remove', page_id: page.page_id, widget_id: widget.widget_id }])}
+            onDuplicate={duplicate} onRemove={widget => void apply(removal(widget))}
+            linksFor={linksFor} onOpenLink={openLink}
+            onEditLink={canEdit ? (widget, chart) => setLinking({ widget, chart }) : undefined}
             onAskNeva={onAskNeva ? (_widget, chart) => onAskNeva(chart ? `Explain the chart “${chart.title}” on this dashboard and suggest improvements.` : 'Help me with this widget.') : undefined}
             contextFor={contextFor} onSelectValue={onSelectValue}
             selectedValueFor={widget => crossFilters.find(item => item.source_widget_id === widget.widget_id)?.label ?? null}
@@ -625,7 +690,12 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
         await published.refetch()
       } catch (error) { toast.error(message(error)) }
     }} />
+    {scheduleOpen && page && <ScheduleDialog open onOpenChange={setScheduleOpen} dashboardId={dashboardId}
+      pages={definition.pages} pageId={page.page_id} />}
     {shareOpen && <ShareDialog open onOpenChange={setShareOpen} dashboardId={dashboardId} workspaceId={workspaceId} definition={definition} />}
+    {linking && <LinkDialog open onOpenChange={value => { if (!value) setLinking(null) }} dashboardId={dashboardId}
+      widgetId={linking.widget.widget_id} chart={linking.chart} saving={savingLink}
+      existing={linksFor(linking.widget)[0]} onSave={link => void saveLink(link)} />}
     <HistorySheet open={historyOpen} onOpenChange={setHistoryOpen} dashboardId={dashboardId} epoch={epoch}
       current={revision} published={publicationId ? publishedRevision : undefined} />
     <TextDialog open={textOpen} onOpenChange={setTextOpen} onAdd={addText} />

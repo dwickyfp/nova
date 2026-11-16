@@ -23,6 +23,7 @@ HANDLERS = frozenset(
         "intelligence.outcome",
         "intelligence.newsroom",
         "agents.quality",
+        "viz.dashboard_export",
     }
 )
 
@@ -62,6 +63,10 @@ async def _run_once(
         record_id = config.record_id or ""
         if handler != "intelligence.consolidate" and not record_id:
             raise ValueError("Internal work has no target record")
+        if handler == "viz.dashboard_export":
+            from app.modules.viz.scheduled_export import run as export_page
+
+            return await export_page(record_id, user)
         if handler == "agents.quality":
             from app.modules.agents.quality_monitoring import score_production
 
@@ -159,7 +164,8 @@ async def _run_once(
         return {"status": "complete", "extracted": extracted}
 
 
-async def run_internal_task(task, job, run_id, executor, repository) -> None:
+async def run_internal_task(task, job, run_id, executor, repository, renew=None) -> None:
+    """Run one allowlisted handler; ``renew`` renews the worker's node and graph leases."""
     handler = task.get("handler")
     if handler not in HANDLERS:
         raise ValueError("Unknown internal task handler")
@@ -184,8 +190,8 @@ async def run_internal_task(task, job, run_id, executor, repository) -> None:
                 or graph_run["state"] != "running"
             ):
                 raise CredentialUnavailable("Internal work no longer owns a running task")
-            await repository.mark_task_run_heartbeat(run_id)
-            await repository.mark_graph_run_heartbeat(job.graph_run_id)
+            if renew is not None:
+                await renew()
             await asyncio.sleep(10)
 
     async def execute():
@@ -228,13 +234,17 @@ async def run_internal_task(task, job, run_id, executor, repository) -> None:
                 await run_once(handler, config, user)
 
     async with asyncio.timeout(120):
-        async with asyncio.TaskGroup() as group:
-            keeper = group.create_task(heartbeat())
+        try:
+            async with asyncio.TaskGroup() as group:
+                keeper = group.create_task(heartbeat())
 
-            async def finish():
-                try:
-                    await execute()
-                finally:
-                    keeper.cancel()
+                async def finish():
+                    try:
+                        await execute()
+                    finally:
+                        keeper.cancel()
 
-            group.create_task(finish())
+                group.create_task(finish())
+        except BaseExceptionGroup as failed:
+            # Record the handler's own error, not the task group around it.
+            raise failed.exceptions[0] from None

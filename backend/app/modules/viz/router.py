@@ -51,6 +51,9 @@ from .contracts.queries import DatasetQueryRequest, DatasetQueryResult
 from .dataset_service import native_dataset_service as datasets
 from .document_service import native_document_service as service
 from .documents import Kind
+from .export_schedules import ScheduleRequest
+from .export_schedules import native_export_schedules as schedules
+from .presence import native_presence as presence
 
 MAX_REVISION = 9_007_199_254_740_991
 
@@ -323,6 +326,60 @@ async def authorize_export(identity: UUID, body: ExportRequest, user: User) -> A
     await service.require_kind(user, identity, KINDS["dashboards"])
     return await service.authorize_export(user, identity, file_format=body.format,
                                           part=body.chart_id)
+
+
+class PresenceCursor(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    #: Across the canvas, 0 (left) to 1 (right).
+    x: float
+    #: Down the canvas, in grid rows.
+    y: float
+
+
+class PresenceBeat(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    page_id: UUID | None = None
+    cursor: PresenceCursor | None = None
+    editing: bool = False
+
+
+@router.put("/dashboards/{identity}/presence")
+async def presence_beat(identity: UUID, body: PresenceBeat, user: User) -> Any:
+    """Say this viewer is here and list the others; anyone who can view may take part."""
+    async def can_view() -> bool:
+        await service.require_kind(user, identity, KINDS["dashboards"])
+        return "view" in await service.permissions(user, identity)
+
+    try:
+        return await presence.beat(
+            user, identity, page_id=body.page_id,
+            cursor=body.cursor.model_dump() if body.cursor else None,
+            editing=body.editing, can_view=can_view)
+    except PermissionError:
+        raise HTTPException(status_code=404, detail="Dashboard not found") from None
+
+
+@router.delete("/dashboards/{identity}/presence", status_code=204)
+async def presence_leave(identity: UUID, user: User) -> Response:
+    await presence.leave(user, identity)
+    return Response(status_code=204)
+
+
+@router.get("/dashboards/{identity}/schedules")
+async def export_schedules(identity: UUID, user: User) -> Any:
+    """Scheduled Excel exports of this dashboard's pages, for people who may download it."""
+    return await schedules.list(user, identity)
+
+
+@router.put("/dashboards/{identity}/schedules")
+async def save_export_schedule(identity: UUID, body: ScheduleRequest, user: User) -> Any:
+    return await schedules.save(user, identity, body)
+
+
+@router.delete("/dashboards/{identity}/schedules/{schedule_id}", status_code=204)
+async def remove_export_schedule(identity: UUID, schedule_id: UUID, user: User) -> Response:
+    await schedules.remove(user, identity, schedule_id)
+    return Response(status_code=204)
 
 
 @router.get("/{collection}/{identity}/permissions", response_model=list[Permission])

@@ -768,6 +768,12 @@ async def test_sql_inspection_binds_sources_and_uses_authorized_engine_schema(se
         "SELECT * FROM foreign_catalog.db.t",
         "SELECT 1 AS total",
         "SELECT sleep(1) AS total FROM orders",
+        "INSERT INTO orders SELECT * FROM orders",
+        "SELECT * FROM orders; DELETE FROM orders",
+        "WITH x AS (SELECT sleep(5) AS total FROM orders) SELECT total FROM x",
+        "UPDATE orders SET total = 0",
+        "SELECT total FROM orders INTO OUTFILE 's3://bucket/x'",
+        "SELECT total FROM orders /* ; DROP TABLE orders */ ; DROP TABLE orders",
     ],
 )
 async def test_invalid_sql_dataset_never_reaches_catalog_or_engine(setup, sql_request, sql):

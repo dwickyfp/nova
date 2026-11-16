@@ -352,8 +352,11 @@ describe("cell", () => {
     await expect.element(editor).toHaveFocus();
     const box = screen.container.querySelector<HTMLElement>("[data-cell-editor]")!;
     expect(box.getBoundingClientRect().height).toBeGreaterThanOrEqual(4 * 20);
-    await userEvent.click(box);
+    // The cell decides on mousedown. Dispatch it directly: a pointer click waits
+    // for the growing editor to stop moving, which timed out under suite load.
+    box.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
     expect(onSelect).not.toHaveBeenCalledWith("c1", false);
+    await expect.element(editor).toHaveFocus();
     await userEvent.keyboard("{End}{Enter}a{Enter}b{Enter}c{Enter}d{Enter}e");
     expect(onSource).toHaveBeenLastCalledWith("c1", "Notes\na\nb\nc\nd\ne");
     await expect.poll(() => box.getBoundingClientRect().height).toBeGreaterThanOrEqual(6 * 20);

@@ -8,6 +8,7 @@ import { cellLabel, cellNumber, chartQueryShape, columnLabel, periodEnd, type Ce
 import { queryError, useChartData } from './chart-data'
 import { EChartHost, type MarkSelection, type VizTokens } from './echart-host'
 import { cellStyle, MAX_PIVOT_COLUMNS, pivotModel, ranges } from './pivot'
+import { NativeMap } from './native-map'
 
 export type ValueSelection = {
   field_id: string
@@ -209,6 +210,13 @@ export function NativeChart({ chart, draft, context, parameters, onSelectValue, 
     }
     onSelectValue({ field_id: column.field_id, value: cell, label: cellLabel(cell, column), anchor })
   }, [chart, result, onSelectValue])
+  // A map point cross-filters by its group; coordinates alone are not a useful filter.
+  const selectGroup = useCallback((row: number) => {
+    const column = result?.columns[2]
+    const cell = result?.rows[row]?.[2]
+    if (!onSelectValue || chart.encoding.kind !== 'map' || !chart.encoding.group || !column?.field_id || cell === undefined) return
+    onSelectValue({ field_id: column.field_id, value: cell, label: cellLabel(cell, column) })
+  }, [chart, result, onSelectValue])
 
   const label = `${chart.title}: ${chart.visual} chart`
   if (shapeError) return <State tone='muted' text={shapeError} />
@@ -225,6 +233,7 @@ export function NativeChart({ chart, draft, context, parameters, onSelectValue, 
         : chart.visual === 'kpi' ? <Kpi chart={chart} result={result} />
           : chart.visual === 'pivot' ? <PivotTable chart={chart} result={result} />
           : chart.visual === 'table' ? <ResultTable chart={chart} result={result} />
+          : chart.visual === 'map' ? <NativeMap chart={chart} result={result} label={label} selectedLabel={selectedLabel} onSelectGroup={onSelectValue ? selectGroup : undefined} />
             : <EChartHost build={build} label={label} onSelect={onSelectValue ? select : undefined} />}
     </div>
     {result.truncated && <p className='shrink-0 pt-1 text-xs text-warning-strong'>

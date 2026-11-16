@@ -428,6 +428,9 @@ export type Interaction = {
   "source_widget_id": string;
   "target_widget_ids"?: Array<string>;
   "target_page_id"?: string | null;
+  "target_dashboard_id"?: string | null;
+  "target_workspace_id"?: string | null;
+  "label"?: string | null;
   "mappings"?: Array<FieldMapping>;
   "run_on"?: "select" | "menu";
 };
