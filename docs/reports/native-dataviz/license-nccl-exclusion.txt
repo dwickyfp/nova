@@ -1,0 +1,15 @@
+NDV-OSS-002 finding from CI run 44019145194 (Backend static, commit f5ccacbb), 2026-11-17:
+  FAIL nvidia-nccl-cu12==2.31.2: prohibited license LicenseRef-NVIDIA-Proprietary
+  (pulled on x86_64 Linux by xgboost 2.1.4 <- flaml[automl]; absent on macOS and aarch64,
+  so the local gate run passed.)
+
+Fix: backend/pyproject.toml [tool.uv] override-dependencies =
+  ["nvidia-nccl-cu12; sys_platform == 'never'"]; uv.lock relocked
+  (`uv export --locked --no-dev` -> nvidia-nccl-cu12 ; sys_platform == 'never').
+
+Verification that CPU xgboost works without NCCL on x86_64 Linux
+(throwaway `docker run --rm --platform linux/amd64 python:3.11-slim`,
+numpy 2.4.6, scipy 1.15.3, xgboost 2.1.4 --no-deps, native xgb.train hist, 200 rows):
+  attempt 1: FAIL - test used XGBClassifier, which needs scikit-learn (not installed in the probe)
+  attempt 2: FAIL - pip download read timeout (network)
+  attempt 3: PASS - "x86_64 nccl installed: False" / "xgboost 2.1.4 train acc 1.0"

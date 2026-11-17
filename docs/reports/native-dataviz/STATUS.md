@@ -719,3 +719,21 @@ AGENT-001, OSS-001 and OSS-002.
   - CI run 44012358710, for the previous commit, failed Backend static on
     Ruff in `recheck_live.py`, which this batch fixes. Every other job passed,
     including integration L3.
+- **First CI run of the license gate (run 44019145194):** it failed on
+  `nvidia-nccl-cu12` (NVIDIA proprietary license). On x86_64 Linux, xgboost
+  pulls it in through `flaml[automl]`; macOS does not install it. A uv override
+  now never installs it. Multi-GPU training is the only use of NCCL, and Nova
+  does not run it. CPU xgboost trains without it
+  (`license-nccl-exclusion.txt`). This also removes about 340 MB from each
+  Linux backend image.
+- **Round 5, later:** the bundle now serves third-party notices
+  (`/licenses/third-party.md`, with the ECharts and es-toolkit NOTICE files),
+  and `pnpm check:bundle` enforces them (OSS-004, OSS-007). REVIS-006 passes
+  with the OPS-001 editor fix.
+- **Gates (round 5, later):** frontend coverage attempt 1 had 10 timeout
+  failures in 5 unchanged files. The host load average was 41 (5-minute) and
+  23 (1-minute) from parallel work. The 5 files passed alone (87 tests).
+  Attempt 2 was clean: 223 files and 1,946 tests. Lint, build, bundle budget
+  with notices, and the license gate passed. CI run 44019145194 (`f5ccacbb`):
+  every job passed except Backend static, which stopped at the NCCL finding.
+  Ruff and mypy did not run in that job; the next push runs them.

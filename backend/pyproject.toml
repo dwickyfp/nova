@@ -68,6 +68,10 @@ packages = ["app"]
 
 [tool.uv]
 default-groups = ["dev"]
+# flaml[automl] pulls xgboost, whose Linux wheel requires NVIDIA NCCL (proprietary
+# license). NCCL is only used for multi-GPU training, which Nova does not run, so it
+# is never installed; CPU xgboost works without it. scripts/check_licenses.py enforces this.
+override-dependencies = ["nvidia-nccl-cu12; sys_platform == 'never'"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

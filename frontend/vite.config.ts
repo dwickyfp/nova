@@ -1,10 +1,40 @@
 /// <reference types="vitest/config" />
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
-import { defineConfig, transformWithOxc } from "vite";
+import { defineConfig, transformWithOxc, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import { playwright } from "@vitest/browser-playwright";
+
+const THIRD_PARTY = "licenses/third-party.md";
+
+/** Append the NOTICE file of every bundled package that ships one (Apache-2.0 section 4d). */
+function thirdPartyNotices(): Plugin {
+  return {
+    name: "third-party-notices",
+    apply: "build",
+    writeBundle(options) {
+      const file = path.join(options.dir ?? "dist", THIRD_PARTY);
+      if (!existsSync(file)) return;
+      const listing = readFileSync(file, "utf8");
+      const store = path.resolve(import.meta.dirname, "node_modules/.pnpm");
+      const notices: string[] = [];
+      for (const [, name, version] of listing.matchAll(/^## (\S+) - (\S+) \(/gm)) {
+        const prefix = `${name.replace("/", "+")}@${version}`;
+        for (const entry of readdirSync(store).filter((item) => item === prefix || item.startsWith(prefix + "_"))) {
+          const directory = path.join(store, entry, "node_modules", name);
+          const notice = existsSync(directory) && readdirSync(directory).find((item) => /^NOTICE(\.(md|txt))?$/i.test(item));
+          if (notice) {
+            notices.push(`### ${name} - ${version}\n\n${readFileSync(path.join(directory, notice), "utf8").trim()}\n`);
+            break;
+          }
+        }
+      }
+      if (notices.length) writeFileSync(file, `${listing.trimEnd()}\n\n## NOTICE files\n\n${notices.join("\n")}`);
+    },
+  };
+}
 
 // https://vite.dev/config/
 export default defineConfig(({ command }) => ({
@@ -28,6 +58,7 @@ export default defineConfig(({ command }) => ({
     }),
     react(),
     tailwindcss(),
+    thirdPartyNotices(),
   ],
   resolve: {
     dedupe: ["react", "react-dom"],
@@ -47,6 +78,8 @@ export default defineConfig(({ command }) => ({
     ],
   },
   build: {
+    // Every bundled dependency's license, served beside the hand-kept map notices.
+    license: { fileName: THIRD_PARTY },
     rolldownOptions: {
       input: { app: path.resolve(import.meta.dirname, 'index.html') },
       output: {

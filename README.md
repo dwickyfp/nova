@@ -398,3 +398,21 @@ pnpm build
 ## License
 
 Internal project; not yet licensed for distribution.
+
+### Third-party notices
+
+Every production build serves the notices of the code it bundles under
+`/licenses/`:
+
+- `third-party.md` lists each bundled npm package with its license text. It
+  ends with the NOTICE file of each package that ships one, such as Apache
+  ECharts.
+- The map data, glyph and MapLibre notices sit beside it. Each web font in
+  `/fonts/` has its license file next to it.
+
+`pnpm check:bundle` fails the build check when any of these is missing.
+`pnpm check:licenses` and `backend/scripts/check_licenses.py` fail on any
+dependency license outside the allowlist, and on commercial or license-key
+dependencies. Keep `/licenses/` and `/fonts/` reachable when you deploy the
+frontend. These checks are engineering gates, not a legal review of
+distribution.
