@@ -536,6 +536,40 @@ describe('QA grid', { timeout: 30_000 }, () => {
 // ---- filters and interactions -------------------------------------------------------
 
 describe('QA filters and interactions', { timeout: 30_000 }, () => {
+  it('NDV-GRID-009: moving a chart keeps the same drawn chart and the viewer\'s selection', async () => {
+    setWidgets([
+      chartWidget(BAR_WIDGET, BAR_CHART, { x: 0, y: 0, w: 6, h: 4 }),
+      chartWidget(KPI_WIDGET, KPI_CHART, { x: 6, y: 0, w: 3, h: 2 }),
+    ])
+    const screen = await mount()
+    await expect.element(screen.getByTestId('kpi-value')).toHaveTextContent('15,257')
+    // Marks select values while viewing; the selection is viewer state and survives Edit.
+    await clickBar(BAR_WIDGET, 0, 10)
+    await expect.element(screen.getByRole('button', { name: 'Clear selection East' })).toBeVisible()
+    const barQueries = () => queries().filter(call => (call.body?.dimensions as unknown[] | undefined)?.length)
+    // Edit shows the draft, so the chart is read and drawn again once for it.
+    await screen.getByRole('button', { name: 'Edit' }).click()
+    const grid = screen.container.querySelector<HTMLElement>('.grid-stack')!
+    await expect.poll(() => grid.classList.contains('grid-stack-static')).toBe(false)
+    await expect.poll(() => barQueries().some(call => call.body?.draft === true)).toBe(true)
+    const { host, chart } = await echartsIn(BAR_WIDGET)
+    await wait(500)
+    const before = barQueries().length
+
+    await userEvent.hover(item(BAR_WIDGET))
+    await mouseDrag(item(BAR_WIDGET).querySelector<HTMLElement>('.grid-stack-item-content')!, 0, 300)
+    await expect.poll(() => operations.length).toBe(1)
+    expect(operations[0]).toMatchObject({ changes: [{ op: 'layout.apply' }] })
+    expect(geometry(BAR_WIDGET).y).toBeGreaterThan(0)
+    // GridStack moved the element; React kept the chart: same host, same live instance, no new query.
+    expect(item(BAR_WIDGET).querySelector('[role="img"]')).toBe(host)
+    expect(getInstanceByDom(host)).toBe(chart)
+    expect(chart.getDom()).toBe(host)
+    expect(barQueries()).toHaveLength(before)
+    await expect.element(screen.getByRole('button', { name: 'Clear selection East' })).toBeVisible()
+    await expect.poll(() => barOpacity(chart)).toEqual([1, 0.3])
+  })
+
   it('NDV-FILTER-021 / NDV-INTER-010: a cross-filter highlights its source without re-querying it, and reset clears only viewer state', async () => {
     permissionList = ['view', 'interact']
     publicationId = '99999999-0000-4000-8000-000000000001'

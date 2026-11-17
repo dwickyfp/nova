@@ -116,3 +116,41 @@ describe('Ranger policy changes while a session is open', () => {
     await expect.element(again.getByRole('table', { name: 'Data for Revenue by region' })).toHaveTextContent('Jakarta')
   })
 })
+
+describe('NDV-CACHE-004: a filter changed ten times in a row', () => {
+  it('shows only the newest result, even when older answers arrive last, and never sends queued superseded queries', async () => {
+    const columns = [
+      { key: 'd0', name: 'region', logical_type: 'string', role: 'dimension', field_id: 'region' },
+      { key: 'm0', name: 'revenue', logical_type: 'decimal', role: 'measure', field_id: 'revenue', aggregation: 'sum' }]
+    const asked: string[] = []
+    // Each answer echoes the filtered region; earlier filters answer later, so replies arrive newest first.
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, options: RequestInit = {}) => {
+      const body = JSON.parse(String(options.body ?? '{}')) as { filters?: { expression: { values: { value: string }[] } } }
+      const region = body.filters?.expression.values[0].value ?? 'none'
+      asked.push(region)
+      await new Promise(resolve => setTimeout(resolve, 900 - Number(region.slice(1)) * 80))
+      return new Response(JSON.stringify({ dataset_id: DATASET, revision: 1, truncated: false, columns,
+        rows: [[{ type: 'string', value: region }, { type: 'decimal', value: '1' }]] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+    const context = (n: number) => ({ expression: { type: 'predicate', op: 'eq',
+      field: { dataset_id: DATASET, dataset_revision: 1, field_id: 'region' }, values: [{ type: 'string', value: `R${n}` }] } }) as never
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const view = (n: number) => <QueryClientProvider client={client}>
+      <div style={{ width: 480, height: 320, display: 'flex' }}><NativeChart chart={bar} draft={false} context={context(n)} /></div>
+    </QueryClientProvider>
+    const screen = await render(view(1))
+    for (let n = 2; n <= 10; n += 1) {
+      await new Promise(resolve => setTimeout(resolve, 20))
+      await screen.rerender(view(n))
+    }
+    const table = screen.getByRole('table', { name: 'Data for Revenue by region' })
+    await expect.element(table).toHaveTextContent('R10')
+    // Let every earlier answer arrive; the chart must still show only the newest filter.
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    expect(table.element().textContent).toContain('R10')
+    expect(table.element().textContent).not.toMatch(/R[1-9](?!0)/)
+    // Three queries run at once; filters superseded while waiting are never sent.
+    expect(asked[asked.length - 1]).toBe('R10')
+    expect(asked.length).toBeLessThan(10)
+  })
+})

@@ -1,6 +1,6 @@
 # Native Dataviz delivery record
 
-Status: **in progress; not production ready; no cutover**. Release QA round 5 (2026-11-17): 172 of 254 pass, 17 out of scope, 65 HIGH open.
+Status: **in progress; not production ready; no cutover**. Release QA round 5 (2026-11-17): 177 of 254 pass, 17 out of scope, 60 HIGH open.
 Branch: `feat/dataviz-native`.
 Baseline: `1ee12694e0ecb6ecfd8135965943be08f5195967`.
 
@@ -737,3 +737,21 @@ AGENT-001, OSS-001 and OSS-002.
   with notices, and the license gate passed. CI run 44019145194 (`f5ccacbb`):
   every job passed except Backend static, which stopped at the NCCL finding.
   Ruff and mypy did not run in that job; the next push runs them.
+- **Round 5, third batch:**
+  - **Defect fixed:** every native and Studio cartesian chart set
+    `grid.containLabel`. ECharts 6 ignores it unless the legacy feature is
+    registered, and warned on each render. The charts now use the documented
+    equivalent (`outerBoundsMode: 'same'`, `outerBoundsContain: 'axisLabel'`).
+    The result was checked visually in light and dark with long labels, and
+    `check:bundle` now refuses `containLabel`.
+  - **New passes:**
+    - GRID-009: moving a chart keeps its live ECharts instance and the
+      viewer's selection.
+    - CACHE-004: ten rapid filter changes with out-of-order answers show only
+      the newest result, and queued superseded queries are never sent.
+  - **Still partial:** PERF-007. Sent queries finish by design (PERF-003), and
+    there is no server cancellation metric.
+  - **Gates:** frontend lint, build, bundle and notices, and coverage with
+    223 files and 1,948 tests, all passed.
+  - **CI run 44023243065 (`6aa4dcf2`):** Backend static passed, including the
+    license gate on Linux, Ruff and mypy. Frontend passed.

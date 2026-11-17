@@ -178,7 +178,7 @@ export function buildChartOption(chart: ChartDefinition, result: Result, tokens:
       color: colors,
       tooltip: { trigger: 'axis', confine: true, axisPointer: { type: horizontal ? 'shadow' : 'line' },
         valueFormatter: (value: unknown) => typeof value === 'number' ? formatNumber(value) : '–' },
-      grid: { left: 8, right: 16, top: 24, bottom: (series.length > 1 ? 36 : 8) + (categoryAxis.name && !horizontal ? 20 : 0), containLabel: true },
+      grid: { left: 8, right: 16, top: 24, bottom: (series.length > 1 ? 36 : 8) + (categoryAxis.name && !horizontal ? 20 : 0), outerBoundsMode: 'same', outerBoundsContain: 'axisLabel' },
       xAxis: horizontal ? valueAxes : categoryAxis,
       yAxis: horizontal ? categoryAxis : valueAxes,
       dataZoom: categories.length > 60 ? [{ type: 'inside' }] : undefined,
@@ -240,7 +240,7 @@ export function buildChartOption(chart: ChartDefinition, result: Result, tokens:
     return {
       ...common(tokens, style, groups.size > 1),
       color: palette(tokens, style, groups.size),
-      grid: { left: 8, right: 16, top: 16, bottom: groups.size > 1 ? 36 : 8, containLabel: true },
+      grid: { left: 8, right: 16, top: 16, bottom: groups.size > 1 ? 36 : 8, outerBoundsMode: 'same', outerBoundsContain: 'axisLabel' },
       xAxis: { ...axisBase(tokens), type: 'value', scale: true, name: axisTitles ? humanize(columns[encoding.kind === 'map' ? 1 : 0]?.name ?? '') : undefined, nameLocation: 'middle', nameGap: 28 },
       yAxis: { ...axisBase(tokens), type: 'value', scale: true, name: axisTitles ? humanize(columns[encoding.kind === 'map' ? 0 : 1]?.name ?? '') : undefined },
       series: [...groups.entries()].map(([name, data]) => ({
@@ -266,7 +266,7 @@ export function buildChartOption(chart: ChartDefinition, result: Result, tokens:
     return {
       ...common(tokens, style, false),
       tooltip: { position: 'top', confine: true },
-      grid: { left: 8, right: 16, top: 8, bottom: 48, containLabel: true },
+      grid: { left: 8, right: 16, top: 8, bottom: 48, outerBoundsMode: 'same', outerBoundsContain: 'axisLabel' },
       xAxis: { ...axisBase(tokens), type: 'category', data: xs, splitArea: { show: false } },
       yAxis: { ...axisBase(tokens), type: 'category', data: ys },
       visualMap: { min: Math.min(0, ...values), max: Math.max(1, ...values), calculable: true, orient: 'horizontal',
@@ -289,7 +289,7 @@ export function buildChartOption(chart: ChartDefinition, result: Result, tokens:
       }
       return {
         ...common(tokens, style, false), color: [tokens.mark],
-        grid: { left: 8, right: 16, top: 16, bottom: 8, containLabel: true },
+        grid: { left: 8, right: 16, top: 16, bottom: 8, outerBoundsMode: 'same', outerBoundsContain: 'axisLabel' },
         xAxis: { ...axisBase(tokens), type: 'category', data: [columns[0]?.name ?? ''] },
         yAxis: { ...axisBase(tokens), type: 'value', scale: true },
         series: [{ type: 'boxplot', data: total ? [[quantile(0), quantile(0.25), quantile(0.5), quantile(0.75), quantile(1)]] : [] }],
@@ -304,7 +304,7 @@ export function buildChartOption(chart: ChartDefinition, result: Result, tokens:
     return {
       ...common(tokens, style, false), color: [tokens.mark],
       tooltip: { trigger: 'axis', confine: true },
-      grid: { left: 8, right: 16, top: 16, bottom: 8, containLabel: true },
+      grid: { left: 8, right: 16, top: 16, bottom: 8, outerBoundsMode: 'same', outerBoundsContain: 'axisLabel' },
       xAxis: { ...axisBase(tokens), type: 'category', data: counts.map((_, i) => `${formatNumber(min + i * width, 'compact')}–${formatNumber(min + (i + 1) * width, 'compact')}`) },
       yAxis: { ...axisBase(tokens), type: 'value', name: axisTitles ? 'Rows' : undefined },
       series: [{ type: 'bar', data: counts, barCategoryGap: '2%' }],

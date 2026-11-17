@@ -61,7 +61,10 @@ for (const family of new Set(fonts.filter(file => file.endsWith('.woff2')).map(f
 const walk = directory => readdirSync(directory, { withFileTypes: true }).flatMap(item =>
   item.isDirectory() ? walk(join(directory, item.name)) : /\.(ts|tsx)$/.test(item.name) ? [join(directory, item.name)] : [])
 for (const file of walk('src')) {
-  if (/from ['"]echarts['"]|import\(['"]echarts['"]\)/.test(readFileSync(file, 'utf8'))) notices.push(`${file} imports the full ECharts entry`)
+  const text = readFileSync(file, 'utf8')
+  if (/from ['"]echarts['"]|import\(['"]echarts['"]\)/.test(text)) notices.push(`${file} imports the full ECharts entry`)
+  // ECharts 6 ignores grid.containLabel unless LegacyGridContainLabel is registered.
+  if (/containLabel\s*:/.test(text) && !text.includes('LegacyGridContainLabel')) notices.push(`${file} uses grid.containLabel; use outerBoundsMode/outerBoundsContain`)
 }
 for (const problem of notices) console.log(`MISSING ${problem}`)
 console.log(`${notices.length ? 'MISSING' : 'ok  '} notices      ${bundled.length} packages, ${fonts.filter(file => file.startsWith('LICENSE-')).length} font licenses`)
