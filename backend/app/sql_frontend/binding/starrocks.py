@@ -148,7 +148,9 @@ class StarRocksCatalogProvider:
                 role=context.role,
                 connected=context.connection,
             )
-        except StarRocksError:
+        except StarRocksError as error:
+            if error.engine_unavailable:
+                raise  # Not a refusal: the caller answers that the engine is unavailable.
             raise SemanticError("Catalog metadata is unavailable or not accessible") from None
         if result.error:
             raise SemanticError("Catalog metadata is unavailable or not accessible")

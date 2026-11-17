@@ -1,0 +1,117 @@
+{
+  "started_at": "2026-11-17T16:09:44.909609+00:00",
+  "run": "f2afd8",
+  "result": "FAIL",
+  "cleanup": "UNVERIFIED: ConnectError",
+  "engine_sessions_baseline": 0,
+  "engine_sessions_in_flight": 4,
+  "killed_load": {
+    "outcomes": [
+      "RemoteProtocolError",
+      "429",
+      "RemoteProtocolError",
+      "429",
+      "429",
+      "429",
+      "429",
+      "429",
+      "429",
+      "RemoteProtocolError",
+      "429",
+      "RemoteProtocolError"
+    ],
+    "seconds": 1.4
+  },
+  "recovered_load": {
+    "outcomes": [
+      "200",
+      "200",
+      "200",
+      "200",
+      "200",
+      "200",
+      "200",
+      "200",
+      "200",
+      "200",
+      "200",
+      "200"
+    ],
+    "seconds": 217.0,
+    "host_load": [
+      18.9423828125,
+      18.65283203125,
+      17.04638671875
+    ]
+  },
+  "error": "ConnectError: [Errno 61] Connection refused",
+  "steps": [
+    {
+      "step": "fixture: CREATE DATABASE ndv_ops_f2afd8",
+      "passed": true
+    },
+    {
+      "step": "fixture: CREATE TABLE ndv_ops_f2afd8.orders (id B",
+      "passed": true
+    },
+    {
+      "step": "fixture: INSERT INTO ndv_ops_f2afd8.orders SELECT",
+      "passed": true
+    },
+    {
+      "step": "the extra web and query processes start",
+      "passed": true
+    },
+    {
+      "step": "the author builds the dataset",
+      "passed": true,
+      "status": 201
+    },
+    {
+      "step": "both web replicas return the identical document",
+      "passed": true
+    },
+    {
+      "step": "both replicas refuse an unknown document identically",
+      "passed": true,
+      "status": 404
+    },
+    {
+      "step": "after a role switch on one replica, both query processes refuse alike",
+      "passed": true,
+      "statuses": [
+        403,
+        403
+      ]
+    },
+    {
+      "step": "a role switch on the second replica is seen by the first",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "step": "every widget ends on its own when the query process dies",
+      "passed": true,
+      "outcomes": [
+        "429",
+        "RemoteProtocolError"
+      ]
+    },
+    {
+      "step": "the killed process's in-flight widgets fail rather than hang",
+      "passed": true
+    },
+    {
+      "step": "a replacement query process starts",
+      "passed": true
+    },
+    {
+      "step": "the replacement answers every widget",
+      "passed": true,
+      "outcomes": [
+        "200"
+      ]
+    }
+  ],
+  "finished_at": "2026-11-17T16:15:53.613052+00:00"
+}

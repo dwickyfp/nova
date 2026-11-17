@@ -129,6 +129,38 @@ through the existing Workspace storage owner:
 The new object layout leaves legacy path-derived and `.versions` objects in
 place: the first save of an imported file keeps its legacy object as history.
 
+## Orphaned objects
+
+Every save writes a new object under `<base>/<namespace>/.objects/` before its
+metadata commits. A failed save removes its object at once. A crash between
+the write and the commit, a failed removal or an unknown commit outcome can
+still leave an object that nothing references. The maintenance worker's
+Workspace object reconciler (`app/modules/workspaces/object_reconciler.py`,
+migration 0060) removes these:
+
+- It runs every 6 hours under a Redis leader lock, so one instance reconciles.
+- It considers only `.objects` keys last written more than 24 hours ago. That
+  is far longer than any save's transaction can stay open, so a write that may
+  still commit is never considered. Imported files, version snapshots under
+  `.versions` and notebook outputs are never touched.
+- As the SERVICE principal `nova-workspace-objects` on the maintenance login,
+  it asks PostgreSQL which of a batch of keys a live entry or a reserved or
+  published version still references. The login can read object keys and
+  nothing else: no names, paths, owners or digests, and no metadata writes.
+  Any other identity on that login sees no rows.
+- It removes the unreferenced keys, at most 1,000 per pass. A failed removal
+  is counted and retried on a later pass. If metadata cannot answer, nothing
+  is removed.
+
+An unknown commit outcome resolves itself. A save that committed references
+its object and keeps it. One that never committed leaves an unreferenced
+object, which is removed after the retention.
+
+Evidence: `tests/unit/test_workspace_object_reconciler.py` and
+`tests/integration/test_metadata_workspace_objects.py` (PG17). The development
+database was upgraded to schema 60 by the guarded procedure recorded in
+`docs/reports/native-dataviz/development-schema-60.json`.
+
 ## Remaining workspace and notebook work
 
 - At cutover, wire `WorkspaceMetadataService` into the router and Notebook
@@ -138,8 +170,9 @@ place: the first save of an imported file keeps its legacy object as history.
   stay with `WorkspaceService`. One Notebook site reads
   `workspace_repository.get_entry` directly and must move to the service.
 - Version reservations made by this service publish in the same transaction, so
-  it leaves no `reserved` rows. A recovery worker is still needed for unknown
-  commit outcomes and for any other reserver.
+  it leaves no `reserved` rows. Orphaned objects are reconciled (see above). A
+  `reserved` row left by another reserver still keeps its object and needs a
+  recovery step that settles the row itself.
 - Produce the redacted duplicate-version conflict manifest and stop import until
   its reconciliation policy is applied.
 - Notebook runtime, execution and package metadata now have a prepared PG store

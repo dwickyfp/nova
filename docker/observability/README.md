@@ -6,7 +6,7 @@ dashboards open in Grafana's **Nova** folder:
 | Dashboard | What to inspect |
 | --- | --- |
 | Operations overview | Availability, request latency, SQL traffic, execution pressure, dependencies |
-| API and SQL | Route errors and latency, SQL pipeline, proxy listener and sessions, API process |
+| API and SQL | Route errors and latency, SQL pipeline, proxy listener and sessions, API process, Dataviz reads and scheduled exports |
 | Jobs and agents | Scheduler leadership, queue backlog, task and Studio Auto workers, migration jobs, search indexing, recovery |
 | StarRocks engine | FE query traffic and queues, BE CPU, memory, disk, compaction |
 | Host system | Docker Linux runtime CPU, memory, swap, filesystems, disk I/O, network, load |

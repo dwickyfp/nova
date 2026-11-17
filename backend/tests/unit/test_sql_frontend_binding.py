@@ -129,6 +129,22 @@ async def test_driver_metadata_failure_is_redacted():
     assert "sensitive" not in str(error.value)
 
 
+@pytest.mark.parametrize("failure", [
+    StarRocksError("Connection error: lost"),
+    StarRocksError("SQL error: (1203) too many connections", engine_code=1203),
+])
+async def test_an_unreachable_engine_is_not_reported_as_inaccessible_metadata(failure):
+    """Callers answer 'unavailable', not 'not permitted', when the engine is down."""
+    repo = AsyncMock()
+    repo.execute_as_user.side_effect = failure
+    provider = StarRocksCatalogProvider(
+        repo, ExecutionContext("alice", database="db", role="analyst"), lambda: "pw",
+    )
+    with pytest.raises(StarRocksError) as error:
+        await provider.get_source_identity(TableName("t"))
+    assert error.value.engine_unavailable
+
+
 @pytest.mark.parametrize("raw,bits", [
     ("tinyint(4)", 8), ("smallint(6)", 16), ("int(11)", 32),
     ("bigint(20)", 64), ("largeint(40)", 128), ("tinyint(1)", 8),

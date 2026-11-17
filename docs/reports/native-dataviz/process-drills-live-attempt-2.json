@@ -1,0 +1,118 @@
+{
+  "started_at": "2026-11-17T16:07:14.440030+00:00",
+  "run": "cd26f1",
+  "result": "FAIL",
+  "cleanup": "REMOVED",
+  "engine_sessions_baseline": 0,
+  "engine_sessions_in_flight": 4,
+  "killed_load": {
+    "outcomes": [
+      "RemoteProtocolError",
+      "RemoteProtocolError",
+      "ConnectError",
+      "ConnectError",
+      "RemoteProtocolError",
+      "RemoteProtocolError",
+      "ConnectError",
+      "ConnectError",
+      "RemoteProtocolError",
+      "RemoteProtocolError",
+      "ReadError",
+      "ReadError"
+    ],
+    "seconds": 0.9
+  },
+  "recovered_load": [
+    "504",
+    "429",
+    "504",
+    "429",
+    "429",
+    "429",
+    "429",
+    "429",
+    "503",
+    "429",
+    "504",
+    "429"
+  ],
+  "engine_sessions_after": 0,
+  "steps": [
+    {
+      "step": "fixture: CREATE DATABASE ndv_ops_cd26f1",
+      "passed": true
+    },
+    {
+      "step": "fixture: CREATE TABLE ndv_ops_cd26f1.orders (id B",
+      "passed": true
+    },
+    {
+      "step": "fixture: INSERT INTO ndv_ops_cd26f1.orders SELECT",
+      "passed": true
+    },
+    {
+      "step": "the extra web and query processes start",
+      "passed": true
+    },
+    {
+      "step": "the author builds the dataset",
+      "passed": true,
+      "status": 201
+    },
+    {
+      "step": "both web replicas return the identical document",
+      "passed": true
+    },
+    {
+      "step": "both replicas refuse an unknown document identically",
+      "passed": true,
+      "status": 404
+    },
+    {
+      "step": "after a role switch on one replica, both query processes refuse alike",
+      "passed": true,
+      "statuses": [
+        403,
+        403
+      ]
+    },
+    {
+      "step": "a role switch on the second replica is seen by the first",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "step": "every widget ends on its own when the query process dies",
+      "passed": true,
+      "outcomes": [
+        "ConnectError",
+        "ReadError",
+        "RemoteProtocolError"
+      ]
+    },
+    {
+      "step": "the killed process's in-flight widgets fail rather than hang",
+      "passed": true
+    },
+    {
+      "step": "a replacement query process starts",
+      "passed": true
+    },
+    {
+      "step": "the replacement answers every widget",
+      "passed": false,
+      "outcomes": [
+        "429",
+        "503",
+        "504"
+      ]
+    },
+    {
+      "step": "the author's engine sessions return to the baseline",
+      "passed": true,
+      "baseline": 0,
+      "after": 0
+    }
+  ],
+  "finished_at": "2026-11-17T16:09:08.355902+00:00"
+}

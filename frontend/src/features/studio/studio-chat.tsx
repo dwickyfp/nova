@@ -59,8 +59,18 @@ import { useTranscriptStream } from "./use-transcript-stream";
 import { rememberLastAgent } from "./default-agent";
 import { mergeMissionProjection, type Mission } from "./workflow-api";
 import { useAuthStore } from "@/stores/auth-store";
-import { NATIVE_DASHBOARD_CHANGED } from "@/features/native-dataviz/dashboard/events";
+import {
+  NATIVE_DASHBOARD_ACTIVITY,
+  NATIVE_DASHBOARD_CHANGED,
+  type NativeDashboardActivity,
+  type NevaState,
+} from "@/features/native-dataviz/dashboard/events";
 import { patchTurn, replayThread, type PendingCall, type TranscriptTurn } from "./studio-transcript";
+
+function activity(detail: NativeDashboardActivity) {
+  window.dispatchEvent(new CustomEvent(NATIVE_DASHBOARD_ACTIVITY, { detail }));
+}
+
 export type { OrderedContent, TranscriptTurn } from "./studio-transcript";
 
 /** A News story handed to Studio: its thread, investigating Mission and prompt. */
@@ -169,6 +179,7 @@ export function StudioChat({
   const [extended, setExtended] = useState(false);
   const [deepenTarget, setDeepenTarget] = useState<string | null>(null);
   const { abortRef, queueEvent, flushEvents, discardQueuedEvents } = useTranscriptStream(setTurns);
+  const toolStatus = useRef(new Map<string, string>());
   const onTurnEvent = useCallback((turnId: string, event: AssistantEvent) => {
     const workflow = event as unknown as { type: string; mission?: Mission };
     if (workflow.type === "mission_updated" && workflow.mission) {
@@ -178,14 +189,28 @@ export function StudioChat({
         (current) => mergeMissionProjection(current, mission, mission.thread_id),
       );
     }
-    if (workflow.type === "dashboard_changed") {
+    if (event.type === "dashboard_changed") {
       // Native dashboards reload the committed revision Neva just wrote.
-      const changed = event as unknown as { dashboard_id?: unknown; revision?: unknown };
-      if (typeof changed.dashboard_id === "string" && typeof changed.revision === "number") {
-        window.dispatchEvent(new CustomEvent(NATIVE_DASHBOARD_CHANGED, {
-          detail: { dashboard_id: changed.dashboard_id, revision: changed.revision },
-        }));
-      }
+      window.dispatchEvent(new CustomEvent(NATIVE_DASHBOARD_CHANGED, {
+        detail: { dashboard_id: event.dashboard_id, revision: event.revision },
+      }));
+      activity({ kind: "status", tool_call_id: event.tool_call_id, state: "saved" });
+    }
+    // Neva's pointer on the dashboard follows the change it proposes, and
+    // whether that change was approved and saved.
+    if (event.type === "tool_call") toolStatus.current.set(event.payload.tool_call_id, event.payload.status);
+    if (event.type === "dashboard_activity") {
+      activity({
+        kind: "proposed", tool_call_id: event.tool_call_id, dashboard_id: event.dashboard_id,
+        action: event.action, widget_ids: event.widget_ids, page_id: event.page_id,
+        state: toolStatus.current.get(event.tool_call_id) === "pending" ? "waiting" : "saving",
+      });
+    }
+    if (event.type === "tool_status") {
+      const state: NevaState | null = event.status === "running" || event.status === "approved" ? "saving"
+        : event.status === "failed" ? "failed"
+        : event.status === "denied" || event.status === "cancelled" ? "stopped" : null;
+      if (state) activity({ kind: "status", tool_call_id: event.tool_call_id, state });
     }
     queueEvent(turnId, event);
   }, [queryClient, queueEvent]);

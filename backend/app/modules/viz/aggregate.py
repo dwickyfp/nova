@@ -162,13 +162,57 @@ def _compatible(field_: DatasetField, kind: str) -> bool:
     return logical == kind
 
 
+def _stages(node: Expression) -> set[str]:
+    if isinstance(node, And | Or):
+        return set().union(*(_stages(child) for child in node.children))
+    if isinstance(node, Not):
+        return _stages(node.child)
+    return {node.stage}
+
+
+def split_stages(expression: Expression) -> tuple[Expression | None, Expression | None]:
+    """The row part (WHERE) and the aggregate part (HAVING) of a filter tree.
+
+    Only a top-level AND may combine the two; an OR or NOT that mixes them has
+    no single stage to run in and is refused.
+    """
+    stages = _stages(expression)
+    if "post_aggregate" in stages:
+        raise SemanticError("Filters on calculated results are not supported in dataset queries")
+    if stages == {"row"}:
+        return expression, None
+    if stages == {"aggregate"}:
+        return None, expression
+    if not isinstance(expression, And):
+        raise SemanticError("A filter on totals cannot be combined with a row filter by OR or NOT")
+    rows: list[Expression] = []
+    totals: list[Expression] = []
+    for child in expression.children:
+        kinds = _stages(child)
+        if kinds == {"row"}:
+            rows.append(child)
+        elif kinds == {"aggregate"}:
+            totals.append(child)
+        else:
+            raise SemanticError(
+                "A filter on totals cannot be combined with a row filter by OR or NOT")
+
+    def joined(items: list[Expression]) -> Expression:
+        return items[0] if len(items) == 1 else And(children=tuple(items))
+
+    return joined(rows), joined(totals)
+
+
 class _Filters:
     def __init__(self, plan: AggregatePlan, fields: dict[str, DatasetField], dataset_id: str,
-                 revision: int, reserved: set[str], now: datetime) -> None:
+                 revision: int, reserved: set[str], now: datetime,
+                 measures: dict[str, list[tuple[str, DatasetField]]] | None = None) -> None:
         self.plan, self.fields, self.now = plan, fields, now
         self.dataset_id, self.revision = dataset_id, revision
         self.reserved = reserved
         self.counter = 0
+        #: field_id -> (aggregate SQL, its output type) for each measure in the query.
+        self.measures = measures or {}
 
     def _bind(self, kind: str, value: ParameterValue, precision: int | None, scale: int | None,
               multiple: bool = False) -> str:
@@ -201,8 +245,8 @@ class _Filters:
         return self._predicate(node)
 
     def _predicate(self, node: Predicate) -> str:
-        if node.stage != "row":
-            raise SemanticError("Only row-level filters are supported in dataset queries")
+        if node.stage not in {"row", "aggregate"}:
+            raise SemanticError("Only row and total filters are supported in dataset queries")
         if (str(node.field.dataset_id) != self.dataset_id
                 or node.field.dataset_revision != self.revision):
             raise SemanticError("Filter field belongs to another dataset revision")
@@ -211,6 +255,19 @@ class _Filters:
             raise SemanticError("Filter references an unknown field")
         column = _identifier(target.source_column)
         op = node.op
+        if node.stage == "aggregate":
+            # A filter on a total compares the measure as the chart computes it.
+            found = self.measures.get(node.field.field_id, [])
+            if not found:
+                raise SemanticError("A filter on totals must use a measure shown in the query")
+            if len(found) > 1:
+                raise SemanticError(
+                    "This field is shown with more than one aggregation; filter one of them")
+            column, target = found[0]
+            if target.logical_type not in NUMERIC:
+                raise SemanticError("Only numeric totals can be filtered")
+            if op not in {*_COMPARE, "between", "is_null", "is_not_null"}:
+                raise SemanticError("Totals can be compared, ranged or checked for no value")
         if op == "is_null":
             return f"({column} IS NULL)"
         if op == "is_not_null":
@@ -289,6 +346,7 @@ def plan_aggregate(
             physical_type=source.physical_type, semantic_role="dimension", nullable=True,
             timezone=source.timezone,
         ))
+    measures: dict[str, list[tuple[str, DatasetField]]] = {}
     for index, measure in enumerate(request.measures):
         source = None
         if measure.field_id is not None:
@@ -296,6 +354,11 @@ def plan_aggregate(
             if source is None:
                 raise SemanticError("Query references an unknown field")
         expression, logical = _measure_sql(source, measure.aggregation)
+        if source is not None:
+            measures.setdefault(source.field_id, []).append((expression, DatasetField(
+                field_id=source.field_id, name=source.name, source_column=f"m{index}",
+                logical_type=logical, physical_type="DECIMAL(38,9)",  # type: ignore[arg-type]
+                semantic_role="measure", nullable=True)))
         key = f"m{index}"
         select.append(f"{expression} AS `{key}`")
         label = "Rows" if source is None else source.name
@@ -311,11 +374,15 @@ def plan_aggregate(
             timezone=source.timezone if source and logical == "timestamp" else None,
         ))
     plan = AggregatePlan(sql="", columns=tuple(columns), output_fields=tuple(outputs))
-    where = ""
+    where = having = ""
     if request.filters is not None:
         compiler = _Filters(plan, by_id, dataset_id, request.revision, set(reserved_parameters),
-                            now or datetime.now(UTC))
-        where = f"\nWHERE {compiler.compile(request.filters.expression)}"
+                            now or datetime.now(UTC), measures)
+        rows, totals = split_stages(request.filters.expression)
+        if rows is not None:
+            where = f"\nWHERE {compiler.compile(rows)}"
+        if totals is not None:
+            having = f"\nHAVING {compiler.compile(totals)}"
     group = ""
     if request.dimensions:
         group = "\nGROUP BY " + ",".join(dimension_sql)
@@ -325,7 +392,7 @@ def plan_aggregate(
     order = "\nORDER BY " + ",".join(order_keys) if order_keys else ""
     plan.sql = (
         f"SELECT {','.join(select)}\nFROM ({inner_sql}\n) AS `nova_dataset`"
-        f"{where}{group}{order}\nLIMIT {request.limit + 1}"
+        f"{where}{group}{having}{order}\nLIMIT {request.limit + 1}"
         + (f" OFFSET {request.offset}" if request.offset else "")
     )
     return plan

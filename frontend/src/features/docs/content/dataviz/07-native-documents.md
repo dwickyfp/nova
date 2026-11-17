@@ -148,6 +148,13 @@ calculate (sum, average, minimum, maximum, count or distinct count), filters,
 sort order and a row limit of up to 10,000. Every filter value is sent as a
 typed value, never as query text, and must match its field's type.
 
+A filter can also apply to a calculated total instead of to rows, for example
+to keep only the cities whose total revenue is above 1,000. Such a filter must
+use a number the same query calculates, with one aggregation, and can compare
+it, check a range or check for no value. It is applied after the totals are
+calculated, so it never changes the totals that remain. Row filters and total
+filters can be combined with AND, but not with OR or NOT.
+
 A query runs with your current role. Draft queries need edit access and use the
 exact dataset revision requested; published dashboards read the dataset
 revision their publication pins. The response says when more rows exist than

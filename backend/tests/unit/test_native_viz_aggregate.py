@@ -171,3 +171,69 @@ def test_date_bounds_on_timestamps_use_the_fields_own_midnight():
     assert values["nova_q0_"].isoformat() == "2024-02-01T00:00:00+07:00"
     assert values["nova_q1"].isoformat() == "2024-03-01T00:00:00+07:00"
     assert [spec.type for spec in result.specs] == ["timestamp", "timestamp"]
+
+
+# ── NDV-FILTER-020: a filter on a measure runs after aggregation ─────
+
+
+def test_a_measure_filter_compiles_into_having_not_where():
+    result = plan(request(
+        dimensions=[{"field_id": "f_city"}],
+        measures=[{"field_id": "f_amount", "aggregation": "sum"}],
+        filters=FilterTree(expression={"type": "and", "children": [
+            predicate("f_city", "neq", {"type": "string", "value": "Bogor"}),
+            predicate("f_amount", "gt", {"type": "decimal", "value": "1000"}, stage="aggregate"),
+        ]}),
+    ))
+    total = "CAST(SUM(CAST(`amount` AS DECIMAL(38,2))) AS DECIMAL(38,2))"
+    assert result.sql == (
+        f"SELECT `city` AS `d0`,{total} AS `m0`\n"
+        "FROM (SELECT * FROM sales\n) AS `nova_dataset`\n"
+        "WHERE (`city` <> :nova_q0_)\n"
+        "GROUP BY `city`\n"
+        f"HAVING ({total} > :nova_q1)\n"
+        "ORDER BY `d0` ASC\nLIMIT 1001"
+    )
+    assert [name for name, _ in result.values] == ["nova_q0_", "nova_q1"]
+    assert result.values[1][1] == Decimal("1000")
+    parsed = parse_statement(result.sql)
+    validate_read_query(parsed)
+
+
+def test_only_a_measure_filter_has_no_where_and_ranges_work():
+    result = plan(request(
+        dimensions=[{"field_id": "f_city"}],
+        measures=[{"field_id": "f_qty", "aggregation": "count"}],
+        filters=FilterTree(expression=predicate(
+            "f_qty", "between", {"type": "integer", "value": "2"},
+            {"type": "integer", "value": "9"}, stage="aggregate")),
+    ))
+    assert "WHERE" not in result.sql
+    assert "HAVING (COUNT(`qty`) BETWEEN :nova_q0_ AND :nova_q1)" in result.sql
+
+
+@pytest.mark.parametrize(("expression", "measures", "message"), [
+    # A measure filter for a field the query does not show.
+    (predicate("f_amount", "gt", {"type": "decimal", "value": "1"}, stage="aggregate"),
+     [{"field_id": "f_qty", "aggregation": "sum"}], "measure shown in the query"),
+    # The same field with two aggregations: which total is meant is unclear.
+    (predicate("f_amount", "gt", {"type": "decimal", "value": "1"}, stage="aggregate"),
+     [{"field_id": "f_amount", "aggregation": "sum"},
+      {"field_id": "f_amount", "aggregation": "avg"}], "more than one aggregation"),
+    # Text totals (MIN of a name) cannot be compared as numbers.
+    (predicate("f_city", "eq", {"type": "string", "value": "x"}, stage="aggregate"),
+     [{"field_id": "f_city", "aggregation": "max"}], "numeric totals"),
+    # Row and total filters joined by OR have no single stage to run in.
+    ({"type": "or", "children": [
+        predicate("f_city", "eq", {"type": "string", "value": "x"}),
+        predicate("f_amount", "gt", {"type": "decimal", "value": "1"}, stage="aggregate")]},
+     [{"field_id": "f_amount", "aggregation": "sum"}], "OR or NOT"),
+    (predicate("f_amount", "like_literal", {"type": "string", "value": "1"}, stage="aggregate"),
+     [{"field_id": "f_amount", "aggregation": "sum"}], "compared"),
+    (predicate("f_amount", "gt", {"type": "decimal", "value": "1"}, stage="post_aggregate"),
+     [{"field_id": "f_amount", "aggregation": "sum"}], "calculated results"),
+])
+def test_measure_filters_that_cannot_run_are_refused(expression, measures, message):
+    with pytest.raises(SemanticError, match=message):
+        plan(request(dimensions=[{"field_id": "f_city"}], measures=measures,
+                     filters=FilterTree(expression=expression)))

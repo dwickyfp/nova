@@ -1,0 +1,113 @@
+[
+ {
+  "step": "mypy",
+  "command": [
+   "uv",
+   "run",
+   "mypy",
+   "app",
+   "--no-error-summary"
+  ],
+  "returncode": 0,
+  "seconds": 32.9,
+  "log": "backend-mypy-attempt-28.txt"
+ },
+ {
+  "step": "ruff",
+  "command": [
+   "uv",
+   "run",
+   "ruff",
+   "check",
+   "app/core/exceptions.py",
+   "app/modules/agents/router.py",
+   "app/modules/agents/tools/native_dataviz.py",
+   "app/modules/assistant/events.py",
+   "app/modules/assistant/schemas.py",
+   "app/modules/assistant/service.py",
+   "app/modules/auth/exceptions.py",
+   "app/modules/auth/service.py",
+   "app/modules/query/repository.py",
+   "app/modules/viz/aggregate.py",
+   "app/modules/viz/dataset_service.py",
+   "app/modules/viz/scheduled_export.py",
+   "app/modules/workspaces/object_reconciler.py",
+   "app/modules/workspaces/service.py",
+   "app/observability/metrics.py",
+   "app/sql_frontend/binding/starrocks.py",
+   "app/worker/maintenance.py",
+   "scripts/verify_metadata_restore_drill.py",
+   "scripts/verify_native_dashboard_perf_live.py",
+   "scripts/verify_native_datasets_live.py",
+   "scripts/verify_native_documents_live.py",
+   "scripts/verify_native_drill_deny_live.py",
+   "scripts/verify_native_metric_ratio_live.py",
+   "scripts/verify_native_neva_live.py",
+   "scripts/verify_native_process_drills_live.py",
+   "scripts/verify_native_row_filters_live.py",
+   "scripts/verify_native_source_identity_live.py",
+   "tests/eval/test_native_dataviz_neva_context.py",
+   "tests/integration/test_metadata_scheduled_export_crash.py",
+   "tests/integration/test_metadata_viz_export.py",
+   "tests/integration/test_metadata_workspace_objects.py",
+   "tests/unit/conftest.py",
+   "tests/unit/test_auth_engine_unavailable.py",
+   "tests/unit/test_native_dataviz_assistant_tools.py",
+   "tests/unit/test_native_viz_aggregate.py",
+   "tests/unit/test_native_viz_datasets.py",
+   "tests/unit/test_native_viz_held_session.py",
+   "tests/unit/test_native_viz_operator_metrics.py",
+   "tests/unit/test_native_viz_references.py",
+   "tests/unit/test_query_provenance.py",
+   "tests/unit/test_sql_frontend_binding.py",
+   "tests/unit/test_workspace_object_reconciler.py"
+  ],
+  "returncode": 0,
+  "seconds": 0.4,
+  "log": "backend-ruff-attempt-28.txt"
+ },
+ {
+  "step": "unit",
+  "command": [
+   "uv",
+   "run",
+   "pytest",
+   "tests/unit",
+   "-q",
+   "-p",
+   "no:cacheprovider",
+   "--cov=app",
+   "--cov-branch",
+   "--cov-report=xml:/Users/dwickyferiansyahputra/.local/share/nova/native-dataviz-evidence-originals-20261114/backend-coverage-attempt-28.xml",
+   "--junitxml=/Users/dwickyferiansyahputra/.local/share/nova/native-dataviz-evidence-originals-20261114/backend-unit-attempt-28.xml"
+  ],
+  "returncode": 0,
+  "seconds": 1933.2,
+  "log": "backend-unit-attempt-28.txt"
+ },
+ {
+  "step": "scorecard",
+  "command": [
+   "uv",
+   "run",
+   "python",
+   "-m",
+   "tests.eval.report"
+  ],
+  "returncode": 0,
+  "seconds": 2.4,
+  "log": "backend-scorecard-attempt-28.txt"
+ },
+ {
+  "step": "boundary",
+  "command": [
+   "uv",
+   "run",
+   "python",
+   "scripts/check_user_data_system_access.py"
+  ],
+  "returncode": 0,
+  "seconds": 0.1,
+  "log": "backend-boundary-attempt-28.txt"
+ }
+]

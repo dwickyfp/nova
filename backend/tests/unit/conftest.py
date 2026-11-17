@@ -70,3 +70,23 @@ def audit_events(monkeypatch):
 
     monkeypatch.setattr(audit, "_persist", record)
     return events
+
+
+@pytest.fixture(autouse=True)
+def _no_held_engine_session(request, monkeypatch):
+    """Dataset reads hold one engine session per request; unit tests have no engine.
+
+    Tests of the held session itself are marked ``engine_session`` and see the
+    real function, with the connection faked.
+    """
+    if request.node.get_closest_marker("engine_session"):
+        return
+    from contextlib import asynccontextmanager
+
+    from app.modules.viz import dataset_service
+
+    @asynccontextmanager
+    async def no_session(_user):
+        yield
+
+    monkeypatch.setattr(dataset_service, "held_engine_session", no_session)

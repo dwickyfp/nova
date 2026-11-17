@@ -1,0 +1,7 @@
+# Engine overload is not a refusal: 12 concurrent widget queries per run (scratch probe), 2026-11-17T16:26:58Z
+# before the fix (22:40-22:55 local, same probe): 403 'Source schema is unavailable or not permitted' in 4 of 6 runs; engine said (1064) 'StarRocks planner use long time ... in logical phase'
+   1 create 201    1 drop True    1 single 200    4 status= 200    8 status= 429 load={ 13.90 14.48 15.56 }
+   1 create 201    1 drop True    1 single 200    8 status= 429    4 status= 504 load={ 18.30 15.46 15.82 }
+   1 create 201    1 drop True    1 single 503    4 status= 200    8 status= 429 load={ 18.64 16.18 16.05 }
+   1 create 503    1 drop True    1 single 404    4 status= 404    8 status= 429 load={ 23.15 18.30 16.88 }
+   1 create 201    1 drop True    1 single 503    8 status= 429    4 status= 503 load={ 25.51 20.43 17.85 }

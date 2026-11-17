@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { getInstanceByDom, type ECharts } from 'echarts/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { page, userEvent } from 'vitest/browser'
+import { cdp, page, userEvent } from 'vitest/browser'
 import { cleanup, render } from 'vitest-browser-react'
 import { ThemeProvider } from '@/context/theme-provider'
 import { useAuthStore } from '@/stores/auth-store'
@@ -161,6 +161,57 @@ afterEach(async () => {
   for (const client of clients.splice(0)) client.clear()
   useAuthStore.getState().auth.reset()
   vi.unstubAllGlobals()
+})
+
+describe('NDV-A11Y-003 reduced motion', () => {
+  // The Playwright provider's CDP session; its typing lives in that provider's package.
+  const session = () => cdp() as unknown as { send(method: string, params?: object): Promise<unknown> }
+  const motion = (value: 'reduce' | 'no-preference') => session().send('Emulation.setEmulatedMedia',
+    { features: [{ name: 'prefers-reduced-motion', value }] })
+  const COLOURS = /^(color|background-color|border-color|outline-color|text-decoration-color|fill|stroke|--tw-[a-z-]*|all)$/
+
+  /** Elements that would move: a running animation, or a timed transition of anything but colour. */
+  function moving(root: HTMLElement): string[] {
+    const found: string[] = []
+    for (const element of [root, ...root.querySelectorAll<HTMLElement>('*')]) {
+      const style = getComputedStyle(element)
+      const animated = style.animationName !== 'none' && style.animationDuration.split(',').some(value => parseFloat(value) > 0)
+      const properties = style.transitionProperty.split(',').map(value => value.trim())
+      const durations = style.transitionDuration.split(',').map(value => parseFloat(value))
+      const transitions = properties.filter((property, i) => (durations[i % durations.length] ?? 0) > 0 && !COLOURS.test(property))
+      if (animated || transitions.length) found.push(`${element.tagName.toLowerCase()}.${element.className}: ${style.animationName} ${transitions.join(' ')}`)
+    }
+    return found
+  }
+
+  it('draws charts and places widgets without animation, and nothing on the canvas moves', async () => {
+    let pending = true
+    const held = new Promise<void>(resolve => { setTimeout(resolve, 800) })
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      // The first query waits a moment, so the loading placeholder is on screen.
+      if (pending && String(input).endsWith('/query')) { pending = false; await held }
+      return route(input, options)
+    }))
+    await motion('reduce')
+    try {
+      const { screen } = await mountCanvas()
+      const container = screen.container
+      await expect.poll(() => container.querySelector('[aria-busy="true"]')).not.toBeNull()
+      expect(moving(container)).toEqual([])
+      const { chart } = await chartOn(container, labels('year'))
+      expect((chart.getOption() as { animation?: boolean }).animation).toBe(false)
+      expect(container.querySelector('.grid-stack')!.classList.contains('grid-stack-animate')).toBe(false)
+      expect(moving(container)).toEqual([])
+    } finally {
+      await motion('no-preference')
+    }
+    // Without the preference the same canvas animates, so the checks above can fail.
+    await cleanup()
+    const { screen } = await mountCanvas()
+    const { chart } = await chartOn(screen.container, labels('year'))
+    expect((chart.getOption() as { animation?: boolean }).animation).not.toBe(false)
+    expect(screen.container.querySelector('.grid-stack')!.classList.contains('grid-stack-animate')).toBe(true)
+  })
 })
 
 describe('NDV-INTER-009 drilling into detail the role cannot read', () => {

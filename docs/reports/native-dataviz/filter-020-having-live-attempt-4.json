@@ -1,0 +1,323 @@
+{
+  "started_at": "2026-11-17T12:15:58.193490+00:00",
+  "resource_id": "765b5bdb-9d80-4cd8-9b87-331eb4aeb5bd",
+  "scope": "shared native dataset read by three people under Ranger row filters",
+  "result": "FAIL",
+  "cleanup": "REMOVED",
+  "error_type": "AssertionError",
+  "error": "finance cannot open the shared dataset",
+  "steps": [
+    {
+      "check": "alice login",
+      "passed": true
+    },
+    {
+      "check": "alice admitted",
+      "passed": true
+    },
+    {
+      "check": "alice login",
+      "passed": true
+    },
+    {
+      "check": "alice admitted",
+      "passed": true
+    },
+    {
+      "check": "bob login",
+      "passed": true
+    },
+    {
+      "check": "bob admitted",
+      "passed": true
+    },
+    {
+      "request": "author uses regional_manager",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "author uses regional_manager",
+      "passed": true
+    },
+    {
+      "check": "author role is regional_manager",
+      "passed": true
+    },
+    {
+      "request": "alice uses marketing",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "alice uses marketing",
+      "passed": true
+    },
+    {
+      "check": "alice active role is marketing",
+      "passed": true
+    },
+    {
+      "request": "bob uses marketing",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "bob uses marketing",
+      "passed": true
+    },
+    {
+      "check": "bob active role is marketing",
+      "passed": true
+    },
+    {
+      "request": "shared workspace",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "shared workspace",
+      "passed": true
+    },
+    {
+      "request": "share with marketing",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "share with marketing",
+      "passed": true
+    },
+    {
+      "request": "inspect",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "inspect",
+      "passed": true
+    },
+    {
+      "check": "schema without rows",
+      "passed": true
+    },
+    {
+      "request": "create in shared workspace",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "create in shared workspace",
+      "passed": true
+    },
+    {
+      "request": "publish",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "publish",
+      "passed": true
+    },
+    {
+      "request": "read grants",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "read grants",
+      "passed": true
+    },
+    {
+      "request": "grant marketing view",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "grant marketing view",
+      "passed": true
+    },
+    {
+      "request": "author query as regional_manager",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "author query as regional_manager",
+      "passed": true
+    },
+    {
+      "check": "regional_manager sees both cities",
+      "passed": true,
+      "rows": [
+        [
+          "Bandung",
+          "600.00"
+        ],
+        [
+          "Jakarta",
+          "400.00"
+        ]
+      ]
+    },
+    {
+      "request": "alice query as marketing",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "alice query as marketing",
+      "passed": true
+    },
+    {
+      "check": "alice sees only Jakarta",
+      "passed": true,
+      "rows": [
+        [
+          "Jakarta",
+          "400.00"
+        ]
+      ]
+    },
+    {
+      "request": "bob query as marketing",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "bob query as marketing",
+      "passed": true
+    },
+    {
+      "check": "bob sees only Bandung",
+      "passed": true,
+      "rows": [
+        [
+          "Bandung",
+          "600.00"
+        ]
+      ]
+    },
+    {
+      "request": "total filter as regional_manager",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "total filter as regional_manager",
+      "passed": true
+    },
+    {
+      "check": "total above 500 keeps Bandung only, with its whole total",
+      "passed": true,
+      "rows": [
+        [
+          "Bandung",
+          "600.00"
+        ]
+      ]
+    },
+    {
+      "request": "row and total filter together",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "row and total filter together",
+      "passed": true
+    },
+    {
+      "check": "a row filter and a total filter combine",
+      "passed": true,
+      "rows": [
+        [
+          "Jakarta",
+          "400.00"
+        ]
+      ]
+    },
+    {
+      "request": "total filter as marketing (alice)",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "total filter as marketing (alice)",
+      "passed": true
+    },
+    {
+      "check": "the total filter sees only the rows Ranger allows",
+      "passed": true,
+      "rows": []
+    },
+    {
+      "request": "alice uses regional_manager",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "alice uses regional_manager",
+      "passed": true
+    },
+    {
+      "request": "alice query as regional_manager",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "alice query as regional_manager",
+      "passed": true
+    },
+    {
+      "check": "the same viewer sees more with a wider role",
+      "passed": true,
+      "rows": [
+        [
+          "Bandung",
+          "600.00"
+        ],
+        [
+          "Jakarta",
+          "400.00"
+        ]
+      ]
+    },
+    {
+      "request": "alice uses finance",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "alice uses finance",
+      "passed": true
+    },
+    {
+      "request": "finance cannot open the shared dataset",
+      "status": 403,
+      "expected_status": 404
+    },
+    {
+      "check": "finance cannot open the shared dataset",
+      "passed": false
+    },
+    {
+      "request": "delete dataset",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "delete dataset",
+      "passed": true
+    },
+    {
+      "request": "delete workspace",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "delete workspace",
+      "passed": true
+    }
+  ],
+  "finished_at": "2026-11-17T12:16:23.307004+00:00"
+}

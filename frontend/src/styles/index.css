@@ -826,6 +826,15 @@ input:-webkit-autofill:active {
   padding: 6px;
   pointer-events: none;
 }
+/* The widget a change Neva proposes would touch. */
+.grid-stack-item[data-neva-target] > .grid-stack-item-content {
+  outline: 2px dashed var(--primary);
+  outline-offset: 2px;
+}
+.grid-stack-item[data-neva-target="failed"] > .grid-stack-item-content,
+.grid-stack-item[data-neva-target="stopped"] > .grid-stack-item-content {
+  outline-color: var(--muted-foreground);
+}
 .nova-dataviz-drop::before {
   content: "";
   display: block;

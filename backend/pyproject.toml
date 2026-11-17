@@ -79,6 +79,7 @@ testpaths = ["tests"]
 addopts = "--strict-markers"
 markers = [
     "metadata_pg: requires an explicitly disposable PostgreSQL 17 database with verified TLS",
+    "engine_session: uses the real held engine session of a dataset read (connection faked)",
     "engine: requires the real StarRocks/Redis/MinIO stack from docker-compose.test.yml",
     "functional_sql: exhaustive SQL matrix against explicitly configured Nova proxy and API",
     "slow: excluded from the fast local loop",

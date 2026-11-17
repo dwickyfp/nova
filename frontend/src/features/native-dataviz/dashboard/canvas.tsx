@@ -17,6 +17,7 @@ import { NativeChart, type ValueSelection } from '../charts/native-chart'
 import { activeDrop, DROP_TYPE, dropSize, slotAt, type DropItem, type Layout, type Page, type Widget } from './layout'
 import { ROW_PX, type CanvasPoint, type Collaborator } from './presence'
 import { PresenceCursors } from './presence-ui'
+import { NevaPointer, type NevaActivity } from './neva-pointer'
 
 type CanvasProps = {
   /** Other people on this dashboard, and where this viewer's pointer is. */
@@ -40,6 +41,8 @@ type CanvasProps = {
   selectedValueFor?: (widget: Widget) => string[] | null
   /** Widgets Neva just changed; they carry a brief "Neva" marker. */
   highlighted?: string[]
+  /** A change Neva proposed on this page: its pointer sits on the target. */
+  neva?: { activity: NevaActivity; short: string } | null
   /** Links from a chart to other dashboards (drill-through). */
   linksFor?: (widget: Widget) => Interaction[]
   onOpenLink?: (link: Interaction, selection: ValueSelection) => void
@@ -116,7 +119,7 @@ function ChartBody({ widget, props }: { widget: ChartWidget; props: CanvasProps 
   return <WidgetFrame widget={widget} title={showTitle || active.length ? title : ''} props={props} chart={definition}
     download={download} canImage={shown ? hasImage(shown) : false}
     drill={active.length ? { back: () => setSteps(active.slice(0, -1)), reset: () => setSteps([]), depth: active.length } : undefined}>
-    {chart.isPending ? <div aria-busy='true' className='min-h-0 flex-1 animate-pulse rounded bg-muted/60' />
+    {chart.isPending ? <div aria-busy='true' className='min-h-0 flex-1 motion-safe:animate-pulse rounded bg-muted/60' />
       : chart.isError || !shown ? <p role='alert' className='m-auto text-sm text-muted-foreground'>This chart is unavailable with your current role.</p>
         : <div ref={place} className='relative flex min-h-0 flex-1 flex-col'>
           {near ? <NativeChart chart={shown} draft={props.draft} context={context}
@@ -167,7 +170,7 @@ function WidgetFrame({ widget, title, props, chart, download, canImage = false, 
     appearance?.padding === 'none' ? 'p-0' : appearance?.padding === 'comfortable' ? 'p-4' : 'p-3',
     props.editing && 'cursor-grab active:cursor-grabbing',
     selected && 'outline-2 outline-offset-2 outline-ring',
-    highlighted && 'ring-2 ring-primary/60 transition-shadow')}
+    highlighted && 'ring-2 ring-primary/60 motion-safe:transition-shadow')}
   onClick={event => { if (props.editing) { event.stopPropagation(); props.onSelect(widget.widget_id) } }}
   // In Edit, Tab reaches every widget and focusing one selects it, so Alt+arrows can move it.
   tabIndex={props.editing ? 0 : undefined}
@@ -227,6 +230,11 @@ function WidgetBody({ widget, props }: { widget: Widget; props: CanvasProps }) {
   return <WidgetFrame widget={widget} title={widget.title ?? ''} props={props}><span /></WidgetFrame>
 }
 
+/** Reduced motion: widgets jump to their place instead of sliding there. */
+function prefersReducedMotion(): boolean {
+  return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
 /** Empty rows kept below the lowest widget while editing, to drag or resize into. */
 const ROOM_ROWS = 3
 
@@ -271,7 +279,7 @@ export function DashboardCanvas(props: CanvasProps) {
     if (!node) return
     const instance = GridStack.init({
       // The saved x/y is authoritative: never pull widgets up into empty rows.
-      column: 12, cellHeight: 72, margin: 6, animate: true, mode: 'float',
+      column: 12, cellHeight: 72, margin: 6, animate: !prefersReducedMotion(), mode: 'float',
       staticGrid: true, disableResize: false, resizable: { handles: 'se,e,s' },
     }, node)
     if (!instance) return
@@ -415,13 +423,16 @@ export function DashboardCanvas(props: CanvasProps) {
       className='grid-stack nova-dataviz-canvas min-h-24'>
       {widgets.map(widget => <div key={widget.widget_id} className='grid-stack-item group/widget' gs-id={widget.widget_id}
         gs-x={widget.layout.x} gs-y={widget.layout.y} gs-w={widget.layout.w} gs-h={widget.layout.h}
-        gs-min-w={2} gs-min-h={2} aria-label={widget.title || undefined}>
+        gs-min-w={2} gs-min-h={2} aria-label={widget.title || undefined}
+        data-neva-target={props.neva?.activity.widget_ids.includes(widget.widget_id) ? props.neva.activity.state : undefined}>
         <WidgetBody widget={widget} props={props} />
       </div>)}
     </div>
     {drop && <div aria-hidden data-testid='drop-preview' className='nova-dataviz-drop'
       style={{ left: `${drop.x / 12 * 100}%`, width: `${drop.w / 12 * 100}%`, top: drop.y * ROW_PX, height: drop.h * ROW_PX }} />}
     {props.collaborators?.length ? <PresenceCursors others={props.collaborators} pageId={props.page.page_id} /> : null}
+    {props.neva && (!props.neva.activity.page_id || props.neva.activity.page_id === props.page.page_id)
+      ? <NevaPointer activity={props.neva.activity} short={props.neva.short} host={host} /> : null}
     </div>
   </div>
 }

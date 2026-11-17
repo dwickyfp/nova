@@ -305,7 +305,8 @@ shown exactly as written and never change the dashboard or its data.
   Tab to reach it, then use the arrow keys to move from bar to bar or slice to
   slice. A screen reader announces each one. Press **Enter** to do what a click
   does, and **Escape** to leave the mark.
-- When your system is set to reduce motion, charts appear without animation
+- When your system is set to reduce motion, charts appear without animation,
+  widgets snap into place instead of sliding, loading placeholders stay still
   and other people's pointers jump instead of gliding.
 - In **Edit**, press Tab to move from widget to widget; the focused widget is
   selected. Press **Alt** with an arrow key to move it, or **Alt** and
@@ -330,6 +331,11 @@ tab disappears within a few seconds. Two people can edit at the same time. If
 both save at the same moment, the later save is not applied: the dashboard
 reloads with the other person's change, the header says **Reloaded after
 someone else’s change**, and you can make your change again.
+
+While you are not saving, a change someone else saves appears on your canvas
+within a few seconds. If your connection drops for a while, the dashboard
+catches up with every change made meanwhile once it is back, and it never
+goes back to an older version.
 
 ## Download charts and data
 
@@ -409,12 +415,34 @@ an administrator, can remove a schedule.
 - Neva reads the dashboard and its datasets and checks the numbers with your
   role. Before it changes anything, it shows the change and asks you to
   **Allow once** or **Deny**.
-- When Neva saves a change, the canvas reloads the new revision on its own.
+- Neva sees the filters and chart selections you have applied. When it gives
+  you numbers, it uses the same filters, or says which one it left out.
+- When Neva proposes changing a chart, the approval says what the chart will
+  show afterwards, for example *It will show total Revenue by City instead of
+  total Revenue and average Quantity by City*, and names anything the chart
+  would no longer show. Neva cannot change a calculation or a saved metric;
+  change those yourself in the chart editor.
+- While a change waits for your approval, a **Neva** pointer sits on the widget
+  it would change, labelled **Waiting for your approval**. It then shows
+  **Saving…** and **Saved**, or **Not saved** when the save failed; nothing
+  changes on the dashboard unless it was saved. The pointer never takes your
+  keyboard focus, and with reduced motion it appears in place instead of
+  moving across the page.
+- When Neva saves a change, the canvas reloads the new revision on its own, and
+  the widgets it changed are marked **Changed by Neva** for a few seconds. A
+  rearrangement of many widgets is saved as one version.
+- In a new chat, Neva opens the dashboard beside the chat, or one you name, at
+  its latest version, checked with your current role. If several dashboards
+  match the name, it lists them and asks which one you mean. If the page you
+  were on was removed meanwhile, Neva says so and asks which page to use.
 
 ## Limits and errors
 
-- "Query capacity is busy" means many charts are loading at once; Nova retries
-  on its own. Click **Retry** if it stays.
+- "Query capacity is still busy" means many charts are loading at once; Nova
+  retries on its own. Click **Retry** if it stays.
+- "The data engine is not responding" means the chart could not reach the data,
+  or the engine was too busy to answer in time. It is not about your access.
+  Click **Retry** in a moment.
 - "The data source changed" means the table or query behind a dataset changed.
   The chart shows no data rather than reading the wrong column, including
   when a selection or filter uses a field that changed. If you can edit

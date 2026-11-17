@@ -14,6 +14,7 @@ method, router or helper — can forget it.
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from collections.abc import Mapping
 from contextlib import contextmanager, suppress
@@ -139,6 +140,19 @@ async def _stream_result(
         raise
 
 
+#: StarRocks reports planning and execution limits with the generic code 1064,
+#: the same code as an analysis error. These messages say the engine ran out of
+#: planning time, query time or memory, or had no backend to run on: the
+#: statement was not refused, and the same request can succeed when load drops.
+ER_UNKNOWN_ERROR = 1064
+_OVERLOAD = re.compile(
+    r"planner use long time|exceeded time limit|query timeout|timeout by txn manager"
+    r"|memory of process exceed limit|mem usage has exceed|exceed mem limit"
+    r"|backend node not found|no scannode backend available",
+    re.IGNORECASE,
+)
+
+
 def _starrocks_error(exc: Exception) -> StarRocksError:
     """Translate a driver error, keeping the engine's own error number.
 
@@ -153,7 +167,10 @@ def _starrocks_error(exc: Exception) -> StarRocksError:
     code = exc.args[0] if exc.args and isinstance(exc.args[0], int) else None
     if code is not None and not 2000 <= code < 3000:
         detail = exc.args[1] if len(exc.args) > 1 else ""
-        return StarRocksError(f"SQL error: ({code}) {detail}", engine_code=code)
+        return StarRocksError(
+            f"SQL error: ({code}) {detail}", engine_code=code,
+            overloaded=code == ER_UNKNOWN_ERROR and bool(_OVERLOAD.search(str(detail))),
+        )
     if isinstance(exc, asyncmy.errors.OperationalError):
         return StarRocksError(f"Connection error: {exc}")
     return StarRocksError(f"SQL error: {exc}")
@@ -548,10 +565,11 @@ class QueryRepository:
             raise
         except asyncmy.errors.DatabaseError as e:
             if parameters is not None or private_query:
+                translated = _starrocks_error(e)
                 raise StarRocksError(
                     "Dataset query execution failed"
                     if private_query else "Bound query execution failed",
-                    engine_code=_starrocks_error(e).engine_code,
+                    engine_code=translated.engine_code, overloaded=translated.overloaded,
                 ) from None
             raise _starrocks_error(e) from e
         finally:

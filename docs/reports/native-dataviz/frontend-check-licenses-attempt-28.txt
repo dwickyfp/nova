@@ -1,0 +1,5 @@
+
+> shadcn-admin@2.2.1 check:licenses /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+> node scripts/check-licenses.mjs
+
+PASS: 646 npm packages checked, 1 reviewed exceptions, 0 findings

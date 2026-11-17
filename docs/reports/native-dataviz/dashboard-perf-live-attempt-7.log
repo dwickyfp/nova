@@ -1,0 +1,8 @@
+[PASS] fixture: CREATE DATABASE ndv_perf_27230c
+[PASS] fixture: CREATE TABLE ndv_perf_27230c.orders (id BIGINT, region S
+[PASS] fixture: INSERT INTO ndv_perf_27230c.orders SELECT generate_serie
+[PASS] fixture: CREATE TABLE ndv_perf_27230c.orders_1m (id BIGINT, regio
+[PASS] fixture: INSERT INTO ndv_perf_27230c.orders_1m SELECT generate_se
+[PASS] fixture: orders holds 100000 orders
+[PASS] fixture: orders_1m holds 1000000 orders
+STOPPED by the operator: 398 of 400 widget queries answered 403 while the FE was alive. Diagnosis: each widget query took 13-16 s server-side (two full source re-inspections, ~15 engine statements) on a host at load average 16-18 on 8 cores; slow catalog reads were reported as refusals. Fixed: engine-unavailable errors now answer 503; one held engine session per dataset request.

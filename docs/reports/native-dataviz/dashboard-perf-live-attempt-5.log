@@ -1,0 +1,9 @@
+[PASS] fixture: CREATE DATABASE ndv_perf_5caa80
+[PASS] fixture: CREATE TABLE ndv_perf_5caa80.orders (id BIGINT, region S
+[PASS] fixture: INSERT INTO ndv_perf_5caa80.orders SELECT generate_serie
+[PASS] fixture: CREATE TABLE ndv_perf_5caa80.orders_1m (id BIGINT, regio
+[PASS] fixture: INSERT INTO ndv_perf_5caa80.orders_1m SELECT generate_se
+[PASS] fixture: orders holds 100000 orders
+[PASS] fixture: orders_1m holds 1000000 orders
+[FAIL] warm-up load answers every widget
+STOPPED: the backend and query processes restarted mid-run (schema 60 code reload before the dev upgrade); warm-up saw 403 during grant propagation and 504s. Not a measurement.

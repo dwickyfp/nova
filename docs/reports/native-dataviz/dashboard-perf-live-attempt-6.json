@@ -1,0 +1,120 @@
+{
+  "started_at": "2026-11-17T14:17:15.647746+00:00",
+  "run": "383845",
+  "dashboard_rows": 100000,
+  "hardware": {
+    "os": "macOS-27.0.1-arm64-arm-64bit",
+    "cpu": "Apple M3",
+    "cores": 8,
+    "memory_bytes": "17179869184",
+    "engine": "StarRocks in Docker on this host",
+    "servers": "dev.sh (uvicorn --reload)"
+  },
+  "result": "FAIL",
+  "cleanup": "UNVERIFIED",
+  "fixture_seconds": 12.7,
+  "grant_wait_seconds": 18.4,
+  "NDV-PERF-002": {
+    "runs": 100,
+    "p50": 0.33,
+    "p95": 1.193,
+    "max": 1.966,
+    "mean": 0.444
+  },
+  "NDV-PERF-001": {
+    "runs": 100,
+    "p50": 0.677,
+    "p95": 2.177,
+    "max": 107.423,
+    "mean": 3.719,
+    "widget_statuses": {
+      "200": 11,
+      "403": 1180,
+      "504": 9
+    },
+    "attempts_per_widget": {
+      "1": 1200
+    }
+  },
+  "error_type": "HTTPStatusError",
+  "error": "Client error '401 Unauthorized' for url 'http://127.0.0.1:5173/api/v1/auth/login'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401",
+  "cleanup_error_type": "HTTPStatusError",
+  "steps": [
+    {
+      "step": "fixture: CREATE DATABASE ndv_perf_383845",
+      "passed": true
+    },
+    {
+      "step": "fixture: CREATE TABLE ndv_perf_383845.orders (id BIGINT, region S",
+      "passed": true
+    },
+    {
+      "step": "fixture: INSERT INTO ndv_perf_383845.orders SELECT generate_serie",
+      "passed": true
+    },
+    {
+      "step": "fixture: CREATE TABLE ndv_perf_383845.orders_1m (id BIGINT, regio",
+      "passed": true
+    },
+    {
+      "step": "fixture: INSERT INTO ndv_perf_383845.orders_1m SELECT generate_se",
+      "passed": true
+    },
+    {
+      "step": "fixture: orders holds 100000 orders",
+      "passed": true,
+      "rows": 100000
+    },
+    {
+      "step": "fixture: orders_1m holds 1000000 orders",
+      "passed": true,
+      "rows": 1000000
+    },
+    {
+      "step": "warm-up load answers every widget",
+      "passed": false,
+      "statuses": [
+        403,
+        403,
+        403,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        403,
+        403,
+        403
+      ]
+    },
+    {
+      "step": "NDV-PERF-002 shell p95 under 1 s",
+      "passed": false,
+      "runs": 100,
+      "p50": 0.33,
+      "p95": 1.193,
+      "max": 1.966,
+      "mean": 0.444
+    },
+    {
+      "step": "NDV-PERF-001 twelve-widget load p95 under 3 s",
+      "passed": true,
+      "runs": 100,
+      "p50": 0.677,
+      "p95": 2.177,
+      "max": 107.423,
+      "mean": 3.719
+    },
+    {
+      "step": "NDV-PERF-001 no widget failed",
+      "passed": false,
+      "statuses": {
+        "200": 11,
+        "403": 1180,
+        "504": 9
+      }
+    }
+  ],
+  "finished_at": "2026-11-17T14:27:12.195092+00:00"
+}

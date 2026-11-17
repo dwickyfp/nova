@@ -1,0 +1,348 @@
+{
+  "started_at": "2026-11-17T12:17:15.224421+00:00",
+  "resource_id": "34a0c71d-24dc-40aa-830d-087c7efb7bc0",
+  "scope": "shared native dataset read by three people under Ranger row filters",
+  "result": "PASS",
+  "cleanup": "REMOVED",
+  "steps": [
+    {
+      "check": "alice login",
+      "passed": true
+    },
+    {
+      "check": "alice admitted",
+      "passed": true
+    },
+    {
+      "check": "alice login",
+      "passed": true
+    },
+    {
+      "check": "alice admitted",
+      "passed": true
+    },
+    {
+      "check": "bob login",
+      "passed": true
+    },
+    {
+      "check": "bob admitted",
+      "passed": true
+    },
+    {
+      "request": "author uses regional_manager",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "author uses regional_manager",
+      "passed": true
+    },
+    {
+      "check": "author role is regional_manager",
+      "passed": true
+    },
+    {
+      "request": "alice uses marketing",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "alice uses marketing",
+      "passed": true
+    },
+    {
+      "check": "alice active role is marketing",
+      "passed": true
+    },
+    {
+      "request": "bob uses marketing",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "bob uses marketing",
+      "passed": true
+    },
+    {
+      "check": "bob active role is marketing",
+      "passed": true
+    },
+    {
+      "request": "shared workspace",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "shared workspace",
+      "passed": true
+    },
+    {
+      "request": "share with marketing",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "share with marketing",
+      "passed": true
+    },
+    {
+      "request": "inspect",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "inspect",
+      "passed": true
+    },
+    {
+      "check": "schema without rows",
+      "passed": true
+    },
+    {
+      "request": "create in shared workspace",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "create in shared workspace",
+      "passed": true
+    },
+    {
+      "request": "publish",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "publish",
+      "passed": true
+    },
+    {
+      "request": "read grants",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "read grants",
+      "passed": true
+    },
+    {
+      "request": "grant marketing view",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "grant marketing view",
+      "passed": true
+    },
+    {
+      "request": "author query as regional_manager",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "author query as regional_manager",
+      "passed": true
+    },
+    {
+      "check": "regional_manager sees both cities",
+      "passed": true,
+      "rows": [
+        [
+          "Bandung",
+          "600.00"
+        ],
+        [
+          "Jakarta",
+          "400.00"
+        ]
+      ]
+    },
+    {
+      "request": "alice query as marketing",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "alice query as marketing",
+      "passed": true
+    },
+    {
+      "check": "alice sees only Jakarta",
+      "passed": true,
+      "rows": [
+        [
+          "Jakarta",
+          "400.00"
+        ]
+      ]
+    },
+    {
+      "request": "bob query as marketing",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "bob query as marketing",
+      "passed": true
+    },
+    {
+      "check": "bob sees only Bandung",
+      "passed": true,
+      "rows": [
+        [
+          "Bandung",
+          "600.00"
+        ]
+      ]
+    },
+    {
+      "request": "total filter as regional_manager",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "total filter as regional_manager",
+      "passed": true
+    },
+    {
+      "check": "total above 500 keeps Bandung only, with its whole total",
+      "passed": true,
+      "rows": [
+        [
+          "Bandung",
+          "600.00"
+        ]
+      ]
+    },
+    {
+      "request": "row and total filter together",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "row and total filter together",
+      "passed": true
+    },
+    {
+      "check": "a row filter and a total filter combine",
+      "passed": true,
+      "rows": [
+        [
+          "Jakarta",
+          "400.00"
+        ]
+      ]
+    },
+    {
+      "request": "total filter as marketing (alice)",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "total filter as marketing (alice)",
+      "passed": true
+    },
+    {
+      "check": "the total filter sees only the rows Ranger allows",
+      "passed": true,
+      "rows": []
+    },
+    {
+      "request": "alice uses regional_manager",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "alice uses regional_manager",
+      "passed": true
+    },
+    {
+      "request": "alice query as regional_manager",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "alice query as regional_manager",
+      "passed": true
+    },
+    {
+      "check": "the same viewer sees more with a wider role",
+      "passed": true,
+      "rows": [
+        [
+          "Bandung",
+          "600.00"
+        ],
+        [
+          "Jakarta",
+          "400.00"
+        ]
+      ]
+    },
+    {
+      "request": "read grants again",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "read grants again",
+      "passed": true
+    },
+    {
+      "request": "remove the marketing grant",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "remove the marketing grant",
+      "passed": true
+    },
+    {
+      "request": "bob cannot open it without the grant",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "bob cannot open it without the grant",
+      "passed": true
+    },
+    {
+      "request": "alice uses finance",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "alice uses finance",
+      "passed": true
+    },
+    {
+      "request": "as finance the owner gets no rows: the engine refuses",
+      "status": 403,
+      "expected_status": 403
+    },
+    {
+      "check": "as finance the owner gets no rows: the engine refuses",
+      "passed": true
+    },
+    {
+      "request": "delete dataset",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "delete dataset",
+      "passed": true
+    },
+    {
+      "request": "delete workspace",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "delete workspace",
+      "passed": true
+    }
+  ],
+  "finished_at": "2026-11-17T12:17:27.772284+00:00"
+}

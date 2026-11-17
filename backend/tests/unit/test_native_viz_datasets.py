@@ -205,6 +205,30 @@ async def test_preview_engine_failure_is_redacted(preview_setup):
     assert "private-engine-marker" not in str(error.value)
 
 
+@pytest.mark.parametrize("failure", [
+    StarRocksError("Connection error: (2003, \"Can't connect\")"),
+    StarRocksError("SQL error: (1203) too many connections", engine_code=1203),
+    StarRocksError("SQL error: (1040) too many connections", engine_code=1040),
+])
+async def test_an_unreachable_engine_is_unavailable_not_a_refusal(preview_setup, failure):
+    """An engine that is down or full answers 503, so nobody is told they lack access."""
+    case = preview_setup
+    case.execute.side_effect = failure
+    with pytest.raises(NovaException) as error:
+        await case.service.preview(case.user, case.document.dataset_id, case.request)
+    assert error.value.status_code == 503
+    assert "not responding" in error.value.message
+    assert "connect" not in error.value.message.lower()
+
+
+async def test_an_engine_refusal_stays_a_refusal(preview_setup):
+    case = preview_setup
+    case.execute.side_effect = StarRocksError("SQL error: (1142) denied", engine_code=1142)
+    with pytest.raises(NovaException) as error:
+        await case.service.preview(case.user, case.document.dataset_id, case.request)
+    assert error.value.status_code == 403
+
+
 async def test_preview_deadline_cancels_the_stream(preview_setup, monkeypatch):
     case = preview_setup
     cancelled = asyncio.Event()

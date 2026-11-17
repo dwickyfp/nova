@@ -1,0 +1,14 @@
+[PASS] fixture: CREATE DATABASE ndv_perf_383845
+[PASS] fixture: CREATE TABLE ndv_perf_383845.orders (id BIGINT, region S
+[PASS] fixture: INSERT INTO ndv_perf_383845.orders SELECT generate_serie
+[PASS] fixture: CREATE TABLE ndv_perf_383845.orders_1m (id BIGINT, regio
+[PASS] fixture: INSERT INTO ndv_perf_383845.orders_1m SELECT generate_se
+[PASS] fixture: orders holds 100000 orders
+[PASS] fixture: orders_1m holds 1000000 orders
+[FAIL] warm-up load answers every widget
+[FAIL] NDV-PERF-002 shell p95 under 1 s
+[PASS] NDV-PERF-001 twelve-widget load p95 under 3 s
+[FAIL] NDV-PERF-001 no widget failed
+{"result": "FAIL", "cleanup": "UNVERIFIED", "error": "Client error '401 Unauthorized' for url 'http://127.0.0.1:5173/api/v1/auth/login'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401", "NDV-PERF-002": {"runs": 100, "p50": 0.33, "p95": 1.193, "max": 1.966, "mean": 0.444}, "NDV-PERF-001": {"runs": 100, "p50": 0.677, "p95": 2.177, "max": 107.423, "mean": 3.719, "widget_statuses": {"200": 11, "403": 1180, "504": 9}, "attempts_per_widget": {"1": 1200}}, "NDV-PERF-004": null, "NDV-PERF-006": null}
+EXIT 1
+ROOT CAUSE: the StarRocks FE container was OOM-killed (exit 137, OOMKilled=true) during the run: the Docker VM has 7.8 GiB shared with another stack and the FE heap is -Xmx4g. Widget 403s were engine connection failures reported as refusals; later sign-ins failed for the same reason. Not a measurement.

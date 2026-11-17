@@ -2163,6 +2163,8 @@ async def send_agent_message(
 
     #: Required tools whose output the server already gave this turn.
     dataviz_settled: tuple[str, ...] = ()
+    #: The dashboard brief says the answer must be a question back.
+    dataviz_question_back = False
     dataviz_aliases: dict[str, str] = {}
     dashboard_tools: tuple[str, ...] = ()
     if agent_id == SKILL_AUTHOR_ID or is_skill_authoring(body.content, history):
@@ -2182,14 +2184,15 @@ async def send_agent_message(
             native_dataviz.register(registry)
             system_prompt += "\n\n" + native_dataviz.PROMPT
             if native is not None:
-                text, read = await native_dataviz.brief(user, native.model_dump(mode="json"))
+                text, settles = await native_dataviz.brief_settling(
+                    user, native.model_dump(mode="json"))
                 system_prompt += (
                     "\n\n## The native dashboard on screen\n"
                     "\"This dashboard\" means this one. Change it only with the native "
                     "dashboard tools.\n" + text
                 )
-                if read:
-                    dataviz_settled += ("native_dashboard_read",)
+                dataviz_settled += settles
+                dataviz_question_back = bool(native_dataviz.ASKING_SETTLES & set(settles))
                 if is_dataviz_assistant(agent_id):
                     # Numbers come from the dashboard's own datasets, and reading
                     # or changing it stays in reach whatever the planner chose.
@@ -2310,6 +2313,7 @@ async def send_agent_message(
         thread_id=thread_id,
         dataviz=body.dataviz.turn_hints() if body.dataviz is not None else None,
         settled_capabilities=dataviz_settled,
+        question_back=dataviz_question_back,
         capability_aliases=dataviz_aliases,
         dashboard_tools=dashboard_tools,
         user=user,

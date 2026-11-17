@@ -1,0 +1,8 @@
+## tests/integration/test_metadata_viz_export.py
+ERROR tests/integration/test_metadata_viz_export.py::test_task_login_cannot_change_or_remove_files
+ERROR tests/integration/test_metadata_viz_export.py::test_a_scheduled_export_file_is_private_to_the_workspace
+6 errors in 2.48s
+## tests/integration/test_metadata_workspace_files.py
+ERROR tests/integration/test_metadata_workspace_files.py::test_import_preserves_duplicate_versions_and_numbers_new_ones_above
+ERROR tests/integration/test_metadata_workspace_files.py::test_scope_rejects_changed_context
+40 errors in 3.81s

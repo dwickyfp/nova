@@ -14,6 +14,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import type { NativeViewFilter } from '@/features/agents/api'
 import { ApiError } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
@@ -36,9 +37,11 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { readToken } from '@/lib/read-token'
 import { FilterBar, FilterBuilder } from './filters'
 import { describeFilterValue } from './filter-describe'
+import { viewFilters } from './view-filters'
 import { chartContext, defaultValue, type CrossFilter, type FilterDefinition, type FilterValue } from './filter-model'
 import { activeDrop, DROP_TYPE, firstFreeSlot, sizeFor, slotAt, type DropItem, type Layout, type Widget } from './layout'
-import { NATIVE_DASHBOARD_CHANGED, NATIVE_DASHBOARD_OPEN, type LinkedSelection, type NativeDashboardChanged, type NativeDashboardOpen } from './events'
+import { NATIVE_DASHBOARD_ACTIVITY, NATIVE_DASHBOARD_CHANGED, NATIVE_DASHBOARD_OPEN, type LinkedSelection, type NativeDashboardActivity, type NativeDashboardChanged, type NativeDashboardOpen } from './events'
+import { nevaWords, type NevaActivity } from './neva-pointer'
 import { applyLocal, inverse, sameLayout, type Change } from './operations'
 import { ShareDialog } from './share-dialog'
 import { ScheduleDialog } from './schedule-dialog'
@@ -52,6 +55,7 @@ export type NativeDashboardContext = {
   revision: number
   page_id: string | null
   selected_widget_id: string | null
+  view_filters?: NativeViewFilter[]
 }
 
 type Props = {
@@ -217,8 +221,9 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
   }, [filterSignature])
 
   useEffect(() => {
-    onContextChange?.(definition && page ? { dashboard_id: dashboardId, revision, page_id: page.page_id, selected_widget_id: selected } : null)
-  }, [onContextChange, dashboardId, revision, page, selected, definition])
+    onContextChange?.(definition && page ? { dashboard_id: dashboardId, revision, page_id: page.page_id, selected_widget_id: selected,
+      view_filters: viewFilters(definition, filterValues, crossFilters) } : null)
+  }, [onContextChange, dashboardId, revision, page, selected, definition, filterValues, crossFilters])
   useEffect(() => () => onContextChange?.(null), [onContextChange])
 
   const reload = useCallback(async () => {
@@ -233,6 +238,43 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
   // Changes by Neva or another editor arrive as committed document events.
   useEffect(() => { if (refreshToken) void reload() }, [refreshToken])
   const [nevaChanged, setNevaChanged] = useState<string[]>([])
+  // Neva's pointer: the change it proposes here, until it is saved or dropped.
+  const [neva, setNeva] = useState<NevaActivity | null>(null)
+  useEffect(() => {
+    const listener = (event: Event) => {
+      const detail = (event as CustomEvent<NativeDashboardActivity>).detail
+      if (!detail) return
+      if (detail.kind === 'proposed') {
+        if (detail.dashboard_id.toLowerCase() !== dashboardId.toLowerCase()) return
+        setNeva({ tool_call_id: detail.tool_call_id, action: detail.action, widget_ids: detail.widget_ids, page_id: detail.page_id, state: detail.state })
+      } else {
+        setNeva(current => current && current.tool_call_id === detail.tool_call_id && current.state !== detail.state
+          && !(['saved', 'failed', 'stopped'] as string[]).includes(current.state) ? { ...current, state: detail.state } : current)
+      }
+    }
+    window.addEventListener(NATIVE_DASHBOARD_ACTIVITY, listener)
+    return () => window.removeEventListener(NATIVE_DASHBOARD_ACTIVITY, listener)
+  }, [dashboardId])
+  const nevaText = useMemo(() => {
+    if (!neva || !definition) return null
+    const widgets = definition.pages.flatMap(item => item.widgets ?? [])
+    return nevaWords(neva, id => {
+      const widget = widgets.find(item => item.widget_id === id)
+      if (!widget) return undefined
+      if (widget.kind === 'chart') {
+        const chart = client.getQueryData<ChartDefinition>(chartDocumentQuery(epoch, widget.chart_ref.chart_id, widget.chart_ref.revision, editing).queryKey)
+        if (chart?.title) return chart.title
+      }
+      return 'title' in widget && typeof widget.title === 'string' && widget.title ? widget.title : undefined
+    })
+  }, [neva, definition, client, epoch, editing])
+  const nevaShown = neva && nevaText ? { activity: neva, short: nevaText.short } : null
+  useEffect(() => {
+    if (!neva || neva.state === 'waiting' || neva.state === 'saving') return
+    const timer = window.setTimeout(() => setNeva(current => current?.tool_call_id === neva.tool_call_id ? null : current),
+      neva.state === 'saved' ? 2500 : 8000)
+    return () => window.clearTimeout(timer)
+  }, [neva])
   useEffect(() => {
     if (!nevaChanged.length) return
     const timer = window.setTimeout(() => setNevaChanged([]), 4000)
@@ -261,17 +303,27 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
     let stopped = false
     const poll = async () => {
       try {
-        const page = await documents.events('dashboards', dashboardId, { after: lastSequence.current, limit: 100 })
-        const first = lastSequence.current === 0
-        lastSequence.current = page.next_sequence
-        if (!first && page.events.length && status !== 'saving') {
-          const latest = await documents.read('dashboards', dashboardId, { draft: true })
-          if (!stopped && latest.revision !== revisionRef.current) {
-            setDefinition(latest.definition as DashboardDefinition)
-            setRevision(latest.revision)
-            setPublicationId(latest.publication_id ?? null)
+        const seen = lastSequence.current
+        const page = await documents.events('dashboards', dashboardId, { after: seen, limit: 100 })
+        if (seen === 0) { lastSequence.current = page.next_sequence; return }
+        // The cursor and the shown revision only move forward. A repeated or late
+        // event changes nothing; a head older than the newest event, or a change
+        // seen while saving, leaves the cursor so the next poll asks again.
+        const newest = Math.max(seen, ...page.events.map(event => event.sequence))
+        let next = Math.max(seen, page.next_sequence)
+        if (newest > seen) {
+          if (status === 'saving') next = seen
+          else {
+            const latest = await documents.read('dashboards', dashboardId, { draft: true })
+            if (latest.metadata_revision < newest) next = seen
+            else if (!stopped && latest.revision > revisionRef.current) {
+              setDefinition(latest.definition as DashboardDefinition)
+              setRevision(latest.revision)
+              setPublicationId(latest.publication_id ?? null)
+            }
           }
         }
+        if (!stopped) lastSequence.current = Math.max(lastSequence.current, next)
       } catch { /* the next poll retries; editing state is unaffected */ }
     }
     void poll()
@@ -553,7 +605,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
     </div>
   }
   if (!definition || !page) return <div role='status' aria-label='Loading dashboard' className='flex flex-1 items-center justify-center'>
-    <Loader2 className='size-5 animate-spin text-muted-foreground' />
+    <Loader2 className='size-5 motion-safe:animate-spin text-muted-foreground' />
   </div>
 
   const sources = datasets.data?.datasets ?? []
@@ -650,6 +702,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
   const label = '@max-3xl/editor:sr-only'
   return <div className='@container/editor flex min-h-0 min-w-0 flex-1 flex-col bg-background'>
     <p role='status' className='sr-only'>{announcement}</p>
+    <p role='status' aria-label='Neva' data-testid='neva-status' className='sr-only'>{nevaText?.sentence ?? ''}</p>
     <header className={cn('flex h-14 shrink-0 items-center gap-3 border-b', compact ? 'px-3' : 'pr-4 pl-2')}>
       {!compact && <Button variant='ghost' size='icon' className='size-9 shrink-0' aria-label='Back to dashboards' onClick={onBack}><ArrowLeft /></Button>}
       <div className='flex min-w-0 flex-1 flex-col justify-center'>
@@ -771,7 +824,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
               const labels = crossFilters.filter(item => item.source_widget_id === widget.widget_id).map(item => item.label)
               return labels.length ? labels : null
             }}
-            highlighted={nevaChanged} onDownload={canExport ? (chart, context, format, root) => void downloadChart(chart, context, format, root) : undefined} />
+            highlighted={nevaChanged} neva={nevaShown} onDownload={canExport ? (chart, context, format, root) => void downloadChart(chart, context, format, root) : undefined} />
         </div>
         {inspector && <div className={cn('flex min-h-0 border-l bg-card',
           // A side column only when the canvas keeps room for a multi-column layout;

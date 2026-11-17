@@ -189,6 +189,19 @@ that identity. HTTP reads and replay continue through the caller's forced RLS.
 * v1 conversion never rounds 24-column positions. Exact even coordinates convert
   to 12 columns; unsupported layouts/filters/calculations become explicit blockers.
   The initial adapters are intentionally incomplete migration coverage.
+* Decision 2026-11-17 (NDV-DATA-014, under the owner's close-everything
+  authorization): dashboard-local metric views and their promotion are not
+  part of this release. Governed metrics ship through published Semantic Views,
+  which already have authoring, review, pinned revisions and native execution.
+  A local view has no execution plan: the query path refuses any dataset with
+  metrics ("needs a semantic or parameter execution plan"), and no editor
+  creates one. Promoting a local metric onto a base dataset would add a metric
+  to that dataset and make every chart on it unanswerable. Shipping promotion
+  first needs a metric formula compiler in `sql_frontend/` with additivity
+  rules. That is a separate work package, not a missing test. The contract
+  keeps `dashboard_local_metric_view` so stored references stay valid. The
+  dependency graph still pins and authorizes its base dataset and refuses
+  cycles.
 
 ## Dataset integration investigation
 

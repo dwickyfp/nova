@@ -1,0 +1,213 @@
+{
+  "started_at": "2026-11-17T12:37:12.994729+00:00",
+  "run": "d559",
+  "scope": "Neva on a native dashboard with the live model",
+  "result": "FAIL",
+  "cleanup": "REMOVED",
+  "turns": {
+    "AGENT-005": {
+      "tools": [
+        "native_dashboard_read",
+        "native_dataset_query"
+      ],
+      "calls": [
+        "Read the dashboard",
+        "Query the dashboard data"
+      ],
+      "finish": "stop",
+      "answer": "The total amount is **600**, with the on-screen **City = Bandung** filter applied. No date filter is applied; the dataset\u2019s date coverage is not specified.",
+      "seconds": 31.3,
+      "errors": []
+    },
+    "AGENT-018": {
+      "tools": [
+        "native_dashboard_list"
+      ],
+      "calls": [
+        "Read the dashboard"
+      ],
+      "finish": "required_capability_incomplete",
+      "answer": "",
+      "seconds": 23.2,
+      "errors": [
+        {
+          "code": "required_capability_incomplete",
+          "message": "The required capability was not executed, so Nova cannot claim the task was completed."
+        }
+      ]
+    },
+    "AGENT-019": {
+      "tools": [
+        "native_dashboard_read"
+      ],
+      "calls": [
+        "Read the dashboard"
+      ],
+      "finish": "stop",
+      "answer": "**\u201cNeva QA d559 Overview v2\u201d** has one page, **Overview**, containing:\n\n- **Amount by city**: a bar chart showing the sum of `amount` grouped by `city`.\n- **Data source**: \u201cNeva QA d559 sales,\u201d with the fields `city` and `amount`.\n- **Filters**: none configured. No date period is specified.\n\nThe dashboard is editable and unpublished. It changed since your page loaded: the page shows **version 1**, while the current dashboard is **version 2**.",
+      "seconds": 20.8,
+      "errors": []
+    },
+    "AGENT-019-bob": {
+      "tools": [
+        "native_dashboard_read"
+      ],
+      "calls": [
+        "Read the dashboard"
+      ],
+      "finish": "error",
+      "answer": "",
+      "seconds": 24.1,
+      "errors": [
+        {
+          "code": "tool_failed",
+          "message": "That dashboard, chart or dataset was not found, or your active role cannot see it."
+        }
+      ]
+    },
+    "REVIS-011": {
+      "tools": [],
+      "calls": [],
+      "finish": "stop",
+      "answer": "The page you\u2019re viewing was removed from this dashboard, so I haven\u2019t changed anything. Should I add the total amount KPI to the remaining **Overview** page?",
+      "seconds": 16.9,
+      "errors": []
+    },
+    "AGENT-006": {
+      "tools": [
+        "native_dashboard_read",
+        "native_chart_update"
+      ],
+      "calls": [
+        "Read the dashboard",
+        "Chart 'Amount by city': from bar chart to pie chart. It still shows total amount by city."
+      ],
+      "finish": "stop",
+      "answer": "The change was not applied because approval was declined. \u201cAmount by city\u201d remains a bar chart, and the dashboard is unchanged.",
+      "seconds": 27.9,
+      "errors": [],
+      "approval": "Chart 'Amount by city': from bar chart to pie chart. It still shows total amount by city."
+    }
+  },
+  "steps": [
+    {
+      "check": "alice uses regional_manager",
+      "passed": true
+    },
+    {
+      "check": "create dataset",
+      "passed": true
+    },
+    {
+      "check": "create chart",
+      "passed": true,
+      "status": 201
+    },
+    {
+      "check": "create dashboard",
+      "passed": true,
+      "status": 201
+    },
+    {
+      "check": "create dashboard",
+      "passed": true,
+      "status": 201
+    },
+    {
+      "check": "create dashboard",
+      "passed": true,
+      "status": 201
+    },
+    {
+      "check": "dashboard moved to revision 2",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "check": "AGENT-005: Neva queried the dashboard data",
+      "passed": true
+    },
+    {
+      "check": "AGENT-005: the total is Bandung's 600, not every city's 1,000",
+      "passed": true,
+      "answer": "The total amount is **600**, with the on-screen **City = Bandung** filter applied. No date filter is applied; the dataset\u2019s date coverage is not specified."
+    },
+    {
+      "check": "AGENT-018: Neva looked the name up",
+      "passed": true
+    },
+    {
+      "check": "AGENT-018: both matching dashboards are named",
+      "passed": false,
+      "answer": ""
+    },
+    {
+      "check": "AGENT-018: no change was proposed or made",
+      "passed": true
+    },
+    {
+      "check": "AGENT-019: the latest version is described",
+      "passed": true,
+      "answer": "**\u201cNeva QA d559 Overview v2\u201d** has one page, **Overview**, containing:\n\n- **Amount by city**: a bar chart showing the sum of `amount` grouped by `city`.\n- **Data source**: \u201cNeva QA d559 sales,\u201d with the fields `city` and `amount`.\n- **Filters**: none configured. No date period is specified.\n\nThe dashboard is editable and unpublished. It changed since your page loaded: the page shows **version 1**,"
+    },
+    {
+      "check": "REVIS-014 / DATA-017: no dashboard, chart or dataset was copied",
+      "passed": true,
+      "before": {
+        "dashboards": 3,
+        "charts": 1,
+        "datasets": 1
+      },
+      "after": {
+        "dashboards": 3,
+        "charts": 1,
+        "datasets": 1
+      }
+    },
+    {
+      "check": "AGENT-019: a person who cannot open it learns nothing about it",
+      "passed": true,
+      "answer": ""
+    },
+    {
+      "check": "REVIS-011: no change was saved",
+      "passed": true
+    },
+    {
+      "check": "REVIS-011: Neva says the page is gone or asks which page",
+      "passed": true,
+      "answer": "The page you\u2019re viewing was removed from this dashboard, so I haven\u2019t changed anything. Should I add the total amount KPI to the remaining **Overview** page?"
+    },
+    {
+      "check": "AGENT-006: the approval says what the chart will show",
+      "passed": true,
+      "approval": "Chart 'Amount by city': from bar chart to pie chart. It still shows total amount by city."
+    },
+    {
+      "check": "AGENT-013: the pointer targets that chart's widget",
+      "passed": true,
+      "pointers": [
+        {
+          "tool_call_id": "d1fa89cf-cf2a-42e2-af33-af15c7951a1b",
+          "dashboard_id": "776b0ecc-08bc-4311-b69e-d058e8198fa2",
+          "action": "change",
+          "widget_ids": [
+            "3b2c967e-2e95-439f-8883-61971fe65a25"
+          ],
+          "page_id": "87a84e65-e051-4c06-8627-6456624a876d",
+          "run_id": "ae52875c-5c49-4431-ba8d-691e95accd8b",
+          "sequence": 20
+        }
+      ]
+    },
+    {
+      "check": "AGENT-006: denied, so nothing was saved",
+      "passed": true
+    },
+    {
+      "check": "the dashboard is still at revision 2",
+      "passed": true
+    }
+  ],
+  "finished_at": "2026-11-17T12:39:47.347443+00:00"
+}

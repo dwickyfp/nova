@@ -453,6 +453,8 @@ async def run(
                     repair_source=replace_view if repair_source else None,
                     kind="view",
                     columns=["id", "amount"],
+                    expected_types={"id": ["integer", "bigint"],
+                                    "amount": ["decimal", "decimal"]},
                     base_url="http://127.0.0.1:5173",
                 )
             )

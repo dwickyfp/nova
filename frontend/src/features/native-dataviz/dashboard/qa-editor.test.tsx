@@ -1,14 +1,14 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { getInstanceByDom } from 'echarts/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { page, userEvent } from 'vitest/browser'
+import { cdp, page, userEvent } from 'vitest/browser'
 import { cleanup, render } from 'vitest-browser-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAuthStore } from '@/stores/auth-store'
 import type { ChartDefinition, DatasetField } from '../contracts'
 import { initialState, toChart } from '../charts/builder-model'
 import { DashboardEditor } from './editor'
-import { NATIVE_DASHBOARD_OPEN, type LinkedSelection, type NativeDashboardOpen } from './events'
+import { NATIVE_DASHBOARD_ACTIVITY, NATIVE_DASHBOARD_CHANGED, NATIVE_DASHBOARD_OPEN, type LinkedSelection, type NativeDashboardActivity, type NativeDashboardOpen } from './events'
 import '@/styles/index.css'
 
 /*
@@ -74,6 +74,12 @@ let publicationId: string | null = null
 let replyLost: 'after-commit' | 'before-commit' | null = null
 /** Whether receipt lookups answer, as after the database is back. */
 let receiptsAvailable = true
+/** Change notifications unreachable, as when the polling channel drops. */
+let eventsDown = false
+/** One events page to return instead of the server's, e.g. a repeat or a late page. */
+let eventsOnce: Json | null = null
+/** One head read to answer with an older snapshot, as a lagging read would. */
+let staleHeadOnce: Json | null = null
 const receipts: Record<string, Json> = {}
 let definition: Json & { pages: PageJson[]; title: string }
 /** Answers a dataset query; the default derives the value from the request. */
@@ -136,6 +142,8 @@ async function route(url: string, options: RequestInit = {}) {
   calls.push({ url, method, body })
   if (url.endsWith(`/viz/dashboards/${DASHBOARD}/permissions`)) return json(permissionList)
   if (url.includes(`/viz/dashboards/${DASHBOARD}/events`)) {
+    if (eventsDown) return json({ detail: 'Service unavailable' }, 503)
+    if (eventsOnce) { const page = eventsOnce; eventsOnce = null; return json(page) }
     const after = Number(new URL(url, 'http://test').searchParams.get('after') ?? 0)
     const last = events[events.length - 1]?.sequence ?? revision
     return json({ events: events.filter(item => item.sequence > after).map(item => ({
@@ -167,7 +175,10 @@ async function route(url: string, options: RequestInit = {}) {
     if (!receiptsAvailable) return json({ detail: 'Metadata service is unavailable' }, 503)
     return receipts[lookup[1]] ? json(receipts[lookup[1]]) : json({ detail: 'Not found' }, 404)
   }
-  if (url.includes(`/viz/dashboards/${DASHBOARD}?`)) return json(snapshot())
+  if (url.includes(`/viz/dashboards/${DASHBOARD}?`)) {
+    if (staleHeadOnce) { const head = staleHeadOnce; staleHeadOnce = null; return json(head) }
+    return json(snapshot())
+  }
   const chart = /\/viz\/charts\/([0-9a-f-]+)\?/.exec(url)
   if (chart && charts[chart[1]]) return json({ resource_id: chart[1], revision: 1, metadata_revision: 1, grants_revision: 1, publication_id: null, definition: charts[chart[1]] })
   if (url.endsWith(`/viz/datasets/${DATASET}/query`)) return answer(body!)
@@ -256,6 +267,9 @@ beforeEach(() => {
   publicationId = null
   replyLost = null
   receiptsAvailable = true
+  eventsDown = false
+  eventsOnce = null
+  staleHeadOnce = null
   for (const key of Object.keys(receipts)) delete receipts[key]
   answer = defaultAnswer
   exported.length = 0
@@ -905,7 +919,7 @@ describe('QA dependency failure', () => {
     // The same request refreshed while the engine is down.
     down = true
     await screen.client.invalidateQueries({ queryKey: ['native-dataviz', 'chart-data'] })
-    await expect.element(screen.getByRole('alert')).toHaveTextContent('The chart could not be loaded.')
+    await expect.element(screen.getByRole('alert')).toHaveTextContent('The data engine is not responding. Retry in a moment.')
     expect(screen.container.querySelector('[data-testid="kpi-value"]')).toBeNull()
     expect(screen.container.textContent).not.toContain('15,257')
 
@@ -913,7 +927,7 @@ describe('QA dependency failure', () => {
     const sent = queries().length
     await screen.getByRole('button', { name: 'Retry' }).click()
     await expect.poll(() => queries().length).toBe(sent + 1)
-    await expect.element(screen.getByRole('alert')).toHaveTextContent('The chart could not be loaded.')
+    await expect.element(screen.getByRole('alert')).toHaveTextContent('The data engine is not responding. Retry in a moment.')
     down = false
     await screen.getByRole('button', { name: 'Retry' }).click()
     await expect.element(screen.getByTestId('kpi-value')).toHaveTextContent('15,257')
@@ -921,7 +935,7 @@ describe('QA dependency failure', () => {
     // A new filter value whose query fails does not keep showing the unfiltered value.
     down = true
     await screen.getByRole('textbox', { name: 'Region contains' }).fill('East')
-    await expect.element(screen.getByRole('alert')).toHaveTextContent('The chart could not be loaded.')
+    await expect.element(screen.getByRole('alert')).toHaveTextContent('The data engine is not responding. Retry in a moment.')
     expect(screen.container.querySelector('[data-testid="kpi-value"]')).toBeNull()
   })
 })
@@ -929,6 +943,58 @@ describe('QA dependency failure', () => {
 // ---- revisions ----------------------------------------------------------------------
 
 describe('QA multiple tabs', { timeout: 40_000 }, () => {
+  it('NDV-REVIS-007 / NDV-OPS-005: missed change notifications are caught up from the event cursor', async () => {
+    const screen = await mount()
+    await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
+    await expect.poll(() => calls.filter(call => call.url.includes('/events')).length).toBeGreaterThanOrEqual(1)
+    // The notification channel drops; two changes are saved elsewhere meanwhile.
+    eventsDown = true
+    otherUserCommits(() => { definition.title = 'Sales overview by Bea' })
+    otherUserCommits(() => { definition.pages[0].widgets[0].layout = { x: 0, y: 2, w: 3, h: 2 } })
+    const missed = calls.filter(call => call.url.includes('/events')).length
+    await expect.poll(() => calls.filter(call => call.url.includes('/events')).length, { timeout: 10_000 }).toBeGreaterThan(missed)
+    await expect.element(screen.getByRole('heading', { name: 'Sales overview' })).toBeVisible()
+    // Back online: the next poll reads from where it left off and lands on the latest revision with both changes.
+    eventsDown = false
+    await expect.element(screen.getByRole('heading', { name: 'Sales overview by Bea' }), { timeout: 10_000 }).toBeVisible()
+    await expect.poll(() => geometry(KPI_WIDGET)).toEqual({ x: 0, y: 2, w: 3, h: 2 })
+    // Later polls ask from the newest change: nothing is fetched twice or skipped.
+    const lastAfter = () => Number(new URL(calls.filter(call => call.url.includes('/events')).slice(-1)[0].url, 'http://test').searchParams.get('after'))
+    await expect.poll(lastAfter, { timeout: 10_000 }).toBe(revision)
+    expect(operations).toHaveLength(0)
+  })
+
+  it('NDV-REVIS-008: a repeated or late event and a lagging head never take the editor back', async () => {
+    const screen = await mount()
+    await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
+    await expect.poll(() => calls.filter(call => call.url.includes('/events')).length).toBeGreaterThanOrEqual(1)
+    const before = snapshot()
+    otherUserCommits(() => { definition.title = 'Sales overview by Bea' })
+    // The first head read after the event lags behind it.
+    staleHeadOnce = clone(before)
+    const reads = () => calls.filter(call => call.url.includes(`/viz/dashboards/${DASHBOARD}?`)).length
+    const start = reads()
+    await expect.poll(reads, { timeout: 10_000 }).toBeGreaterThan(start)
+    await expect.element(screen.getByRole('heading', { name: 'Sales overview' })).toBeVisible()
+    // The cursor stayed, so the next poll reads again and gets the real head.
+    await expect.element(screen.getByRole('heading', { name: 'Sales overview by Bea' }), { timeout: 10_000 }).toBeVisible()
+    // A repeated event and a late page with an older cursor change nothing.
+    eventsOnce = { events: [
+      { event_id: crypto.randomUUID(), operation_id: events[events.length - 1].operation_id, sequence: revision, event_kind: 'edit', created_at: '2026-11-16T00:00:00Z' },
+      { event_id: crypto.randomUUID(), operation_id: crypto.randomUUID(), sequence: revision - 2, event_kind: 'edit', created_at: '2026-11-16T00:00:00Z' },
+    ], through: revision - 2, next_sequence: revision - 2 }
+    staleHeadOnce = clone(before)
+    await expect.poll(() => eventsOnce, { timeout: 10_000 }).toBeNull()
+    await wait(600)
+    await expect.element(screen.getByRole('heading', { name: 'Sales overview by Bea' })).toBeVisible()
+    // Later polls ask from the newest sequence, never the late page's.
+    const startCalls = calls.length
+    await expect.poll(() => calls.slice(startCalls).some(call => call.url.includes('/events')), { timeout: 10_000 }).toBe(true)
+    const next = calls.slice(startCalls).find(call => call.url.includes('/events'))!
+    expect(Number(new URL(next.url, 'http://test').searchParams.get('after'))).toBe(revision)
+    expect(operations).toHaveLength(0)
+  })
+
   it('NDV-REVIS-010: two editor tabs of one person converge without a stale local override', async () => {
     // Each tab has its own screen; here both fit on one so both charts draw.
     await page.viewport(1280, 1600)
@@ -1116,5 +1182,179 @@ describe('QA scale', { timeout: 90_000 }, () => {
     expect(samples[1]).toEqual(samples[0])
     const [early, late] = heaps
     if (early !== undefined && late !== undefined) expect(late - early).toBeLessThan(32 * 1024 * 1024)
+  })
+})
+
+
+// ---- Neva's pointer --------------------------------------------------------------------
+
+const neva = (detail: NativeDashboardActivity) => window.dispatchEvent(new CustomEvent(NATIVE_DASHBOARD_ACTIVITY, { detail }))
+const propose = (widget_ids: string[], state: 'waiting' | 'saving' = 'waiting', extra: Partial<NativeDashboardActivity> = {}) =>
+  neva({ kind: 'proposed', tool_call_id: 'call-1', dashboard_id: DASHBOARD, action: 'change', widget_ids, page_id: PAGE, state, ...extra } as NativeDashboardActivity)
+const pointer = () => document.querySelector<HTMLElement>('[data-neva-pointer]')
+const nevaStatus = (screen: Awaited<ReturnType<typeof mount>>) => screen.getByTestId('neva-status').element().textContent
+const motion = (value: '' | 'reduce') => (cdp() as unknown as { send(method: string, params?: object): Promise<unknown> })
+  .send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value }] })
+
+describe('QA Neva pointer', { timeout: 30_000 }, () => {
+  afterEach(async () => { await motion('') })
+
+  it('NDV-AGENT-013: the pointer sits on the widget the pending change touches and says where it is', async () => {
+    setWidgets([
+      chartWidget(KPI_WIDGET, KPI_CHART, { x: 0, y: 0, w: 3, h: 2 }),
+      chartWidget(BAR_WIDGET, BAR_CHART, { x: 3, y: 2, w: 6, h: 4 }),
+    ])
+    const screen = await mount()
+    await expect.element(screen.getByText('Revenue by region').first()).toBeVisible()
+    // A change on another dashboard is not shown here.
+    propose([BAR_WIDGET], 'waiting', { dashboard_id: 'dddddddd-0000-4000-8000-0000000000ff' })
+    await wait(200)
+    expect(pointer()).toBeNull()
+    propose([BAR_WIDGET])
+    await expect.poll(() => pointer()?.dataset.arrived).toBe('true')
+    await wait(800)
+    // The pointer sits on the target's top edge, inside its width, and the
+    // target is outlined; no other widget is.
+    const target = item(BAR_WIDGET).getBoundingClientRect()
+    const tip = pointer()!.getBoundingClientRect()
+    expect(tip.left).toBeGreaterThanOrEqual(target.left)
+    expect(tip.right).toBeLessThanOrEqual(target.right)
+    expect(tip.top + tip.height / 2).toBeGreaterThanOrEqual(target.top)
+    expect(tip.top + tip.height / 2).toBeLessThan(target.top + 24)
+    expect(item(BAR_WIDGET).dataset.nevaTarget).toBe('waiting')
+    expect(item(KPI_WIDGET).dataset.nevaTarget).toBeUndefined()
+    expect(pointer()!.textContent).toBe('Neva · Waiting for your approval')
+    expect(pointer()!.getAttribute('aria-hidden')).toBe('true')
+    expect(nevaStatus(screen)).toBe('Neva wants to change “Revenue by region”. It is waiting for your approval in the chat.')
+    // Approved, then saved: the label follows, and the pointer leaves after the save.
+    neva({ kind: 'status', tool_call_id: 'call-1', state: 'saving' })
+    await expect.poll(() => pointer()?.textContent).toBe('Neva · Saving…')
+    neva({ kind: 'status', tool_call_id: 'call-1', state: 'saved' })
+    await expect.poll(() => pointer()?.textContent).toBe('Neva · Saved')
+    expect(nevaStatus(screen)).toBe('Neva saved its change: change “Revenue by region”.')
+    await expect.poll(() => pointer(), { timeout: 4000 }).toBeNull()
+    // A new chart has no widget yet: the pointer goes below what is there.
+    propose([], 'waiting', { tool_call_id: 'call-2', action: 'add' } as Partial<NativeDashboardActivity>)
+    await expect.poll(() => pointer()?.dataset.arrived).toBe('true')
+    await wait(800)
+    expect(pointer()!.getBoundingClientRect().top).toBeGreaterThan(item(BAR_WIDGET).getBoundingClientRect().bottom - 16)
+    expect(nevaStatus(screen)).toBe('Neva wants to add a chart. It is waiting for your approval in the chat.')
+  })
+
+  it('NDV-AGENT-014: a save that fails shows Not saved, never Saved, and changes nothing', async () => {
+    const screen = await mount()
+    await expect.element(screen.getByText('Units sold')).toBeVisible()
+    const before = calls.length
+    propose([KPI_WIDGET])
+    await expect.poll(() => pointer()?.textContent).toBe('Neva · Waiting for your approval')
+    neva({ kind: 'status', tool_call_id: 'call-1', state: 'saving' })
+    neva({ kind: 'status', tool_call_id: 'call-1', state: 'failed' })
+    await expect.poll(() => pointer()?.dataset.nevaPointer).toBe('failed')
+    expect(pointer()!.textContent).toBe('Neva · Not saved')
+    expect(item(KPI_WIDGET).dataset.nevaTarget).toBe('failed')
+    expect(nevaStatus(screen)).toBe('Neva could not save its change (change “Units sold”). Nothing was changed.')
+    // A late "saved" for the same call cannot turn a failure into a success.
+    neva({ kind: 'status', tool_call_id: 'call-1', state: 'saved' })
+    await wait(200)
+    expect(pointer()!.textContent).toBe('Neva · Not saved')
+    expect(screen.container.textContent).not.toContain('Neva · Saved')
+    // Nothing was written by the page for Neva's attempt.
+    expect(calls.slice(before).filter(call => call.method !== 'GET' && !call.url.endsWith('/query'))).toEqual([])
+    // A declined change says so too.
+    propose([KPI_WIDGET], 'waiting', { tool_call_id: 'call-2' })
+    neva({ kind: 'status', tool_call_id: 'call-2', state: 'stopped' })
+    await expect.poll(() => pointer()?.textContent).toBe('Neva · Stopped')
+    expect(nevaStatus(screen)).toBe('Neva\u2019s change was not made (change “Units sold”). Nothing was changed.'.replace('\u2019', "'"))
+  })
+
+  it('NDV-AGENT-016 / NDV-A11Y-003: with reduced motion the pointer appears in place and its state is still announced', async () => {
+    await motion('reduce')
+    const screen = await mount()
+    await expect.element(screen.getByText('Units sold')).toBeVisible()
+    propose([KPI_WIDGET])
+    // On the first frame it is already at the widget: no path from the chat side.
+    await expect.poll(() => pointer()).not.toBeNull()
+    expect(pointer()!.dataset.arrived).toBe('true')
+    const style = getComputedStyle(pointer()!)
+    expect(style.transitionDuration.split(',').every(value => parseFloat(value) === 0)).toBe(true)
+    expect(pointer()!.style.opacity).toBe('')
+    const target = item(KPI_WIDGET).getBoundingClientRect()
+    expect(pointer()!.getBoundingClientRect().right).toBeLessThanOrEqual(target.right)
+    expect(nevaStatus(screen)).toContain('Neva wants to change “Units sold”')
+    expect(screen.getByTestId('neva-status').element().getAttribute('role')).toBe('status')
+    // Without the preference the same pointer glides in from the side.
+    await motion('')
+    propose([KPI_WIDGET], 'waiting', { tool_call_id: 'call-2' })
+    await expect.poll(() => pointer()?.dataset.arrived).toBe('true')
+    expect(parseFloat(getComputedStyle(pointer()!).transitionDuration)).toBeGreaterThan(0)
+  })
+
+  it('NDV-AGENT-017: typing next to the widget Neva points at keeps focus and every keystroke', async () => {
+    setWidgets([
+      chartWidget(KPI_WIDGET, KPI_CHART, { x: 0, y: 0, w: 3, h: 2 }),
+      chartWidget(BAR_WIDGET, BAR_CHART, { x: 3, y: 0, w: 6, h: 4 }),
+    ])
+    const screen = await mount()
+    await expect.element(screen.getByText('Revenue by region').first()).toBeVisible()
+    await userEvent.dblClick(screen.getByRole('heading', { name: 'Sales overview' }))
+    const input = screen.getByRole('textbox', { name: 'Dashboard title' })
+    await expect.element(input).toHaveFocus()
+    const field = input.element() as HTMLInputElement
+    field.select()
+    await userEvent.keyboard('Quarterly')
+    propose([BAR_WIDGET])
+    neva({ kind: 'status', tool_call_id: 'call-1', state: 'saving' })
+    await userEvent.keyboard(' sales')
+    await expect.poll(() => pointer()?.textContent).toBe('Neva · Saving…')
+    propose([KPI_WIDGET], 'waiting', { tool_call_id: 'call-2' })
+    await userEvent.keyboard(' review')
+    expect(document.activeElement).toBe(field)
+    expect(field.value).toBe('Quarterly sales review')
+    // The pointer can never take focus or a click.
+    expect(pointer()!.querySelector('[tabindex], button, a, input')).toBeNull()
+    expect(getComputedStyle(pointer()!).pointerEvents).toBe('none')
+    // The widgets under it stay selectable with a click.
+    await userEvent.keyboard('{Escape}')
+  })
+})
+
+
+describe('QA Neva layout plan', { timeout: 40_000 }, () => {
+  it('NDV-PERF-008: a twenty-step layout revision from Neva lands in place without a frame stall', async () => {
+    const ids = Array.from({ length: 20 }, (_, index) => `ffffffff-0000-4000-8000-1000000000${String(index).padStart(2, '0')}`)
+    // Four charts among sixteen notes, stacked one per row.
+    setWidgets(ids.map((id, index) => index % 5 === 0
+      ? chartWidget(id, index === 0 ? KPI_CHART : index === 5 ? REVENUE_CHART : BAR_CHART, { x: 0, y: index * 3, w: 6, h: 3 })
+      : textWidget(id, `Note ${index}`, { x: 0, y: index * 3, w: 6, h: 3 })))
+    await page.viewport(1280, 1400)
+    const screen = await mount(1200, 1300)
+    await expect.element(screen.getByText('Note 19')).toBeInTheDocument()
+    await wait(500)
+    const target = ids.map((id, index) => ({ id, layout: { x: (index % 2) * 6, y: Math.floor(index / 2) * 3, w: 6, h: 3 } }))
+    // Neva's one batch: every widget moves in a single committed revision.
+    otherUserCommits(() => commit([{ op: 'layout.apply', page_id: PAGE, placements: target.map(item => ({ widget_id: item.id, layout: item.layout })) }]))
+    const long: number[] = []
+    const observer = new PerformanceObserver(list => { for (const entry of list.getEntries()) long.push(entry.duration) })
+    observer.observe({ type: 'longtask', buffered: false })
+    const started = performance.now()
+    window.dispatchEvent(new CustomEvent(NATIVE_DASHBOARD_CHANGED, { detail: { dashboard_id: DASHBOARD, revision } }))
+    await expect.poll(() => target.every(({ id, layout }) => {
+      const node = gridOf().engine.nodes.find(entry => entry.id === id)
+      return node?.x === layout.x && node?.y === layout.y && node?.w === layout.w && node?.h === layout.h
+    }), { timeout: 10_000 }).toBe(true)
+    const applied = performance.now() - started
+    await wait(600)
+    observer.disconnect()
+    // Every widget is where the plan put it, drawn in place, after one reload.
+    for (const { id, layout } of target) {
+      expect(item(id).getAttribute('gs-x')).toBe(String(layout.x))
+      expect(item(id).getAttribute('gs-y')).toBe(String(layout.y))
+    }
+    const reads = calls.filter(call => call.method === 'GET' && call.url.includes(`/viz/dashboards/${DASHBOARD}`) && !call.url.includes('/events'))
+    expect(reads.length).toBeGreaterThan(0)
+    // No main-thread task long enough to freeze the page (a stall is ~200 ms or more).
+    console.info(`PERF-008 apply ${Math.round(applied)} ms, long tasks ${JSON.stringify(long.map(Math.round))}`)
+    expect(Math.max(0, ...long)).toBeLessThan(200)
+    expect(applied).toBeLessThan(3000)
   })
 })

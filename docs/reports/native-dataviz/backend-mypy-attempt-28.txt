@@ -1,0 +1,3 @@
+app/core/database.py:75: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app/core/redis.py:52: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app/modules/assistant/plain_language.py:359: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]

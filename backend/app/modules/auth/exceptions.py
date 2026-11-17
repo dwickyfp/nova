@@ -8,6 +8,16 @@ class InvalidCredentialsError(NovaException):
         super().__init__(message, status_code=401)
 
 
+class SignInUnavailableError(NovaException):
+    """The data engine that checks passwords did not answer: not a wrong password."""
+
+    def __init__(self, message: str = (
+        "Sign-in is unavailable because the data engine is not responding. "
+        "Try again in a moment."
+    )):
+        super().__init__(message, status_code=503)
+
+
 class SetupAlreadyCompleteError(NovaException):
     def __init__(self, message: str = "Setup already completed"):
         super().__init__(message, status_code=400)

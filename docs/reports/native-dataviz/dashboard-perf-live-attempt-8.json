@@ -1,0 +1,223 @@
+{
+  "started_at": "2026-11-17T15:03:38.619361+00:00",
+  "run": "a3678a",
+  "dashboard_rows": 100000,
+  "hardware": {
+    "os": "macOS-27.0.1-arm64-arm-64bit",
+    "cpu": "Apple M3",
+    "cores": 8,
+    "memory_bytes": "17179869184",
+    "engine": "StarRocks in Docker on this host",
+    "servers": "dev.sh (uvicorn --reload)"
+  },
+  "result": "FAIL",
+  "cleanup": "REMOVED",
+  "fixture_seconds": 20.5,
+  "grant_wait_seconds": 25.6,
+  "NDV-PERF-002": {
+    "runs": 20,
+    "p50": 0.67,
+    "p95": 1.489,
+    "max": 1.489,
+    "mean": 0.784
+  },
+  "NDV-PERF-001": {
+    "runs": 20,
+    "p50": 77.08,
+    "p95": 114.101,
+    "max": 114.101,
+    "mean": 77.338,
+    "widget_statuses": {
+      "504": 39,
+      "200": 48,
+      "403": 153
+    },
+    "attempts_per_widget": {
+      "1": 240
+    }
+  },
+  "NDV-PERF-004": {
+    "sessions": 20,
+    "widgets": 240,
+    "wall_seconds": 105.51,
+    "final_statuses": {
+      "504": 9,
+      "429": 136,
+      "403": 6,
+      "503": 88,
+      "200": 1
+    },
+    "attempts_per_widget": {
+      "1": 68,
+      "6": 138,
+      "4": 16,
+      "3": 7,
+      "5": 4,
+      "2": 7
+    },
+    "unanswered": 239,
+    "unanswered_share": 0.9958,
+    "load_seconds": {
+      "runs": 20,
+      "p50": 93.243,
+      "p95": 105.498,
+      "max": 105.498,
+      "mean": 80.705
+    },
+    "admission_samples": 1129,
+    "admission_peak": 4.0,
+    "session_errors": []
+  },
+  "NDV-PERF-006": {
+    "source_rows": 1000000,
+    "pages_read": 1,
+    "rows_received": 100,
+    "largest_response_bytes": 7273,
+    "page_past_cap_status": 422,
+    "query_rss_kib_before": 27568,
+    "query_rss_kib_after": 44496
+  },
+  "operator_metrics": [
+    "operation=\"query\",outcome=\"ok\"",
+    "operation=\"query\",outcome=\"refused\"",
+    "operation=\"query\",outcome=\"rejected\"",
+    "operation=\"query\",outcome=\"timeout\""
+  ],
+  "steps": [
+    {
+      "step": "fixture: CREATE DATABASE ndv_perf_a3678a",
+      "passed": true
+    },
+    {
+      "step": "fixture: CREATE TABLE ndv_perf_a3678a.orders (id BIGINT, region S",
+      "passed": true
+    },
+    {
+      "step": "fixture: INSERT INTO ndv_perf_a3678a.orders SELECT generate_serie",
+      "passed": true
+    },
+    {
+      "step": "fixture: CREATE TABLE ndv_perf_a3678a.orders_1m (id BIGINT, regio",
+      "passed": true
+    },
+    {
+      "step": "fixture: INSERT INTO ndv_perf_a3678a.orders_1m SELECT generate_se",
+      "passed": true
+    },
+    {
+      "step": "fixture: orders holds 100000 orders",
+      "passed": true,
+      "rows": 100000
+    },
+    {
+      "step": "fixture: orders_1m holds 1000000 orders",
+      "passed": true,
+      "rows": 1000000
+    },
+    {
+      "step": "warm-up load answers every widget",
+      "passed": false,
+      "statuses": [
+        403,
+        403,
+        403,
+        403,
+        403,
+        403,
+        403,
+        403,
+        403,
+        403,
+        403,
+        403
+      ]
+    },
+    {
+      "step": "NDV-PERF-002 shell p95 under 1 s",
+      "passed": false,
+      "runs": 20,
+      "p50": 0.67,
+      "p95": 1.489,
+      "max": 1.489,
+      "mean": 0.784
+    },
+    {
+      "step": "NDV-PERF-001 twelve-widget load p95 under 3 s",
+      "passed": false,
+      "runs": 20,
+      "p50": 77.08,
+      "p95": 114.101,
+      "max": 114.101,
+      "mean": 77.338
+    },
+    {
+      "step": "NDV-PERF-001 no widget failed",
+      "passed": false,
+      "statuses": {
+        "504": 39,
+        "200": 48,
+        "403": 153
+      }
+    },
+    {
+      "step": "NDV-PERF-004 no request failed with a server error",
+      "passed": false,
+      "statuses": {
+        "504": 9,
+        "429": 136,
+        "403": 6,
+        "503": 88,
+        "200": 1
+      },
+      "errors": []
+    },
+    {
+      "step": "NDV-PERF-004 admission stays at or under its cap",
+      "passed": true,
+      "peak": 4.0,
+      "cap": 4
+    },
+    {
+      "step": "NDV-PERF-004 unanswered widgets within the 1% error budget",
+      "passed": false,
+      "unanswered": 239,
+      "widgets": 240
+    },
+    {
+      "step": "page at 0 holds one page",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "step": "page at 2000 holds one page",
+      "passed": false,
+      "status": 403
+    },
+    {
+      "step": "NDV-PERF-006 the browser receives pages, never the table",
+      "passed": true,
+      "rows": 100,
+      "largest_bytes": 7273
+    },
+    {
+      "step": "NDV-PERF-006 a page past the offset cap is refused",
+      "passed": true
+    },
+    {
+      "step": "NDV-PERF-006 query process memory stays bounded",
+      "passed": true,
+      "growth_kib": 16928
+    },
+    {
+      "step": "operator metrics count these reads with bounded labels",
+      "passed": true,
+      "labels": [
+        "operation=\"query\",outcome=\"ok\"",
+        "operation=\"query\",outcome=\"refused\"",
+        "operation=\"query\",outcome=\"rejected\"",
+        "operation=\"query\",outcome=\"timeout\""
+      ]
+    }
+  ],
+  "finished_at": "2026-11-17T15:38:00.861845+00:00"
+}

@@ -580,6 +580,37 @@ api_sql = dashboard(
             unit="reqps",
             w=24,
         ),
+        row("Dataviz"),
+        line(
+            "Dataviz chart queries, p95",
+            (
+                "histogram_quantile(0.95, sum by(le) (rate(nova_dataviz_read_"
+                'duration_seconds_bucket{job=~"nova-backend|nova-query",operat'
+                'ion="query"}[5m])))'
+            ),
+            unit="s",
+            description="Approved target: a warm 12-widget dashboard under 3 s at p95.",
+        ),
+        line(
+            "Dataviz reads by outcome",
+            (
+                'sum by(operation, outcome) (rate(nova_dataviz_reads_total{job=~"'
+                'nova-backend|nova-query"}[5m]))'
+            ),
+            legend="{{operation}} · {{outcome}}",
+            unit="reqps",
+            description=(
+                "refused: the role may not read it; rejected: admission or a busy"
+                " source; timeout: the engine took too long; error: anything else."
+            ),
+        ),
+        line(
+            "Scheduled exports by outcome",
+            'sum by(outcome) (increase(nova_dataviz_scheduled_exports_total{job="nova-worker"}[1h]))',
+            legend="{{outcome}}",
+            unit="short",
+            w=24,
+        ),
     ],
 )
 

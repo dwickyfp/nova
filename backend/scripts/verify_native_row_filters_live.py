@@ -5,7 +5,10 @@ saves a SQL dataset over ``analytics.sales`` there and publishes it. Then the
 same governed aggregate runs through the native chart query API for each
 viewer. Ranger's row filter decides the rows: the seed gives ``alice`` both
 cities as regional_manager, Jakarta as marketing, and ``bob`` Bandung as
-marketing. No administrator is involved.
+marketing. No administrator is involved. Since migration 0049 the workspace
+share is not enough on its own: alice also grants the marketing role view
+access to the dataset. A filter on totals (NDV-FILTER-020) runs after Ranger's
+row filter.
 
 Credentials come from NOVA_QA_OWNER_PASSWORD (alice) and
 NOVA_QA_OUTSIDER_PASSWORD (bob). Everything created is removed afterwards.
@@ -114,6 +117,18 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             await probe.request("publish", "POST", path + "/publish", admin, operation=key,
                                 revision=1, body={"operation_id": key, "expected_revision": 1})
 
+            # Since migration 0049 a workspace share alone does not open a dataset:
+            # the owner also grants the marketing role view access to it.
+            state = await probe.request("read grants", "GET", path + "/grants", admin)
+            grants_revision = state.json()["revision"]
+            key = str(uuid4())
+            await probe.request("grant marketing view", "PUT", path + "/grants", admin,
+                                operation=key, revision=grants_revision,
+                                body={"operation_id": key, "expected_revision": grants_revision,
+                                      "grants": [{"subject_type": "role",
+                                                  "subject_id": "marketing",
+                                                  "permissions": ["view"]}]})
+
             query = {"revision": 1, "draft": False,
                      "dimensions": [{"field_id": fields["city"]}],
                      "measures": [{"field_id": fields["amount"], "aggregation": "sum"}],
@@ -131,6 +146,36 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             bob = await rows("bob query as marketing", tokens["bob"])
             probe.check("bob sees only Bandung", bob == [["Bandung", "600.00"]], rows=bob)
 
+            # NDV-FILTER-020: a filter on the total runs after aggregation and after
+            # Ranger's row filter, so it keeps whole groups and never changes a total.
+            def above(amount: str) -> dict[str, Any]:
+                return {"type": "predicate", "op": "gt", "stage": "aggregate",
+                        "values": [{"type": "decimal", "value": amount}],
+                        "field": {"dataset_id": dataset, "dataset_revision": 1,
+                                  "field_id": fields["amount"]}}
+
+            async def total_rows(name: str, token: str, expression: dict[str, Any]):
+                body = {**query, "filters": {"expression": expression}}
+                response = await probe.request(name, "POST", path + "/query", token, body=body)
+                return [[cell["value"] for cell in row] for row in response.json()["rows"]]
+
+            big = await total_rows("total filter as regional_manager", admin, above("500"))
+            probe.check("total above 500 keeps Bandung only, with its whole total",
+                        big == [["Bandung", "600.00"]], rows=big)
+            mixed = await total_rows("row and total filter together", admin, {
+                "type": "and", "children": [
+                    {"type": "predicate", "op": "neq", "stage": "row",
+                     "values": [{"type": "string", "value": "Bandung"}],
+                     "field": {"dataset_id": dataset, "dataset_revision": 1,
+                               "field_id": fields["city"]}},
+                    above("100")]})
+            probe.check("a row filter and a total filter combine",
+                        mixed == [["Jakarta", "400.00"]], rows=mixed)
+            hidden = await total_rows("total filter as marketing (alice)", tokens["alice"],
+                                      above("500"))
+            probe.check("the total filter sees only the rows Ranger allows",
+                        hidden == [], rows=hidden)
+
             # The same person, another role: the active role decides the rows.
             await probe.request("alice uses regional_manager", "POST", "/api/v1/auth/switch-role",
                                 tokens["alice"], body={"role": "regional_manager"})
@@ -138,11 +183,22 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             probe.check("the same viewer sees more with a wider role",
                         widened == [["Bandung", "600.00"], ["Jakarta", "400.00"]], rows=widened)
 
-            # A role outside the share cannot open the dataset at all.
+            # Without the role's grant, a viewer cannot open the dataset at all. The
+            # owner can open it under any role, but the data still follows the
+            # active role: finance has no access to the table, so the engine refuses.
+            state = await probe.request("read grants again", "GET", path + "/grants", admin)
+            grants_revision = state.json()["revision"]
+            key = str(uuid4())
+            await probe.request("remove the marketing grant", "PUT", path + "/grants", admin,
+                                operation=key, revision=grants_revision,
+                                body={"operation_id": key, "expected_revision": grants_revision,
+                                      "grants": []})
+            await probe.request("bob cannot open it without the grant", "POST", path + "/query",
+                                tokens["bob"], body=query, status=404)
             await probe.request("alice uses finance", "POST", "/api/v1/auth/switch-role",
                                 tokens["alice"], body={"role": "finance"})
-            await probe.request("finance cannot open the shared dataset", "POST", path + "/query",
-                                tokens["alice"], body=query, status=404)
+            await probe.request("as finance the owner gets no rows: the engine refuses",
+                                "POST", path + "/query", tokens["alice"], body=query, status=403)
             report["result"] = "PASS"
         except Exception as error:
             # Exceptions can carry server payloads; keep only the type and a short message.

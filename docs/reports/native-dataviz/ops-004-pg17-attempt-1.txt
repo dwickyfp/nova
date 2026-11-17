@@ -1,0 +1,3 @@
+# OPS-004 2026-11-17T15:33:19Z commit ad72c0b8+worktree
+cmd: lockf /tmp/nova-metadata-pg.lock uv run pytest tests/integration/test_metadata_scheduled_export_crash.py -q -x
+result: 1 passed in 42.73s (first attempt)

@@ -1,4 +1,4 @@
-"""NDV-METRIC-002: a semantic margin is a ratio of sums at every chart grain.
+"""NDV-METRIC-002 and NDV-METRIC-008: ratio and weighted-average metrics at every grain.
 
 A disposable table holds sales with a leap day, a refund, a missing profit and
 a missing revenue. ``alice`` (``marketing``) publishes a semantic view whose
@@ -7,6 +7,11 @@ region-and-day grain. Native chart queries must then match the engine's own
 ratio of sums computed directly on the table: per region, in total, and never
 the average of row margins or the sum of daily margins. A coarser date grain
 for the ratio is refused, while a plain sum metric still totals per month.
+
+NDV-METRIC-008: ``weighted_price`` is ``SUM(price * units) / SUM(units)``. Per
+region and in total it must equal the engine's weighted average (a row with no
+units, a row with zero units and a row with no price included) and differ from
+the plain average price.
 
 Usage (from backend/; passwords are read here and never printed):
     UV_NO_SYNC=1 STARROCKS_FE_MYSQL_PORT=29030 RANGER_USERNAME=admin \
@@ -40,14 +45,14 @@ from app.integrations.ranger.compiler import compile_access_policy  # noqa: E402
 RUN = uuid.uuid4().hex[:6]
 DB = f"ndv_metric_{RUN}"
 ROLE = "marketing"
-ROWS = [  # id, region, sold_on, revenue, profit
-    (1, "West", "2024-02-28", "100.00", "30.00"),
-    (2, "West", "2024-02-29", "300.00", "30.00"),  # leap day
-    (3, "West", "2024-02-29", "-50.00", "-20.00"),  # refund
-    (4, "West", "2024-03-01", "200.00", None),  # profit missing
-    (5, "East", "2024-02-29", "400.00", "100.00"),
-    (6, "East", "2024-03-01", "100.00", "50.00"),
-    (7, "East", "2024-03-01", None, "10.00"),  # revenue missing
+ROWS = [  # id, region, sold_on, revenue, profit, price, units
+    (1, "West", "2024-02-28", "100.00", "30.00", "10.00", "1"),
+    (2, "West", "2024-02-29", "300.00", "30.00", "30.00", "9"),  # leap day
+    (3, "West", "2024-02-29", "-50.00", "-20.00", "50.00", "0"),  # refund, no units
+    (4, "West", "2024-03-01", "200.00", None, None, "4"),  # profit and price missing
+    (5, "East", "2024-02-29", "400.00", "100.00", "8.00", "10"),
+    (6, "East", "2024-03-01", "100.00", "50.00", "20.00", "2"),
+    (7, "East", "2024-03-01", None, "10.00", "100.00", None),  # revenue and units missing
 ]
 
 
@@ -64,12 +69,16 @@ DEFINITION = json.dumps({
          "datatype": "Date"},
         {"name": "revenue", "expression": expression("revenue"), "datatype": "Decimal"},
         {"name": "profit", "expression": expression("profit"), "datatype": "Decimal"},
+        {"name": "price", "expression": expression("price"), "datatype": "Decimal"},
+        {"name": "units", "expression": expression("units"), "datatype": "Decimal"},
     ]}],
     "metrics": [
         {"name": "margin", "datatype": "Decimal",
          "expression": expression("SUM(sales.profit) / SUM(sales.revenue)")},
         {"name": "revenue_total", "datatype": "Decimal",
          "expression": expression("SUM(sales.revenue)")},
+        {"name": "weighted_price", "datatype": "Decimal",
+         "expression": expression("SUM(sales.price * sales.units) / SUM(sales.units)")},
     ],
 })
 
@@ -116,11 +125,13 @@ def main() -> None:
 
     try:
         values = ",".join(
-            "(" + ",".join([str(i), f"'{r}'", f"'{d}'", rev or "NULL", pro or "NULL"]) + ")"
-            for i, r, d, rev, pro in ROWS)
+            "(" + ",".join([str(i), f"'{r}'", f"'{d}'", rev or "NULL", pro or "NULL",
+                            price or "NULL", units or "NULL"]) + ")"
+            for i, r, d, rev, pro, price, units in ROWS)
         for sql in (f"CREATE DATABASE {DB}",
                     f"CREATE TABLE {DB}.sales (id INT, region STRING, sold_on DATE, "
-                    "revenue DECIMAL(12,2), profit DECIMAL(12,2)) DUPLICATE KEY(id) "
+                    "revenue DECIMAL(12,2), profit DECIMAL(12,2), price DECIMAL(12,2), units INT) "
+                    "DUPLICATE KEY(id) "
                     "DISTRIBUTED BY HASH(id) BUCKETS 1 PROPERTIES ('replication_num' = '1')",
                     f"INSERT INTO {DB}.sales VALUES {values}"):
             probe.check(f"fixture: {sql[:40]}", bool(admin.run(sql).get("success")))
@@ -134,8 +145,17 @@ def main() -> None:
         monthly = admin.run(
             "SELECT DATE_TRUNC('month', sold_on), SUM(revenue) "
             f"FROM {DB}.sales GROUP BY 1 ORDER BY 1")["rows"]
+        weighted = admin.run(
+            "SELECT region, SUM(price * units) / SUM(units), AVG(price) "
+            f"FROM {DB}.sales GROUP BY region ORDER BY region")["rows"]
+        weighted_total = admin.run(
+            f"SELECT SUM(price * units) / SUM(units), AVG(price) FROM {DB}.sales")["rows"][0]
         report["oracle"] = {"by_region": oracle, "total": total, "sum_of_daily": daily,
-                            "monthly_revenue": monthly}
+                            "monthly_revenue": monthly, "weighted_by_region": weighted,
+                            "weighted_total": weighted_total}
+        probe.check("fixture: the weighted price differs from the plain average price",
+                    all(not close(w[1], w[2]) for w in weighted)
+                    and not close(weighted_total[0], weighted_total[1]))
         probe.check("fixture: ratio of sums differs from averaged and daily-summed margins",
                     all(not close(o[1], o[2]) and not close(o[1], d[1])
                         for o, d in zip(oracle, daily, strict=True)))
@@ -161,7 +181,7 @@ def main() -> None:
         probe.check("semantic view published", published.status_code == 200)
         source = {"kind": "semantic_model", "model_id": view_id, "model_revision": 1,
                   "model_fingerprint": fingerprint, "dimensions": ["region", "sold_on"],
-                  "metrics": ["margin", "revenue_total"]}
+                  "metrics": ["margin", "revenue_total", "weighted_price"]}
         inspected = call("POST", "/api/v1/viz/datasets/inspect",
                          json={"dataset_id": dataset, "source": source})
         probe.check("inspect at region and day", inspected.status_code == 200,
@@ -207,6 +227,18 @@ def main() -> None:
         probe.check("month grain: a plain sum still totals per month (leap day in February)",
                     status == 200 and len(rows) == len(monthly)
                     and all(close(r[1], m[1]) for r, m in zip(rows, monthly, strict=True)),
+                    rows=rows)
+        status, rows = query([{"field_id": fields["region"]}], [("weighted_price", "sum")])
+        probe.check("per region: weighted price equals SUM(price*units)/SUM(units)",
+                    status == 200 and len(rows) == len(weighted)
+                    and all(r[0] == w[0] and close(r[1], w[1])
+                            for r, w in zip(rows, weighted, strict=True)), rows=rows)
+        probe.check("per region: the weighted price is not the plain average price",
+                    status == 200 and all(not close(r[1], w[2])
+                                          for r, w in zip(rows, weighted, strict=True)))
+        status, rows = query([], [("weighted_price", "sum")])
+        probe.check("total: one weighted price over every row with units",
+                    status == 200 and len(rows) == 1 and close(rows[0][0], weighted_total[0]),
                     rows=rows)
         status, rows = query([{"field_id": fields["region"]}, {"field_id": fields["sold_on"]}],
                              [("margin", "sum")])

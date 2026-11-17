@@ -11,7 +11,7 @@ must never place a credential-bearing statement here.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
@@ -206,6 +206,21 @@ class UiMapMetricInput(BaseModel):
 
 
 
+class NativeViewFilterInput(BaseModel):
+    """One filter or chart selection applied on screen: a hint for Neva's answers."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source: Literal["filter", "selection"]
+    label: str = Field(min_length=1, max_length=128)
+    text: str = Field(default="", max_length=256)
+    dataset_id: UUID | None = None
+    field_id: str | None = Field(default=None, min_length=1, max_length=256)
+    values: list[
+        Annotated[str, Field(max_length=256)] | int | float | bool | None
+    ] = Field(default_factory=list, max_length=20)
+
+
 class NativeDashboardTurnInput(BaseModel):
     """The native Dataviz dashboard on screen: an untrusted hint.
 
@@ -219,6 +234,8 @@ class NativeDashboardTurnInput(BaseModel):
     revision: int = Field(ge=1, le=9_007_199_254_740_991, strict=True)
     page_id: UUID | None = None
     selected_widget_id: UUID | None = None
+    #: Filters and chart selections applied on the page, so answers match the screen.
+    view_filters: list[NativeViewFilterInput] = Field(default_factory=list, max_length=32)
 
 
 class DatavizTurnInput(BaseModel):

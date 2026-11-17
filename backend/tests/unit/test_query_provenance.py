@@ -114,3 +114,38 @@ async def test_private_query_disables_global_profile_before_sql():
         "SET ROLE ANALYST", "SET enable_profile = false", "SELECT private_formula",
     ]
     assert identity.profile_enabled is False
+
+
+async def test_private_query_overload_stays_private_and_reads_as_unavailable():
+    """A dataset query keeps its private wording, but an engine overload still
+    reaches the caller as unavailable (503), never as a refusal (403)."""
+    import asyncmy.errors
+
+    from app.core.exceptions import StarRocksError
+    from app.modules.viz.dataset_service import _engine_refusal
+
+    class Cursor:
+        description = None
+        rowcount = 0
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return None
+
+        async def execute(self, sql):
+            if sql.startswith("SELECT"):
+                raise asyncmy.errors.ProgrammingError(
+                    1064, "StarRocks planner use long time 3324 ms in logical phase")
+
+    conn = Mock()
+    conn.cursor.return_value = Cursor()
+    conn.select_db = AsyncMock()
+    with dataset_query(DatasetQuery(uuid4(), "inspect")), pytest.raises(StarRocksError) as raised:
+        await QueryRepository._execute_on(
+            conn, "SELECT private_formula", role="ANALYST", max_rows=None, start=0,
+        )
+    assert raised.value.message == "Dataset query execution failed"
+    assert "planner" not in raised.value.message
+    assert _engine_refusal(raised.value, "refused").status_code == 503

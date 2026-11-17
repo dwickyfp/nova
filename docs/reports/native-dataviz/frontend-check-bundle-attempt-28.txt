@@ -1,0 +1,8 @@
+
+> shadcn-admin@2.2.1 check:bundle /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+> node scripts/check-bundle.mjs
+
+ok   total           3723.6 kB of 4000.0 kB
+ok   largestChunk     159.7 kB of 175.0 kB
+ok   firstLoad        664.7 kB of 690.0 kB
+ok   notices      226 packages, 2 font licenses

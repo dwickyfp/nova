@@ -63,6 +63,11 @@ EVENT_TOOL_DETAIL = "tool_detail"
 #: A Dataviz dashboard committed a new revision through a tool: the page
 #: reloads that dashboard. ``{"tool_call_id", "dashboard_id", "revision"}``.
 EVENT_DASHBOARD_CHANGED = "dashboard_changed"
+#: A native dashboard change Neva proposes, before it is approved and saved:
+#: the page points at what it targets. ``{"tool_call_id", "dashboard_id",
+#: "action", "widget_ids", "page_id"}``. Whether it was saved comes from
+#: ``tool_status`` and ``dashboard_changed`` for the same call.
+EVENT_DASHBOARD_ACTIVITY = "dashboard_activity"
 
 #: Media type the route must set on the response.
 SSE_MEDIA_TYPE = "text/event-stream"
@@ -272,6 +277,24 @@ def dashboard_changed(tool_call_id: str, change: dict[str, Any]) -> str:
         if change.get(flag):
             payload[flag] = True
     return format_sse(EVENT_DASHBOARD_CHANGED, payload)
+
+
+DASHBOARD_ACTIONS = frozenset({"add", "change", "move", "remove", "arrange", "filter",
+                               "data", "publish"})
+
+
+def dashboard_activity(tool_call_id: str, target: dict[str, Any]) -> str | None:
+    """What a proposed native dashboard change targets; ``None`` when it is unclear."""
+    action = target.get("action")
+    dashboard_id = target.get("dashboard_id")
+    if action not in DASHBOARD_ACTIONS or not dashboard_id:
+        return None
+    widgets = [str(item) for item in (target.get("widget_ids") or [])][:12]
+    payload: dict[str, Any] = {"tool_call_id": tool_call_id, "dashboard_id": str(dashboard_id),
+                               "action": action, "widget_ids": widgets}
+    if target.get("page_id"):
+        payload["page_id"] = str(target["page_id"])
+    return format_sse(EVENT_DASHBOARD_ACTIVITY, payload)
 
 
 def tool_detail(tool_call_id: str, text: str) -> str:

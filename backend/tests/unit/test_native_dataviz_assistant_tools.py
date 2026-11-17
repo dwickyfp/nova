@@ -866,7 +866,8 @@ def test_the_turn_context_carries_the_native_dashboard_strictly():
                              "page_id": str(PAGE), "selected_widget_id": None}}})
     dumped = request.dataviz.model_dump(mode="json")
     assert dumped["native_dashboard"] == {"dashboard_id": str(DASHBOARD), "revision": 4,
-                                          "page_id": str(PAGE), "selected_widget_id": None}
+                                          "page_id": str(PAGE), "selected_widget_id": None,
+                                          "view_filters": []}
     assert dumped["dashboard_id"] is None
     assert DatavizTurnInput.model_validate({"dashboard_id": 7}).native_dashboard is None
     for bad in ({"dashboard_id": "x", "revision": 1}, {"dashboard_id": str(DASHBOARD)},
@@ -924,3 +925,327 @@ async def test_added_chart_is_stored_as_built_under_the_tool_derived_operation(d
     assert stored.chart_id == uuid5(base, "chart:0")
     # The create carries the id derived from the tool call, so a retry replays it.
     assert uuid5(base, "chart-create:0") in docs.receipts
+
+
+# ── NDV-REVIS-011: the page on screen was removed meanwhile ──────────
+
+
+@pytest.mark.asyncio
+async def test_a_page_removed_since_the_screen_loaded_is_refused_not_replaced(docs):
+    gone = uuid4()
+    outcome = await _run("native_dashboard_add_charts", {"charts": [
+        {"title": "Revenue", "visual": "kpi", "measures": [{"field": "revenue"}]}]},
+        _context(page_id=str(gone)))
+    assert not outcome.ok and outcome.recoverable
+    assert "no longer on this dashboard" in outcome.error and "Overview" in outcome.error
+    assert not docs.applied
+    # Naming a page that exists still works, and with no page on screen the
+    # first page is the default.
+    named = await _run("native_dashboard_add_charts", {"page_id": str(PAGE), "charts": [
+        {"title": "Revenue", "visual": "kpi", "measures": [{"field": "revenue"}]}]},
+        _context(page_id=str(gone)))
+    assert named.ok and len(docs.applied) == 1
+    default = await _run("native_dashboard_add_charts", {"charts": [
+        {"title": "Quantity", "visual": "kpi", "measures": [{"field": "quantity"}]}]},
+        _context(revision=2), call_id="call-2")
+    assert default.ok and len(docs.applied) == 2
+
+
+@pytest.mark.asyncio
+async def test_the_brief_says_the_page_on_screen_is_gone(docs):
+    text, read = await native.brief(USER, {"dashboard_id": str(DASHBOARD), "revision": 1,
+                                           "page_id": str(uuid4())})
+    assert read and "no longer on the dashboard" in text
+    text, _ = await native.brief(USER, {"dashboard_id": str(DASHBOARD), "revision": 1,
+                                        "page_id": str(PAGE)})
+    assert "no longer on the dashboard" not in text
+
+
+# ── NDV-AGENT-005: answers use the filters on screen ─────────────────
+
+
+def test_view_filters_are_bounded_and_strict():
+    one = {"source": "filter", "label": "City", "text": "Surabaya",
+           "dataset_id": str(DATASET), "field_id": "city", "values": ["Surabaya"]}
+    parsed = DatavizTurnInput.model_validate({"native_dashboard": {
+        "dashboard_id": str(DASHBOARD), "revision": 1, "view_filters": [one]}})
+    assert parsed.native_dashboard.view_filters[0].values == ["Surabaya"]
+    for bad in ([one] * 33, [{**one, "values": ["x"] * 21}], [{**one, "label": "x" * 129}],
+                [{**one, "sql": "DROP"}], [{**one, "source": "url"}], [{**one, "label": ""}]):
+        with pytest.raises(ValidationError):
+            DatavizTurnInput.model_validate({"native_dashboard": {
+                "dashboard_id": str(DASHBOARD), "revision": 1, "view_filters": bad}})
+
+
+@pytest.mark.asyncio
+async def test_the_brief_lists_the_filters_on_screen_and_asks_to_apply_them(docs):
+    opened = DatavizTurnInput.model_validate({"native_dashboard": {
+        "dashboard_id": str(DASHBOARD), "revision": 1, "page_id": str(PAGE), "view_filters": [
+            {"source": "filter", "label": "City", "text": "Surabaya", "dataset_id": str(DATASET),
+             "field_id": "city", "values": ["Surabaya"]},
+            {"source": "selection", "label": "Order date: Mar 2026", "text": "Selected Mar 2026",
+             "dataset_id": str(DATASET), "field_id": "order_date",
+             "values": ["2026-03-01", "2026-04-01"]},
+        ]}}).native_dashboard.model_dump(mode="json")
+    text, read = await native.brief(USER, opened)
+    assert read and "Filters and selections applied on screen" in text
+    assert "native_dataset_query" in text
+    assert '"label": "City"' in text and '"field_id": "city"' in text and "Surabaya" in text
+    assert '"source": "selection"' in text and "2026-04-01" in text
+    # Nothing on screen, nothing said.
+    text, _ = await native.brief(USER, {"dashboard_id": str(DASHBOARD), "revision": 1})
+    assert "Filters and selections" not in text
+
+
+# ── NDV-AGENT-018: no dashboard open, none named ─────────────────────
+
+
+@pytest.mark.asyncio
+async def test_a_change_with_no_dashboard_named_points_to_the_list_and_asking(docs):
+    no_dashboard = SimpleNamespace(user=USER, dataviz=None, thread_id="t1")
+    outcome = await _run("native_dashboard_add_charts", {"charts": [
+        {"title": "Revenue", "visual": "kpi", "measures": [{"field": "revenue"}]}]},
+        no_dashboard)
+    assert not outcome.ok and outcome.recoverable
+    assert "list of dashboards" in outcome.error and "ask which one" in outcome.error
+    assert not _leaks(outcome.error)
+    assert not docs.applied and not docs.created
+
+
+# ── NDV-AGENT-006: a chart change shows what the numbers will mean ───
+
+
+def _two_measure_bar() -> ChartDefinition:
+    return ChartDefinition.model_validate({
+        "chart_id": str(CHART), "title": "Revenue by city", "dataset_id": str(DATASET),
+        "dataset_revision": 1, "visual": "bar",
+        "encoding": {"kind": "cartesian", "dimensions": [{"field_id": "city"}],
+                     "measures": [{"field_id": "revenue", "aggregation": "sum"},
+                                  {"field_id": "quantity", "aggregation": "avg"}]},
+    })
+
+
+async def _chart_approval(arguments: dict[str, Any]) -> str:
+    tool = _tool("native_chart_update")
+    return await tool.consent_preview(_call("native_chart_update", arguments), _context())
+
+
+@pytest.mark.asyncio
+async def test_a_type_change_that_drops_a_number_says_so_before_approval(docs):
+    docs.docs[CHART] = [_two_measure_bar()]
+    pie = await _chart_approval({"widget_id": str(WIDGET), "visual": "pie"})
+    assert pie == ("Chart 'Revenue by city': from bar chart to pie chart. It will show total "
+                   "Revenue by City instead of total Revenue and average Quantity by City. It no "
+                   "longer shows average Quantity.")
+    # A KPI holds one number: the approval says the change cannot be saved as asked.
+    two = await _chart_approval({"widget_id": str(WIDGET), "visual": "kpi"})
+    assert "cannot be saved as proposed" in two
+    docs.docs[CHART] = [_chart()]
+    kpi = await _chart_approval({"widget_id": str(WIDGET), "visual": "kpi"})
+    assert kpi == ("Chart 'Revenue by city': from bar chart to KPI. It will show total Revenue "
+                   "instead of total Revenue by City. It no longer shows the breakdown by City.")
+    assert not _leaks(pie, kpi, two)
+    docs.docs[CHART] = [_two_measure_bar()]
+    # What was approved is what is saved.
+    outcome = await _run("native_chart_update", {"widget_id": str(WIDGET), "visual": "pie"})
+    assert outcome.ok
+    saved = docs.docs[CHART][-1]
+    assert saved.visual == "pie" and saved.encoding.measure.field_id == "revenue"
+    assert saved.encoding.measure.aggregation == "sum"
+
+
+@pytest.mark.asyncio
+async def test_a_look_only_change_says_the_numbers_stay_and_a_new_sum_is_shown(docs):
+    line = await _chart_approval({"widget_id": str(WIDGET), "visual": "line"})
+    assert line == ("Chart 'Revenue by city': from bar chart to line chart. It still shows "
+                    "total Revenue by City.")
+    average = await _chart_approval({"widget_id": str(WIDGET), "measures": [
+        {"field": "revenue", "aggregation": "avg"}]})
+    assert average == ("Chart 'Revenue by city'. It will show average Revenue by City instead "
+                       "of total Revenue by City.")
+    renamed = await _chart_approval({"widget_id": str(WIDGET), "title": "Sales by city"})
+    assert renamed == "Rename the chart 'Revenue by city' to 'Sales by city'"
+    assert not docs.applied
+
+
+# ── NDV-AGENT-008: Neva cannot change a formula ──────────────────────
+# Decision (2026-11-17): calculations and saved metrics are written by people in
+# the editor, where the expression is checked and previewed against the data.
+# Neva only chooses fields and the six plain aggregations, so there is no
+# formula it could change without that review.
+
+
+def _keys(schema: Any) -> set[str]:
+    found: set[str] = set()
+    if isinstance(schema, dict):
+        for key, value in schema.items():
+            if key == "properties" and isinstance(value, dict):
+                found |= set(value)
+            found |= _keys(value)
+    elif isinstance(schema, list):
+        for item in schema:
+            found |= _keys(item)
+    return found
+
+
+def test_no_tool_accepts_a_formula_expression_or_sql():
+    banned = {"formula", "expression", "sql", "calculation", "calc", "metric_expression",
+              "definition", "query"}
+    for tool in native.TOOLS:
+        assert not _keys(tool.parameters) & banned, tool.name
+    aggregations = set(native._MEASURE["properties"]["aggregation"]["enum"])
+    assert aggregations == {"sum", "avg", "min", "max", "count", "count_distinct"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("name", "arguments"), [
+    ("native_chart_update", {"widget_id": str(WIDGET), "formula": "SUM(revenue)/SUM(quantity)"}),
+    ("native_chart_update", {"widget_id": str(WIDGET), "measures": [
+        {"field": "revenue", "aggregation": "sum", "expression": "revenue * 2"}]}),
+    ("native_dashboard_add_charts", {"charts": [{"title": "Ratio", "visual": "kpi",
+                                                 "measures": [{"field": "revenue",
+                                                               "aggregation": "ratio"}]}]}),
+])
+async def test_a_formula_sent_anyway_changes_nothing(docs, name, arguments):
+    outcome = await _run(name, arguments)
+    assert not outcome.ok and not docs.applied and not docs.created
+    assert "SUM(" not in outcome.error and "revenue * 2" not in outcome.error
+    assert len(docs.docs[CHART]) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_chart_with_a_calculation_can_only_be_changed_in_the_editor(docs):
+    calc = _chart().model_dump(mode="json")
+    calc["encoding"]["measures"] = [{"field_id": "revenue", "aggregation": "agg"}]
+    docs.docs[CHART] = [ChartDefinition.model_validate(calc)]
+    outcome = await _run("native_chart_update", {"widget_id": str(WIDGET), "visual": "line"})
+    assert not outcome.ok and "only be edited in the editor" in outcome.error
+    assert len(docs.docs[CHART]) == 1
+
+
+def test_the_pointer_event_is_bounded_and_carries_no_arguments():
+    frame = events.dashboard_activity("call-1", {
+        "dashboard_id": DASHBOARD, "action": "move", "page_id": PAGE,
+        "widget_ids": [uuid4() for _ in range(40)], "title": "secret", "sql": "DROP"})
+    payload = json.loads(frame.split("data: ", 1)[1])
+    assert set(payload) == {"tool_call_id", "dashboard_id", "action", "widget_ids", "page_id"}
+    assert len(payload["widget_ids"]) == 12
+    assert events.dashboard_activity("c", {"dashboard_id": DASHBOARD, "action": "drop"}) is None
+    assert events.dashboard_activity("c", {"action": "move"}) is None
+    # Read-only tools have no target; a change without an open dashboard has none.
+    assert _tool("native_dashboard_read").target(_call("native_dashboard_read", {}),
+                                                 _context()) is None
+    no_dashboard = SimpleNamespace(user=USER, dataviz=None, thread_id="t1")
+    assert _tool("native_dashboard_add_charts").target(
+        _call("native_dashboard_add_charts", {"charts": [{"title": "K", "visual": "kpi"}]}),
+        no_dashboard) is None
+
+
+# ── NDV-PERF-008: a twenty-step layout plan lands as one atomic batch ─
+
+
+@pytest.mark.asyncio
+async def test_a_twenty_step_layout_plan_is_one_revision_with_every_position(docs):
+    notes = [UUID(f"99999999-9999-4999-8999-{index:012d}") for index in range(20)]
+    _with_widgets(docs, *(_note(item, f"Note {index}", 0, 4 + 2 * index)
+                          for index, item in enumerate(notes)))
+    start = len(docs.docs[DASHBOARD])
+    # Two columns of ten, every widget moved and resized: twenty steps.
+    plan = [{"widget_id": str(item), "x": (index % 2) * 6, "y": 4 + (index // 2) * 3,
+             "w": 6, "h": 3} for index, item in enumerate(notes)]
+    outcome = await _run("native_dashboard_arrange", {"move": plan})
+    assert outcome.ok, outcome.error
+    # One operation and one new revision for the whole plan.
+    assert len(docs.applied) == 1 and len(docs.docs[DASHBOARD]) == start + 1
+    widgets = docs.docs[DASHBOARD][-1].pages[0].widgets
+    placed = {widget.widget_id: widget.layout for widget in widgets}
+    for step in plan:
+        layout = placed[UUID(step["widget_id"])]
+        assert (layout.x, layout.y, layout.w, layout.h) == (step["x"], step["y"], step["w"],
+                                                            step["h"])
+
+
+@pytest.mark.asyncio
+async def test_a_plan_with_one_bad_step_saves_none_of_it(docs):
+    notes = [UUID(f"99999999-9999-4999-8999-{index:012d}") for index in range(20)]
+    _with_widgets(docs, *(_note(item, f"Note {index}", 0, 4 + 2 * index)
+                          for index, item in enumerate(notes)))
+    start = len(docs.docs[DASHBOARD])
+    plan = [{"widget_id": str(item), "x": 0, "y": 4 + index * 3, "w": 6, "h": 3}
+            for index, item in enumerate(notes)]
+    plan[19] = {**plan[19], "y": plan[18]["y"]}  # the last step overlaps the one before
+    outcome = await _run("native_dashboard_arrange", {"move": plan})
+    assert not outcome.ok and not docs.applied and len(docs.docs[DASHBOARD]) == start
+
+
+# ── Live findings (neva-live-attempt-1): questions back and blank arguments ──
+
+
+@pytest.mark.asyncio
+async def test_several_dashboards_matching_a_name_settle_the_data_step(docs, monkeypatch):
+    async def spaces(user):
+        return [SimpleNamespace(id="personal", name="Personal Workspace")]
+
+    rows = [{"resource_id": str(uuid4()), "title": title, "revision": 1,
+             "current_publication_id": None} for title in ("Sales North", "Sales South")]
+
+    class Two:
+        async def browse(self, user, space, *, kind, draft, limit):
+            return rows if draft else []
+
+    monkeypatch.setattr(native, "_spaces", spaces)
+    monkeypatch.setattr(native, "_documents", lambda: Two())
+    outcome = await _run("native_dashboard_list", {"search": "sales"})
+    assert outcome.ok and "ask which one" in outcome.summary
+    assert [item["title"] for item in outcome.data["dashboards"]] == ["Sales North", "Sales South"]
+    assert set(outcome.metadata["settles_capabilities"]) == set(native.ASKING_SETTLES)
+    assert _tool("native_dashboard_list").may_settle == native.ASKING_SETTLES
+    # A title that is the name exactly, or a single match, is not a question back.
+    exact = await _run("native_dashboard_list", {"search": "sales north"})
+    assert not (exact.metadata or {}).get("settles_capabilities")
+    # The name as people say it: words in any order, "my ... dashboard" ignored.
+    said = await _run("native_dashboard_list", {"search": "my Sales dashboard"})
+    assert len(said.data["dashboards"]) == 2 and said.metadata["question_back"]
+    north = await _run("native_dashboard_list", {"search": "the North Sales dashboard"})
+    assert [item["title"] for item in north.data["dashboards"]] == ["Sales North"]
+    assert not (north.metadata or {}).get("settles_capabilities")
+    rows.pop()
+    single = await _run("native_dashboard_list", {"search": "sales"})
+    assert not (single.metadata or {}).get("settles_capabilities")
+
+
+@pytest.mark.asyncio
+async def test_a_removed_page_on_screen_settles_the_data_step(docs):
+    _, settles = await native.brief_settling(USER, {
+        "dashboard_id": str(DASHBOARD), "revision": 1, "page_id": str(uuid4())})
+    assert "native_dashboard_read" in settles and set(native.ASKING_SETTLES) <= set(settles)
+    _, settles = await native.brief_settling(USER, {
+        "dashboard_id": str(DASHBOARD), "revision": 1, "page_id": str(PAGE)})
+    assert settles == ("native_dashboard_read",)
+    assert await native.brief_settling(USER, {"revision": 1}) == ("No dashboard is open.", ())
+
+
+@pytest.mark.asyncio
+async def test_blank_optional_arguments_mean_not_given(docs):
+    # A real model sent every optional property as "" (live attempt 1).
+    blanks = {"widget_id": str(WIDGET), "visual": "pie", "title": "", "x": "", "y": "",
+              "size": "", "color": None, "sort": None, "orientation": "", "stack": ""}
+    preview = _tool("native_chart_update").preview(_call("native_chart_update", blanks))
+    assert preview == "Change a chart on the dashboard: chart type (to pie chart)"
+    approval = await _chart_approval(blanks)
+    assert approval.startswith("Chart 'Revenue by city': from bar chart to pie chart.")
+    target = _tool("native_chart_update").target(_call("native_chart_update", blanks), _context())
+    assert target is not None and target["widget_ids"] == [WIDGET]
+    # An empty filter list is kept: it still clears the filters.
+    assert native._given({"mode": "replace", "filters": [], "x": ""}) == {
+        "mode": "replace", "filters": []}
+
+
+@pytest.mark.asyncio
+async def test_an_invalid_change_reads_plainly_on_the_approval_card(docs):
+    approval = await _chart_approval({"widget_id": "not-a-widget", "visual": "pie"})
+    assert approval.endswith("Some details of this change are missing, so it cannot be saved yet.")
+    assert "widget_id" not in approval and "UUID" not in approval
+    # Neva still gets which argument failed, to correct the call.
+    outcome = await _run("native_chart_update", {"widget_id": "not-a-widget", "visual": "pie"})
+    assert not outcome.ok and outcome.recoverable and "widget_id" in outcome.error

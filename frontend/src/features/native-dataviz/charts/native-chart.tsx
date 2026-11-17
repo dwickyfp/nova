@@ -347,7 +347,7 @@ export function NativeChart({ chart, draft, context, parameters, onSelectValue, 
   const label = `${chart.title}: ${chart.visual} chart`
   if (shapeError) return <State tone='muted' text={shapeError} />
   if (query.isPending) return <div aria-busy='true' className='flex flex-1 flex-col gap-2 p-1' role='status' aria-label={`Loading ${chart.title}`}>
-    <div className='h-4 w-1/3 animate-pulse rounded bg-muted' /><div className='min-h-0 flex-1 animate-pulse rounded bg-muted/60' />
+    <div className='h-4 w-1/3 motion-safe:animate-pulse rounded bg-muted' /><div className='min-h-0 flex-1 motion-safe:animate-pulse rounded bg-muted/60' />
   </div>
   if (query.isError) return <State tone='error' text={queryError(query.error)} retry={() => void query.refetch()} />
   if (!result) return null
@@ -360,7 +360,7 @@ export function NativeChart({ chart, draft, context, parameters, onSelectValue, 
   return <div className={cn('relative flex min-h-0 flex-1 flex-col', className)} title={unfilterable}
     data-updating={updating ? '' : undefined}>
     {query.isFetching && <span role='status' className='sr-only'>Updating {chart.title}</span>}
-    <div className={cn('flex min-h-0 flex-1 flex-col transition-opacity', query.isFetching && 'opacity-60')}>
+    <div className={cn('flex min-h-0 flex-1 flex-col motion-safe:transition-opacity', query.isFetching && 'opacity-60')}>
       {empty && chart.visual !== 'kpi' ? <State tone='muted' text='No rows match the current filters.' />
         : chart.visual === 'kpi' ? <Kpi chart={chart} result={result} />
           : chart.visual === 'pivot' ? <PivotTable chart={chart} result={result} />

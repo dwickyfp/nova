@@ -106,3 +106,31 @@ async def test_task_login_cannot_change_or_remove_files(viz):  # noqa: F811
         "SELECT name,is_deleted FROM nova_meta.config_workspace_entries WHERE id=%s",
         (entry["id"],))
     assert rows == [{"name": "report.xlsx", "is_deleted": False}]
+
+
+async def test_a_scheduled_export_file_is_private_to_the_workspace(viz):  # noqa: F811
+    """NDV-STORE-008: there is no public or signed link to an exported workbook; the
+    file is a workspace entry, so only roles the workspace is shared with can find
+    it, and the storage key never reaches anyone who cannot."""
+    namespace = "~ws/" + viz.workspace_id
+    async with viz.transaction(runner(), workload="task",
+                               repository_type=WorkspaceFileRepository) as (files, _):
+        await files.insert_entry(namespace, parent_path="", name="Scheduled exports",
+                                 entry_type="folder", object_key=None)
+        entry = await files.insert_entry(namespace, parent_path="Scheduled exports",
+                                         name="Weekly sales.xlsx", entry_type="file",
+                                         object_key="viz-export/" + uuid4().hex,
+                                         size_bytes=10, etag="etag", content_sha256=DIGEST)
+    # A role the workspace is shared with finds it.
+    async with viz.transaction(session("viewer-person", active="VIEWER"),
+                               repository_type=WorkspaceFileRepository) as (files, _):
+        assert (await files.get_entry(namespace, entry["id"]))["name"] == "Weekly sales.xlsx"
+    # Another role of a member, and another person, find nothing: not by listing,
+    # not by id, not by asking which workspace the id belongs to.
+    for outsider in (session("viewer-person", active="OUTSIDERS"),
+                     session("stranger", active="OUTSIDERS")):
+        async with viz.transaction(outsider,
+                                   repository_type=WorkspaceFileRepository) as (files, _):
+            assert await files.list_entries(namespace) == []
+            assert await files.get_entry(namespace, entry["id"]) is None
+            assert await files.namespace_of(entry["id"]) is None

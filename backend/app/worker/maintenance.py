@@ -1,4 +1,5 @@
-"""Background catalog, routine-load, Search, News and ML retention work outside the HTTP API."""
+"""Background catalog, routine-load, Search, News, ML retention and Workspace object
+reconciliation work outside the HTTP API."""
 
 from __future__ import annotations
 
@@ -20,6 +21,7 @@ class MaintenanceWorker:
         from app.modules.llm_functions.registration_worker import AIFunctionRegistrationWorker
         from app.modules.ml_engine.service import ml_engine_service
         from app.modules.routine_load import reconciler as routine_load_reconciler
+        from app.modules.workspaces import object_reconciler
 
         async with asyncio.TaskGroup() as group:
             tasks = [
@@ -31,6 +33,7 @@ class MaintenanceWorker:
                     ("search", search_service.run()),
                     ("ml-retention", ml_engine_service.sweep_ephemeral()),
                     ("ai-functions", AIFunctionRegistrationWorker().run_forever(stop)),
+                    ("workspace-objects", object_reconciler.run(stop)),
                 )
             ]
             await stop.wait()

@@ -1,4 +1,7 @@
-$ eslint .
+
+> shadcn-admin@2.2.1 lint /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+> eslint .
+
 
 /Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/components/data-table/simple-table-controls.tsx
   19:14  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
@@ -41,6 +44,13 @@ $ eslint .
 /Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/features/monitoring/queries/index.tsx
   19:14  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
 
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/features/native-dataviz/charts/echart-host.tsx
+  29:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+  58:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/features/native-dataviz/dashboard/neva-pointer.tsx
+  25:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
 /Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/features/tasks/components/tasks-table.tsx
   68:3  warning  Unused eslint-disable directive (no problems were reported from 'react-hooks/incompatible-library')
 
@@ -49,15 +59,12 @@ $ eslint .
   250:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
 
 /Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/features/workspaces/index.tsx
-  4115:45  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
-  4125:50  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
-  4125:62  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4134:45  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4144:50  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4144:62  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
 
 /Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/features/workspaces/query-confirmation.tsx
   13:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
-
-/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/routes/_authenticated/analytics.tsx
-  16:10  warning  Fast refresh only works when a file only exports components. Move your component(s) to a separate file. If all exports are HOCs, add them to the `extraHOCs` option  react-refresh/only-export-components
 
 /Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/routes/_authenticated/functions/index.tsx
   11:10  warning  Fast refresh only works when a file only exports components. Move your component(s) to a separate file. If all exports are HOCs, add them to the `extraHOCs` option  react-refresh/only-export-components
@@ -80,9 +87,6 @@ $ eslint .
 /Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/routes/_authenticated/users/$username.tsx
   4:10  warning  Fast refresh only works when a file only exports components. Move your component(s) to a separate file. If all exports are HOCs, add them to the `extraHOCs` option  react-refresh/only-export-components
 
-/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/routes/bi-launch.tsx
-  37:10  warning  Fast refresh only works when a file only exports components. Move your component(s) to a separate file. If all exports are HOCs, add them to the `extraHOCs` option  react-refresh/only-export-components
-
-✖ 31 problems (0 errors, 31 warnings)
+✖ 32 problems (0 errors, 32 warnings)
   0 errors and 1 warning potentially fixable with the `--fix` option.
 

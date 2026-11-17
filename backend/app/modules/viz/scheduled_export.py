@@ -724,6 +724,24 @@ async def page_workbook(user: Mapping[str, Any], target: ExportTarget, *,
 async def run(record_id: str, user: Mapping[str, Any], *,
               occurrence: Occurrence | None = None,
               now: datetime | None = None) -> dict[str, Any]:
+    """``_run``, counted by bounded outcome for operators."""
+    from app.observability.metrics import dataviz_export
+
+    try:
+        result = await _run(record_id, user, occurrence=occurrence, now=now)
+    except ExportUnavailable:
+        dataviz_export("unavailable")
+        raise
+    except Exception:
+        dataviz_export("error")
+        raise
+    dataviz_export("existing" if result.get("existing") else "saved")
+    return result
+
+
+async def _run(record_id: str, user: Mapping[str, Any], *,
+               occurrence: Occurrence | None = None,
+               now: datetime | None = None) -> dict[str, Any]:
     """One scheduled run: save the page's workbook once for its occurrence.
 
     The occurrence is persisted by the task scheduler before the run starts, and

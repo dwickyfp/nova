@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import replace
@@ -11,6 +12,7 @@ from hashlib import sha256
 from typing import Any, Literal
 from uuid import UUID, uuid5
 
+import asyncmy.errors
 from fastapi import HTTPException
 
 from app.core.database import configured_timezone
@@ -24,6 +26,7 @@ from app.modules.query.admission import QueryCapacityError, audit_refusal, query
 from app.modules.query.provenance import DatasetQuery, dataset_query
 from app.modules.query.repository import QueryRepository
 from app.modules.query.service import query_service
+from app.observability.metrics import dataviz_read
 from app.sql_frontend.analysis.lineage import read_query_sources
 from app.sql_frontend.binding.models import BoundColumn, BoundTable, TableName
 from app.sql_frontend.binding.starrocks import (
@@ -84,6 +87,8 @@ from .semantic_grain import MetricGrainError, SemanticGrain, plan_semantic_grain
 
 SOURCE_TIMEOUT_SECONDS = 30
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def source_capacity(
@@ -104,6 +109,59 @@ async def source_capacity(
         raise NovaException(
             "Dataset query capacity reached; retry shortly", status_code=429
         ) from None
+
+
+@asynccontextmanager
+async def held_engine_session(user: Mapping[str, Any]) -> AsyncIterator[None]:
+    """One engine session, as this account, for every statement of one request.
+
+    A dataset read checks its source before and after the query, and each check
+    reads the catalog several times. Opening a connection per statement made one
+    widget cost about fifteen sign-ins on the engine. The request now opens one
+    connection with the caller's own credentials and runs everything on it; the
+    role is still set before each statement and the session is closed when the
+    request ends, timed out or not. A scheduled run already holds its worker's
+    session for this account and keeps it.
+    """
+    from app.core.database import db
+    from app.modules.query.service import delegated_connection, delegated_connection_for
+
+    username = str(user.get("username") or "")
+    encrypted = user.get("encrypted_password")
+    if delegated_connection_for(username) is not None or not isinstance(encrypted, str) \
+            or not encrypted:
+        yield
+        return
+    try:
+        opened = db.user_conn(username=username, password=decrypt_password(encrypted))
+        connection = await opened.__aenter__()
+    except asyncmy.errors.OperationalError as error:
+        code = error.args[0] if error.args and isinstance(error.args[0], int) else None
+        if code == 1045:  # The password changed since sign-in: the session is over.
+            raise SessionExpiredError() from None
+        raise StarRocksError(f"Connection error: {code}") from None
+    except OSError:
+        raise StarRocksError("Connection error: unreachable") from None
+    try:
+        with delegated_connection(username, connection):
+            yield
+    finally:
+        await opened.__aexit__(None, None, None)
+
+
+def _engine_refusal(error: StarRocksError, refused: str) -> NovaException:
+    """403 for anything the engine refused; 503 when the engine did not answer.
+
+    A refusal, a missing object and an analysis error keep one wording, so the
+    response never reveals whether a private object exists. An unreachable or
+    overloaded engine is not a refusal and must not read as one.
+    """
+    if error.engine_unavailable:
+        logger.warning("Dataviz read failed: engine unavailable (code %s)", error.engine_code)
+        return NovaException(
+            "The data engine is not responding. Try again in a moment.", status_code=503)
+    logger.info("Dataviz read refused by the engine (code %s)", error.engine_code)
+    return NovaException(refused, status_code=403)
 
 
 async def _source(provider: StarRocksCatalogProvider, name: TableName) -> BoundTable:
@@ -250,11 +308,18 @@ class NativeDatasetService:
     async def preview(
         self, user: Mapping[str, Any], identity: UUID, request: DatasetPreviewRequest
     ) -> DatasetPreview:
+        with dataviz_read("preview"):
+            return await self._admitted_preview(user, identity, request)
+
+    async def _admitted_preview(
+        self, user: Mapping[str, Any], identity: UUID, request: DatasetPreviewRequest
+    ) -> DatasetPreview:
         async with document_admission(user, action="PREVIEW", identity=identity):
             try:
                 async with (
                     source_capacity(user, identity, operation="preview", revision=request.revision),
                     asyncio.timeout(SOURCE_TIMEOUT_SECONDS),
+                    held_engine_session(user),
                 ):
                     return await self._preview(user, identity, request)
             except TimeoutError:
@@ -263,10 +328,8 @@ class NativeDatasetService:
                 raise NovaException(
                     "Dataset preview is unavailable or unsupported", status_code=422
                 ) from None
-            except StarRocksError:
-                raise NovaException(
-                    "Dataset is unavailable or not permitted", status_code=403
-                ) from None
+            except StarRocksError as error:
+                raise _engine_refusal(error, "Dataset is unavailable or not permitted") from None
 
     async def _preview(
         self, user: Mapping[str, Any], identity: UUID, request: DatasetPreviewRequest
@@ -361,11 +424,18 @@ class NativeDatasetService:
         self, user: Mapping[str, Any], identity: UUID, request: DatasetQueryRequest
     ) -> DatasetQueryResult:
         """Aggregate a pinned dataset revision under the caller's active role."""
+        with dataviz_read("query"):
+            return await self._admitted_query(user, identity, request)
+
+    async def _admitted_query(
+        self, user: Mapping[str, Any], identity: UUID, request: DatasetQueryRequest
+    ) -> DatasetQueryResult:
         async with document_admission(user, action="QUERY", identity=identity):
             try:
                 async with (
                     source_capacity(user, identity, operation="query", revision=request.revision),
                     asyncio.timeout(SOURCE_TIMEOUT_SECONDS),
+                    held_engine_session(user),
                 ):
                     return await self._query(user, identity, request)
             except TimeoutError:
@@ -374,10 +444,8 @@ class NativeDatasetService:
                 raise NovaException(
                     "Dataset query is unavailable or unsupported", status_code=422
                 ) from None
-            except StarRocksError:
-                raise NovaException(
-                    "Dataset is unavailable or not permitted", status_code=403
-                ) from None
+            except StarRocksError as error:
+                raise _engine_refusal(error, "Dataset is unavailable or not permitted") from None
 
     async def _query_snapshot(
         self, user: Mapping[str, Any], identity: UUID, request: DatasetQueryRequest
@@ -476,6 +544,7 @@ class NativeDatasetService:
                 async with (
                     source_capacity(user, request.dataset_id, operation="inspect"),
                     asyncio.timeout(SOURCE_TIMEOUT_SECONDS),
+                    held_engine_session(user),
                 ):
                     return await self._inspect(user, request)
             except TimeoutError:
@@ -484,10 +553,8 @@ class NativeDatasetService:
                 raise NovaException(
                     "Source schema is unavailable or unsupported", status_code=422
                 ) from None
-            except StarRocksError:
-                raise NovaException(
-                    "Source is unavailable or not permitted", status_code=403
-                ) from None
+            except StarRocksError as error:
+                raise _engine_refusal(error, "Source is unavailable or not permitted") from None
 
     async def _inspect(
         self,

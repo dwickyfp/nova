@@ -1,0 +1,59 @@
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+
+12:10:00 AM [vite] (client) Re-optimizing dependencies because vite config has changed
+12:10:01 AM [vite] (client) [optimizer] scanning dependencies...
+12:10:03 AM [vite] (client) [optimizer] bundling dependencies...
+ ❯ |browser (chromium)| src/features/native-dataviz/charts/theme-switch.test.tsx (1 test | 1 failed) 3816ms
+     × re-reads colours from the theme and keeps axis text at AA contrast in light and dark 3815ms
+ ❯ |browser (chromium)| src/features/native-dataviz/dashboard/qa-editor.test.tsx (32 tests | 1 failed) 93602ms
+     × NDV-OPS-010: a failed refresh shows an error, never the earlier rows as current 15084ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |browser (chromium)| src/features/native-dataviz/charts/theme-switch.test.tsx > NDV-A11Y-004 theme switch with a chart on screen > re-reads colours from the theme and keeps axis text at AA contrast in light and dark
+Error: not drawn
+
+Failure screenshot:
+  - src/features/native-dataviz/charts/__screenshots__/theme-switch.test.tsx/NDV-A11Y-004-theme-switch-with-a-chart-on-screen-re-reads-colours-from-the-theme-and-keeps-axis-text-at-AA-contrast-in-light-and-dark-1.png
+
+ ❯ src/features/native-dataviz/charts/theme-switch.test.tsx:62:87
+     60|       const host = screen.container.querySelector<HTMLElement>('[role=…
+     61|       const chart = host && getInstanceByDom(host)
+     62|       if (!chart || !(chart.getOption() as { xAxis?: unknown[] }).xAxi…
+       |                                                                                       ^
+     63|       return chart
+     64|     })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |browser (chromium)| src/features/native-dataviz/dashboard/qa-editor.test.tsx > QA dependency failure > NDV-OPS-010: a failed refresh shows an error, never the earlier rows as current
+Error: [2mexpect([22m[31melement[39m[2m).toHaveTextContent()[22m
+
+Expected element to have text content:
+[32m  The chart could not be loaded.[39m
+Received:
+[31m  The data engine is not responding. Retry in a moment.Retry[39m
+
+Failure screenshot:
+  - src/features/native-dataviz/dashboard/__screenshots__/qa-editor.test.tsx/QA-dependency-failure-NDV-OPS-010--a-failed-refresh-shows-an-error--never-the-earlier-rows-as-current-1.png
+
+ ❯ src/features/native-dataviz/dashboard/qa-editor.test.tsx:922:52
+    920|     down = true
+    921|     await screen.client.invalidateQueries({ queryKey: ['native-dataviz…
+    922|     await expect.element(screen.getByRole('alert')).toHaveTextContent(…
+       |                                                    ^
+    923|     expect(screen.container.querySelector('[data-testid="kpi-value"]')…
+    924|     expect(screen.container.textContent).not.toContain('15,257')
+
+Caused by: Error: Matcher did not succeed in time.
+ ❯ src/features/native-dataviz/dashboard/qa-editor.test.tsx:922:4
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed | 5 passed (7)
+      Tests  2 failed | 116 passed (118)
+   Start at  00:10:00
+   Duration  105.80s (transform 0ms, setup 0ms, import 40.57s, tests 191.39s, environment 0ms)
+

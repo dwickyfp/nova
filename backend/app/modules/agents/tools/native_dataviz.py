@@ -26,6 +26,7 @@ import re
 from collections.abc import Awaitable, Callable
 from decimal import Decimal, InvalidOperation
 from functools import partial
+from types import SimpleNamespace
 from typing import Annotated, Any, Literal, TypeVar, cast, get_args
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
@@ -357,17 +358,37 @@ class PublishArgs(_Args):
     release_notes: str = Field(default="", max_length=2000)
 
 
+class InvalidArguments(Refusal):
+    """The call's arguments do not validate; the details are for Neva, not the reader."""
+
+
+def _given(value: Any) -> Any:
+    """Drop object keys a model sent blank ("" or null): blank means not given.
+
+    Models often send every optional property empty. An empty list is kept (an
+    empty filter list clears the filters), and values inside lists are kept as
+    sent, so an empty string compared in a filter still reaches its check.
+    """
+    if isinstance(value, dict):
+        kept = {key: _given(item) for key, item in value.items()}
+        return {key: item for key, item in kept.items() if item is not None and item != ""}
+    if isinstance(value, list):
+        return [_given(item) if isinstance(item, dict) else item for item in value]
+    return value
+
+
 def _parse(model: type[ArgsT], arguments: dict[str, Any]) -> ArgsT:
     """Strict validation; the reason never echoes the supplied values."""
     try:
-        return model.model_validate(arguments)
+        return model.model_validate(_given(arguments))
     except ValidationError as exc:
         reasons = []
         for error in exc.errors(include_input=False, include_url=False)[:4]:
             where = ".".join(str(part) for part in error.get("loc", ()) if part != "__root__")
             message = str(error.get("msg") or "is invalid").removeprefix("Value error, ")
             reasons.append(f"{where}: {message}" if where else message)
-        raise Refusal("The request is incomplete or invalid: " + "; ".join(reasons)) from None
+        raise InvalidArguments(
+            "The request is incomplete or invalid: " + "; ".join(reasons)) from None
 
 
 # ── Errors ───────────────────────────────────────────────────────────
@@ -437,7 +458,10 @@ def _uuid(value: Any) -> UUID | None:
 def _dashboard_id(requested: UUID | None, context: Any) -> UUID:
     identity = requested or _uuid(_open(context).get("dashboard_id"))
     if identity is None:
-        raise Refusal("No dashboard is open. Name the dashboard to use, or create one.")
+        raise Refusal(
+            "No dashboard is open. Look it up by name in the list of dashboards; if several "
+            "match, show them to the user and ask which one, or create one."
+        )
     return identity
 
 
@@ -1139,6 +1163,9 @@ class _Tool:
         try:
             args = _parse(self.args_model, invocation.arguments)
             return await self.describe(args, invocation, context, user) or plain
+        except InvalidArguments:
+            # The approval card is for the reader; which argument failed goes to Neva.
+            return f"{plain}. Some details of this change are missing, so it cannot be saved yet."
         except Refusal as exc:
             return f"{plain}. This cannot be saved as proposed: {exc}"
         except (NovaException, ValidationError):
@@ -1149,6 +1176,35 @@ class _Tool:
     ) -> str | None:
         """A fuller approval text from the current dashboard; ``None`` keeps ``preview``."""
         return None
+
+    #: What a change does, for the page's Neva pointer; read-only tools have none.
+    action: str | None = None
+
+    def widgets(self, args: Any) -> list[UUID]:
+        """The widgets this change touches, from its arguments."""
+        return []
+
+    def target(self, invocation: ToolInvocation, context: Any) -> dict[str, Any] | None:
+        """The dashboard, page and widgets a proposed change lands on; no read."""
+        if self.action is None:
+            return None
+        try:
+            args = _parse(self.args_model, invocation.arguments)
+        except Refusal:
+            return None
+        opened = _open(context)
+        dashboard = getattr(args, "dashboard_id", None) or _uuid(opened.get("dashboard_id"))
+        if dashboard is None:
+            return None
+        page = getattr(args, "page_id", None)
+        if page is None and _uuid(opened.get("dashboard_id")) == dashboard:
+            page = _uuid(opened.get("page_id"))
+        action = self.action
+        if isinstance(args, ArrangeArgs):
+            action = "remove" if args.remove and not args.move else (
+                "move" if args.move and not args.remove else "arrange")
+        return {"dashboard_id": dashboard, "page_id": page, "action": action,
+                "widget_ids": self.widgets(args)}
 
     async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
         user = _user(context)
@@ -1230,9 +1286,30 @@ _SHAPE = {
 _VISUAL = {"type": "string", "enum": list(VISUAL_WORDS)}
 
 
+#: Words a person adds around a dashboard's name ("my Sales dashboard").
+_NAME_FILLER = frozenset({"dashboard", "dashboards", "the", "my", "our", "a"})
+
+
+def _title_words(text: str) -> frozenset[str]:
+    return frozenset(re.findall(r"\w+", text.casefold())) - _NAME_FILLER
+
+
+#: The data and change steps a turn owes; a turn whose answer must be a
+#: question back (which dashboard, which page) owes none of them yet. Neva may
+#: still make the change once the person answers, after approval as always.
+ASKING_SETTLES = frozenset({
+    "semantic_query", "semantic_view_query", "diagnose_change", "native_dataset_query",
+    "native_dashboard_read", "native_dataset_describe", "native_dashboard_add_charts",
+    "native_chart_update", "native_dashboard_arrange",
+    "native_dashboard_filters", "native_dashboard_create", "native_dashboard_attach_dataset",
+    "native_dashboard_publish",
+})
+
+
 class ListDashboardsTool(_Tool):
     name = "native_dashboard_list"
     args_model = ListArgs
+    may_settle = ASKING_SETTLES
     description = (
         "List the Dataviz dashboards your active role can open, across your workspaces: title, "
         "dashboard_id, workspace, draft revision (when you can edit), and whether it is "
@@ -1248,7 +1325,8 @@ class ListDashboardsTool(_Tool):
     async def act(self, args: ListArgs, invocation, context, user) -> ToolOutcome:
         found: dict[str, dict[str, Any]] = {}
         spaces = (await _spaces(user))[:MAX_WORKSPACES]
-        needle = (args.search or "").casefold()
+        needle = (args.search or "").casefold().strip()
+        words = _title_words(needle)
         for space in spaces:
             for draft in (True, False):
                 try:
@@ -1258,7 +1336,8 @@ class ListDashboardsTool(_Tool):
                     continue
                 for row in rows:
                     title = str(row.get("title") or "Untitled dashboard")
-                    if needle and needle not in title.casefold():
+                    if needle and needle not in title.casefold() and not (
+                            words and words <= _title_words(title)):
                         continue
                     key = str(row["resource_id"])
                     entry = found.setdefault(key, {
@@ -1271,6 +1350,18 @@ class ListDashboardsTool(_Tool):
                     if draft:
                         entry.update(title=title, can_edit=True, draft_revision=row["revision"])
         dashboards = list(found.values())[:MAX_DASHBOARDS]
+        exact = [item for item in dashboards if item["title"].casefold() == needle
+                 or _title_words(item["title"]) == words]
+        if needle and len(dashboards) > 1 and not exact:
+            # Several dashboards fit the name and none is it exactly: the answer
+            # is a question back naming them, so no data step is still owed.
+            return ToolOutcome(
+                ok=True, summary=f"{len(dashboards)} dashboards match; ask which one",
+                data={"dashboards": dashboards,
+                      "note": "Several dashboards match the name. Show their titles and "
+                              "workspaces and ask the user which one; change nothing yet."},
+                metadata={"settles_capabilities": sorted(ASKING_SETTLES), "question_back": True},
+            )
         return ToolOutcome(ok=True, summary=f"{len(dashboards)} dashboards",
                            data={"dashboards": dashboards})
 
@@ -1493,12 +1584,23 @@ def _dataset_for(spec_dataset: UUID | None, dashboard: DashboardDefinition) -> D
 def _page(dashboard: DashboardDefinition, page_id: UUID | None, context: Any) -> Page:
     wanted = page_id or _uuid(_open(context).get("page_id"))
     page = next((item for item in dashboard.pages if item.page_id == wanted), None)
-    if page is None and page_id is not None:
-        raise Refusal("That page is not on this dashboard.")
-    return page or dashboard.pages[0]
+    if page is not None:
+        return page
+    if wanted is None:
+        return dashboard.pages[0]
+    # A page removed since the screen loaded, or a wrong id: never fall back to
+    # another page silently; name the pages there are now.
+    pages = "; ".join(f"{item.title} (page_id {item.page_id})" for item in dashboard.pages[:20])
+    if page_id is not None:
+        raise Refusal(f"That page is not on this dashboard. Its pages: {pages}.")
+    raise Refusal(
+        "The page on screen is no longer on this dashboard; someone changed it since "
+        f"the page loaded. Tell the user and ask which page to use. Its pages: {pages}."
+    )
 
 
 class AddChartsTool(_Change):
+    action = "add"
     name = "native_dashboard_add_charts"
     args_model = AddChartsArgs
     description = (
@@ -1591,7 +1693,65 @@ class AddChartsTool(_Change):
                         change)
 
 
+AGGREGATION_WORDS = {"sum": "total", "avg": "average", "min": "lowest", "max": "highest",
+                     "count": "count", "count_distinct": "distinct count", "agg": "saved metric"}
+
+
+def _encoded(chart: ChartDefinition) -> tuple[list[Any], list[Any]]:
+    """The measures and the groupings (dimensions, colour, pivot columns) of a chart."""
+    encoding = chart.encoding
+    measures: list[Any] = []
+    groups: list[Any] = []
+    for name in ("measures", "measure"):
+        value = getattr(encoding, name, None)
+        measures += list(value) if isinstance(value, (list, tuple)) else [value] if value else []
+    for name in ("dimensions", "category", "pivot_columns", "color"):
+        value = getattr(encoding, name, None)
+        groups += list(value) if isinstance(value, (list, tuple)) else [value] if value else []
+    for name in ("x", "y", "size"):
+        value = getattr(encoding, name, None)
+        if isinstance(value, str):
+            measures.append(SimpleNamespace(field_id=value, aggregation=None))
+    return measures, groups
+
+
+def _named(dataset: Dataset, field_id: str) -> str:
+    for item in [*dataset.fields, *dataset.metrics]:
+        if str(getattr(item, "field_id", None) or getattr(item, "metric_id", "")) == field_id:
+            return item.name[:80]
+    return "a field"
+
+
+def _parts(chart: ChartDefinition, dataset: Dataset) -> list[str]:
+    measures, groups = _encoded(chart)
+    parts = []
+    for item in measures:
+        word = AGGREGATION_WORDS.get(str(item.aggregation), "")
+        parts.append(f"{word} {_named(dataset, str(item.field_id))}".strip())
+    for item in groups:
+        grain = getattr(item, "date_grain", None)
+        name = _named(dataset, str(item.field_id))
+        parts.append(f"by {name}" + (f" per {grain}" if grain else ""))
+    return parts
+
+
+def _shows(chart: ChartDefinition, dataset: Dataset) -> str:
+    """'total Revenue and average Quantity by City' for an approval."""
+    measures, groups = _encoded(chart)
+    numbers = _parts(chart, dataset)[:len(measures)]
+    grouping = _parts(chart, dataset)[len(measures):]
+    text = " and ".join(numbers) or "no numbers"
+    if grouping:
+        text += " " + ", ".join(grouping)
+    return text
+
+
 class UpdateChartTool(_Change):
+    action = "change"
+
+    def widgets(self, args: UpdateChartArgs) -> list[UUID]:
+        return [args.widget_id]
+
     name = "native_chart_update"
     args_model = UpdateChartArgs
     description = (
@@ -1615,7 +1775,7 @@ class UpdateChartTool(_Change):
         changed = [key for key in ("title", "visual", "dimensions", "measures", "color", "sort",
                                    "orientation", "stack", "x", "y", "size", "donut",
                                    "columns", "totals", "shade")
-                   if key in invocation.arguments]
+                   if key in _given(invocation.arguments)]
         words = {"visual": "chart type", "dimensions": "grouping", "measures": "numbers",
                  "columns": "pivot columns", "shade": "shading"}
         parts = ", ".join(words.get(key, key) for key in changed) or "its settings"
@@ -1623,9 +1783,11 @@ class UpdateChartTool(_Change):
         suffix = f" (to {VISUAL_WORDS.get(str(visual), 'chart')})" if visual else ""
         return f"Change a chart on the dashboard: {parts}{suffix}"
 
-    async def act(self, args: UpdateChartArgs, invocation, context, user) -> ToolOutcome:
+    async def _proposed(
+        self, args: UpdateChartArgs, context: Any, user: dict[str, Any],
+    ) -> tuple[UUID, ChartDefinition, ChartDefinition, int, Dataset | None]:
+        """The chart as it is and as this change would save it."""
         identity = _dashboard_id(args.dashboard_id, context)
-        base = _base(invocation)
         _, dashboard = await _draft(user, identity)
         widget = next((item for page in dashboard.pages for item in page.widgets
                        if item.widget_id == args.widget_id), None)
@@ -1639,6 +1801,7 @@ class UpdateChartTool(_Change):
         chart_head = int(snapshot["revision"])
         given = args.model_dump(exclude_unset=True, exclude={"dashboard_id", "widget_id"})
         structural = set(given) - {"title"}
+        dataset: Dataset | None = None
         if structural:
             spec_data = spec_from_chart(current)
             visual = given.get("visual", spec_data["visual"])
@@ -1663,6 +1826,33 @@ class UpdateChartTool(_Change):
                                   revision=current.dataset_revision, dataset=dataset)
         else:
             updated = current.model_copy(update={"title": given["title"]})
+        return chart_id, current, updated, chart_head, dataset
+
+    async def describe(self, args: UpdateChartArgs, invocation, context, user) -> str:
+        """What the chart shows now and after the change, in the dataset's words."""
+        _, current, updated, _, dataset = await self._proposed(args, context, user)
+        if dataset is None:
+            return f"Rename the chart '{current.title[:80]}' to '{updated.title[:80]}'"
+        before, after = _shows(current, dataset), _shows(updated, dataset)
+        lines = [f"Chart '{current.title[:80]}'"]
+        if current.visual != updated.visual:
+            lines[0] += (f": from {VISUAL_WORDS.get(current.visual, current.visual)} to "
+                         f"{VISUAL_WORDS.get(updated.visual, updated.visual)}")
+        lines.append(f"It will show {after} instead of {before}" if after != before
+                     else f"It still shows {after}")
+        kept = _parts(updated, dataset)
+        dropped = [f"the breakdown {item}" if item.startswith("by ") else item
+                   for item in _parts(current, dataset) if item not in kept]
+        if dropped and current.visual != updated.visual:
+            lines.append("It no longer shows " + _bounded(dropped))
+        if updated.title != current.title:
+            lines.append(f"Its title becomes '{updated.title[:80]}'")
+        return ". ".join(lines) + "."
+
+    async def act(self, args: UpdateChartArgs, invocation, context, user) -> ToolOutcome:
+        identity = _dashboard_id(args.dashboard_id, context)
+        base = _base(invocation)
+        chart_id, current, updated, chart_head, _ = await self._proposed(args, context, user)
         operation_id = uuid5(base, "chart-replace")
         chart_receipt = await _settle(user, operation_id, lambda: _documents().replace_visual(
             user, updated, operation_id=operation_id, expected_revision=chart_head))
@@ -1687,6 +1877,11 @@ class UpdateChartTool(_Change):
 
 
 class ArrangeTool(_Change):
+    action = "arrange"
+
+    def widgets(self, args: ArrangeArgs) -> list[UUID]:
+        return [*(item.widget_id for item in args.move), *args.remove]
+
     name = "native_dashboard_arrange"
     args_model = ArrangeArgs
     description = (
@@ -1821,6 +2016,7 @@ class ArrangeTool(_Change):
 
 
 class FiltersTool(_Change):
+    action = "filter"
     name = "native_dashboard_filters"
     args_model = FiltersArgs
     description = (
@@ -2111,6 +2307,7 @@ class CreateDashboardTool(_Change):
 
 
 class AttachDatasetTool(_Change):
+    action = "data"
     name = "native_dashboard_attach_dataset"
     args_model = AttachArgs
     description = (
@@ -2161,6 +2358,7 @@ class AttachDatasetTool(_Change):
 
 
 class PublishTool(_Change):
+    action = "publish"
     name = "native_dashboard_publish"
     args_model = PublishArgs
     description = (
@@ -2220,6 +2418,11 @@ as the user's active role and is saved as a new version.
 - To add a chart, call native_dashboard_add_charts with the visual and fields the user asked
   for; to change one, native_chart_update with its widget_id; to move, resize or remove,
   native_dashboard_arrange; filters, native_dashboard_filters.
+- To open a dashboard by name, call native_dashboard_list with words from the name. If more
+  than one matches, or none does, show the user the matching titles with their workspaces and
+  ask which one; never pick one yourself or change any of them until the user has chosen.
+- When the page lists filters and selections applied on screen, apply them to the numbers you
+  quote, or say that you did not.
 - If the data is not on the dashboard yet, attach a dataset first.
 - Publish only when the user asks to.
 - Say a dashboard changed only when a tool confirmed it, with the saved version number (call it
@@ -2234,28 +2437,75 @@ def register(registry: Any) -> None:
             registry.register(tool)
 
 
+def _view_filters(raw: Any) -> str:
+    """The on-screen filters as JSON lines; labels are user text, kept quoted."""
+    import json
+
+    if not isinstance(raw, list):
+        return ""
+    lines = []
+    for item in raw[:32]:
+        if not isinstance(item, dict) or not item.get("label"):
+            continue
+        entry = {
+            key: item.get(key)
+            for key in ("source", "label", "text", "dataset_id", "field_id", "values")
+            if item.get(key) not in (None, "", [])
+        }
+        lines.append("- " + json.dumps(entry, ensure_ascii=False, default=str)[:1_200])
+    return "\n".join(lines)
+
+
 async def brief(user: dict[str, Any], opened: dict[str, Any]) -> tuple[str, bool]:
     """The native dashboard on screen, read as the caller, for the turn's prompt.
 
     Returns the text and whether the dashboard was read (the same facts
     ``native_dashboard_read`` returns, so that call is settled).
     """
+    text, settles = await brief_settling(user, opened)
+    return text, "native_dashboard_read" in settles
+
+
+async def brief_settling(
+    user: dict[str, Any], opened: dict[str, Any],
+) -> tuple[str, tuple[str, ...]]:
+    """``brief`` with the required tools its facts settle for this turn.
+
+    Reading the dashboard settles ``native_dashboard_read``; a page on screen
+    that was removed settles the data steps too, since the answer is a
+    question back about which page to use.
+    """
     import json
 
     identity = _uuid(opened.get("dashboard_id"))
     if identity is None:
-        return "No dashboard is open.", False
+        return "No dashboard is open.", ()
     try:
         summary = await dashboard_summary(
             user, identity, selected=_uuid(opened.get("selected_widget_id")),
         )
     except (NovaException, Refusal) as exc:
         reason = _explain(exc) if isinstance(exc, NovaException) else str(exc)
-        return f"The dashboard on screen could not be read right now. {reason}", False
+        return f"The dashboard on screen could not be read right now. {reason}", ()
     notes = [f"dashboard_id: {identity}"]
+    settles: tuple[str, ...] = ("native_dashboard_read",)
     page = _uuid(opened.get("page_id"))
     if page is not None:
         notes.append(f"Page on screen: {page}")
+        if all(item.get("page_id") != str(page) for item in summary.get("pages", [])):
+            settles += tuple(sorted(ASKING_SETTLES))
+            notes.append(
+                "That page is no longer on the dashboard: someone removed it since the "
+                "page loaded. Say so, and ask which page to use before changing anything."
+            )
+    shown_filters = _view_filters(opened.get("view_filters"))
+    if shown_filters:
+        notes.append(
+            "Filters and selections applied on screen (the user sees numbers with these "
+            "applied). When you answer with numbers, pass the ones on the same dataset "
+            "to native_dataset_query as filters (field_id, values; a range as between), "
+            "and say which ones you applied or that you left one out:\n" + shown_filters
+        )
     shown = opened.get("revision")
     if isinstance(shown, int) and shown != summary["revision"]:
         notes.append(
@@ -2265,4 +2515,4 @@ async def brief(user: dict[str, Any], opened: dict[str, Any]) -> tuple[str, bool
     if not summary["editable"]:
         notes.append("The active role can view this dashboard but not change it.")
     body = json.dumps(summary, ensure_ascii=False, separators=(",", ":"), default=str)
-    return "\n".join(notes) + "\n" + body[:24_000], True
+    return "\n".join(notes) + "\n" + body[:24_000], settles

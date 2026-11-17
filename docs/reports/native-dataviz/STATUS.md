@@ -1,6 +1,6 @@
 # Native Dataviz delivery record
 
-Status: **in progress; not production ready; no cutover**. Release QA round 8 (2026-11-17): 199 of 254 pass, 17 out of scope, 38 HIGH open.
+Status: **in progress; not production ready; no cutover**. Release QA round 9 (2026-11-18): 233 of 254 pass, 18 out of scope, 3 blocked on dedicated performance hardware, none open.
 Branch: `feat/dataviz-native`.
 Baseline: `1ee12694e0ecb6ecfd8135965943be08f5195967`.
 
@@ -23,7 +23,7 @@ Baseline: `1ee12694e0ecb6ecfd8135965943be08f5195967`.
 | WP12 collaboration | In progress | Event-polling refresh (4 s) and Neva change events update open editors; presence (avatars, editing state) and live pointers through a 1 s Redis-backed heartbeat gated by view access, live-tested with two people; websocket replay open |
 | WP13 export/report/schedules | In progress | Chart PNG/CSV/Excel, page Excel workbook and a printable report, behind the Export permission with an audited server check; CSV formula guard; scheduled Excel exports of a page run on the task scheduler as the role's scheduled-task account and save into the dashboard's shared workspace; server-rendered PDF/image exports open |
 | WP14 conversion | Not started | Complete asset mapping and semantic/visual comparisons |
-| WP15 security/resilience | In progress | Shared native dataset read by three people under Ranger row filters (`row-filters-live-attempt-8.json`); reflection policy for every user; faults, restore and metrics open |
+| WP15 security/resilience | In progress | Shared native dataset read by three people under Ranger row filters (`row-filters-live-attempt-8.json`); reflection policy for every user; round 9 drills cover query-process kill, two web replicas, crash-retried scheduled exports, orphan-object reconciliation, backup restore and operator metrics. Load targets need dedicated hardware |
 | WP16 release QA | In progress | Attempt 2 (`release-qa-attempt-2.json`): 79 PASS after view-only access, multi-value/legend selection, tablet view, chart text alternatives, multi-page reports, table calculations and comments. Attempt 1: 68 PASS, 17 out of scope by the Superset decision, 169 open (31 CRITICAL) with the missing feature, infrastructure or test noted per row in `QA_MATRIX.csv`; five defects found and fixed in the pass |
 | WP17 decommission | Done by user decision (2026-11-16), ahead of WP14/WP16 | Superset services, image, gateway route, backend module, frontend and docs removed; development Superset metadata backed up outside Git before deletion; no assets converted |
 
@@ -943,4 +943,89 @@ OUT_OF_SCOPE.
     passed 226 files and 1,981 tests on the first run.
   - Existing browser tests that mount two tabs, or a 2,400 px page, now size
     the test viewport to fit them, since charts draw only near the screen.
+
+## Release QA round 9 (2026-11-17 to 2026-11-18)
+
+Every scenario is now decided: 233 PASS, 18 OUT_OF_SCOPE and 3 BLOCKED
+(the dashboard timing targets, which need the declared dedicated hardware).
+None is `NOT_RUN`. Of round 8's 38 open scenarios, 34 pass, 1 is out of scope
+by a recorded decision and 3 are blocked.
+
+- **Defects fixed:**
+  - **Engine overload read as a refusal:** under load, StarRocks answers a
+    planner timeout ("planner use long time … in logical phase") with the
+    generic code 1064. A dataset's source check turned it into 403 "Source
+    schema is unavailable or not permitted". In benchmark attempt 8, 153 of
+    240 widgets were wrongly refused. The engine's own planning-time,
+    query-time, memory and no-backend messages now mark the error as
+    overloaded, before the private dataset wording replaces the message. The
+    caller gets 503 "The data engine is not responding", and the operator
+    metric counts it as `rejected`, not `refused`. A live probe of 12
+    concurrent widgets: 403 in 4 of 6 runs before the fix, none in 5 runs
+    after (`engine-overload-classification-live-attempt-1.txt`).
+  - **Sign-in:** an unreachable or full engine was answered as a wrong
+    password. Only code 1045 is now a wrong password; anything else is 503
+    "Sign-in is unavailable because the data engine is not responding".
+  - **REVIS-008:** a stale head read could roll the canvas back to an older
+    revision. Polling is now forward-only.
+  - **Dataset reads** hold one engine session per request (about 15 short
+    connections per widget before).
+- **Built:**
+  - Neva pointer: outlines the widget of a pending change with its state, and
+    honours reduced motion (AGENT-013/016/017, A11Y-003).
+  - Applied filters and selections are sent to Neva (AGENT-005).
+  - Workspace orphan-object reconciler: maintenance worker, migration 0060
+    (STORE-009).
+- **Decision (DATA-014):** dashboard-local metric views and their promotion
+  are out of this release. Governed metrics ship through published Semantic
+  Views. A dataset with metrics has no execution plan, and promoting a local
+  metric would make every chart on the base dataset unanswerable. Recorded in
+  `IMPLEMENTATION.md`, Specification resolutions.
+- **Drills (live unless noted):**
+  - **INTER-009:** a Ranger column deny on the drill detail becomes active in
+    5.2 s. The drilled query returns 403 with no rows and no object names.
+    The summary level also returns 403 once the deny is active, because a
+    dataset reads every field.
+  - **OPS-003:** a query process is killed with 12 widgets in flight. Each
+    widget fails on its own within 1.2 s. The 4 in-flight engine sessions
+    return to 0, and a replacement answers all 12 (attempt 5; attempts 1–4
+    kept).
+  - **OPS-008:** two web processes give one session identical documents and
+    refusals. A role switch on either is seen by both.
+  - **OPS-004 (PG17):** a scheduled export killed between write and commit
+    saves exactly one file on retry. The reconciler removes only the dead
+    attempt's object.
+  - **STORE-012/OPS-007:** the schema-59 dev backup was restored onto the
+    disposable PG17 server: roles by the normal bootstrap, then one-transaction
+    `pg_restore` with grants and RLS. Verified: 198 tables and 1,323,415 rows;
+    40 FKs; 277 revision digests; 35/35 Workspace objects. The migrator brings
+    it to 60 with no data change, and the reconciler login sees exactly the
+    referenced keys (attempt 5; attempts 1–4 kept).
+- **Performance (attempt 8, shared Apple M3, load average 13–25):**
+  - **PERF-006 passes:** one 100-row page from a 1,000,000-row table, 7 KB.
+  - **OPS-006 passes:** labels are `operation` and `outcome` only.
+  - **PERF-004, bound holds, budget not met:** admission stayed at its cap of 4,
+    but 239 of 240 widgets ended unanswered.
+  - **PERF-001 and PERF-002, blocked:** dashboard p95 114 s against 3 s, and
+    shell p95 1.49 s against 1 s. A single widget alone takes 6–16 s on this
+    host. These need the declared hardware. All eight attempts are kept.
+- **Gates (round 9, local; CI still waived):**
+  - **Backend (attempt 28):** full-application mypy, changed-file Ruff,
+    12,665 unit tests with coverage, agent scorecard and the user-data
+    boundary check pass.
+  - **PG17:** `test_metadata_workspace_objects.py` (4),
+    `test_metadata_scheduled_export_crash.py` (1),
+    `test_metadata_viz_export.py` (6) and `test_metadata_workspace_files.py`
+    (40) pass. In attempt 1 the disposable server crashed mid-file and
+    restarted (a backend process exited with code 2). Its leftover fixture
+    roles were removed as the fixture teardown does, and attempt 3 passed.
+  - **Frontend:** lint, build, bundle and licenses pass. Coverage on the final
+    source (attempt 30) passes 228 files and 1,994 tests. Earlier attempts are
+    kept:
+    - Attempt 28 had 10 browser timeouts while the backend suite ran beside
+      it. One was real: NDV-OPS-010 expected the generic error for a 503,
+      which now shows the engine message, so the test was updated.
+    - Attempt 29 had 5 load timeouts in files that pass alone twice. The
+      theme-switch test waited only 1 s for the chart library to load and
+      draw; it now waits up to 10 s, like the other chart tests.
 

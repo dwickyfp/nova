@@ -120,8 +120,13 @@ async def verify_dashboard_registration(
         probe.check("historical read does not substitute latest draft",
                     original.json()["revision"] == 1 and original.headers["etag"] == '"1"'
                     and not original.json()["definition"].get("datasets"))
-        await probe.request("historical read requires draft editing scope", "GET",
-                            path + "?revision=1", owner, status=422)
+        # Since a324eeac a revision read needs no draft flag: row security
+        # admits an editor to every revision and a viewer only to a revision a
+        # visible publication pins. The editor gets the same revision 1.
+        pinned = await probe.request("editor reads a historical revision", "GET",
+                                     path + "?revision=1", owner)
+        probe.check("historical revision is exact", pinned.json()["revision"] == 1
+                    and pinned.json()["definition"] == original.json()["definition"])
     finally:
         for label, owned in (("dataset dashboard", path), ("dashboard dataset", child_path)):
             read = await probe.client.get(
@@ -246,6 +251,32 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                     for source in sources
                 ),
             )
+            # NDV-DATA-006: the dataset names its source exactly as the engine
+            # does (kind, catalog, database, object) and a SQL dataset lists the
+            # view it reads as a dependency, never the view's base table.
+            if selection["kind"] in {"view", "table", "sql"}:
+                lineage = [source for source in sources
+                           if source.get("object_name") == args.object]
+                probe.check(
+                    "source lineage and qualified name",
+                    len(lineage) == 1
+                    and lineage[0]["kind"] == args.kind
+                    and lineage[0]["catalog"] == "default_catalog"
+                    and lineage[0]["database"] == args.database
+                    and lineage[0].get("schema_name") in (None, "default"),
+                    sources=[{key: source.get(key) for key in
+                              ("kind", "catalog", "database", "schema_name", "object_name")}
+                             for source in sources],
+                )
+            expected_types = getattr(args, "expected_types", None)
+            if expected_types:
+                observed_types = {f["source_column"]: [f["logical_type"], f["physical_type"]]
+                                  for f in schema["fields"]}
+                probe.check("source field types", all(
+                    observed_types.get(column, [None, None])[0] == logical
+                    and str(observed_types[column][1]).lower().startswith(physical)
+                    for column, (logical, physical) in expected_types.items()),
+                    observed=observed_types)
             if selection["kind"] == "sql":
                 probe.check(
                     "parsed query digest",

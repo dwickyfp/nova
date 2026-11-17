@@ -24,8 +24,8 @@ class LiveCheck:
         self.client = client
         self.steps: list[dict[str, Any]] = []
 
-    def check(self, name: str, condition: bool) -> None:
-        self.steps.append({"check": name, "passed": condition})
+    def check(self, name: str, condition: bool, **detail: Any) -> None:
+        self.steps.append({"check": name, "passed": condition, **detail})
         if not condition:
             raise AssertionError(name)
 

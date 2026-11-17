@@ -52,6 +52,14 @@ describe('chart states', () => {
     const timedOut = await show()
     await expect.element(timedOut.getByRole('alert')).toHaveTextContent('The query timed out. Add a filter or reduce the row limit.')
   })
+
+  it('says an unreachable engine is not about access, and offers a retry', async () => {
+    respond(503, { detail: 'The data engine is not responding. Try again in a moment.' })
+    const screen = await show()
+    await expect.element(screen.getByRole('alert')).toHaveTextContent('The data engine is not responding. Retry in a moment.')
+    await expect.element(screen.getByRole('button', { name: 'Retry' })).toBeVisible()
+    expect(screen.container.textContent).not.toContain('current role')
+  })
 })
 
 describe('chart text alternative', () => {

@@ -181,6 +181,33 @@ groups:
           summary: "StarRocks p95 query latency is above five seconds"
           description: "Inspect pending queries, CPU, memory, and compaction pressure."
 
+      - alert: NovaDatavizQueryLatencyHigh
+        expr: histogram_quantile(0.95, sum by(le) (rate(nova_dataviz_read_duration_seconds_bucket{job=~"nova-backend|nova-query",operation="query"}[5m]))) > 3 and sum(rate(nova_dataviz_reads_total{job=~"nova-backend|nova-query",operation="query"}[5m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Dataviz chart queries are above the 3 second p95 target"
+          description: "Inspect StarRocks query latency and Dataviz reads by outcome."
+
+      - alert: NovaDatavizReadFailureRateHigh
+        expr: sum(rate(nova_dataviz_reads_total{job=~"nova-backend|nova-query",outcome=~"error|timeout"}[5m])) / clamp_min(sum(rate(nova_dataviz_reads_total{job=~"nova-backend|nova-query"}[5m])), 0.001) > 0.05 and sum(rate(nova_dataviz_reads_total{job=~"nova-backend|nova-query"}[5m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 5% of Dataviz reads fail or time out"
+          description: "Refusals by role are not counted; check engine health and the reads-by-outcome panel."
+
+      - alert: NovaDatavizScheduledExportFailing
+        expr: sum(increase(nova_dataviz_scheduled_exports_total{job="nova-worker",outcome="error"}[1h])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "A scheduled dashboard export failed"
+          description: "Check the task run history; a run that lost Export access is counted as unavailable, not as a failure."
+
       - alert: NovaBEDiskCapacityHigh
         expr: 100 * (1 - starrocks_be_disks_avail_capacity{job="starrocks-be"} / starrocks_be_disks_total_capacity{job="starrocks-be"}) > 90
         for: 10m

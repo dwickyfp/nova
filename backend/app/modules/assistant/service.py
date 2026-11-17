@@ -205,6 +205,10 @@ class LoopContext:
     #: turn's context (for example the native dashboard brief, which is the
     #: output of ``native_dashboard_read`` for the caller). Set by the router only.
     settled_capabilities: tuple[str, ...] = ()
+    #: The answer is a question back (which dashboard, which page), so no data
+    #: result is owed. Set by the router from the dashboard brief, or by a
+    #: tool that may settle the data step (``may_settle``) in its result.
+    question_back: bool = False
     #: Required tools this turn satisfies with another registered tool (for
     #: the Dataviz assistant, governed data comes from the open dashboard's
     #: own dataset). Set by the router only.
@@ -1834,6 +1838,10 @@ class AssistantLoop:
                             str(uuid4()), finish_reason="required_capability_incomplete"
                         )
                         return
+                    logger.info(
+                        "Turn incomplete: required %s not run (intent %s)",
+                        sorted(missing_required), route.intent.value,
+                    )
                     yield events.error(
                         "required_capability_incomplete",
                         "The required capability was not executed, so Nova cannot "
@@ -1900,6 +1908,7 @@ class AssistantLoop:
                 if (
                     business_request and not denials and not guard_blocked
                     and not evidence.business_tables and not lineage_answer
+                    and not context.question_back
                 ):
                     detail = (
                         "No business query result is available. Catalog listings do not "
@@ -1919,8 +1928,14 @@ class AssistantLoop:
                 answer_tables = (
                     nonredundant_business_tables(evidence) if business_request else evidence.tables
                 )
+                draft_answer = "".join(buffered_text)
                 answer_text = enforce_evidence(
-                    "".join(buffered_text), needs_data=route.needs_data, evidence=evidence
+                    draft_answer,
+                    # A question back (which dashboard, which page) owes no data;
+                    # an answer that asks nothing still does.
+                    needs_data=route.needs_data
+                    and not (context.question_back and "?" in draft_answer),
+                    evidence=evidence,
                 )
                 if denials and route.needs_data and not evidence.items:
                     answer_text = say("loop.consent_declined", language)
@@ -2400,6 +2415,9 @@ class AssistantLoop:
             )
             try:
                 yield events.tool_call(view)
+                activity = _dashboard_activity(tool, invocation, context)
+                if activity:
+                    yield activity
                 allowed: bool | None | ConsentApproval = True
                 if pending_consent is not None:
                     allowed = await asyncio.wait_for(
@@ -3058,6 +3076,8 @@ class AssistantLoop:
             settled = _settled_capabilities(
                 self._registry.get(invocation.tool_name), outcome
             )
+            if settled and (outcome.metadata or {}).get("question_back"):
+                context.question_back = True
             if settled:
                 # A verified result made a later required step inapplicable
                 # (for example Dataviz refused a conversion): explaining that
@@ -3635,6 +3655,24 @@ _SPLIT_REQUEST_PROMPT = (
 #: A tool's fuller approval text reads current state; it never holds up a turn.
 CONSENT_PREVIEW_SECONDS = 10.0
 MAX_CONSENT_PREVIEW_CHARS = 2000
+
+
+def _dashboard_activity(tool: Any, invocation: ToolInvocation, context: LoopContext) -> str | None:
+    """Where a proposed native dashboard change lands, for the page's Neva pointer.
+
+    From the call's arguments and the open dashboard only (no read); a target
+    that cannot be worked out sends nothing.
+    """
+    target = getattr(tool, "target", None)
+    if not callable(target):
+        return None
+    try:
+        found = target(invocation, context)
+    except Exception as exc:  # noqa: BLE001 - the pointer is a hint; the call goes on
+        logger.debug("Dashboard target for %s unavailable: %s",
+                     invocation.tool_name, type(exc).__name__)
+        return None
+    return events.dashboard_activity(invocation.tool_call_id, found) if found else None
 
 
 async def _consent_preview(

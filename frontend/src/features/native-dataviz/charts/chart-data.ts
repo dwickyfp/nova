@@ -15,6 +15,7 @@ export function queryError(error: unknown): string {
     if (error.status === 409) return 'The data source changed since this chart was saved. Someone who can edit the dashboard can review it in the Data tab.'
     if (error.status === 413) return 'The result is too large. Reduce the row limit or add a filter.'
     if (error.status === 429) return 'Query capacity is still busy. Retry in a moment.'
+    if (error.status === 503) return 'The data engine is not responding. Retry in a moment.'
     if (error.status === 504) return 'The query timed out. Add a filter or reduce the row limit.'
     if (error.status === 422) return 'This chart configuration cannot be run. Check its fields and filters.'
   }

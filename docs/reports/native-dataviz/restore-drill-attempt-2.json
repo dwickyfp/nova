@@ -1,0 +1,78 @@
+{
+  "started_at": "2026-11-17T15:53:47.354317+00:00",
+  "result": "FAIL",
+  "backup": {
+    "bytes": 124742529,
+    "receipt_sha256": "9b19ac3fa1a63df151fd3247af954a1c12fff97bd3a081351dcdf627cf3f8905"
+  },
+  "restore_seconds": 100.6,
+  "error": "MetadataSchemaMismatch: Metadata schema or epoch does not match this deployment",
+  "steps": [
+    {
+      "step": "the backup file matches the digest recorded when it was taken",
+      "passed": true
+    },
+    {
+      "step": "the bootstrap provisions the deployment's roles on the new server",
+      "passed": true,
+      "logins": 15
+    },
+    {
+      "step": "the backup restores in one transaction with its grants and policies",
+      "passed": true,
+      "errors": ""
+    },
+    {
+      "step": "schema version and epoch match the backup receipt",
+      "passed": true,
+      "schema_version": 59
+    },
+    {
+      "step": "every applied migration matches this checkout's migration file",
+      "passed": true,
+      "applied": 59
+    },
+    {
+      "step": "every table holds the row count recorded at freeze time",
+      "passed": true,
+      "tables": 198,
+      "rows": 1323415,
+      "mismatched": {}
+    },
+    {
+      "step": "every foreign key is restored and validated",
+      "passed": true,
+      "foreign_keys": 40
+    },
+    {
+      "step": "every Dataviz revision matches its stored digest",
+      "passed": true,
+      "revisions": 277,
+      "mismatched": 0
+    },
+    {
+      "step": "every resource's revisions are complete up to its draft",
+      "passed": true,
+      "incomplete": 0
+    },
+    {
+      "step": "every publication, reference and dependency resolves",
+      "passed": true,
+      "dangling": {
+        "publications": 0,
+        "publication_references": 0,
+        "revision_dependencies": 0,
+        "current_publications": 0
+      }
+    },
+    {
+      "step": "every restored file reference has its object with the recorded digest",
+      "passed": true,
+      "objects": 35,
+      "verified": 35,
+      "missing": 0,
+      "changed": 0
+    }
+  ],
+  "finished_at": "2026-11-17T15:56:32.611183+00:00"
+}

@@ -1,0 +1,61 @@
+{
+  "started_at": "2026-11-17T16:03:39.308456+00:00",
+  "run": "fcc270",
+  "result": "PASS",
+  "cleanup": "REMOVED",
+  "deny_seconds": 5.2,
+  "region_level_after_deny": {
+    "status": 403,
+    "rows": 0,
+    "note": "observed; the dataset reads every field, so a denied field can make the whole dataset unreadable for the role"
+  },
+  "steps": [
+    {
+      "step": "fixture: CREATE DATABASE ndv_inter9_fcc270",
+      "passed": true
+    },
+    {
+      "step": "fixture: CREATE TABLE ndv_inter9_fcc270.orders (i",
+      "passed": true
+    },
+    {
+      "step": "fixture: INSERT INTO ndv_inter9_fcc270.orders VAL",
+      "passed": true
+    },
+    {
+      "step": "author builds the dataset while the table is readable",
+      "passed": true,
+      "status": 201
+    },
+    {
+      "step": "region totals answer before the deny",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "step": "the drilled orders answer before the deny",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "step": "the drilled query is refused once the detail is denied",
+      "passed": true,
+      "status": 403
+    },
+    {
+      "step": "the refusal carries no rows",
+      "passed": true
+    },
+    {
+      "step": "the refusal names no table, column or database",
+      "passed": true,
+      "detail": "Dataset is unavailable or not permitted"
+    },
+    {
+      "step": "the region level never shows the denied detail",
+      "passed": true,
+      "status": 403
+    }
+  ],
+  "finished_at": "2026-11-17T16:04:42.478712+00:00"
+}

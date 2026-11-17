@@ -1,0 +1,9 @@
+[PASS] fixture: CREATE DATABASE ndv_perf_d2d668
+[PASS] fixture: CREATE TABLE ndv_perf_d2d668.orders (id BIGINT, region S
+[PASS] fixture: INSERT INTO ndv_perf_d2d668.orders SELECT generate_serie
+[PASS] fixture: CREATE TABLE ndv_perf_d2d668.orders_1m (id BIGINT, regio
+[PASS] fixture: INSERT INTO ndv_perf_d2d668.orders_1m SELECT generate_se
+[PASS] fixture: orders holds 100000 orders
+[PASS] fixture: orders_1m holds 1000000 orders
+{"result": "FAIL", "cleanup": "REMOVED", "error": "POST datasets returned 403", "NDV-PERF-002": null, "NDV-PERF-001": null, "NDV-PERF-004": null, "NDV-PERF-006": null}
+EXIT 1

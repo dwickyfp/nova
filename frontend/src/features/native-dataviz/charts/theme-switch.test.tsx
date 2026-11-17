@@ -61,7 +61,7 @@ describe('NDV-A11Y-004 theme switch with a chart on screen', () => {
       const chart = host && getInstanceByDom(host)
       if (!chart || !(chart.getOption() as { xAxis?: unknown[] }).xAxis?.length) throw new Error('not drawn')
       return chart
-    })
+    }, { timeout: 10_000 })  // The chart library loads on demand; a busy machine needs more than 1 s.
     const axisText = () => ((instance.getOption() as { xAxis: { axisLabel: { color: string } }[] }).xAxis[0].axisLabel.color)
 
     const light = readTokens()

@@ -146,3 +146,64 @@ async def test_digest_verifies_stored_document_before_applying_new_optional_defa
     payload["title"] = "Tampered title"
     with pytest.raises(NovaException, match="integrity"):
         await VizDocumentRepository._definition(repository, saved.chart_id, 1, "chart")
+
+
+# ── NDV-METRIC-018: a dashboard-local metric and a shared one share a name ──
+
+
+def _semantic_registry_dataset(model_revision: int):
+    """A dataset over the shared semantic registry: its metric is addressed by its
+    model field id and pinned by the model revision and fingerprint."""
+    return dataset(
+        source={"kind": "semantic_model", "model_id": "sales_model",
+                "model_revision": model_revision, "model_fingerprint": "b" * 64,
+                "metrics": ["revenue"], "database": "sales",
+                "dependencies": [{"kind": "table", "catalog": "default_catalog",
+                                  "database": "sales", "object_name": "orders",
+                                  "physical_id": "test-table-id"}]},
+        fields=[{"field_id": "region", "name": "region", "source_column": "region",
+                 "logical_type": "string", "physical_type": "VARCHAR(30)", "nullable": True,
+                 "semantic_role": "dimension"},
+                {"field_id": "revenue", "name": "Revenue", "source_column": "revenue",
+                 "logical_type": "decimal", "physical_type": "DECIMAL(38,2)", "nullable": True,
+                 "semantic_role": "measure"}],
+    )
+
+
+async def test_a_local_and_a_shared_metric_with_one_name_resolve_to_distinct_pinned_ids():
+    from app.modules.viz.bindings import validate_chart_binding
+
+    shared = _semantic_registry_dataset(model_revision=4)
+    local_metric = uuid4()
+    local = dataset(
+        source={"kind": "dashboard_local_metric_view", "dataset_id": shared.dataset_id,
+                "dataset_revision": 3},
+        fields=[field.model_dump() for field in shared.fields],
+        metrics=[{"metric_id": local_metric, "revision": 2, "name": "Revenue",
+                  "formula": "SUM([revenue]) * 1.1", "level": "aggregate", "grain": [],
+                  "unit": "currency", "scope": "dashboard_local"}],
+    )
+    # One name, two identities: the shared metric is the registry field id, the
+    # local one its own metric id; neither is found by the display name.
+    on_shared = chart(shared, dataset_revision=3, encoding={
+        "kind": "cartesian", "dimensions": [{"field_id": "region"}],
+        "measures": [{"field_id": "revenue", "aggregation": "sum"}]})
+    on_local = chart(local, dataset_revision=1, encoding={
+        "kind": "cartesian", "dimensions": [{"field_id": "region"}],
+        "measures": [{"field_id": str(local_metric), "aggregation": "agg"}]})
+    validate_chart_binding(on_shared, shared)
+    validate_chart_binding(on_local, local)
+    by_name = on_local.model_dump()
+    by_name["encoding"]["measures"][0]["field_id"] = "Revenue"
+    with pytest.raises(ValueError, match="absent"):
+        validate_chart_binding(chart(local).model_validate(by_name), local)
+    # The local metric pins the shared dataset revision it was built on: a newer
+    # registry model (revision 5, a new dataset revision 4) changes neither the
+    # local metric's id and revision nor which shared revision it reads.
+    newer = _semantic_registry_dataset(model_revision=5)
+    graph = Graph({(shared.dataset_id, 3): shared, (shared.dataset_id, 4): newer})
+    assert await graph.references(local) == [(shared.dataset_id, 3)]
+    assert graph.reads == Counter({(shared.dataset_id, 3): 1})
+    assert (local.metrics[0].metric_id, local.metrics[0].revision) == (local_metric, 2)
+    assert local.metrics[0].scope == "dashboard_local"
+    assert shared.source.model_revision == 4 and newer.source.model_revision == 5

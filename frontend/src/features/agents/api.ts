@@ -309,7 +309,18 @@ export type DatavizTurnContext = {
     revision: number;
     page_id: string | null;
     selected_widget_id: string | null;
+    /** Filters and chart selections applied on screen, so answers match the page. */
+    view_filters?: NativeViewFilter[];
   } | null;
+};
+
+export type NativeViewFilter = {
+  source: "filter" | "selection";
+  label: string;
+  text: string;
+  dataset_id: string | null;
+  field_id: string | null;
+  values: (string | number | boolean | null)[];
 };
 
 export type StreamAgentTurnOptions = {
