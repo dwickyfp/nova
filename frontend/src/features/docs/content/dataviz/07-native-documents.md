@@ -85,6 +85,22 @@ an unavailable pinned version, or revoked source access refuses the request.
 An older published version remains usable while its model is active and your
 access still permits it.
 
+### Metrics at the chart's level of detail
+
+A semantic dataset keeps one row for each combination of its dimensions. When a
+chart shows fewer of those dimensions, Nova asks the Semantic View for each
+metric again at the chart's own grouping. A margin defined as
+`SUM(profit) / SUM(revenue)` per region is therefore the ratio for the whole
+region, not the sum of each day's margin. A chart with no dimensions shows one
+value calculated over every row.
+
+Two cases cannot be recalculated that way: grouping a date by a longer period
+(for example by month on a dataset kept by day), and filtering on a dimension
+the chart does not show. There, a metric that is a single `SUM` or `COUNT` is
+added up as usual. Any other metric, such as a ratio, an average or a distinct
+count, makes the chart say that its configuration cannot be run. Add the
+missing dimensions to the chart, or save a dataset with the grouping you need.
+
 ## Dashboard datasets
 
 A dashboard can reference a dataset before any chart uses it. Each reference

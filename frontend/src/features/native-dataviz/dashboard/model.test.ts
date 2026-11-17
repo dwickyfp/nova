@@ -1,13 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
+import { QueryClient } from '@tanstack/react-query'
 import type { CartesianEncoding, ChartDefinition, DashboardDefinition, DatasetField, DatasetQueryResult } from '../contracts'
 import { fromChart, initialState, missing, switchVisual, toChart } from '../charts/builder-model'
 import { buildChartOption } from '../charts/chart-options'
 import { cellLabel, chartQueryShape, ChartQueryError, columnLabel, combineFilters, formatNumber, hasSplit, humanize, periodEnd } from '../charts/chart-query'
 import type { VizTokens } from '../charts/echart-host'
 import { capacityRetry, MAX_CONCURRENT_QUERIES, queuedQuery } from '../charts/query-queue'
-import { chartDataQuery } from '../charts/chart-data'
+import { chartDataQuery, freshChartData } from '../charts/chart-data'
 import { chartContext, defaultValue, targetBinding, type FilterDefinition } from './filter-model'
-import { firstFreeSlot, validPlacements, type Widget } from './layout'
+import { firstFreeSlot, slotAt, validPlacements, type Widget } from './layout'
 import { applyLocal, inverse, sameLayout } from './operations'
 
 const DATASET = 'aaaaaaaa-0000-4000-8000-000000000001'
@@ -367,5 +368,63 @@ describe('dashboard links', () => {
     const change = { op: 'actions.replace' as const, actions: [link] }
     expect(applyLocal(before, change).actions).toEqual([link])
     expect(inverse(change, before)).toEqual({ op: 'actions.replace', actions: [] })
+  })
+})
+
+describe('governed downloads', () => {
+  it('keeps rows read under one role apart from rows read under another', async () => {
+    // A role switch moves the security epoch (auth-store.test.ts); rows are keyed by it.
+    const chart = { chart_id: 'c', dataset_id: 'aaaaaaaa-0000-4000-8000-000000000011', dataset_revision: 1 } as ChartDefinition
+    const request = { revision: 1, draft: false, measures: [{ field_id: 'f', aggregation: 'sum' }] } as never
+    const marketing = chartDataQuery(4, chart, request).queryKey
+    const finance = chartDataQuery(5, chart, request).queryKey
+    expect(JSON.stringify(marketing)).not.toBe(JSON.stringify(finance))
+    const client = new QueryClient()
+    client.setQueryData(marketing, { rows: [['Jakarta']] })
+    expect(client.getQueryData(finance)).toBeUndefined()
+  })
+
+  it('reads the rows again for each download instead of reusing an earlier result', async () => {
+    const chart = { chart_id: 'c', dataset_id: 'aaaaaaaa-0000-4000-8000-000000000010', dataset_revision: 1 } as ChartDefinition
+    const body = JSON.stringify({ dataset_id: chart.dataset_id, revision: 1, truncated: false, offset: 0, next_offset: null, rows: [],
+      columns: [{ key: 'm0', name: 'f', logical_type: 'decimal', role: 'measure', field_id: 'f', aggregation: 'sum' }] })
+    const fetcher = vi.fn(async () => new Response(body, { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      const client = new QueryClient()
+      const request = { revision: 1, draft: false, measures: [{ field_id: 'f', aggregation: 'sum' }] } as never
+      // A chart on screen may reuse rows it just read ...
+      await client.fetchQuery(chartDataQuery(0, chart, request))
+      await client.fetchQuery(chartDataQuery(0, chart, request))
+      expect(fetcher).toHaveBeenCalledTimes(1)
+      // ... but each download asks the engine again under the current policy.
+      await freshChartData(client, 0, chart, request)
+      await freshChartData(client, 0, chart, request)
+      expect(fetcher).toHaveBeenCalledTimes(3)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})
+
+describe('dropping a widget on a cell', () => {
+  const at = (x: number, y: number, w: number, h: number) => ({ widget_id: `${x}-${y}`, kind: 'text', layout: { x, y, w, h } }) as unknown as Widget
+  const widgets = [at(0, 0, 3, 2), at(3, 0, 9, 2), at(0, 2, 6, 4)]
+
+  it('lands on the cell under the pointer when it fits', () => {
+    expect(slotAt(widgets, 3, 2, { x: 7, y: 3 })).toEqual({ x: 7, y: 3, w: 3, h: 2 })
+  })
+
+  it('keeps a wide widget inside the grid', () => {
+    expect(slotAt(widgets, 6, 4, { x: 10, y: 6 })).toEqual({ x: 6, y: 6, w: 6, h: 4 })
+  })
+
+  it('never overlaps: on an occupied cell it takes the first free slot from that row down', () => {
+    expect(slotAt(widgets, 12, 2, { x: 4, y: 1 })).toEqual({ x: 0, y: 6, w: 12, h: 2 })
+    expect(slotAt(widgets, 3, 2, { x: 1, y: 3 })).toEqual({ x: 6, y: 3, w: 3, h: 2 })
+  })
+
+  it('without a cell behaves like the toolbar button', () => {
+    expect(slotAt(widgets, 3, 2, null)).toEqual(firstFreeSlot(widgets, 3, 2))
   })
 })

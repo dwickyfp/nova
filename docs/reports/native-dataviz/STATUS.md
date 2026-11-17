@@ -1,6 +1,6 @@
 # Native Dataviz delivery record
 
-Status: **in progress; not production ready; no cutover**. Release QA attempt 2 leaves 158 of 254 scenarios open.
+Status: **in progress; not production ready; no cutover**. Release QA round 5 (2026-11-17): 172 of 254 pass, 17 out of scope, 65 HIGH open.
 Branch: `feat/dataviz-native`.
 Baseline: `1ee12694e0ecb6ecfd8135965943be08f5195967`.
 
@@ -663,3 +663,59 @@ record is `release-qa-attempt-4.json`.
   - Record: `release-qa-attempt-4.json`.
 - **StarRocks compatibility audit (started 2026-11-16):** see
   `docs/architecture/starrocks-compat/PLAN.md`.
+
+## Release QA round 5 (2026-11-17)
+
+Every CRITICAL scenario now passes or is out of scope: 172 PASS, 65 NOT_RUN
+(all HIGH) and 17 OUT_OF_SCOPE. Rows changed in this round: CACHE-001 to 003,
+OPS-001, OPS-002, ACL-012, STORE-002, STORE-004, GRID-001, METRIC-002,
+AGENT-001, OSS-001 and OSS-002.
+
+- **Defects fixed:**
+  - Downloads reused chart rows cached before a Ranger change. Downloads now
+    always re-run the governed query; on screen, rows are kept for at most
+    30 seconds (CACHE-001 to 003).
+  - Presence kept a viewer's access for 30 seconds after sharing changed. It
+    is now 5 seconds, and changing grants or deleting a dashboard clears it at
+    once (ACL-012).
+  - A semantic ratio metric (for example a margin) was summed at a coarser
+    chart grain, giving wrong totals. The query is now compiled again at the
+    chart's grain, or refused with a plain message when that is not possible;
+    only declared-additive SUM/COUNT metrics are re-totalled (METRIC-002). The
+    control run without the fix (`metric-ratio-control-without-fix.json`)
+    shows East 0.85 and total 1.19 instead of 0.32 and 0.19.
+  - Neva's chart builder truncated large results differently from the manual
+    builder; both now match (AGENT-001).
+  - Workspace files were served without an integrity check. Migration 0059
+    records a SHA-256 for every saved file and version, and reads refuse a
+    mismatch (STORE-004). Development is at schema 59 (`development-schema-59.json`).
+  - When a dashboard save's reply was lost, the editor took the change back
+    even if it had been saved, so the user could add a widget twice. The editor
+    now checks the operation's receipt (OPS-001).
+- **Built:** drag a Chart, KPI, Table or Text from the toolbar onto a canvas
+  cell, with a placement preview (GRID-001).
+- **New blocking CI gates:** `backend/scripts/check_licenses.py` and
+  `pnpm check:licenses` fail on a non-allowlisted license anywhere in the
+  installed trees (135 Python distributions and 646 npm packages, 0 findings).
+  They also fail on known commercial or open-core packages and on license-key
+  APIs (OSS-001, OSS-002). This is an engineering gate, not a legal notice
+  sign-off.
+- **Live evidence:** `policy-change-live-attempt-2.json` (Ranger filter 1.1 s,
+  mask 5.1 s, revoke 4.3 s to take effect). `metric-ratio-live-attempt-2.json`
+  passes; attempt 1 is kept as a script failure on null cells.
+- **Fault evidence:** `ops-001-pg-fault-attempt-1.txt`. Client connections were
+  terminated mid-save, and one commit reply was dropped on the disposable PG17
+  fixture. The PG process itself was not restarted.
+- **Still open:** 65 HIGH scenarios, WP14 conversion, server-side PDF/image
+  export, websocket replay, and the open items listed per work package above.
+- **Gates (round 5, local):**
+  - Backend unit 12,558 passed, plus 15 license-gate tests run separately.
+    Changed-file Ruff and full mypy (767 files) pass.
+  - PG17 fixture: workspace, viz-export and migrator suites, 92 passed. The
+    first run had 2 failures in new test code (a wrong argument and a write
+    guard); both were fixed. Viz and viz-QA suites: 92 passed.
+  - Frontend: lint (0 errors), build, bundle budget, license gate, and
+    coverage with 222 files and 1,935 tests, all passed.
+  - CI run 44012358710, for the previous commit, failed Backend static on
+    Ruff in `recheck_live.py`, which this batch fixes. Every other job passed,
+    including integration L3.

@@ -1,0 +1,105 @@
+{
+  "started_at": "2026-11-17T03:57:52.489285+00:00",
+  "run": "d0ba2c",
+  "scope": "governed native chart query after Ranger row filter, mask and revoke",
+  "result": "PASS",
+  "cleanup": "REMOVED",
+  "steps": [
+    {
+      "step": "fixture: CREATE DATABASE ndv_policy_d0ba2c",
+      "passed": true
+    },
+    {
+      "step": "fixture: CREATE TABLE ndv_policy_d0ba2c.regions",
+      "passed": true
+    },
+    {
+      "step": "fixture: INSERT INTO ndv_policy_d0ba2c.regions VALUES",
+      "passed": true
+    },
+    {
+      "step": "alice uses marketing",
+      "passed": true
+    },
+    {
+      "step": "shared workspace",
+      "passed": true
+    },
+    {
+      "step": "inspect",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "step": "dataset created",
+      "passed": true,
+      "status": 201
+    },
+    {
+      "step": "before: both cities",
+      "passed": true,
+      "rows": [
+        [
+          "Bandung",
+          "600.00"
+        ],
+        [
+          "Jakarta",
+          "400.00"
+        ]
+      ]
+    },
+    {
+      "step": "row filter added: the next read has only Jakarta",
+      "passed": true,
+      "status": 200,
+      "rows": [
+        [
+          "Jakarta",
+          "400.00"
+        ]
+      ],
+      "seconds_until_applied": 1.5
+    },
+    {
+      "step": "mask added: the city value is no longer readable",
+      "passed": true,
+      "status": 200,
+      "rows": [
+        [
+          "35393265323765323739323762383536336236386166336264346565353834303737666536343064313832646465333332393033373565393435386435306364",
+          "400.00"
+        ]
+      ],
+      "seconds_until_applied": 4.6
+    },
+    {
+      "step": "dashboard created",
+      "passed": true,
+      "status": 201
+    },
+    {
+      "step": "download authorized for the owner",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "step": "downloaded rows are masked",
+      "passed": true,
+      "rows": [
+        [
+          "35393265323765323739323762383536336236386166336264346565353834303737666536343064313832646465333332393033373565393435386435306364",
+          "400.00"
+        ]
+      ]
+    },
+    {
+      "step": "access removed: the next read is refused and returns no rows",
+      "passed": true,
+      "status": 403,
+      "rows": [],
+      "seconds_until_applied": 3.1
+    }
+  ],
+  "finished_at": "2026-11-17T03:58:13.384629+00:00"
+}

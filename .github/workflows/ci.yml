@@ -152,6 +152,10 @@ jobs:
         working-directory: backend
         run: uv run python scripts/generate_viz_contracts.py --check
 
+      - name: Dependency licenses and license-key APIs
+        working-directory: backend
+        run: uv run python scripts/check_licenses.py
+
       - name: ruff (full tree, report-only)
         working-directory: backend
         run: uv run ruff check . || true
@@ -590,6 +594,9 @@ jobs:
         run: pnpm build
       - name: Bundle budget
         run: pnpm check:bundle
+
+      - name: Dependency licenses and license-key APIs
+        run: pnpm check:licenses
 
       - name: Test with coverage
         run: pnpm test:coverage

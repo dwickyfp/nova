@@ -17,6 +17,8 @@ from tests.integration.test_metadata_workspaces import session
 
 pytestmark = pytest.mark.metadata_pg
 
+DIGEST = "a" * 64  # any well-formed content digest
+
 
 def runner(role: str = "EDITOR"):
     """The identity a scheduled run binds: the role's account, a task session."""
@@ -71,7 +73,7 @@ async def test_task_login_adds_a_file_only_where_the_role_may_edit(viz):  # noqa
         entry = await files.insert_entry(namespace, parent_path="Scheduled exports",
                                          name="Weekly sales.xlsx", entry_type="file",
                                          object_key="viz-export/" + uuid4().hex,
-                                         size_bytes=10, etag="etag")
+                                         size_bytes=10, etag="etag", content_sha256=DIGEST)
         assert (folder["path"], entry["path"]) == (
             "Scheduled exports", "Scheduled exports/Weekly sales.xlsx")
     # A view-only share, and anyone's personal files, are refused.
@@ -81,7 +83,7 @@ async def test_task_login_adds_a_file_only_where_the_role_may_edit(viz):  # noqa
                                        repository_type=WorkspaceFileRepository) as (files, _):
                 await files.insert_entry(target, parent_path="", name="x.xlsx",
                                          entry_type="file", object_key="k-" + uuid4().hex,
-                                         size_bytes=1, etag="e")
+                                         size_bytes=1, etag="e", content_sha256=DIGEST)
 
 
 async def test_task_login_cannot_change_or_remove_files(viz):  # noqa: F811
@@ -90,7 +92,7 @@ async def test_task_login_cannot_change_or_remove_files(viz):  # noqa: F811
                                repository_type=WorkspaceFileRepository) as (files, _):
         entry = await files.insert_entry(namespace, parent_path="", name="report.xlsx",
                                          entry_type="file", object_key="k-" + uuid4().hex,
-                                         size_bytes=1, etag="e")
+                                         size_bytes=1, etag="e", content_sha256=DIGEST)
     for change in (
         "UPDATE nova_meta.config_workspace_entries SET name='renamed.xlsx',"
         "metadata_revision=metadata_revision+1 WHERE id=%s",

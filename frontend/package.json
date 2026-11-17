@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "check:bundle": "node scripts/check-bundle.mjs",
+    "check:licenses": "node scripts/check-licenses.mjs",
     "preview": "vite preview",
     "format:check": "prettier --check .",
     "format": "prettier --write .",

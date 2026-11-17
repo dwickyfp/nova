@@ -66,3 +66,53 @@ describe('chart text alternative', () => {
     await expect.element(table.getByRole('cell', { name: '600' })).toBeInTheDocument()
   })
 })
+
+describe('Ranger policy changes while a session is open', () => {
+  const columns = [
+    { key: 'd0', name: 'region', logical_type: 'string', role: 'dimension', field_id: 'region' },
+    { key: 'm0', name: 'revenue', logical_type: 'decimal', role: 'measure', field_id: 'revenue', aggregation: 'sum' }]
+  const rows = (...regions: string[]) => regions.map(region => [{ type: 'string', value: region }, { type: 'decimal', value: '100' }])
+
+  async function mount(client: QueryClient) {
+    return render(<QueryClientProvider client={client}>
+      <div style={{ width: 480, height: 320, display: 'flex' }}><NativeChart chart={bar} draft={false} /></div>
+    </QueryClientProvider>)
+  }
+
+  // Past the short window a chart may show rows it already read.
+  async function laterThanTheShownRowsWindow() {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(Date.now() + 31_000)
+  }
+  afterEach(() => { vi.useRealTimers() })
+
+  it('asks the engine again when the chart opens, and shows no earlier rows once access is revoked', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    respond(200, { dataset_id: DATASET, revision: 1, truncated: false, columns, rows: rows('Jakarta', 'Bandung') })
+    const first = await mount(client)
+    await expect.element(first.getByRole('table', { name: 'Data for Revenue by region' })).toHaveTextContent('Jakarta')
+    await first.unmount()
+
+    // A steward revokes the policy; the role and security epoch stay the same.
+    await laterThanTheShownRowsWindow()
+    respond(403, { detail: 'Access denied by Ranger' })
+    const again = await mount(client)
+    await expect.element(again.getByRole('alert')).toHaveTextContent('This data is unavailable with your current role.')
+    expect(again.container.textContent).not.toContain('Jakarta')
+    expect(again.container.querySelector('canvas')).toBeNull()
+  })
+
+  it('replaces the rows with the narrowed result when a row filter is added', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    respond(200, { dataset_id: DATASET, revision: 1, truncated: false, columns, rows: rows('Jakarta', 'Bandung') })
+    const first = await mount(client)
+    await expect.element(first.getByRole('table', { name: 'Data for Revenue by region' })).toHaveTextContent('Bandung')
+    await first.unmount()
+
+    await laterThanTheShownRowsWindow()
+    respond(200, { dataset_id: DATASET, revision: 1, truncated: false, columns, rows: rows('Jakarta') })
+    const again = await mount(client)
+    await vi.waitFor(() => expect(again.container.querySelector('table')?.textContent ?? '').not.toContain('Bandung'))
+    await expect.element(again.getByRole('table', { name: 'Data for Revenue by region' })).toHaveTextContent('Jakarta')
+  })
+})

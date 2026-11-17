@@ -17,7 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ApiError } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
-import type { ChartDefinition, DashboardDefinition, FilterTree, Interaction, Operation } from '../contracts'
+import type { ChartDefinition, DashboardDefinition, FilterTree, Interaction, Operation, OperationReceipt } from '../contracts'
 import { DashboardDataTab } from '../dashboard-data-tab'
 import { nativeDocuments } from '../documents'
 import { ChartInspector } from '../charts/chart-inspector'
@@ -30,14 +30,14 @@ import {
   type ChartFileFormat, type ReportItem, type ResultTable,
 } from './export'
 import { chartDocumentQuery } from './hooks'
-import { chartDataQuery, chartRequest } from '../charts/chart-data'
+import { chartRequest, freshChartData } from '../charts/chart-data'
 import { printImage } from '../charts/print-image'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { readToken } from '@/lib/read-token'
 import { FilterBar, FilterBuilder } from './filters'
 import { describeFilterValue } from './filter-describe'
 import { chartContext, defaultValue, type CrossFilter, type FilterDefinition, type FilterValue } from './filter-model'
-import { firstFreeSlot, sizeFor, type Layout, type Widget } from './layout'
+import { activeDrop, DROP_TYPE, firstFreeSlot, sizeFor, slotAt, type DropItem, type Layout, type Widget } from './layout'
 import { NATIVE_DASHBOARD_CHANGED, NATIVE_DASHBOARD_OPEN, type LinkedSelection, type NativeDashboardChanged, type NativeDashboardOpen } from './events'
 import { applyLocal, inverse, sameLayout, type Change } from './operations'
 import { ShareDialog } from './share-dialog'
@@ -72,7 +72,21 @@ type Props = {
 const LINKED_SOURCE = 'linked'
 
 type Status = 'saved' | 'saving' | 'conflict' | 'error'
-type Inspector = { mode: 'new'; visual: Visual } | { mode: 'edit'; widget: Widget; chart: ChartDefinition }
+/** Lets a toolbar button be dragged onto a canvas cell; clicking still adds at the first free slot. */
+function dragged(item: DropItem) {
+  return {
+    draggable: true,
+    onDragStart: (event: React.DragEvent) => {
+      activeDrop.item = item
+      event.dataTransfer.setData(DROP_TYPE, JSON.stringify(item))
+      event.dataTransfer.effectAllowed = 'copy'
+    },
+    onDragEnd: () => { activeDrop.item = null },
+  }
+}
+
+/** A new chart may carry the canvas cell it was dropped on. */
+type Inspector = { mode: 'new'; visual: Visual; at?: { x: number; y: number } } | { mode: 'edit'; widget: Widget; chart: ChartDefinition }
 
 function message(error: unknown): string {
   if (error instanceof ApiError) {
@@ -130,6 +144,8 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
   const [selected, setSelected] = useState<string | null>(null)
   const [status, setStatus] = useState<Status>('saved')
   const [inspector, setInspector] = useState<Inspector | null>(null)
+  // The cell a Text item was dropped on, until the text is added or the dialog closes.
+  const [textAt, setTextAt] = useState<{ x: number; y: number } | null>(null)
   const [inspectorError, setInspectorError] = useState<string>()
   const [savingChart, setSavingChart] = useState(false)
   const [filterValues, setFilterValues] = useState<Record<string, FilterValue>>({})
@@ -267,7 +283,28 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
       setDefinition(changes.reduce(applyLocal, before))
       setStatus('saving')
       try {
-        const receipt = await documents.apply(dashboardId, operation)
+        let receipt: OperationReceipt
+        try {
+          receipt = await documents.apply(dashboardId, operation)
+        } catch (error) {
+          // A refused save is final. Any other failure may have been saved before the
+          // reply was lost, so ask for this operation's receipt instead of guessing.
+          if (error instanceof ApiError && error.status >= 400 && error.status < 500) throw error
+          const found = await documents.receipt(operation.operation_id).catch((lookup: unknown) =>
+            lookup instanceof ApiError && lookup.status === 404 ? null : undefined)
+          if (found === null) throw error
+          if (found === undefined) {
+            setDefinition(before)
+            setStatus('error')
+            // Once reloaded, the screen shows exactly what is saved, with or without this change.
+            if (await reload().catch(() => undefined)) {
+              setStatus('saved')
+              toast.error('The save could not be confirmed. The dashboard was reloaded to show what is saved.')
+            } else toast.error('The save could not be confirmed. Reload the dashboard before making another change.')
+            return false
+          }
+          receipt = found
+        }
         setRevision(receipt.new_revision)
         revisionRef.current = receipt.new_revision
         lastSequence.current = Math.max(lastSequence.current, receipt.event_sequence)
@@ -373,7 +410,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
         await documents.createChart({ workspace_id: workspaceId, definition: chart }, crypto.randomUUID())
         const size = sizeFor(chart.visual)
         const widget = { kind: 'chart', widget_id: crypto.randomUUID(), title: '', locked: false,
-          layout: firstFreeSlot(page.widgets ?? [], size.w, size.h), chart_ref: { chart_id: chart.chart_id, revision: 1 } } as Widget
+          layout: slotAt(page.widgets ?? [], size.w, size.h, inspector?.mode === 'new' ? inspector.at : null), chart_ref: { chart_id: chart.chart_id, revision: 1 } } as Widget
         if (await apply([{ op: 'widget.add', page_id: page.page_id, widget }])) {
           setInspector(null)
           setSelected(widget.widget_id)
@@ -390,7 +427,8 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
   function addText(text: string, style: 'title' | 'body') {
     if (!page) return
     const widget = { kind: 'text', widget_id: crypto.randomUUID(), title: '', locked: false, text, style,
-      layout: firstFreeSlot(page.widgets ?? [], 12, style === 'title' ? 2 : 2) } as Widget
+      layout: slotAt(page.widgets ?? [], 12, 2, textAt) } as Widget
+    setTextAt(null)
     void apply([{ op: 'widget.add', page_id: page.page_id, widget }])
   }
 
@@ -481,7 +519,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
       }
       const request = chartRequest({ chart, draft: editing, context })
       if (!request) throw new Error('The chart cannot run')
-      const table = resultTable(await client.fetchQuery(chartDataQuery(epoch, chart, request)))
+      const table = resultTable(await freshChartData(client, epoch, chart, request))
       saveFile(format === 'csv' ? toCsv(table) : await toXlsx([{ title: chart.title, table }]),
         fileName(chart.title, format))
     } catch (error) {
@@ -512,7 +550,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
         const chart = await client.fetchQuery(chartDocumentQuery(epoch, widget.chart_ref.chart_id, widget.chart_ref.revision, editing))
         const request = chartRequest({ chart, draft: editing, context: contextFor(widget, chart) })
         if (!request) continue
-        const result = await client.fetchQuery(chartDataQuery(epoch, chart, request))
+        const result = await freshChartData(client, epoch, chart, request)
         sheets.push({ title: widget.title || chart.title, table: resultTable(result) })
       }
       if (!sheets.length) toast.info('This page has no charts to download yet.')
@@ -545,7 +583,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
         const context = chartContext({ definition, chart, widgetId: widget.widget_id, pageId: sheet.page_id, values: appliedValues, crossFilters })
         const request = chartRequest({ chart, draft: editing, context })
         if (!request) continue
-        const result = await client.fetchQuery(chartDataQuery(epoch, chart, request))
+        const result = await freshChartData(client, epoch, chart, request)
         if (chart.visual === 'map') {
           // A map prints as drawn on screen, basemap included; off screen it prints its rows.
           const canvas = document.querySelector<HTMLCanvasElement>(`[gs-id="${CSS.escape(widget.widget_id)}"] canvas`)
@@ -669,10 +707,10 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
         </nav>
       </>}
       {tab === 'canvas' && editing && <div role='toolbar' aria-label='Add to dashboard' className='flex flex-wrap items-center gap-1'>
-        <Button variant='ghost' size='sm' onClick={() => setInspector({ mode: 'new', visual: 'bar' })}><BarChart3 />Chart</Button>
-        <Button variant='ghost' size='sm' onClick={() => setInspector({ mode: 'new', visual: 'kpi' })}><Hash />KPI</Button>
-        <Button variant='ghost' size='sm' onClick={() => setInspector({ mode: 'new', visual: 'table' })}><Table2 />Table</Button>
-        <Button variant='ghost' size='sm' onClick={() => setTextOpen(true)}><Type />Text</Button>
+        <Button variant='ghost' size='sm' {...dragged({ kind: 'chart', visual: 'bar' })} onClick={() => setInspector({ mode: 'new', visual: 'bar' })}><BarChart3 />Chart</Button>
+        <Button variant='ghost' size='sm' {...dragged({ kind: 'chart', visual: 'kpi' })} onClick={() => setInspector({ mode: 'new', visual: 'kpi' })}><Hash />KPI</Button>
+        <Button variant='ghost' size='sm' {...dragged({ kind: 'chart', visual: 'table' })} onClick={() => setInspector({ mode: 'new', visual: 'table' })}><Table2 />Table</Button>
+        <Button variant='ghost' size='sm' {...dragged({ kind: 'text' })} onClick={() => { setTextAt(null); setTextOpen(true) }}><Type />Text</Button>
         <Button variant='ghost' size='sm' onClick={openFilters}><Filter />Filters</Button>
         <span className='mx-1 h-5 w-px bg-border' aria-hidden />
         <Tooltip><TooltipTrigger asChild><Button variant='ghost' size='icon' className='size-8' aria-label='Undo' disabled={!undo.length || status === 'saving'} onClick={undoLast}><Undo2 /></Button></TooltipTrigger><TooltipContent>Undo</TooltipContent></Tooltip>
@@ -696,6 +734,10 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
             collaborators={presence.others} onPointer={presence.point}
             selectedId={selected} onSelect={setSelected} onLayout={onLayout}
             onEditChart={(widget, chart) => setInspector({ mode: 'edit', widget, chart })}
+            onDropWidget={(item, cell) => {
+              if (item.kind === 'text') { setTextAt(cell); setTextOpen(true) }
+              else setInspector({ mode: 'new', visual: item.visual as Visual, at: cell })
+            }}
             onDuplicate={duplicate} onRemove={widget => void apply(removal(widget))}
             linksFor={linksFor} onOpenLink={openLink}
             onEditLink={canEdit ? (widget, chart) => setLinking({ widget, chart }) : undefined}
@@ -738,7 +780,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
       existing={linksFor(linking.widget)[0]} onSave={link => void saveLink(link)} />}
     <HistorySheet open={historyOpen} onOpenChange={setHistoryOpen} dashboardId={dashboardId} epoch={epoch}
       current={revision} published={publicationId ? publishedRevision : undefined} />
-    <TextDialog open={textOpen} onOpenChange={setTextOpen} onAdd={addText} />
+    <TextDialog open={textOpen} onOpenChange={open => { setTextOpen(open); if (!open) setTextAt(null) }} onAdd={addText} />
   </div>
 }
 

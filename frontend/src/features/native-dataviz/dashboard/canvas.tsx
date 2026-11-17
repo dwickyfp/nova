@@ -14,7 +14,7 @@ import { useChartDocument } from './hooks'
 import { useDatasetDefinition } from '../charts/chart-data'
 import { drillContext, drillDimension, drilledChart, drillOptions, type DrillStep } from '../charts/drill'
 import { NativeChart, type ValueSelection } from '../charts/native-chart'
-import type { Layout, Page, Widget } from './layout'
+import { activeDrop, DROP_TYPE, dropSize, slotAt, type DropItem, type Layout, type Page, type Widget } from './layout'
 import { ROW_PX, type CanvasPoint, type Collaborator } from './presence'
 import { PresenceCursors } from './presence-ui'
 
@@ -45,6 +45,8 @@ type CanvasProps = {
   onOpenLink?: (link: Interaction, selection: ValueSelection) => void
   /** Edit mode: add or change a chart's link to another dashboard. */
   onEditLink?: (widget: Widget, chart: ChartDefinition) => void
+  /** Edit mode: a toolbar item was dropped on a canvas cell. */
+  onDropWidget?: (item: DropItem, cell: { x: number; y: number }) => void
   /** Present only with Export access: download one chart as a file. */
   onDownload?: (chart: ChartDefinition, context: FilterTree | undefined, format: ChartFileFormat, root: HTMLElement) => void
 }
@@ -334,6 +336,36 @@ export function DashboardCanvas(props: CanvasProps) {
     }
   }, [tiles, signature])
 
+  // A toolbar item dragged over the canvas shows where it will land.
+  const [drop, setDrop] = useState<Layout | null>(null)
+  const dropping = tiles && Boolean(props.onDropWidget)
+  const cellAt = (event: { clientX: number; clientY: number }) => {
+    const box = host.current?.getBoundingClientRect()
+    if (!box?.width) return null
+    return { x: Math.floor((event.clientX - box.left) / (box.width / 12)), y: Math.max(0, Math.floor((event.clientY - box.top) / ROW_PX)) }
+  }
+  const accepts = (event: React.DragEvent) => dropping && event.dataTransfer.types.includes(DROP_TYPE)
+  const onDragOver = (event: React.DragEvent) => {
+    if (!accepts(event)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+    const cell = cellAt(event)
+    const item = activeDrop.item
+    if (!cell || !item) return
+    const size = dropSize(item)
+    const next = slotAt(widgets, size.w, size.h, cell)
+    setDrop(current => current && current.x === next.x && current.y === next.y && current.w === next.w && current.h === next.h ? current : next)
+  }
+  const onDrop = (event: React.DragEvent) => {
+    if (!accepts(event)) return
+    event.preventDefault()
+    setDrop(null)
+    const cell = cellAt(event)
+    let item: DropItem | null
+    try { item = JSON.parse(event.dataTransfer.getData(DROP_TYPE)) as DropItem } catch { item = null }
+    if (cell && item && (item.kind === 'text' || (item.kind === 'chart' && typeof item.visual === 'string'))) props.onDropWidget?.(item, cell)
+  }
+
   return <div ref={scroller} className='min-h-0 flex-1 overflow-y-auto p-2.5' onClick={() => props.editing && props.onSelect(null)}>
     {props.editing && narrow && <p role='status' className='m-1.5 rounded-md border border-dashed p-2 text-xs text-muted-foreground'>
       {columns === 1 ? 'Widen the window to move or resize widgets.' : 'Widen the window to move or resize widgets; this narrower view is scaled from the full layout.'} Your layout is kept for larger screens.
@@ -343,6 +375,8 @@ export function DashboardCanvas(props: CanvasProps) {
       <p className='max-w-sm text-sm text-muted-foreground'>{props.editing ? 'Add a chart, KPI or text from the toolbar, or ask Neva to build one for you.' : 'Nothing has been added to this page yet.'}</p>
     </div>}
     <div className='relative'
+      onDragOver={dropping ? onDragOver : undefined} onDrop={dropping ? onDrop : undefined}
+      onDragLeave={dropping ? event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDrop(null) } : undefined}
       onPointerMove={props.onPointer ? event => {
         const box = host.current?.getBoundingClientRect()
         if (box?.width) props.onPointer?.({ x: (event.clientX - box.left) / box.width, y: (event.clientY - box.top) / ROW_PX })
@@ -360,6 +394,8 @@ export function DashboardCanvas(props: CanvasProps) {
         <WidgetBody widget={widget} props={props} />
       </div>)}
     </div>
+    {drop && <div aria-hidden data-testid='drop-preview' className='nova-dataviz-drop'
+      style={{ left: `${drop.x / 12 * 100}%`, width: `${drop.w / 12 * 100}%`, top: drop.y * ROW_PX, height: drop.h * ROW_PX }} />}
     {props.collaborators?.length ? <PresenceCursors others={props.collaborators} pageId={props.page.page_id} /> : null}
     </div>
   </div>

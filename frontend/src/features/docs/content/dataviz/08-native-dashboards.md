@@ -41,7 +41,9 @@ You can also build a dataset from a SQL query, with named parameters. See
 1. Go back to **Canvas** and click **Edit**. A dotted grid and the toolbar
    appear.
 2. Click **Chart**, **KPI** or **Table**. The chart panel opens on the right
-   with a live preview.
+   with a live preview. To choose where it goes, drag the button onto a square
+   of the grid instead: an outline shows the space it will take, and the chart
+   is placed there when you add it. **Text** can be dragged the same way.
 3. On **Configure**, type a **Chart name**, pick a visualization (KPI, Bar,
    Line, Area, Combo, Pie, Funnel, Table, Pivot, Scatter, Heatmap, Treemap,
    Flow, Histogram, Gauge or Map), and choose the fields. For a date field, **Group by**
@@ -380,5 +382,11 @@ an administrator, can remove a schedule.
   Open the **Data** tab to review the dataset.
 - "Someone else changed this dashboard" means another person or Neva saved
   first. The latest version is loaded; make your change again.
+- If the connection drops while a change is saving, Nova checks whether the
+  change was saved before deciding what to show. A saved change stays on the
+  canvas and an unsaved one is taken back, so the same change is never saved
+  twice. "The save could not be confirmed" means Nova could not check yet; the
+  dashboard is reloaded to show what is saved. Look at the canvas before you
+  make the change again.
 - Charts show up to the row limit you choose. A note under the chart says when
   more rows exist.

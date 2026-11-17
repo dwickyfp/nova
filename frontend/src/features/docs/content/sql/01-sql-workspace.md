@@ -394,6 +394,7 @@ and permissions.
 | `Invalid SQL: 1:13 Unexpected or missing SQL token ...` | A syntax error. The numbers are the line and column. In a script, nothing runs until every statement is valid. |
 | `The run ended with a transaction still open, so Nova rolled it back ...` | Add `COMMIT` (or `ROLLBACK`) at the end of the same run. |
 | `The remembered setting <name> could not be applied again and was cleared.` | A setting kept from an earlier run is no longer accepted by the engine. Set it again if you still need it. |
+| `This file's stored contents do not match what was saved, so it was not opened. ...` | Nova checks every file and saved version against what was saved. The stored copy was changed or damaged outside Nova, so it is not shown. Ask an administrator to restore it. Other versions of the file may still open. |
 
 - Some statements are always refused, for example dropping the `root` user or
   changing the protected `ACCOUNTADMIN` role. Writing query results to files

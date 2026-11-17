@@ -80,6 +80,7 @@ from .document_service import (
 )
 from .parameters import bind_parameters
 from .preview import PreviewRows
+from .semantic_grain import MetricGrainError, SemanticGrain, plan_semantic_grain
 
 SOURCE_TIMEOUT_SECONDS = 30
 
@@ -405,8 +406,17 @@ class NativeDatasetService:
         parameters = bind_parameters(document.parameters, request.parameters)
         await self._verify_preview_source(user, document, selection)
         execution: ObjectInspect | SqlInspect
+        fields = document.fields
         if isinstance(selection, SemanticInspect):
-            execution, _ = await self._semantic_query(user, selection)
+            execution, model = await self._semantic_query(user, selection)
+            try:
+                grain = plan_semantic_grain(model, document.fields, request)
+            except MetricGrainError as error:
+                raise NovaException(str(error), status_code=422) from None
+            if grain is not None:
+                # Every metric is computed by the semantic layer once per chart group.
+                execution, _ = await self._semantic_query(user, selection, grain=grain)
+                fields = grain.fields
         else:
             execution = selection
         if isinstance(execution, SqlInspect):
@@ -424,7 +434,7 @@ class NativeDatasetService:
             projection = ",".join(_identifier(f.source_column) for f in document.fields)
             inner = f"SELECT {projection} FROM {qualified}"
         plan = await run_sql_cpu(
-            len(inner), plan_aggregate, inner, document.fields, request,
+            len(inner), plan_aggregate, inner, fields, request,
             dataset_id=str(identity),
             reserved_parameters={spec.name for spec in parameters.specs} if parameters else set(),
         )
@@ -687,7 +697,8 @@ class NativeDatasetService:
         )
 
     async def _semantic_query(
-        self, user: Mapping[str, Any], request: SemanticInspect
+        self, user: Mapping[str, Any], request: SemanticInspect,
+        *, grain: SemanticGrain | None = None,
     ) -> tuple[SqlInspect, SemanticModelIR]:
         session = await current_session(user)
         selection = request.source
@@ -702,7 +713,8 @@ class NativeDatasetService:
             compiled = await run_sql_cpu(
                 len(json.dumps(record["definition"])), SemanticCompiler().compile, model,
                 SemanticPlan(
-                    dimensions=selection.dimensions, metrics=selection.metrics,
+                    dimensions=grain.dimensions if grain else selection.dimensions,
+                    metrics=grain.metrics if grain else selection.metrics,
                     named_filters=selection.named_filters,
                 ),
             )

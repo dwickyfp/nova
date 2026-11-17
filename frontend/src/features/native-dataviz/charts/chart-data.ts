@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, type QueryClient, useQuery } from '@tanstack/react-query'
 import { ApiError } from '@/lib/api-client'
 import { useAuthStore } from '@/stores/auth-store'
 import type { ChartDefinition, DatasetDefinition, FilterTree, ParameterInput, QuerySort } from '../contracts'
@@ -46,6 +46,13 @@ export function chartRequest({ chart, draft, context, parameters }: ChartRequest
   }
 }
 
+/**
+ * How long a chart may show rows it already read without asking again. Ranger
+ * can narrow or revoke access without changing the role, so this is short, an
+ * error from the next read replaces the rows, and downloads never use it.
+ */
+const SHOWN_ROWS_STALE_TIME = 30_000
+
 /** One cache entry per chart request, shared by the chart and its downloads. */
 export function chartDataQuery(epoch: number, chart: ChartDefinition, request: NonNullable<ReturnType<typeof chartRequest>>) {
   return {
@@ -57,9 +64,15 @@ export function chartDataQuery(epoch: number, chart: ChartDefinition, request: N
         .then(result => applyCalculations(chart, result)),
     retry: capacityRetry,
     retryDelay: capacityDelay,
-    staleTime: 30_000,
+    staleTime: SHOWN_ROWS_STALE_TIME,
     gcTime: 5 * 60_000,
   }
+}
+
+/** Rows for a download: always read again, so a file never holds rows the current policy hides. */
+export function freshChartData(client: QueryClient, epoch: number, chart: ChartDefinition,
+  request: NonNullable<ReturnType<typeof chartRequest>>) {
+  return client.fetchQuery({ ...chartDataQuery(epoch, chart, request), staleTime: 0 })
 }
 
 /** The same governed request narrowed to one page; a viewer sort replaces the chart's. */
@@ -93,7 +106,7 @@ export function useChartData({ chart, draft, context, parameters, page }: ChartR
     placeholderData: keepPreviousData,
     retry: capacityRetry,
     retryDelay: capacityDelay,
-    staleTime: 30_000,
+    staleTime: SHOWN_ROWS_STALE_TIME,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
   })
@@ -113,7 +126,7 @@ export function useTableTotals({ chart, draft, context, parameters, enabled }: C
     enabled: enabled && request !== null,
     retry: capacityRetry,
     retryDelay: capacityDelay,
-    staleTime: 30_000,
+    staleTime: SHOWN_ROWS_STALE_TIME,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
   })

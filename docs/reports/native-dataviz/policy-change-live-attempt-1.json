@@ -1,0 +1,85 @@
+{
+  "started_at": "2026-11-17T03:53:47.200793+00:00",
+  "run": "fe60e6",
+  "scope": "governed native chart query after Ranger row filter, mask and revoke",
+  "result": "PASS",
+  "cleanup": "REMOVED",
+  "steps": [
+    {
+      "step": "fixture: CREATE DATABASE ndv_policy_fe60e6",
+      "passed": true
+    },
+    {
+      "step": "fixture: CREATE TABLE ndv_policy_fe60e6.regions",
+      "passed": true
+    },
+    {
+      "step": "fixture: INSERT INTO ndv_policy_fe60e6.regions VALUES",
+      "passed": true
+    },
+    {
+      "step": "alice uses marketing",
+      "passed": true
+    },
+    {
+      "step": "shared workspace",
+      "passed": true
+    },
+    {
+      "step": "inspect",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "step": "dataset created",
+      "passed": true,
+      "status": 201
+    },
+    {
+      "step": "before: both cities",
+      "passed": true,
+      "rows": [
+        [
+          "Bandung",
+          "600.00"
+        ],
+        [
+          "Jakarta",
+          "400.00"
+        ]
+      ]
+    },
+    {
+      "step": "row filter added: the next read has only Jakarta",
+      "passed": true,
+      "status": 200,
+      "rows": [
+        [
+          "Jakarta",
+          "400.00"
+        ]
+      ],
+      "seconds_until_applied": 1.1
+    },
+    {
+      "step": "mask added: the city value is no longer readable",
+      "passed": true,
+      "status": 200,
+      "rows": [
+        [
+          "35393265323765323739323762383536336236386166336264346565353834303737666536343064313832646465333332393033373565393435386435306364",
+          "400.00"
+        ]
+      ],
+      "seconds_until_applied": 5.1
+    },
+    {
+      "step": "access removed: the next read is refused and returns no rows",
+      "passed": true,
+      "status": 403,
+      "rows": [],
+      "seconds_until_applied": 4.3
+    }
+  ],
+  "finished_at": "2026-11-17T03:54:03.273118+00:00"
+}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from collections.abc import Callable, Coroutine
 from typing import Annotated, Any, Literal
@@ -54,6 +55,8 @@ from .documents import Kind
 from .export_schedules import ScheduleRequest
 from .export_schedules import native_export_schedules as schedules
 from .presence import native_presence as presence
+
+logger = logging.getLogger(__name__)
 
 MAX_REVISION = 9_007_199_254_740_991
 
@@ -299,6 +302,15 @@ async def restore(
     return await service.restore(user, identity, body)
 
 
+async def _forget_presence_access(identity: UUID) -> None:
+    # The change is committed. If Redis is unavailable the cached check still
+    # expires within ACCESS_SECONDS, so this never fails the request.
+    try:
+        await presence.forget_access(identity)
+    except Exception as error:  # noqa: BLE001 - presence is a courtesy cache
+        logger.warning("Presence access cache not cleared: %s", type(error).__name__)
+
+
 @router.get("/{collection}/{identity}/grants", response_model=GrantState)
 async def grants(identity: Resource, user: User, response: Response) -> Any:
     state = await service.grant_state(user, identity)
@@ -311,7 +323,9 @@ async def replace_grants(
     identity: Resource, body: GrantsReplace, user: User, key: Key, revision: Expected
 ) -> Any:
     command_matches(body, key, revision)
-    return await service.replace_grants(user, identity, body)
+    receipt = await service.replace_grants(user, identity, body)
+    await _forget_presence_access(identity)
+    return receipt
 
 
 class ExportRequest(BaseModel):
@@ -467,4 +481,7 @@ async def delete_document(
     revision: Expected,
 ) -> Any:
     command_matches(body, key, revision)
-    return await service.delete(user, identity, KINDS[collection], body)
+    receipt = await service.delete(user, identity, KINDS[collection], body)
+    if collection == "dashboards":
+        await _forget_presence_access(identity)
+    return receipt

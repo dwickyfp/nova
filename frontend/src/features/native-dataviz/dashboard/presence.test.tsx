@@ -1,15 +1,15 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { cleanup, render } from 'vitest-browser-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { colourFor, initials, ROW_PX, type Collaborator } from './presence'
+import { colourFor, initials, ROW_PX, usePresence, type Collaborator } from './presence'
 import { PresenceAvatars, PresenceCursors } from './presence-ui'
 import '@/styles/index.css'
 
 const person = (viewer: string, name: string, extra: Partial<Collaborator> = {}): Collaborator =>
   ({ viewer, name, page_id: 'p1', cursor: null, editing: false, seconds_ago: 0, ...extra })
 
-afterEach(() => cleanup())
+afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 describe('presence helpers', () => {
   it('gives a person the same colour on every screen', () => {
@@ -52,5 +52,28 @@ describe('presence cursors', () => {
     const pointer = container.querySelector<HTMLElement>('[style*="left"]')!
     expect(pointer.style.left).toBe('50%')
     expect(pointer.style.top).toBe(`${2 * ROW_PX}px`)
+  })
+})
+
+describe('presence after access is revoked', () => {
+  function Others() {
+    const { others } = usePresence({ dashboardId: 'dddddddd-0000-4000-8000-000000000001', pageId: null, editing: false })
+    return <ul aria-label='Others here'>{others.map(item => <li key={item.viewer}>{item.name}</li>)}</ul>
+  }
+
+  it('stops showing who else is here once a heartbeat is refused', async () => {
+    let allowed = true
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit = {}) => {
+      if (init.method === 'DELETE') return new Response(null, { status: 204 })
+      return allowed
+        ? new Response(JSON.stringify({ viewer: 'me', more: 0, others: [person('v2', 'bob')] }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } })
+        : new Response(JSON.stringify({ detail: 'Dashboard not found' }),
+          { status: 404, headers: { 'Content-Type': 'application/json' } })
+    }))
+    const screen = await render(<Others />)
+    await expect.element(screen.getByText('bob')).toBeVisible()
+    allowed = false
+    await vi.waitFor(() => expect(screen.container.textContent).not.toContain('bob'), { timeout: 4000 })
   })
 })

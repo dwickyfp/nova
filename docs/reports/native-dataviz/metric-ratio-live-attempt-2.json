@@ -1,0 +1,170 @@
+{
+  "started_at": "2026-11-17T04:10:00.819341+00:00",
+  "run": "e86f62",
+  "scope": "semantic ratio metric through native chart queries vs engine oracle",
+  "result": "PASS",
+  "cleanup": "REMOVED",
+  "oracle": {
+    "by_region": [
+      [
+        "East",
+        "0.32000000",
+        "0.375000000000",
+        "500.00"
+      ],
+      [
+        "West",
+        "0.07272727",
+        "0.266666666667",
+        "550.00"
+      ]
+    ],
+    "total": [
+      "0.19047619"
+    ],
+    "sum_of_daily": [
+      [
+        "East",
+        "0.85000000"
+      ],
+      [
+        "West",
+        "0.34000000"
+      ]
+    ],
+    "monthly_revenue": [
+      [
+        "2024-02-01",
+        "750.00"
+      ],
+      [
+        "2024-03-01",
+        "300.00"
+      ]
+    ]
+  },
+  "steps": [
+    {
+      "step": "fixture: CREATE DATABASE ndv_metric_e86f62",
+      "passed": true
+    },
+    {
+      "step": "fixture: CREATE TABLE ndv_metric_e86f62.sales (id",
+      "passed": true
+    },
+    {
+      "step": "fixture: INSERT INTO ndv_metric_e86f62.sales VALU",
+      "passed": true
+    },
+    {
+      "step": "fixture: ratio of sums differs from averaged and daily-summed margins",
+      "passed": true
+    },
+    {
+      "step": "alice uses marketing",
+      "passed": true
+    },
+    {
+      "step": "semantic view created",
+      "passed": true,
+      "status": 201
+    },
+    {
+      "step": "semantic view valid",
+      "passed": true
+    },
+    {
+      "step": "semantic view published",
+      "passed": true
+    },
+    {
+      "step": "inspect at region and day",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "step": "dataset created",
+      "passed": true,
+      "status": 201
+    },
+    {
+      "step": "per region: margin equals SUM(profit)/SUM(revenue)",
+      "passed": true,
+      "rows": [
+        [
+          "East",
+          "0.32000000"
+        ],
+        [
+          "West",
+          "0.07272727"
+        ]
+      ]
+    },
+    {
+      "step": "per region: not the average of row margins nor the sum of daily margins",
+      "passed": true
+    },
+    {
+      "step": "total: one ratio of sums over every row, nulls and refund included",
+      "passed": true,
+      "rows": [
+        [
+          "0.19047619",
+          "1050.00"
+        ]
+      ]
+    },
+    {
+      "step": "month grain: the ratio is refused rather than added up",
+      "passed": true,
+      "status": 422
+    },
+    {
+      "step": "month grain: a plain sum still totals per month (leap day in February)",
+      "passed": true,
+      "rows": [
+        [
+          "2024-02-01",
+          "750.00"
+        ],
+        [
+          "2024-03-01",
+          "300.00"
+        ]
+      ]
+    },
+    {
+      "step": "dataset grain: one row per region and day",
+      "passed": true,
+      "rows": [
+        [
+          "East",
+          "2024-02-29",
+          "0.25000000"
+        ],
+        [
+          "East",
+          "2024-03-01",
+          "0.60000000"
+        ],
+        [
+          "West",
+          "2024-02-28",
+          "0.30000000"
+        ],
+        [
+          "West",
+          "2024-02-29",
+          "0.04000000"
+        ],
+        [
+          "West",
+          "2024-03-01",
+          null
+        ]
+      ]
+    }
+  ],
+  "finished_at": "2026-11-17T04:10:15.588234+00:00"
+}

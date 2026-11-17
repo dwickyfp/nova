@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 import re
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 import pytest
 from pydantic import ValidationError
@@ -879,3 +880,34 @@ def test_the_change_event_carries_only_the_dashboard_and_revision():
     payload = json.loads(frame.split("data: ", 1)[1])
     assert payload == {"tool_call_id": "call-1", "dashboard_id": str(DASHBOARD),
                        "revision": 5, "published": True}
+
+
+# ── NDV-AGENT-001: Neva saves what the chart builder saves ───────────
+
+PARITY = json.loads((Path(__file__).parents[3] / "frontend/src/features/native-dataviz/charts"
+                     / "__fixtures__/neva-parity.json").read_text())
+
+
+@pytest.mark.parametrize("name", ["bar", "line", "kpi"])
+def test_neva_builds_the_chart_the_chart_builder_saves(name):
+    # The frontend test pins PARITY["manual"] to builder-model.toChart.
+    manual = ChartDefinition.model_validate(PARITY["manual"][name])
+    neva = native.build_chart(native.ChartSpec.model_validate(PARITY["neva_specs"][name]),
+                              chart_id=manual.chart_id, dataset_id=DATASET, revision=1,
+                              dataset=DATASET_DEF)
+    assert neva.model_dump(mode="json") == manual.model_dump(mode="json")
+
+
+@pytest.mark.asyncio
+async def test_added_chart_is_stored_as_built_under_the_tool_derived_operation(docs):
+    outcome = await _run("native_dashboard_add_charts",
+                         {"charts": [PARITY["neva_specs"]["bar"]]}, call_id="call-parity")
+    assert outcome.ok, outcome.error
+    [(_, stored)] = docs.created
+    expected = ChartDefinition.model_validate(PARITY["manual"]["bar"]).model_dump(mode="json")
+    saved = stored.model_dump(mode="json")
+    assert {**saved, "chart_id": None} == {**expected, "chart_id": None}
+    base = uuid5(native.NAMESPACE, "call-parity")
+    assert stored.chart_id == uuid5(base, "chart:0")
+    # The create carries the id derived from the tool call, so a retry replays it.
+    assert uuid5(base, "chart-create:0") in docs.receipts

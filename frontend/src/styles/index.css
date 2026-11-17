@@ -807,6 +807,21 @@ input:-webkit-autofill:active {
   border-radius: calc(var(--radius) - 2px);
   background: color-mix(in oklab, var(--primary) 7%, var(--muted));
 }
+/* Where a widget dragged from the toolbar will land. */
+.nova-dataviz-drop {
+  position: absolute;
+  z-index: 5;
+  padding: 6px;
+  pointer-events: none;
+}
+.nova-dataviz-drop::before {
+  content: "";
+  display: block;
+  height: 100%;
+  border: 1px dashed var(--ring);
+  border-radius: var(--radius);
+  background: color-mix(in oklab, var(--primary) 8%, transparent);
+}
 .nova-dataviz-canvas .grid-stack-placeholder > .placeholder-content {
   border: 1px dashed var(--ring);
   border-radius: var(--radius);

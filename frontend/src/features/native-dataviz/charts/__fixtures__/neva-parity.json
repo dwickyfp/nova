@@ -1,0 +1,208 @@
+{
+  "_comment": "NDV-AGENT-001: the chart builder (manual) and Neva (neva_specs) must save the same chart. charts/neva-parity.test.ts pins manual to builder-model.toChart; backend tests/unit/test_native_dataviz_assistant_tools.py checks build_chart(neva_specs) against it.",
+  "dataset_fields": [
+    {
+      "field_id": "order_id",
+      "name": "Order",
+      "logical_type": "integer",
+      "semantic_role": "dimension"
+    },
+    {
+      "field_id": "city",
+      "name": "City",
+      "logical_type": "string",
+      "semantic_role": "dimension"
+    },
+    {
+      "field_id": "order_date",
+      "name": "Order date",
+      "logical_type": "date",
+      "semantic_role": "dimension"
+    },
+    {
+      "field_id": "revenue",
+      "name": "Revenue",
+      "logical_type": "decimal",
+      "semantic_role": "measure"
+    },
+    {
+      "field_id": "quantity",
+      "name": "Quantity",
+      "logical_type": "integer",
+      "semantic_role": "measure"
+    }
+  ],
+  "neva_specs": {
+    "bar": {
+      "title": "Revenue by city",
+      "visual": "bar",
+      "dimensions": [
+        "city"
+      ],
+      "measures": [
+        {
+          "field": "revenue"
+        }
+      ]
+    },
+    "line": {
+      "title": "Revenue by week",
+      "visual": "line",
+      "dimensions": [
+        {
+          "field": "order_date",
+          "date_grain": "week"
+        }
+      ],
+      "measures": [
+        {
+          "field": "revenue"
+        }
+      ]
+    },
+    "kpi": {
+      "title": "Revenue",
+      "visual": "kpi",
+      "measures": [
+        {
+          "field": "revenue"
+        }
+      ]
+    }
+  },
+  "manual": {
+    "bar": {
+      "schema_version": 2,
+      "chart_id": "44444444-4444-4444-8444-444444444444",
+      "title": "Revenue by city",
+      "dataset_id": "33333333-3333-4333-8333-333333333333",
+      "dataset_revision": 1,
+      "visual": "bar",
+      "encoding": {
+        "kind": "cartesian",
+        "dimensions": [
+          {
+            "field_id": "city",
+            "discrete": true,
+            "date_grain": null,
+            "date_mode": "truncate"
+          }
+        ],
+        "measures": [
+          {
+            "field_id": "revenue",
+            "aggregation": "sum",
+            "format": {
+              "kind": "number",
+              "decimals": 2,
+              "locale": "en-US"
+            },
+            "axis": "left",
+            "series": "bar"
+          }
+        ],
+        "orientation": "vertical",
+        "stack": "none",
+        "interpolation": "linear",
+        "nulls": "gap"
+      },
+      "style": {
+        "show_title": true,
+        "show_legend": true,
+        "show_labels": false,
+        "show_axis_titles": true,
+        "palette": "neutral",
+        "description": ""
+      },
+      "sort": [
+        {
+          "field_id": "revenue",
+          "direction": "desc",
+          "aggregation": "sum"
+        }
+      ],
+      "row_limit": 1000,
+      "result_overflow": "truncate_with_warning"
+    },
+    "line": {
+      "schema_version": 2,
+      "chart_id": "44444444-4444-4444-8444-444444444444",
+      "title": "Revenue by week",
+      "dataset_id": "33333333-3333-4333-8333-333333333333",
+      "dataset_revision": 1,
+      "visual": "line",
+      "encoding": {
+        "kind": "cartesian",
+        "dimensions": [
+          {
+            "field_id": "order_date",
+            "discrete": true,
+            "date_grain": "week",
+            "date_mode": "truncate"
+          }
+        ],
+        "measures": [
+          {
+            "field_id": "revenue",
+            "aggregation": "sum",
+            "format": {
+              "kind": "number",
+              "decimals": 2,
+              "locale": "en-US"
+            },
+            "axis": "left",
+            "series": "line"
+          }
+        ],
+        "orientation": "vertical",
+        "stack": "none",
+        "interpolation": "linear",
+        "nulls": "gap"
+      },
+      "style": {
+        "show_title": true,
+        "show_legend": true,
+        "show_labels": false,
+        "show_axis_titles": true,
+        "palette": "neutral",
+        "description": ""
+      },
+      "sort": [],
+      "row_limit": 1000,
+      "result_overflow": "truncate_with_warning"
+    },
+    "kpi": {
+      "schema_version": 2,
+      "chart_id": "44444444-4444-4444-8444-444444444444",
+      "title": "Revenue",
+      "dataset_id": "33333333-3333-4333-8333-333333333333",
+      "dataset_revision": 1,
+      "visual": "kpi",
+      "encoding": {
+        "kind": "single_measure",
+        "measure": {
+          "field_id": "revenue",
+          "aggregation": "sum",
+          "format": {
+            "kind": "number",
+            "decimals": 2,
+            "locale": "en-US"
+          },
+          "axis": "left",
+          "series": "bar"
+        }
+      },
+      "style": {
+        "show_title": true,
+        "show_legend": true,
+        "show_labels": false,
+        "show_axis_titles": true,
+        "palette": "neutral",
+        "description": ""
+      },
+      "sort": [],
+      "row_limit": 1000,
+      "result_overflow": "truncate_with_warning"
+    }
+  }
+}

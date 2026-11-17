@@ -76,6 +76,7 @@ async def create_file(files, parent="", name="report.sql", namespace=ALICE, user
         return await repo.insert_entry(
             namespace, parent_path=parent, name=name, entry_type="file",
             object_key=key(f"{parent}/{name}".strip("/")), size_bytes=3, etag="e1",
+            content_sha256=SHA,
         )
 
 
@@ -102,6 +103,7 @@ async def test_personal_entries_are_private_and_audited_without_names(files):
         entry = await repo.insert_entry(
             ALICE, parent_path=folder_name, name=file_name, entry_type="file",
             object_key=key("x"), size_bytes=4, etag="e",
+            content_sha256=SHA,
         )
         assert entry["path"] == f"{folder_name}/{file_name}"
         assert [row["id"] for row in await repo.list_entries(ALICE)] == [folder["id"], entry["id"]]
@@ -113,7 +115,8 @@ async def test_personal_entries_are_private_and_audited_without_names(files):
             with pytest.raises(MetadataPermissionDenied):
                 async with files.transaction(user) as (other, _):
                     await other.insert_entry(ALICE, parent_path="", name="planted.sql",
-                                             entry_type="file", object_key=key("p"))
+                                             entry_type="file", object_key=key("p"),
+                                             content_sha256=SHA)
     events = await audit(files)
     assert [e["action"] for e in events] == ["CREATE", "CREATE"]
     assert {e["user_name"] for e in events} == {ALICE}
@@ -133,11 +136,12 @@ async def test_shared_namespace_follows_assigned_role_share(files, permission):
     if permission == "view":
         for call in (
             lambda r: r.update_file(namespace, entry["id"], expected_revision=1,
-                                    object_key=key("y"), size_bytes=1, etag="e2"),
+                                    object_key=key("y"), size_bytes=1, etag="e2",
+                                    content_sha256=SHA),
             lambda r: r.reserve_version(namespace, entry["id"], object_key_for=str),
             lambda r: r.delete(namespace, entry["id"], expected_revision=1),
             lambda r: r.insert_entry(namespace, parent_path="", name="new.sql",
-                                     entry_type="file", object_key=key("n")),
+                                     entry_type="file", object_key=key("n"), content_sha256=SHA),
         ):
             with pytest.raises(MetadataPermissionDenied):
                 async with files.transaction(bob) as (repo, _):
@@ -145,7 +149,8 @@ async def test_shared_namespace_follows_assigned_role_share(files, permission):
     else:
         async with files.transaction(bob) as (repo, _):
             updated = await repo.update_file(namespace, entry["id"], expected_revision=1,
-                                             object_key=key("y"), size_bytes=1, etag="e2")
+                                             object_key=key("y"), size_bytes=1, etag="e2",
+                                             content_sha256=SHA)
             assert updated["metadata_revision"] == 2
             reserved = await repo.reserve_version(namespace, entry["id"],
                                                   object_key_for=lambda n: key(f"v{n}"))
@@ -161,7 +166,7 @@ async def test_namespace_aliases_are_refused(files):
     with pytest.raises((MetadataPermissionDenied, ValueError)):
         async with files.transaction(session("~ws/abc")) as (repo, _):
             await repo.insert_entry("~ws/abc", parent_path="", name="a.sql",
-                                    entry_type="file", object_key=key("a"))
+                                    entry_type="file", object_key=key("a"), content_sha256=SHA)
 
 
 @pytest.mark.parametrize("workload", [role.removeprefix("nova_meta_") for role in WORKLOAD_ROLES])
@@ -179,7 +184,8 @@ async def test_workload_privileges(files, workload):
         with pytest.raises(MetadataPermissionDenied):
             async with files.transaction(workload=workload) as (repo, _):
                 await repo.update_file(ALICE, entry["id"], expected_revision=1,
-                                       object_key=key("z"), size_bytes=0, etag="e")
+                                       object_key=key("z"), size_bytes=0, etag="e",
+                                       content_sha256=SHA)
 
 
 async def test_concurrent_saves_have_one_winner(files):
@@ -190,7 +196,8 @@ async def test_concurrent_saves_have_one_winner(files):
         async with files.transaction() as (repo, _):
             await ready.wait()
             return await repo.update_file(ALICE, entry["id"], expected_revision=1,
-                                          object_key=entry["object_key"], size_bytes=1, etag=etag)
+                                          object_key=entry["object_key"], size_bytes=1, etag=etag,
+                                          content_sha256=SHA)
 
     results = await asyncio.gather(save("A"), save("B"), return_exceptions=True)
     assert sum(isinstance(r, dict) for r in results) == 1
@@ -261,11 +268,13 @@ async def test_folder_move_is_atomic_and_wildcards_do_not_overmatch(files):
         await repo.insert_entry(ALICE, parent_path="a_%", name="sub", entry_type="folder",
                                 object_key=None)
         inner = await repo.insert_entry(ALICE, parent_path="a_%/sub", name="q.sql",
-                                        entry_type="file", object_key=key("a_%/sub/q.sql"))
+                                        entry_type="file", object_key=key("a_%/sub/q.sql"),
+                                        content_sha256=SHA)
         bystander = await repo.insert_entry(ALICE, parent_path="", name="abX",
                                             entry_type="folder", object_key=None)
         lookalike = await repo.insert_entry(ALICE, parent_path="abX", name="q.sql",
-                                            entry_type="file", object_key=key("abX/q.sql"))
+                                            entry_type="file", object_key=key("abX/q.sql"),
+                                            content_sha256=SHA)
         with pytest.raises(ValueError, match="itself"):
             await repo.move(ALICE, folder["id"], expected_revision=1, new_parent_path="a_%/sub",
                             new_name="inside", object_key_for=key)
@@ -288,7 +297,8 @@ async def test_failed_subtree_move_rolls_back_every_row(files, monkeypatch):
         folder = await repo.insert_entry(ALICE, parent_path="", name="src", entry_type="folder",
                                          object_key=None)
         child = await repo.insert_entry(ALICE, parent_path="src", name="c.sql",
-                                        entry_type="file", object_key=key("src/c.sql"))
+                                        entry_type="file", object_key=key("src/c.sql"),
+                                        content_sha256=SHA)
     async with files.transaction() as (repo, _):
         calls = []
 
@@ -309,7 +319,7 @@ async def test_delete_retires_subtree_and_versions_and_returns_object_keys(files
         folder = await repo.insert_entry(ALICE, parent_path="", name="d", entry_type="folder",
                                          object_key=None)
         entry = await repo.insert_entry(ALICE, parent_path="d", name="f.sql", entry_type="file",
-                                        object_key=key("d/f.sql"))
+                                        object_key=key("d/f.sql"), content_sha256=SHA)
         version = await repo.reserve_version(ALICE, entry["id"],
                                              object_key_for=lambda n: key(f"v/{n}"))
         await repo.publish_version(ALICE, version["id"], size_bytes=1, etag="e",

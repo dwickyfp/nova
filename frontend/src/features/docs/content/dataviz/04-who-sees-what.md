@@ -48,6 +48,17 @@ Switch your active role from your name at the bottom of Studio's rail
 (**Switch role**). Every chart then runs again under that role's data access.
 A role you share a dashboard with only matters while it is your active role.
 
+## When data access changes
+
+When an administrator changes your row filters, masks or table access, a
+chart that is already on your screen can keep the rows it read for up to 30
+seconds. After that, the next time the chart appears it runs again under the
+new access. If you may no longer read the table, the chart says the data is
+unavailable with your current role and stops showing the earlier rows.
+
+Downloads (CSV, Excel and page workbooks) always run the query again, so a
+file never holds rows your current access hides.
+
 ## Limits
 
 - If your role cannot read a table a chart uses, that chart says the data is

@@ -25,7 +25,8 @@ from app.core.metadata_scope import actor_for
 #: A viewer who has not sent a heartbeat for this long has left.
 STALE_SECONDS = 15
 #: The read permission check is reused this long, keyed by security-context version.
-ACCESS_SECONDS = 30
+#: A change to the dashboard's own sharing clears it at once (``forget_access``).
+ACCESS_SECONDS = 5
 #: Most people listed per dashboard; the rest are counted.
 MAX_LISTED = 20
 KEY = "nova:viz:presence:{dashboard}"
@@ -119,6 +120,14 @@ class PresenceService:
         others.sort(key=lambda item: (item["name"].casefold(), item["viewer"]))
         return {"viewer": viewer, "others": others[:MAX_LISTED],
                 "more": max(0, len(others) - MAX_LISTED)}
+
+    async def forget_access(self, dashboard: UUID) -> None:
+        """Check view access again on every viewer's next beat after sharing changes."""
+        redis = self._redis()
+        pattern = ACCESS.format(dashboard=dashboard, viewer="*", version="*")
+        keys = [key async for key in redis.scan_iter(match=pattern, count=200)]
+        if keys:
+            await redis.delete(*keys)
 
     async def leave(self, user: Mapping[str, Any], dashboard: UUID) -> None:
         actor = actor_for(user)

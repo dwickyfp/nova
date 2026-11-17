@@ -99,6 +99,22 @@ async def acting_transaction(*, read_only: bool = False):
         yield repository
 
 
+def _verified(record: Mapping[str, Any], data: bytes) -> None:
+    """Refuse an object that is not the content recorded when it was saved.
+
+    Rows saved before digests were recorded (and imported rows) have none and are
+    checked from their next save.
+    """
+    expected = record.get("content_sha256")
+    if expected and hashlib.sha256(data).hexdigest() != expected:
+        logger.warning("Workspace file %s failed its content digest check",
+                       record.get("entry_id") or record.get("id"))
+        raise StorageError(
+            "This file's stored contents do not match what was saved, so it was not "
+            "opened. Ask an administrator to restore it.", status_code=502,
+        )
+
+
 def _not_found() -> StorageError:
     return StorageError("Workspace entry not found", status_code=404)
 
@@ -166,7 +182,9 @@ class WorkspaceMetadataService:
         entry = await self._entry(namespace, entry_id)
         if entry["entry_type"] != "file":
             raise StorageError("Only files can be opened", status_code=400)
-        return entry, await self._objects.get(entry["object_key"])
+        data = await self._objects.get(entry["object_key"])
+        _verified(entry, data)
+        return entry, data
 
     async def create_folder(self, namespace: str, parent_path: str, name: str) -> dict[str, Any]:
         try:
@@ -210,6 +228,7 @@ class WorkspaceMetadataService:
                 entry = await files.insert_entry(
                     namespace, parent_path=parent_path, name=name, entry_type="file",
                     object_key=key, size_bytes=len(data), etag=etag,
+                    content_sha256=hashlib.sha256(data).hexdigest(),
                 )
                 await self._record(action, "workspace_file", entry["path"])
                 if on_created is not None:
@@ -257,6 +276,7 @@ class WorkspaceMetadataService:
                 saved = await files.update_file(
                     namespace, entry["id"], expected_revision=entry["metadata_revision"],
                     object_key=key, size_bytes=len(data), etag=etag,
+                    content_sha256=hashlib.sha256(data).hexdigest(),
                 )
                 if keep_old:
                     assert current is not None
@@ -337,6 +357,7 @@ class WorkspaceMetadataService:
         if record is None:
             raise StorageError("Version not found", status_code=404)
         body = await self._objects.get(record["object_key"])
+        _verified(record, body)
         return record, body.decode("utf-8")
 
     async def get_file_version(self, namespace: str, entry_id: str, version: int) -> str:

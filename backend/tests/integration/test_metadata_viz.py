@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import httpx
+import psycopg
 import pytest
 import pytest_asyncio
 from cryptography.fernet import Fernet
@@ -25,6 +26,7 @@ from app.core.metadata_db import (
     MetadataDatabase,
     MetadataIntegrityViolation,
     MetadataOperationFailed,
+    MetadataOutcomeUnknown,
     MetadataPermissionDenied,
 )
 from app.core.metadata_migrations import migrate
@@ -1872,3 +1874,98 @@ async def test_viewer_reads_only_the_revisions_a_visible_publication_pins(viz):
     with pytest.raises(NovaException):
         async with viz.transaction(stranger) as (repository, _):
             await repository.read(figure.chart_id, revision=1)
+
+
+async def _saves(viz, dashboard_id):
+    rows = await viz.inspect(
+        "SELECT r.draft_revision, count(o.operation_id) AS operations "
+        "FROM nova_meta.viz_resources r LEFT JOIN nova_meta.viz_operations o "
+        "ON o.resource_id=r.resource_id WHERE r.resource_id=%s GROUP BY r.draft_revision",
+        (dashboard_id,))
+    return rows[0]
+
+
+async def test_save_interrupted_by_a_database_restart_is_neither_lost_nor_doubled(
+        native_http, viz):
+    """NDV-OPS-001: every client connection drops while a save waits to commit."""
+    client, records = native_http
+    owner = records["login-owner"]
+    document = dashboard()
+    assert (await http_create(client, owner, document)).status_code == 201
+    path = f"/api/v1/viz/dashboards/{document.dashboard_id}"
+    key = uuid4()
+    body = document.model_copy(update={"title": "Saved across a restart"}).model_dump(mode="json")
+
+    def save():
+        return client.patch(path + "/draft", json=body,
+                            headers=http_headers(owner, key=key, revision=1))
+
+    async with await psycopg.AsyncConnection.connect(
+        viz.environment.config.dsn, autocommit=True,
+    ) as blocker, blocker.transaction():
+        await blocker.execute("SELECT 1 FROM nova_meta.viz_resources WHERE resource_id=%s "
+                              "FOR UPDATE", (document.dashboard_id,))
+        pending = asyncio.create_task(save())
+        for _ in range(200):  # Wait until the save is inside its transaction.
+            waiting = await viz.inspect(
+                "SELECT pid FROM pg_stat_activity WHERE usename='nova_meta_web' "
+                "AND wait_event_type='Lock'")
+            if waiting:
+                break
+            await asyncio.sleep(0.05)
+        assert waiting, "the save never reached the database"
+        # A primary restart ends every client session, mid-transaction included.
+        await viz.inspect("SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                          "WHERE usename='nova_meta_web'")
+        interrupted = await pending
+    assert interrupted.status_code == 503, interrupted.text
+    # Nothing was acknowledged, nothing was written, and the receipt says so.
+    assert await _saves(viz, document.dashboard_id) == {"draft_revision": 1, "operations": 1}
+    receipt = await client.get(path + f"/operations/{key}", headers=http_headers(owner))
+    assert receipt.status_code == 404
+    # The pool reconnects; the same operation then applies exactly once.
+    retried = await save()
+    assert retried.status_code == 200, retried.text
+    assert retried.json()["new_revision"] == 2
+    assert (await save()).json() == retried.json()
+    assert await _saves(viz, document.dashboard_id) == {"draft_revision": 2, "operations": 2}
+    draft = (await client.get(path + "?draft=true", headers=http_headers(owner))).json()
+    assert draft["definition"]["title"] == "Saved across a restart"
+
+
+async def test_save_whose_acknowledgement_is_lost_is_resolved_by_its_receipt(
+        native_http, viz, monkeypatch):
+    """NDV-OPS-001: the commit happened but the connection dropped before the reply."""
+    client, records = native_http
+    owner = records["login-owner"]
+    document = dashboard()
+    assert (await http_create(client, owner, document)).status_code == 201
+    path = f"/api/v1/viz/dashboards/{document.dashboard_id}"
+    database = metadata_scope.metadata_db()
+    original = database.transaction
+    lose_next = {"armed": True}
+
+    @asynccontextmanager
+    async def transaction(*args, **kwargs):
+        async with original(*args, **kwargs) as connection:
+            yield connection
+        if lose_next["armed"] and not kwargs.get("read_only"):
+            lose_next["armed"] = False
+            raise MetadataOutcomeUnknown()  # As if COMMIT's reply never arrived.
+
+    monkeypatch.setattr(database, "transaction", transaction)
+    key = uuid4()
+    body = document.model_copy(update={"title": "Committed, reply lost"}).model_dump(mode="json")
+    lost = await client.patch(path + "/draft", json=body,
+                              headers=http_headers(owner, key=key, revision=1))
+    assert lost.status_code == 503
+    receipt = await client.get(path + f"/operations/{key}", headers=http_headers(owner))
+    assert receipt.status_code == 200 and receipt.json()["new_revision"] == 2
+    retried = await client.patch(path + "/draft", json=body,
+                                 headers=http_headers(owner, key=key, revision=1))
+    assert retried.status_code == 200 and retried.json() == receipt.json()
+    # A different save still based on revision 1 is refused, not stacked as a duplicate.
+    stale = await client.patch(path + "/draft", json=body,
+                               headers=http_headers(owner, key=uuid4(), revision=1))
+    assert stale.status_code == 409
+    assert await _saves(viz, document.dashboard_id) == {"draft_revision": 2, "operations": 2}

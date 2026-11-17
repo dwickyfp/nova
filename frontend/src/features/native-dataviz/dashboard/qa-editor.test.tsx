@@ -69,6 +69,11 @@ let permissionList: string[] = []
 let charts: Record<string, ChartDefinition> = {}
 let revision = 4
 let publicationId: string | null = null
+/** Fault for the next save: committed with the reply lost, or lost before it committed. */
+let replyLost: 'after-commit' | 'before-commit' | null = null
+/** Whether receipt lookups answer, as after the database is back. */
+let receiptsAvailable = true
+const receipts: Record<string, Json> = {}
 let definition: Json & { pages: PageJson[]; title: string }
 /** Answers a dataset query; the default derives the value from the request. */
 let answer: (body: Json) => Promise<Response> | Response
@@ -142,12 +147,23 @@ async function route(url: string, options: RequestInit = {}) {
       refused.push(body!)
       return json({ detail: 'The dashboard changed; reload it.' }, 409)
     }
+    const fault = replyLost
+    replyLost = null
+    if (fault === 'before-commit') return json({ detail: 'Metadata outcome requires reconciliation before retry' }, 503)
     operations.push(body!)
     commit(body!.changes as Json[])
     const base = revision
     revision += 1
     events.push({ sequence: revision, operation_id: headers['Idempotency-Key'] })
-    return json({ operation_id: headers['Idempotency-Key'], resource_id: DASHBOARD, base_revision: base, new_revision: revision, event_sequence: revision, committed_at: '2026-11-16T00:00:00Z' })
+    const receipt = { operation_id: headers['Idempotency-Key'], resource_id: DASHBOARD, base_revision: base, new_revision: revision, event_sequence: revision, committed_at: '2026-11-16T00:00:00Z' }
+    receipts[headers['Idempotency-Key']] = receipt
+    if (fault === 'after-commit') return json({ detail: 'Metadata outcome requires reconciliation before retry' }, 503)
+    return json(receipt)
+  }
+  const lookup = /\/viz\/operations\/([0-9a-f-]+)$/.exec(url)
+  if (lookup) {
+    if (!receiptsAvailable) return json({ detail: 'Metadata service is unavailable' }, 503)
+    return receipts[lookup[1]] ? json(receipts[lookup[1]]) : json({ detail: 'Not found' }, 404)
   }
   if (url.includes(`/viz/dashboards/${DASHBOARD}?`)) return json(snapshot())
   const chart = /\/viz\/charts\/([0-9a-f-]+)\?/.exec(url)
@@ -231,6 +247,9 @@ beforeEach(() => {
   events.length = 0
   revision = 4
   publicationId = null
+  replyLost = null
+  receiptsAvailable = true
+  for (const key of Object.keys(receipts)) delete receipts[key]
   answer = defaultAnswer
   charts = {
     [KPI_CHART]: kpiChart(KPI_CHART, 'Units sold', 'units'),
@@ -321,6 +340,112 @@ describe('QA grid', { timeout: 30_000 }, () => {
     await wait(500)
     expect(operations).toHaveLength(0)
     expect(refused).toHaveLength(0)
+  })
+
+  describe('NDV-OPS-001: a save whose reply is lost', () => {
+    async function addNote(screen: Awaited<ReturnType<typeof mount>>, text: string) {
+      await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
+      await screen.getByRole('button', { name: 'Edit' }).click()
+      await screen.getByRole('toolbar', { name: 'Add to dashboard' }).getByRole('button', { name: 'Text' }).click()
+      await page.getByRole('textbox').fill(text)
+      await page.getByRole('button', { name: 'Add text' }).click()
+    }
+    const saves = () => calls.filter(call => call.url.endsWith(`/viz/dashboards/${DASHBOARD}/operations`))
+
+    it('keeps a change that was saved, found by its receipt, and never sends it twice', async () => {
+      replyLost = 'after-commit'
+      const screen = await mount()
+      await addNote(screen, 'Saved before the reply was lost')
+      await expect.element(screen.getByText('Saved before the reply was lost')).toBeVisible()
+      await expect.poll(() => calls.some(call => call.url.includes('/viz/operations/'))).toBe(true)
+      expect(saves()).toHaveLength(1)
+      expect(operations).toHaveLength(1)
+      // The next change builds on the saved revision instead of conflicting with it.
+      await screen.getByRole('toolbar', { name: 'Add to dashboard' }).getByRole('button', { name: 'Text' }).click()
+      await page.getByRole('textbox').fill('Second note')
+      await page.getByRole('button', { name: 'Add text' }).click()
+      await expect.poll(() => operations.length).toBe(2)
+      expect(refused).toHaveLength(0)
+      expect(definition.pages[0].widgets.filter(widget => widget.kind === 'text')).toHaveLength(3)
+    })
+
+    it('takes back a change that was not saved', async () => {
+      replyLost = 'before-commit'
+      const screen = await mount()
+      await addNote(screen, 'Lost before it was saved')
+      await expect.poll(() => calls.some(call => call.url.includes('/viz/operations/'))).toBe(true)
+      await expect.element(screen.getByText('Lost before it was saved')).not.toBeInTheDocument()
+      expect(operations).toHaveLength(0)
+      expect(saves()).toHaveLength(1)
+    })
+
+    it('reloads what is saved when the result cannot be confirmed yet', async () => {
+      replyLost = 'after-commit'
+      receiptsAvailable = false
+      const screen = await mount()
+      const reads = () => calls.filter(call => call.url.includes(`/viz/dashboards/${DASHBOARD}?`)).length
+      await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
+      const before = reads()
+      await addNote(screen, 'Saved while receipts were down')
+      await expect.poll(reads).toBeGreaterThan(before)
+      await expect.element(screen.getByText('All changes saved')).toBeVisible()
+      // The reload shows the server's copy, which has the change; nothing was sent again.
+      await expect.element(screen.getByText('Saved while receipts were down')).toBeVisible()
+      expect(saves()).toHaveLength(1)
+    })
+  })
+
+  it('NDV-GRID-001: dragging Text from the toolbar onto a cell adds one widget there in one save', async () => {
+    const screen = await mount()
+    await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
+    await screen.getByRole('button', { name: 'Edit' }).click()
+    const source = screen.getByRole('toolbar', { name: 'Add to dashboard' }).getByRole('button', { name: 'Text' }).element() as HTMLElement
+    const canvas = document.querySelector<HTMLElement>('.nova-dataviz-canvas')!
+    const box = canvas.getBoundingClientRect()
+    // The middle of the cell in column 5, row 4 (0-based), below the existing widgets.
+    const at = { clientX: box.left + (5.5 * box.width) / 12, clientY: box.top + 4.5 * 72 }
+    const transfer = new DataTransfer()
+    source.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: transfer }))
+    canvas.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: transfer, ...at }))
+    // A full-width text block cannot start at column 5; the preview shows where it will land.
+    await expect.element(screen.getByTestId('drop-preview')).toBeInTheDocument()
+    canvas.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer, ...at }))
+    source.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: transfer }))
+    await expect.element(screen.getByTestId('drop-preview')).not.toBeInTheDocument()
+    expect(operations).toHaveLength(0)
+
+    await page.getByRole('textbox').fill('Dropped note')
+    await page.getByRole('button', { name: 'Add text' }).click()
+    await expect.poll(() => operations.length).toBe(1)
+    const changes = operations[0].changes as { op: string; widget: { widget_id: string } }[]
+    expect(changes).toHaveLength(1)
+    expect(changes[0]).toMatchObject({ op: 'widget.add', page_id: PAGE,
+      widget: { kind: 'text', text: 'Dropped note', layout: { x: 0, y: 4, w: 12, h: 2 } } })
+    await expect.element(screen.getByText('Dropped note')).toBeVisible()
+    expect(geometry(changes[0].widget.widget_id)).toEqual({ x: 0, y: 4, w: 12, h: 2 })
+  })
+
+  it('NDV-GRID-001: a dropped KPI previews its own size at the cell and opens the chart builder', async () => {
+    const screen = await mount()
+    await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
+    await screen.getByRole('button', { name: 'Edit' }).click()
+    const toolbar = screen.getByRole('toolbar', { name: 'Add to dashboard' })
+    const source = toolbar.getByRole('button', { name: 'KPI' }).element() as HTMLElement
+    const canvas = document.querySelector<HTMLElement>('.nova-dataviz-canvas')!
+    const box = canvas.getBoundingClientRect()
+    const transfer = new DataTransfer()
+    source.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: transfer }))
+    const at = { clientX: box.left + (8.5 * box.width) / 12, clientY: box.top + 3.5 * 72 }
+    canvas.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: transfer, ...at }))
+    const preview = screen.getByTestId('drop-preview')
+    await expect.element(preview).toBeInTheDocument()
+    // A KPI is three columns by two rows, placed at the cell under the pointer.
+    const shown = (preview.element() as HTMLElement).style
+    expect([parseFloat(shown.left), parseFloat(shown.width)]).toEqual([expect.closeTo(800 / 12, 3), 25])
+    expect([shown.top, shown.height]).toEqual([`${3 * 72}px`, `${2 * 72}px`])
+    canvas.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer, ...at }))
+    await expect.element(page.getByRole('heading', { name: 'New chart' })).toBeVisible()
+    expect(operations).toHaveLength(0)
   })
 
   it('NDV-GRID-011: Duplicate adds a new widget ID that shares the original chart', async () => {

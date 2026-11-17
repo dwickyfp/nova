@@ -818,6 +818,8 @@ def build_chart(
             chart_id=chart_id, title=spec.title, dataset_id=dataset_id,
             dataset_revision=revision, visual=visual, encoding=encoding, sort=sort,
             style=style,
+            # The chart builder saves this too; both show the first rows with a warning.
+            result_overflow="truncate_with_warning",
         )
     except ValidationError as exc:
         reason = exc.errors(include_input=False)[0].get("msg", "invalid chart")
