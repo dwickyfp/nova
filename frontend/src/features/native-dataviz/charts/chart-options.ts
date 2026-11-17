@@ -224,7 +224,9 @@ export function buildChartOption(chart: ChartDefinition, result: Result, tokens:
     })
     const funnel = chart.visual === 'funnel'
     const other = !funnel && result.truncated && remainder !== null
-    if (other) data.push({ name: OTHER, value: remainder, itemStyle: { color: tokens.mark, ...(chosen !== null ? { opacity: 0.3 } : {}) } })
+    // A real value named Other keeps its name; the combined slice says what it is.
+    const otherName = data.some(item => item.name === OTHER) ? `${OTHER} (rest)` : OTHER
+    if (other) data.push({ name: otherName, value: remainder, itemStyle: { color: tokens.mark, ...(chosen !== null ? { opacity: 0.3 } : {}) } })
     // Shares are only true of the whole: a capped pie without Other shows names alone.
     const shares = !result.truncated || other
     return {

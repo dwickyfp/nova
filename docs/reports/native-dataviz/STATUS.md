@@ -832,3 +832,25 @@ OUT_OF_SCOPE.
     The file is unchanged this round.
 - **CI run 44026373467 (`20d3ccaa`, ACL-018/020):** all seven jobs passed,
   PG17 and the real engine included.
+- **CI waived for now (2026-11-17, user decision):** GitHub Actions is
+  rate-limited, so round 6 is verified locally instead.
+  - The CI run for `4626f043` was started but not followed; it is not
+    evidence.
+  - **Local PG17 metadata suite:** the CI file list plus
+    `test_metadata_viz_qa/comments/export`, run on the disposable fixture
+    (port 55433), took 36 minutes. Results: 1,104 passed, 0 failed,
+    8 skipped.
+  - All 8 skips are PgBouncer tests: seven in `test_metadata_pgbouncer.py`
+    and one in `test_metadata_stages.py` (transaction pooling). They need
+    the pinned `NOVA_TEST_PGBOUNCER_BINARY` that CI builds in the
+    `metadata-test` image. They are not passes and stay open until CI or
+    that image runs them.
+  - **Not run locally:**
+    - The full real-engine suite. It needs a test-stack swap or temporary
+      users on the dev engine; round 6 changes no backend data-access, SQL,
+      auth or storage path.
+    - Grammar drift and the notebook image; nothing they cover changed.
+- **Review fix after `4626f043`:** a real value named Other no longer shares
+  a name with the combined slice; the added slice becomes **Other (rest)**.
+  Covered by a test, and chart tests (24) pass.
+

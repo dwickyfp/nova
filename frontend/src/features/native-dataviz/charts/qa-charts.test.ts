@@ -226,6 +226,12 @@ describe('NDV-CHART-009 pie with more values than slices', () => {
     expect(option.series[0].label.formatter).toBe('{b}: {d}%')
   })
 
+  it('never merges the rest with a real value named Other', () => {
+    const named = { ...top3, rows: [[s('Other'), d('500')], ...top3.rows.slice(1)] }
+    const option = buildChartOption(pie('sum'), named, tokens, null, 400, 100) as Pie
+    expect(option.series[0].data.map(item => item.name)).toEqual(['Other', 'Bandung', 'Medan', 'Other (rest)'])
+  })
+
   it('has no Other when the shown slices already make up the whole', () => {
     expect(remainderOf(top3, result([meas('m0', 'revenue')], [[d('900')]]))).toBeNull()
     expect(remainderOf(top3, undefined)).toBeNull()
