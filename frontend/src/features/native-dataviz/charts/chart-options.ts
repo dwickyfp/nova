@@ -72,11 +72,16 @@ function axisBase(tokens: VizTokens) {
   }
 }
 
+/** Tooltips take the theme's surface and text, so a dark page has a dark tooltip. */
+function tooltipTheme(tokens: VizTokens) {
+  return { backgroundColor: tokens.surface, borderColor: tokens.grid, textStyle: { color: tokens.text } }
+}
+
 function common(tokens: VizTokens, style: Style | undefined, legend: boolean) {
   return {
     animationDuration: 300,
     textStyle: { color: tokens.text, fontFamily: 'inherit' },
-    tooltip: { trigger: 'item', confine: true, valueFormatter: (value: unknown) =>
+    tooltip: { ...tooltipTheme(tokens), trigger: 'item', confine: true, valueFormatter: (value: unknown) =>
       typeof value === 'number' ? formatNumber(value) : String(value ?? '') },
     legend: legend && style?.show_legend !== false
       ? { type: 'scroll', bottom: 0, textStyle: { color: tokens.muted }, icon: 'roundRect', itemWidth: 10, itemHeight: 10 }
@@ -176,7 +181,7 @@ export function buildChartOption(chart: ChartDefinition, result: Result, tokens:
     return {
       ...common(tokens, style, series.length > 1),
       color: colors,
-      tooltip: { trigger: 'axis', confine: true, axisPointer: { type: horizontal ? 'shadow' : 'line' },
+      tooltip: { ...tooltipTheme(tokens), trigger: 'axis', confine: true, axisPointer: { type: horizontal ? 'shadow' : 'line' },
         valueFormatter: (value: unknown) => typeof value === 'number' ? formatNumber(value) : '–' },
       grid: { left: 8, right: 16, top: 24, bottom: (series.length > 1 ? 36 : 8) + (categoryAxis.name && !horizontal ? 20 : 0), outerBoundsMode: 'same', outerBoundsContain: 'axisLabel' },
       xAxis: horizontal ? valueAxes : categoryAxis,
@@ -265,7 +270,7 @@ export function buildChartOption(chart: ChartDefinition, result: Result, tokens:
     const values = data.map(item => item[2] ?? 0)
     return {
       ...common(tokens, style, false),
-      tooltip: { position: 'top', confine: true },
+      tooltip: { ...tooltipTheme(tokens), position: 'top', confine: true },
       grid: { left: 8, right: 16, top: 8, bottom: 48, outerBoundsMode: 'same', outerBoundsContain: 'axisLabel' },
       xAxis: { ...axisBase(tokens), type: 'category', data: xs, splitArea: { show: false } },
       yAxis: { ...axisBase(tokens), type: 'category', data: ys },
@@ -303,7 +308,7 @@ export function buildChartOption(chart: ChartDefinition, result: Result, tokens:
     for (const point of points) counts[Math.min(bins - 1, Math.floor((point.value - min) / width))] += point.count
     return {
       ...common(tokens, style, false), color: [tokens.mark],
-      tooltip: { trigger: 'axis', confine: true },
+      tooltip: { ...tooltipTheme(tokens), trigger: 'axis', confine: true },
       grid: { left: 8, right: 16, top: 16, bottom: 8, outerBoundsMode: 'same', outerBoundsContain: 'axisLabel' },
       xAxis: { ...axisBase(tokens), type: 'category', data: counts.map((_, i) => `${formatNumber(min + i * width, 'compact')}–${formatNumber(min + (i + 1) * width, 'compact')}`) },
       yAxis: { ...axisBase(tokens), type: 'value', name: axisTitles ? 'Rows' : undefined },

@@ -1,6 +1,6 @@
 # Native Dataviz delivery record
 
-Status: **in progress; not production ready; no cutover**. Release QA round 5 (2026-11-17): 177 of 254 pass, 17 out of scope, 60 HIGH open.
+Status: **in progress; not production ready; no cutover**. Release QA round 5 (2026-11-17): 181 of 254 pass, 17 out of scope, 56 HIGH open.
 Branch: `feat/dataviz-native`.
 Baseline: `1ee12694e0ecb6ecfd8135965943be08f5195967`.
 
@@ -755,3 +755,21 @@ AGENT-001, OSS-001 and OSS-002.
     223 files and 1,948 tests, all passed.
   - **CI run 44023243065 (`6aa4dcf2`):** Backend static passed, including the
     license gate on Linux, Ruff and mypy. Frontend passed.
+- **Round 5, fourth batch:**
+  - **Built:** keyboard access to chart marks (INTER-011). A chart that can
+    filter is a Tab stop with a visible focus ring. The arrow keys move between
+    marks, each one is announced, Enter does what a click does, and Escape
+    leaves the mark.
+  - **Defects fixed:**
+    - Tooltips were white in dark mode; they now use the theme's surface and
+      text.
+    - A chosen filter value that is no longer in the data vanished from the
+      list. It now stays listed, ticked and marked **Not in the data now**
+      (FILTER-016). The test fails against the old code.
+    - The filter search field drew its own box in dark mode; it no longer does.
+  - **New passes:** A11Y-004 (theme switch with a chart drawn; contrast:
+    light 5.20 and 14.63, dark 7.53 and 17.09) and FILTER-018 (200-value cap,
+    note, server search).
+  - **Checks:** visual checks in light and dark. `/docs` dataviz 08 updated.
+    Frontend: 224 files and 1,952 tests, plus lint, build and bundle checks,
+    all passed.

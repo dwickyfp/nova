@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ECharts, EChartsCoreOption } from 'echarts/core'
 import { readLightToken, readToken } from '@/lib/read-token'
+import { cn } from '@/lib/utils'
 
 export type VizTokens = {
   series: string[]
@@ -145,6 +146,66 @@ export function EChartHost({ build, label, onSelect, className }: {
     return () => { cancelled = true }
   }, [build, label, theme, width])
 
+  // Keyboard: the arrow keys move between marks and Enter or Space acts as a click on the mark.
+  const [active, setActive] = useState<{ index: number; text: string } | null>(null)
+  const marks = () => {
+    const data = (instance.current as unknown as { getModel?: () => { getSeriesByIndex: (index: number) => { getData: () => MarkData } | undefined } } | null)
+      ?.getModel?.().getSeriesByIndex(0)?.getData()
+    return data && data.count() > 0 ? data : null
+  }
+  const clear = () => {
+    instance.current?.dispatchAction({ type: 'downplay', seriesIndex: 0 })
+    instance.current?.dispatchAction({ type: 'hideTip' })
+    setActive(null)
+  }
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const chart = instance.current
+    const data = marks()
+    if (!chart || !data) return
+    const count = data.count()
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key]
+    if (step !== undefined) {
+      event.preventDefault()
+      const index = active === null ? (step > 0 ? 0 : count - 1) : (active.index + step + count) % count
+      chart.dispatchAction({ type: 'downplay', seriesIndex: 0 })
+      chart.dispatchAction({ type: 'highlight', seriesIndex: 0, dataIndex: index })
+      chart.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: index })
+      setActive({ index, text: `${data.getName(index) || `Item ${index + 1}`}, ${index + 1} of ${count}` })
+    } else if ((event.key === 'Enter' || event.key === ' ') && active) {
+      event.preventDefault()
+      const at = markCenter(data.getItemLayout(active.index))
+      select.current?.({ seriesIndex: 0, dataIndex: active.index, name: data.getName(active.index), ...at,
+        additive: event.shiftKey || event.ctrlKey || event.metaKey })
+    } else if (event.key === 'Escape' && active) {
+      clear()
+    }
+  }
+
   if (failed) return <p role='alert' className='p-3 text-sm text-muted-foreground'>The chart could not be drawn.</p>
-  return <div ref={container} role='img' aria-label={label} className={className ?? 'size-full min-h-0 min-w-0'} />
+  const drawing = <div ref={container} role='img' aria-label={label} className={onSelect ? 'size-full min-h-0 min-w-0' : className ?? 'size-full min-h-0 min-w-0'} />
+  if (!onSelect) return drawing
+  return <div role='group' tabIndex={0} aria-label={`${label}. Use the arrow keys to move between marks and Enter to select one.`}
+    onKeyDown={onKeyDown} onBlur={() => { if (active) clear() }}
+    className={cn(className ?? 'size-full min-h-0 min-w-0', 'rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring')}>
+    {drawing}
+    <span aria-live='polite' className='sr-only'>{active?.text ?? ''}</span>
+  </div>
+}
+
+type MarkData = { count: () => number; getName: (index: number) => string; getItemLayout: (index: number) => unknown }
+
+/** Where a mark is drawn, so the action menu opens beside it as it does for a click. */
+function markCenter(layout: unknown): { x?: number; y?: number } {
+  if (Array.isArray(layout) && typeof layout[0] === 'number') return { x: layout[0], y: layout[1] as number }
+  const box = layout as { x?: number; y?: number; width?: number; height?: number; cx?: number; cy?: number
+    r?: number; r0?: number; startAngle?: number; endAngle?: number } | null
+  if (box && typeof box.x === 'number' && typeof box.width === 'number') {
+    return { x: box.x + box.width / 2, y: (box.y ?? 0) + (box.height ?? 0) / 2 }
+  }
+  if (box && typeof box.cx === 'number' && typeof box.cy === 'number') {
+    const angle = ((box.startAngle ?? 0) + (box.endAngle ?? 0)) / 2
+    const radius = ((box.r ?? 0) + (box.r0 ?? 0)) / 2
+    return { x: box.cx + radius * Math.cos(angle), y: box.cy + radius * Math.sin(angle) }
+  }
+  return {}
 }

@@ -39,3 +39,67 @@ describe('NDV-FILTER-008 true/false control', () => {
     expect(changes).toEqual([{ kind: 'boolean', value: null }])
   })
 })
+
+describe('Multi-value filter list', () => {
+  const regions = {
+    ...definition,
+    filters: [{ filter_id: 'aaaaaaaa-0000-4000-8000-0000000000c4', title: 'Region', kind: 'multi_value',
+      field: { dataset_id: DATASET, dataset_revision: 1, field_id: 'region' }, scope: { kind: 'global' }, mappings: [], defaults: [],
+      allow_all: true, include_null: false, searchable: true, depends_on: [] }],
+  } as unknown as DashboardDefinition
+  const column = { key: 'd0', name: 'region', logical_type: 'string', role: 'dimension', field_id: 'region' }
+  const asked: { filters?: unknown; dimensions?: unknown[] }[] = []
+  function serve(names: string[], truncated = false) {
+    asked.length = 0
+    vi.stubGlobal('fetch', vi.fn(async (url: string, options: RequestInit = {}) => {
+      // The filter reads the dataset definition for the field's type: text fields can be searched.
+      if (!options.body && url.includes(`/viz/datasets/${DATASET}?`)) {
+        return new Response(JSON.stringify({ resource_id: DATASET, revision: 1, metadata_revision: 1, grants_revision: 1, publication_id: null,
+          definition: { dataset_id: DATASET, title: 'Orders', schema_fingerprint: 'a'.repeat(64),
+            fields: [{ field_id: 'region', name: 'Region', source_column: 'region', logical_type: 'string', physical_type: 'VARCHAR(32)', semantic_role: 'dimension', nullable: true }],
+            source: { kind: 'table', catalog: 'default_catalog', database: 'Sales', object_name: 'Orders', physical_id: '1001' } } }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      const body = JSON.parse(String(options.body ?? '{}')) as { dimensions?: unknown[] }
+      if (body.dimensions) asked.push(body)
+      return new Response(JSON.stringify({ dataset_id: DATASET, revision: 1, truncated, columns: [column],
+        rows: names.map(name => [{ type: 'string', value: name }]) }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+  }
+  async function open(values: Record<string, FilterValue>, changes: (FilterValue | undefined)[] = []) {
+    const screen = await render(<QueryClientProvider client={new QueryClient()}>
+      <FilterBar definition={regions} values={values} onChange={(_, value) => changes.push(value)} crossFilters={[]}
+        onClearCross={() => undefined} editing={false} onEdit={() => undefined} draft={false} />
+    </QueryClientProvider>)
+    await screen.getByRole('combobox', { name: 'Region filter' }).or(screen.getByRole('button', { name: 'Region filter' })).click()
+    return screen
+  }
+
+  it('NDV-FILTER-016: a chosen value the data no longer has stays chosen, marked, and can be removed', async () => {
+    serve(['East', 'West'])
+    const changes: (FilterValue | undefined)[] = []
+    const saved = { kind: 'members', values: [{ type: 'string', value: 'North' }, { type: 'string', value: 'East' }] } as FilterValue
+    await open({ 'aaaaaaaa-0000-4000-8000-0000000000c4': saved }, changes)
+    const north = page.getByRole('option', { name: /North/ })
+    await expect.element(north).toHaveAttribute('aria-selected', 'true')
+    await expect.element(north).toHaveTextContent('Not in the data now')
+    await expect.element(page.getByRole('option', { name: 'East' })).toHaveAttribute('aria-selected', 'true')
+    expect(page.getByRole('option').elements().map(item => item.textContent)).toEqual(['NorthNot in the data now', 'East', 'West'])
+    // Nothing changed until the viewer acts; removing it keeps the other choice.
+    expect(changes).toEqual([])
+    await north.click()
+    expect(changes).toEqual([{ kind: 'members', values: [{ type: 'string', value: 'East' }] }])
+  })
+
+  it('NDV-FILTER-018: a long list shows the first 200 values, says so, and searches on the server', async () => {
+    serve(Array.from({ length: 200 }, (_, index) => `City ${String(index).padStart(3, '0')}`), true)
+    await open({})
+    await expect.element(page.getByText('Showing the first 200 values. Search to narrow the list.')).toBeVisible()
+    expect(page.getByRole('option').elements()).toHaveLength(200)
+    expect(asked[0]).toMatchObject({ limit: 200 })
+    await page.getByRole('textbox', { name: 'Search Region' }).fill('City 19')
+    await expect.poll(() => asked.length).toBeGreaterThan(1)
+    expect(asked[asked.length - 1]).toMatchObject({ limit: 200,
+      filters: { expression: { type: 'predicate', op: 'like_literal', values: [{ type: 'string', value: 'City 19' }] } } })
+  })
+})

@@ -53,6 +53,22 @@ function MembersControl({ filter, value, onChange, field, draft }: ControlProps)
     onChange(next.length ? { kind: 'members', values: next } : undefined)
     if (single) setOpen(false)
   }
+  // A chosen value the data no longer has stays chosen and visible, never silently dropped.
+  // Only a complete, unsearched list can show that a value is missing.
+  const listed = new Set(options.data?.rows.map(row => key(row[0])))
+  const missing = options.data && !options.data.truncated && !search.trim()
+    ? selected.filter(item => !listed.has(key(item))) : []
+  const option = (cell: Scalar | null, note?: string) => {
+    const active = selected.some(item => key(item) === key(cell))
+    return <button key={key(cell)} type='button' role='option' aria-selected={active} onClick={() => toggle(cell)}
+      className='flex min-h-9 w-full items-center gap-2 rounded px-2 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none'>
+      <span className={cn('flex size-4 shrink-0 items-center justify-center rounded-sm border', active && 'border-primary bg-primary text-primary-foreground')}>
+        {active && <Check className='size-3' />}
+      </span>
+      <span className='min-w-0 truncate'>{cellLabel(cell)}</span>
+      {note && <span className='ml-auto shrink-0 text-xs text-muted-foreground'>{note}</span>}
+    </button>
+  }
   return <Popover open={open} onOpenChange={setOpen}>
     <PopoverTrigger asChild>
       <Button variant='outline' size='sm' className={CHIP} aria-label={`${filter.title} filter`}>
@@ -64,23 +80,16 @@ function MembersControl({ filter, value, onChange, field, draft }: ControlProps)
       {text && <div className='flex items-center gap-2 border-b px-3'>
         <Search className='size-4 text-muted-foreground' aria-hidden />
         <Input aria-label={`Search ${filter.title}`} value={search} onChange={event => setSearch(event.target.value)}
-          placeholder='Search values' className='h-10 border-0 px-0 shadow-none focus-visible:ring-0' />
+          placeholder='Search values' className='h-10 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0' />
       </div>}
       <div role='listbox' aria-label={`${filter.title} values`} aria-multiselectable={!single} className='max-h-72 overflow-y-auto p-1'>
         {options.isPending ? <p role='status' className='p-3 text-sm text-muted-foreground'>Loading values…</p>
           : options.isError ? <p role='alert' className='p-3 text-sm text-muted-foreground'>Values are unavailable with your current role.</p>
-            : !options.data.rows.length ? <p className='p-3 text-sm text-muted-foreground'>No values found.</p>
-              : options.data.rows.map(row => {
-                const cell = row[0]
-                const active = selected.some(item => key(item) === key(cell))
-                return <button key={key(cell)} type='button' role='option' aria-selected={active} onClick={() => toggle(cell)}
-                  className='flex min-h-9 w-full items-center gap-2 rounded px-2 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none'>
-                  <span className={cn('flex size-4 items-center justify-center rounded-sm border', active && 'border-primary bg-primary text-primary-foreground')}>
-                    {active && <Check className='size-3' />}
-                  </span>
-                  <span className='truncate'>{cellLabel(cell)}</span>
-                </button>
-              })}
+            : !options.data.rows.length && !missing.length ? <p className='p-3 text-sm text-muted-foreground'>No values found.</p>
+              : <>
+                {missing.map(cell => option(cell, 'Not in the data now'))}
+                {options.data.rows.map(row => option(row[0]))}
+              </>}
         {options.data?.truncated && <p className='px-2 py-1 text-xs text-muted-foreground'>Showing the first 200 values. Search to narrow the list.</p>}
       </div>
       {selected.length > 0 && <div className='border-t p-1'>

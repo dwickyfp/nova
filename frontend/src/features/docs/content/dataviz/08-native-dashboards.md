@@ -183,6 +183,11 @@ larger screens.
 Filters apply to every chart built on the same dataset. The values in a list
 come from your role's own data. **Reset** clears all filters and selections.
 
+A list shows up to 200 values. When there are more, it says so; type in
+**Search values** to find the rest. A value you chose that is no longer in the
+data stays chosen and is marked **Not in the data now**. Untick it to remove
+it.
+
 A **True / false** filter offers **All**, **True**, **False** and **No value**.
 **True** and **False** never include rows where the field is empty; choose
 **No value** to see only those rows.
@@ -273,6 +278,10 @@ shown exactly as written and never change the dashboard or its data.
 
 - Every drawn chart also carries a table of its rows for screen readers, so
   categories and values never depend on colour alone.
+- A chart you can click to filter can also be used from the keyboard. Press
+  Tab to reach it, then use the arrow keys to move from bar to bar or slice to
+  slice. A screen reader announces each one. Press **Enter** to do what a click
+  does, and **Escape** to leave the mark.
 - When your system is set to reduce motion, charts appear without animation
   and other people's pointers jump instead of gliding.
 - In **Edit**, press Tab to move from widget to widget; the focused widget is

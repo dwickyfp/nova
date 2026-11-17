@@ -570,6 +570,37 @@ describe('QA filters and interactions', { timeout: 30_000 }, () => {
     await expect.poll(() => barOpacity(chart)).toEqual([1, 0.3])
   })
 
+  it('NDV-INTER-011: the keyboard reaches a mark and Enter does what a click does', async () => {
+    permissionList = ['view', 'interact']
+    publicationId = '99999999-0000-4000-8000-000000000001'
+    setWidgets([
+      chartWidget(BAR_WIDGET, BAR_CHART, { x: 0, y: 0, w: 6, h: 4 }),
+      chartWidget(KPI_WIDGET, KPI_CHART, { x: 6, y: 0, w: 3, h: 2 }),
+    ])
+    const screen = await mount()
+    await expect.element(screen.getByTestId('kpi-value')).toHaveTextContent('15,257')
+    const { chart } = await echartsIn(BAR_WIDGET)
+    const group = screen.getByRole('group', { name: /Revenue by region: bar chart\. Use the arrow keys/ })
+    ;(group.element() as HTMLElement).focus()
+    expect(document.activeElement).toBe(group.element())
+    await userEvent.keyboard('{ArrowRight}')
+    await expect.element(group.getByText('East, 1 of 2')).toBeInTheDocument()
+    await userEvent.keyboard('{ArrowRight}')
+    await expect.element(group.getByText('West, 2 of 2')).toBeInTheDocument()
+    await userEvent.keyboard('{ArrowLeft}')
+    await expect.element(group.getByText('East, 1 of 2')).toBeInTheDocument()
+    await userEvent.keyboard('{Enter}')
+    // The same result as clicking the East bar: one selection, the KPI re-queried with it, the source dimmed.
+    await expect.element(screen.getByRole('button', { name: 'Clear selection East' })).toBeVisible()
+    await expect.element(screen.getByTestId('kpi-value')).toHaveTextContent('4,000')
+    await expect.poll(() => barOpacity(chart)).toEqual([1, 0.3])
+    // Escape leaves the mark; a chart that cannot filter is not a keyboard stop.
+    ;(group.element() as HTMLElement).focus()
+    await userEvent.keyboard('{ArrowRight}{Escape}')
+    await expect.element(group.getByText('East, 1 of 2')).not.toBeInTheDocument()
+    expect(item(KPI_WIDGET).querySelector('[role="group"][tabindex="0"]')).toBeNull()
+  })
+
   it('NDV-FILTER-021 / NDV-INTER-010: a cross-filter highlights its source without re-querying it, and reset clears only viewer state', async () => {
     permissionList = ['view', 'interact']
     publicationId = '99999999-0000-4000-8000-000000000001'
