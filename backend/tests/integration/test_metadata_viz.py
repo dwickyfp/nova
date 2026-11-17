@@ -44,10 +44,19 @@ from app.modules.viz.contracts.authoring import (
 from app.modules.viz.contracts.commands import (
     DeleteRequest,
     GrantsReplace,
+    LayoutChange,
+    Operation,
+    Placement,
     PublicationRequest,
     RestoreRequest,
 )
-from app.modules.viz.contracts.dashboards import DashboardDefinition, DatasetReference, Page
+from app.modules.viz.contracts.dashboards import (
+    DashboardDefinition,
+    DatasetReference,
+    Layout,
+    Page,
+    TextWidget,
+)
 from app.modules.viz.contracts.datasets import SqlSource
 from app.modules.viz.contracts.filters import FilterDefinition
 from app.modules.viz.dataset_service import NativeDatasetService
@@ -1371,6 +1380,72 @@ async def test_two_edits_have_one_winner_and_one_revision_conflict(viz):
     assert results.count("conflict") == 1
     assert (await viz.inspect("SELECT count(*) AS n FROM nova_meta.viz_revisions"))[0]["n"] == 2
     assert (await viz.inspect("SELECT count(*) AS n FROM nova_meta.viz_outbox"))[0]["n"] == 2
+
+
+async def test_twenty_concurrent_layout_editors_lose_no_acknowledged_operation(viz):
+    """NDV-PERF-005: every acknowledged edit owns one revision; losers get conflicts."""
+    page_id, widget_id = uuid4(), uuid4()
+    note = TextWidget(widget_id=widget_id, text="Notes",
+                      layout=Layout(x=0, y=0, w=4, h=4))
+    document = DashboardDefinition(dashboard_id=uuid4(), title="Sales",
+                                   pages=(Page(page_id=page_id, title="Page 1", widgets=(note,)),))
+    await create(viz, document)
+    identity = document.dashboard_id
+    editors = 20
+    barrier = asyncio.Barrier(editors)
+    conflicts = 0
+
+    async def editor(index):
+        nonlocal conflicts
+        operation = Operation(operation_id=uuid4(), expected_revision=1, changes=(
+            LayoutChange(page_id=page_id, placements=(Placement(
+                widget_id=widget_id, layout=Layout(x=index % 9, y=index, w=3, h=2)),)),))
+        await barrier.wait()
+        for _ in range(editors * 3):
+            try:
+                async with viz.transaction() as (repo, _):
+                    return operation, index, await repo.apply(identity, operation)
+            except MetadataConflict:
+                conflicts += 1
+                async with viz.transaction() as (repo, _):
+                    head = await repo.read(identity, draft=True)
+                operation = operation.model_copy(
+                    update={"expected_revision": head["revision"]})
+        raise AssertionError(f"editor {index} never committed")
+
+    acknowledged = await asyncio.gather(*(editor(index) for index in range(editors)))
+    assert conflicts >= editors - 1
+    revisions = sorted(receipt["new_revision"] for _, _, receipt in acknowledged)
+    assert revisions == list(range(2, editors + 2))
+    rows = await viz.inspect(
+        "SELECT o.operation_id,o.base_revision,o.new_revision,count(x.event_id) AS events "
+        "FROM nova_meta.viz_operations o LEFT JOIN nova_meta.viz_outbox x "
+        "ON x.operation_id=o.operation_id WHERE o.resource_id=%s AND o.kind='edit' "
+        "GROUP BY o.operation_id", (identity,))
+    stored = {row["operation_id"]: row for row in rows}
+    assert len(stored) == editors
+    for operation, _, receipt in acknowledged:
+        row = stored[operation.operation_id]
+        assert row["new_revision"] == receipt["new_revision"] == row["base_revision"] + 1
+        assert row["base_revision"] == operation.expected_revision
+        assert row["events"] == 1
+    totals = await viz.inspect(
+        "SELECT (SELECT count(*) FROM nova_meta.viz_revisions WHERE resource_id=%s) AS revisions,"
+        " (SELECT count(*) FROM nova_meta.viz_outbox WHERE resource_id=%s) AS events,"
+        " (SELECT count(*) FROM nova_meta.viz_outbox x WHERE NOT EXISTS (SELECT 1 FROM"
+        "  nova_meta.viz_operations o WHERE o.operation_id=x.operation_id)) AS orphans,"
+        " (SELECT draft_revision FROM nova_meta.viz_resources WHERE resource_id=%s) AS head",
+        (identity, identity, identity))
+    assert totals == [{"revisions": editors + 1, "events": editors + 1, "orphans": 0,
+                       "head": editors + 1}]
+    last = max(acknowledged, key=lambda item: item[2]["new_revision"])
+    async with viz.transaction() as (repo, _):
+        final = (await repo.read(identity, draft=True))["definition"]
+        assert final.pages[0].widgets[0].layout == Layout(x=last[1] % 9, y=last[1], w=3, h=2)
+        replay = await repo.apply(identity, acknowledged[0][0])
+    assert replay == acknowledged[0][2]
+    assert (await viz.inspect("SELECT count(*) AS n FROM nova_meta.viz_operations "
+                              "WHERE resource_id=%s", (identity,)))[0]["n"] == editors + 1
 
 
 async def test_role_grant_is_active_only_and_workspace_membership_is_separate(viz):

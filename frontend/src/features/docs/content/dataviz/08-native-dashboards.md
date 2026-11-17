@@ -303,6 +303,9 @@ shown exactly as written and never change the dashboard or its data.
   **Shift** with an arrow key to resize it. A screen reader announces the new
   position, or that another widget is in the way.
 - Closing the **Filters** window returns you to the button that opened it.
+- Every button, field and widget you reach with Tab shows a focus ring and has
+  a name a screen reader can read. With a high-contrast theme (forced colours)
+  turned on, the ring is drawn in your system's highlight colour.
 
 ## See who else is here
 

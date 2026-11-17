@@ -1,6 +1,6 @@
 # Native Dataviz delivery record
 
-Status: **in progress; not production ready; no cutover**. Release QA round 6 (2026-11-17): 189 of 254 pass, 17 out of scope, 48 HIGH open.
+Status: **in progress; not production ready; no cutover**. Release QA round 7 (2026-11-17): 192 of 254 pass, 17 out of scope, 45 HIGH open.
 Branch: `feat/dataviz-native`.
 Baseline: `1ee12694e0ecb6ecfd8135965943be08f5195967`.
 
@@ -853,4 +853,41 @@ OUT_OF_SCOPE.
 - **Review fix after `4626f043`:** a real value named Other no longer shares
   a name with the combined slice; the added slice becomes **Other (rest)**.
   Covered by a test, and chart tests (24) pass.
+
+## Release QA round 7 (2026-11-17)
+
+Three more scenarios pass: 192 PASS, 45 NOT_RUN (all HIGH) and 17
+OUT_OF_SCOPE.
+
+- **Defect fixed (A11Y-009):** with a high-contrast theme (forced colours),
+  controls whose focus indicator is a ring, such as the page tabs, showed no
+  focus at all, because the browser drops box shadows in that mode. A
+  forced-colours rule now draws a Highlight outline on every focused control.
+  A browser test tabs through a dashboard in view and edit mode. Every stop
+  must have a name and a visible outline or ring. The test then repeats with
+  forced colours emulated in Chromium, and it fails without the fix. No live
+  page check was done because the dev app was not running.
+- **CACHE-010:** a filter change while a later table page is still loading
+  starts the filtered query from row 1. The late page is then ignored: its
+  rows never appear and the pager does not move.
+- **PERF-005 (CAS integrity, PG17):** 20 editors apply layout changes to one
+  dashboard at the same revision. Losers get revision conflicts and retry on
+  the new head. All 20 acknowledged operations own revisions 2–21 exactly
+  once, each with one outbox event and none orphaned. Replaying an
+  acknowledged operation returns its receipt. Passed 6 of 6 runs. Timing on
+  declared hardware is not measured.
+- **Gates (round 7, local; CI still waived):**
+  - **Backend:** changed-file Ruff and full-application mypy pass. The whole
+    `test_metadata_viz.py` file passes on PG17 (87 tests). No application
+    code changed, so the unit and engine suites were not rerun.
+  - **Frontend:**
+    - attempt 1 failed at build: the new test called the CDP session's
+      `send`, which the shared types do not declare. Fixed with a local cast;
+      a provider type reference was tried first and dropped because it
+      changed global timer types;
+    - attempt 2: lint, build, bundle, notices and licenses passed. Coverage
+      had 3 timeouts at load average 15 from other builds on the host (CHART-013,
+      A11Y-007, REVIS-010). The three files then passed 35/35 on their own,
+      and the accessibility file passed in shuffled order;
+    - attempt 3: coverage passed 224 files and 1,972 tests.
 

@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { page, userEvent } from 'vitest/browser'
+import { cdp, page, userEvent } from 'vitest/browser'
 import { cleanup, render } from 'vitest-browser-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAuthStore } from '@/stores/auth-store'
@@ -183,4 +183,62 @@ describe('QA accessibility', { timeout: 30_000 }, () => {
     await expect.element(page.getByRole('dialog', { name: 'Publish dashboard' })).toBeVisible()
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(768)
   })
+
+  it('NDV-A11Y-009: every control reached by Tab is named and visibly focused, also in forced colours', async () => {
+    const screen = await mount(1200)
+    await expect.element(screen.getByRole('button', { name: 'Edit' })).toBeVisible()
+    const nameOf = (element: Element) => (element.getAttribute('aria-label')
+      ?? (element.getAttribute('aria-labelledby') ? document.getElementById(element.getAttribute('aria-labelledby')!)?.textContent : null)
+      ?? element.textContent ?? '').trim()
+    const indicator = (element: Element) => {
+      const style = getComputedStyle(element)
+      return { outline: style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0, ring: style.boxShadow !== 'none' && style.boxShadow !== '' }
+    }
+    /** One full Tab cycle through the dashboard, from the top. */
+    const walk = async () => {
+      ;(document.activeElement as HTMLElement | null)?.blur()
+      const seen: { name: string; outline: boolean; ring: boolean }[] = []
+      for (let step = 0; step < 60; step += 1) {
+        await userEvent.keyboard('{Tab}')
+        const focused = document.activeElement
+        if (!focused || focused === document.body || !screen.container.contains(focused)) continue
+        if (seen.length && nameOf(focused) === seen[0].name) break
+        seen.push({ name: nameOf(focused), ...indicator(focused) })
+      }
+      return seen
+    }
+    const check = (stops: Awaited<ReturnType<typeof walk>>, forced: boolean) => {
+      for (const item of stops) {
+        expect(item.name, 'a focusable control without a name').not.toBe('')
+        // Forced colours drop shadows, so there the focus must be an outline.
+        expect(forced ? item.outline : item.outline || item.ring, `no focus indicator on ${item.name}`).toBe(true)
+      }
+    }
+    // The Playwright provider's CDP session; its typing is only declared by
+    // that provider's package, which would also change global timer types.
+    const session = cdp() as unknown as {
+      send(method: string, params?: object): Promise<unknown>
+    }
+    const forcedColours = (value: 'active' | 'none') => session.send('Emulation.setEmulatedMedia', { features: [{ name: 'forced-colors', value }] })
+
+    // Viewing: the header and page controls.
+    const viewing = await walk()
+    expect(viewing.map(item => item.name)).toEqual(expect.arrayContaining(['Back to dashboards', 'Refresh data', 'Edit', 'Overview']))
+    check(viewing, false)
+    // Editing: every widget is a stop, with its own actions.
+    await screen.getByRole('button', { name: 'Edit' }).click()
+    await expect.poll(() => screen.container.querySelectorAll('[aria-label$=" actions"]').length).toBeGreaterThan(0)
+    const editing = await walk()
+    expect(editing.some(item => item.name.endsWith('press Alt and an arrow key to move it'))).toBe(true)
+    expect(editing.some(item => item.name.endsWith(' actions'))).toBe(true)
+    check(editing, false)
+    await forcedColours('active')
+    try {
+      expect(matchMedia('(forced-colors: active)').matches).toBe(true)
+      check(await walk(), true)
+    } finally {
+      await forcedColours('none')
+    }
+  })
+
 })

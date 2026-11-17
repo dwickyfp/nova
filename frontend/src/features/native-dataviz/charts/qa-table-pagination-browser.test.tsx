@@ -178,3 +178,50 @@ describe('NDV-CHART-016 server-side table pages', () => {
     expect(screen.container.querySelector('tbody tr:last-child td:last-child')?.textContent).toBe(total.toLocaleString())
   })
 })
+
+describe('NDV-CACHE-010 a filter change while a page is still loading', () => {
+  it('starts again at the first page of the new query and never shows the late page', async () => {
+    const FILTER = { expression: { type: 'predicate', field: { dataset_id: DATASET, dataset_revision: 1, field_id: 'store' },
+      op: 'like_literal', values: [{ type: 'string', value: '7' }], source: 'global', stage: 'row' } } as never
+    let release: () => void = () => undefined
+    const held = new Promise<void>(resolve => { release = resolve })
+    sent.length = 0
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const request = JSON.parse(String(init?.body)) as DatasetQueryRequest
+      sent.push(request)
+      // The unfiltered second page answers only after the filter has changed.
+      if (!request.filters && request.offset === 100) await held
+      const result = answer(request)
+      const filtered = request.filters
+        ? { ...result, rows: result.rows.filter(row => String(row[0]?.value).includes('7')).slice(0, 5), truncated: false }
+        : result
+      return new Response(JSON.stringify(filtered), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const view = (context?: never) => <QueryClientProvider client={client}>
+      <div style={{ width: 640, height: 480, display: 'flex' }}><NativeChart chart={table()} draft={false} context={context} /></div>
+    </QueryClientProvider>
+    const screen = await render(view())
+    await expect.element(screen.getByText('Rows 1–100', { exact: true })).toBeVisible()
+    await screen.getByRole('button', { name: 'Next page' }).click()
+    await expect.poll(() => sent.some(request => request.offset === 100)).toBe(true)
+
+    // The viewer filters while page 2 is still on its way.
+    await screen.rerender(view(FILTER))
+    await expect.poll(() => sent.some(request => request.filters)).toBe(true)
+    const first = sent.find(request => request.filters)!
+    expect(first.offset ?? 0).toBe(0)
+    await expect.poll(() => screen.container.querySelectorAll('tbody tr').length).toBe(5)
+    expect([...screen.container.querySelectorAll('tbody tr td:first-child')].every(cell => cell.textContent?.includes('7'))).toBe(true)
+
+    // The late unfiltered page arrives: nothing on screen changes.
+    release()
+    await new Promise(resolve => setTimeout(resolve, 300))
+    const stores = [...screen.container.querySelectorAll('tbody tr td:first-child')].map(cell => cell.textContent)
+    expect(stores).toHaveLength(5)
+    expect(stores.every(store => store?.includes('7'))).toBe(true)
+    expect(screen.container.textContent).not.toContain('Rows 101–200')
+    await expect.element(screen.getByRole('button', { name: 'Next page' })).not.toBeInTheDocument()
+  })
+})
+
