@@ -1,0 +1,9 @@
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+
+
+ Test Files  1 passed (1)
+      Tests  13 passed (13)
+   Start at  04:00:12
+   Duration  7.30s (transform 0ms, setup 0ms, import 633ms, tests 9ms, environment 0ms)
+

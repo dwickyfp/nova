@@ -87,7 +87,7 @@ class Edge(EdgeCreate):
 class GraphRunCreate(BaseModel):
     """Request body for creating a graph run."""
 
-    graph_id: str = Field(..., min_length=1, max_length=64)
+    graph_id: str = Field(..., min_length=1, max_length=514)
     trigger_type: TriggerType = "manual"
     state: GraphRunState = "pending"
     #: Copied from the graph's root task at enqueue so the worker can enforce

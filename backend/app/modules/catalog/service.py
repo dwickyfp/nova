@@ -215,7 +215,14 @@ class CatalogService:
                     written = await repo.update_catalog(
                         name, changes, expected_revision=existing["metadata_revision"]
                     )
-        connector = connector_for((existing or {}).get("catalog_type") or "iceberg")
+        from .connections import CONNECTION_PROPERTY
+
+        connector = connector_for(
+            (existing or {}).get("catalog_type") or "iceberg",
+            connection_backed=bool(((existing or {}).get("properties") or {}).get(
+                CONNECTION_PROPERTY
+            )),
+        )
         try:
             await self._run_as_caller(connector.build_alter_sql(name, body), user)
         except CatalogError:

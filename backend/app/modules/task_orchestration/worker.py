@@ -496,11 +496,17 @@ class GraphRunWorker:
         if handler in SCRIPT_HANDLERS:
             await self._execute_script(job, task, run_id, lease, owner, handler)
             return
+        if handler == "pipe.load":
+            await self._execute_pipe(job, task, run_id, lease, owner)
+            return
         if handler != "sql":
             from app.modules.task_orchestration.internal_handlers import run_internal_task
 
             try:
-                await run_internal_task(task, job, run_id, self._executor, self._repository)
+                await run_internal_task(
+                    task, job, run_id, self._executor, self._repository,
+                    renew=lambda: self._heartbeat(job, run_id, lease),
+                )
             except Exception as exc:
                 await self._finalize(
                     job, task, run_id, lease, owner, NodeState.FAILED, error=_safe_message(exc)
@@ -628,6 +634,25 @@ class GraphRunWorker:
         await self._finalize(
             job, task, run_id, lease, owner, NodeState.SUCCESS, output=output or ""
         )
+
+    async def _execute_pipe(
+        self, job: GraphRunJob, task: dict[str, Any], run_id: str, lease: int, owner: str,
+    ) -> None:
+        """Load a pipe's new files as the owner role's scheduled-task account."""
+        from app.modules.pipes.runner import run_pipe_task
+
+        async def heartbeat() -> None:
+            await self._heartbeat(job, run_id, lease)
+
+        role = job.execution_role or task.get("owner_role") or ""
+        try:
+            output = await run_pipe_task(task, owner, role, self._executor, heartbeat=heartbeat)
+        except Exception as exc:  # noqa: BLE001 - any failure fails the node
+            await self._finalize(
+                job, task, run_id, lease, owner, NodeState.FAILED, error=_safe_message(exc)
+            )
+            return
+        await self._finalize(job, task, run_id, lease, owner, NodeState.SUCCESS, output=output)
 
     async def _heartbeat(self, job: GraphRunJob, run_id: str, lease: int) -> None:
         """Renew both leases; a lost lease stops this delivery's execution."""

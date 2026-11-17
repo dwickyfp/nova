@@ -1,0 +1,11 @@
+{
+  "recorded_at": "2026-11-14T16:20:47.527226+00:00",
+  "status": "SOURCE_REVIEW_PENDING_RUNTIME_REPRODUCTION",
+  "scope": "Dataset create/update idempotency when source inspection is no longer possible after a committed operation",
+  "evidence": [
+    "NativeDatasetService.create calls _definition before VizDocumentRepository.create checks _prior",
+    "NativeDatasetService.update calls _definition before VizDocumentRepository.replace checks _prior"
+  ],
+  "finding": "An exact replay can encounter a new stale-source/refusal error before reaching its persisted receipt. Receipt lookup remains available, but strict replay behavior needs a dedicated regression and service/repository fix before editor save integration.",
+  "limits": "Source-backed ordering finding, not a demonstrated duplicate write; no new mutation or bypass implemented."
+}

@@ -1,0 +1,23 @@
+E501 Line too long (108 > 100)
+    --> tests/integration/test_metadata_viz.py:1154:101
+     |
+1152 |         assert (await repo.get_version(identity, 2))["status"] == "ACTIVE"
+1153 |         await connection.execute("SELECT set_config('nova.service_identity','nova_meta_web',true)")
+1154 |         rows = await (await connection.execute("SELECT id FROM nova_meta.config_semantic_views")).fetchall()
+     |                                                                                                     ^^^^^^^^
+1155 |         assert rows == []
+1156 |     for table in ("config_semantic_views", "config_semantic_view_versions", "config_entities"):
+     |
+
+E501 Line too long (104 > 100)
+    --> tests/integration/test_metadata_viz.py:1161:101
+     |
+1159 |                 await connection.execute(f"DELETE FROM nova_meta.{table}")
+1160 |     async with viz.transaction() as (_, connection):
+1161 |         await IntelligenceMetadataRepository(connection, actor).deprecate(identity, expected_revision=4)
+     |                                                                                                     ^^^^
+1162 |     async with viz.transaction(workload="query") as (_, connection):
+1163 |         repo = IntelligenceMetadataRepository(connection, actor)
+     |
+
+Found 2 errors.

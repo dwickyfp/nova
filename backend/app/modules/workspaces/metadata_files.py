@@ -32,6 +32,14 @@ def _revision(value: int) -> None:
         raise ValueError("A positive entry revision is required")
 
 
+def _digest(value: str | None, *, required: bool) -> None:
+    """A file's content digest is lowercase SHA-256 hex; folders have none."""
+    if value is None and not required:
+        return
+    if not isinstance(value, str) or not _SHA256.fullmatch(value):
+        raise ValueError("A file needs the SHA-256 digest of its content")
+
+
 def _name(name: str) -> str:
     if (
         not isinstance(name, str) or not name.strip() or name in {".", ".."}
@@ -95,16 +103,18 @@ class WorkspaceFileRepository(WorkspaceMetadataScope):
     async def insert_entry(
         self, namespace: str, *, parent_path: str, name: str, entry_type: str,
         object_key: str | None, size_bytes: int = 0, etag: str | None = None,
+        content_sha256: str | None = None,
     ) -> dict[str, Any]:
         await self._transaction()
         if entry_type not in _ENTRY_TYPES:
             raise ValueError("Invalid workspace entry type")
+        _digest(content_sha256, required=entry_type == "file")
         cursor = await self.connection.execute(
             "INSERT INTO nova_meta.config_workspace_entries "
-            "(id,user_name,parent_path,name,entry_type,object_key,size_bytes,etag) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",
+            "(id,user_name,parent_path,name,entry_type,object_key,size_bytes,etag,content_sha256) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",
             (str(uuid4()), namespace, _parent(parent_path), _name(name), entry_type,
-             object_key, size_bytes, etag),
+             object_key, size_bytes, etag, content_sha256),
         )
         row = await cursor.fetchone()
         assert row is not None
@@ -136,18 +146,20 @@ class WorkspaceFileRepository(WorkspaceMetadataScope):
 
     async def update_file(
         self, namespace: str, entry_id: str, *, expected_revision: int,
-        object_key: str, size_bytes: int, etag: str | None,
+        object_key: str, size_bytes: int, etag: str | None, content_sha256: str,
     ) -> dict[str, Any]:
         """Publish a file's new live object receipt against the revision it was read at."""
         await self._transaction()
+        _digest(content_sha256, required=True)
         async with self.connection.transaction():
             entry = await self._locked(namespace, entry_id, expected_revision)
             if entry["entry_type"] != "file":
                 raise ValueError("Only files have content")
             cursor = await self.connection.execute(
                 "UPDATE nova_meta.config_workspace_entries SET object_key=%s,size_bytes=%s,"
-                "etag=%s,metadata_revision=metadata_revision+1 WHERE id=%s RETURNING *",
-                (object_key, size_bytes, etag, entry_id),
+                "etag=%s,content_sha256=%s,metadata_revision=metadata_revision+1 "
+                "WHERE id=%s RETURNING *",
+                (object_key, size_bytes, etag, content_sha256, entry_id),
             )
             row = await cursor.fetchone()
             assert row is not None

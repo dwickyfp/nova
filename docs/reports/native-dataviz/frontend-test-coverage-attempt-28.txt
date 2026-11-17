@@ -1,0 +1,279 @@
+
+> shadcn-admin@2.2.1 test:coverage /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+> vitest run --coverage --browser.headless
+
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+      Coverage enabled with v8
+
+11:40:25 PM [vite] (client) Re-optimizing dependencies because vite config has changed
+11:40:26 PM [vite] (client) [optimizer] scanning dependencies...
+11:40:29 PM [vite] (client) [optimizer] bundling dependencies...
+ ❯ |browser (chromium)| src/features/agents/agent-detail/quality-tab.test.tsx (19 tests | 2 failed) 65833ms
+     × sends selected behavioral gates and bounded performance limits with the evaluation 16016ms
+     × creates regression cases with reviewed assertions and does not modify the frozen run 16435ms
+ ❯ |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx (29 tests | 1 failed) 72721ms
+     × renders the process rail and the answer, and opens a step 18744ms
+ ❯ |browser (chromium)| src/components/layout/navigation-material.test.tsx (21 tests | 1 failed) 87620ms
+     × opens a glass mobile Sheet and closes on navigation in 'light' at 320 px 18204ms
+ ❯ |browser (chromium)| src/features/native-dataviz/dataset-create.test.tsx (14 tests | 1 failed) 94126ms
+     × declares SQL parameters, saves the analyzer-accepted declarations and offers them in preview 15600ms
+ ❯ |browser (chromium)| src/features/native-dataviz/dashboard/qa-editor.test.tsx (32 tests | 2 failed) 185886ms
+     × NDV-OPS-010: a failed refresh shows an error, never the earlier rows as current 16933ms
+     × NDV-REVIS-010: a tab that edits before seeing the other tab’s change is refused, reloads and does not resubmit 5026ms
+ ❯ |browser (chromium)| src/features/native-dataviz/charts/theme-switch.test.tsx (1 test | 1 failed) 4040ms
+     × re-reads colours from the theme and keeps axis text at AA contrast in light and dark 4039ms
+11:47:12 PM [vite] (client) [console.error] You seem to have overlapping act() calls, this is not supported. Be sure to await previous act() calls before making a new one. 
+11:47:12 PM [vite] (client) [console.error] You seem to have overlapping act() calls, this is not supported. Be sure to await previous act() calls before making a new one. 
+11:47:17 PM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.28.2_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=a6401330:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.28.2_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=a6401330:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=a6401330:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=a6401330:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=a6401330:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=a6401330:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=a6401330:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=a6401330:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=a6401330:2792:2)
+stderr | src/features/ai-providers/providers-tab.test.tsx > registers and edits an LLM provider at 1280px
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 2501.9430000000284ms exceeded.
+Call log:
+  - taking element screenshot
+  - waiting for fonts to load...
+  - fonts loaded
+  - attempting scroll into view action
+    - waiting for element to be stable
+]
+ ❯ |browser (chromium)| src/features/ai-providers/providers-tab.test.tsx (2 tests | 2 failed) 42374ms
+   × registers and edits an LLM provider at 1280px 23260ms
+   × registers and edits an LLM provider at 320px 19104ms
+Failed to parse file:///Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/features/native-dataviz/charts/__fixtures__/neva-parity.json?import. Excluding it from coverage.
+ Error [RolldownError]: Parse failed with 1 error:
+Expected a semicolon or an implicit semicolon after a statement, but found none
+1: {
+2:   "_comment": "NDV-AGENT-001: the chart builder (manual) and Neva (neva_specs) must save the same chart. charts/neva-...
+               ^
+3:   "dataset_fields": [
+4:     {
+    at error (file:///Users/dwickyferiansyahputra/Public/Research/nova/frontend/node_modules/.pnpm/rolldown@1.2.19/node_modules/rolldown/dist/shared/logs-DyTyzzWG.mjs:164:24)
+    at normalizeParseError (file:///Users/dwickyferiansyahputra/Public/Research/nova/frontend/node_modules/.pnpm/rolldown@1.2.19/node_modules/rolldown/dist/parse-ast-index.mjs:25:9)
+    at wrap (file:///Users/dwickyferiansyahputra/Public/Research/nova/frontend/node_modules/.pnpm/rolldown@1.2.19/node_modules/rolldown/dist/parse-ast-index.mjs:5:39)
+    at parseAstAsync (file:///Users/dwickyferiansyahputra/Public/Research/nova/frontend/node_modules/.pnpm/rolldown@1.2.19/node_modules/rolldown/dist/parse-ast-index.mjs:54:9)
+    at async V8CoverageProvider.remapCoverage (file:///Users/dwickyferiansyahputra/Public/Research/nova/frontend/node_modules/.pnpm/@vitest+coverage-v8@4.1.11_@vitest+browser@4.1.11_vitest@4.1.11/node_modules/@vitest/coverage-v8/dist/provider.js:133:10)
+    at async file:///Users/dwickyferiansyahputra/Public/Research/nova/frontend/node_modules/.pnpm/@vitest+coverage-v8@4.1.11_@vitest+browser@4.1.11_vitest@4.1.11/node_modules/@vitest/coverage-v8/dist/provider.js:269:23
+    at async Promise.all (index 1)
+    at async V8CoverageProvider.convertCoverage (file:///Users/dwickyferiansyahputra/Public/Research/nova/frontend/node_modules/.pnpm/@vitest+coverage-v8@4.1.11_@vitest+browser@4.1.11_vitest@4.1.11/node_modules/@vitest/coverage-v8/dist/provider.js:261:4)
+    at async onFinished (file:///Users/dwickyferiansyahputra/Public/Research/nova/frontend/node_modules/.pnpm/@vitest+coverage-v8@4.1.11_@vitest+browser@4.1.11_vitest@4.1.11/node_modules/@vitest/coverage-v8/dist/provider.js:46:23)
+    at async V8CoverageProvider.readCoverageFiles (file:///Users/dwickyferiansyahputra/Public/Research/nova/frontend/node_modules/.pnpm/vitest@4.1.11_@types+node@25.9.7_@vitest+browser-playwright@4.1.11_@vitest+coverage-v8@_d20be361a4c957f7b98bddb6908caa46/node_modules/vitest/dist/chunks/coverage.DM_a_rWm.js:769:4) {
+  code: 'PARSE_ERROR',
+  id: undefined,
+  pos: 14
+}
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 10 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |browser (chromium)| src/components/layout/navigation-material.test.tsx > Nova navigation material > opens a glass mobile Sheet and closes on navigation in 'light' at 320 px
+Error: Test timed out in 15000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+
+Failure screenshot:
+  - src/components/layout/__screenshots__/navigation-material.test.tsx/Nova-navigation-material-opens-a-glass-mobile-Sheet-and-closes-on-navigation-in--light--at-320-px-2.png
+
+ ❯ src/components/layout/navigation-material.test.tsx:457:4
+    455|     ),
+    456|   )(
+    457|     "opens a glass mobile Sheet and closes on navigation in $theme at …
+       |    ^
+    458|     async ({ theme, width }) => {
+    459|       await page.viewport(width, 800);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/10]⎯
+
+ FAIL  |browser (chromium)| src/features/ai-providers/providers-tab.test.tsx > registers and edits an LLM provider at 1280px
+TimeoutError: locator.click: Timeout 2398ms exceeded.
+Call log:
+  - waiting for locator('[data-vitest="true"]').contentFrame().getByTestId('__vitest_0__').getByRole('menuitem', { name: 'Edit Provider' })
+    - locator resolved to <div tabindex="-1" role="menuitem" data-variant="default" data-orientation="vertical" data-radix-collection-item="" data-slot="dropdown-menu-item" class="relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 data-inset:ps-8 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:f…>…</div>
+  - attempting click action
+    - waiting for element to be visible, enabled and stable
+    - element is visible, enabled and stable
+    - scrolling into view if needed
+    - done scrolling
+    - performing click action
+    - click action done
+    - waiting for scheduled navigations to finish
+
+ ❯ src/features/ai-providers/providers-tab.test.tsx:55:64
+     53|   const row = screen.getByRole('row').filter({ hasText: /gateway/i })
+     54|   await row.getByRole('button').click()
+     55|   await screen.getByRole('menuitem', { name: 'Edit Provider' }).click()
+       |                                                                ^
+     56|   await expect
+     57|     .element(screen.getByLabelText('Endpoint', { exact: true }))
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/10]⎯
+
+ FAIL  |browser (chromium)| src/features/ai-providers/providers-tab.test.tsx > registers and edits an LLM provider at 320px
+TimeoutError: locator.click: Timeout 46ms exceeded.
+Call log:
+  - waiting for locator('[data-vitest="true"]').contentFrame().getByTestId('__vitest_0__').getByRole('button', { name: 'Create Provider' })
+    - locator resolved to <button data-slot="button" class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive bg-primary text-primary-fore…>Create Provider</button>
+  - attempting click action
+
+
+Failure screenshot:
+  - src/features/ai-providers/__screenshots__/providers-tab.test.tsx/registers-and-edits-an-LLM-provider-at-320px-2.png
+
+ ❯ src/features/ai-providers/providers-tab.test.tsx:47:64
+     45|     .element(screen.getByRole('button', { name: 'Test connection' }))
+     46|     .toBeInTheDocument()
+     47|   await screen.getByRole('button', { name: 'Create Provider' }).click()
+       |                                                                ^
+     48|   expect(post).toHaveBeenCalledWith(
+     49|     '/ai/providers',
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/10]⎯
+
+ FAIL  |browser (chromium)| src/features/native-dataviz/dataset-create.test.tsx > dashboard dataset authoring > declares SQL parameters, saves the analyzer-accepted declarations and offers them in preview
+TimeoutError: locator.click: Timeout 165ms exceeded.
+Call log:
+  - waiting for locator('[data-vitest="true"]').contentFrame().getByTestId('__vitest_0__').getByRole('button', { name: 'Add parameter' })
+
+
+Failure screenshot:
+  - src/features/native-dataviz/__screenshots__/dataset-create.test.tsx/dashboard-dataset-authoring-declares-SQL-parameters--saves-the-analyzer-accepted-declarations-and-offers-them-in-preview-1.png
+
+ ❯ src/features/native-dataviz/dataset-create.test.tsx:248:64
+    246|     await userEvent.type(screen.getByRole('textbox', { name: 'Dataset …
+    247|       'SELECT amount FROM Orders WHERE region IN (:regions) AND amount…
+    248|     await screen.getByRole('button', { name: 'Add parameter' }).click()
+       |                                                                ^
+    249|     await screen.getByRole('textbox', { name: 'Parameter name' }).fill…
+    250|     await screen.getByRole('button', { name: 'Inspect columns', exact:…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/10]⎯
+
+ FAIL  |browser (chromium)| src/features/studio/studio-chat.integration.test.tsx > studio transcript click-through > renders the process rail and the answer, and opens a step
+Error: Test timed out in 15000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+
+Failure screenshot:
+  - src/features/studio/__screenshots__/studio-chat.integration.test.tsx/studio-transcript-click-through-renders-the-process-rail-and-the-answer--and-opens-a-step-1.png
+
+ ❯ src/features/studio/studio-chat.integration.test.tsx:929:2
+    927|   });
+    928|
+    929|   it("renders the process rail and the answer, and opens a step", asyn…
+       |  ^
+    930|     await renderStudio();
+    931|     await page
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/10]⎯
+
+ FAIL  |browser (chromium)| src/features/agents/agent-detail/quality-tab.test.tsx > Agent Quality > sends selected behavioral gates and bounded performance limits with the evaluation
+TimeoutError: locator.fill: Timeout 205ms exceeded.
+Call log:
+  - waiting for locator('[data-vitest="true"]').contentFrame().getByTestId('__vitest_0__').getByLabel('Maximum metadata reads')
+    - locator resolved to <input min="0" step="1" value="" type="number" data-slot="input" aria-invalid="false" max="9007199254740991" id="_r_9_-limit-metadata_reads" aria-describedby="_r_9_-limits-help" class="flex h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 py-1 text-base text-foreground shadow-xs transition-[color,box-shadow] outline-none selection:bg-primary selection:text-primary-foreground file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foregro…/>
+    - fill("3")
+  - attempting fill action
+    - waiting for element to be visible, enabled and editable
+
+
+Failure screenshot:
+  - src/features/agents/agent-detail/__screenshots__/quality-tab.test.tsx/Agent-Quality-sends-selected-behavioral-gates-and-bounded-performance-limits-with-the-evaluation-1.png
+
+ ❯ src/features/agents/agent-detail/quality-tab.test.tsx:287:58
+    285|     await screen.getByLabelText("Maximum context tokens").fill("800");
+    286|     await screen.getByLabelText("Maximum participants").fill("2");
+    287|     await screen.getByLabelText("Maximum metadata reads").fill("3");
+       |                                                          ^
+    288|     await page.screenshot();
+    289|     await screen.getByRole("button", { name: "Run tests" }).click();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/10]⎯
+
+ FAIL  |browser (chromium)| src/features/agents/agent-detail/quality-tab.test.tsx > Agent Quality > creates regression cases with reviewed assertions and does not modify the frozen run
+Error: Test timed out in 15000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+
+Failure screenshot:
+  - src/features/agents/agent-detail/__screenshots__/quality-tab.test.tsx/Agent-Quality-creates-regression-cases-with-reviewed-assertions-and-does-not-modify-the-frozen-run-1.png
+
+ ❯ src/features/agents/agent-detail/quality-tab.test.tsx:784:2
+    782|     });
+    783|   });
+    784|   it("creates regression cases with reviewed assertions and does not m…
+       |  ^
+    785|     const fetch = mock();
+    786|     const screen = await setup(<AgentQualityTab agentId="sales" />);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/10]⎯
+
+ FAIL  |browser (chromium)| src/features/native-dataviz/charts/theme-switch.test.tsx > NDV-A11Y-004 theme switch with a chart on screen > re-reads colours from the theme and keeps axis text at AA contrast in light and dark
+Error: not drawn
+
+Failure screenshot:
+  - src/features/native-dataviz/charts/__screenshots__/theme-switch.test.tsx/NDV-A11Y-004-theme-switch-with-a-chart-on-screen-re-reads-colours-from-the-theme-and-keeps-axis-text-at-AA-contrast-in-light-and-dark-1.png
+
+ ❯ src/features/native-dataviz/charts/theme-switch.test.tsx:62:87
+     60|       const host = screen.container.querySelector<HTMLElement>('[role=…
+     61|       const chart = host && getInstanceByDom(host)
+     62|       if (!chart || !(chart.getOption() as { xAxis?: unknown[] }).xAxi…
+       |                                                                                       ^
+     63|       return chart
+     64|     })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/10]⎯
+
+ FAIL  |browser (chromium)| src/features/native-dataviz/dashboard/qa-editor.test.tsx > QA dependency failure > NDV-OPS-010: a failed refresh shows an error, never the earlier rows as current
+Error: [2mexpect([22m[31melement[39m[2m).toHaveTextContent()[22m
+
+Expected element to have text content:
+[32m  The chart could not be loaded.[39m
+Received:
+[31m  The data engine is not responding. Retry in a moment.Retry[39m
+
+Failure screenshot:
+  - src/features/native-dataviz/dashboard/__screenshots__/qa-editor.test.tsx/QA-dependency-failure-NDV-OPS-010--a-failed-refresh-shows-an-error--never-the-earlier-rows-as-current-1.png
+
+ ❯ src/features/native-dataviz/dashboard/qa-editor.test.tsx:922:52
+    920|     down = true
+    921|     await screen.client.invalidateQueries({ queryKey: ['native-dataviz…
+    922|     await expect.element(screen.getByRole('alert')).toHaveTextContent(…
+       |                                                    ^
+    923|     expect(screen.container.querySelector('[data-testid="kpi-value"]')…
+    924|     expect(screen.container.textContent).not.toContain('15,257')
+
+Caused by: Error: Matcher did not succeed in time.
+ ❯ src/features/native-dataviz/dashboard/qa-editor.test.tsx:922:4
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/10]⎯
+
+ FAIL  |browser (chromium)| src/features/native-dataviz/dashboard/qa-editor.test.tsx > QA multiple tabs > NDV-REVIS-010: a tab that edits before seeing the other tab’s change is refused, reloads and does not resubmit
+AssertionError: expected 'Sales overviewDraftDraft · All change…' to contain 'Plain notes'
+
+Failure screenshot:
+  - src/features/native-dataviz/dashboard/__screenshots__/qa-editor.test.tsx/QA-multiple-tabs-NDV-REVIS-010--a-tab-that-edits-before-seeing-the-other-tab-s-change-is-refused--reloads-and-does-not-resubmit-1.png
+
+Expected: [32m"Plain notes"[39m
+Received: [31m"Sales overviewDraftDraft · All changes savedShareDonePublishCanvasDataOverviewChartKPITableTextFiltersAdd filterUnits sold15,257"[39m
+
+ ❯ src/features/native-dataviz/dashboard/qa-editor.test.tsx:1052:39
+    1050|     await A.getByRole('button', { name: 'Done' }).click()
+    1051|     // B still shows the old draft and moves the text widget that A re…
+    1052|     expect(tabB.container.textContent).toContain('Plain notes')
+       |                                       ^
+    1053|     await B.getByText('Plain notes').click()
+    1054|     await userEvent.keyboard('{Alt>}{ArrowDown}{/Alt}')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/10]⎯
+
+
+ Test Files  7 failed | 221 passed (228)
+      Tests  10 failed | 1984 passed (1994)
+   Start at  23:40:24
+   Duration  450.79s (transform 3.66s, setup 0ms, import 521.28s, tests 1931.28s, environment 4ms)
+
+ ELIFECYCLE  Command failed with exit code 1.

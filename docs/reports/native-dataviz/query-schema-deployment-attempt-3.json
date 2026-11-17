@@ -1,0 +1,87 @@
+{
+  "before": {
+    "id": "998fbee11fd6f06cf834c230d6266f29d0313768e89c946568f7d0a267c2c061",
+    "image": "sha256:d66e88b035c35d7aef0fc4327773b619be6e2d9c48335848a64da32e4be0445a",
+    "mounts": [
+      [
+        "docker_ranger_fe_log",
+        "/opt/starrocks/fe/log"
+      ],
+      [
+        "docker_ranger_fe_meta",
+        "/opt/starrocks/fe/meta"
+      ],
+      [
+        null,
+        "/opt/starrocks/fe/conf/fe.conf"
+      ],
+      [
+        null,
+        "/opt/starrocks/fe/conf/ranger-starrocks-audit.xml"
+      ],
+      [
+        null,
+        "/opt/starrocks/fe/conf/ranger-starrocks-security.xml"
+      ]
+    ],
+    "health": "unhealthy"
+  },
+  "after": {
+    "id": "2c6d786936387f208dab42ebcbcbbb05f2f89460a7b102c5a44ffd18c683dfa0",
+    "image": "sha256:a9ef5b99681ad729e518a1f69853449f3776232209b292b498605b216cff1989",
+    "mounts": [
+      [
+        "docker_ranger_fe_log",
+        "/opt/starrocks/fe/log"
+      ],
+      [
+        "docker_ranger_fe_meta",
+        "/opt/starrocks/fe/meta"
+      ],
+      [
+        null,
+        "/opt/starrocks/fe/conf/fe.conf"
+      ],
+      [
+        null,
+        "/opt/starrocks/fe/conf/ranger-starrocks-audit.xml"
+      ],
+      [
+        null,
+        "/opt/starrocks/fe/conf/ranger-starrocks-security.xml"
+      ]
+    ],
+    "health": "healthy"
+  },
+  "command": [
+    "docker",
+    "compose",
+    "--project-directory",
+    "/Users/dwickyferiansyahputra/Public/Research/nova/docker",
+    "--env-file",
+    "/Users/dwickyferiansyahputra/Public/Research/nova/docker/.env",
+    "-p",
+    "docker",
+    "-f",
+    "/Users/dwickyferiansyahputra/.local/share/nova/migration-20261113/pg-provisioning/compose.yaml",
+    "-f",
+    "/Users/dwickyferiansyahputra/Public/Research/nova/docker/docker-compose-engine.yml",
+    "-f",
+    "/Users/dwickyferiansyahputra/Public/Research/nova/docker/docker-compose.dev.yml",
+    "up",
+    "-d",
+    "--no-deps",
+    "--no-build",
+    "--force-recreate",
+    "--timeout",
+    "10",
+    "--wait",
+    "--wait-timeout",
+    "180",
+    "starrocks-fe"
+  ],
+  "returncode": 0,
+  "seconds": 16.43,
+  "volumes_preserved": true,
+  "result": "PASS"
+}

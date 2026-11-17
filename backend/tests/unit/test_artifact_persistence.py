@@ -1,14 +1,14 @@
-"""Artifact ports keep revision conflicts, owner identity, and historical specs."""
+"""Artifact ports keep owner identity and historical specs."""
 
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
 from app.core.metadata_actor import acting_as
-from app.core.metadata_db import MetadataConflict, MetadataPermissionDenied, MetadataUnavailable
+from app.core.metadata_db import MetadataPermissionDenied, MetadataUnavailable
 from app.modules.access_control.security_context import SecurityContext
 from app.modules.agents import artifact_repository as module
 from app.modules.viz import migration
@@ -53,79 +53,15 @@ def store(monkeypatch):
     engine.assert_not_awaited()
 
 
-async def test_source_update_preserves_timestamp_api_and_fences_by_revision(store):
+async def test_artifacts_read_their_historical_specs_unless_they_pointed_at_bi(store):
     repository = module.ArtifactRepository()
-    current = store.get_artifact.return_value
-    store.update_artifact.return_value = {**current, "sql_text": "SELECT 2"}
-    assert (
-        await repository.update_bi_source(
-            "a1",
-            owner_name="alice",
-            expected_updated_at=current["updated_at"],
-            sql_text="SELECT 2",
-        )
-    )["sql_text"] == "SELECT 2"
-    store.update_artifact.assert_awaited_once_with(
-        "a1", {"sql_text": "SELECT 2"}, expected_revision=7
-    )
-    store.update_artifact.reset_mock()
-    assert (
-        await repository.update_bi_source(
-            "a1",
-            owner_name="alice",
-            expected_updated_at=current["updated_at"] - timedelta(seconds=1),
-            sql_text="SELECT 3",
-        )
-        is None
-    )
-    store.update_artifact.assert_not_awaited()
-    store.update_artifact.side_effect = MetadataConflict()
-    assert (
-        await repository.update_bi_source(
-            "a1",
-            owner_name="alice",
-            expected_updated_at=current["updated_at"],
-            sql_text="SELECT 3",
-        )
-        is None
-    )
-
-
-async def test_conversion_keeps_id_and_hides_retained_historical_specs(store):
-    repository = module.ArtifactRepository()
-    store.update_artifact.return_value = {
-        **store.get_artifact.return_value,
-        "bi_kind": "chart",
-        "bi_object_id": 31,
-        "bi_dataset_id": 12,
-    }
-    converted = await repository.attach_bi(
-        "a1",
-        owner_name="alice",
-        bi_kind="chart",
-        bi_object_id=31,
-        bi_dataset_id=12,
-    )
-    assert converted["artifact_id"] == "a1" and converted["legacy"] is False
-    assert converted["chart_spec"] is None and converted["viz_spec"] is None
-    assert converted["bi_view_path"].startswith("/bi/explore/")
-    store.update_artifact.assert_awaited_once_with(
-        "a1",
-        {"bi_kind": "chart", "bi_object_id": 31, "bi_dataset_id": 12},
-        expected_revision=7,
-    )
-    store.get_artifact.return_value = store.update_artifact.return_value
-    assert (
-        await repository.attach_bi(
-            "a1",
-            owner_name="alice",
-            bi_kind="chart",
-            bi_object_id=32,
-            bi_dataset_id=12,
-        )
-        is None
-    )
-    assert store.update_artifact.await_count == 1
+    found = await repository.get("a1", owner_name="alice")
+    assert found["viz_spec"] == {"historic": True} and found["retired"] is False
+    assert not {"bi_kind", "bi_object_id", "bi_view_path", "legacy"} & set(found)
+    store.get_artifact.return_value = {**store.get_artifact.return_value, "bi_object_id": 31}
+    retired = await repository.get("a1", owner_name="alice")
+    assert retired["retired"] is True and retired["viz_spec"] is None
+    assert not hasattr(repository, "create_bi") and not hasattr(repository, "attach_bi")
 
 
 async def test_artifact_owner_and_dependency_refusals_never_use_another_store(store):
@@ -138,32 +74,6 @@ async def test_artifact_owner_and_dependency_refusals_never_use_another_store(st
         await repository.list(owner_name="alice")
     with pytest.raises(MetadataUnavailable):
         await migration.legacy_tile_dashboards("alice")
-
-
-async def test_invalid_bi_kind_or_id_never_writes(store):
-    repository = module.ArtifactRepository()
-    with pytest.raises(ValueError):
-        await repository.attach_bi(
-            "a1",
-            owner_name="alice",
-            bi_kind="dashboard",
-            bi_object_id=1,
-            bi_dataset_id=None,
-        )
-    with pytest.raises(ValueError):
-        await repository.create_bi(
-            owner_name="alice",
-            title="Chart",
-            artifact_type="chart",
-            sql_text="SELECT 1",
-            database_name=None,
-            schema_name=None,
-            bi_kind="chart",
-            bi_object_id=True,
-            bi_dataset_id=None,
-        )
-    store.create_artifact.assert_not_awaited()
-    store.update_artifact.assert_not_awaited()
 
 
 async def test_legacy_tiles_use_the_same_owner_and_are_removed_after_conversion(store):

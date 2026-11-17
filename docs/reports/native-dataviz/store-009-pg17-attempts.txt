@@ -1,0 +1,10 @@
+PG17 attempt 1 (2026-11-17, during dashboard benchmark load): tests/integration/test_metadata_migrator.py + test_metadata_workspace_objects.py + test_metadata_workspace_files.py
+app/core/metadata_migrations.py:163: MetadataTimeout
+=========================== short test summary info ============================
+FAILED tests/integration/test_metadata_migrator.py::test_two_migrators_publish_one_schema_revision
+1 failed, 60 passed in 611.52s (0:10:11)
+
+[exited with code 0]
+
+Attempt 2: test_two_migrators_publish_one_schema_revision alone -> 1 passed in 3.08s (the failure in attempt 1 coincided with host load from the live benchmark; the full file is rerun in the final gates).
+Earlier: test_metadata_workspace_objects.py attempt 0 -> 2 failed (test bugs: raw psycopg error inside a savepoint, read-only transaction for a write probe), then 4 passed.

@@ -1,0 +1,12 @@
+[
+  {
+    "gate": "config",
+    "returncode": 0,
+    "seconds": 0.73
+  },
+  {
+    "gate": "build",
+    "returncode": 0,
+    "seconds": 245.07
+  }
+]

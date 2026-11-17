@@ -1,0 +1,140 @@
+I001 [*] Import block is un-sorted or un-formatted
+  --> app/modules/viz/documents.py:3:1
+   |
+ 1 |   """Native document storage within the existing actor-bound metadata transaction."""
+ 2 |
+ 3 | / from __future__ import annotations
+ 4 | |
+ 5 | | import hashlib
+ 6 | | import json
+ 7 | | from datetime import datetime
+ 8 | | from typing import Any, Literal
+ 9 | | from uuid import UUID, uuid4
+10 | |
+11 | | from psycopg.types.json import Jsonb
+12 | |
+13 | | from app.core.exceptions import NovaException
+14 | | from app.core.metadata_db import MetadataConflict, MetadataPermissionDenied
+15 | | from app.modules.workspaces.metadata_sharing import WorkspaceMetadataScope
+16 | |
+17 | | from .bindings import (
+18 | |     document_bindings,
+19 | |     validate_chart_binding,
+20 | |     validate_control_binding,
+21 | |     validate_document_controls,
+22 | |     validate_relationship_binding,
+23 | |     validate_widget_bindings,
+24 | | )
+25 | | from .contracts.charts import ChartDefinition
+26 | | from .contracts.authoring import DatasetCreate, DatasetUpdate
+27 | | from .contracts.commands import (
+28 | |     DeleteRequest,
+29 | |     GrantsReplace,
+30 | |     Operation,
+31 | |     PublicationRequest,
+32 | |     RestoreRequest,
+33 | | )
+34 | | from .contracts.common import Contract, Permission
+35 | | from .contracts.dashboards import ChartWidget, DashboardDefinition
+36 | | from .contracts.datasets import DatasetDefinition, LocalMetricSource
+37 | | from .operations import apply_operation
+   | |_______________________________________^
+38 |
+39 |   Document = DatasetDefinition | ChartDefinition | DashboardDefinition
+   |
+help: Organize imports
+
+E501 Line too long (101 > 100)
+   --> app/modules/viz/documents.py:494:101
+    |
+492 |             "definition": document.model_dump(mode="json"),
+493 |         }
+494 |         payload = dataset_intent(intent, workspace_id=workspace_id) if intent is not None else legacy
+    |                                                                                                     ^
+495 |         digest, prior = await self._prior(operation_id, identity, payload,
+496 |                                          legacy_payload=legacy if intent is not None else None)
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> tests/integration/test_metadata_viz.py:3:1
+   |
+ 1 |   """Native document isolation, immutable publications and atomic revision races on PG17."""
+ 2 |
+ 3 | / from __future__ import annotations
+ 4 | |
+ 5 | | import asyncio
+ 6 | | import secrets
+ 7 | | from contextlib import asynccontextmanager
+ 8 | | from datetime import UTC, datetime, timedelta
+ 9 | | from unittest.mock import AsyncMock
+10 | | from uuid import uuid4
+11 | |
+12 | | import httpx
+13 | | import pytest
+14 | | import pytest_asyncio
+15 | | from cryptography.fernet import Fernet
+16 | | from fastapi import FastAPI
+17 | | from pydantic import ValidationError
+18 | |
+19 | | from app.core import metadata_db as metadata_db_module
+20 | | from app.core import metadata_scope, security
+21 | | from app.core.config import settings
+22 | | from app.core.exceptions import NovaException, register_exception_handlers
+23 | | from app.core.metadata_db import (
+24 | |     MetadataConflict,
+25 | |     MetadataDatabase,
+26 | |     MetadataIntegrityViolation,
+27 | |     MetadataOperationFailed,
+28 | |     MetadataPermissionDenied,
+29 | | )
+30 | | from app.core.metadata_migrations import migrate
+31 | | from app.core.metadata_schema import load_migrations
+32 | | from app.modules.access_control.security_context import SecurityContext
+33 | | from app.modules.intelligence.metadata_repository import IntelligenceMetadataRepository
+34 | | from app.modules.viz import document_service
+35 | | from app.modules.viz import router as viz_router
+36 | | from app.modules.viz.contracts.authoring import ObjectDatasetCreate, ObjectDatasetUpdate
+37 | | from app.modules.viz.contracts.commands import (
+38 | |     DeleteRequest,
+39 | |     GrantsReplace,
+40 | |     PublicationRequest,
+41 | |     RestoreRequest,
+42 | | )
+43 | | from app.modules.viz.contracts.dashboards import DashboardDefinition, DatasetReference, Page
+44 | | from app.modules.viz.contracts.datasets import SqlSource
+45 | | from app.modules.viz.contracts.filters import FilterDefinition
+46 | | from app.modules.viz.document_service import NativeDocumentService
+47 | | from app.modules.viz.dataset_service import NativeDatasetService
+48 | | from app.modules.viz.documents import VizDocumentRepository
+49 | | from app.modules.workspaces.metadata_sharing import WorkspaceSharingRepository
+50 | | from tests.integration.test_metadata_bootstrap import environment  # noqa: F401
+51 | | from tests.integration.test_metadata_workspaces import session
+52 | | from tests.unit.test_native_viz_bindings import chart, dataset
+   | |______________________________________________________________^
+53 |
+54 |   pytestmark = pytest.mark.metadata_pg
+   |
+help: Organize imports
+
+E501 Line too long (101 > 100)
+   --> tests/integration/test_metadata_viz.py:239:101
+    |
+238 | @pytest.mark.parametrize("edit", [False, True])
+239 | async def test_dataset_intent_replay_survives_source_loss_and_later_edits(dataset_author, viz, edit):
+    |                                                                                                     ^
+240 |     author, service, records, source, create, inspect = dataset_author
+241 |     user = records["login-owner"]
+    |
+
+E501 Line too long (101 > 100)
+   --> tests/integration/test_metadata_viz.py:260:101
+    |
+259 | @pytest.mark.parametrize("change", ["title", "source", "fingerprint", "revision", "command"])
+260 | async def test_dataset_intent_reuse_refuses_changed_command_before_source_io(dataset_author, change):
+    |                                                                                                     ^
+261 |     author, _, records, _, create, inspect = dataset_author
+262 |     user = records["login-owner"]
+    |
+
+Found 5 errors.
+[*] 2 fixable with the `--fix` option.

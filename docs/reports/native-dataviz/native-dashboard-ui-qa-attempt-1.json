@@ -1,0 +1,23 @@
+{
+  "recorded_at": "2026-11-16T04:30:00+07:00",
+  "surface": "Nova Studio > Dataviz > Dashboards (native), dev stack via Vite 5173, signed in as nova_admin (ACCOUNTADMIN), dark theme 1440x900 plus light 390x844",
+  "dataset": "DEMO_SALES.orders (6 typed fields) added through the Data tab; inspection without rows",
+  "steps": [
+    {"step": "Create dashboard 'Demo sales overview' in Personal", "observed": "editor opened at revision 1"},
+    {"step": "Data tab: add table dataset, inspect, save", "observed": "dashboard revision 2; dataset revision 1 pinned"},
+    {"step": "Edit > KPI: sum(units), live preview", "observed": "preview 15,257; Add to dashboard committed revision 3; widget 3x2 at first free slot"},
+    {"step": "Edit > Chart: bar region x sum(revenue)", "observed": "preview switched from month to region on field change; committed revision 4"},
+    {"step": "Click Jakarta bar (view mode)", "observed": "KPI re-queried 15,257 -> 4,764; chip 'Selected: Jakarta'; source chart unchanged and dims other bars"},
+    {"step": "Neva: add monthly revenue line chart", "observed": "first attempt FAILED: tool used dashboard revision as dataset revision (fixed: pinned revision preferred); second attempt asked approval, committed revision 5, canvas reloaded live; line first rendered as per-month dots because color repeated the axis field (fixed in tool and renderer)"},
+    {"step": "Edit > Filters: Region multi-value + Order date range; Apply", "observed": "revision 6; filter bar shows both"},
+    {"step": "Region = Bandung + Jakarta", "observed": "KPI 7,452; two bars; filtered trend. First run showed 'Query capacity is busy' on two widgets (fixed: client query queue max 3, capacity retry, 300 ms debounce); rerun with rapid toggles loaded all widgets"},
+    {"step": "Order date from 2026-06-01", "observed": "KPI 3,795; trend starts Jun 2026"},
+    {"step": "Drag KPI to a new cell", "observed": "layout committed as revision 7 with neighbour reflow"},
+    {"step": "Undo", "observed": "inverse layout committed as revision 8; Redo enabled"},
+    {"step": "Resize trend chart wider", "observed": "revision 9; ECharts re-fit"},
+    {"step": "Publish with notes", "observed": "badge Published; Publish disabled until draft changes"},
+    {"step": "Phone 390x844 light theme", "observed": "first pass: truncated title, wrapped status, overflowing date control and clipped Studio band (fixed); second pass coherent, single-column widgets"},
+    {"step": "Agent > Artifacts > Native dashboards", "observed": "same dashboard opens at revision 9 in the shared editor"}
+  ],
+  "not_covered": ["viewer in another role on a shared workspace", "export", "drill", "Neva publish/arrange tools live", "performance with many widgets"]
+}

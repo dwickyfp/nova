@@ -1,0 +1,45 @@
+.....................................................................F.. [ 61%]
+.................F............................                           [100%]
+=================================== FAILURES ===================================
+_______________________ test_workload_privileges[query] ________________________
+
+iq = <tests.integration.test_metadata_intelligence.Intelligence object at 0x11bf6eed0>
+workload = 'query'
+
+    @pytest.mark.parametrize("workload", [role.removeprefix("nova_meta_") for role in WORKLOAD_ROLES])
+    async def test_workload_privileges(iq, workload):
+        view = await create_view(iq)
+        await create_index(iq)
+        async with iq.transaction() as (repo, _):
+            await repo.save_record("nodes", record("n-w"))
+        if workload in VIEW_READERS:
+            async with iq.transaction(workload, read_only=True) as (repo, _):
+                assert (await repo.get_view(view["id"]))["name"] == "sales"
+        else:
+>           with pytest.raises(MetadataPermissionDenied):
+E           Failed: DID NOT RAISE MetadataPermissionDenied
+
+tests/integration/test_metadata_intelligence.py:490: Failed
+___________________ test_feature_workload_privileges[query] ____________________
+
+iq = <tests.integration.test_metadata_intelligence.Intelligence object at 0x11bf8c990>
+workload = 'query'
+
+    @pytest.mark.parametrize("workload", [role.removeprefix("nova_meta_") for role in WORKLOAD_ROLES])
+    async def test_feature_workload_privileges(iq, workload):
+        async with iq.transaction() as (repo, _):
+            await repo.create_entity(ENTITY)
+        await built_view(iq)
+        await import_legacy_semantics(iq)
+        if workload in ENTITY_READERS:
+            async with iq.transaction(workload, read_only=True) as (repo, _):
+                assert (await repo.get_entity("entity-1"))["name"] == "customer"
+        else:
+>           with pytest.raises(MetadataPermissionDenied):
+E           Failed: DID NOT RAISE MetadataPermissionDenied
+
+tests/integration/test_metadata_intelligence.py:843: Failed
+=========================== short test summary info ============================
+FAILED tests/integration/test_metadata_intelligence.py::test_workload_privileges[query]
+FAILED tests/integration/test_metadata_intelligence.py::test_feature_workload_privileges[query]
+2 failed, 116 passed in 150.32s (0:02:30)

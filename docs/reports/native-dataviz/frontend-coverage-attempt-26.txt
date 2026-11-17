@@ -1,0 +1,551 @@
+$ vitest run --coverage --browser.headless
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+      Coverage enabled with v8
+
+1:07:13 AM [vite] (client) Re-optimizing dependencies because vite config has changed
+1:07:15 AM [vite] (client) [optimizer] bundling dependencies...
+1:07:56 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/features/native-dataviz/dataset-create.test.tsx > dashboard dataset authoring > preserves rapid input through the real Monaco SQL editor: SELECT amount FROM Orders
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 2270.2019999999975ms exceeded.
+Call log:
+[2m  - taking element screenshot[22m
+[2m  - waiting for fonts to load...[22m
+[2m  - fonts loaded[22m
+[2m  - attempting scroll into view action[22m
+[2m    - waiting for element to be stable[22m
+]
+1:07:58 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/features/studio/navigation-material.integration.test.tsx > Studio navigation material integration > keeps the mobile drawer readable and closes on history, Escape, and scrim in 'dark' at 600 px
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 3148.5350000000035ms exceeded.
+Call log:
+[2m  - taking element screenshot[22m
+[2m  - waiting for fonts to load...[22m
+[2m  - fonts loaded[22m
+[2m  - attempting scroll into view action[22m
+[2m    - waiting for element to be stable[22m
+]
+ ❯ |browser (chromium)| src/features/studio/navigation-material.integration.test.tsx (6 tests | 1 failed) 35550ms
+     × keeps the mobile drawer readable and closes on history, Escape, and scrim in 'dark' at 600 px 23375ms
+1:08:07 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/components/layout/navigation-material.test.tsx > Nova navigation material > opens a glass mobile Sheet and closes on navigation in 'dark' at 320 px
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 5000ms exceeded.
+Call log:
+[2m  - waiting for locator('[data-vitest="true"]').contentFrame().locator('body')[22m
+[2m    - locator resolved to visible <body data-scroll-locked="1" data-testid="__vitest_0__">…</body>[22m
+]
+1:08:07 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/features/agents/agent-detail/quality-tab.test.tsx > Agent Quality > removes previous scoped results after a role change and handles narrow themes
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 899.8689999999988ms exceeded.
+Call log:
+[2m  - taking element screenshot[22m
+]
+ ❯ |browser (chromium)| src/features/agents/agent-detail/quality-tab.test.tsx (19 tests | 1 failed) 47272ms
+     × removes previous scoped results after a role change and handles narrow themes 26638ms
+1:08:09 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/features/intelligence/intelligence-page.test.tsx > Nova Intelligence > inspects a View definition, quality report, and question preview
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 1678.326000000001ms exceeded.
+Call log:
+[2m  - taking element screenshot[22m
+[2m  - waiting for fonts to load...[22m
+[2m  - fonts loaded[22m
+[2m  - attempting scroll into view action[22m
+[2m    - waiting for element to be stable[22m
+]
+1:08:23 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/features/migration/index.test.tsx > MigrationPage > discovers databases only after source details are saved and supports multi-selection
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 5000ms exceeded.
+Call log:
+[2m  - waiting for locator('[data-vitest="true"]').contentFrame().locator('body')[22m
+]
+1:08:23 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/features/studio/news/newspaper-page.test.tsx > moves between edition days from the masthead
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 5000ms exceeded.
+Call log:
+[2m  - waiting for locator('[data-vitest="true"]').contentFrame().locator('body')[22m
+]
+1:08:44 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/components/layout/navigation-material.test.tsx > Nova navigation material > opens a glass mobile Sheet and closes on navigation in 'dark' at 600 px
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 5000ms exceeded.
+Call log:
+[2m  - waiting for locator('[data-vitest="true"]').contentFrame().locator('body')[22m
+[2m    - locator resolved to visible <body data-testid="__vitest_0__">…</body>[22m
+]
+1:08:46 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/features/intelligence/intelligence-page.test.tsx > Nova Intelligence > keeps Semantic View details within a narrow viewport
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 5000ms exceeded.
+Call log:
+[2m  - waiting for locator('[data-vitest="true"]').contentFrame().locator('body')[22m
+[2m    - locator resolved to visible <body data-testid="__vitest_0__">…</body>[22m
+]
+1:08:49 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/features/native-dataviz/dataset-create.test.tsx > dashboard dataset authoring > preserves rapid input through the real Monaco SQL editor: SELECT SUM(amount) AS total FROM Orders
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout -4914.264999999999ms exceeded.
+Call log:
+[2m  - taking element screenshot[22m
+]
+1:08:58 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/features/migration/index.test.tsx > MigrationPage > reviews every selected database before each worker job
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 5000ms exceeded.
+Call log:
+[2m  - waiting for locator('[data-vitest="true"]').contentFrame().locator('body')[22m
+[2m    - locator resolved to visible <body data-testid="__vitest_0__">…</body>[22m
+]
+1:08:59 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/features/studio/news/newspaper-page.test.tsx > opens the monitor alerts desk
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 5000ms exceeded.
+Call log:
+[2m  - waiting for locator('[data-vitest="true"]').contentFrame().locator('body')[22m
+[2m    - locator resolved to visible <body data-testid="__vitest_0__">…</body>[22m
+]
+1:09:06 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/features/intelligence/intelligence-page.test.tsx > Nova Intelligence > keeps an unsupported imported View readable while requiring a new supported version
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 5000ms exceeded.
+Call log:
+[2m  - waiting for locator('[data-vitest="true"]').contentFrame().locator('body')[22m
+]
+1:09:08 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/components/layout/navigation-material.test.tsx > Nova navigation material > keeps the mobile fallback opaque for supports
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 5000ms exceeded.
+Call log:
+[2m  - waiting for locator('[data-vitest="true"]').contentFrame().locator('body')[22m
+[2m    - locator resolved to visible <body data-testid="__vitest_0__">…</body>[22m
+]
+ ❯ |browser (chromium)| src/features/intelligence/intelligence-page.test.tsx (20 tests | 3 failed) 115550ms
+     × inspects a View definition, quality report, and question preview 28079ms
+     × keeps Semantic View details within a narrow viewport 27872ms
+     × keeps an unsupported imported View readable while requiring a new supported version 30352ms
+1:09:18 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/features/native-dataviz/dataset-create.test.tsx > dashboard dataset authoring > preserves rapid input through the real Monaco SQL editor: SELECT amount FROM Orders WHERE region = 'West'
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 2617.8150000000023ms exceeded.
+Call log:
+[2m  - taking element screenshot[22m
+[2m  - waiting for fonts to load...[22m
+[2m  - fonts loaded[22m
+[2m  - attempting scroll into view action[22m
+[2m    - waiting for element to be stable[22m
+]
+1:09:23 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/features/migration/index.test.tsx > MigrationPage > invalidates the review when the selection changes
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 2553.00499999999ms exceeded.
+Call log:
+[2m  - taking element screenshot[22m
+[2m  - waiting for fonts to load...[22m
+[2m  - fonts loaded[22m
+[2m  - attempting scroll into view action[22m
+[2m    - waiting for element to be stable[22m
+]
+1:09:23 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/features/studio/news/newspaper-page.test.tsx > tells the full story in a panel beside the edition at 320 px
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 2554.5360000000073ms exceeded.
+Call log:
+[2m  - taking element screenshot[22m
+[2m  - waiting for fonts to load...[22m
+[2m  - fonts loaded[22m
+[2m  - attempting scroll into view action[22m
+[2m    - waiting for element to be stable[22m
+]
+1:09:46 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/features/native-dataviz/dataset-create.test.tsx > dashboard dataset authoring > pins a published semantic version, metrics, dimensions and named filters
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout -1318.3500000000058ms exceeded.
+Call log:
+[2m  - taking element screenshot[22m
+]
+1:09:48 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/features/migration/index.test.tsx > MigrationPage > blocks submission when a selected database fails preflight
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 5000ms exceeded.
+Call log:
+[2m  - waiting for locator('[data-vitest="true"]').contentFrame().locator('body')[22m
+[2m    - locator resolved to visible <body data-testid="__vitest_0__">…</body>[22m
+]
+1:09:48 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/features/studio/news/newspaper-page.test.tsx > tells the full story in a panel beside the edition at 1280 px
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 5000ms exceeded.
+Call log:
+[2m  - waiting for locator('[data-vitest="true"]').contentFrame().locator('body')[22m
+[2m    - locator resolved to visible <body data-scroll-locked="1" data-testid="__vitest_0__">…</body>[22m
+]
+ ❯ |browser (chromium)| src/features/studio/news/newspaper-page.test.tsx (22 tests | 4 failed) 135874ms
+   × moves between edition days from the masthead 31719ms
+   × opens the monitor alerts desk 33628ms
+   × tells the full story in a panel beside the edition at 320 px 26108ms
+   × tells the full story in a panel beside the edition at 1280 px 25958ms
+1:09:54 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/features/ai-providers/providers-tab.test.tsx > registers and edits an LLM provider at 1280px
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 5000ms exceeded.
+Call log:
+[2m  - waiting for locator('[data-vitest="true"]').contentFrame().locator('body')[22m
+[2m    - locator resolved to visible <body data-testid="__vitest_0__">…</body>[22m
+]
+1:09:58 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/components/layout/navigation-material.test.tsx > Nova navigation material > keeps the frame continuous and workspace bounded with the assistant open in light
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout -589.7960000000021ms exceeded.
+Call log:
+[2m  - taking element screenshot[22m
+]
+1:10:15 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/features/migration/index.test.tsx > MigrationPage > shows a retry after database discovery fails
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 3483.4279999999853ms exceeded.
+Call log:
+[2m  - taking element screenshot[22m
+[2m  - waiting for fonts to load...[22m
+[2m  - fonts loaded[22m
+[2m  - attempting scroll into view action[22m
+[2m    - waiting for element to be stable[22m
+]
+1:10:16 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/features/ai-providers/providers-tab.test.tsx > registers and edits an LLM provider at 320px
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 5000ms exceeded.
+Call log:
+[2m  - waiting for locator('[data-vitest="true"]').contentFrame().locator('body')[22m
+[2m    - locator resolved to visible <body data-scroll-locked="1" data-testid="__vitest_0__">…</body>[22m
+]
+ ❯ |browser (chromium)| src/features/ai-providers/providers-tab.test.tsx (2 tests | 2 failed) 44972ms
+   × registers and edits an LLM provider at 1280px 22542ms
+   × registers and edits an LLM provider at 320px 22429ms
+1:10:21 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/components/layout/navigation-material.test.tsx > Nova navigation material > keeps the frame continuous and workspace bounded with the assistant open in dark
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout -650.710000000021ms exceeded.
+Call log:
+[2m  - taking element screenshot[22m
+]
+ ❯ |browser (chromium)| src/components/layout/navigation-material.test.tsx (21 tests | 5 failed) 178947ms
+     × opens a glass mobile Sheet and closes on navigation in 'dark' at 320 px 25428ms
+     × opens a glass mobile Sheet and closes on navigation in 'dark' at 600 px 29226ms
+     × keeps the mobile fallback opaque for supports 29080ms
+     × keeps the frame continuous and workspace bounded with the assistant open in light 22752ms
+     × keeps the frame continuous and workspace bounded with the assistant open in dark 25690ms
+1:10:23 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/features/native-dataviz/dataset-attach.test.tsx > reuse a dataset in the shared Data tab > checks the selected exact revision and adds its reference without copying or querying rows
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout -124.69000000000233ms exceeded.
+Call log:
+[2m  - taking element screenshot[22m
+]
+1:10:29 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+1:10:29 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/features/native-dataviz/dataset-create.test.tsx > dashboard dataset authoring > keeps populated authoring within a narrow dark viewport
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 1457.0049999999756ms exceeded.
+Call log:
+[2m  - taking element screenshot[22m
+[2m  - waiting for fonts to load...[22m
+[2m  - fonts loaded[22m
+[2m  - attempting scroll into view action[22m
+[2m    - waiting for element to be stable[22m
+]
+stderr | src/features/studio/intelligent-ui/renderer.test.tsx > Nova interactive answers > dispatches a conditional follow-up after local state reveals it
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 1454.7849999999744ms exceeded.
+Call log:
+[2m  - taking element screenshot[22m
+[2m  - waiting for fonts to load...[22m
+[2m  - fonts loaded[22m
+[2m  - attempting scroll into view action[22m
+[2m    - waiting for element to be stable[22m
+]
+ ❯ |browser (chromium)| src/features/native-dataviz/dataset-create.test.tsx (12 tests | 6 failed) 189464ms
+     × preserves rapid input through the real Monaco SQL editor: SELECT amount FROM Orders 21785ms
+     × preserves rapid input through the real Monaco SQL editor: SELECT SUM(amount) AS total FROM Orders 52402ms
+     × preserves rapid input through the real Monaco SQL editor: SELECT amount FROM Orders WHERE region = 'West' 29282ms
+     × pins a published semantic version, metrics, dimensions and named filters 26780ms
+     × keeps populated authoring within a narrow light viewport 23319ms
+     × keeps populated authoring within a narrow dark viewport 21621ms
+1:10:38 AM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.8_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=b7248d65:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=b7248d65:2792:2)
+stderr | src/features/migration/index.test.tsx > MigrationPage > does not select more databases than the batch limit
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 1987.2459999999846ms exceeded.
+Call log:
+[2m  - taking element screenshot[22m
+[2m  - waiting for fonts to load...[22m
+[2m  - fonts loaded[22m
+[2m  - attempting scroll into view action[22m
+[2m    - waiting for element to be stable[22m
+]
+[ELIFECYCLE] Command failed with exit code 130.

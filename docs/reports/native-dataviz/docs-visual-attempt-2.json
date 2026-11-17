@@ -1,0 +1,14 @@
+{
+  "date": "2026-11-14",
+  "method": "CUA native Google Chrome application, authenticated Nova session",
+  "result": "PASS",
+  "window_pixels": [1920, 1080],
+  "theme": "dark",
+  "observations": [
+    {"path": "/docs/studio/add-to-dataviz#when-the-button-is-missing", "result": "Role-change and cancellation paragraph visible and readable"},
+    {"path": "/docs/dataviz/native-documents", "result": "Drafts, publications, receipts, sharing, deletion and current limits visible; section navigation works"},
+    {"path": "/docs/dataviz/what-is-dataviz#limits", "result": "Native document integrations link navigates to the expected native documentation page"}
+  ],
+  "image_evidence": "Screenshots retained in the CUA conversation outputs; no local image artifact claimed",
+  "limits": ["Documentation only", "Native editor acceptance pending", "No mobile or light-theme acceptance claimed"]
+}

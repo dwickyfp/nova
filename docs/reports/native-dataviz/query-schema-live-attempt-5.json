@@ -1,0 +1,371 @@
+{
+  "started_at": "2026-11-13T20:01:10.708727+00:00",
+  "result": "FAIL",
+  "scope": "EXPLAIN SCHEMA through authenticated HTTP and governed pinned FE",
+  "cleanup": "PASS",
+  "schemas": [
+    {
+      "check": "empty view",
+      "rows": [
+        [
+          "1",
+          "id",
+          "bigint(20)",
+          "NO"
+        ],
+        [
+          "2",
+          "amount",
+          "decimal(38, 12)",
+          "YES"
+        ]
+      ]
+    },
+    {
+      "check": "computed output",
+      "rows": [
+        [
+          "1",
+          "next_id",
+          "bigint(20)",
+          "YES"
+        ],
+        [
+          "2",
+          "doubled",
+          "decimal(38, 12)",
+          "YES"
+        ],
+        [
+          "3",
+          "positive",
+          "boolean",
+          "YES"
+        ]
+      ]
+    },
+    {
+      "check": "empty outer join",
+      "rows": [
+        [
+          "1",
+          "left_id",
+          "bigint(20)",
+          "NO"
+        ],
+        [
+          "2",
+          "right_id",
+          "bigint(20)",
+          "YES"
+        ]
+      ]
+    },
+    {
+      "check": "outer join",
+      "rows": [
+        [
+          "1",
+          "left_id",
+          "bigint(20)",
+          "NO"
+        ],
+        [
+          "2",
+          "right_id",
+          "bigint(20)",
+          "YES"
+        ]
+      ]
+    },
+    {
+      "check": "typed null and literals",
+      "rows": [
+        [
+          "1",
+          "optional",
+          "bigint(20)",
+          "YES"
+        ],
+        [
+          "2",
+          "enabled",
+          "boolean",
+          "NO"
+        ],
+        [
+          "3",
+          "day_value",
+          "date",
+          "YES"
+        ],
+        [
+          "4",
+          "time_value",
+          "datetime",
+          "YES"
+        ],
+        [
+          "5",
+          "amount",
+          "decimal(38, 12)",
+          "YES"
+        ]
+      ]
+    },
+    {
+      "check": "aggregate empty source",
+      "rows": [
+        [
+          "1",
+          "n",
+          "bigint(20)",
+          "NO"
+        ]
+      ]
+    }
+  ],
+  "error_type": "AssertionError",
+  "steps": [
+    {
+      "check": "login",
+      "passed": true
+    },
+    {
+      "check": "admitted",
+      "passed": true
+    },
+    {
+      "request": "inactive role denied",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "inactive role denied",
+      "passed": true
+    },
+    {
+      "check": "inactive role denied single result",
+      "passed": true
+    },
+    {
+      "check": "inactive role denied outcome",
+      "passed": true
+    },
+    {
+      "request": "activate fixture role",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "activate fixture role",
+      "passed": true
+    },
+    {
+      "check": "exact active role",
+      "passed": true
+    },
+    {
+      "request": "empty view",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "empty view",
+      "passed": true
+    },
+    {
+      "check": "empty view single result",
+      "passed": true
+    },
+    {
+      "check": "empty view outcome",
+      "passed": true
+    },
+    {
+      "check": "empty view execution identity",
+      "passed": true
+    },
+    {
+      "check": "empty source precision",
+      "passed": true
+    },
+    {
+      "request": "computed output",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "computed output",
+      "passed": true
+    },
+    {
+      "check": "computed output single result",
+      "passed": true
+    },
+    {
+      "check": "computed output outcome",
+      "passed": true
+    },
+    {
+      "check": "computed output execution identity",
+      "passed": true
+    },
+    {
+      "check": "computed output retains declared types",
+      "passed": true
+    },
+    {
+      "request": "empty outer join",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "empty outer join",
+      "passed": true
+    },
+    {
+      "check": "empty outer join single result",
+      "passed": true
+    },
+    {
+      "check": "empty outer join outcome",
+      "passed": true
+    },
+    {
+      "check": "empty outer join execution identity",
+      "passed": true
+    },
+    {
+      "request": "seed owned join row",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "seed owned join row",
+      "passed": true
+    },
+    {
+      "check": "owned row inserted",
+      "passed": true
+    },
+    {
+      "request": "observe unmatched join",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "observe unmatched join",
+      "passed": true
+    },
+    {
+      "check": "unmatched join returns a null",
+      "passed": true
+    },
+    {
+      "request": "outer join",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "outer join",
+      "passed": true
+    },
+    {
+      "check": "outer join single result",
+      "passed": true
+    },
+    {
+      "check": "outer join outcome",
+      "passed": true
+    },
+    {
+      "check": "outer join execution identity",
+      "passed": true
+    },
+    {
+      "check": "outer join introduces nullability",
+      "passed": true
+    },
+    {
+      "check": "schema independent of source rows",
+      "passed": true
+    },
+    {
+      "request": "typed null and literals",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "typed null and literals",
+      "passed": true
+    },
+    {
+      "check": "typed null and literals single result",
+      "passed": true
+    },
+    {
+      "check": "typed null and literals outcome",
+      "passed": true
+    },
+    {
+      "check": "typed null and literals execution identity",
+      "passed": true
+    },
+    {
+      "check": "typed literals have engine schema",
+      "passed": true
+    },
+    {
+      "request": "aggregate empty source",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "aggregate empty source",
+      "passed": true
+    },
+    {
+      "check": "aggregate empty source single result",
+      "passed": true
+    },
+    {
+      "check": "aggregate empty source outcome",
+      "passed": true
+    },
+    {
+      "check": "aggregate empty source execution identity",
+      "passed": true
+    },
+    {
+      "check": "aggregate type on empty source",
+      "passed": true
+    },
+    {
+      "request": "DML refused",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "DML refused",
+      "passed": true
+    },
+    {
+      "check": "DML refused single result",
+      "passed": true
+    },
+    {
+      "check": "DML refused outcome",
+      "passed": true
+    },
+    {
+      "request": "external output refused",
+      "status": 403,
+      "expected_status": 200
+    },
+    {
+      "check": "external output refused",
+      "passed": false
+    }
+  ]
+}

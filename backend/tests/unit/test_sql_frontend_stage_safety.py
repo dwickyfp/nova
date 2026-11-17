@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.sql_frontend.ast.builder import ast_builders
-from app.sql_frontend.context import PlanningContext
+from app.sql_frontend.context import ExecutionContext, PlanningContext
 from app.sql_frontend.errors import SemanticError
 from app.sql_frontend.execution.adapters import (
     _logical_location,
@@ -131,7 +131,7 @@ def test_engine_response_names_stages_not_buckets_or_endpoints():
     adapters._repo = Repo()
     adapters._audit_sink = audit
     adapters._decrypt = lambda _value: "pw"
-    context = SimpleNamespace(
+    context = ExecutionContext(
         username="u", encrypted_password="e", database="db", schema=None, role="r",
         max_rows=10, connection=None, session_id=None, file_id=None, row_sink=None,
         engine_session_prepared=False, transaction_active=False, statements={},

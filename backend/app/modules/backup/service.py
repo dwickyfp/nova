@@ -22,12 +22,8 @@ from __future__ import annotations
 import logging
 import re
 
-from app.common.audit import write_audit_log
-from app.core.config import get_storage_connection
-from app.modules.query.dialect.injector import resolve_storage_credentials
 from app.modules.query.service import query_service
 
-from . import bi_metadata
 from .schemas import (
     RecoverRequest,
     RepositoryCreate,
@@ -77,6 +73,7 @@ class BackupService:
         encrypted_password: str,
         session_id: str | None,
         role: str | None = None,
+        allow_stage_export: bool = False,
     ) -> None:
         result = await query_service.execute(
             sql=sql,
@@ -85,6 +82,7 @@ class BackupService:
             session_id=session_id,
             role=role,
             confirm_destructive=True,
+            allow_stage_export=allow_stage_export,
         )
         if result.error:
             raise BackupError(result.error)
@@ -143,10 +141,6 @@ class BackupService:
             "repository": repository,
             "message": f"Snapshot '{database}.{label}' created",
         }
-        if bi_metadata.pairs_with(database):
-            outcome = await bi_metadata.dump(repository, label)
-            await self._audit_bi("BACKUP_BI_METADATA", label, outcome, username, session_id)
-            result["bi_metadata"] = outcome.as_dict()
         return result
 
     async def restore_snapshot(
@@ -189,30 +183,7 @@ class BackupService:
             "repository": repository,
             "message": f"Snapshot '{database}.{label}' restored",
         }
-        if bi_metadata.pairs_with(database) and not body.tables:
-            outcome = await bi_metadata.restore(repository, label)
-            await self._audit_bi("RESTORE_BI_METADATA", label, outcome, username, session_id)
-            result["bi_metadata"] = outcome.as_dict()
         return result
-
-    @staticmethod
-    async def _audit_bi(
-        action: str,
-        label: str,
-        outcome: bi_metadata.BiMetadataResult,
-        username: str,
-        session_id: str | None,
-    ) -> None:
-        await write_audit_log(
-            event_type="BACKUP",
-            user_name=username,
-            action=action,
-            object_type="BI_METADATA",
-            object_name=label,
-            status="FAILED" if outcome.status == "failed" else "SUCCESS",
-            error_message=outcome.message if outcome.status == "failed" else None,
-            session_id=session_id,
-        )
 
     @staticmethod
     def _on_clause(tables: list[str], *, database: str) -> str:
@@ -255,49 +226,42 @@ class BackupService:
         session_id: str | None,
         role: str | None = None,
     ) -> dict:
-        """``CREATE REPOSITORY … WITH BROKER ON LOCATION <path> PROPERTIES(...)``.
+        """``CREATE [READ ONLY] REPOSITORY … WITH BROKER ON LOCATION "@stage/folder/"``.
 
-        Credentials come from the named storage connection, resolved here. They
-        are embedded in the statement (the engine needs them) but never stored
-        by Nova and never returned — ``redact_sql_credentials`` scrubs the
-        audited copy of the statement.
+        The SQL frontend authorizes the active role's access to the stage
+        (write, or read for a read-only repository) before it resolves the
+        stage's storage credential, and renders the physical location and
+        credential only at execution. Repositories need ``ACCOUNTADMIN``
+        (``app.sql_frontend.backup_restore``).
         """
         name = _safe_ident(body.name, "repository name")
         location = body.location.strip()
-        if not location or any(c in location for c in ("'", '"', ";", "\n")):
+        if not location or any(c in location for c in ("'", '"', ";", "\n", "\\")):
             raise BackupError("Invalid repository location")
-
-        connection = get_storage_connection(body.storage_connection)
-        access_key, secret_key = resolve_storage_credentials(body.storage_connection)
-        props: list[str] = []
-        if connection.endpoint:
-            props.append(f'"aws.s3.endpoint" = "{connection.endpoint}"')
-        if access_key:
-            props.append(f'"aws.s3.access_key" = "{access_key}"')
-        if secret_key:
-            props.append(f'"aws.s3.secret_key" = "{secret_key}"')
-        # Resolve region/bucket through the connection, never a hardcoded default.
-        if getattr(connection, "region", None):
-            props.append(f'"aws.s3.region" = "{connection.region}"')
-
+        if not location.startswith("@"):
+            raise BackupError(
+                "A backup repository is a stage folder: write the location as "
+                "'@<stage>/<folder>/'. Storage URLs are refused; the stage supplies "
+                "the storage location and credentials."
+            )
+        read_only = "READ ONLY " if body.read_only else ""
         statement = (
-            f"CREATE REPOSITORY {_quote(name)} WITH BROKER "
+            f"CREATE {read_only}REPOSITORY {_quote(name)} WITH BROKER "
             f'ON LOCATION "{location}"'
         )
-        if props:
-            statement += f" PROPERTIES({', '.join(props)})"
         await self._run(
             statement,
             username=username,
             encrypted_password=encrypted_password,
             session_id=session_id,
             role=role,
+            allow_stage_export=True,
         )
         return {
             "success": True,
             "name": name,
-            "storage_connection": body.storage_connection,
             "location": location,
+            "read_only": body.read_only,
         }
 
     async def list_repositories(

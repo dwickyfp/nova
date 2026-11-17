@@ -1,0 +1,48 @@
+[
+  {
+    "command": [
+      "docker",
+      "compose",
+      "--project-directory",
+      "/Users/dwickyferiansyahputra/Public/Research/nova/docker",
+      "--env-file",
+      "/Users/dwickyferiansyahputra/Public/Research/nova/docker/.env",
+      "-p",
+      "docker",
+      "-f",
+      "/Users/dwickyferiansyahputra/.local/share/nova/migration-20261113/pg-provisioning/compose.yaml",
+      "-f",
+      "/Users/dwickyferiansyahputra/Public/Research/nova/docker/docker-compose-engine.yml",
+      "-f",
+      "/Users/dwickyferiansyahputra/Public/Research/nova/docker/docker-compose.dev.yml",
+      "config",
+      "--quiet"
+    ],
+    "file": "query-schema-compose-attempt-1.txt",
+    "returncode": 0,
+    "seconds": 0.67
+  },
+  {
+    "command": [
+      "docker",
+      "compose",
+      "--project-directory",
+      "/Users/dwickyferiansyahputra/Public/Research/nova/docker",
+      "--env-file",
+      "/Users/dwickyferiansyahputra/Public/Research/nova/docker/.env",
+      "-p",
+      "docker",
+      "-f",
+      "/Users/dwickyferiansyahputra/.local/share/nova/migration-20261113/pg-provisioning/compose.yaml",
+      "-f",
+      "/Users/dwickyferiansyahputra/Public/Research/nova/docker/docker-compose-engine.yml",
+      "-f",
+      "/Users/dwickyferiansyahputra/Public/Research/nova/docker/docker-compose.dev.yml",
+      "build",
+      "starrocks-fe"
+    ],
+    "file": "query-schema-build-attempt-1.txt",
+    "returncode": 1,
+    "seconds": 209.92
+  }
+]

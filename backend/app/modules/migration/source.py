@@ -25,6 +25,7 @@ from dataclasses import dataclass
 import asyncmy
 import asyncmy.cursors
 
+from app import mysql_driver_guard  # noqa: F401 - refuse mapping parameters
 from app.storage.secrets import SecretResolutionError, resolve_secret_reference
 
 

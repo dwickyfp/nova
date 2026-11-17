@@ -17,18 +17,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import sys
 import time
 from pathlib import Path
 from typing import Any
 
 import httpx
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "superset" / "bench"))
-
-from nova_session import principal, sign_in  # noqa: E402
-
-from tests.benchmark.ontology_isolation.seed import STATE  # noqa: E402
+from tests.benchmark.nova_session import principal, sign_in
+from tests.benchmark.ontology_isolation.seed import STATE
 
 #: (agent, question, the concept it must use, words from the other meaning that must not appear)
 CASES: list[dict[str, Any]] = [

@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="3" skipped="0" tests="3" time="14.595" timestamp="2026-11-13T23:00:42.751870+07:00" hostname="Dwickys-MacBook-Air.local"><testcase classname="tests.integration.test_metadata_viz" name="test_personal_documents_use_existing_private_workspace_namespace" time="6.330"><failure message="TypeError: session() takes from 0 to 1 positional arguments but 2 were given">viz = &lt;tests.integration.test_metadata_viz.VizFixture object at 0x118e765d0&gt;
+
+    async def test_personal_documents_use_existing_private_workspace_namespace(viz):
+        document = dashboard()
+        async with viz.transaction() as (repository, _):
+            await repository.create("personal", document, operation_id=uuid4())
+            await repository.publish(document.dashboard_id, PublicationRequest(
+                operation_id=uuid4(), expected_revision=1,
+            ))
+            assert (await repository.browse("personal"))[0]["resource_id"] == document.dashboard_id
+        row = (await viz.inspect(
+            "SELECT workspace_namespace,shared_workspace_id FROM nova_meta.viz_resources"
+        ))[0]
+        assert row == {"workspace_namespace": "owner", "shared_workspace_id": None}
+        # A document grant never creates membership in another user's personal space.
+        await grant(viz, document.dashboard_id, {
+            "subject_type": "user", "subject_id": "reader", "permissions": ["manage", "export"],
+        })
+&gt;       async with viz.transaction(session("reader", "VIEWER")) as (repository, _):
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: session() takes from 0 to 1 positional arguments but 2 were given
+
+tests/integration/test_metadata_viz.py:130: TypeError</failure></testcase><testcase classname="tests.integration.test_metadata_viz" name="test_personal_binding_cannot_borrow_another_principals_dataset" time="4.115"><failure message="TypeError: session() takes from 0 to 1 positional arguments but 2 were given">viz = &lt;tests.integration.test_metadata_viz.VizFixture object at 0x1190f36d0&gt;
+
+    async def test_personal_binding_cannot_borrow_another_principals_dataset(viz):
+        source = dataset()
+        async with viz.transaction() as (repository, _):
+            await repository.create("personal", source, operation_id=uuid4())
+        await grant(viz, source.dataset_id, {
+            "subject_type": "user", "subject_id": "reader", "permissions": ["edit"],
+        })
+        with pytest.raises(NovaException, match="Document not found"):
+&gt;           async with viz.transaction(session("reader", "VIEWER")) as (repository, _):
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           TypeError: session() takes from 0 to 1 positional arguments but 2 were given
+
+tests/integration/test_metadata_viz.py:151: TypeError</failure></testcase><testcase classname="tests.integration.test_metadata_viz" name="test_personal_namespace_cannot_be_forged_or_used_without_bound_roles" time="3.432"><failure message="app.core.metadata_db.MetadataOperationFailed: Metadata operation failed">viz = &lt;tests.integration.test_metadata_viz.VizFixture object at 0x118fbee10&gt;
+
+    async def test_personal_namespace_cannot_be_forged_or_used_without_bound_roles(viz):
+        document = dashboard()
+        async with viz.transaction() as (repository, _):
+            await repository.create("personal", document, operation_id=uuid4())
+        with pytest.raises(MetadataPermissionDenied):
+&gt;           async with viz.transaction() as (_, connection):
+
+tests/integration/test_metadata_viz.py:161: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/contextlib.py:231: in __aexit__
+    await self.gen.athrow(typ, value, traceback)
+tests/integration/test_metadata_viz.py:71: in transaction
+    async with (
+../../../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/contextlib.py:231: in __aexit__
+    await self.gen.athrow(typ, value, traceback)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;app.core.metadata_db.MetadataDatabase object at 0x118f75550&gt;
+actor = SecurityContext(principal='owner', active_role='ANALYST', principal_type='USER', database=None, session_id='login-owner', security_context_version=5)
+read_only = False, request_id = ''
+
+    @asynccontextmanager
+    async def transaction(
+        self,
+        actor: SecurityContext,
+        *,
+        read_only: bool = False,
+        request_id: str = "",
+    ) -&gt; AsyncIterator[psycopg.AsyncConnection[dict[str, Any]]]:
+        if not isinstance(actor, SecurityContext):
+            raise ValueError("An explicit metadata actor is required")
+        session_id = actor.session_id
+        if session_id is not None and (
+            not isinstance(session_id, str)
+            or not session_id.strip()
+            or len(session_id) &gt; 64
+            or "\0" in session_id
+        ):
+            raise ValueError("Invalid metadata login context")
+        if not self._ready:
+            raise MetadataUnavailable()
+        try:
+            async with self._pool.connection() as conn, conn.transaction():
+                if read_only:
+                    await conn.execute("SET TRANSACTION READ ONLY")
+                # A transaction pooler can select a different backend after
+                # readiness. Check before sending any actor or domain values.
+                if not await logging_is_private(conn):
+                    raise MetadataSchemaMismatch()
+                await conn.execute(
+                    "SELECT set_config('nova.principal', %s, true), "
+                    "set_config('nova.active_role', %s, true), "
+                    "set_config('nova.security_context_version', %s, true), "
+                    "set_config('nova.principal_type', %s, true), "
+                    "set_config('nova.session_id', %s, true), "
+                    "set_config('nova.request_id', %s, true), "
+                    "set_config('nova.service_identity', current_user, true), "
+                    "set_config('synchronous_commit', 'on', true), "
+                    "set_config('TimeZone', 'UTC', true), "
+                    "set_config('statement_timeout', %s, true), "
+                    "set_config('lock_timeout', %s, true), "
+                    "set_config('idle_in_transaction_session_timeout', %s, true)",
+                    (
+                        actor.principal,
+                        actor.active_role,
+                        str(actor.security_context_version),
+                        actor.principal_type,
+                        session_id or "",
+                        request_id,
+                        str(self._config.statement_timeout_ms),
+                        str(self._config.lock_timeout_ms),
+                        str(self._config.idle_transaction_timeout_ms),
+                    ),
+                )
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock_shared(%s)", (METADATA_DEPLOYMENT_LOCK,)
+                )
+                cursor = await conn.execute(
+                    "SELECT schema_version, metadata_epoch, maintenance "
+                    "FROM nova_meta.deployment_state WHERE singleton = TRUE"
+                )
+                state = await cursor.fetchone()
+                if (
+                    not state
+                    or state["schema_version"] != self._schema_version
+                    or str(state["metadata_epoch"]) != self._metadata_epoch
+                ):
+                    raise MetadataSchemaMismatch()
+                if not read_only and state["maintenance"]:
+                    raise MetadataReadOnlyMaintenance()
+                yield conn
+        except (
+            psycopg.errors.UniqueViolation,
+            psycopg.errors.SerializationFailure,
+            psycopg.errors.DeadlockDetected,
+        ) as exc:
+            _log_database_failure("conflict", exc)
+            raise MetadataConflict() from None
+        except (PoolTimeout, psycopg.errors.QueryCanceled, psycopg.errors.LockNotAvailable) as exc:
+            _log_database_failure("timeout", exc)
+            raise MetadataTimeout() from None
+        except (TooManyRequests, PoolClosed) as exc:
+            _log_database_failure("unavailable", exc)
+            raise MetadataUnavailable() from None
+        except psycopg.OperationalError as exc:
+            _log_database_failure("outcome_unknown", exc)
+            # A connection lost during COMMIT cannot be retried without a receipt.
+            raise MetadataOutcomeUnknown() from None
+        except psycopg.errors.InsufficientPrivilege as exc:
+            _log_database_failure("permission", exc)
+            raise MetadataPermissionDenied() from None
+        except psycopg.errors.ReadOnlySqlTransaction as exc:
+            _log_database_failure("read_only", exc)
+            raise MetadataReadOnlyMaintenance() from None
+        except psycopg.IntegrityError as exc:
+            _log_database_failure("integrity", exc)
+            raise MetadataIntegrityViolation() from None
+        except psycopg.Error as exc:
+            _log_database_failure("sql_error", exc)
+            # Driver diagnostics can contain bind values; expose only the category.
+&gt;           raise MetadataOperationFailed() from None
+E           app.core.metadata_db.MetadataOperationFailed: Metadata operation failed
+
+app/core/metadata_db.py:388: MetadataOperationFailed</failure></testcase></testsuite></testsuites>

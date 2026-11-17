@@ -6,12 +6,6 @@ import "@/styles/index.css";
 import { ApiError } from "@/lib/api-client";
 import { StudioTabs } from "../studio-tabs";
 import { AddToDatavizButton } from "./add-to-dataviz";
-import {
-  attachDatavizFrame,
-  parseFramePath,
-  probeUnsavedChanges,
-  syncDatavizFrame,
-} from "./dashboard-bridge";
 
 const dataviz = vi.hoisted(() => ({ check: vi.fn(), dashboards: vi.fn(), publish: vi.fn() }));
 vi.mock("./api", async (importOriginal) => ({
@@ -39,37 +33,6 @@ const SUPPORTED = {
   title: "Units by brand",
   concepts: [{ qualified_name: "Sales.Units", label: "Units sold" }],
 };
-
-describe("the Dataviz frame bridge", () => {
-  it("reads the dashboard and a well-formed filter key from a /bi path only", () => {
-    expect(parseFramePath("/bi/superset/dashboard/14/?native_filters_key=Ab_9-x")).toMatchObject({
-      dashboardId: 14,
-      nativeFiltersKey: "Ab_9-x",
-    });
-    expect(parseFramePath("/bi/superset/dashboard/14/?native_filters_key=<script>")).toMatchObject({
-      dashboardId: 14,
-      nativeFiltersKey: null,
-    });
-    expect(parseFramePath("/bi/explore/?slice_id=3").dashboardId).toBeNull();
-    expect(parseFramePath("https://evil.example/bi/superset/dashboard/1/").path).toBeNull();
-  });
-
-  it("reads unsaved edits from Superset's own beforeunload guard", () => {
-    // A same-origin frame window: a real EventTarget at a Superset path.
-    const view = Object.assign(new EventTarget(), {
-      location: { pathname: "/bi/superset/dashboard/1/", search: "" },
-      Event: window.Event,
-    });
-    const frame = { contentWindow: view } as unknown as HTMLIFrameElement;
-    expect(probeUnsavedChanges(frame)).toBe("clean");
-    // What Superset's useBeforeUnload registers while a dashboard has unsaved changes.
-    view.addEventListener("beforeunload", (event) => event.preventDefault());
-    expect(probeUnsavedChanges(frame)).toBe("dirty");
-    const elsewhere = { contentWindow: { ...view, location: { pathname: "/sign-in", search: "" } } };
-    expect(probeUnsavedChanges(elsewhere as unknown as HTMLIFrameElement)).toBe("unknown");
-    expect(probeUnsavedChanges(null)).toBe("unknown");
-  });
-});
 
 describe("Studio's workspace tabs", () => {
   it("is one tab list that arrow keys move through", async () => {
@@ -106,7 +69,7 @@ describe("Add to Dataviz", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     dataviz.dashboards.mockResolvedValue({
-      dashboards: [{ id: 7, title: "Sales", published: true, own: true, bi_view_path: "/bi/superset/dashboard/7/" }],
+      dashboards: [{ id: "aaaaaaaa-0000-4000-8000-000000000007", title: "Sales", published: true, own: true, changed: "2026-11-16T00:00:00Z", workspace_id: "personal" }],
       page: 0,
       has_more: false,
     });
@@ -115,7 +78,6 @@ describe("Add to Dataviz", () => {
 
   it.each([
     ["UNSUPPORTED", false],
-    ["CONVERTIBLE", false],
     ["UNKNOWN", false],
     ["SUPPORTED", false],
   ])("shows nothing at all for %s when it cannot be added", async (status, canAdd) => {
@@ -139,8 +101,8 @@ describe("Add to Dataviz", () => {
     dataviz.publish
       .mockRejectedValueOnce(new ApiError(503, "Dataviz is unavailable right now."))
       .mockResolvedValueOnce({
-        operation_id: "pub_1", status: "SUCCEEDED", dashboard_id: 7, chart_id: 9,
-        artifact_id: "a", bi_view_path: "/bi/superset/dashboard/7/", reused_chart: false, concepts: [],
+        operation_id: "pub_1", status: "SUCCEEDED", dashboard_id: "aaaaaaaa-0000-4000-8000-000000000007", chart_id: "c1",
+        workspace_id: "personal", reused_chart: false, concepts: [],
       });
     const screen = await render(withQueries(<AddToDatavizButton locator={LOCATOR} />));
     await screen.getByRole("button", { name: "Add to Dataviz" }).click();
@@ -152,14 +114,14 @@ describe("Add to Dataviz", () => {
     await vi.waitFor(() => expect(dataviz.publish).toHaveBeenCalledTimes(2));
     const [first, second] = dataviz.publish.mock.calls.map(([body]) => body);
     expect(first.idempotency_key).toBe(second.idempotency_key);
-    expect(first).toMatchObject({ preview_ref: "pv1.a.b", target: { mode: "existing", dashboard_id: 7 } });
+    expect(first).toMatchObject({ preview_ref: "pv1.a.b", target: { mode: "existing", dashboard_id: "aaaaaaaa-0000-4000-8000-000000000007" } });
   });
 
   it("creates a new dashboard by name, without asking for SQL or a dataset", async () => {
     dataviz.check.mockResolvedValue({ results: [SUPPORTED] });
     dataviz.publish.mockResolvedValue({
-      operation_id: "pub_2", status: "SUCCEEDED", dashboard_id: 11, chart_id: 9,
-      artifact_id: "a", bi_view_path: "/bi/superset/dashboard/11/", reused_chart: false, concepts: [],
+      operation_id: "pub_2", status: "SUCCEEDED", dashboard_id: "bbbbbbbb-0000-4000-8000-000000000011", chart_id: "c2",
+      workspace_id: "personal", reused_chart: false, concepts: [],
     });
     const screen = await render(withQueries(<AddToDatavizButton locator={LOCATOR} />));
     await screen.getByRole("button", { name: "Add to Dataviz" }).click();
@@ -190,31 +152,5 @@ describe("the Dataviz assistant composer", () => {
     await panel.unmount();
     const agentTab = await render(<Composer {...props} />);
     await expect.element(agentTab.getByText("Nova Dataviz assistant")).toBeVisible();
-  });
-});
-
-describe("the dashboard the assistant reads", () => {
-  function framed(path: string, title: string) {
-    const [pathname, search = ""] = path.split("?");
-    return {
-      contentWindow: { location: { pathname, search: search ? `?${search}` : "" } },
-      contentDocument: { title },
-    } as unknown as HTMLIFrameElement;
-  }
-
-  afterEach(() => attachDatavizFrame(null));
-
-  it("takes the open dashboard's name from Superset's page title", () => {
-    attachDatavizFrame(framed("/bi/superset/dashboard/16/", "Dataviz 5W1H eval"));
-    expect(syncDatavizFrame()).toMatchObject({ dashboardId: 16, title: "Dataviz 5W1H eval" });
-    attachDatavizFrame(framed("/bi/superset/dashboard/16/", "Sales | Superset"));
-    expect(syncDatavizFrame().title).toBe("Sales");
-  });
-
-  it("names nothing outside a dashboard or before Superset titles it", () => {
-    attachDatavizFrame(framed("/bi/explore/", "Revenue chart"));
-    expect(syncDatavizFrame().title).toBeNull();
-    attachDatavizFrame(framed("/bi/superset/dashboard/16/", "Superset"));
-    expect(syncDatavizFrame().title).toBeNull();
   });
 });

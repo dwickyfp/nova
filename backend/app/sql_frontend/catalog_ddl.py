@@ -128,17 +128,24 @@ def validate_catalog(statement: Statement, context: Any):
                 if key in clauses:
                     raise SemanticError(f"CREATE CONNECTION clause {key} is repeated")
                 clauses[key] = value
-            missing = {"TYPE", "ENDPOINT", "SECRET"} - set(clauses)
+            missing = {"TYPE", "ENDPOINT"} - set(clauses)
             if missing:
                 raise SemanticError(
                     "CREATE CONNECTION requires " + ", ".join(sorted(missing))
                 )
+            from app.modules.catalog.sources import source_for
+
             connector_type = validate_connector_type(clauses["TYPE"])
-            parse_endpoint(connector_type, clauses["ENDPOINT"])
+            endpoint = parse_endpoint(connector_type, clauses["ENDPOINT"])
+            needs_secret = source_for(connector_type).requires_credentials(endpoint)
+            if needs_secret and "SECRET" not in clauses:
+                raise SemanticError("CREATE CONNECTION requires SECRET")
+            if not needs_secret and "SECRET" in clauses:
+                raise SemanticError("This connection takes no credentials; leave out SECRET")
             kwargs.update(
                 connector_type=connector_type,
                 endpoint=clauses["ENDPOINT"],
-                secret_ref=validate_secret_ref(clauses["SECRET"]),
+                secret_ref=validate_secret_ref(clauses["SECRET"]) if needs_secret else None,
                 comment=clauses.get("COMMENT"),
             )
         if statement.operation == "create_foreign_catalog":

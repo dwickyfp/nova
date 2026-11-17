@@ -6,6 +6,12 @@ in `nova_meta`, with `TaskMetadataRepository` as the prepared replacement for
 the `NOVA_SYSTEM` paths of `TaskOrchestrationRepository`. Running scheduler,
 worker and API code still uses `NOVA_SYSTEM`; nothing imports the repository.
 
+Revision 0058 widens `graph_id` in edges and graph runs from 64 to 514
+octets. A graph id is the root task's qualified `database.schema.name`
+(128 + 128 + 256 octets and two dots); with 64 octets a task in a database with
+a longer name could be created but never queued, and a pipe in such a database
+could not be created. Run ids remain UUIDs.
+
 ## Access
 
 Task metadata is control-plane state. The owning service (and the engine, for

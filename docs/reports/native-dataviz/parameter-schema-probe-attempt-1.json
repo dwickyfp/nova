@@ -1,0 +1,186 @@
+{
+  "result": "PASS_PROBE_ONLY",
+  "scope": "Read-only type-carrier feasibility probe on existing patched FE, caller Alice with marketing role; not dataset parameter acceptance",
+  "cases": [
+    {
+      "declared_type": "BIGINT",
+      "case": "nullable",
+      "columns": [
+        {
+          "type": "bigint(20)",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "declared_type": "BIGINT",
+      "case": "non_null",
+      "columns": [
+        {
+          "type": "bigint(20)",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "declared_type": "BIGINT",
+      "case": "non_null",
+      "columns": [
+        {
+          "type": "bigint(20)",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "declared_type": "DECIMAL(38,12)",
+      "case": "nullable",
+      "columns": [
+        {
+          "type": "decimal(38, 12)",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "declared_type": "DECIMAL(38,12)",
+      "case": "non_null",
+      "columns": [
+        {
+          "type": "decimal(38, 12)",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "declared_type": "DECIMAL(38,12)",
+      "case": "non_null",
+      "columns": [
+        {
+          "type": "decimal(38, 12)",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "declared_type": "VARCHAR(65536)",
+      "case": "nullable",
+      "columns": [
+        {
+          "type": "varchar(65536)",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "declared_type": "VARCHAR(65536)",
+      "case": "non_null",
+      "columns": [
+        {
+          "type": "varchar(65536)",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "declared_type": "VARCHAR(65536)",
+      "case": "non_null",
+      "columns": [
+        {
+          "type": "varchar(65536)",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "declared_type": "BOOLEAN",
+      "case": "nullable",
+      "columns": [
+        {
+          "type": "boolean",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "declared_type": "BOOLEAN",
+      "case": "non_null",
+      "columns": [
+        {
+          "type": "boolean",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "declared_type": "BOOLEAN",
+      "case": "non_null",
+      "columns": [
+        {
+          "type": "boolean",
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "declared_type": "DATE",
+      "case": "nullable",
+      "columns": [
+        {
+          "type": "date",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "declared_type": "DATE",
+      "case": "non_null",
+      "columns": [
+        {
+          "type": "date",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "declared_type": "DATE",
+      "case": "non_null",
+      "columns": [
+        {
+          "type": "date",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "declared_type": "DATETIME",
+      "case": "nullable",
+      "columns": [
+        {
+          "type": "datetime",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "declared_type": "DATETIME",
+      "case": "non_null",
+      "columns": [
+        {
+          "type": "datetime",
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "declared_type": "DATETIME",
+      "case": "non_null",
+      "columns": [
+        {
+          "type": "datetime",
+          "nullable": true
+        }
+      ]
+    }
+  ]
+}

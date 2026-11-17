@@ -1,10 +1,12 @@
 """Auth service — StarRocks native authentication + session management."""
 
+import logging
 from contextlib import suppress
 
 import asyncmy
 import asyncmy.errors
 
+from app import mysql_driver_guard  # noqa: F401 - refuse mapping parameters
 from app.common.audit import write_audit_log
 from app.common.nova_system import is_setup_complete, mark_setup_complete
 from app.common.user_flags import (
@@ -26,8 +28,14 @@ from app.modules.auth.exceptions import (
     InvalidCredentialsError,
     PasswordMismatchError,
     SetupAlreadyCompleteError,
+    SignInUnavailableError,
     WeakPasswordError,
 )
+
+logger = logging.getLogger(__name__)
+
+#: The engine's answer to a wrong user name or password (ER_ACCESS_DENIED_ERROR).
+ER_ACCESS_DENIED = 1045
 
 
 class AuthService:
@@ -45,8 +53,17 @@ class AuthService:
             )
             conn.close()
             return True
-        except asyncmy.errors.OperationalError:
-            return False
+        except asyncmy.errors.OperationalError as exc:
+            # Only the engine's own access-denied answer is a wrong password. An
+            # unreachable or overloaded engine must not read as one.
+            if exc.args and exc.args[0] == ER_ACCESS_DENIED:
+                return False
+            logger.warning("Sign-in check failed: engine unavailable (code %s)",
+                           exc.args[0] if exc.args else None)
+            raise SignInUnavailableError() from None
+        except (OSError, TimeoutError):
+            logger.warning("Sign-in check failed: engine unreachable")
+            raise SignInUnavailableError() from None
 
     async def get_user_roles(self, username: str, password: str) -> list[str]:
         """Fetch all granted/applicable roles for this user."""

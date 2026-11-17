@@ -1,17 +1,16 @@
 # Nova observability
 
-Grafana and Prometheus are provisioned from files in this directory. The seven
+Grafana and Prometheus are provisioned from files in this directory. The six
 dashboards open in Grafana's **Nova** folder:
 
 | Dashboard | What to inspect |
 | --- | --- |
 | Operations overview | Availability, request latency, SQL traffic, execution pressure, dependencies |
-| API and SQL | Route errors and latency, SQL pipeline, proxy listener and sessions, API process |
+| API and SQL | Route errors and latency, SQL pipeline, proxy listener and sessions, API process, Dataviz reads and scheduled exports |
 | Jobs and agents | Scheduler leadership, queue backlog, task and Studio Auto workers, migration jobs, search indexing, recovery |
 | StarRocks engine | FE query traffic and queues, BE CPU, memory, disk, compaction |
 | Host system | Docker Linux runtime CPU, memory, swap, filesystems, disk I/O, network, load |
 | Dependencies | Cache and queue, stage storage, policy service, monitoring pipeline |
-| BI (Superset) | Superset requests by area, queries it runs on Nova, Celery tasks, reports and SQL Lab waits |
 
 Each panel shows **No data** when its metric has not been emitted yet. An
 absent availability target appears as **No data** or **Not configured**, never
@@ -119,7 +118,7 @@ python docker/observability/check_stack.py --mode container
 Run only the command matching the selected mode. The checker verifies scrape
 targets, startup, a successful search indexing poll, and dependency metrics,
 Linux runtime CPU, memory, filesystem,
-disk, network, and load metrics, alert rules, and all seven provisioned
+disk, network, and load metrics, alert rules, and all six provisioned
 dashboard URLs. It exits nonzero if a required check fails.
 
 ## Alert thresholds
@@ -182,13 +181,3 @@ The node exporter host namespace and read-only root mount follow its
 [official container deployment guide](https://github.com/prometheus/node_exporter/blob/master/README.md#docker).
 Grafana dashboard and data source files follow
 [Grafana provisioning](https://grafana.com/docs/grafana/latest/administration/provisioning/).
-
-## BI (Superset) metrics
-
-Superset sends statsd over UDP to `statsd-exporter` (`statsd/mapping.yml`
-turns the names into `nova_bi_*` series); Prometheus scrapes it as job
-`bi-metrics`. Superset finds the exporter through `SUPERSET_STATSD_HOST`
-(default `statsd-exporter`) and drops packets while it is not running, so the
-observability stack can start before or after the `app` profile. Tags carry
-the HTTP method, status class, BI area, query outcome and Celery task name and
-state; never a user, role, SQL text or object name.

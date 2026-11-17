@@ -1,0 +1,19 @@
+{
+  "baseline_commit": "442044440e91d5e955247f99c1c6e23a141774c1",
+  "schema_before": 58,
+  "schema_after": 59,
+  "migration": "0059_workspace_entry_digest.sql",
+  "migration_sha256": "566adaf445c488e9cada115a1c7eea2ee3205f62d5bbb15b8c4c09fb3e341ef4",
+  "metadata_epoch_preserved": true,
+  "tables_count_checked": 198,
+  "all_counts_preserved": true,
+  "new_tables": [],
+  "backup": {
+    "bytes": 126523657,
+    "sha256": "c811eb0377de934643a292c0995ecaf675690e1923269b5e08f122b41e92fd53",
+    "toc_verified": true
+  },
+  "fixture_evidence": "tests/integration/test_metadata_workspace_files.py and tests/integration/test_metadata_migrator.py on the PG17 fixture",
+  "launcher": "not stopped; processes refused metadata work while frozen and reloaded at 59",
+  "recorded_at": "2026-11-17T04:18:15.732295+00:00"
+}

@@ -1,0 +1,33 @@
+E501 Line too long (101 > 100)
+   --> app/modules/viz/documents.py:194:101
+    |
+192 |             if isinstance(document, ChartDefinition) and isinstance(referenced, DatasetDefinition):
+193 |                 validate_chart_binding(document, referenced)
+194 |             if isinstance(document, DatasetDefinition) and isinstance(referenced, DatasetDefinition):
+    |                                                                                                     ^
+195 |                 for relation in document.relationships:
+196 |                     if relation.dataset_id == identity and relation.dataset_revision == revision:
+    |
+
+E501 Line too long (101 > 100)
+  --> tests/integration/test_metadata_viz.py:40:101
+   |
+39 |     @asynccontextmanager
+40 |     async def transaction(self, user=None, *, workload="web", repository_type=VizDocumentRepository):
+   |                                                                                                     ^
+41 |         user = user or session("owner")
+42 |         database = MetadataDatabase(self.environment.role_config("nova_meta_" + workload))
+   |
+
+E501 Line too long (104 > 100)
+   --> tests/integration/test_metadata_viz.py:263:101
+    |
+261 |     await grant(viz, document.dashboard_id, original)
+262 |     expires = datetime.now(UTC) + timedelta(hours=1)
+263 |     await grant(viz, document.dashboard_id, {**original, "expires_at": expires.isoformat()}, revision=2)
+    |                                                                                                     ^^^^
+264 |     rows = await viz.inspect("SELECT subject_id,expires_at FROM nova_meta.viz_acl_grants")
+265 |     assert rows == [{"subject_id": "VIEWER", "expires_at": expires}]
+    |
+
+Found 3 errors.

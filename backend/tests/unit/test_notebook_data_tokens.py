@@ -18,7 +18,6 @@ from app.core.config import settings
 from app.core.redis import session_store
 from app.core.security import encrypt_password
 from app.modules.access_control import data_tokens
-from app.modules.superset import access
 from app.proxy.executor import ProxyQueryExecutor, _reads_only
 from app.proxy.protocol import scramble_native_password
 from app.proxy.session import SessionState
@@ -35,7 +34,7 @@ async def redis(monkeypatch):
         await fake.aclose()
 
 
-async def _session(role: str = "analyst") -> data_tokens.BiSession:
+async def _session(role: str = "analyst") -> data_tokens.TokenSession:
     session_id = await session_store.create(
         "alice", encrypt_password("pw"), ["analyst", "finance"],
         default_role="analyst", active_role=role,
@@ -61,8 +60,8 @@ async def test_notebook_tokens_live_in_their_own_namespace(redis):
     assert not await redis.keys("nova:bi:token:*")
     scramble = b"x" * 20
     response = scramble_native_password(issued.token, scramble)
-    # Not a BI token…
-    assert await data_tokens.match("alice", scramble, response, purpose=data_tokens.BI) is None
+    # Not a task token…
+    assert await data_tokens.match("alice", scramble, response, purpose=data_tokens.TASK) is None
     # …but a notebook one, bound to the runtime.
     binding = await data_tokens.match("alice", scramble, response, purpose=data_tokens.NOTEBOOK)
     assert binding is not None and binding.subject == "rt-1" and binding.notebook
@@ -83,7 +82,7 @@ async def test_binding_holds_only_while_the_runtime_is_live(redis):
         "alice", scramble, scramble_native_password(issued.token, scramble),
         purpose=data_tokens.NOTEBOOK,
     )
-    with pytest.raises(data_tokens.BiCredentialError, match="stopped"):
+    with pytest.raises(data_tokens.DataTokenError, match="stopped"):
         await data_tokens.verify_binding(binding)
     await _runtime_live(redis)
     assert (await data_tokens.verify_binding(binding)).username == "alice"
@@ -99,7 +98,7 @@ async def test_a_role_switch_breaks_the_binding(redis):
         purpose=data_tokens.NOTEBOOK,
     )
     await session_store.set_active_role(session.session_id, "finance")
-    with pytest.raises(data_tokens.BiCredentialError, match="changed"):
+    with pytest.raises(data_tokens.DataTokenError, match="changed"):
         await data_tokens.verify_binding(binding)
 
 
@@ -116,9 +115,11 @@ async def test_revoking_the_runtime_forgets_its_token(redis):
 
 def test_notebook_tokens_are_accepted_only_from_sandbox_networks(monkeypatch):
     monkeypatch.setattr(settings, "NOTEBOOK_SANDBOX_NETWORKS", "0.250.250.0/24")
-    assert access.notebook_peer_allowed("0.250.250.254")
-    assert not access.notebook_peer_allowed("10.0.0.5")
-    assert not access.notebook_peer_allowed("not-an-ip")
+    assert data_tokens.sandbox_peer_allowed("0.250.250.254")
+    assert data_tokens.sandbox_peer_allowed("::ffff:0.250.250.9")
+    assert not data_tokens.sandbox_peer_allowed("10.0.0.5")
+    assert not data_tokens.sandbox_peer_allowed("not-an-ip")
+    assert "bi" not in data_tokens.PURPOSES
 
 
 @pytest.mark.parametrize(

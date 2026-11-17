@@ -1,0 +1,13 @@
+
+> shadcn-admin@2.2.1 test /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+> vitest run --browser.headless tests/dev-proxy.rule.test.ts src/features/native-dataviz/documents.test.ts
+
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+
+
+ Test Files  2 passed (2)
+      Tests  54 passed (54)
+   Start at  03:25:50
+   Duration  2.56s (transform 439ms, setup 0ms, import 2.04s, tests 324ms, environment 0ms)
+

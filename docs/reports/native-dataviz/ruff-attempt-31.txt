@@ -1,0 +1,11 @@
+E501 Line too long (103 > 100)
+   --> app/modules/viz/contracts/common.py:101:101
+    |
+100 | Scalar = Annotated[
+101 |     StringValue | IntegerValue | DecimalValue | FloatValue | BooleanValue | DateValue | TimestampValue,
+    |                                                                                                     ^^^
+102 |     Field(discriminator="type"),
+103 | ]
+    |
+
+Found 1 error.

@@ -1,0 +1,202 @@
+ Image docker-starrocks-fe Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 1.74kB done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from starrocks-fe.Dockerfile
+#2 transferring dockerfile:
+#2 transferring dockerfile: 10.71kB 0.0s done
+#2 DONE 0.2s
+
+#3 [internal] load metadata for docker.io/starrocks/fe-ubuntu:4.1.4
+#3 DONE 0.0s
+
+#4 [internal] load metadata for docker.io/library/eclipse-temurin:17.0.12_7-jdk-jammy
+#4 DONE 1.1s
+
+#5 [internal] load .dockerignore
+#5 transferring context: 305B 0.0s done
+#5 DONE 0.0s
+
+#6 [patcher  1/26] FROM docker.io/library/eclipse-temurin:17.0.12_7-jdk-jammy@sha256:56c8b3a8f4299e0190095333cf85e647e810bdf167e59f224a1fd432e47a8f12
+#6 DONE 0.0s
+
+#7 [upstream 1/1] FROM docker.io/starrocks/fe-ubuntu:4.1.4
+#7 CACHED
+
+#8 [internal] load build context
+#8 transferring context: 10.78kB done
+#8 DONE 0.0s
+
+#9 [patcher  4/26] COPY patches/starrocks/4.1.4-ranger-active-role.patch /tmp/ranger-active-role.patch
+#9 CACHED
+
+#10 [patcher 11/26] RUN git -C /src sparse-checkout add /fe/fe-core/src/main/java/com/starrocks/connector/jdbc/JDBCMetadata.java     /fe/fe-core/src/main/java/com/starrocks/connector/jdbc/JDBCDriverClassLoaders.java     /fe/fe-core/src/main/java/com/starrocks/connector/jdbc/SnowflakeSchemaResolver.java     /fe/fe-core/src/main/java/com/starrocks/planner/JDBCScanNode.java     /fe/fe-core/src/test/java/com/starrocks/connector/jdbc/SnowflakeSchemaResolverTest.java
+#10 CACHED
+
+#11 [patcher  9/26] COPY patches/starrocks/4.1.4-task-active-role.patch /tmp/task-active-role.patch
+#11 CACHED
+
+#12 [patcher 15/26] COPY patches/starrocks/4.1.4-view-source-identity.patch /tmp/view-source-identity.patch
+#12 CACHED
+
+#13 [patcher 10/26] RUN git -C /src apply --check /tmp/task-active-role.patch     && git -C /src apply /tmp/task-active-role.patch
+#13 CACHED
+
+#14 [patcher  2/26] RUN apt-get update     && apt-get install -y --no-install-recommends curl git     && rm -rf /var/lib/apt/lists/*
+#14 CACHED
+
+#15 [patcher  6/26] COPY patches/starrocks/4.1.4-ranger-rpc-context.patch /tmp/ranger-rpc-context.patch
+#15 CACHED
+
+#16 [patcher  7/26] RUN git -C /src apply --check /tmp/ranger-rpc-context.patch     && git -C /src apply /tmp/ranger-rpc-context.patch
+#16 CACHED
+
+#17 [patcher  3/26] RUN git init /src     && git -C /src remote add origin https://github.com/StarRocks/starrocks.git     && git -C /src sparse-checkout init --no-cone     && git -C /src sparse-checkout set        /conf/ranger/ranger-starrocks-security.xml        /fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerAccessController.java        /fe/fe-core/src/main/java/com/starrocks/authorization/ranger/starrocks/RangerStarRocksAccessController.java        /fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerStarRocksAccessRequest.java        /fe/fe-core/src/test/java/com/starrocks/authorization/ranger/RangerInterfaceTest.java        /fe/fe-core/src/test/resources/ranger-starrocks-security.xml     && git -C /src fetch --filter=blob:none --depth 1 origin 4a9848edf03f5c936dac664b2d52527f48e72eb0     && git -C /src checkout FETCH_HEAD
+#17 CACHED
+
+#18 [patcher  8/26] RUN git -C /src sparse-checkout add /fe/fe-core/src/main/java/com/starrocks/scheduler/TaskRun.java     /fe/fe-core/src/main/java/com/starrocks/scheduler/TaskManager.java
+#18 CACHED
+
+#19 [patcher 14/26] RUN git -C /src sparse-checkout add /fe/fe-core/src/main/java/com/starrocks/service/InformationSchemaDataSource.java
+#19 CACHED
+
+#20 [patcher 13/26] RUN git -C /src apply --check /tmp/jdbc-snowflake.patch     && git -C /src apply /tmp/jdbc-snowflake.patch
+#20 CACHED
+
+#21 [patcher  5/26] RUN git -C /src apply --check /tmp/ranger-active-role.patch     && git -C /src apply /tmp/ranger-active-role.patch
+#21 CACHED
+
+#22 [patcher 12/26] COPY patches/starrocks/4.1.4-jdbc-snowflake.patch /tmp/jdbc-snowflake.patch
+#22 CACHED
+
+#23 [patcher 16/26] RUN git -C /src apply --check /tmp/view-source-identity.patch     && git -C /src apply /tmp/view-source-identity.patch
+#23 CACHED
+
+#24 [patcher 17/26] COPY --from=upstream /opt/starrocks/fe/lib /opt/starrocks/fe/lib
+#24 DONE 0.2s
+
+#25 [patcher 18/26] RUN curl -fsSLo /opt/starrocks/fe/lib/nashorn-core-15.4.jar        https://repo1.maven.org/maven2/org/openjdk/nashorn/nashorn-core/15.4/nashorn-core-15.4.jar     && echo "6f816e84dfd63a81d4eaa7829c08337bbaff3ec683ff3bf6bbd90d017a00dc6f  /opt/starrocks/fe/lib/nashorn-core-15.4.jar" | sha256sum -c -     && curl -fsSLo /opt/starrocks/fe/lib/asm-commons-9.4.jar        https://repo1.maven.org/maven2/org/ow2/asm/asm-commons/9.4/asm-commons-9.4.jar     && echo "0c128a9ec3f33c98959272f6d16cf14247b508f58951574bcdbd2b56d6326364  /opt/starrocks/fe/lib/asm-commons-9.4.jar" | sha256sum -c -
+#25 2.358 /opt/starrocks/fe/lib/nashorn-core-15.4.jar: OK
+#25 2.525 /opt/starrocks/fe/lib/asm-commons-9.4.jar: OK
+#25 DONE 2.5s
+
+#26 [patcher 19/26] RUN mkdir -p /opt/starrocks/drivers     && curl -fsSLo /opt/starrocks/drivers/snowflake-jdbc-3.28.0.jar        https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/3.28.0/snowflake-jdbc-3.28.0.jar     && echo "41e3e99fde1aa90516448306885b345df7600db650258e7dfd0ea79c02f6cb49  /opt/starrocks/drivers/snowflake-jdbc-3.28.0.jar" | sha256sum -c -     && curl -fsSLo /tmp/junit-console.jar        https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/1.11.4/junit-platform-console-standalone-1.11.4.jar     && echo "b016ef6b1c3454d6d7c2c88ce081dabf289699686af6622d6e4e2e1b54b4a2fc  /tmp/junit-console.jar" | sha256sum -c -
+#26 154.4 /opt/starrocks/drivers/snowflake-jdbc-3.28.0.jar: OK
+#26 157.2 /tmp/junit-console.jar: OK
+#26 DONE 157.3s
+
+#27 [patcher 20/26] RUN mkdir -p /tmp/classes     && javac -encoding UTF-8 -cp '/opt/starrocks/fe/lib/*' -d /tmp/classes        /src/fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerStarRocksAccessRequest.java        /src/fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerAccessController.java        /src/fe/fe-core/src/main/java/com/starrocks/authorization/ranger/starrocks/RangerStarRocksAccessController.java        /src/fe/fe-core/src/main/java/com/starrocks/scheduler/TaskRun.java        /src/fe/fe-core/src/main/java/com/starrocks/scheduler/TaskManager.java        /src/fe/fe-core/src/main/java/com/starrocks/service/InformationSchemaDataSource.java        /src/fe/fe-core/src/main/java/com/starrocks/connector/jdbc/JDBCMetadata.java        /src/fe/fe-core/src/main/java/com/starrocks/connector/jdbc/JDBCDriverClassLoaders.java        /src/fe/fe-core/src/main/java/com/starrocks/connector/jdbc/SnowflakeSchemaResolver.java        /src/fe/fe-core/src/main/java/com/starrocks/planner/JDBCScanNode.java
+#27 7.710 Note: /src/fe/fe-core/src/main/java/com/starrocks/planner/JDBCScanNode.java uses or overrides a deprecated API.
+#27 7.710 Note: Recompile with -Xlint:deprecation for details.
+#27 DONE 7.8s
+
+#28 [patcher 21/26] RUN git -C /src sparse-checkout add     /fe/fe-grammar/src/main/antlr/com/starrocks/grammar/StarRocks.g4     /fe/fe-grammar/src/main/antlr/com/starrocks/grammar/StarRocksLex.g4     /fe/fe-parser/src/main/java/com/starrocks/sql/ast/StatementBase.java     /fe/fe-core/src/main/java/com/starrocks/sql/parser/AstBuilder.java     /fe/fe-core/src/main/java/com/starrocks/qe/StmtExecutor.java
+#28 DONE 1.8s
+
+#29 [patcher 22/26] COPY patches/starrocks/4.1.4-query-schema.patch /tmp/query-schema.patch
+#29 DONE 0.9s
+
+#30 [patcher 23/26] RUN git -C /src apply --check /tmp/query-schema.patch     && git -C /src apply /tmp/query-schema.patch
+#30 DONE 0.7s
+
+#31 [patcher 24/26] RUN curl -fsSLo /tmp/antlr.jar https://www.antlr.org/download/antlr-4.9.3-complete.jar     && echo "afcd40946d3de4d81e28d7c88d467289e0587285d27adb172aecc5494a17df36  /tmp/antlr.jar" | sha256sum -c -     && cd /src/fe/fe-grammar/src/main/antlr/com/starrocks/grammar     && java -jar /tmp/antlr.jar -visitor -package com.starrocks.sql.parser        -o /tmp/generated-grammar StarRocks.g4     && mkdir -p /tmp/grammar-classes     && javac -encoding UTF-8 -cp '/opt/starrocks/fe/lib/*' -d /tmp/grammar-classes        /tmp/generated-grammar/*.java     && javac -encoding UTF-8 -cp '/tmp/grammar-classes:/opt/starrocks/fe/lib/*' -d /tmp/classes        /src/fe/fe-parser/src/main/java/com/starrocks/sql/ast/StatementBase.java        /src/fe/fe-core/src/main/java/com/starrocks/sql/parser/AstBuilder.java        /src/fe/fe-core/src/main/java/com/starrocks/qe/QuerySchema.java        /src/fe/fe-core/src/main/java/com/starrocks/qe/StmtExecutor.java
+#31 3.456 /tmp/antlr.jar: OK
+#31 4.561 warning(131): StarRocks.g4:2386:7: greedy block ()+ contains wildcard; the non-greedy syntax ()+? may be preferred
+#31 22.31 Note: Some input files use or override a deprecated API.
+#31 22.31 Note: Recompile with -Xlint:deprecation for details.
+#31 22.31 Note: /src/fe/fe-core/src/main/java/com/starrocks/sql/parser/AstBuilder.java uses unchecked or unsafe operations.
+#31 22.31 Note: Recompile with -Xlint:unchecked for details.
+#31 DONE 22.6s
+
+#32 [patcher 25/26] RUN mkdir -p /tmp/test-classes     && javac -encoding UTF-8 -cp "/tmp/classes:/tmp/grammar-classes:/opt/starrocks/fe/lib/*:/tmp/junit-console.jar" -d /tmp/test-classes        /src/fe/fe-core/src/test/java/com/starrocks/connector/jdbc/SnowflakeSchemaResolverTest.java        /src/fe/fe-core/src/test/java/com/starrocks/qe/QuerySchemaTest.java     && java -jar /tmp/junit-console.jar execute --disable-banner --details=summary --fail-if-no-tests        -cp "/tmp/test-classes:/tmp/classes:/tmp/grammar-classes:$(ls /opt/starrocks/fe/lib/*.jar | tr '\n' ':')"        --select-class com.starrocks.connector.jdbc.SnowflakeSchemaResolverTest        --select-class com.starrocks.qe.QuerySchemaTest
+#32 6.632 
+#32 6.632 Failures (2):
+#32 6.632   JUnit Jupiter:QuerySchemaTest:onlyTopLevelQueriesAcceptSchemaExplain()
+#32 6.633     MethodSource [className = 'com.starrocks.qe.QuerySchemaTest', methodName = 'onlyTopLevelQueriesAcceptSchemaExplain', methodParameterTypes = '']
+#32 6.634     => com.starrocks.sql.parser.ParsingException: Getting syntax error from line 1, column 7 to line 1, column 18. Detail message: Unsupported expr 'array slice'.
+#32 6.634        com.starrocks.sql.parser.AstBuilder.visitArraySlice(AstBuilder.java:8707)
+#32 6.634        com.starrocks.sql.parser.AstBuilder.visitArraySlice(AstBuilder.java:596)
+#32 6.634        com.starrocks.sql.parser.StarRocksParser$ArraySliceContext.accept(StarRocksParser.java:51452)
+#32 6.634        org.antlr.v4.runtime.tree.AbstractParseTreeVisitor.visitChildren(AbstractParseTreeVisitor.java:46)
+#32 6.634        com.starrocks.sql.parser.StarRocksBaseVisitor.visitValueExpressionDefault(StarRocksBaseVisitor.java:3590)
+#32 6.634        com.starrocks.sql.parser.StarRocksParser$ValueExpressionDefaultContext.accept(StarRocksParser.java:50721)
+#32 6.634        org.antlr.v4.runtime.tree.AbstractParseTreeVisitor.visit(AbstractParseTreeVisitor.java:18)
+#32 6.634        com.starrocks.sql.parser.AstBuilder.visitPredicate(AstBuilder.java:7635)
+#32 6.634        com.starrocks.sql.parser.AstBuilder.visitPredicate(AstBuilder.java:596)
+#32 6.634        com.starrocks.sql.parser.StarRocksParser$PredicateContext.accept(StarRocksParser.java:50243)
+#32 6.634        [...]
+#32 6.634   JUnit Jupiter:QuerySchemaTest:schemaHasEngineTypesNullabilityAndNoLiteralValues()
+#32 6.634     MethodSource [className = 'com.starrocks.qe.QuerySchemaTest', methodName = 'schemaHasEngineTypesNullabilityAndNoLiteralValues', methodParameterTypes = '']
+#32 6.634     => org.opentest4j.AssertionFailedError: expected: <[1, id, BIGINT, NO]> but was: <[1, id, bigint(20), NO]>
+#32 6.634        org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:151)
+#32 6.634        org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:132)
+#32 6.634        org.junit.jupiter.api.AssertEquals.failNotEqual(AssertEquals.java:197)
+#32 6.634        org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:182)
+#32 6.634        org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:177)
+#32 6.634        org.junit.jupiter.api.Assertions.assertEquals(Assertions.java:1145)
+#32 6.634        com.starrocks.qe.QuerySchemaTest.schemaHasEngineTypesNullabilityAndNoLiteralValues(QuerySchemaTest.java:33)
+#32 6.634        java.base/java.lang.reflect.Method.invoke(Method.java:569)
+#32 6.634        java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+#32 6.634        java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+#32 6.634 
+#32 6.634 Test run finished after 1484 ms
+#32 6.634 [         5 containers found      ]
+#32 6.634 [         0 containers skipped    ]
+#32 6.634 [         5 containers started    ]
+#32 6.634 [         0 containers aborted    ]
+#32 6.634 [         5 containers successful ]
+#32 6.634 [         0 containers failed     ]
+#32 6.634 [        15 tests found           ]
+#32 6.634 [         0 tests skipped         ]
+#32 6.634 [        15 tests started         ]
+#32 6.634 [         0 tests aborted         ]
+#32 6.634 [        13 tests successful      ]
+#32 6.634 [         2 tests failed          ]
+#32 6.634 
+#32 ERROR: process "/bin/sh -c mkdir -p /tmp/test-classes     && javac -encoding UTF-8 -cp \"/tmp/classes:/tmp/grammar-classes:/opt/starrocks/fe/lib/*:/tmp/junit-console.jar\" -d /tmp/test-classes        /src/fe/fe-core/src/test/java/com/starrocks/connector/jdbc/SnowflakeSchemaResolverTest.java        /src/fe/fe-core/src/test/java/com/starrocks/qe/QuerySchemaTest.java     && java -jar /tmp/junit-console.jar execute --disable-banner --details=summary --fail-if-no-tests        -cp \"/tmp/test-classes:/tmp/classes:/tmp/grammar-classes:$(ls /opt/starrocks/fe/lib/*.jar | tr '\\n' ':')\"        --select-class com.starrocks.connector.jdbc.SnowflakeSchemaResolverTest        --select-class com.starrocks.qe.QuerySchemaTest" did not complete successfully: exit code: 1
+------
+ > [patcher 25/26] RUN mkdir -p /tmp/test-classes     && javac -encoding UTF-8 -cp "/tmp/classes:/tmp/grammar-classes:/opt/starrocks/fe/lib/*:/tmp/junit-console.jar" -d /tmp/test-classes        /src/fe/fe-core/src/test/java/com/starrocks/connector/jdbc/SnowflakeSchemaResolverTest.java        /src/fe/fe-core/src/test/java/com/starrocks/qe/QuerySchemaTest.java     && java -jar /tmp/junit-console.jar execute --disable-banner --details=summary --fail-if-no-tests        -cp "/tmp/test-classes:/tmp/classes:/tmp/grammar-classes:$(ls /opt/starrocks/fe/lib/*.jar | tr '\n' ':')"        --select-class com.starrocks.connector.jdbc.SnowflakeSchemaResolverTest        --select-class com.starrocks.qe.QuerySchemaTest:
+6.634 [         0 containers aborted    ]
+6.634 [         5 containers successful ]
+6.634 [         0 containers failed     ]
+6.634 [        15 tests found           ]
+6.634 [         0 tests skipped         ]
+6.634 [        15 tests started         ]
+6.634 [         0 tests aborted         ]
+6.634 [        13 tests successful      ]
+6.634 [         2 tests failed          ]
+6.634 
+------
+starrocks-fe.Dockerfile:108
+
+--------------------
+
+ 107 |     # Exercise both patches against the runtime FE libraries.
+
+ 108 | >>> RUN mkdir -p /tmp/test-classes \
+
+ 109 | >>>     && javac -encoding UTF-8 -cp "/tmp/classes:/tmp/grammar-classes:/opt/starrocks/fe/lib/*:/tmp/junit-console.jar" -d /tmp/test-classes \
+
+ 110 | >>>        /src/fe/fe-core/src/test/java/com/starrocks/connector/jdbc/SnowflakeSchemaResolverTest.java \
+
+ 111 | >>>        /src/fe/fe-core/src/test/java/com/starrocks/qe/QuerySchemaTest.java \
+
+ 112 | >>>     && java -jar /tmp/junit-console.jar execute --disable-banner --details=summary --fail-if-no-tests \
+
+ 113 | >>>        -cp "/tmp/test-classes:/tmp/classes:/tmp/grammar-classes:$(ls /opt/starrocks/fe/lib/*.jar | tr '\n' ':')" \
+
+ 114 | >>>        --select-class com.starrocks.connector.jdbc.SnowflakeSchemaResolverTest \
+
+ 115 | >>>        --select-class com.starrocks.qe.QuerySchemaTest
+
+ 116 |     RUN jar uf /opt/starrocks/fe/lib/fe-core-4.1.4.jar -C /tmp/classes com/starrocks/authorization/ranger \
+
+--------------------
+
+failed to solve: process "/bin/sh -c mkdir -p /tmp/test-classes     && javac -encoding UTF-8 -cp \"/tmp/classes:/tmp/grammar-classes:/opt/starrocks/fe/lib/*:/tmp/junit-console.jar\" -d /tmp/test-classes        /src/fe/fe-core/src/test/java/com/starrocks/connector/jdbc/SnowflakeSchemaResolverTest.java        /src/fe/fe-core/src/test/java/com/starrocks/qe/QuerySchemaTest.java     && java -jar /tmp/junit-console.jar execute --disable-banner --details=summary --fail-if-no-tests        -cp \"/tmp/test-classes:/tmp/classes:/tmp/grammar-classes:$(ls /opt/starrocks/fe/lib/*.jar | tr '\\n' ':')\"        --select-class com.starrocks.connector.jdbc.SnowflakeSchemaResolverTest        --select-class com.starrocks.qe.QuerySchemaTest" did not complete successfully: exit code: 1
+
+
+
+View build details: docker-desktop://dashboard/build/default/default/xzmgr2cfeejenv05fyl0bckm4
+

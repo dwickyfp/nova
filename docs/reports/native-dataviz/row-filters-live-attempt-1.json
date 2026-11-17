@@ -1,0 +1,16 @@
+{
+  "started_at": "2026-11-16T02:10:59.443872+00:00",
+  "resource_id": "8f8b205e-2dbd-47d5-81b0-de65dbb35dfc",
+  "scope": "shared native dataset read by three people under Ranger row filters",
+  "result": "FAIL",
+  "cleanup": "NOT_RUN",
+  "error_type": "AssertionError",
+  "error": "nova_admin login",
+  "steps": [
+    {
+      "check": "nova_admin login",
+      "passed": false
+    }
+  ],
+  "finished_at": "2026-11-16T02:10:59.567267+00:00"
+}

@@ -1,0 +1,6 @@
+ Container nova-starrocks-fe Stopping 
+ Container nova-starrocks-fe Stopped 
+ Container nova-starrocks-fe Removing 
+ Container nova-starrocks-fe Removed 
+ Container 08209f78ecc6_nova-starrocks-fe Starting 
+ Container 08209f78ecc6_nova-starrocks-fe Started 

@@ -36,7 +36,7 @@ Semantic Views: metrics, dimensions, relationships, verified queries
       ↓
 Supernova Business Ontology: concepts, names, bindings, releases
       ↓
-Nova Studio agents · Superset BI · SQL clients
+Nova Studio agents · Dataviz dashboards · SQL clients
       ↓
 Measured learning → steward proposals → new release
 ```
@@ -51,7 +51,7 @@ edits meaning directly: it files proposals that a domain steward reviews.
 | Surface | Role |
 | --- | --- |
 | **Nova Console** | The data and control foundation: SQL Workspace, catalog and Database Explorer, stages, ingestion/export, ML, tasks, security, Semantic Views, the Business Ontology page, and monitoring. |
-| **Nova Studio** | The intelligence workspace: chat with one selected agent, inline tables and charts, artifacts and Superset dashboards, News with reviewed investigations, skills, and connectors. |
+| **Nova Studio** | The intelligence workspace: chat with one selected agent, inline tables and charts, artifacts and Dataviz dashboards, News with reviewed investigations, skills, and connectors. |
 
 Both surfaces operate on the same governed enterprise foundation and authenticated
 StarRocks identity with one active role. In Studio, each turn runs one selected
@@ -106,10 +106,11 @@ cases, and measured refinement proposals.
 
 ### BI and charts
 
-Answers render inline tables and charts. Saved charts and dashboards live in
-Superset, embedded at `/bi` with the caller's identity, so BI queries follow the
+Answers render inline tables and charts. Saved charts, dashboards and their
+datasets are native Dataviz documents in Studio's **Dataviz** tab. Every chart
+query runs with the viewer's identity and active role, so dashboards follow the
 same Ranger policies as everything else
-([Superset architecture](docs/arch-17-superset.md)).
+([Dataviz architecture](docs/arch-19-studio-dataviz.md)).
 
 ### News and investigations
 
@@ -124,7 +125,7 @@ they do not represent separate physical services.
 
 | Layer | Capabilities |
 | --- | --- |
-| Nova Studio and BI | Agent chat, artifacts, Superset dashboards, News investigations |
+| Nova Studio and Dataviz | Agent chat, artifacts, Dataviz dashboards, News investigations |
 | Intelligence runtime | Agents, skills, tools, memory, harness |
 | Business meaning | Supernova Business Ontology: concepts, names, bindings, releases, learning |
 | Semantic layer | Semantic Views, metrics, relationships, verified queries |
@@ -363,7 +364,7 @@ nova/
 | Semantic layer | [Intelligence foundation](docs/28-intelligence-foundation.md) |
 | Business ontology | [Supernova Business Ontology](docs/arch-18-business-ontology.md), [benchmark](docs/testing/supernova/benchmark.md) |
 | Studio and agents | [Governed Studio](docs/arch-15-governed-studio.md), [operations and acceptance](docs/governed-studio-operations.md) |
-| BI and charts | [Superset](docs/arch-17-superset.md), [viz core](docs/arch-16-viz-core.md) |
+| BI and charts | [Studio Dataviz](docs/arch-19-studio-dataviz.md), [charts and dashboards](docs/23-dashboards.md), [viz core](docs/arch-16-viz-core.md) |
 | Security and governance | [Ranger authorization architecture](docs/arch-08-ranger-authorization.md), [access control runbook](docs/29-ranger-access-control.md) |
 | ML | [Native ML runtime](docs/28-native-ml-runtime.md) |
 | Operations | [Run guide](HOW_TO_RUN.md), [task manager](docs/08-task-manager.md), [NOVA_SYSTEM architecture](docs/arch-06-nova-system-database.md) |
@@ -397,3 +398,21 @@ pnpm build
 ## License
 
 Internal project; not yet licensed for distribution.
+
+### Third-party notices
+
+Every production build serves the notices of the code it bundles under
+`/licenses/`:
+
+- `third-party.md` lists each bundled npm package with its license text. It
+  ends with the NOTICE file of each package that ships one, such as Apache
+  ECharts.
+- The map data, glyph and MapLibre notices sit beside it. Each web font in
+  `/fonts/` has its license file next to it.
+
+`pnpm check:bundle` fails the build check when any of these is missing.
+`pnpm check:licenses` and `backend/scripts/check_licenses.py` fail on any
+dependency license outside the allowlist, and on commercial or license-key
+dependencies. Keep `/licenses/` and `/fonts/` reachable when you deploy the
+frontend. These checks are engineering gates, not a legal review of
+distribution.

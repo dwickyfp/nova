@@ -1,0 +1,286 @@
+{
+  "started_at": "2026-11-13T20:43:47.831756+00:00",
+  "resource_id": "16279b88-2ec6-4687-a442-ce336c8ddf34",
+  "scope": "table dataset API, real StarRocks/Ranger and PG17 metadata",
+  "result": "FAIL",
+  "cleanup": "SOFT_DELETED",
+  "preview_field_types": [
+    {
+      "source_column": "id",
+      "logical_type": "integer",
+      "physical_type": "bigint(20)",
+      "nullable": false
+    },
+    {
+      "source_column": "flag",
+      "logical_type": "integer",
+      "physical_type": "tinyint(1)",
+      "nullable": true
+    },
+    {
+      "source_column": "day",
+      "logical_type": "date",
+      "physical_type": "date",
+      "nullable": true
+    },
+    {
+      "source_column": "moment",
+      "logical_type": "timestamp",
+      "physical_type": "datetime",
+      "nullable": true
+    },
+    {
+      "source_column": "note",
+      "logical_type": "string",
+      "physical_type": "varchar(4100)",
+      "nullable": true
+    },
+    {
+      "source_column": "amount",
+      "logical_type": "decimal",
+      "physical_type": "decimal(38, 12)",
+      "nullable": true
+    }
+  ],
+  "preview_mismatches": [
+    {
+      "row": 1,
+      "column": 1,
+      "actual_type": "integer",
+      "expected_type": "boolean"
+    }
+  ],
+  "error_type": "AssertionError",
+  "steps": [
+    {
+      "check": "QA login",
+      "passed": true
+    },
+    {
+      "check": "QA admitted",
+      "passed": true
+    },
+    {
+      "check": "non-admin role",
+      "passed": true
+    },
+    {
+      "check": "QA login",
+      "passed": true
+    },
+    {
+      "check": "QA admitted",
+      "passed": true
+    },
+    {
+      "check": "non-admin role",
+      "passed": true
+    },
+    {
+      "request": "inactive fixture role cannot inspect source",
+      "status": 403,
+      "expected_status": 403
+    },
+    {
+      "check": "inactive fixture role cannot inspect source",
+      "passed": true
+    },
+    {
+      "check": "source refusal has no private name",
+      "passed": true
+    },
+    {
+      "request": "inactive role cannot create source dataset",
+      "status": 403,
+      "expected_status": 403
+    },
+    {
+      "check": "inactive role cannot create source dataset",
+      "passed": true
+    },
+    {
+      "check": "create refusal has no private name",
+      "passed": true
+    },
+    {
+      "request": "activate fixture role",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "activate fixture role",
+      "passed": true
+    },
+    {
+      "check": "exact active role",
+      "passed": true
+    },
+    {
+      "request": "denied create left no dataset",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "denied create left no dataset",
+      "passed": true
+    },
+    {
+      "request": "inspect",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "inspect",
+      "passed": true
+    },
+    {
+      "check": "schema without data",
+      "passed": true
+    },
+    {
+      "check": "physical identity",
+      "passed": true
+    },
+    {
+      "check": "authoritative fields",
+      "passed": true
+    },
+    {
+      "check": "no browser cache",
+      "passed": true
+    },
+    {
+      "request": "stale binding refused",
+      "status": 409,
+      "expected_status": 409
+    },
+    {
+      "check": "stale binding refused",
+      "passed": true
+    },
+    {
+      "request": "spoofed schema refused",
+      "status": 422,
+      "expected_status": 422
+    },
+    {
+      "check": "spoofed schema refused",
+      "passed": true
+    },
+    {
+      "request": "create",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "create",
+      "passed": true
+    },
+    {
+      "request": "replay",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "replay",
+      "passed": true
+    },
+    {
+      "check": "same receipt",
+      "passed": true
+    },
+    {
+      "request": "draft",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "draft",
+      "passed": true
+    },
+    {
+      "check": "stored server schema",
+      "passed": true
+    },
+    {
+      "request": "personal isolation",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "personal isolation",
+      "passed": true
+    },
+    {
+      "request": "preview draft",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "preview draft",
+      "passed": true
+    },
+    {
+      "check": "bounded typed preview without fabricated total",
+      "passed": true
+    },
+    {
+      "check": "preview cache disabled",
+      "passed": true
+    },
+    {
+      "request": "preview next page",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "preview next page",
+      "passed": true
+    },
+    {
+      "check": "pagination bounded",
+      "passed": true
+    },
+    {
+      "check": "exact typed preview pages",
+      "passed": false
+    },
+    {
+      "request": "delete owned dataset",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "delete owned dataset",
+      "passed": true
+    },
+    {
+      "request": "deleted dataset hidden",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "deleted dataset hidden",
+      "passed": true
+    },
+    {
+      "request": "logout",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "logout",
+      "passed": true
+    },
+    {
+      "request": "logout",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "logout",
+      "passed": true
+    }
+  ],
+  "finished_at": "2026-11-13T20:43:58.294046+00:00"
+}

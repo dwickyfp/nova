@@ -1,0 +1,32 @@
+{
+  "returncode": 1,
+  "before": {
+    "id": "08209f78ecc69d5a004cf4d05070ad179265d09abe9a278b97c12b77ec82594b",
+    "image": "sha256:ba74dfa4ff6b5b5beca2bd639ddc9d3bc27164847a7b3650058be31526961c45",
+    "mounts": [
+      [
+        "docker_ranger_fe_log",
+        "/opt/starrocks/fe/log"
+      ],
+      [
+        "docker_ranger_fe_meta",
+        "/opt/starrocks/fe/meta"
+      ],
+      [
+        null,
+        "/opt/starrocks/fe/conf/fe.conf"
+      ],
+      [
+        null,
+        "/opt/starrocks/fe/conf/ranger-starrocks-audit.xml"
+      ],
+      [
+        null,
+        "/opt/starrocks/fe/conf/ranger-starrocks-security.xml"
+      ]
+    ],
+    "health": "healthy"
+  },
+  "health_observations": [],
+  "result": "FAIL"
+}

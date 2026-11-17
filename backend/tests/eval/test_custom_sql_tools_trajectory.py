@@ -280,8 +280,16 @@ async def test_default_guard_and_query_tool_still_block_stage_exports(monkeypatc
         with pytest.raises(ForbiddenSQLError):
             guard_user_statement(sql, confirm_destructive=True)
         if "INTO FILES" in sql:
-            with pytest.raises(ForbiddenSQLError):
-                guard_user_statement(sql, confirm_destructive=True, allow_stage_export=True)
+            # An export context leaves unload targets to the SQL frontend, which
+            # accepts only stage paths: a non-stage target never reaches a plan.
+            from app.sql_frontend.ast.builder import ast_builders
+            from app.sql_frontend.errors import SemanticError
+            from app.sql_frontend.parser import parse_statement
+
+            guard_user_statement(sql, confirm_destructive=True, allow_stage_export=True,
+                                 check_confirmation=False)
+            with pytest.raises(SemanticError, match="writes only to a stage"):
+                ast_builders.build(parse_statement(sql))
         tool = QueryExecuteTool()
 
         async def no_audit(**_kwargs):

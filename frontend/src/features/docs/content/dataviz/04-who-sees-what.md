@@ -1,60 +1,65 @@
 ---
 title: Who sees what
-description: Understand how Dataviz dashboards belong to a Nova role, and why two people can see different numbers on the same dashboard.
+description: Understand who can open a native dashboard, and why two people can see different numbers on the same dashboard.
 ---
 
 ## What it is
 
-Dataviz dashboards are not shared person to person. Instead, **a dashboard
-belongs to the active role of the person who created it**. Everyone who works
-under that role can open it in Dataviz.
-
-Two separate rules decide what you see:
+Two separate rules decide what you see in Dataviz:
 
 | Rule | What it controls |
 | --- | --- |
-| The dashboard's **role** | Whether the dashboard appears for you at all. |
+| The dashboard's **sharing** | Whether you can open, edit or publish the dashboard. |
 | Your own **data access** | Which rows and values each chart shows you. |
 
-The role never widens data access. When you open a dashboard, every chart
-runs its query with **your** sign-in and **your** active role, under your
-row filters and column masks. Two people in the same role with different row
-filters can see different numbers on the same dashboard.
+Sharing never widens data access. Every chart runs its query with **your**
+sign-in and **your** active role, under your row filters and column masks.
+Two people who open the same dashboard can see different numbers when their
+roles read different rows.
 
-## How a dashboard gets its role
+## Personal and shared workspaces
 
-When you create a dashboard (from **Artifacts**, from the chart editor's
-**Add to dashboard**, from **Add to Dataviz**, or in the BI tool itself), Nova:
+- A dashboard in your **Personal** workspace is private. Only you can open it.
+- A dashboard in a **shared workspace** can be shared with people or roles from
+  **Share**. See [Build a native dashboard](/docs/dataviz/native-dashboards#publish-and-share).
+- You choose the workspace when you click **New dashboard**.
 
-1. attaches it to your current active role, shown in BI as
-   `Nova role <ROLE>` (for example `Nova role ACCOUNTADMIN`);
-2. publishes it, so the members of that role can open it at once.
+## Access levels
 
-## Owners and editing
+| Access | What it allows |
+| --- | --- |
+| **Can view** | Open the published version and use filters and selections. |
+| **Can edit** | Change the draft: datasets, charts, layout and filters. |
+| **Can edit and publish** | Also publish a new version for viewers. |
+| **Can manage** | Everything, including sharing. |
+| **Export** | Added separately when someone may export. |
 
-- The person who creates a dashboard is its **owner**. Owners always see their
-  dashboards, whatever role is active.
-- Only owners can edit a dashboard. Other members of the role can view it.
-- **Add to Dataviz** lists only dashboards you can edit.
+The person who creates a dashboard owns it and always has full access.
+
+## Drafts and published versions
+
+Editors work on a draft. Viewers see the published version only, including the
+exact chart and dataset versions it uses. Publishing again replaces what
+viewers see; the draft history is kept in **Version history**.
 
 ## Switching roles
 
 Switch your active role from your name at the bottom of Studio's rail
-(**Switch role**). Dataviz then shows the dashboards of the new role, and
-every chart runs again under that role's data access.
+(**Switch role**). Every chart then runs again under that role's data access.
+A role you share a dashboard with only matters while it is your active role.
 
-## Who may create charts and dashboards
+## When data access changes
 
-Creating BI content needs an **author** role. `ACCOUNTADMIN` is always one;
-an administrator decides which other roles may author. Roles that are not
-authors can view dashboards of their role, and do not see **Add to Dataviz**.
+When an administrator changes your row filters, masks or table access, a
+chart that is already on your screen can keep the rows it read for up to 30
+seconds. After that, the next time the chart appears it runs again under the
+new access. If you may no longer read the table, the chart says the data is
+unavailable with your current role and stops showing the earlier rows.
 
-If two administrators update author roles at the same time, one update may
-report a conflict. Reload the current author list before submitting another change.
+Downloads (CSV, Excel and page workbooks) always run the query again, so a
+file never holds rows your current access hides.
 
 ## Limits
 
-- There is no "share with a person" for Dataviz dashboards. To give someone a
-  dashboard, they need to work under the dashboard's role.
-- `ACCOUNTADMIN` does not see dashboards that belong to other roles unless it
-  owns them.
+- If your role cannot read a table a chart uses, that chart says the data is
+  unavailable with your current role; the rest of the dashboard still loads.

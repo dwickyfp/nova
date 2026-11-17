@@ -420,9 +420,6 @@ function StepRow({ step, span, now }: {
       {hasDetail ? (
         <CollapsibleContent className="CollapsibleContent">
           <div className="mt-1 mb-2 ml-6 min-w-0 space-y-2">
-            {step.kind === "tool" ? (
-              <p className="font-mono text-xs text-muted-foreground">{step.label}</p>
-            ) : null}
             {step.preview ? <ToolPreview preview={step.preview} /> : null}
             {detail ? <ReasoningBody text={detail} /> : null}
             {body ? <ReasoningBody text={body} /> : null}

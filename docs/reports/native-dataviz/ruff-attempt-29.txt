@@ -1,0 +1,26 @@
+UP017 [*] Use `datetime.UTC` alias
+  --> app/modules/viz/preview.py:48:34
+   |
+46 |             # would silently change the instant used by filters and charts.
+47 |             if first.utcoffset() != second.utcoffset() or (
+48 |                 first.astimezone(timezone.utc).astimezone(zone).replace(tzinfo=None) != value
+   |                                  ^^^^^^^^^^^^
+49 |             ):
+50 |                 raise ValueError("Ambiguous local timestamp")
+   |
+help: Convert to `datetime.UTC` alias
+
+B905 `zip()` without an explicit `strict=` parameter
+  --> app/modules/viz/preview.py:83:69
+   |
+81 |             try:
+82 |                 values = tuple(
+83 |                     preview_value(field, value) for field, value in zip(self.fields, row)
+   |                                                                     ^^^^^^^^^^^^^^^^^^^^^
+84 |                 )
+85 |                 self.bytes += 2 + sum(
+   |
+help: Add explicit value for parameter `strict=`
+
+Found 2 errors.
+[*] 1 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).

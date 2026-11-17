@@ -1,0 +1,3 @@
+src/features/native-dataviz/dashboard-data-tab.test.tsx(117,33): error TS2550: Property 'at' does not exist on type 'any[][]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.
+src/features/native-dataviz/dataset-attach.test.tsx(146,50): error TS2550: Property 'at' does not exist on type 'any[][]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.
+src/features/native-dataviz/dataset-attach.tsx(138,45): error TS2550: Property 'at' does not exist on type 'DocumentSummary[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2022' or later.

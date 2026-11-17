@@ -1,0 +1,691 @@
+{
+ "run": "bf8d79",
+ "date": "2026-11-17 09:35:42 +0700",
+ "through": "Nova HTTP API at 127.0.0.1:5173 as nova_admin, alice (marketing), bob",
+ "summary": {
+  "steps": 64,
+  "passed": 64,
+  "failed": []
+ },
+ "ranger_policies_removed": [
+  "nova-managed/access/marketing/default_catalog/compat_recheck_pipe_bf8d79/*",
+  "nova-managed/access/marketing/recheck_lake_bf8d79/recheck_bf8d79/*"
+ ],
+ "steps": [
+  {
+   "section": "W3 pipes",
+   "step": "create database",
+   "passed": true,
+   "at_seconds": 0.5
+  },
+  {
+   "section": "W3 pipes",
+   "step": "create table",
+   "passed": true,
+   "at_seconds": 0.7
+  },
+  {
+   "section": "W3 pipes",
+   "step": "create stage",
+   "passed": true,
+   "at_seconds": 0.9,
+   "status": 201
+  },
+  {
+   "section": "W3 pipes",
+   "step": "upload first file",
+   "passed": true,
+   "at_seconds": 1.2
+  },
+  {
+   "section": "W3 pipes",
+   "step": "storage URL refused",
+   "passed": true,
+   "at_seconds": 9.7,
+   "error": "A pipe reads files from a stage: FILES(\"path\" = \"@stage/folder/*.parquet\", ...)",
+   "rows": [],
+   "warnings": [
+    "A pipe reads files from a stage: FILES(\"path\" = \"@stage/folder/*.parquet\", ...)"
+   ]
+  },
+  {
+   "section": "W3 pipes",
+   "step": "alice (marketing) creates a shorthand CSV pipe",
+   "passed": true,
+   "at_seconds": 10.1,
+   "error": null,
+   "rows": [
+    [
+     "compat_recheck_pipe_bf8d79.orders_pipe",
+     "compat_recheck_pipe_bf8d79.orders",
+     "RUNNING",
+     "marketing"
+    ]
+   ],
+   "warnings": [
+    "Pipe created. It loads the files already in its path now, and new files as they arrive while it is RUNNING."
+   ]
+  },
+  {
+   "section": "W3 pipes",
+   "step": "first file loaded at creation",
+   "passed": true,
+   "at_seconds": 22.7,
+   "rows": 2
+  },
+  {
+   "section": "W3 pipes",
+   "step": "upload second file",
+   "passed": true,
+   "at_seconds": 22.8
+  },
+  {
+   "section": "W3 pipes",
+   "step": "next poll loads the new file",
+   "passed": true,
+   "at_seconds": 70.4,
+   "rows": 3
+  },
+  {
+   "section": "W3 pipes",
+   "step": "each row loaded once",
+   "passed": true,
+   "at_seconds": 70.6,
+   "error": null,
+   "rows": [],
+   "warnings": []
+  },
+  {
+   "section": "W3 pipes",
+   "step": "suspend",
+   "passed": true,
+   "at_seconds": 70.7,
+   "error": null,
+   "rows": [
+    [
+     "compat_recheck_pipe_bf8d79.orders_pipe",
+     "SUSPENDED"
+    ]
+   ],
+   "warnings": [
+    "Pipe suspended; files are not loaded until RESUME"
+   ]
+  },
+  {
+   "section": "W3 pipes",
+   "step": "suspended pipe loads nothing",
+   "passed": true,
+   "at_seconds": 116.9,
+   "rows": 3
+  },
+  {
+   "section": "W3 pipes",
+   "step": "resume loads the waiting file",
+   "passed": true,
+   "at_seconds": 129.5,
+   "rows": 4
+  },
+  {
+   "section": "W3 pipes",
+   "step": "SHOW PIPES lists it with the owner role",
+   "passed": true,
+   "at_seconds": 129.6,
+   "error": null,
+   "rows": [
+    [
+     "compat_recheck_pipe_bf8d79",
+     "d0598275-de54-4c04-acb9-fe002740fbec",
+     "orders_pipe",
+     "compat_recheck_pipe_bf8d79.orders",
+     "RUNNING",
+     "{\"loadedFiles\":3,\"loadedBytes\":89,\"loadingFiles\":0,\"errorFiles\":0,\"loadedRows\":4,\"LastLoadedTime\":\"2026-11-17 09:34:57\"}",
+     null,
+     "2026-11-17T09:32:59",
+     "marketing"
+    ]
+   ],
+   "warnings": []
+  },
+  {
+   "section": "W3 pipes",
+   "step": "pipe_files ledger",
+   "passed": true,
+   "at_seconds": 129.6,
+   "error": null,
+   "rows": [
+    [
+     "FINISHED",
+     3
+    ]
+   ],
+   "warnings": []
+  },
+  {
+   "section": "W3 pipes",
+   "step": "no storage address in results",
+   "passed": true,
+   "at_seconds": 129.6
+  },
+  {
+   "section": "W3 pipes",
+   "step": "another role of the same person sees no pipe",
+   "passed": true,
+   "at_seconds": 129.8,
+   "switch_status": 200,
+   "error": "SQL error: (5204) Access denied; you need (at least one of) the ANY privilege(s) on DATABASE compat_recheck_pipe_bf8d79 for this operation.",
+   "rows": [],
+   "warnings": [
+    "SQL error: (5204) Access denied; you need (at least one of) the ANY privilege(s) on DATABASE compat_recheck_pipe_bf8d79 for this operation."
+   ]
+  },
+  {
+   "section": "W3 pipes",
+   "step": "another role cannot control the pipe",
+   "passed": true,
+   "at_seconds": 129.9,
+   "error": "Pipe compat_recheck_pipe_bf8d79.orders_pipe does not exist",
+   "rows": [],
+   "warnings": []
+  },
+  {
+   "section": "W3 pipes",
+   "step": "drop pipe",
+   "passed": true,
+   "at_seconds": 129.9,
+   "error": null,
+   "rows": [
+    [
+     "compat_recheck_pipe_bf8d79.orders_pipe",
+     true
+    ]
+   ],
+   "warnings": [
+    "Pipe dropped. Rows it loaded stay in the table."
+   ]
+  },
+  {
+   "section": "W3 pipes",
+   "step": "DROP PIPE IF EXISTS on a missing pipe",
+   "passed": true,
+   "at_seconds": 129.9,
+   "error": null,
+   "rows": [
+    [
+     "orders_pipe",
+     false
+    ]
+   ],
+   "warnings": [
+    "The pipe does not exist; nothing changed"
+   ]
+  },
+  {
+   "section": "W3 pipes",
+   "step": "cleanup: drop database",
+   "passed": true,
+   "at_seconds": 130.7
+  },
+  {
+   "section": "W8 routine load",
+   "step": "create Kafka connection",
+   "passed": true,
+   "at_seconds": 130.8,
+   "error": null,
+   "rows": [
+    [
+     "Connection recheck_kafka_bf8d79 created"
+    ]
+   ],
+   "warnings": []
+  },
+  {
+   "section": "W8 routine load",
+   "step": "choose roles that may load",
+   "passed": true,
+   "at_seconds": 130.9,
+   "status": 200
+  },
+  {
+   "section": "W8 routine load",
+   "step": "produce 3 CSV messages",
+   "passed": true,
+   "at_seconds": 134.3
+  },
+  {
+   "section": "W8 routine load",
+   "step": "create CSV routine load",
+   "passed": true,
+   "at_seconds": 134.6,
+   "error": null,
+   "rows": [
+    [
+     "Routine load compat_recheck_rl_bf8d79.orders_csv: create done"
+    ]
+   ],
+   "warnings": []
+  },
+  {
+   "section": "W8 routine load",
+   "step": "3 rows loaded exactly",
+   "passed": true,
+   "at_seconds": 144.0,
+   "rows": [
+    [
+     1,
+     "alice",
+     "10.50"
+    ],
+    [
+     2,
+     "bob",
+     "20.00"
+    ],
+    [
+     3,
+     "carol",
+     "7.25"
+    ]
+   ]
+  },
+  {
+   "section": "W8 routine load",
+   "step": "SHOW ROUTINE LOAD",
+   "passed": true,
+   "at_seconds": 144.1,
+   "error": null
+  },
+  {
+   "section": "W8 routine load",
+   "step": "no broker address or secret in SHOW",
+   "passed": true,
+   "at_seconds": 144.1,
+   "columns": []
+  },
+  {
+   "section": "W8 routine load",
+   "step": "a role without access cannot read the job",
+   "passed": true,
+   "at_seconds": 144.2,
+   "error": "SQL error: (5204) Access denied; you need (at least one of) the ANY privilege(s) on DATABASE compat_recheck_rl_bf8d79 for this operation.",
+   "rows": [],
+   "warnings": [
+    "SQL error: (5204) Access denied; you need (at least one of) the ANY privilege(s) on DATABASE compat_recheck_rl_bf8d79 for this operation."
+   ]
+  },
+  {
+   "section": "W8 routine load",
+   "step": "PAUSE ROUTINE LOAD",
+   "passed": true,
+   "at_seconds": 144.3,
+   "error": null,
+   "rows": [
+    [
+     "Routine load compat_recheck_rl_bf8d79.orders_csv: pause done"
+    ]
+   ],
+   "warnings": []
+  },
+  {
+   "section": "W8 routine load",
+   "step": "ALTER ROUTINE LOAD",
+   "passed": true,
+   "at_seconds": 144.4,
+   "error": null,
+   "rows": [
+    [
+     "Routine load compat_recheck_rl_bf8d79.orders_csv: alter done"
+    ]
+   ],
+   "warnings": []
+  },
+  {
+   "section": "W8 routine load",
+   "step": "RESUME ROUTINE LOAD",
+   "passed": true,
+   "at_seconds": 144.5,
+   "error": null,
+   "rows": [
+    [
+     "Routine load compat_recheck_rl_bf8d79.orders_csv: resume done"
+    ]
+   ],
+   "warnings": []
+  },
+  {
+   "section": "W8 routine load",
+   "step": "changing the topic is refused",
+   "passed": true,
+   "at_seconds": 144.5,
+   "error": "ALTER ROUTINE LOAD cannot change 'kafka_topic'; create a new job instead",
+   "rows": [],
+   "warnings": [
+    "ALTER ROUTINE LOAD cannot change 'kafka_topic'; create a new job instead"
+   ]
+  },
+  {
+   "section": "W8 routine load",
+   "step": "Pulsar refused",
+   "passed": true,
+   "at_seconds": 144.5,
+   "error": "Nova loads routine loads from Kafka connections only",
+   "rows": [],
+   "warnings": [
+    "Nova loads routine loads from Kafka connections only"
+   ]
+  },
+  {
+   "section": "W8 routine load",
+   "step": "native broker list refused",
+   "passed": true,
+   "at_seconds": 144.5,
+   "error": "'kafka_broker_list' comes from the Kafka connection; name the connection with \"kafka_connection\" = \"<connection>\" instead",
+   "rows": [],
+   "warnings": [
+    "'kafka_broker_list' comes from the Kafka connection; name the connection with \"kafka_connection\" = \"<connection>\" instead"
+   ]
+  },
+  {
+   "section": "W8 routine load",
+   "step": "alice without INSERT is refused",
+   "passed": true,
+   "at_seconds": 144.7,
+   "error": "Role marketing may not write to compat_recheck_rl_bf8d79.orders",
+   "rows": [],
+   "warnings": []
+  },
+  {
+   "section": "W8 routine load",
+   "step": "STOP",
+   "passed": true,
+   "at_seconds": 144.7,
+   "error": null,
+   "rows": [
+    [
+     "Routine load compat_recheck_rl_bf8d79.orders_csv: stop done"
+    ]
+   ],
+   "warnings": []
+  },
+  {
+   "section": "W8 routine load",
+   "step": "a stopped job cannot resume",
+   "passed": true,
+   "at_seconds": 144.7,
+   "error": "Routine load compat_recheck_rl_bf8d79.orders_csv is stopped; a stopped job cannot be resumed or changed. Create a new one.",
+   "rows": [],
+   "warnings": []
+  },
+  {
+   "section": "W8 routine load",
+   "step": "cleanup: drop connection and database",
+   "passed": true,
+   "at_seconds": 144.9,
+   "error": null,
+   "rows": [
+    [
+     "Connection recheck_kafka_bf8d79 dropped"
+    ]
+   ],
+   "warnings": []
+  },
+  {
+   "section": "W9 iceberg",
+   "step": "create Iceberg connection",
+   "passed": true,
+   "at_seconds": 147.9,
+   "error": null,
+   "rows": [
+    [
+     "Connection recheck_ice_bf8d79 created"
+    ]
+   ],
+   "warnings": []
+  },
+  {
+   "section": "W9 iceberg",
+   "step": "enter storage credentials",
+   "passed": true,
+   "at_seconds": 148.1,
+   "status": 200
+  },
+  {
+   "section": "W9 iceberg",
+   "step": "credential response holds no key",
+   "passed": true,
+   "at_seconds": 148.1
+  },
+  {
+   "section": "W9 iceberg",
+   "step": "create foreign catalog",
+   "passed": true,
+   "at_seconds": 149.2,
+   "error": null,
+   "rows": [
+    [
+     "Catalog recheck_lake_bf8d79 created"
+    ]
+   ],
+   "warnings": []
+  },
+  {
+   "section": "W9 iceberg",
+   "step": "SHOW CREATE CATALOG hides keys",
+   "passed": true,
+   "at_seconds": 149.2,
+   "error": null
+  },
+  {
+   "section": "W9 iceberg",
+   "step": "CREATE DATABASE recheck_lake_bf8d79.recheck_bf8d79",
+   "passed": true,
+   "at_seconds": 149.4,
+   "error": null,
+   "rows": [],
+   "warnings": []
+  },
+  {
+   "section": "W9 iceberg",
+   "step": "CREATE TABLE recheck_lake_bf8d79.recheck_bf8d79.orders (id I",
+   "passed": true,
+   "at_seconds": 149.9,
+   "error": null,
+   "rows": [],
+   "warnings": []
+  },
+  {
+   "section": "W9 iceberg",
+   "step": "INSERT INTO recheck_lake_bf8d79.recheck_bf8d79.orders VALUES",
+   "passed": true,
+   "at_seconds": 151.5,
+   "error": null,
+   "rows": [],
+   "warnings": []
+  },
+  {
+   "section": "W9 iceberg",
+   "step": "INSERT INTO recheck_lake_bf8d79.recheck_bf8d79.orders VALUES",
+   "passed": true,
+   "at_seconds": 152.1,
+   "error": null,
+   "rows": [],
+   "warnings": []
+  },
+  {
+   "section": "W9 iceberg",
+   "step": "select returns the 3 rows",
+   "passed": true,
+   "at_seconds": 152.6,
+   "error": null,
+   "rows": [
+    [
+     1,
+     "ana",
+     "10.50"
+    ],
+    [
+     2,
+     "budi",
+     "20.00"
+    ],
+    [
+     3,
+     "citra",
+     "7.25"
+    ]
+   ],
+   "warnings": []
+  },
+  {
+   "section": "W9 iceberg",
+   "step": "snapshots metadata table",
+   "passed": true,
+   "at_seconds": 154.8,
+   "error": null,
+   "rows": [
+    [
+     8099719149498822923
+    ],
+    [
+     8977766294600514285
+    ]
+   ],
+   "warnings": []
+  },
+  {
+   "section": "W9 iceberg",
+   "step": "time travel to the first snapshot has 2 rows",
+   "passed": true,
+   "at_seconds": 155.1,
+   "error": null,
+   "rows": [
+    [
+     2
+    ]
+   ],
+   "warnings": []
+  },
+  {
+   "section": "W9 iceberg",
+   "step": "alice denied before a grant",
+   "passed": true,
+   "at_seconds": 155.7,
+   "error": "SQL error: (5204) Access denied; you need (at least one of) the SELECT privilege(s) on COLUMN dt for this operation.",
+   "rows": [],
+   "warnings": [
+    "SQL error: (5204) Access denied; you need (at least one of) the SELECT privilege(s) on COLUMN dt for this operation."
+   ]
+  },
+  {
+   "section": "W9 iceberg",
+   "step": "alice reads after SELECT grant",
+   "passed": true,
+   "at_seconds": 160.4,
+   "error": null,
+   "rows": [
+    [
+     3
+    ]
+   ],
+   "warnings": []
+  },
+  {
+   "section": "W9 iceberg",
+   "step": "alice INSERT still denied",
+   "passed": true,
+   "at_seconds": 160.5,
+   "error": "SQL error: (5204) Access denied; you need (at least one of) the INSERT privilege(s) on TABLE orders for this operation.",
+   "rows": [],
+   "warnings": [
+    "SQL error: (5204) Access denied; you need (at least one of) the INSERT privilege(s) on TABLE orders for this operation."
+   ]
+  },
+  {
+   "section": "W9 iceberg",
+   "step": "connections page is security-admin only",
+   "passed": true,
+   "at_seconds": 160.8,
+   "status": 403
+  },
+  {
+   "section": "W9 iceberg",
+   "step": "alice denied after revoke",
+   "passed": true,
+   "at_seconds": 165.3,
+   "error": "SQL error: (5204) Access denied; you need (at least one of) the SELECT privilege(s) on COLUMN ___count___ for this operation.",
+   "rows": [],
+   "warnings": [
+    "SQL error: (5204) Access denied; you need (at least one of) the SELECT privilege(s) on COLUMN ___count___ for this operation."
+   ]
+  },
+  {
+   "section": "W9 iceberg",
+   "step": "cleanup: remove catalog",
+   "passed": true,
+   "at_seconds": 168.2,
+   "status": 200
+  },
+  {
+   "section": "W9 iceberg",
+   "step": "cleanup: drop connection",
+   "passed": true,
+   "at_seconds": 168.6,
+   "error": null,
+   "rows": [
+    [
+     "Connection recheck_ice_bf8d79 dropped"
+    ]
+   ],
+   "warnings": []
+  },
+  {
+   "section": "W5 backup API",
+   "step": "storage URL refused",
+   "passed": true,
+   "at_seconds": 170.8,
+   "status": 400,
+   "detail": "A backup repository is a stage folder: write the location as '@<stage>/<folder>/'. Storage URLs are refused; the stage supplies the storage location and credentials."
+  },
+  {
+   "section": "W5 backup API",
+   "step": "create repository on a stage through the API",
+   "passed": true,
+   "at_seconds": 171.6,
+   "status": 201,
+   "body": {
+    "success": true,
+    "name": "recheck_repo_bf8d79",
+    "location": "@compat_recheck_bk_bf8d79.compat_recheck_bk_bf8d79.bk_stage_bf8d79/backups/",
+    "read_only": false
+   }
+  },
+  {
+   "section": "W5 backup API",
+   "step": "repository listed without bucket or key",
+   "passed": true,
+   "at_seconds": 172.2,
+   "status": 200
+  },
+  {
+   "section": "W5 backup API",
+   "step": "non-admin refused",
+   "passed": true,
+   "at_seconds": 172.4,
+   "status": 403
+  },
+  {
+   "section": "W5 backup API",
+   "step": "drop repository",
+   "passed": true,
+   "at_seconds": 172.6,
+   "error": null,
+   "rows": [],
+   "warnings": []
+  },
+  {
+   "section": "W5 backup API",
+   "step": "cleanup: drop database",
+   "passed": true,
+   "at_seconds": 173.2
+  }
+ ]
+}

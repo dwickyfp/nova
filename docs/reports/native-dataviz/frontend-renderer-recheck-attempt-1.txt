@@ -1,0 +1,12 @@
+$ vitest run --browser.headless src/features/studio/intelligent-ui/renderer.test.tsx src/features/studio/dataviz/use-dataviz-capability.test.tsx src/features/docs/content.test.ts --browser.fileParallelism=false --no-file-parallelism --maxWorkers=1
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+
+11:23:42 PM [vite] (client) Re-optimizing dependencies because vite config has changed
+11:23:43 PM [vite] (client) [optimizer] bundling dependencies...
+
+ Test Files  3 passed (3)
+      Tests  47 passed (47)
+   Start at  23:23:42
+   Duration  11.15s (transform 0ms, setup 0ms, import 1.73s, tests 6.13s, environment 0ms)
+

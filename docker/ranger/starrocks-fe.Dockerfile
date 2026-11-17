@@ -46,21 +46,25 @@ RUN git -C /src sparse-checkout add /fe/fe-core/src/main/java/com/starrocks/conn
 COPY patches/starrocks/4.1.4-jdbc-snowflake.patch /tmp/jdbc-snowflake.patch
 RUN git -C /src apply --check /tmp/jdbc-snowflake.patch \
     && git -C /src apply /tmp/jdbc-snowflake.patch
+RUN git -C /src sparse-checkout add /fe/fe-core/src/main/java/com/starrocks/service/InformationSchemaDataSource.java
+COPY patches/starrocks/4.1.4-view-source-identity.patch /tmp/view-source-identity.patch
+RUN git -C /src apply --check /tmp/view-source-identity.patch \
+    && git -C /src apply /tmp/view-source-identity.patch
 COPY --from=upstream /opt/starrocks/fe/lib /opt/starrocks/fe/lib
-RUN curl -fsSLo /opt/starrocks/fe/lib/nashorn-core-${NASHORN_VERSION}.jar \
+RUN curl --http1.1 --retry 3 --retry-all-errors --connect-timeout 15 --max-time 300 -fsSLo /opt/starrocks/fe/lib/nashorn-core-${NASHORN_VERSION}.jar \
        https://repo1.maven.org/maven2/org/openjdk/nashorn/nashorn-core/${NASHORN_VERSION}/nashorn-core-${NASHORN_VERSION}.jar \
     && echo "${NASHORN_SHA256}  /opt/starrocks/fe/lib/nashorn-core-${NASHORN_VERSION}.jar" | sha256sum -c - \
-    && curl -fsSLo /opt/starrocks/fe/lib/asm-commons-${ASM_COMMONS_VERSION}.jar \
+    && curl --http1.1 --retry 3 --retry-all-errors --connect-timeout 15 --max-time 300 -fsSLo /opt/starrocks/fe/lib/asm-commons-${ASM_COMMONS_VERSION}.jar \
        https://repo1.maven.org/maven2/org/ow2/asm/asm-commons/${ASM_COMMONS_VERSION}/asm-commons-${ASM_COMMONS_VERSION}.jar \
     && echo "${ASM_COMMONS_SHA256}  /opt/starrocks/fe/lib/asm-commons-${ASM_COMMONS_VERSION}.jar" | sha256sum -c -
 # The Snowflake driver stays off fe/lib: it bundles unshaded zstd-jni that would shadow the FE copy.
 # JDBCMetadata loads it in an isolated class loader from this file:// path, and the BE image has the
 # same file at the same path for the JDBC scanner.
 RUN mkdir -p /opt/starrocks/drivers \
-    && curl -fsSLo /opt/starrocks/drivers/snowflake-jdbc-${SNOWFLAKE_JDBC_VERSION}.jar \
+    && curl --http1.1 --retry 3 --retry-all-errors --connect-timeout 15 --max-time 300 -fsSLo /opt/starrocks/drivers/snowflake-jdbc-${SNOWFLAKE_JDBC_VERSION}.jar \
        https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/${SNOWFLAKE_JDBC_VERSION}/snowflake-jdbc-${SNOWFLAKE_JDBC_VERSION}.jar \
     && echo "${SNOWFLAKE_JDBC_SHA256}  /opt/starrocks/drivers/snowflake-jdbc-${SNOWFLAKE_JDBC_VERSION}.jar" | sha256sum -c - \
-    && curl -fsSLo /tmp/junit-console.jar \
+    && curl --http1.1 --retry 3 --retry-all-errors --connect-timeout 15 --max-time 300 -fsSLo /tmp/junit-console.jar \
        https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/${JUNIT_CONSOLE_VERSION}/junit-platform-console-standalone-${JUNIT_CONSOLE_VERSION}.jar \
     && echo "${JUNIT_CONSOLE_SHA256}  /tmp/junit-console.jar" | sha256sum -c -
 RUN mkdir -p /tmp/classes \
@@ -70,27 +74,62 @@ RUN mkdir -p /tmp/classes \
        /src/fe/fe-core/src/main/java/com/starrocks/authorization/ranger/starrocks/RangerStarRocksAccessController.java \
        /src/fe/fe-core/src/main/java/com/starrocks/scheduler/TaskRun.java \
        /src/fe/fe-core/src/main/java/com/starrocks/scheduler/TaskManager.java \
+       /src/fe/fe-core/src/main/java/com/starrocks/service/InformationSchemaDataSource.java \
        /src/fe/fe-core/src/main/java/com/starrocks/connector/jdbc/JDBCMetadata.java \
        /src/fe/fe-core/src/main/java/com/starrocks/connector/jdbc/JDBCDriverClassLoaders.java \
        /src/fe/fe-core/src/main/java/com/starrocks/connector/jdbc/SnowflakeSchemaResolver.java \
        /src/fe/fe-core/src/main/java/com/starrocks/planner/JDBCScanNode.java
-# Run the Snowflake JDBC patch tests against the compiled classes and the runtime FE libraries.
+RUN git -C /src sparse-checkout add \
+    /fe/fe-grammar/src/main/antlr/com/starrocks/grammar/StarRocks.g4 \
+    /fe/fe-grammar/src/main/antlr/com/starrocks/grammar/StarRocksLex.g4 \
+    /fe/fe-parser/src/main/java/com/starrocks/sql/ast/StatementBase.java \
+    /fe/fe-core/src/main/java/com/starrocks/sql/parser/AstBuilder.java \
+    /fe/fe-core/src/main/java/com/starrocks/qe/StmtExecutor.java
+COPY patches/starrocks/4.1.4-query-schema.patch /tmp/query-schema.patch
+RUN git -C /src apply --check /tmp/query-schema.patch \
+    && git -C /src apply /tmp/query-schema.patch
+# The FE uses upstream ANTLR 4.9.3; Nova's Python frontend has a separate runtime pin.
+ARG FE_ANTLR_VERSION=4.9.3
+ARG FE_ANTLR_SHA256=afcd40946d3de4d81e28d7c88d467289e0587285d27adb172aecc5494a17df36
+RUN curl --http1.1 --retry 3 --retry-all-errors --connect-timeout 15 --max-time 300 -fsSLo /tmp/antlr.jar https://www.antlr.org/download/antlr-${FE_ANTLR_VERSION}-complete.jar \
+    && echo "${FE_ANTLR_SHA256}  /tmp/antlr.jar" | sha256sum -c - \
+    && cd /src/fe/fe-grammar/src/main/antlr/com/starrocks/grammar \
+    && java -jar /tmp/antlr.jar -visitor -package com.starrocks.sql.parser \
+       -o /tmp/generated-grammar StarRocks.g4 \
+    && mkdir -p /tmp/grammar-classes \
+    && javac -encoding UTF-8 -cp '/opt/starrocks/fe/lib/*' -d /tmp/grammar-classes \
+       /tmp/generated-grammar/*.java \
+    && javac -encoding UTF-8 -cp '/tmp/grammar-classes:/opt/starrocks/fe/lib/*' -d /tmp/classes \
+       /src/fe/fe-parser/src/main/java/com/starrocks/sql/ast/StatementBase.java \
+       /src/fe/fe-core/src/main/java/com/starrocks/sql/parser/AstBuilder.java \
+       /src/fe/fe-core/src/main/java/com/starrocks/qe/QuerySchema.java \
+       /src/fe/fe-core/src/main/java/com/starrocks/qe/StmtExecutor.java
+# Exercise both patches against the runtime FE libraries.
 RUN mkdir -p /tmp/test-classes \
-    && javac -encoding UTF-8 -cp "/tmp/classes:/opt/starrocks/fe/lib/*:/tmp/junit-console.jar" -d /tmp/test-classes \
+    && javac -encoding UTF-8 -cp "/tmp/classes:/tmp/grammar-classes:/opt/starrocks/fe/lib/*:/tmp/junit-console.jar" -d /tmp/test-classes \
        /src/fe/fe-core/src/test/java/com/starrocks/connector/jdbc/SnowflakeSchemaResolverTest.java \
+       /src/fe/fe-core/src/test/java/com/starrocks/qe/QuerySchemaTest.java \
     && java -jar /tmp/junit-console.jar execute --disable-banner --details=summary --fail-if-no-tests \
-       -cp "/tmp/test-classes:/tmp/classes:$(ls /opt/starrocks/fe/lib/*.jar | tr '\n' ':')" \
-       --select-class com.starrocks.connector.jdbc.SnowflakeSchemaResolverTest
+       -cp "/tmp/test-classes:/tmp/classes:/tmp/grammar-classes:$(ls /opt/starrocks/fe/lib/*.jar | tr '\n' ':')" \
+       --select-class com.starrocks.connector.jdbc.SnowflakeSchemaResolverTest \
+       --select-class com.starrocks.qe.QuerySchemaTest
 RUN jar uf /opt/starrocks/fe/lib/fe-core-4.1.4.jar -C /tmp/classes com/starrocks/authorization/ranger \
        -C /tmp/classes com/starrocks/scheduler \
        -C /tmp/classes com/starrocks/connector/jdbc \
-       -C /tmp/classes com/starrocks/planner
+       -C /tmp/classes com/starrocks/service \
+       -C /tmp/classes com/starrocks/planner \
+       -C /tmp/classes com/starrocks/sql/parser \
+       -C /tmp/classes com/starrocks/qe \
+    && jar uf /opt/starrocks/fe/lib/fe-parser-4.1.4.jar -C /tmp/classes com/starrocks/sql/ast \
+    && jar uf /opt/starrocks/fe/lib/fe-grammar-4.1.4.jar -C /tmp/grammar-classes com/starrocks/sql/parser
 
 FROM starrocks/fe-ubuntu:${STARROCKS_VERSION}
 LABEL org.opencontainers.image.title="Nova patched StarRocks FE"
-LABEL org.opencontainers.image.version="4.1.4-ranger-active-role-jdbc-snowflake"
+LABEL org.opencontainers.image.version="4.1.4-ranger-active-role-jdbc-snowflake-query-schema"
 LABEL org.opencontainers.image.revision="4a9848edf03f5c936dac664b2d52527f48e72eb0"
 COPY --from=patcher /opt/starrocks/fe/lib/fe-core-4.1.4.jar /opt/starrocks/fe/lib/fe-core-4.1.4.jar
+COPY --from=patcher /opt/starrocks/fe/lib/fe-parser-4.1.4.jar /opt/starrocks/fe/lib/fe-parser-4.1.4.jar
+COPY --from=patcher /opt/starrocks/fe/lib/fe-grammar-4.1.4.jar /opt/starrocks/fe/lib/fe-grammar-4.1.4.jar
 COPY --from=patcher /opt/starrocks/fe/lib/nashorn-core-15.4.jar /opt/starrocks/fe/lib/nashorn-core-15.4.jar
 COPY --from=patcher /opt/starrocks/fe/lib/asm-commons-9.4.jar /opt/starrocks/fe/lib/asm-commons-9.4.jar
 # Nova Catalog JDBC drivers (phase 2). A JDBC catalog's `driver_url` must name the

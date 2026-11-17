@@ -24,10 +24,9 @@ import {
   type DatavizTarget,
 } from "./api";
 import {
-  datavizFrameState,
-  probeUnsavedChanges,
-  reloadDatavizFrameIfClean,
-} from "./dashboard-bridge";
+  NATIVE_DASHBOARD_CHANGED,
+  NATIVE_DASHBOARD_OPEN,
+} from "@/features/native-dataviz/dashboard/events";
 import { useDatavizCapability } from "./use-dataviz-capability";
 
 /**
@@ -92,14 +91,14 @@ export function AddToDatavizDialog({
 }: {
   capability: DatavizCapability;
   onClose: () => void;
-  preselectDashboardId?: number | null;
+  preselectDashboardId?: string | null;
 }) {
   const navigate = useNavigate();
   const securityEpoch = useAuthStore((state) => state.securityEpoch);
   const [mode, setMode] = useState<"existing" | "new">("existing");
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<number | null>(preselectDashboardId ?? null);
+  const [selected, setSelected] = useState<string | null>(preselectDashboardId ?? null);
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -140,8 +139,6 @@ export function AddToDatavizDialog({
       setError(mode === "new" ? "Name the new dashboard." : "Choose a dashboard.");
       return;
     }
-    const frame = datavizFrameState();
-    const editorState = probeUnsavedChanges();
     setBusy(true);
     setError(null);
     try {
@@ -149,26 +146,25 @@ export function AddToDatavizDialog({
         preview_ref: capability.preview_ref,
         idempotency_key: idempotencyKey,
         target,
-        editor_state: editorState,
-        open_dashboard_id: frame.dashboardId,
       });
-      if (frame.dashboardId === result.dashboard_id) reloadDatavizFrameIfClean();
-      const path = result.bi_view_path;
-      toast.success(
-        result.reused_chart ? "Chart placed on the dashboard" : "Chart added to Dataviz",
-        path
-          ? {
-              action: {
-                label: "Open in Dataviz",
-                onClick: () =>
-                  void navigate({
-                    to: "/studio",
-                    search: (prev) => ({ ...prev, tab: "dataviz", bi: path }),
-                  }),
-              },
-            }
-          : undefined,
-      );
+      // An editor already showing this dashboard reloads the new revision.
+      window.dispatchEvent(new CustomEvent(NATIVE_DASHBOARD_CHANGED, {
+        detail: { dashboard_id: result.dashboard_id, revision: Number.MAX_SAFE_INTEGER },
+      }));
+      // Dataviz shows the dashboard the chart went to, however the user gets there.
+      const destination = { dashboardId: result.dashboard_id, workspaceId: result.workspace_id };
+      window.dispatchEvent(new CustomEvent(NATIVE_DASHBOARD_OPEN, { detail: destination }));
+      try {
+        localStorage.setItem("nova.dataviz.native.open", JSON.stringify(destination));
+      } catch {
+        // The open Dataviz tab already switched; a reload starts on the list.
+      }
+      toast.success(result.reused_chart ? "This chart is already on that dashboard" : "Chart added to Dataviz", {
+        action: {
+          label: "Open in Dataviz",
+          onClick: () => void navigate({ to: "/studio", search: (prev) => ({ ...prev, tab: "dataviz" }) }),
+        },
+      });
       onClose();
     } catch (failure) {
       setError(
@@ -199,21 +195,26 @@ export function AddToDatavizDialog({
           </p>
         ) : null}
 
-        <div role="radiogroup" aria-label="Destination" className="grid grid-cols-2 gap-2">
+        <div role="radiogroup" aria-label="Destination" className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
           {(["existing", "new"] as const).map((value) => (
-            <Button
+            <button
               key={value}
               type="button"
               role="radio"
               aria-checked={mode === value}
-              variant={mode === value ? "default" : "outline"}
+              className={cn(
+                "h-8 rounded-md text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                mode === value
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
               onClick={() => {
                 setMode(value);
                 setError(null);
               }}
             >
               {value === "existing" ? "Existing dashboard" : "New dashboard"}
-            </Button>
+            </button>
           ))}
         </div>
 
@@ -270,9 +271,11 @@ export function AddToDatavizDialog({
                       selected === item.id ? "bg-accent text-accent-foreground" : "hover:bg-muted",
                     )}
                   >
-                    <span className="min-w-0 truncate font-medium">{item.title}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {item.changed ?? ""}
+                    <span className="min-w-0 truncate">{item.title}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                      {item.changed
+                        ? new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" }).format(new Date(item.changed))
+                        : ""}
                     </span>
                   </button>
                 ))

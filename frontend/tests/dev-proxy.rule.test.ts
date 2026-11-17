@@ -48,6 +48,12 @@ afterAll(async () => {
 
 it.each([
   ['/api/v1/query/execute', 'query'],
+  ['/api/v1/viz/datasets/inspect', 'query'],
+  ['/api/v1/viz/datasets/aaaaaaaa-0000-4000-8000-000000000001/preview', 'query'],
+  ['/api/v1/viz/datasets/aaaaaaaa-0000-4000-8000-000000000001/preview?draft=true', 'query'],
+  ['/api/v1/viz/datasets', 'web'],
+  ['/api/v1/viz/datasets/inspect-extra', 'web'],
+  ['/api/v1/viz/datasets/aaaaaaaa-0000-4000-8000-000000000001/publish', 'web'],
   ['/api/v1/ml/jobs', 'query'],
   ['/api/v1/agents', 'web'],
   ['/api/v1/agents/fixture/knowledge/consolidate', 'web'],

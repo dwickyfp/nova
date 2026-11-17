@@ -1,0 +1,77 @@
+E501 Line too long (103 > 100)
+  --> scripts/verify_query_schema_live.py:38:101
+   |
+36 |                 probe.check(name + " execution identity", bool(result["nova_execution_id"])
+37 |                             and bool(result["engine_query_ids"]))
+38 |                 return query_output_schema(QueryResult(columns=result["columns"], rows=result["rows"]))
+   |                                                                                                     ^^^
+39 |             return None
+   |
+
+E501 Line too long (108 > 100)
+  --> scripts/verify_query_schema_live.py:49:101
+   |
+47 |             probe.check("admitted", body["status"] == "AUTHENTICATED")
+48 |             token = body["access_token"]
+49 |             await execute("inactive role denied", "EXPLAIN SCHEMA SELECT * FROM source_view", success=False)
+   |                                                                                                     ^^^^^^^^
+50 |             switched = await probe.request("activate fixture role", "POST", "/api/v1/auth/switch-role",
+51 |                 token, body={"role": args.role})
+   |
+
+E501 Line too long (103 > 100)
+  --> scripts/verify_query_schema_live.py:50:101
+   |
+48 |             token = body["access_token"]
+49 |             await execute("inactive role denied", "EXPLAIN SCHEMA SELECT * FROM source_view", success=False)
+50 |             switched = await probe.request("activate fixture role", "POST", "/api/v1/auth/switch-role",
+   |                                                                                                     ^^^
+51 |                 token, body={"role": args.role})
+52 |             probe.check("exact active role", switched.json()["active_role"] == args.role)
+   |
+
+E501 Line too long (102 > 100)
+  --> scripts/verify_query_schema_live.py:53:101
+   |
+51 |                 token, body={"role": args.role})
+52 |             probe.check("exact active role", switched.json()["active_role"] == args.role)
+53 |             columns = await execute("empty view", "EXPLAIN SCHEMA SELECT id, amount FROM source_view")
+   |                                                                                                     ^^
+54 |             probe.check("empty source precision", columns is not None
+55 |                 and columns[0].sql_type == SqlType("INTEGER", bits=64)
+   |
+
+E501 Line too long (101 > 100)
+  --> scripts/verify_query_schema_live.py:60:101
+   |
+58 |             columns = await execute("computed output", "EXPLAIN SCHEMA WITH x AS "
+59 |                 "(SELECT id, amount FROM source_view) SELECT CAST(id + 1 AS BIGINT) AS next_id, "
+60 |                 "CAST(amount * 2 AS DECIMAL(38,12)) AS doubled, id > 0 AS positive FROM x WHERE 1=0")
+   |                                                                                                     ^
+61 |             probe.check("computed output retains declared types", columns is not None
+62 |                 and [column.name for column in columns] == ["next_id", "doubled", "positive"]
+   |
+
+E501 Line too long (105 > 100)
+  --> scripts/verify_query_schema_live.py:77:101
+   |
+75 |             probe.check("typed literals have engine schema", columns is not None
+76 |                 and columns[0].nullable is True and columns[1].sql_type == SqlType("BOOLEAN")
+77 |                 and columns[2].sql_type == SqlType("DATE") and columns[3].sql_type == SqlType("DATETIME")
+   |                                                                                                     ^^^^^
+78 |                 and columns[4].sql_type == SqlType("DECIMAL", precision=38, scale=12))
+79 |             columns = await execute("aggregate empty source", "EXPLAIN SCHEMA SELECT count(*) AS n FROM source_table")
+   |
+
+E501 Line too long (118 > 100)
+  --> scripts/verify_query_schema_live.py:79:101
+   |
+77 |                 and columns[2].sql_type == SqlType("DATE") and columns[3].sql_type == SqlType("DATETIME")
+78 |                 and columns[4].sql_type == SqlType("DECIMAL", precision=38, scale=12))
+79 |             columns = await execute("aggregate empty source", "EXPLAIN SCHEMA SELECT count(*) AS n FROM source_table")
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^
+80 |             probe.check("aggregate type on empty source", columns is not None
+81 |                 and columns[0].sql_type == SqlType("INTEGER", bits=64))
+   |
+
+Found 8 errors (1 fixed, 7 remaining).

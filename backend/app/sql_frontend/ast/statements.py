@@ -17,6 +17,16 @@ class NativeStatement(Statement):
 
 
 @dataclass(frozen=True, slots=True)
+class ParameterizedQueryStatement(NativeStatement):
+    """A read query with declared value inputs supplied outside its SQL text."""
+
+
+@dataclass(frozen=True, slots=True)
+class QuerySchemaStatement(NativeStatement):
+    """Engine-authorized output metadata without physical row execution."""
+
+
+@dataclass(frozen=True, slots=True)
 class StreamStatement(Statement):
     operation: str
     name: tuple[str, ...] | None = None
@@ -134,3 +144,13 @@ class MergeStatement(Statement):
     on_sql: str = ""
     keys: tuple[tuple[str, str], ...] | None = None
     clauses: tuple[MergeClause, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class PipeStatement(Statement):
+    """``CREATE``/``ALTER``/``DROP PIPE``, ``SHOW PIPES`` or ``DESC PIPE``: a Nova pipe.
+
+    ``operation`` is ``create``, ``drop``, ``alter``, ``show`` or ``describe``.
+    """
+
+    operation: str = ""

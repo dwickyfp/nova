@@ -1,0 +1,10 @@
+{
+  "url": "http://127.0.0.1:5173/sign-in?redirect=%2Fdocs%2Fstudio%2Fadd-to-dataviz",
+  "http_status": 200,
+  "headings": [
+    "Nova",
+    "Sign in to Nova"
+  ],
+  "body": "Nova\n\nEnterprise Intelligence OS\n\nSign in to Nova\nUsername\nPassword\nShow password\nSign in\n\nEnterprise Intelligence OS\n\nUnderstand, decide, act, and learn.\n\nTurn governed enterprise data into understanding, decisions, actions, and learning.",
+  "errors": []
+}

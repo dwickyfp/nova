@@ -1724,7 +1724,7 @@ async def test_usage_and_session_trace_facades_keep_owner_agent_and_time_scope(
         )
 
 
-async def test_artifact_facade_cas_and_shared_membership_preserve_the_viewer(
+async def test_artifact_facade_shared_membership_preserves_the_viewer(
     agents, runtime_registry
 ):
     from psycopg.types.json import Jsonb
@@ -1772,29 +1772,6 @@ async def test_artifact_facade_cas_and_shared_membership_preserve_the_viewer(
     finally:
         await agents.admin("UPDATE nova_meta.deployment_state SET maintenance=false")
     with acting_as(owner):
-        created = await repo.create_bi(
-            owner_name=owner.principal,
-            title="BI chart",
-            artifact_type="chart",
-            sql_text="SELECT 1",
-            database_name=None,
-            schema_name=None,
-            bi_kind="chart",
-            bi_object_id=4,
-            bi_dataset_id=7,
-        )
-        edits = await asyncio.gather(
-            *[
-                repo.update_bi_source(
-                    created["artifact_id"],
-                    owner_name=owner.principal,
-                    expected_updated_at=created["updated_at"],
-                    sql_text=f"SELECT {value}",
-                )
-                for value in (2, 3)
-            ]
-        )
-        assert sum(row is not None for row in edits) == 1
         share = await share_repository.create(
             owner_name=owner.principal,
             body=ShareTarget(
@@ -1824,21 +1801,6 @@ async def test_artifact_facade_cas_and_shared_membership_preserve_the_viewer(
         await share_repository.delete(share["share_id"], owner_name=owner.principal)
     with acting_as(viewer):
         assert await repo.shared_dashboard("board", owner_name=owner.principal) is None
-    with acting_as(owner):
-        converted = await repo.attach_bi(
-            "chart", owner_name=owner.principal, bi_kind="chart", bi_object_id=9, bi_dataset_id=7
-        )
-        assert converted["artifact_id"] == "chart" and converted["viz_spec"] is None
-        assert (
-            await repo.attach_bi(
-                "chart",
-                owner_name=owner.principal,
-                bi_kind="chart",
-                bi_object_id=10,
-                bi_dataset_id=7,
-            )
-            is None
-        )
     async with agents.transaction(
         workload="maintenance",
         actor=SecurityContext(

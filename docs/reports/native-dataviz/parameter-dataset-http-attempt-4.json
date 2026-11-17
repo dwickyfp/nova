@@ -1,0 +1,103 @@
+{
+  "started_at": "2026-11-15T20:07:14.400443+00:00",
+  "resource_id": "cd77b08b-c2fe-425b-bbbc-f160e53bc280",
+  "owner": "alice",
+  "scope": "parameterized SQL dataset HTTP API, real StarRocks/Ranger and PG17 metadata",
+  "result": "FAIL",
+  "cleanup": "NOT_CREATED",
+  "error_type": "AssertionError",
+  "error": "changed declarations need a new inspection",
+  "steps": [
+    {
+      "check": "QA login",
+      "passed": true
+    },
+    {
+      "check": "QA admitted",
+      "passed": true
+    },
+    {
+      "check": "non-admin role",
+      "passed": true
+    },
+    {
+      "check": "QA login",
+      "passed": true
+    },
+    {
+      "check": "QA admitted",
+      "passed": true
+    },
+    {
+      "check": "non-admin role",
+      "passed": true
+    },
+    {
+      "request": "activate fixture role",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "activate fixture role",
+      "passed": true
+    },
+    {
+      "check": "exact active role",
+      "passed": true
+    },
+    {
+      "request": "undeclared named parameter refused",
+      "status": 422,
+      "expected_status": 422
+    },
+    {
+      "check": "undeclared named parameter refused",
+      "passed": true
+    },
+    {
+      "request": "inspect with declarations",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "inspect with declarations",
+      "passed": true
+    },
+    {
+      "check": "schema from analyzer without data rows",
+      "passed": true
+    },
+    {
+      "check": "declarations echoed exactly",
+      "passed": true
+    },
+    {
+      "request": "changed declarations need a new inspection",
+      "status": 422,
+      "expected_status": 409
+    },
+    {
+      "check": "changed declarations need a new inspection",
+      "passed": false
+    },
+    {
+      "request": "logout",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "logout",
+      "passed": true
+    },
+    {
+      "request": "logout",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "logout",
+      "passed": true
+    }
+  ],
+  "finished_at": "2026-11-15T20:07:17.387784+00:00"
+}

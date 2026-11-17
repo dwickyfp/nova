@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import replace
+from hashlib import sha256
 
+from app.core.exceptions import StarRocksError
 from app.modules.query.repository import QueryRepository, QueryResult
 from app.sql_frontend.binding.models import BoundColumn, BoundTable, TableName
+from app.sql_frontend.binding.types import UnknownType
 from app.sql_frontend.context import ExecutionContext
 from app.sql_frontend.errors import SemanticError
 from app.sql_frontend.parser import parse_statement
@@ -20,6 +24,111 @@ def _identifier(value: str) -> str:
     return "`" + value.replace("`", "``") + "`"
 
 
+def column_projection(columns: tuple[BoundColumn, ...], *, text_limit: int | None = None) -> str:
+    if (
+        not 1 <= len(columns) <= 512
+        or len({column.name.casefold() for column in columns}) != len(columns)
+        or text_limit is not None
+        and (type(text_limit) is not int or not 1 <= text_limit <= 65536)
+    ):
+        raise SemanticError("Invalid column projection")
+    parts = []
+    for column in columns:
+        name = _identifier(column.name)
+        if text_limit is not None and column.sql_type.kind in {"CHAR", "VARCHAR"}:
+            parts.append(f"LEFT({name},{text_limit}) AS {name}")
+        else:
+            parts.append(name)
+    return ",".join(parts)
+
+
+def source_projection(
+    table: BoundTable,
+    columns: tuple[str, ...],
+    *,
+    limit: int,
+    offset: int = 0,
+    text_limit: int | None = None,
+    order_by: tuple[str, ...] = (),
+) -> str:
+    """Project only catalog-bound columns; names never become SQL fragments."""
+    if (
+        type(limit) is not int
+        or not 0 <= limit <= 1000
+        or type(offset) is not int
+        or not 0 <= offset <= 10_000
+        or not columns
+        or len(columns) > 512
+        or len(set(columns)) != len(columns)
+        or not set(columns) <= {column.name for column in table.columns}
+        or not set(order_by) <= set(columns)
+        or len(order_by) != len(set(order_by))
+        or table.name.database is None
+    ):
+        raise SemanticError("Invalid source projection")
+    qualified = ".".join(
+        _identifier(value)
+        for value in (
+            table.name.catalog,
+            table.name.database,
+            table.name.table,
+        )
+    )
+    available = {column.name: column for column in table.columns}
+    projection = column_projection(
+        tuple(available[name] for name in columns), text_limit=text_limit
+    )
+    order = (
+        " ORDER BY " + ",".join(_identifier(name) + " ASC" for name in order_by) if order_by else ""
+    )
+    return f"SELECT {projection} FROM {qualified}{order} LIMIT {limit}" + (
+        f" OFFSET {offset}" if offset else ""
+    )
+
+
+def query_output_schema(result: QueryResult) -> tuple[BoundColumn, ...]:
+    """Decode the pinned FE's schema result, refusing incomplete or ambiguous metadata."""
+    if (
+        result.error
+        or result.columns != ["ordinal", "name", "physical_type", "nullable"]
+        or not 1 <= len(result.rows) <= 512
+    ):
+        raise SemanticError("Query output schema is unavailable")
+    columns = []
+    seen: set[str] = set()
+    size = 0
+    for index, row in enumerate(result.rows, 1):
+        if (
+            len(row) != 4
+            or any(type(value) is not str for value in row)
+            or row[0] != str(index)
+            or row[3] not in {"YES", "NO"}
+        ):
+            raise SemanticError("Invalid query output metadata")
+        _, name, physical_type, nullable = row
+        if (
+            not name
+            or len(name) > 256
+            or "\x00" in name
+            or name.casefold() in seen
+            or not physical_type
+            or len(physical_type) > 65535
+        ):
+            raise SemanticError("Query output names must be unique and bounded")
+        try:
+            size += sum(len(value.encode("utf-8")) for value in row)
+        except UnicodeEncodeError:
+            raise SemanticError("Invalid query output text") from None
+        if size > 1_048_576:
+            raise SemanticError("Query output metadata exceeds the byte limit")
+        column = BoundColumn(name, physical_type, index, nullable == "YES")
+        if isinstance(column.sql_type, UnknownType):
+            raise SemanticError("Unsupported query output type")
+        columns.append(column)
+        seen.add(name.casefold())
+    return tuple(columns)
+
+
 class StarRocksCatalogProvider:
     def __init__(
         self, repository: QueryRepository, context: ExecutionContext, password: Callable[[], str]
@@ -30,14 +139,19 @@ class StarRocksCatalogProvider:
 
     async def _query(self, sql: str) -> QueryResult:
         context = self.context
-        result = await self.repository.execute_as_user(
-            sql=sql,
-            username=context.username,
-            password="" if context.connection is not None else self.password(),
-            database=context.database,
-            role=context.role,
-            connected=context.connection,
-        )
+        try:
+            result = await self.repository.execute_as_user(
+                sql=sql,
+                username=context.username,
+                password="" if context.connection is not None else self.password(),
+                database=context.database,
+                role=context.role,
+                connected=context.connection,
+            )
+        except StarRocksError as error:
+            if error.engine_unavailable:
+                raise  # Not a refusal: the caller answers that the engine is unavailable.
+            raise SemanticError("Catalog metadata is unavailable or not accessible") from None
         if result.error:
             raise SemanticError("Catalog metadata is unavailable or not accessible")
         return result
@@ -86,6 +200,60 @@ class StarRocksCatalogProvider:
                 row[5] or None,
             )
             for row in result.rows
+        )
+
+    async def get_source_identity(self, name: TableName) -> tuple[str, str]:
+        """Read the engine object ID under the caller's active role."""
+        if name.catalog != "default_catalog" or name.schema != "default":
+            raise SemanticError("This source does not provide a verified physical identity")
+        result = await self._query(
+            "SELECT c.TABLE_ID,t.TABLE_TYPE FROM information_schema.tables_config c "
+            "INNER JOIN information_schema.tables t ON c.TABLE_SCHEMA=t.TABLE_SCHEMA "
+            "AND c.TABLE_NAME=t.TABLE_NAME "
+            f"WHERE c.TABLE_SCHEMA={_literal(self._database(name))} "
+            f"AND c.TABLE_NAME={_literal(name.table)}"
+        )
+        if len(result.rows) != 1 or len(result.rows[0]) != 2:
+            raise SemanticError("Source identity is unavailable or not accessible")
+        identity, kind = result.rows[0]
+        if type(identity) is not int or identity <= 0 or kind not in {"BASE TABLE", "VIEW"}:
+            raise SemanticError("This source does not provide a verified physical identity")
+        return str(identity), kind
+
+    async def get_source_schema(self, name: TableName) -> BoundTable:
+        """Capture catalog schema without sampling rows or rebinding a replaced object.
+
+        This is an observation, not a DDL lock. Consumers must compare the saved
+        identity and schema again before execution; a mismatch requires repair.
+        """
+        resolved = replace(name, database=self._database(name))
+        before = await self.get_source_identity(resolved)
+        columns = await self.get_columns(resolved)
+        after = await self.get_source_identity(resolved)
+        if before != after:
+            raise SemanticError("Source changed while reading its schema")
+        if not columns or any(column.nullable is None for column in columns):
+            raise SemanticError("Source column metadata is unavailable or incomplete")
+        if [column.ordinal for column in columns] != list(range(1, len(columns) + 1)):
+            raise SemanticError("Source column order is unavailable or incomplete")
+        if len({column.name.casefold() for column in columns}) != len(columns):
+            raise SemanticError("Source columns are ambiguous")
+        schema = {
+            "catalog": resolved.catalog,
+            "database": resolved.database,
+            "schema": resolved.schema,
+            "table": resolved.table,
+            "physical_id": after[0],
+            "kind": after[1],
+            "columns": [
+                (column.name, column.data_type, column.ordinal, column.nullable)
+                for column in columns
+            ],
+        }
+        encoded = json.dumps(schema, sort_keys=True, separators=(",", ":")).encode()
+        digest = sha256(encoded).hexdigest()
+        return BoundTable(
+            resolved, after[1], columns=columns, physical_id=after[0], schema_version=digest
         )
 
     async def get_details(self, name: TableName) -> BoundTable:

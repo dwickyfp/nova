@@ -1,0 +1,43 @@
+v22.22.0
+11.8.0
+$ vitest run --coverage --browser.headless --maxWorkers=1
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+      Coverage enabled with v8
+
+10:32:50 PM [vite] (client) Re-optimizing dependencies because vite config has changed
+10:32:51 PM [vite] (client) [optimizer] scanning dependencies...
+10:32:53 PM [vite] (client) [optimizer] bundling dependencies...
+ ❯ |browser (chromium)| src/features/intelligence/intelligence-page.test.tsx (20 tests | 1 failed) 56699ms
+     × queries a Semantic View with selected metrics, dimensions, and named filters 16390ms
+ ❯ |browser (chromium)| src/features/agents/agent-detail/version-history.test.tsx (11 tests | 1 failed) 61129ms
+     × selects a resource and a typed fixed filter without granting other indexes 24243ms
+10:34:43 PM [vite] (client) [console.error] [vitest] Failed to take a screenshot TimeoutError: STACK_TRACE_ERROR
+    at ensureAwaited (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.0_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=2e633e40:10:22)
+    at Object.screenshot (http://localhost:63315/node_modules/.pnpm/@vitest+browser@4.1.11_vite@8.3.0_@types+node@25.9.7_esbuild@0.27.4_jiti@2.7.0_yaml@2.9.1__vitest@4.1.11/node_modules/@vitest/browser/dist/context.js?v=2e633e40:465:10)
+    at async BrowserTestRunner.onTaskFinished (http://localhost:63315/__vitest_browser__/tester-BJtsJFpD.js:926:28)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=2e633e40:2969:6
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=2e633e40:2664:3)
+    at async callAroundEachHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=2e633e40:2800:2)
+    at async runTest (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=2e633e40:2941:4)
+    at async http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=2e633e40:3160:10
+    at async callAroundHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=2e633e40:2664:3)
+    at async callAroundAllHooks (http://localhost:63315/node_modules/.pnpm/@vitest+runner@4.1.11/node_modules/@vitest/runner/dist/chunk-artifact.js?v=2e633e40:2792:2)
+stderr | src/features/studio/intelligent-ui/renderer.test.tsx > renders verified geometry and links table selection to declarative state
+[vitest] Failed to take a screenshot [TimeoutError: locator.screenshot: Timeout 339.3220000000001ms exceeded.
+Call log:
+[2m  - taking element screenshot[22m
+]
+ ❯ |browser (chromium)| src/features/ontology/ontology.test.tsx (23 tests | 1 failed) 56073ms
+   × proposes a concept bound to a published metric 18256ms
+ ❯ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx (29 tests | 1 failed) 74930ms
+   × renders verified geometry and links table selection to declarative state 22583ms
+ ❯ |browser (chromium)| src/features/agents/agent-detail/configuration-tab.test.tsx (9 tests | 1 failed) 58719ms
+     × saves the selected provider and model and restores the default 17858ms
+10:35:04 PM [vite] (client) [console.error] Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["bi","session",0]
+10:35:06 PM [vite] (client) [console.error] Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["bi","session",0]
+10:35:09 PM [vite] (client) [console.error] Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["bi","session",0]
+10:35:12 PM [vite] (client) [console.error] Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["bi","session",0]
+ ❯ |browser (chromium)| src/features/migration/index.test.tsx (14 tests | 1 failed) 64566ms
+     × discovers databases only after source details are saved and supports multi-selection 23728ms
+[ELIFECYCLE] Command failed with exit code 130.

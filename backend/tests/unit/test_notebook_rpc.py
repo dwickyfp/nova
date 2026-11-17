@@ -209,7 +209,7 @@ async def test_a_role_without_stage_write_is_refused_and_audited(stages, monkeyp
 
 async def test_an_ended_session_cannot_write(monkeypatch):
     async def resolve(session_id):
-        raise rpc.data_tokens.BiCredentialError("gone")
+        raise rpc.data_tokens.DataTokenError("gone")
 
     monkeypatch.setattr(rpc.data_tokens, "resolve_session", resolve)
     files = _sandbox({"op": "put", "target": "@landing/x.csv"}, b"x", "csv")

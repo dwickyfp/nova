@@ -27,6 +27,7 @@ pytestmark = pytest.mark.metadata_pg
 ALICE = "workspace-alice"
 
 
+
 class MemoryObjects:
     def __init__(self):
         self.objects: dict[str, bytes] = {}
@@ -305,3 +306,43 @@ async def test_legacy_object_is_kept_as_history_and_duplicates_refuse_to_open(ha
     assert record["etag"] == f"sha256:{digest}" and record["content_sha256"] == digest
     assert saved["object_key"] != legacy_key
     await harness.assert_no_orphans()
+
+
+async def test_reads_refuse_an_object_that_changed_after_it_was_saved(harness):
+    """NDV-STORE-004: a file or version whose stored bytes changed is never served."""
+    svc = await harness.service()
+    entry = await svc.create_file(ALICE, "", "export.csv", "region,total\nWest,10\n")
+    assert entry["content_sha256"] == hashlib.sha256(b"region,total\nWest,10\n").hexdigest()
+    saved = await svc.update_file(ALICE, entry["id"], "region,total\nWest,11\n")
+    assert saved["content_sha256"] == hashlib.sha256(b"region,total\nWest,11\n").hexdigest()
+    assert (await svc.get_file(ALICE, entry["id"]))[1] == "region,total\nWest,11\n"
+
+    harness.objects.objects[saved["object_key"]] = b"region,total\nWest,999\n"
+    with pytest.raises(StorageError) as refused:
+        await svc.read_entry_bytes(ALICE, entry["id"])
+    assert refused.value.status_code == 502
+    assert "do not match" in refused.value.message and "export.csv" not in refused.value.message
+    with pytest.raises(StorageError):
+        await svc.get_file(ALICE, entry["id"])
+
+    # The previous version keeps its own digest and is checked the same way.
+    assert await svc.get_file_version(ALICE, entry["id"], 1) == "region,total\nWest,10\n"
+    harness.objects.objects[entry["object_key"]] = b"tampered"
+    with pytest.raises(StorageError) as old:
+        await svc.get_file_version(ALICE, entry["id"], 1)
+    assert old.value.status_code == 502
+
+
+async def test_rows_without_a_digest_are_read_and_gain_one_on_save(harness):
+    svc = await harness.service()
+    entry = await svc.create_file(ALICE, "", "legacy.sql", "select 1")
+    # Rows imported or saved before digests were recorded have none.
+    admin = harness.environment.admin
+    async with admin.transaction():  # Outside the workspace write guard, as an import would be.
+        await admin.execute("SET LOCAL session_replication_role=replica")
+        await admin.execute(
+            "UPDATE nova_meta.config_workspace_entries SET content_sha256=NULL WHERE id=%s",
+            (entry["id"],))
+    assert (await svc.get_file(ALICE, entry["id"]))[1] == "select 1"
+    saved = await svc.update_file(ALICE, entry["id"], "select 2")
+    assert saved["content_sha256"] == hashlib.sha256(b"select 2").hexdigest()

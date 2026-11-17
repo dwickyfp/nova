@@ -591,6 +591,18 @@ input:-webkit-autofill:active {
   --g3: var(--chart-4);
 }
 
+/*
+ * Forced colours (Windows High Contrast) drop box-shadow, which draws most focus
+ * rings, and repaint borders in system colours. Keep keyboard focus visible
+ * there with a real outline in the system highlight colour.
+ */
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 2px solid Highlight !important;
+    outline-offset: 2px;
+  }
+}
+
 @media (forced-colors: active) {
   .nova-greeting-ink {
     background-image: none;
@@ -789,4 +801,57 @@ input:-webkit-autofill:active {
   .CollapsibleContent[data-state="closed"] {
     animation: none;
   }
+}
+
+/* Native Dataviz canvas. The dotted grid is an editing affordance only; widget
+   geometry comes from the saved 12-column layout, never from these pixels. */
+/* Every cell of the 12-column canvas while editing, behind the widgets. The
+   inset matches GridStack's item margin, so a widget covers whole cells. */
+.nova-dataviz-cells {
+  position: absolute;
+  inset: 0 0 auto 0;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  pointer-events: none;
+}
+.nova-dataviz-cells > span {
+  margin: 6px;
+  border-radius: calc(var(--radius) - 2px);
+  background: color-mix(in oklab, var(--primary) 7%, var(--muted));
+}
+/* Where a widget dragged from the toolbar will land. */
+.nova-dataviz-drop {
+  position: absolute;
+  z-index: 5;
+  padding: 6px;
+  pointer-events: none;
+}
+/* The widget a change Neva proposes would touch. */
+.grid-stack-item[data-neva-target] > .grid-stack-item-content {
+  outline: 2px dashed var(--primary);
+  outline-offset: 2px;
+}
+.grid-stack-item[data-neva-target="failed"] > .grid-stack-item-content,
+.grid-stack-item[data-neva-target="stopped"] > .grid-stack-item-content {
+  outline-color: var(--muted-foreground);
+}
+.nova-dataviz-drop::before {
+  content: "";
+  display: block;
+  height: 100%;
+  border: 1px dashed var(--ring);
+  border-radius: var(--radius);
+  background: color-mix(in oklab, var(--primary) 8%, transparent);
+}
+.nova-dataviz-canvas .grid-stack-placeholder > .placeholder-content {
+  border: 1px dashed var(--ring);
+  border-radius: var(--radius);
+  background: color-mix(in oklab, var(--primary) 8%, transparent);
+}
+.nova-dataviz-canvas .grid-stack-item > .ui-resizable-se {
+  opacity: 0;
+}
+.nova-dataviz-canvas[data-mode="edit"] .grid-stack-item:hover > .ui-resizable-se,
+.nova-dataviz-canvas[data-mode="edit"] .grid-stack-item:focus-within > .ui-resizable-se {
+  opacity: 1;
 }

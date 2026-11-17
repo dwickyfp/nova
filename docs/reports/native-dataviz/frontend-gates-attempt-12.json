@@ -1,0 +1,17 @@
+[
+  {
+    "gate": "lint",
+    "returncode": 0,
+    "seconds": 21.05
+  },
+  {
+    "gate": "build",
+    "returncode": 0,
+    "seconds": 75.51
+  },
+  {
+    "gate": "coverage",
+    "returncode": 0,
+    "seconds": 489.19
+  }
+]

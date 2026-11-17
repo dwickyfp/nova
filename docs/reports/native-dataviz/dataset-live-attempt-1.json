@@ -1,0 +1,62 @@
+{
+  "started_at": "2026-11-13T19:08:22.669735+00:00",
+  "resource_id": "a680f81f-4cb3-4329-b72b-920a15292500",
+  "scope": "object-source dataset API, real StarRocks/Ranger and PG17 metadata",
+  "result": "FAIL",
+  "cleanup": "NOT_CREATED",
+  "error_type": "AssertionError",
+  "steps": [
+    {
+      "check": "QA login",
+      "passed": true
+    },
+    {
+      "check": "QA admitted",
+      "passed": true
+    },
+    {
+      "check": "non-admin role",
+      "passed": true
+    },
+    {
+      "check": "QA login",
+      "passed": true
+    },
+    {
+      "check": "QA admitted",
+      "passed": true
+    },
+    {
+      "check": "non-admin role",
+      "passed": true
+    },
+    {
+      "request": "inspect",
+      "status": 422,
+      "expected_status": 200
+    },
+    {
+      "check": "inspect",
+      "passed": false
+    },
+    {
+      "request": "logout",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "logout",
+      "passed": true
+    },
+    {
+      "request": "logout",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "logout",
+      "passed": true
+    }
+  ],
+  "finished_at": "2026-11-13T19:08:23.521907+00:00"
+}

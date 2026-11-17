@@ -66,35 +66,42 @@ def build_files_function(
     Returns:
         FILES('path'='...', 'format'='...', 'aws.s3.access_key'='...', ...)
     """
-    def assignment(key: str, value: str) -> str:
-        quoted_key = key.replace("'", "''")
-        quoted_value = value.replace("'", "''")
-        return f"'{quoted_key}'='{quoted_value}'"
+    params = [_assignment("path", s3_path), _assignment("format", file_format)]
+    params.extend(storage_credential_assignments(config, credential_params))
+    if extra_params:
+        params.extend(_assignment(key, value) for key, value in extra_params.items())
 
-    params = [assignment("path", s3_path), assignment("format", file_format)]
+    return f"FILES({', '.join(params)})"
 
-    # Add credentials
+
+def _assignment(key: str, value: str) -> str:
+    quoted_key = key.replace("'", "''")
+    quoted_value = value.replace("'", "''")
+    return f"'{quoted_key}'='{quoted_value}'"
+
+
+def storage_credential_assignments(
+    config: StorageConfig, credential_params: dict | None = None
+) -> list[str]:
+    """The ``'key'='value'`` storage properties for one stage. Execution only."""
+    params: list[str] = []
     if credential_params:
         for key, value in credential_params.items():
-            params.append(assignment(key, value))
+            params.append(_assignment(key, value))
     elif config.access_key:
-        params.append(assignment("aws.s3.access_key", config.access_key))
-        params.append(assignment("aws.s3.secret_key", config.secret_key))
+        params.append(_assignment("aws.s3.access_key", config.access_key))
+        params.append(_assignment("aws.s3.secret_key", config.secret_key))
         if config.endpoint:
-            params.append(assignment("aws.s3.endpoint", config.endpoint))
+            params.append(_assignment("aws.s3.endpoint", config.endpoint))
         if config.region:
-            params.append(assignment("aws.s3.region", config.region))
+            params.append(_assignment("aws.s3.region", config.region))
         # Required for MinIO / S3-compatible storage
         if config.endpoint and not config.endpoint.startswith("https"):
             params.append("'aws.s3.enable_ssl'='false'")
         params.append("'aws.s3.enable_path_style_access'='true'")
         params.append("'aws.s3.use_aws_sdk_default_behavior'='false'")
         params.append("'aws.s3.use_instance_profile'='false'")
-
-    if extra_params:
-        params.extend(assignment(key, value) for key, value in extra_params.items())
-
-    return f"FILES({', '.join(params)})"
+    return params
 
 
 def translate_stage_query(
@@ -127,6 +134,7 @@ def translate_stage_query(
 
     warnings = []
     replacements: list[tuple[int, int, str]] = []
+    load_credentials: set[tuple[str, ...]] = set()
 
     for index, ref in enumerate(parsed.stage_refs):
         stage_name = ref.stage_name
@@ -134,6 +142,49 @@ def translate_stage_query(
         config = (stage_configs_by_ref or {}).get(ref.start) or stage_configs.get(stage_name)
         if config is None:
             raise ValueError(f"Stage '{stage_name}' not found")
+
+        if ref.unload is not None:
+            if parsed.original_sql[ref.start : ref.end] != ref.full_match:
+                raise ValueError("Stage reference source span does not match the parsed SQL")
+            credentials = storage_credential_assignments(
+                config,
+                (credential_params_by_ref or {}).get(ref.start)
+                or (credential_params_by_stage or {}).get(stage_name),
+            )
+            kind = getattr(ref.unload, "kind", "")
+            if kind in {"load_path", "load_broker"}:
+                from app.sql_frontend.broker_load import physical_load_path, render_load_clause
+
+                # One broker clause serves every path: all files must be read
+                # with the same storage credential.
+                load_credentials.add(tuple(credentials))
+                physical = physical_load_path(
+                    config.bucket, config.base_prefix, ref.path_parts, ref.is_directory
+                )
+                text = render_load_clause(ref.unload, physical, credentials)
+                warnings.append(f"Resolved @{stage_name} load path for execution")
+            elif kind == "repository":
+                from app.sql_frontend.backup_restore import (
+                    physical_repository_location,
+                    render_repository_location,
+                )
+
+                physical = physical_repository_location(
+                    config.bucket, config.base_prefix, ref.path_parts
+                )
+                text = render_repository_location(physical, credentials)
+                warnings.append(f"Resolved @{stage_name} repository location for execution")
+            else:
+                from app.sql_frontend.unload import physical_unload_path, render_unload_clause
+
+                physical = physical_unload_path(
+                    ref.unload, config.bucket, config.base_prefix, ref.path_parts,
+                    ref.is_directory,
+                )
+                text = render_unload_clause(ref.unload, physical, credentials)
+                warnings.append(f"Resolved @{stage_name} unload target for execution")
+            replacements.append((ref.start, ref.end, text))
+            continue
 
         # Build S3 path
         s3_path = build_s3_path(config, ref)
@@ -191,6 +242,11 @@ def translate_stage_query(
             raise ValueError("Stage reference source span does not match the parsed SQL")
         replacements.append((ref.start, ref.end, files_func))
 
+    if len(load_credentials) > 1:
+        raise ValueError(
+            "All files of one LOAD must be in stages on the same storage connection"
+        )
+
     sql = parsed.original_sql
     for start, end, files_func in sorted(replacements, reverse=True):
         sql = sql[:start] + files_func + sql[end:]
@@ -229,7 +285,9 @@ def translate_stage_query(
             source = match.group(1).strip()
             if re.fullmatch(r"(?:`[^`]+`|[\w$]+)(?:\.(?:`[^`]+`|[\w$]+))?", source):
                 suffix = f"SELECT * FROM {source}"
-            elif re.match(r"(?is)^(SELECT|WITH)\s+", source):
+            elif re.match(r"(?is)^\(*\s*(SELECT|WITH)\s+", source):
+                # ``FROM (SELECT ...)``: the grammar's query statement may be
+                # parenthesized; INSERT ... SELECT accepts the same form.
                 suffix = source
             else:
                 raise ValueError("Unsupported COPY INTO export source")

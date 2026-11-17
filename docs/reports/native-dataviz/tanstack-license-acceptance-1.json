@@ -1,0 +1,42 @@
+{
+  "recorded_at": "2026-11-14T15:52:54.717391+00:00",
+  "scenario": "NDV-OSS-005",
+  "result": "PASS",
+  "scope": "License/static acceptance: installed exact locked packages include table pagination and virtualization under MIT. This does not assert finished server pagination or editor integration.",
+  "components": [
+    {
+      "name": "@tanstack/virtual-core",
+      "version": "3.19.11",
+      "license": "MIT",
+      "license_sha256": "a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7",
+      "feature_source": "src/index.ts",
+      "feature_sha256": "6c43fe08e8a5c0c1421a3b4c2d9c5c9a0a0f30960371e2b676ef4004bce314e5"
+    },
+    {
+      "name": "@tanstack/react-virtual",
+      "version": "3.14.26",
+      "license": "MIT",
+      "license_sha256": "a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7",
+      "feature_source": "src/index.tsx",
+      "feature_sha256": "c08d1cf7be0d7b390927be5a2331e2ee19f5fff2f2677ef4208cb4eed19ff7e8"
+    },
+    {
+      "name": "@tanstack/table-core",
+      "version": "8.21.3",
+      "license": "MIT",
+      "license_sha256": "9db3f8ddd7031ab264b99bec49c221155d0c8649b53dd4aa007f2041d36cdf5f",
+      "feature_source": "src/features/RowPagination.ts",
+      "feature_sha256": "88af4898d3f567120f9168536f61412a5fdf0beff8ae516d6c98275b8699b793"
+    },
+    {
+      "name": "@tanstack/react-table",
+      "version": "8.21.3",
+      "license": "MIT",
+      "license_sha256": "9db3f8ddd7031ab264b99bec49c221155d0c8649b53dd4aa007f2041d36cdf5f",
+      "feature_source": "src/index.tsx",
+      "feature_sha256": "84d8a1fb7690d2c864c8c75ac704548d045e362f5e9a893cd4d1ce570ea13b63"
+    }
+  ],
+  "license_inventory": "frontend-license-attempt-3.json",
+  "lockfile_sha256": "638c144ee2a08cf506952bb141f0d15de35d2fdb18313a0473049b341125f39b"
+}

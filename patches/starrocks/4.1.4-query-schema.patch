@@ -1,0 +1,217 @@
+diff --git a/fe/fe-grammar/src/main/antlr/com/starrocks/grammar/StarRocks.g4 b/fe/fe-grammar/src/main/antlr/com/starrocks/grammar/StarRocks.g4
+--- a/fe/fe-grammar/src/main/antlr/com/starrocks/grammar/StarRocks.g4
++++ b/fe/fe-grammar/src/main/antlr/com/starrocks/grammar/StarRocks.g4
+@@ -2927,7 +2927,7 @@
+     ;
+ 
+ explainDesc
+-    : (DESC | DESCRIBE | EXPLAIN) (LOGICAL | ANALYZE | VERBOSE | COSTS | SCHEDULER)?
++    : (DESC | DESCRIBE | EXPLAIN) (LOGICAL | ANALYZE | VERBOSE | COSTS | SCHEDULER | SCHEMA)?
+     ;
+ 
+ optimizerTrace
+diff --git a/fe/fe-parser/src/main/java/com/starrocks/sql/ast/StatementBase.java b/fe/fe-parser/src/main/java/com/starrocks/sql/ast/StatementBase.java
+--- a/fe/fe-parser/src/main/java/com/starrocks/sql/ast/StatementBase.java
++++ b/fe/fe-parser/src/main/java/com/starrocks/sql/ast/StatementBase.java
+@@ -39,7 +39,8 @@
+         OPTIMIZER,
+         REWRITE,
+         SCHEDULER,
+-        PLAN_ADVISOR;
++        PLAN_ADVISOR,
++        SCHEMA;
+ 
+         public static ExplainLevel defaultValue() {
+             return NORMAL;
+diff --git a/fe/fe-core/src/main/java/com/starrocks/sql/parser/AstBuilder.java b/fe/fe-core/src/main/java/com/starrocks/sql/parser/AstBuilder.java
+--- a/fe/fe-core/src/main/java/com/starrocks/sql/parser/AstBuilder.java
++++ b/fe/fe-core/src/main/java/com/starrocks/sql/parser/AstBuilder.java
+@@ -8971,6 +8971,17 @@
+     private static StatementBase.ExplainLevel getExplainType(
+             com.starrocks.sql.parser.StarRocksParser.ExplainDescContext context) {
+         StatementBase.ExplainLevel explainLevel = StatementBase.ExplainLevel.parse(Config.query_explain_level);
++        if (explainLevel == StatementBase.ExplainLevel.SCHEMA) {
++            explainLevel = StatementBase.ExplainLevel.NORMAL;
++        }
++        if (context.SCHEMA() != null) {
++            if (!(context.getParent() instanceof StarRocksParser.QueryStatementContext query)
++                    || !(query.getParent() instanceof StarRocksParser.StatementContext)
++                    || query.outfile() != null) {
++                throw new ParsingException("EXPLAIN SCHEMA requires a top-level query without OUTFILE");
++            }
++            return StatementBase.ExplainLevel.SCHEMA;
++        }
+         if (context.LOGICAL() != null) {
+             explainLevel = StatementBase.ExplainLevel.LOGICAL;
+         } else if (context.ANALYZE() != null) {
+diff --git a/fe/fe-core/src/main/java/com/starrocks/qe/StmtExecutor.java b/fe/fe-core/src/main/java/com/starrocks/qe/StmtExecutor.java
+--- a/fe/fe-core/src/main/java/com/starrocks/qe/StmtExecutor.java
++++ b/fe/fe-core/src/main/java/com/starrocks/qe/StmtExecutor.java
+@@ -967,6 +967,9 @@
+             }
+ 
+             if (RecursiveCTEAstCheck.hasRecursiveCte(parsedStmt, context)) {
++                if (parsedStmt.getExplainLevel() == StatementBase.ExplainLevel.SCHEMA) {
++                    throw new SemanticException("EXPLAIN SCHEMA does not support recursive queries");
++                }
+                 redirectStatus = RedirectStatus.FORWARD_WITH_SYNC;
+                 if (isForwardToLeader()) {
+                     context.setIsForward(true);
+@@ -1878,6 +1881,17 @@
+         context.getMysqlChannel().reset();
+ 
+         boolean isExplainQuery = parsedStmt.isExplain();
++        if (isExplainQuery && parsedStmt.getExplainLevel() == StatementBase.ExplainLevel.SCHEMA) {
++            ShowResultSet result = QuerySchema.describe(((QueryStatement) parsedStmt).getQueryRelation()
++                    .getRelationFields().getAllFields());
++            if (isProxy) {
++                proxyResultSet = result;
++                context.getState().setEof();
++            } else {
++                sendShowResult(result);
++            }
++            return;
++        }
+         boolean isExplainAnalyze = isExplainQuery
+                 && StatementBase.ExplainLevel.ANALYZE.equals(parsedStmt.getExplainLevel());
+         boolean isSchedulerExplain = isExplainQuery
+diff --git a/fe/fe-core/src/main/java/com/starrocks/qe/QuerySchema.java b/fe/fe-core/src/main/java/com/starrocks/qe/QuerySchema.java
+new file mode 100644
+--- /dev/null
++++ b/fe/fe-core/src/main/java/com/starrocks/qe/QuerySchema.java
+@@ -0,0 +1,44 @@
++// Copyright 2026 Nova contributors. Licensed under the Apache License, Version 2.0.
++package com.starrocks.qe;
++
++import com.starrocks.catalog.Column;
++import com.starrocks.sql.analyzer.SemanticException;
++import com.starrocks.sql.analyzer.Field;
++import com.starrocks.type.TypeFactory;
++
++import java.nio.charset.StandardCharsets;
++import java.util.ArrayList;
++import java.util.List;
++
++/** Analyzed output fields after authorization, before physical-plan rewrites can change nullability. */
++public final class QuerySchema {
++    private QuerySchema() {
++    }
++
++    public static ShowResultSet describe(List<Field> fields) {
++        if (fields.isEmpty() || fields.size() > 512) {
++            throw new SemanticException("Query schema requires between one and 512 output columns");
++        }
++        ShowResultSetMetaData metadata = ShowResultSetMetaData.builder()
++                .addColumn(new Column("ordinal", TypeFactory.createVarcharType(20)))
++                .addColumn(new Column("name", TypeFactory.createVarcharType(65535)))
++                .addColumn(new Column("physical_type", TypeFactory.createVarcharType(65535)))
++                .addColumn(new Column("nullable", TypeFactory.createVarcharType(3)))
++                .build();
++        List<List<String>> rows = new ArrayList<>();
++        long bytes = 0;
++        for (int index = 0; index < fields.size(); index++) {
++            Field field = fields.get(index);
++            String physicalType = field.getType().toSql();
++            String name = field.getName();
++            bytes += name.getBytes(StandardCharsets.UTF_8).length
++                    + physicalType.getBytes(StandardCharsets.UTF_8).length + 32;
++            if (bytes > 1048576) {
++                throw new SemanticException("Query schema exceeds one MiB");
++            }
++            rows.add(List.of(Integer.toString(index + 1), name, physicalType,
++                    field.isNullable() ? "YES" : "NO"));
++        }
++        return new ShowResultSet(metadata, rows);
++    }
++}
+diff --git a/fe/fe-core/src/test/java/com/starrocks/qe/QuerySchemaTest.java b/fe/fe-core/src/test/java/com/starrocks/qe/QuerySchemaTest.java
+new file mode 100644
+--- /dev/null
++++ b/fe/fe-core/src/test/java/com/starrocks/qe/QuerySchemaTest.java
+@@ -0,0 +1,86 @@
++// Copyright 2026 Nova contributors. Licensed under the Apache License, Version 2.0.
++package com.starrocks.qe;
++
++import com.starrocks.sql.analyzer.SemanticException;
++import com.starrocks.sql.analyzer.Field;
++import com.starrocks.sql.ast.expression.Expr;
++import com.starrocks.sql.ast.QueryStatement;
++import com.starrocks.sql.ast.StatementBase;
++import com.starrocks.sql.ast.expression.DecimalLiteral;
++import com.starrocks.sql.ast.expression.IntLiteral;
++import com.starrocks.sql.ast.expression.NullLiteral;
++import com.starrocks.sql.ast.expression.StringLiteral;
++import com.starrocks.sql.parser.SqlParser;
++import com.starrocks.type.IntegerType;
++import org.junit.jupiter.api.Test;
++
++import java.util.Collections;
++import java.util.List;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertFalse;
++import static org.junit.jupiter.api.Assertions.assertInstanceOf;
++import static org.junit.jupiter.api.Assertions.assertThrows;
++
++public class QuerySchemaTest {
++    private static Field field(String name, Expr expression) {
++        return new Field(name, expression.getOriginType(), null, expression, true, expression.isNullable());
++    }
++
++    @Test
++    public void analyzedNullabilityDoesNotDependOnOptimizedExpressions() {
++        Field nullableSide = new Field("joined", IntegerType.BIGINT, null, new IntLiteral(1), true, true);
++        Field retainedSide = new Field("retained", IntegerType.BIGINT, null, new NullLiteral(), true, false);
++        ShowResultSet result = QuerySchema.describe(List.of(nullableSide, retainedSide));
++        assertEquals("YES", result.getResultRows().get(0).get(3));
++        assertEquals("NO", result.getResultRows().get(1).get(3));
++    }
++
++    @Test
++    public void schemaHasEngineTypesNullabilityAndNoLiteralValues() {
++        NullLiteral nullable = new NullLiteral();
++        nullable.setType(IntegerType.BIGINT);
++        DecimalLiteral decimal = new DecimalLiteral("12345678901234567890123456.123456789012");
++        ShowResultSet result = QuerySchema.describe(List.of(
++                field("id", new IntLiteral(Long.MAX_VALUE)), field("amount", decimal),
++                field("optional", nullable), field("label", new StringLiteral("private-literal-canary"))));
++        assertEquals(4, result.getResultRows().size());
++        assertEquals(List.of("1", "id", "bigint(20)", "NO"), result.getResultRows().get(0));
++        assertEquals(decimal.getOriginType().toSql(), result.getResultRows().get(1).get(2));
++        assertEquals(List.of("3", "optional", "bigint(20)", "YES"), result.getResultRows().get(2));
++        assertFalse(result.getResultRows().toString().contains("private-literal-canary"));
++        assertFalse(result.getResultRows().toString().contains("12345678901234567890123456"));
++    }
++
++    @Test
++    public void outputShapeAndPayloadAreBoundedBeforeReturningAnyRows() {
++        assertThrows(SemanticException.class, () -> QuerySchema.describe(List.of()));
++        assertThrows(SemanticException.class, () -> QuerySchema.describe(
++                Collections.nCopies(513, field("a", new IntLiteral(1)))));
++        assertThrows(SemanticException.class, () -> QuerySchema.describe(
++                List.of(field("x".repeat(1048576), new IntLiteral(1)))));
++    }
++
++    @Test
++    public void onlyTopLevelQueriesAcceptSchemaExplain() {
++        StatementBase statement = SqlParser.parseSingleStatement(
++                "EXPLAIN SCHEMA SELECT 1 AS value", 0L);
++        assertInstanceOf(QueryStatement.class, statement);
++        assertEquals(StatementBase.ExplainLevel.SCHEMA, statement.getExplainLevel());
++        for (String sql : List.of("EXPLAIN SCHEMA INSERT INTO t VALUES (1)",
++                "EXPLAIN SCHEMA UPDATE t SET x=1", "EXPLAIN SCHEMA DELETE FROM t",
++                "EXPLAIN SCHEMA REFRESH MATERIALIZED VIEW v",
++                "CREATE TABLE t AS EXPLAIN SCHEMA SELECT 1",
++                "EXPLAIN SCHEMA SELECT 1 INTO OUTFILE 's3://untrusted/result'")) {
++            assertThrows(RuntimeException.class,
++                    () -> SqlParser.parseSingleStatement(sql, 0L), sql);
++        }
++        assertThrows(com.starrocks.sql.parser.ParsingException.class,
++                () -> SqlParser.parseSingleStatement("SELECT [1,2,3][1:2]", 0L));
++        for (String sql : List.of("SELECT 1", "EXPLAIN SELECT 1", "EXPLAIN VERBOSE SELECT 1",
++                "SELECT map{'x':1}")) {
++            assertInstanceOf(QueryStatement.class,
++                    SqlParser.parseSingleStatement(sql, 0L));
++        }
++    }
++}

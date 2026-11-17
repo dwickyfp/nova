@@ -191,29 +191,25 @@ async def test_valid_columns_and_an_unreadable_query_still_train(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    ("sql", "message"),
+    ("sql", "run_once"),
     [
-        ("SUBMIT TASK t AS INSERT INTO sink SELECT 1", "SUBMIT TASK runs in the background"),
-        (
-            "SUBMIT TASK t SCHEDULE EVERY(INTERVAL 1 MINUTE) AS INSERT INTO sink SELECT 1",
-            "Use CREATE TASK",
-        ),
-        (
-            "CREATE ROUTINE LOAD db.job ON t PROPERTIES ('format' = 'json') FROM KAFKA "
-            "('kafka_broker_list' = 'b:9092', 'kafka_topic' = 'x')",
-            "Routine loads run in the background",
-        ),
-        ("RESUME ROUTINE LOAD FOR db.job", "Routine loads run in the background"),
+        ("SUBMIT TASK t AS INSERT INTO sink SELECT 1", True),
+        ("SUBMIT TASK t SCHEDULE EVERY(INTERVAL 1 MINUTE) AS INSERT INTO sink SELECT 1", False),
     ],
 )
 @pytest.mark.asyncio
-async def test_engine_background_jobs_are_refused(sql, message):
+async def test_engine_background_jobs_become_nova_tasks(sql, run_once):
+    """SUBMIT TASK never reaches the engine: it is a Nova task of the caller's role."""
+    from app.sql_frontend.ast.statements import CreateTaskStatement
     from app.sql_frontend.context import PlanningContext
-    from app.sql_frontend.errors import CapabilityUnsupportedError
+    from app.sql_frontend.planning.execution import NovaActionPlan
     from app.sql_frontend.planning.planner import SQLPlanner
 
-    with pytest.raises(CapabilityUnsupportedError, match=message):
-        await SQLPlanner().plan(_statement(sql), PlanningContext())
+    statement = _statement(sql)
+    assert isinstance(statement, CreateTaskStatement)
+    plan = await SQLPlanner().plan(statement, PlanningContext(database="db"))
+    assert isinstance(plan, NovaActionPlan)
+    assert plan.payload.definition.run_once is run_once
 
 
 @pytest.mark.parametrize(

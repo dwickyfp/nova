@@ -8,7 +8,7 @@ warehouses they can pick, and their Studio preferences.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -70,136 +70,7 @@ class StudioCapabilities(BaseModel):
     runtime: StudioRuntimeCapabilities | None = None
 
 
-# ── Query-backed artifacts ───────────────────────────────────
-
-#: Studio has exactly two artifact kinds: a chart (a viz worksheet) and a
-#: dashboard (a zone layout over charts). The old table/dashboard entities are
-#: gone; legacy rows migrate into these two.
-ArtifactType = Literal["chart", "dashboard"]
-
-
-class ArtifactCreateRequest(BaseModel):
-    #: A Semantic View result's proof; the server uses the statement it recorded.
-    semantic_provenance_ref: str | None = Field(default=None, max_length=64)
-    title: str = Field(min_length=1, max_length=256)
-    artifact_type: ArtifactType
-    sql_text: str = Field(default="", max_length=200_000)
-    database_name: str | None = Field(default=None, max_length=128)
-    schema_name: str | None = Field(default=None, max_length=128)
-    chart_spec: dict[str, Any] | None = None
-    viz_spec: dict[str, Any] | None = None
-    agent_id: str | None = Field(default=None, max_length=64)
-    thread_id: str | None = Field(default=None, max_length=64)
-
-
-class ArtifactSummary(BaseModel):
-    artifact_id: str
-    title: str
-    artifact_type: ArtifactType
-    agent_id: str | None = None
-    thread_id: str | None = None
-    database_name: str | None = None
-    schema_name: str | None = None
-    created_at: datetime
-    updated_at: datetime
-    #: Set for artifacts published to Superset: the object and its /bi paths.
-    bi_kind: Literal["chart", "dashboard"] | None = None
-    bi_object_id: int | None = None
-    bi_view_path: str | None = None
-    bi_edit_path: str | None = None
-    #: Saved before BI: read-only until converted.
-    legacy: bool = False
-
-
-class ArtifactView(ArtifactSummary):
-    sql_text: str
-    chart_spec: dict[str, Any] | None = None
-    viz_spec: dict[str, Any] | None = None
-    #: For a legacy artifact: what conversion to BI could not carry (blockers)
-    #: and what it would only draw differently (notes).
-    legacy_blockers: list[str] = Field(default_factory=list)
-    legacy_notes: list[str] = Field(default_factory=list)
-
-
-class ArtifactConvertRequest(BaseModel):
-    #: The legacy artifacts to convert; all of the caller's when omitted.
-    artifact_ids: list[str] | None = Field(default=None, max_length=500)
-    #: Convert even artifacts with blockers, accepting what BI cannot carry.
-    force: bool = False
-
-
-class ArtifactConversionOutcome(BaseModel):
-    artifact_id: str
-    title: str
-    artifact_type: str
-    status: Literal["converted", "kept", "failed"]
-    blockers: list[str] = Field(default_factory=list)
-    notes: list[str] = Field(default_factory=list)
-    error: str | None = None
-    bi_view_path: str | None = None
-
-
-class ArtifactConvertResponse(BaseModel):
-    outcomes: list[ArtifactConversionOutcome] = Field(default_factory=list)
-
-
-class ArtifactListResponse(BaseModel):
-    artifacts: list[ArtifactSummary] = Field(default_factory=list)
-    count: int = 0
-
-
-class ArtifactRefreshResponse(BaseModel):
-    artifact: ArtifactView
-    columns: list[str] = Field(default_factory=list)
-    rows: list[list[Any]] = Field(default_factory=list)
-    row_count: int = 0
-    elapsed_ms: float = 0.0
-    #: The computed presentation model for viz-backed charts.
-    presmodel: dict[str, Any] | None = None
-    #: The StarRocks statement the presentation model was computed from.
-    sql: str | None = None
-    #: For a chart saved before worksheets existed: the worksheet derived from
-    #: its SQL and chart encoding, so it renders and opens in the editor.
-    #: Saving it from the editor makes it the artifact's worksheet.
-    derived_viz_spec: dict[str, Any] | None = None
-
-
-class ArtifactDraft(BaseModel):
-    sql_text: str = Field(min_length=1, max_length=200_000)
-    artifact_type: Literal["chart"] = "chart"
-    chart_spec: dict[str, Any] | None = None
-    viz_spec: dict[str, Any] | None = None
-
-
-class ArtifactEditMessage(BaseModel):
-    role: Literal["user", "assistant"]
-    content: str = Field(min_length=1, max_length=1000)
-
-
-class ArtifactEditRequest(BaseModel):
-    instruction: str = Field(min_length=1, max_length=2000)
-    draft: ArtifactDraft | None = None
-    columns: list[Annotated[str, Field(max_length=128)]] = Field(
-        default_factory=list, max_length=100
-    )
-    history: list[ArtifactEditMessage] = Field(default_factory=list, max_length=8)
-
-
-class ArtifactEditResponse(BaseModel):
-    message: str
-    draft: ArtifactDraft | None = None
-    columns: list[str] = Field(default_factory=list)
-    rows: list[list[Any]] = Field(default_factory=list)
-    row_count: int = 0
-    elapsed_ms: float = 0.0
-    #: Superset's view of the draft (a ``/bi`` path holding an Explore form
-    #: data key, never credentials), when BI can draw it.
-    preview_path: str | None = None
-
-
-class ArtifactApplyRequest(BaseModel):
-    draft: ArtifactDraft
-    expected_updated_at: datetime
+# ── Shared legacy dashboards ─────────────────────────────────
 
 
 class DashboardComputeRequest(BaseModel):

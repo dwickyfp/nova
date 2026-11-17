@@ -66,6 +66,7 @@ from app.modules.assistant.intelligence import (
     TurnIntent,
     TurnRoute,
     TurnState,
+    dashboard_change_claims,
     display_title,
     enforce_evidence,
     state_step,
@@ -197,17 +198,24 @@ class LoopContext:
     workspace_file_id: str | None = None
     session_id: str | None = None
     thread_id: str | None = None
-    #: The Dataviz page a Studio turn was asked from: dashboard id, filter key
-    #: and edit state. Hints only; Dataviz tools verify them as the caller.
+    #: The Dataviz page a Studio turn was asked from (the native dashboard on
+    #: screen). Hints only; Dataviz tools verify them as the caller.
     dataviz: dict[str, Any] | None = None
     #: Required tools whose verified output the server already put in this
-    #: turn's context (for example the Dataviz dashboard brief, which is the
-    #: output of ``dataviz_context`` for the caller). Set by the router only.
+    #: turn's context (for example the native dashboard brief, which is the
+    #: output of ``native_dashboard_read`` for the caller). Set by the router only.
     settled_capabilities: tuple[str, ...] = ()
+    #: The answer is a question back (which dashboard, which page), so no data
+    #: result is owed. Set by the router from the dashboard brief, or by a
+    #: tool that may settle the data step (``may_settle``) in its result.
+    question_back: bool = False
     #: Required tools this turn satisfies with another registered tool (for
     #: the Dataviz assistant, governed data comes from the open dashboard's
     #: own dataset). Set by the router only.
     capability_aliases: dict[str, str] = field(default_factory=dict)
+    #: Tools for the native dashboard on screen kept in reach with the
+    #: aliases above (reading and changing it). Set by the router only.
+    dashboard_tools: tuple[str, ...] = ()
     user: dict[str, Any] | None = None
     app_context: NevaAppContext | None = None
     secure_input: dict[str, str] | None = field(default=None, repr=False)
@@ -340,10 +348,10 @@ _RESULT_TOOLS = ("compute_metrics", "data_to_chart")
 _PREVIEW_ROWS = 40
 _PREVIEW_COLUMNS = 12
 #: Read-only analysis an owner can enable on a Studio agent, usable after its query.
-#: ``dataviz_query`` answers from the open Dataviz dashboard's own dataset; it
-#: is registered only for Studio turns and refuses when no dashboard is open.
+#: ``native_dataset_query`` answers from a native Dataviz dashboard's dataset.
 _ANALYSIS_TOOLS = (
-    "compute_metrics", "data_to_chart", "diagnose_change", "ml_execute", "dataviz_query",
+    "compute_metrics", "data_to_chart", "diagnose_change", "ml_execute",
+    "native_dataset_query",
 )
 #: Tool-call syntax some providers leak into the text channel.
 _TOOL_MARKUP = re.compile(
@@ -363,6 +371,7 @@ REPAIR_LIMITS = {
     "unverified_number": 1,
     "split_request": 1,
     "split_followup": 1,
+    "unconfirmed_dashboard_change": 1,
 }
 MAX_TURN_REPAIRS = 6
 
@@ -372,6 +381,23 @@ MAX_TURN_REPAIRS = 6
 _RESULT_ANALYSIS_TOOLS = frozenset({
     "ml_execute", "data_to_chart", "compute_metrics", "diagnose_change",
 })
+
+def _answer_from_results(
+    missing_required: list[str], evidence: Any, failed: set[str] | frozenset[str] = frozenset(),
+) -> bool:
+    """Only derived steps that ran and failed are missing, and verified results are
+    in: answer from them. A step the model never ran still fails the turn."""
+    return bool(missing_required) and bool(evidence.business_tables) and all(
+        name in _RESULT_ANALYSIS_TOOLS and name in failed for name in missing_required
+    )
+
+
+_DERIVED_STEP_MISSING_PROMPT = (
+    "These steps could not be completed: {steps}. Answer from the verified results "
+    "already returned. State the numbers they contain, and say plainly that the derived "
+    "figure (a difference, share, chart or model) was not calculated; do not compute it "
+    "yourself."
+)
 
 
 async def _primary_plan_usable(registry: ToolRegistry, context: LoopContext) -> bool:
@@ -918,6 +944,10 @@ class AssistantLoop:
             context.agent_scope = planning_scope(context)
         repairs = repair_budget or RepairBudget((resume_state or {}).get("repairs"))
         completed_capabilities: set[str] = set()
+        #: Native dashboard changes this turn committed, from their operation receipts.
+        dashboard_receipts: list[dict[str, Any]] = []
+        #: Capabilities that ran in this turn and failed (not ones the model skipped).
+        failed_capabilities: set[str] = set()
         composing_final = False
         clarification_requested = False
         clarification_context: dict[str, Any] = {}
@@ -1179,7 +1209,7 @@ class AssistantLoop:
             selected_tools = tuple(dict.fromkeys((
                 *selected_tools,
                 *(
-                    name for name in ("dataviz_query", "dataviz_context")
+                    name for name in context.dashboard_tools
                     if self._registry.get(name) is not None
                 ),
             )))
@@ -1739,6 +1769,18 @@ class AssistantLoop:
                             }
                         )
                         continue
+                    if _answer_from_results(missing_required, evidence, failed_capabilities):
+                        # Only a derived step (a calculation, a chart) is missing and
+                        # verified results are in: answer from them and say what
+                        # could not be derived, instead of leaving nothing.
+                        composing_final = True
+                        messages.append({
+                            "role": "system",
+                            "content": _DERIVED_STEP_MISSING_PROMPT.format(
+                                steps=", ".join(missing_required)),
+                        })
+                        messages.append(composer_message())
+                        continue
                     if (
                         # Studio agents, and Neva turns with governed views the
                         # caller can open, fall back to the governed query.
@@ -1796,11 +1838,43 @@ class AssistantLoop:
                             str(uuid4()), finish_reason="required_capability_incomplete"
                         )
                         return
+                    logger.info(
+                        "Turn incomplete: required %s not run (intent %s)",
+                        sorted(missing_required), route.intent.value,
+                    )
                     yield events.error(
                         "required_capability_incomplete",
                         "The required capability was not executed, so Nova cannot "
                         "claim the task was completed.",
                     )
+                    _transition(context, TurnState.FAILED)
+                    yield events.done(
+                        str(uuid4()), finish_reason="required_capability_incomplete"
+                    )
+                    return
+                unconfirmed = _unconfirmed_dashboard_claims(
+                    context, "".join(buffered_text), dashboard_receipts
+                )
+                if unconfirmed:
+                    # The answer says the dashboard changed or was published, but
+                    # no committed receipt in this turn shows it.
+                    if repairs.take("unconfirmed_dashboard_change"):
+                        _record_step(context, {
+                            "kind": "runtime_decision",
+                            "answer_repair": "unconfirmed_dashboard_change",
+                            "claims": sorted(unconfirmed), "status": "done",
+                        })
+                        _transition(context, TurnState.REPAIRING)
+                        composing_final = False
+                        messages.append({"role": "system", "content": _UNCONFIRMED_CHANGE_PROMPT})
+                        continue
+                    # Nova's own words replace the claim, so nothing unconfirmed is shown.
+                    yield events.text_delta(" ".join(
+                        say(f"loop.{kind}_unconfirmed", language)
+                        for kind in ("change", "publish") if kind in unconfirmed
+                    ))
+                    _record_step(context, {"kind": "answer", "unconfirmed_dashboard_change":
+                                           sorted(unconfirmed)})
                     _transition(context, TurnState.FAILED)
                     yield events.done(
                         str(uuid4()), finish_reason="required_capability_incomplete"
@@ -1823,15 +1897,18 @@ class AssistantLoop:
                 # concepts) when no data tool was required.
                 lineage_answer = bool(
                     getattr(context, "dataviz", None)
-                    and completed_capabilities & {"dataviz_context", "dataviz_chart_source"}
+                    and completed_capabilities & {
+                        "native_dashboard_read",
+                    }
                     and not set(route.required_capabilities) & {
                         "semantic_query", "semantic_view_query", "query_execute",
-                        "diagnose_change", "compute_metrics", "dataviz_query",
+                        "diagnose_change", "compute_metrics", "native_dataset_query",
                     }
                 )
                 if (
                     business_request and not denials and not guard_blocked
                     and not evidence.business_tables and not lineage_answer
+                    and not context.question_back
                 ):
                     detail = (
                         "No business query result is available. Catalog listings do not "
@@ -1851,8 +1928,14 @@ class AssistantLoop:
                 answer_tables = (
                     nonredundant_business_tables(evidence) if business_request else evidence.tables
                 )
+                draft_answer = "".join(buffered_text)
                 answer_text = enforce_evidence(
-                    "".join(buffered_text), needs_data=route.needs_data, evidence=evidence
+                    draft_answer,
+                    # A question back (which dashboard, which page) owes no data;
+                    # an answer that asks nothing still does.
+                    needs_data=route.needs_data
+                    and not (context.question_back and "?" in draft_answer),
+                    evidence=evidence,
                 )
                 if denials and route.needs_data and not evidence.items:
                     answer_text = say("loop.consent_declined", language)
@@ -2200,9 +2283,10 @@ class AssistantLoop:
             # The reasoning for this iteration is done: it produced a call. Close
             # the ``act`` row here, or a panel that keys liveness on the last
             # ``running`` step shows a spinner that never stops.
-            yield _thinking_step(context, "act", f"Calling {invocation.tool_name}", status="done")
+            yield _thinking_step(context, "act", f"Using {invocation.tool_name}", status="done")
 
             preview = "" if invocation.tool_name == "load_skill" else tool.preview(invocation)
+            preview = await _consent_preview(tool, invocation, context, preview)
             from app.modules.assistant.tools import invocation_classification
 
             classification = invocation_classification(tool, invocation)
@@ -2331,6 +2415,9 @@ class AssistantLoop:
             )
             try:
                 yield events.tool_call(view)
+                activity = _dashboard_activity(tool, invocation, context)
+                if activity:
+                    yield activity
                 allowed: bool | None | ConsentApproval = True
                 if pending_consent is not None:
                     allowed = await asyncio.wait_for(
@@ -2627,6 +2714,7 @@ class AssistantLoop:
             if not outcome.ok:
                 yield events.tool_status(invocation.tool_call_id, "failed")
                 _finish_tool_step(context, "failed", outcome.error)
+                failed_capabilities.add(invocation.tool_name)
                 terminal = (outcome.error_class or "").upper() in {
                     "PERMISSION_DENIED",
                     "AUTHORIZATION_FAILURE",
@@ -2705,6 +2793,12 @@ class AssistantLoop:
 
             yield events.tool_status(invocation.tool_call_id, "done")
             _transition(context, TurnState.VERIFYING_RESULT)
+            dashboard_change = outcome.metadata.get("native_dashboard_change")
+            if isinstance(dashboard_change, dict):
+                # The tool's operation receipt confirmed a new dashboard
+                # revision: the page reloads it.
+                dashboard_receipts.append(dashboard_change)
+                yield events.dashboard_changed(invocation.tool_call_id, dashboard_change)
             client_action = outcome.metadata.get("client_action")
             if (
                 invocation.tool_name == "invoke_client_capability"
@@ -2798,14 +2892,6 @@ class AssistantLoop:
                         tool_call_id=invocation.tool_call_id,
                     )
                 )
-                context.pending_output = _pending_trace(pending_artifacts)
-            if invocation.tool_name == "dashboard_build" and isinstance(
-                outcome.metadata.get("dashboard_artifact"), dict
-            ):
-                pending_artifacts.append(PendingArtifact(
-                    kind="dashboard", payload=outcome.metadata["dashboard_artifact"],
-                    tool_call_id=invocation.tool_call_id,
-                ))
                 context.pending_output = _pending_trace(pending_artifacts)
             if outcome.citations:
                 for citation in outcome.citations:
@@ -2990,6 +3076,8 @@ class AssistantLoop:
             settled = _settled_capabilities(
                 self._registry.get(invocation.tool_name), outcome
             )
+            if settled and (outcome.metadata or {}).get("question_back"):
+                context.question_back = True
             if settled:
                 # A verified result made a later required step inapplicable
                 # (for example Dataviz refused a conversion): explaining that
@@ -3563,6 +3651,79 @@ _SPLIT_REQUEST_PROMPT = (
     "step with ml_execute or data_to_chart. Answer from the parts that return data and "
     "name any part that is still not covered."
 )
+
+#: A tool's fuller approval text reads current state; it never holds up a turn.
+CONSENT_PREVIEW_SECONDS = 10.0
+MAX_CONSENT_PREVIEW_CHARS = 2000
+
+
+def _dashboard_activity(tool: Any, invocation: ToolInvocation, context: LoopContext) -> str | None:
+    """Where a proposed native dashboard change lands, for the page's Neva pointer.
+
+    From the call's arguments and the open dashboard only (no read); a target
+    that cannot be worked out sends nothing.
+    """
+    target = getattr(tool, "target", None)
+    if not callable(target):
+        return None
+    try:
+        found = target(invocation, context)
+    except Exception as exc:  # noqa: BLE001 - the pointer is a hint; the call goes on
+        logger.debug("Dashboard target for %s unavailable: %s",
+                     invocation.tool_name, type(exc).__name__)
+        return None
+    return events.dashboard_activity(invocation.tool_call_id, found) if found else None
+
+
+async def _consent_preview(
+    tool: Any, invocation: ToolInvocation, context: LoopContext, preview: str,
+) -> str:
+    """The approval text: the tool's ``consent_preview`` when it has one, else ``preview``.
+
+    A tool may describe its change from current state (for a dashboard, the widgets
+    it touches by name). That read runs as the caller and is bounded; any failure
+    keeps the plain preview, and consent is still asked the same way.
+    """
+    describe = getattr(tool, "consent_preview", None)
+    if not callable(describe):
+        return preview
+    try:
+        text = await asyncio.wait_for(describe(invocation, context),
+                                      timeout=CONSENT_PREVIEW_SECONDS)
+    except Exception as exc:  # noqa: BLE001 - the plain preview still describes the call
+        logger.warning("Approval text for %s unavailable: %s",
+                       invocation.tool_name, type(exc).__name__)
+        return preview
+    return str(text)[:MAX_CONSENT_PREVIEW_CHARS] if text else preview
+
+
+_UNCONFIRMED_CHANGE_PROMPT = (
+    "Your draft says the dashboard was changed or published, but no change or "
+    "publication was saved in this turn. If the user asked for one, call the matching "
+    "dashboard tool now (it asks for their approval). Otherwise answer again without "
+    "saying anything was changed or published; describe only what the dashboard and "
+    "its data show."
+)
+
+
+def _unconfirmed_dashboard_claims(
+    context: LoopContext, answer: str, receipts: list[dict[str, Any]],
+) -> frozenset[str]:
+    """Claims in a native dashboard turn's answer that no committed receipt confirms.
+
+    ``change`` needs a committed dashboard change; ``publish`` a committed
+    publication. Turns outside a native dashboard are not checked here.
+    """
+    if not isinstance((context.dataviz or {}).get("native_dashboard"), dict):
+        return frozenset()
+    claims = dashboard_change_claims(answer)
+    if not claims:
+        return claims
+    confirmed: set[str] = set()
+    for receipt in receipts:
+        confirmed.add("publish" if receipt.get("published") else "change")
+    return frozenset(claims - confirmed)
+
 
 _SPLIT_FOLLOWUP_PROMPT = (
     "Do not ask the user yet. Call semantic_query now for the data parts, one short "
@@ -4678,7 +4839,9 @@ def _tag_safe(payload: str) -> str:
 
 
 #: Governed sources: answers built on them are labelled trusted.
-_SEMANTIC_SOURCES = frozenset({"semantic_query", "semantic_view_query", "dataviz_query"})
+_SEMANTIC_SOURCES = frozenset(
+    {"semantic_query", "semantic_view_query", "native_dataset_query"}
+)
 _GLOSSARY_SOURCES = frozenset({"ontology_resolve", "ontology_explain", "ontology_status"})
 
 

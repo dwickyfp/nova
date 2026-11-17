@@ -1,0 +1,74 @@
+{
+  "started_at": "2026-11-15T19:55:43.807000+00:00",
+  "resource_id": "1ab16829-0930-4313-b0bd-cf8327a5ef9f",
+  "owner": "alice",
+  "visible_city": "Jakarta",
+  "scope": "parameterized SQL dataset HTTP API, real StarRocks/Ranger and PG17 metadata",
+  "result": "FAIL",
+  "cleanup": "NOT_CREATED",
+  "error_type": "AssertionError",
+  "error": "inspect with declarations",
+  "steps": [
+    {
+      "check": "QA login",
+      "passed": true
+    },
+    {
+      "check": "QA admitted",
+      "passed": true
+    },
+    {
+      "check": "non-admin role",
+      "passed": true
+    },
+    {
+      "check": "QA login",
+      "passed": true
+    },
+    {
+      "check": "QA admitted",
+      "passed": true
+    },
+    {
+      "check": "non-admin role",
+      "passed": true
+    },
+    {
+      "request": "undeclared named parameter refused",
+      "status": 422,
+      "expected_status": 422
+    },
+    {
+      "check": "undeclared named parameter refused",
+      "passed": true
+    },
+    {
+      "request": "inspect with declarations",
+      "status": 403,
+      "expected_status": 200
+    },
+    {
+      "check": "inspect with declarations",
+      "passed": false
+    },
+    {
+      "request": "logout",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "logout",
+      "passed": true
+    },
+    {
+      "request": "logout",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "logout",
+      "passed": true
+    }
+  ],
+  "finished_at": "2026-11-15T19:55:47.584045+00:00"
+}

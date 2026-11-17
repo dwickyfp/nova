@@ -1,0 +1,17 @@
+{
+  "result": "PASS",
+  "scope": "Authenticated Chrome native-app observation, current dark desktop theme",
+  "source_sha256": "e7bc56f4ce44f95c217ed612fdce20895fd215291752abc6796182f8d4845fb0",
+  "page": "/docs/dataviz/native-documents#preview-dataset-rows",
+  "observed": [
+    "Exact saved draft revision preview requires current edit permission",
+    "Publication preview remains pinned to publication",
+    "Explicit preview bounds and source/access revalidation readable",
+    "Current source-repair limits remain visible"
+  ],
+  "evidence": "AX state and screenshot observed in conversation; no saved image artifact",
+  "limitations": [
+    "Does not establish native editor acceptance",
+    "Does not establish light/mobile docs layout"
+  ]
+}

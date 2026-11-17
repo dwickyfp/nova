@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render } from "vitest-browser-react";
+import { cleanup, render } from "vitest-browser-react";
 import { userEvent } from "vitest/browser";
 import { IntelligentUi } from "./renderer";
 import { validateProgram } from "./validator";
@@ -17,6 +17,19 @@ vi.mock("../dataviz/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../dataviz/api")>()),
   datavizApi: dataviz,
 }));
+
+// Geometry and camera-state checks use the bundled basemap with real MapLibre,
+// so availability of the public tile provider cannot determine their result.
+vi.mock("./map-style", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./map-style")>();
+  return {
+    ...actual,
+    PUBLIC_MAP_STYLES: {
+      get light() { return actual.businessMapStyle(); },
+      get dark() { return actual.businessMapStyle(); },
+    },
+  };
+});
 
 const source: UiSource = {
   agentId: "agent",
@@ -58,6 +71,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await flushUiStates().catch(() => {});
+  await cleanup();
   document.documentElement.className = originalTheme;
   vi.restoreAllMocks();
 });
@@ -116,7 +130,7 @@ it("asks nothing and shows no Dataviz action without a stored answer", async () 
     state_defaults: parsed.state, evidence,
     provenance: { scope: "verified_result_rows", assumption: false, evidence_ids: ["e1"] } };
   const screen = await render(<IntelligentUi block={ui} complete />);
-  await expect.element(screen.getByText("Revenue")).toBeVisible();
+  await expect.element(screen.getByText("Revenue", { exact: true })).toBeVisible();
   expect(screen.getByRole("button", { name: "Add to Dataviz" }).query()).toBeNull();
   expect(dataviz.check).not.toHaveBeenCalled();
   await screen.unmount();

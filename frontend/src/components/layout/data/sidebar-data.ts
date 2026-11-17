@@ -104,9 +104,10 @@ export const sidebarData: SidebarData = {
               newTab: true,
             },
             {
-              title: "BI",
-              url: "/analytics",
+              title: "Dataviz",
+              url: "/studio?tab=dataviz",
               icon: ChartColumn,
+              newTab: true,
             },
             {
               title: "Entities",

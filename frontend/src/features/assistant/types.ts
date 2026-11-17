@@ -154,6 +154,23 @@ export type AssistantEvent = (
     }
   | ({ type: "guard" } & import("../agents/api").GuardDecision)
   | {
+      type: "dashboard_changed";
+      tool_call_id: string;
+      dashboard_id: string;
+      revision: number;
+      created?: boolean;
+      published?: boolean;
+    }
+  | {
+      /** A native dashboard change Neva proposes; saved only on dashboard_changed. */
+      type: "dashboard_activity";
+      tool_call_id: string;
+      dashboard_id: string;
+      action: "add" | "change" | "move" | "remove" | "arrange" | "filter" | "data" | "publish";
+      widget_ids: string[];
+      page_id?: string;
+    }
+  | {
       type: "tool_detail";
       tool_call_id: string;
       /** What the tool did. Already redacted by the backend. */

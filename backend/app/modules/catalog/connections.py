@@ -1,10 +1,12 @@
 """Nova Catalog connections and foreign catalogs (phase 2).
 
 A *connection* registers an external source (one of :data:`.sources.SOURCES`:
-StarRocks, PostgreSQL, Snowflake): its endpoint and a secret reference, in
-``NOVA_SYSTEM.CATALOG_CONNECTIONS``. A *foreign catalog* is a StarRocks JDBC
-catalog built from a connection, so the engine and Ranger govern every query
-against it like any other catalog.
+StarRocks, PostgreSQL, Snowflake, Iceberg REST, Kafka): its endpoint and a
+secret reference, in ``nova_meta.catalog_connections``. A *foreign catalog* is
+an engine catalog built from a connection (JDBC, or the engine's Iceberg
+catalog), so the engine and Ranger govern every query against it like any
+other catalog. A Kafka connection backs no catalog: Routine Load jobs name it,
+and a security admin chooses the roles that may load from it.
 
 Rules this module keeps:
 
@@ -24,6 +26,7 @@ Rules this module keeps:
 from __future__ import annotations
 
 import asyncio
+import builtins
 import logging
 import re
 
@@ -176,6 +179,29 @@ class ConnectionRepository:
                 raise MetadataPermissionDenied()
             await repo.put_credentials(name, username, password, write=write)
 
+    async def roles(self, name: str) -> builtins.list[str]:
+        from app.modules.routine_load.repository import RoutineLoadRepository
+
+        async with catalog_transaction(read_only=True) as repo:
+            return await RoutineLoadRepository(repo.connection, repo.actor).connection_roles(name)
+
+    async def set_roles(
+        self, name: str, roles: builtins.list[str], by: SecurityContext
+    ) -> None:
+        from app.modules.routine_load.repository import RoutineLoadRepository
+
+        async with catalog_transaction(by) as repo:
+            await RoutineLoadRepository(repo.connection, repo.actor).set_connection_roles(
+                name, roles
+            )
+
+    async def live_routine_loads(self, name: str) -> builtins.list[str]:
+        from app.modules.routine_load.repository import RoutineLoadRepository
+
+        async with catalog_transaction(read_only=True) as repo:
+            jobs = await RoutineLoadRepository(repo.connection, repo.actor).live_jobs_using(name)
+        return [f"{job['database_name']}.{job['job_name']}" for job in jobs]
+
     async def delete_write_credentials(self, name: str) -> None:
         async with catalog_transaction() as repo:
             await repo.delete_credentials(name, write=True)
@@ -251,11 +277,19 @@ class ConnectionService:
 
     async def _summary(self, row: dict, catalogs: list[str]) -> ConnectionSummary:
         managed = row["secret_ref"] == _managed_ref(row["name"])
+        stored = (not managed) or await self.repo.has_credentials(row["name"])
+        source = SOURCES.get(row["connector_type"])
+        needs = source is None or source.requires_credentials(endpoint_of(row))
         return ConnectionSummary(
             name=row["name"],
             connector_type=row["connector_type"],
-            credential_source="managed" if managed else "external",
-            has_credentials=(not managed) or await self.repo.has_credentials(row["name"]),
+            credential_source=(
+                "none" if not needs and not stored
+                else "managed" if managed else "external"
+            ),
+            has_credentials=stored or not needs,
+            roles=await self.repo.roles(row["name"]) if source and not source.provides_catalog
+            else [],
             writable=await self.repo.has_credentials(row["name"], write=True),
             owner=row.get("owner"),
             comment=row.get("comment"),
@@ -293,15 +327,24 @@ class ConnectionService:
             connector_type = validate_connector_type(connector_type)
             parsed = parse_endpoint(connector_type, endpoint)
             entered = username is not None or password is not None
+            needs = SOURCES[connector_type].requires_credentials(parsed)
             if entered and (not username or not password):
                 raise CatalogConnectionError("Enter both a username and a password")
             if entered and secret_ref and secret_ref != _managed_ref(name):
                 raise CatalogConnectionError(
                     "Give either a secret reference or credentials, not both"
                 )
-            if not entered and not secret_ref:
+            if not needs and (entered or (secret_ref and secret_ref != _managed_ref(name))):
+                raise CatalogConnectionError(
+                    "This connection takes no credentials; choose a SASL security protocol "
+                    "to sign in to the brokers"
+                )
+            if needs and not entered and not secret_ref:
                 raise CatalogConnectionError("A connection needs a secret reference or credentials")
-            ref = _managed_ref(name) if entered else validate_secret_ref(secret_ref or "")
+            ref = (
+                _managed_ref(name) if entered or not needs
+                else validate_secret_ref(secret_ref or "")
+            )
             if ref.startswith(MANAGED_SCHEME) and ref != _managed_ref(name):
                 raise CatalogConnectionError(
                     f"A Nova-managed credential belongs to one connection: use nova://{name}"
@@ -394,6 +437,31 @@ class ConnectionService:
         await _audit(user, "SET_CONNECTION_WRITE_CREDENTIALS", name, "SUCCESS", None)
         return await self.describe(name, user)
 
+    async def set_roles(self, name: str, roles: list[str], user: dict) -> ConnectionSummary | None:
+        """Replace the roles that may load from a Kafka connection (security admins)."""
+        name = safe_name(name)
+        security = await self._authorize(user, "SET_CONNECTION_ROLES", name)
+        try:
+            row = await self.repo.get(name)
+            if row is None:
+                raise CatalogConnectionError(f"Connection '{name}' does not exist")
+            source = SOURCES.get(row["connector_type"])
+            if source is None or source.provides_catalog:
+                raise CatalogConnectionError(
+                    "Roles are chosen for Kafka connections; catalog access is granted with "
+                    "access policies"
+                )
+            cleaned = sorted({str(role).strip() for role in roles if str(role).strip()})
+            for role in cleaned:
+                if len(role) > 128 or any(ord(ch) < 32 for ch in role):
+                    raise CatalogConnectionError(f"Invalid role name {role!r}")
+            await self.repo.set_roles(name, cleaned, security)
+        except Exception as exc:
+            await _audit(user, "SET_CONNECTION_ROLES", name, "ERROR", str(exc))
+            raise
+        await _audit(user, "SET_CONNECTION_ROLES", name, "SUCCESS", None)
+        return await self.describe(name, user)
+
     async def write_credentials(self, connection: dict) -> Credentials | None:
         """A connection's write credential, or ``None``. Call only after authorization."""
         stored = await self.repo.read_credentials(connection["name"], write=True)
@@ -408,6 +476,12 @@ class ConnectionService:
                 if if_exists:
                     return False
                 raise CatalogConnectionError(f"Connection '{name}' does not exist")
+            jobs = await self.repo.live_routine_loads(name)
+            if jobs:
+                raise CatalogConnectionError(
+                    f"Connection '{name}' is used by routine load(s) {', '.join(jobs)}; "
+                    "stop them first"
+                )
             users = (await self._catalog_uses()).get(name)
             if users:
                 raise CatalogConnectionError(
@@ -482,10 +556,12 @@ class ConnectionService:
             if row is None:
                 raise CatalogConnectionError(f"Connection '{connection}' does not exist")
             source = SOURCES.get(row["connector_type"])
-            if source is None:
+            if source is None or not source.provides_catalog:
                 raise CatalogConnectionError(
-                    f"Connection type {row['connector_type']!r} can no longer back a "
-                    "catalog; supported types are " + ", ".join(sorted(SOURCES))
+                    f"A {row['connector_type']} connection cannot back a catalog; catalogs "
+                    "are built from " + ", ".join(
+                        sorted(key for key, item in SOURCES.items() if item.provides_catalog)
+                    ) + " connections"
                 )
             sql = source.build_catalog_sql(
                 name,

@@ -1,0 +1,88 @@
+{
+  "started_at": "2026-11-17T12:17:33.276650+00:00",
+  "run": "9c03ea",
+  "scope": "semantic ratio metric through native chart queries vs engine oracle",
+  "result": "FAIL",
+  "cleanup": "UNVERIFIED",
+  "oracle": {
+    "by_region": [
+      [
+        "East",
+        "0.32000000",
+        "0.375000000000",
+        "500.00"
+      ],
+      [
+        "West",
+        "0.07272727",
+        "0.266666666667",
+        "550.00"
+      ]
+    ],
+    "total": [
+      "0.19047619"
+    ],
+    "sum_of_daily": [
+      [
+        "East",
+        "0.85000000"
+      ],
+      [
+        "West",
+        "0.34000000"
+      ]
+    ],
+    "monthly_revenue": [
+      [
+        "2024-02-01",
+        "750.00"
+      ],
+      [
+        "2024-03-01",
+        "300.00"
+      ]
+    ],
+    "weighted_by_region": [
+      [
+        "East",
+        "10.00000000",
+        "42.66666667"
+      ],
+      [
+        "West",
+        "20.00000000",
+        "30.00000000"
+      ]
+    ],
+    "weighted_total": [
+      "15.38461538",
+      "36.33333333"
+    ]
+  },
+  "error_type": "RangerError",
+  "error": "Ranger rejected the configured control-plane identity",
+  "cleanup_error_type": "RangerError",
+  "steps": [
+    {
+      "step": "fixture: CREATE DATABASE ndv_metric_9c03ea",
+      "passed": true
+    },
+    {
+      "step": "fixture: CREATE TABLE ndv_metric_9c03ea.sales (id",
+      "passed": true
+    },
+    {
+      "step": "fixture: INSERT INTO ndv_metric_9c03ea.sales VALU",
+      "passed": true
+    },
+    {
+      "step": "fixture: the weighted price differs from the plain average price",
+      "passed": true
+    },
+    {
+      "step": "fixture: ratio of sums differs from averaged and daily-summed margins",
+      "passed": true
+    }
+  ],
+  "finished_at": "2026-11-17T12:17:34.323822+00:00"
+}

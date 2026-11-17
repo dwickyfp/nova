@@ -1,0 +1,65 @@
+{
+  "result": "FAIL",
+  "cleanup": "REMOVED",
+  "error_type": "AssertionError",
+  "steps": [
+    {
+      "check": "semantic fixture login",
+      "passed": true
+    },
+    {
+      "request": "semantic fixture active role",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "semantic fixture active role",
+      "passed": true
+    },
+    {
+      "request": "create owned semantic view",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "create owned semantic view",
+      "passed": true
+    },
+    {
+      "request": "draft model cannot author dataset",
+      "status": 403,
+      "expected_status": 404
+    },
+    {
+      "check": "draft model cannot author dataset",
+      "passed": false
+    },
+    {
+      "request": "remove owned semantic view",
+      "status": 204,
+      "expected_status": 204
+    },
+    {
+      "check": "remove owned semantic view",
+      "passed": true
+    },
+    {
+      "request": "removed semantic view hidden",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "removed semantic view hidden",
+      "passed": true
+    },
+    {
+      "request": "semantic fixture logout",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "semantic fixture logout",
+      "passed": true
+    }
+  ]
+}

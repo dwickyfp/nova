@@ -1,0 +1,45 @@
+E501 Line too long (101 > 100)
+   --> scripts/verify_native_source_identity_live.py:125:101
+    |
+123 |                       f"SELECT id, amount FROM {database}.source_table")
+124 |         replaced = await source.get_source_schema(TableName("source_view", database))
+125 |         check("drop recreate never reuses source identity", replaced.physical_id != view.physical_id)
+    |                                                                                                     ^
+126 |         await db.execute_system(f"REVOKE {role} FROM USER '{principal}'")
+127 |         await denied("revoked role cannot read metadata", role)
+    |
+
+E501 Line too long (101 > 100)
+   --> scripts/verify_native_source_identity_live.py:136:101
+    |
+134 |                 await operation()
+135 |             except Exception as error:
+136 |                 report["cleanup_errors"].append({"action": name, "error_type": type(error).__name__})
+    |                                                                                                     ^
+137 |         for policy_name in reversed(policies):
+138 |             async def remove_policy(name=policy_name):
+    |
+
+E501 Line too long (110 > 100)
+   --> scripts/verify_native_source_identity_live.py:152:101
+    |
+150 |             await clean("remove owned role", remove_role)
+151 |         try:
+152 |             check("QA attributes unchanged", attributes == await ranger_client.get_user_attributes(principal))
+    |                                                                                                     ^^^^^^^^^^
+153 |             check("QA grants unchanged", grants == await db.execute_system(f"SHOW GRANTS FOR '{principal}'"))
+154 |         except Exception as error:
+    |
+
+E501 Line too long (109 > 100)
+   --> scripts/verify_native_source_identity_live.py:153:101
+    |
+151 |         try:
+152 |             check("QA attributes unchanged", attributes == await ranger_client.get_user_attributes(principal))
+153 |             check("QA grants unchanged", grants == await db.execute_system(f"SHOW GRANTS FOR '{principal}'"))
+    |                                                                                                     ^^^^^^^^^
+154 |         except Exception as error:
+155 |             report["cleanup_errors"].append({"action": "verify original QA identity",
+    |
+
+Found 5 errors (1 fixed, 4 remaining).

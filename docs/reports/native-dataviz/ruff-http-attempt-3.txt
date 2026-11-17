@@ -1,0 +1,2 @@
+$ uv run ruff check --force-exclude app/modules/viz/router.py app/modules/viz/contracts/http.py app/modules/viz/documents.py app/modules/viz/document_service.py app/main.py scripts/generate_viz_contracts.py tests/integration/test_metadata_viz.py tests/unit/test_native_viz_router.py
+All checks passed!

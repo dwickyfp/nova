@@ -1,0 +1,31 @@
+{
+  "started_at": "2026-11-17T13:16:34.078553+00:00",
+  "run": "2e704d",
+  "hardware": {
+    "os": "macOS-27.0.1-arm64-arm-64bit",
+    "cpu": "Apple M3",
+    "cores": 8,
+    "memory_bytes": "17179869184",
+    "engine": "StarRocks in Docker on this host",
+    "servers": "dev.sh (uvicorn --reload)"
+  },
+  "result": "FAIL",
+  "cleanup": "REMOVED",
+  "error_type": "AssertionError",
+  "error": "fixture failed",
+  "steps": [
+    {
+      "step": "fixture: CREATE DATABASE ndv_perf_2e704d",
+      "passed": true
+    },
+    {
+      "step": "fixture: CREATE TABLE ndv_perf_2e704d.orders (id BIGINT, ",
+      "passed": true
+    },
+    {
+      "step": "fixture: INSERT INTO ndv_perf_2e704d.orders SELECT genera",
+      "passed": false
+    }
+  ],
+  "finished_at": "2026-11-17T13:16:36.553633+00:00"
+}

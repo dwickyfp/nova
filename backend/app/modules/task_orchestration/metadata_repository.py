@@ -20,6 +20,7 @@ their engine adapters; this repository holds only Nova control rows.
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
@@ -230,6 +231,15 @@ class TaskMetadataRepository:
         return await self._one(
             "SELECT * FROM nova_meta.config_task_graph_runs WHERE id=%s", (run_id,),
         )
+
+    async def scheduled_occurrence_time(self, graph_run_id: str) -> datetime | None:
+        """When the scheduler said a reserved occurrence was due; ``None`` if not scheduled."""
+        await self._bound()
+        row = await self._one(
+            "SELECT scheduled_at FROM nova_meta.scheduled_occurrences WHERE graph_run_id=%s",
+            (graph_run_id,),
+        )
+        return row["scheduled_at"] if row else None
 
     async def existing_graph_run_ids(self, run_ids: list[str]) -> set[str]:
         await self._bound()

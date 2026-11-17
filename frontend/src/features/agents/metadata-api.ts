@@ -52,8 +52,8 @@ export const metadataApi = {
    * Databases on the internal catalog, excluding Nova's own and the engine's
    * information schemas. Sorted, so the dropdown order is stable.
    */
-  async listDatabases(includeSystem = false): Promise<string[]> {
-    const response = await api.get<{ catalogs: CatalogInfo[] }>('/explorer/catalogs')
+  async listDatabases(includeSystem = false, signal?: AbortSignal): Promise<string[]> {
+    const response = await api.get<{ catalogs: CatalogInfo[] }>('/explorer/catalogs', signal)
     const internal = response.catalogs.find((c) => c.name === 'default_catalog')
     const databases = internal?.databases ?? []
     return databases
@@ -63,8 +63,8 @@ export const metadataApi = {
       .sort((a, b) => a.localeCompare(b))
   },
 
-  listTables(database: string): Promise<DatabaseObjects> {
-    return api.get<DatabaseObjects>(`/explorer/databases/${encodeURIComponent(database)}`)
+  listTables(database: string, signal?: AbortSignal): Promise<DatabaseObjects> {
+    return api.get<DatabaseObjects>(`/explorer/databases/${encodeURIComponent(database)}`, signal)
   },
 
   getTableDetail(database: string, table: string): Promise<TableDetail> {

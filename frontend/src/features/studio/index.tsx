@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { toast } from "sonner";
@@ -68,8 +68,8 @@ function StudioAppContent() {
   const view: StudioView = search.view ?? "chat";
   // Agent and Dataviz are top-level workspaces, separate from the sidebar view.
   const tab: StudioTab = search.tab ?? "agent";
-  // Dataviz mounts on first visit and then stays mounted, so its Superset
-  // frame (and any unsaved edit in it) survives a visit to the Agent tab.
+  // Dataviz mounts on first visit and then stays mounted, so an open dashboard
+  // and its viewer state survive a visit to the Agent tab.
   const [datavizMounted, setDatavizMounted] = useState(tab === "dataviz");
   useEffect(() => {
     if (tab === "dataviz") setDatavizMounted(true);
@@ -81,12 +81,6 @@ function StudioAppContent() {
       replace: true,
     });
   };
-  const followBiPath = useCallback(
-    (bi: string) => {
-      void navigate({ from: "/studio", to: "/studio", search: (prev) => ({ ...prev, bi }), replace: true });
-    },
-    [navigate],
-  );
   // The open thread lives in the URL, not in component state: a refresh has to
   // come back to the same conversation, and losing it made the transcript (and
   // its thinking) look like it had vanished.
@@ -154,15 +148,14 @@ function StudioAppContent() {
       ? threads.find((thread) => thread.agent_id === requestedAgentId)
       : threads[0];
     if (!newest?.agent_id) return;
-    // The workspace tab and the Dataviz page stay: a link that opens
-    // Dataviz must not be turned into the Agent tab.
+    // The workspace tab stays: a link that opens Dataviz must not be turned
+    // into the Agent tab.
     navigate({
       to: "/studio",
       search: {
         agent: newest.agent_id,
         thread: newest.thread_id,
         tab: search.tab,
-        bi: search.bi,
       },
       replace: true,
     });
@@ -171,7 +164,6 @@ function StudioAppContent() {
     navigate,
     search.thread,
     search.tab,
-    search.bi,
     requestedAgentId,
     threads,
     threadsQuery.isSuccess,
@@ -338,7 +330,7 @@ function StudioAppContent() {
       </div>
 
       <main aria-label={tab === "dataviz" ? "Nova Studio Dataviz" : view === "chat" ? "Nova Studio chat" : view} className="@container/studio shell-pane relative flex min-h-0 min-w-0 flex-1 flex-col bg-background">
-        {/* On Dataviz the switch docks in Superset's own bar (DatavizWorkspace). */}
+        {/* On Dataviz the switch sits in the workspace's own band (DatavizWorkspace). */}
         {tab === "agent" ? <StudioTabs tab={tab} onSelect={selectTab} reserveRow={view !== "chat"} /> : null}
         {needsRole ? (
           <div role="status" className="mt-14 flex shrink-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b border-border px-4 py-2 text-xs text-muted-foreground">
@@ -361,8 +353,6 @@ function StudioAppContent() {
         {datavizMounted ? (
           <div className={tab === "dataviz" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
             <DatavizWorkspace
-              path={search.bi}
-              onPathChange={followBiPath}
               onContinueInAgent={(prompt) => {
                 setInitialPrompt(prompt);
                 setFreshChat(true);

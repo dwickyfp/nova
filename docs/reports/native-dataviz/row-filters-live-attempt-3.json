@@ -1,0 +1,63 @@
+{
+  "started_at": "2026-11-16T02:12:25.470957+00:00",
+  "resource_id": "a270d7f3-5631-4585-8377-7d61d77ad04e",
+  "scope": "steward-published native dataset read by QA viewers under Ranger row filters",
+  "result": "FAIL",
+  "cleanup": "BY_AUTHOR",
+  "error_type": "AssertionError",
+  "error": "alice query as marketing",
+  "steps": [
+    {
+      "check": "alice login",
+      "passed": true
+    },
+    {
+      "check": "alice admitted",
+      "passed": true
+    },
+    {
+      "check": "bob login",
+      "passed": true
+    },
+    {
+      "check": "bob admitted",
+      "passed": true
+    },
+    {
+      "request": "alice uses marketing",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "alice uses marketing",
+      "passed": true
+    },
+    {
+      "check": "alice active role is marketing",
+      "passed": true
+    },
+    {
+      "request": "bob uses marketing",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "bob uses marketing",
+      "passed": true
+    },
+    {
+      "check": "bob active role is marketing",
+      "passed": true
+    },
+    {
+      "request": "alice query as marketing",
+      "status": 404,
+      "expected_status": 200
+    },
+    {
+      "check": "alice query as marketing",
+      "passed": false
+    }
+  ],
+  "finished_at": "2026-11-16T02:12:25.796312+00:00"
+}

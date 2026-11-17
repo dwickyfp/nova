@@ -1,0 +1,54 @@
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+
+2:47:19 AM [vite] (client) Re-optimizing dependencies because vite config has changed
+2:47:20 AM [vite] (client) [optimizer] scanning dependencies...
+2:47:22 AM [vite] (client) [optimizer] bundling dependencies...
+ ❯ |browser (chromium)| src/features/native-dataviz/documents.test.ts (31 tests | 1 failed) 109ms
+     × inspects SQL through the same authenticated dataset transport 7ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |browser (chromium)| src/features/native-dataviz/documents.test.ts:80:3 > native document transport > inspects SQL through the same authenticated dataset transport
+AssertionError: expected { …(4) } to deeply equal { …(4) }
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[33m@@ -1,16 +1,19 @@[39m
+[2m  {[22m
+[2m    "dataset_id": "aaaaaaaa-0000-4000-8000-000000000001",[22m
+[2m    "fields": [[22m
+[2m      {[22m
+[31m+       "currency": null,[39m
+[2m        "field_id": "aaaaaaaa-0000-4000-8000-000000000004",[22m
+[2m        "logical_type": "decimal",[22m
+[2m        "name": "amount",[22m
+[2m        "nullable": true,[22m
+[2m        "physical_type": "decimal(38,12)",[22m
+[2m        "semantic_role": "measure",[22m
+[2m        "source_column": "amount",[22m
+[31m+       "timezone": null,[39m
+[31m+       "unit": null,[39m
+[2m      },[22m
+[2m    ],[22m
+[2m    "schema_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",[22m
+[2m    "source": {[22m
+[2m      "ast_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",[22m
+
+ ❯ src/features/native-dataviz/documents.test.ts:85:69
+     83|       ast_digest: 'b'.repeat(64), dependencies: [inspected.source] } }
+     84|     fetchMock.mockResolvedValueOnce(response(result))
+     85|     await expect(client().inspectSql({ dataset_id: id(1), source })).r…
+       |                                                                     ^
+     86|     expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/viz/datasets/insp…
+     87|     expect(fetchMock.mock.calls[0][1].headers['Idempotency-Key']).toBe…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 38 passed (39)
+   Start at  02:47:19
+   Duration  9.95s (transform 0ms, setup 0ms, import 304ms, tests 121ms, environment 0ms)
+

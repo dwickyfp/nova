@@ -5,6 +5,7 @@ import type { ConnectionSummary } from './api'
 import {
   AddCatalogDialog,
   AddConnectionDialog,
+  ConnectionRolesDialog,
   DropConnectionDialog,
 } from './connection-dialogs'
 
@@ -12,10 +13,12 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 const createConnection = vi.fn()
 const createForeignCatalog = vi.fn()
+const setConnectionRoles = vi.fn()
 vi.mock('./api', async (original) => ({
   ...(await original<typeof import('./api')>()),
   createConnection: (...args: unknown[]) => createConnection(...args),
   createForeignCatalog: (...args: unknown[]) => createForeignCatalog(...args),
+  setConnectionRoles: (...args: unknown[]) => setConnectionRoles(...args),
 }))
 
 const connection = (overrides: Partial<ConnectionSummary> = {}): ConnectionSummary => ({
@@ -34,6 +37,7 @@ const connection = (overrides: Partial<ConnectionSummary> = {}): ConnectionSumma
 beforeEach(() => {
   createConnection.mockReset()
   createForeignCatalog.mockReset()
+  setConnectionRoles.mockReset()
 })
 
 describe('AddConnectionDialog', () => {
@@ -77,12 +81,72 @@ describe('AddConnectionDialog', () => {
     }))
   })
 
-  it('offers exactly the three supported sources', async () => {
+  it('offers exactly the supported sources', async () => {
     await render(<AddConnectionDialog open onOpenChange={() => {}} />)
-    for (const label of ['StarRocks', 'PostgreSQL', 'Snowflake']) {
+    for (const label of ['StarRocks', 'PostgreSQL', 'Snowflake', 'Iceberg', 'Kafka']) {
       await expect.element(page.getByRole('radio', { name: label })).toBeVisible()
     }
     await expect.element(page.getByRole('radio', { name: 'MySQL' })).not.toBeInTheDocument()
+  })
+
+  it('asks Iceberg for the catalog URI, storage settings and a storage key', async () => {
+    createConnection.mockResolvedValue(connection({ connector_type: 'iceberg' }))
+    await render(<AddConnectionDialog open onOpenChange={() => {}} />)
+    await page.getByRole('radio', { name: 'Iceberg' }).click()
+    await page.getByLabelText('Name', { exact: true }).fill('lake_rest')
+    await page.getByLabelText('Catalog URI').fill('http://iceberg-rest:8181')
+    await page.getByLabelText('Storage endpoint (optional)').fill('http://object-store:9000')
+    await page.getByLabelText('Storage region (optional)').fill('us-east-1')
+    await page.getByLabelText('Access key ID').fill('AKIA')
+    const secret = page.getByLabelText('Secret access key')
+    await expect.element(secret).toHaveAttribute('type', 'password')
+    await secret.fill('secret')
+    await page.getByRole('button', { name: 'Add connection' }).click()
+    expect(createConnection).toHaveBeenCalledWith({
+      name: 'lake_rest',
+      connector_type: 'iceberg',
+      endpoint:
+        'http://iceberg-rest:8181?s3_endpoint=http%3A%2F%2Fobject-store%3A9000&s3_region=us-east-1',
+      comment: undefined,
+      credentials: { username: 'AKIA', password: 'secret' },
+    })
+  })
+
+  it('adds a Kafka cluster without credentials unless it signs in with SASL', async () => {
+    createConnection.mockResolvedValue(connection({ connector_type: 'kafka' }))
+    await render(<AddConnectionDialog open onOpenChange={() => {}} />)
+    await page.getByRole('radio', { name: 'Kafka' }).click()
+    await page.getByLabelText('Name', { exact: true }).fill('events_kafka')
+    await page.getByLabelText('Brokers').fill('kafka-1:9092, kafka-2:9092')
+    await expect.element(page.getByLabelText('SASL username')).not.toBeInTheDocument()
+    await expect
+      .element(page.getByLabelText('SASL mechanism'))
+      .not.toBeInTheDocument()
+    await page.getByRole('button', { name: 'Add connection' }).click()
+    expect(createConnection).toHaveBeenCalledWith({
+      name: 'events_kafka',
+      connector_type: 'kafka',
+      endpoint: 'kafka-1:9092,kafka-2:9092',
+      comment: undefined,
+    })
+  })
+
+  it('needs the SASL username and password for a SASL Kafka cluster', async () => {
+    createConnection.mockResolvedValue(connection({ connector_type: 'kafka' }))
+    await render(<AddConnectionDialog open onOpenChange={() => {}} />)
+    await page.getByRole('radio', { name: 'Kafka' }).click()
+    await page.getByLabelText('Name', { exact: true }).fill('secure_kafka')
+    await page.getByLabelText('Brokers').fill('b1:9093')
+    await page.getByLabelText('Security protocol').click()
+    await page.getByRole('option', { name: 'SASL_SSL' }).click()
+    await expect.element(page.getByRole('button', { name: 'Add connection' })).toBeDisabled()
+    await page.getByLabelText('SASL username').fill('loader')
+    await page.getByLabelText('SASL password').fill('pw')
+    await page.getByRole('button', { name: 'Add connection' }).click()
+    expect(createConnection).toHaveBeenCalledWith(expect.objectContaining({
+      endpoint: 'b1:9093?security_protocol=SASL_SSL&sasl_mechanism=PLAIN',
+      credentials: { username: 'loader', password: 'pw' },
+    }))
   })
 
   it('keeps Add disabled until the name is a valid identifier', async () => {
@@ -153,6 +217,38 @@ describe('AddCatalogDialog', () => {
     // Falls back to a new connection: the address fields are shown.
     await expect.element(page.getByLabelText('Host', { exact: true })).toBeVisible()
     await expect.element(page.getByRole('button', { name: 'Add catalog' })).toBeDisabled()
+  })
+})
+
+describe('Kafka connections', () => {
+  it('are never offered as a catalog source', async () => {
+    await render(
+      <AddCatalogDialog
+        open
+        onOpenChange={() => {}}
+        connections={[connection({ name: 'events_kafka', connector_type: 'kafka' })]}
+      />
+    )
+    await expect.element(page.getByRole('radio', { name: 'Iceberg' })).toBeVisible()
+    await expect.element(page.getByRole('radio', { name: 'Kafka' })).not.toBeInTheDocument()
+  })
+
+  it('save the roles that may load from them', async () => {
+    setConnectionRoles.mockResolvedValue(connection({ connector_type: 'kafka', roles: ['marketing'] }))
+    const onSaved = vi.fn()
+    await render(
+      <ConnectionRolesDialog
+        connection={connection({ name: 'events_kafka', connector_type: 'kafka', roles: ['finance'] })}
+        onOpenChange={() => {}}
+        onSaved={onSaved}
+      />
+    )
+    const roles = page.getByLabelText('Roles', { exact: true })
+    await expect.element(roles).toHaveValue('finance')
+    await roles.fill('marketing, finance ,')
+    await page.getByRole('button', { name: 'Save roles' }).click()
+    expect(setConnectionRoles).toHaveBeenCalledWith('events_kafka', ['marketing', 'finance'])
+    expect(onSaved).toHaveBeenCalled()
   })
 })
 

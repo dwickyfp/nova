@@ -1,0 +1,396 @@
+
+> shadcn-admin@2.2.1 build /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+> tsc -b && vite build
+
+vite v8.3.8 building client environment for production...
+transforming...
+✓ 6157 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/assets/KaTeX_Size3-Regular-CTq5MqoE.woff           4.42 kB
+dist/assets/KaTeX_Size4-Regular-Dl5lxZxV.woff2          4.92 kB
+dist/assets/KaTeX_Size2-Regular-Dy4dx90m.woff2          5.20 kB
+dist/assets/KaTeX_Size1-Regular-mCD8mA8B.woff2          5.46 kB
+dist/assets/KaTeX_Size4-Regular-BF-4gkZK.woff           5.98 kB
+dist/assets/KaTeX_Size2-Regular-oD1tc_U0.woff           6.18 kB
+dist/assets/KaTeX_Size1-Regular-C195tn64.woff           6.49 kB
+dist/index.html                                         6.58 kB │ gzip:   1.36 kB
+dist/assets/KaTeX_Caligraphic-Regular-Di6jR-x-.woff2    6.90 kB
+dist/assets/KaTeX_Caligraphic-Bold-Dq_IR9rO.woff2       6.91 kB
+dist/assets/KaTeX_Size3-Regular-DgpXs0kz.ttf            7.58 kB
+dist/assets/KaTeX_Caligraphic-Regular-CTRA-rTL.woff     7.65 kB
+dist/assets/KaTeX_Caligraphic-Bold-BEiXGLvX.woff        7.71 kB
+dist/assets/KaTeX_Script-Regular-D3wIWfF6.woff2         9.64 kB
+dist/assets/KaTeX_SansSerif-Regular-DDBCnlJ7.woff2     10.34 kB
+dist/assets/KaTeX_Size4-Regular-DWFBv043.ttf           10.36 kB
+dist/assets/KaTeX_Script-Regular-D5yQViql.woff         10.58 kB
+dist/assets/KaTeX_Fraktur-Regular-CTYiF6lA.woff2       11.31 kB
+dist/assets/KaTeX_Fraktur-Bold-CL6g_b3V.woff2          11.34 kB
+dist/assets/KaTeX_Size2-Regular-B7gKUWhC.ttf           11.50 kB
+dist/assets/KaTeX_SansSerif-Italic-C3H0VqGB.woff2      12.02 kB
+dist/assets/KaTeX_SansSerif-Bold-D1sUS0GD.woff2        12.21 kB
+dist/assets/KaTeX_Size1-Regular-Dbsnue_I.ttf           12.22 kB
+dist/assets/KaTeX_SansSerif-Regular-CS6fqUqJ.woff      12.31 kB
+dist/assets/KaTeX_Caligraphic-Regular-wX97UBjC.ttf     12.34 kB
+dist/assets/KaTeX_Caligraphic-Bold-ATXxdsX0.ttf        12.36 kB
+dist/assets/KaTeX_Fraktur-Regular-Dxdc4cR9.woff        13.20 kB
+dist/assets/KaTeX_Fraktur-Bold-BsDP51OF.woff           13.29 kB
+dist/assets/KaTeX_Typewriter-Regular-CO6r4hn1.woff2    13.56 kB
+dist/assets/KaTeX_SansSerif-Italic-DN2j7dab.woff       14.11 kB
+dist/assets/KaTeX_SansSerif-Bold-DbIhKOiC.woff         14.40 kB
+dist/assets/KaTeX_Typewriter-Regular-C0xS9mPB.woff     16.02 kB
+dist/assets/KaTeX_Math-BoldItalic-CZnvNsCZ.woff2       16.40 kB
+dist/assets/KaTeX_Math-Italic-t53AETM-.woff2           16.44 kB
+dist/assets/KaTeX_Script-Regular-C5JkGWo-.ttf          16.64 kB
+dist/assets/KaTeX_Main-BoldItalic-DxDJ3AOS.woff2       16.78 kB
+dist/assets/KaTeX_Main-Italic-NWA7e6Wa.woff2           16.98 kB
+dist/assets/KaTeX_Math-BoldItalic-iY-2wyZ7.woff        18.66 kB
+dist/assets/KaTeX_Math-Italic-DA0__PXp.woff            18.74 kB
+dist/assets/KaTeX_Main-BoldItalic-SpSLRI95.woff        19.41 kB
+dist/assets/KaTeX_SansSerif-Regular-BNo7hRIc.ttf       19.43 kB
+dist/assets/KaTeX_Fraktur-Regular-CB_wures.ttf         19.57 kB
+dist/assets/KaTeX_Fraktur-Bold-BdnERNNW.ttf            19.58 kB
+dist/assets/KaTeX_Main-Italic-BMLOBm91.woff            19.67 kB
+dist/assets/KaTeX_SansSerif-Italic-YYjJ1zSn.ttf        22.36 kB
+dist/assets/KaTeX_SansSerif-Bold-CFMepnvq.ttf          24.50 kB
+dist/assets/KaTeX_Main-Bold-Cx986IdX.woff2             25.32 kB
+dist/assets/KaTeX_Main-Regular-B22Nviop.woff2          26.27 kB
+dist/assets/KaTeX_Typewriter-Regular-D3Ib7_Hf.ttf      27.55 kB
+dist/assets/KaTeX_AMS-Regular-BQhdFMY1.woff2           28.07 kB
+dist/assets/KaTeX_Main-Bold-Jm3AIy58.woff              29.91 kB
+dist/assets/KaTeX_Main-Regular-Dr94JaBh.woff           30.77 kB
+dist/assets/KaTeX_Math-BoldItalic-B3XSjfu4.ttf         31.19 kB
+dist/assets/KaTeX_Math-Italic-flOr_0UB.ttf             31.30 kB
+dist/assets/KaTeX_Main-BoldItalic-DzxPMmG6.ttf         32.96 kB
+dist/assets/KaTeX_AMS-Regular-DMm9YOAa.woff            33.51 kB
+dist/assets/KaTeX_Main-Italic-3WenGoN9.ttf             33.58 kB
+dist/assets/KaTeX_Main-Bold-waoOVXN0.ttf               51.33 kB
+dist/assets/KaTeX_Main-Regular-ypZvNtVU.ttf            53.58 kB
+dist/assets/KaTeX_AMS-Regular-DRggAlZN.ttf             63.63 kB
+dist/assets/codicon-ngg6Pgfi.ttf                      121.97 kB
+dist/assets/editor.worker-C3R1XRkp.js                 280.41 kB
+dist/licenses/third-party.md                          299.60 kB
+dist/assets/maplibre-gl-worker-CEzvAyZY.js            507.69 kB
+dist/assets/vendor-BG1u1H5L.css                         0.09 kB │ gzip:   0.09 kB
+dist/assets/vendor-C0o0WN9P.css                         0.11 kB │ gzip:   0.11 kB
+dist/assets/vendor-uPAAwZJh.css                         0.23 kB │ gzip:   0.14 kB
+dist/assets/vendor-CQwDAmTo.css                         0.24 kB │ gzip:   0.16 kB
+dist/assets/vendor-CRrTnOCY.css                         0.42 kB │ gzip:   0.21 kB
+dist/assets/vendor-Db0iUD3Z.css                         0.50 kB │ gzip:   0.18 kB
+dist/assets/chart-frame-CHDixO1V.css                    0.53 kB │ gzip:   0.17 kB
+dist/assets/map-style-BUAoC-QJ.css                      0.73 kB │ gzip:   0.35 kB
+dist/assets/vendor-1q1_nmQd.css                         0.85 kB │ gzip:   0.33 kB
+dist/assets/vendor-DnvFQ7hy.css                         0.87 kB │ gzip:   0.33 kB
+dist/assets/sign-in-DMinOwYb.css                        0.91 kB │ gzip:   0.34 kB
+dist/assets/vendor-hChFM6vY.css                         1.15 kB │ gzip:   0.37 kB
+dist/assets/vendor-D5pr94dC.css                         1.30 kB │ gzip:   0.35 kB
+dist/assets/vendor-BXCck7BZ.css                         2.31 kB │ gzip:   0.60 kB
+dist/assets/vendor-BqO4pTli.css                         2.58 kB │ gzip:   0.65 kB
+dist/assets/vendor-Dde3G5f_.css                         2.92 kB │ gzip:   0.77 kB
+dist/assets/vendor-BOFCtWkG.css                         2.96 kB │ gzip:   0.74 kB
+dist/assets/vendor-DUzbJ6Yw.css                         3.43 kB │ gzip:   0.85 kB
+dist/assets/vendor-WVUxdzeO.css                         3.72 kB │ gzip:   0.88 kB
+dist/assets/vendor-DiWif_cv.css                         4.02 kB │ gzip:   0.93 kB
+dist/assets/vendor-DzgHyQEr.css                         4.97 kB │ gzip:   1.33 kB
+dist/assets/vendor-DrGymszL.css                         5.58 kB │ gzip:   1.34 kB
+dist/assets/vendor-Dx_NJ98P.css                         6.02 kB │ gzip:   1.43 kB
+dist/assets/vendor-g-Fs7Hbc.css                         6.83 kB │ gzip:   1.73 kB
+dist/assets/vendor-CuJOsd9u.css                         6.93 kB │ gzip:   1.54 kB
+dist/assets/vendor-TXy0gsga.css                         7.19 kB │ gzip:   1.36 kB
+dist/assets/vendor-DbrS-0T7.css                         7.64 kB │ gzip:   2.06 kB
+dist/assets/vendor-CfRhgr0R.css                         7.73 kB │ gzip:   1.18 kB
+dist/assets/vendor-BjkoYTIA.css                         8.22 kB │ gzip:   1.70 kB
+dist/assets/vendor-piW3Z7Oj.css                         8.98 kB │ gzip:   1.59 kB
+dist/assets/vendor-CHscQ8Kj.css                        11.93 kB │ gzip:   2.29 kB
+dist/assets/vendor-CsCYCMsa.css                        12.22 kB │ gzip:   2.40 kB
+dist/assets/vendor-CQi7XLd3.css                        12.76 kB │ gzip:   2.14 kB
+dist/assets/vendor-DLioOiRN.css                        15.41 kB │ gzip:   2.56 kB
+dist/assets/vendor-yAuyBjmG.css                        17.21 kB │ gzip:   3.31 kB
+dist/assets/vendor-C02HYdjx.css                        29.80 kB │ gzip:   7.97 kB
+dist/assets/vendor-B8-mEBLf.css                        82.96 kB │ gzip:  10.72 kB
+dist/assets/frontend-S0iNct9T.css                     200.73 kB │ gzip:  31.74 kB
+dist/assets/app-Nug6pVhV.js                             0.04 kB │ gzip:   0.06 kB
+dist/assets/vendor-AuunhmCz.js                          0.09 kB │ gzip:   0.11 kB
+dist/assets/vendor-D_1DSu89.js                          0.15 kB │ gzip:   0.14 kB
+dist/assets/vendor-DXXeSVEi.js                          0.16 kB │ gzip:   0.15 kB
+dist/assets/docs-D8Qh1ens.js                            0.17 kB │ gzip:   0.15 kB
+dist/assets/route-BCyD2ZaQ.js                           0.18 kB │ gzip:   0.16 kB
+dist/assets/_slug-D65EygWY.js                           0.18 kB │ gzip:   0.16 kB
+dist/assets/vendor-Dx1COAJ_.js                          0.21 kB │ gzip:   0.18 kB
+dist/assets/vendor-DXgmIKJU.js                          0.22 kB │ gzip:   0.18 kB
+dist/assets/vendor-BsAsTqOp.js                          0.22 kB │ gzip:   0.18 kB
+dist/assets/vendor-BOg4nFKi.js                          0.23 kB │ gzip:   0.19 kB
+dist/assets/ai-search-DE1TCGr6.js                       0.26 kB │ gzip:   0.21 kB
+dist/assets/entities-CWxTx3ro.js                        0.26 kB │ gzip:   0.21 kB
+dist/assets/feature-store-CDLp4AY1.js                   0.26 kB │ gzip:   0.21 kB
+dist/assets/semantic-views-OPxy_arR.js                  0.26 kB │ gzip:   0.22 kB
+dist/assets/vendor-tkgX319x.js                          0.30 kB │ gzip:   0.24 kB
+dist/assets/docs-CSQPHOIQ.js                            0.31 kB │ gzip:   0.23 kB
+dist/assets/_slug-DyVpY4Z2.js                           0.33 kB │ gzip:   0.24 kB
+dist/assets/sql-highlighter-DVxKg8ll.js                 0.34 kB │ gzip:   0.26 kB
+dist/assets/skeleton-CJL3-iYi.js                        0.34 kB │ gzip:   0.26 kB
+dist/assets/_graphId-DXe4OaSh.js                        0.35 kB │ gzip:   0.25 kB
+dist/assets/use-mobile-CMqoOdg3.js                      0.39 kB │ gzip:   0.27 kB
+dist/assets/dataset-source-queries-B3fWAxqg.js          0.40 kB │ gzip:   0.29 kB
+dist/assets/queries-qMAYyQ4v.js                         0.44 kB │ gzip:   0.31 kB
+dist/assets/cookies-CntfjdR-.js                         0.44 kB │ gzip:   0.27 kB
+dist/assets/vendor-BczseZ6T.js                          0.45 kB │ gzip:   0.33 kB
+dist/assets/semantic-views_._viewId-Ds3_WuOT.js         0.46 kB │ gzip:   0.30 kB
+dist/assets/collapsible-C7ydJNWc.js                     0.47 kB │ gzip:   0.25 kB
+dist/assets/utils-AHtsfjI9.js                           0.53 kB │ gzip:   0.30 kB
+dist/assets/vendor-hGxPFiKs.js                          0.53 kB │ gzip:   0.32 kB
+dist/assets/main-CDcIp1El.js                            0.53 kB │ gzip:   0.37 kB
+dist/assets/sql-code-block-DbwmXHJR.js                  0.56 kB │ gzip:   0.39 kB
+dist/assets/label-BymEWzaz.js                           0.57 kB │ gzip:   0.36 kB
+dist/assets/monitoring-header-CH24CyOB.js               0.59 kB │ gzip:   0.36 kB
+dist/assets/logo-CGzIigOy.js                            0.59 kB │ gzip:   0.37 kB
+dist/assets/vendor-BPamkoOH.js                          0.60 kB │ gzip:   0.26 kB
+dist/assets/avatar-CKzujgK0.js                          0.61 kB │ gzip:   0.35 kB
+dist/assets/vendor-DKbJtJYY.js                          0.64 kB │ gzip:   0.42 kB
+dist/assets/metadata-api-sk97zhs5.js                    0.67 kB │ gzip:   0.39 kB
+dist/assets/tasks-a4lHjYq3.js                           0.70 kB │ gzip:   0.39 kB
+dist/assets/page-header-DuBkhDnP.js                     0.73 kB │ gzip:   0.42 kB
+dist/assets/api-CEoU-qYX.js                             0.74 kB │ gzip:   0.43 kB
+dist/assets/sign-out-dialog-Cf21KGts.js                 0.77 kB │ gzip:   0.46 kB
+dist/assets/textarea-4vQR9OMw.js                        0.77 kB │ gzip:   0.47 kB
+dist/assets/datetime-D2O15vsQ.js                        0.78 kB │ gzip:   0.45 kB
+dist/assets/monitoring-fseuTTk9.js                      0.83 kB │ gzip:   0.44 kB
+dist/assets/rolldown-runtime-BWaJ3C7D.js                0.91 kB │ gzip:   0.51 kB
+dist/assets/card-wj4WJzgn.js                            0.91 kB │ gzip:   0.44 kB
+dist/assets/semantic-views-api-CK-IHIuu.js              0.93 kB │ gzip:   0.45 kB
+dist/assets/format-HrbCh9rg.js                          0.95 kB │ gzip:   0.52 kB
+dist/assets/input-R-2Exz1n.js                           0.96 kB │ gzip:   0.53 kB
+dist/assets/vendor-Cz_lX2Rf.js                          0.98 kB │ gzip:   0.55 kB
+dist/assets/empty-state-C1SFyy_N.js                     0.98 kB │ gzip:   0.52 kB
+dist/assets/vendor-hWxp08cH.js                          0.99 kB │ gzip:   0.53 kB
+dist/assets/auth-store-C2aL0Pri.js                      1.04 kB │ gzip:   0.47 kB
+dist/assets/header-IO5TTMb4.js                          1.05 kB │ gzip:   0.62 kB
+dist/assets/checkbox-DRDBVeVS.js                        1.09 kB │ gzip:   0.55 kB
+dist/assets/popover-hcMXif62.js                         1.10 kB │ gzip:   0.53 kB
+dist/assets/switch-D-qOrfv0.js                          1.12 kB │ gzip:   0.56 kB
+dist/assets/vendor-CFp83uyh.js                          1.15 kB │ gzip:   0.61 kB
+dist/assets/radio-group-D9mV3ft5.js                     1.16 kB │ gzip:   0.59 kB
+dist/assets/scroll-area-B8R-Chci.js                     1.20 kB │ gzip:   0.59 kB
+dist/assets/vendor-oq6QPfcv.js                          1.21 kB │ gzip:   0.62 kB
+dist/assets/search-CCBeu8yq.js                          1.23 kB │ gzip:   0.72 kB
+dist/assets/vendor-xWOh9Mh0.js                          1.23 kB │ gzip:   0.62 kB
+dist/assets/alert-DUUPsazi.js                           1.24 kB │ gzip:   0.61 kB
+dist/assets/api-QWquP77m.js                             1.30 kB │ gzip:   0.64 kB
+dist/assets/table-DE9_fd4N.js                           1.30 kB │ gzip:   0.54 kB
+dist/assets/vendor-CeUn7_IA.js                          1.33 kB │ gzip:   0.72 kB
+dist/assets/vendor-D6h7BXFj.js                          1.34 kB │ gzip:   0.64 kB
+dist/assets/tooltip-8R0XIGg2.js                         1.34 kB │ gzip:   0.64 kB
+dist/assets/badge-BPI6K6VT.js                           1.38 kB │ gzip:   0.67 kB
+dist/assets/neva-feedback-C-YWfSFW.js                   1.46 kB │ gzip:   0.81 kB
+dist/assets/api-DkMktaev.js                             1.61 kB │ gzip:   0.85 kB
+dist/assets/metric-card-DpzI3YLX.js                     1.62 kB │ gzip:   0.73 kB
+dist/assets/vendor-DHJDvtoT.js                          1.63 kB │ gzip:   0.57 kB
+dist/assets/vendor-BHuoajOS.js                          1.66 kB │ gzip:   0.81 kB
+dist/assets/vendor-b3VT_dmc.js                          1.72 kB │ gzip:   0.90 kB
+dist/assets/loading-overlay-DYLpw_eh.js                 1.75 kB │ gzip:   0.72 kB
+dist/assets/button-B9TPi_4B.js                          1.78 kB │ gzip:   0.81 kB
+dist/assets/vendor-D6rDLW6Q.js                          1.83 kB │ gzip:   0.86 kB
+dist/assets/read-token-CDa9L9xJ.js                      2.06 kB │ gzip:   1.15 kB
+dist/assets/vendor-aCP0oIrY.js                          2.14 kB │ gzip:   0.88 kB
+dist/assets/map-data-CjJoh-0Y.js                        2.21 kB │ gzip:   1.12 kB
+dist/assets/dataset-sql-editor-DhZ4OYec.js              2.29 kB │ gzip:   1.18 kB
+dist/assets/use-client-daypart-DXgl13Gt.js              2.45 kB │ gzip:   1.24 kB
+dist/assets/vendor-BkVymmCr.js                          2.48 kB │ gzip:   1.17 kB
+dist/assets/status-badge-CgR1qhJT.js                    2.50 kB │ gzip:   1.04 kB
+dist/assets/vendor-BdyLj7nA.js                          2.56 kB │ gzip:   1.18 kB
+dist/assets/dialog-68X9Xtpj.js                          2.63 kB │ gzip:   0.99 kB
+dist/assets/map-options-DoJGH3HR.js                     2.65 kB │ gzip:   1.21 kB
+dist/assets/sheet-BmkhKG8s.js                           2.76 kB │ gzip:   0.96 kB
+dist/assets/confirm-dialog-BFhu3Zbr.js                  2.78 kB │ gzip:   1.05 kB
+dist/assets/expandable-row-BKamBKxk.js                  2.85 kB │ gzip:   1.20 kB
+dist/assets/tabs-P4J3RhYU.js                            2.92 kB │ gzip:   1.37 kB
+dist/assets/surface-registry-BAHS6DSD.js                2.93 kB │ gzip:   1.32 kB
+dist/assets/searchable-select-Bn1WRBmU.js               2.96 kB │ gzip:   1.14 kB
+dist/assets/starter-templates-gjyVaMo4.js               3.03 kB │ gzip:   1.43 kB
+dist/assets/vendor-Bf8AWKbq.js                          3.09 kB │ gzip:   1.39 kB
+dist/assets/command-DAEDLeYa.js                         3.12 kB │ gzip:   1.11 kB
+dist/assets/monaco-theme-C9KcvTcY.js                    3.17 kB │ gzip:   1.02 kB
+dist/assets/simple-table-controls-DgGWgB_w.js           3.43 kB │ gzip:   1.24 kB
+dist/assets/vendor-D_vRFFD2.js                          3.55 kB │ gzip:   1.16 kB
+dist/assets/vendor-BKSiehgz.js                          3.55 kB │ gzip:   1.60 kB
+dist/assets/vendor-D2xxxNYl.js                          3.60 kB │ gzip:   1.57 kB
+dist/assets/vendor-n2W9W3qu.js                          3.67 kB │ gzip:   1.32 kB
+dist/assets/api-client-BJsz835_.js                      3.70 kB │ gzip:   1.58 kB
+dist/assets/dropdown-menu-CYakitE3.js                   3.70 kB │ gzip:   1.12 kB
+dist/assets/select-CnTPygsY.js                          3.86 kB │ gzip:   1.39 kB
+dist/assets/map-surface-Di7zm96L.js                     3.88 kB │ gzip:   1.74 kB
+dist/assets/context-menu-C-vcmU8y.js                    3.90 kB │ gzip:   1.11 kB
+dist/assets/vendor-B0auqmhl.js                          4.30 kB │ gzip:   1.92 kB
+dist/assets/app-context-op-GJihD.js                     4.71 kB │ gzip:   1.81 kB
+dist/assets/search-provider-CILNVvHo.js                 4.77 kB │ gzip:   1.96 kB
+dist/assets/skills-mSF-AxtO.js                          4.78 kB │ gzip:   1.94 kB
+dist/assets/vendor-CfEC1-FR.js                          4.80 kB │ gzip:   1.94 kB
+dist/assets/public-map-CGv7pwD6.js                      4.85 kB │ gzip:   2.11 kB
+dist/assets/context-inspector-BRnHHXYn.js               5.10 kB │ gzip:   2.02 kB
+dist/assets/profile-BMPXiw4j.js                         5.33 kB │ gzip:   2.12 kB
+dist/assets/data-chart-DOIOXWat.js                      5.37 kB │ gzip:   2.05 kB
+dist/assets/vendor-D9CyAj6U.js                          5.45 kB │ gzip:   2.37 kB
+dist/assets/agents-D7KzPbPQ.js                          6.35 kB │ gzip:   2.49 kB
+dist/assets/vendor-DCKNGW-3.js                          6.42 kB │ gzip:   2.57 kB
+dist/assets/audit-DZ7q1hik.js                           6.49 kB │ gzip:   2.60 kB
+dist/assets/active-queries-DOgVd3zi.js                  6.57 kB │ gzip:   2.53 kB
+dist/assets/vendor-BTkJLXmq.js                          6.78 kB │ gzip:   2.79 kB
+dist/assets/vendor-C8Cip9_H.js                          6.83 kB │ gzip:   2.89 kB
+dist/assets/api-CdXvMRkb.js                             6.95 kB │ gzip:   2.06 kB
+dist/assets/connections-C-MVC17d.js                     7.24 kB │ gzip:   2.50 kB
+dist/assets/vendor-DHWLNazK.js                          7.35 kB │ gzip:   3.21 kB
+dist/assets/query-history-BAOwPZIH.js                   7.55 kB │ gzip:   2.97 kB
+dist/assets/settings-B9iBKBUR.js                        7.71 kB │ gzip:   2.83 kB
+dist/assets/loads-CDWx_Lhj.js                           7.80 kB │ gzip:   2.89 kB
+dist/assets/health-CI1DpZr_.js                          7.80 kB │ gzip:   2.53 kB
+dist/assets/tools-CWWhUf3D.js                           8.29 kB │ gzip:   2.70 kB
+dist/assets/_username-B40R09EN.js                       8.56 kB │ gzip:   2.96 kB
+dist/assets/cluster-BdxxwOYk.js                         9.18 kB │ gzip:   3.02 kB
+dist/assets/vendor-DTot67Q1.js                          9.40 kB │ gzip:   3.52 kB
+dist/assets/vendor-C3zindTo.js                          9.52 kB │ gzip:   3.89 kB
+dist/assets/thread-client-D5uabGl7.js                  10.68 kB │ gzip:   3.29 kB
+dist/assets/roles-CIFxEn4z.js                          10.83 kB │ gzip:   3.69 kB
+dist/assets/vendor-_RH1avK8.js                         11.45 kB │ gzip:   4.07 kB
+dist/assets/vendor-BfzOrfQL.js                         11.52 kB │ gzip:   3.93 kB
+dist/assets/vendor-VRy_6TJG.js                         11.87 kB │ gzip:   4.90 kB
+dist/assets/sidebar-ByM_S5aH.js                        11.98 kB │ gzip:   3.49 kB
+dist/assets/vendor-x-Kn-5wa.js                         12.08 kB │ gzip:   4.77 kB
+dist/assets/query-cost-CoXDPPOU.js                     12.16 kB │ gzip:   4.39 kB
+dist/assets/vendor-Fd9xt1O5.js                         12.24 kB │ gzip:   3.77 kB
+dist/assets/functions-Bw6RZRH_.js                      12.47 kB │ gzip:   3.52 kB
+dist/assets/_name-C6-zrTYe.js                          12.60 kB │ gzip:   3.53 kB
+dist/assets/_authenticated-C5L9ZtjZ.js                 12.77 kB │ gzip:   4.38 kB
+dist/assets/sign-in-DxeYhGQn.js                        13.05 kB │ gzip:   4.16 kB
+dist/assets/geo-map-DoziY0z0.js                        13.82 kB │ gzip:   4.75 kB
+dist/assets/vendor-BScFXNTU.js                         13.96 kB │ gzip:   3.47 kB
+dist/assets/vendor-gmK1XtpJ.js                         14.13 kB │ gzip:   4.49 kB
+dist/assets/vendor-DpHp2sYB.js                         14.37 kB │ gzip:   5.28 kB
+dist/assets/vendor-CHtV2sOR.js                         17.32 kB │ gzip:   5.09 kB
+dist/assets/docs-C1ll8PRo.js                           17.65 kB │ gzip:   5.47 kB
+dist/assets/vendor-Xi9nwRTe.js                         17.88 kB │ gzip:   4.64 kB
+dist/assets/semantic-views_.builder-D9BwmITp.js        18.23 kB │ gzip:   5.12 kB
+dist/assets/vendor-BVV0oZ5H.js                         18.36 kB │ gzip:   6.29 kB
+dist/assets/ai-2-hqMlq3.js                             18.70 kB │ gzip:   5.96 kB
+dist/assets/vendor-Cfl9h8CZ.js                         19.06 kB │ gzip:   6.34 kB
+dist/assets/vendor-4aPzCJRf.js                         19.25 kB │ gzip:   6.56 kB
+dist/assets/vendor-CwyP_j5t.js                         19.47 kB │ gzip:   7.46 kB
+dist/assets/connection-dialogs-c8nbbXVd.js             19.55 kB │ gzip:   5.93 kB
+dist/assets/vendor-kzZeTgUp.js                         19.89 kB │ gzip:   7.43 kB
+dist/assets/vendor-BGuI1-yw.js                         20.63 kB │ gzip:   4.62 kB
+dist/assets/vendor-CaKyb_J8.js                         20.64 kB │ gzip:   7.39 kB
+dist/assets/stages-DWSr6S78.js                         20.74 kB │ gzip:   5.84 kB
+dist/assets/vendor-OJhO7dz8.js                         21.44 kB │ gzip:   6.35 kB
+dist/assets/route-CR6d2K0Q.js                          22.03 kB │ gzip:   6.98 kB
+dist/assets/access-control-CacAuGY9.js                 22.09 kB │ gzip:   6.65 kB
+dist/assets/autopilot-G-vSh51E.js                      22.69 kB │ gzip:   6.99 kB
+dist/assets/assistant-provider-CWmKD2iB.js             23.69 kB │ gzip:   8.32 kB
+dist/assets/migration-XjGa34sZ.js                      23.81 kB │ gzip:   6.74 kB
+dist/assets/agent-memory-dialog-BHM1yG-B.js            23.84 kB │ gzip:   7.37 kB
+dist/assets/vendor-AaruF_B0.js                         24.55 kB │ gzip:   6.69 kB
+dist/assets/map-style-BoZnrcii.js                      27.05 kB │ gzip:   9.18 kB
+dist/assets/vendor-DeaO2CCK.js                         28.89 kB │ gzip:  10.87 kB
+dist/assets/vendor-CME8kcLv.js                         30.06 kB │ gzip:  11.26 kB
+dist/assets/vendor-CHDcMtAf.js                         32.32 kB │ gzip:  10.67 kB
+dist/assets/task-orchestration-Bj1az-Fv.js             32.79 kB │ gzip:  10.01 kB
+dist/assets/vendor-I--7GnVJ.js                         33.69 kB │ gzip:   9.45 kB
+dist/assets/ml-models-a4e5L1mU.js                      34.34 kB │ gzip:   8.12 kB
+dist/assets/vendor-DpDIoizm.js                         36.90 kB │ gzip:   9.59 kB
+dist/assets/vendor-CenxYSpQ.js                         39.48 kB │ gzip:  12.11 kB
+dist/assets/users-BfBR45Ju.js                          39.76 kB │ gzip:   9.56 kB
+dist/assets/assistant-dock-CKVlQkGz.js                 40.49 kB │ gzip:  12.75 kB
+dist/assets/vendor-B5UtyY1k.js                         40.63 kB │ gzip:  11.93 kB
+dist/assets/ai-providers-DLFMpJFr.js                   43.13 kB │ gzip:   9.93 kB
+dist/assets/vendor-sHprTG-r.js                         43.89 kB │ gzip:  13.31 kB
+dist/assets/vendor-7_JDXtpj.js                         44.17 kB │ gzip:  12.51 kB
+dist/assets/vendor-CyuPpILa.js                         45.06 kB │ gzip:  16.24 kB
+dist/assets/vendor-DauxA8hg.js                         45.95 kB │ gzip:  12.37 kB
+dist/assets/frontend-oWO0CeqS.js                       46.97 kB │ gzip:  13.02 kB
+dist/assets/chart-frame-CrT7zxRc.js                    47.43 kB │ gzip:  15.64 kB
+dist/assets/vendor-3RgrWD_f.js                         47.84 kB │ gzip:  17.98 kB
+dist/assets/vendor-DU-BTt6o.js                         49.86 kB │ gzip:  18.64 kB
+dist/assets/vendor-DgO0fI0X.js                         50.57 kB │ gzip:  11.41 kB
+dist/assets/vendor-By_ryC8Y.js                         54.55 kB │ gzip:  20.46 kB
+dist/assets/vendor-7rhT0N_o.js                         58.10 kB │ gzip:  19.52 kB
+dist/assets/vendor-B-r6_ROx.js                         59.96 kB │ gzip:  14.34 kB
+dist/assets/vendor-DCN-zng8.js                         60.44 kB │ gzip:  17.61 kB
+dist/assets/vendor-DzhJ8F81.js                         62.18 kB │ gzip:  19.32 kB
+dist/assets/vendor-CO6Tt16G.js                         62.27 kB │ gzip:  18.09 kB
+dist/assets/vendor-CZVO1VR2.js                         62.34 kB │ gzip:  22.12 kB
+dist/assets/vendor-BWu-7YvZ.js                         65.07 kB │ gzip:  17.86 kB
+dist/assets/vendor-C3N8VgPW.js                         65.62 kB │ gzip:  16.08 kB
+dist/assets/vendor-DBaVwxXX.js                         66.62 kB │ gzip:  20.25 kB
+dist/assets/vendor-BT5BlKVd.js                         68.37 kB │ gzip:  23.14 kB
+dist/assets/vendor-Dg7h7jM0.js                         68.90 kB │ gzip:  21.16 kB
+dist/assets/vendor-CZZThMrG.js                         69.14 kB │ gzip:  18.77 kB
+dist/assets/vendor-BNoUTKpR.js                         70.52 kB │ gzip:  17.38 kB
+dist/assets/vendor-CTPtec5E.js                         70.61 kB │ gzip:  23.98 kB
+dist/assets/vendor-B8d5xaum.js                         71.33 kB │ gzip:  18.70 kB
+dist/assets/vendor-DwT7K5fg.js                         72.39 kB │ gzip:  18.32 kB
+dist/assets/vendor-CTL3DmXd.js                         74.69 kB │ gzip:  25.41 kB
+dist/assets/vendor-B0QC2OgU.js                         75.90 kB │ gzip:  23.88 kB
+dist/assets/vendor-DZoMQDUm.js                         78.58 kB │ gzip:  27.36 kB
+dist/assets/vendor-Be8Fjk7r.js                         78.95 kB │ gzip:  29.45 kB
+dist/assets/vendor-ChTlg2Or.js                         80.33 kB │ gzip:  26.08 kB
+dist/assets/vendor-IIwTLC1t.js                         82.09 kB │ gzip:  27.77 kB
+dist/assets/vendor-DZb8Vaxc.js                         83.13 kB │ gzip:  22.90 kB
+dist/assets/vendor-TmYySfIR.js                         83.67 kB │ gzip:  21.22 kB
+dist/assets/vendor-CV3eX72R.js                         85.62 kB │ gzip:  23.37 kB
+dist/assets/vendor-uNQEaBea.js                         89.09 kB │ gzip:  23.59 kB
+dist/assets/vendor-CD7mJSQg.js                         89.98 kB │ gzip:  24.55 kB
+dist/assets/intelligence-page-DXDY4knZ.js              90.65 kB │ gzip:  22.22 kB
+dist/assets/vendor-CEBU9GVg.js                         90.71 kB │ gzip:  26.98 kB
+dist/assets/vendor-BpCOA4ZJ.js                         92.14 kB │ gzip:  25.71 kB
+dist/assets/vendor-BG3WO1bb.js                         93.55 kB │ gzip:  31.79 kB
+dist/assets/database-explorer-DjvSTL0M.js              93.84 kB │ gzip:  21.83 kB
+dist/assets/vendor-dTbicCau.js                         93.94 kB │ gzip:  24.69 kB
+dist/assets/vendor-D7wmFb7O.js                         94.00 kB │ gzip:  27.00 kB
+dist/assets/vendor-CxtIR2lH.js                         96.26 kB │ gzip:  27.11 kB
+dist/assets/vendor-CaXAVfT4.js                         97.23 kB │ gzip:  28.33 kB
+dist/assets/vendor-WB50797b.js                         97.67 kB │ gzip:  33.07 kB
+dist/assets/business-ontology-CYtKwLVu.js              97.68 kB │ gzip:  25.64 kB
+dist/assets/vendor-mI7C95qU.js                        100.80 kB │ gzip:  26.10 kB
+dist/assets/vendor-DSrvla-v.js                        100.92 kB │ gzip:  33.09 kB
+dist/assets/vendor-BIyGf0Er.js                        102.73 kB │ gzip:  28.56 kB
+dist/assets/vendor-BzGWIsUP.js                        103.83 kB │ gzip:  32.72 kB
+dist/assets/vendor-D4zSRPxl.js                        105.42 kB │ gzip:  25.32 kB
+dist/assets/vendor-DKpcYyqI.js                        105.70 kB │ gzip:  30.92 kB
+dist/assets/result-cards-kgcwtfnC.js                  107.06 kB │ gzip:  31.14 kB
+dist/assets/vendor-DQgU2n8K.js                        107.62 kB │ gzip:  35.83 kB
+dist/assets/vendor-C-FGGL_z.js                        108.12 kB │ gzip:  28.72 kB
+dist/assets/vendor-CsAoizYX.js                        108.13 kB │ gzip:  35.06 kB
+dist/assets/vendor-Nb-xm7U2.js                        108.64 kB │ gzip:  36.93 kB
+dist/assets/vendor-BV5nPiO5.js                        109.30 kB │ gzip:  26.52 kB
+dist/assets/vendor-CZGqUw9T.js                        109.95 kB │ gzip:  28.93 kB
+dist/assets/vendor-CSUxOzXs.js                        110.11 kB │ gzip:  29.22 kB
+dist/assets/vendor-OCAuEf7h.js                        113.75 kB │ gzip:  39.07 kB
+dist/assets/vendor-Dvg3ekOE.js                        116.38 kB │ gzip:  31.45 kB
+dist/assets/vendor-B2GONGmy.js                        117.25 kB │ gzip:  35.30 kB
+dist/assets/vendor-B7rqrV0L.js                        118.08 kB │ gzip:  38.55 kB
+dist/assets/vendor-Cg1NwRH5.js                        119.73 kB │ gzip:  29.22 kB
+dist/assets/vendor-CeNojazs.js                        121.94 kB │ gzip:  32.06 kB
+dist/assets/vendor-BIXfI_sS.js                        123.97 kB │ gzip:  31.85 kB
+dist/assets/vendor-DrjECk0v.js                        124.73 kB │ gzip:  33.10 kB
+dist/assets/vendor-v0_bEWd0.js                        128.00 kB │ gzip:  41.33 kB
+dist/assets/vendor-BfncERdS.js                        130.15 kB │ gzip:  32.64 kB
+dist/assets/vendor-DR9Uvuuq.js                        134.46 kB │ gzip:  33.84 kB
+dist/assets/vendor-CqHo61l4.js                        141.41 kB │ gzip:  35.56 kB
+dist/assets/vendor-DQpRMVsQ.js                        142.77 kB │ gzip:  46.71 kB
+dist/assets/vendor-DTm5wGoG.js                        145.77 kB │ gzip:  43.82 kB
+dist/assets/vendor-DSYJlG9R.js                        146.32 kB │ gzip:  33.50 kB
+dist/assets/vendor-BoDziEQV.js                        147.24 kB │ gzip:  37.38 kB
+dist/assets/vendor-B_zd1Yby.js                        148.44 kB │ gzip:  35.13 kB
+dist/assets/vendor-oP3xq-GZ.js                        149.03 kB │ gzip:  36.71 kB
+dist/assets/vendor-DHHel9OV.js                        156.42 kB │ gzip:  53.92 kB
+dist/assets/vendor-B44YCAzA.js                        162.93 kB │ gzip:  51.91 kB
+dist/assets/vendor-CR2j6jgz.js                        171.84 kB │ gzip:  46.74 kB
+dist/assets/vendor-sPgo7py9.js                        172.64 kB │ gzip:  39.93 kB
+dist/assets/_agentId-BKeTkH0r.js                      195.88 kB │ gzip:  49.35 kB
+dist/assets/vendor-bDFEgURt.js                        203.05 kB │ gzip:  63.53 kB
+dist/assets/workspaces-astyHSuV.js                    205.82 kB │ gzip:  62.80 kB
+dist/assets/vendor-Lb0hcMt0.js                        212.23 kB │ gzip:  61.86 kB
+dist/assets/vendor-BF7_LZ3Q.js                        259.88 kB │ gzip:  78.71 kB
+dist/assets/content-XhF6lP5I.js                       397.32 kB │ gzip: 130.76 kB
+dist/assets/studio-DT7htEa6.js                        459.00 kB │ gzip: 122.89 kB
+dist/assets/vendor-DQQunDTk.js                        492.64 kB │ gzip: 160.90 kB
+
+✓ built in 11.85s

@@ -1,0 +1,21 @@
+E501 Line too long (102 > 100)
+   --> tests/unit/test_native_viz_datasets.py:402:101
+    |
+400 | ):
+401 |     inspected = await setup.service.inspect(setup.user, sql_request)
+402 |     monkeypatch.setattr(module, "document_workspace", AsyncMock(return_value=SimpleNamespace(id="p")))
+    |                                                                                                     ^^
+403 |     repository = SimpleNamespace(create=AsyncMock(return_value={"committed": True}))
+    |
+
+E501 Line too long (102 > 100)
+   --> tests/unit/test_native_viz_datasets.py:421:101
+    |
+420 | async def test_sql_create_cannot_persist_stale_preview(setup, sql_request, monkeypatch):
+421 |     monkeypatch.setattr(module, "document_workspace", AsyncMock(return_value=SimpleNamespace(id="p")))
+    |                                                                                                     ^^
+422 |     transaction = AsyncMock(side_effect=AssertionError("Must not commit"))
+423 |     monkeypatch.setattr(module, "document_transaction", transaction)
+    |
+
+Found 3 errors (1 fixed, 2 remaining).

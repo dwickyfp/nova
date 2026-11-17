@@ -1,0 +1,81 @@
+[PASS] fixture: CREATE DATABASE ndv_perf_67df01
+[PASS] fixture: CREATE TABLE ndv_perf_67df01.orders (id BIGINT, 
+[PASS] fixture: INSERT INTO ndv_perf_67df01.orders SELECT genera
+[PASS] fixture: one million orders
+[FAIL] warm-up load answers every widget
+[FAIL] NDV-PERF-002 shell p95 under 1 s
+Traceback (most recent call last):
+  File "/Users/dwickyferiansyahputra/.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dwickyferiansyahputra/.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/Users/dwickyferiansyahputra/Public/Research/nova/backend/scripts/verify_native_dashboard_perf_live.py", line 407, in cleanup
+    ok = True
+              
+  File "/Users/dwickyferiansyahputra/Public/Research/nova/backend/scripts/verify_native_dashboard_perf_live.py", line 152, in sign_in
+    async def sign_in(client: httpx.AsyncClient) -> Session:
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dwickyferiansyahputra/Public/Research/nova/backend/.venv/lib/python3.11/site-packages/httpx/_client.py", line 1859, in post
+    return await self.request(
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/dwickyferiansyahputra/Public/Research/nova/backend/.venv/lib/python3.11/site-packages/httpx/_client.py", line 1540, in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dwickyferiansyahputra/Public/Research/nova/backend/.venv/lib/python3.11/site-packages/httpx/_client.py", line 1629, in send
+    response = await self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dwickyferiansyahputra/Public/Research/nova/backend/.venv/lib/python3.11/site-packages/httpx/_client.py", line 1657, in _send_handling_auth
+    response = await self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dwickyferiansyahputra/Public/Research/nova/backend/.venv/lib/python3.11/site-packages/httpx/_client.py", line 1694, in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dwickyferiansyahputra/Public/Research/nova/backend/.venv/lib/python3.11/site-packages/httpx/_client.py", line 1730, in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dwickyferiansyahputra/Public/Research/nova/backend/.venv/lib/python3.11/site-packages/httpx/_transports/default.py", line 394, in handle_async_request
+    resp = await self._pool.handle_async_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dwickyferiansyahputra/Public/Research/nova/backend/.venv/lib/python3.11/site-packages/httpcore/_async/connection_pool.py", line 256, in handle_async_request
+    raise exc from None
+  File "/Users/dwickyferiansyahputra/Public/Research/nova/backend/.venv/lib/python3.11/site-packages/httpcore/_async/connection_pool.py", line 236, in handle_async_request
+    response = await connection.handle_async_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dwickyferiansyahputra/Public/Research/nova/backend/.venv/lib/python3.11/site-packages/httpcore/_async/connection.py", line 103, in handle_async_request
+    return await self._connection.handle_async_request(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dwickyferiansyahputra/Public/Research/nova/backend/.venv/lib/python3.11/site-packages/httpcore/_async/http11.py", line 136, in handle_async_request
+    raise exc
+  File "/Users/dwickyferiansyahputra/Public/Research/nova/backend/.venv/lib/python3.11/site-packages/httpcore/_async/http11.py", line 106, in handle_async_request
+    ) = await self._receive_response_headers(**kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dwickyferiansyahputra/Public/Research/nova/backend/.venv/lib/python3.11/site-packages/httpcore/_async/http11.py", line 177, in _receive_response_headers
+    event = await self._receive_event(timeout=timeout)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dwickyferiansyahputra/Public/Research/nova/backend/.venv/lib/python3.11/site-packages/httpcore/_async/http11.py", line 217, in _receive_event
+    data = await self._network_stream.read(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dwickyferiansyahputra/Public/Research/nova/backend/.venv/lib/python3.11/site-packages/httpcore/_backends/anyio.py", line 35, in read
+    return await self._stream.receive(max_bytes=max_bytes)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dwickyferiansyahputra/Public/Research/nova/backend/.venv/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 1337, in receive
+    await self._protocol.read_event.wait()
+  File "/Users/dwickyferiansyahputra/.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/asyncio/locks.py", line 213, in wait
+    await fut
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/dwickyferiansyahputra/Public/Research/nova/backend/scripts/verify_native_dashboard_perf_live.py", line 497, in <module>
+  File "/Users/dwickyferiansyahputra/Public/Research/nova/backend/scripts/verify_native_dashboard_perf_live.py", line 476, in main
+    found = asyncio.run(ranger_client.get_policy(policy.name))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dwickyferiansyahputra/.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/asyncio/runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/Users/dwickyferiansyahputra/.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/asyncio/runners.py", line 123, in run
+    raise KeyboardInterrupt()
+KeyboardInterrupt

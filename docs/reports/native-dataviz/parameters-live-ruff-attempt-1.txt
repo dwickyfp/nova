@@ -1,0 +1,34 @@
+E501 Line too long (105 > 100)
+   --> scripts/verify_native_parameters_live.py:106:101
+    |
+104 |         if principal == "alice":
+105 |             try:
+106 |                 await execute("SELECT id FROM analytics.sales WHERE city = :city", text(city), "finance")
+    |                                                                                                     ^^^^^
+107 |             except StarRocksError as error:
+108 |                 check("inactive role cannot borrow another role's source grant",
+    |
+
+E501 Line too long (104 > 100)
+   --> scripts/verify_native_parameters_live.py:120:101
+    |
+118 |         owned = [item for item in history["items"] if item["session_id"] == session]
+119 |         check("normal query audit is durable", len(owned) >= 5)
+120 |         check("parameter values absent from Nova history", canary not in json.dumps(owned, default=str))
+    |                                                                                                     ^^^^
+121 |         report["result"] = "PASS"
+122 |     except Exception as error:
+    |
+
+E501 Line too long (101 > 100)
+   --> scripts/verify_native_parameters_live.py:131:101
+    |
+129 |         await db.close_system_pool()
+130 |         report["scope"] = (
+131 |             "Direct QueryService with existing caller credentials and active roles; read-only data. "
+    |                                                                                                     ^
+132 |             "Nova history checked. Engine audit/profile redaction is not established by this test."
+133 |         )
+    |
+
+Found 3 errors.

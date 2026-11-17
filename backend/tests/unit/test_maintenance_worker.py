@@ -14,11 +14,13 @@ from app.modules.intelligence import newsroom_refresher as news
 from app.modules.intelligence import search
 from app.modules.llm_functions.registration_worker import AIFunctionRegistrationWorker
 from app.modules.ml_engine.service import ml_engine_service
+from app.modules.routine_load import reconciler as routine_load
 from app.worker.maintenance import MaintenanceWorker
 
 
 @pytest.mark.parametrize(
-    "failure", [None, "catalog", "news", "search", "ml-retention", "ai-functions"]
+    "failure",
+    [None, "catalog", "routine-load", "news", "search", "ml-retention", "ai-functions"],
 )
 async def test_all_loops_are_supervised_and_cleaned_up(monkeypatch, failure):
     stop = asyncio.Event()
@@ -30,7 +32,7 @@ async def test_all_loops_are_supervised_and_cleaned_up(monkeypatch, failure):
             await asyncio.sleep(0)
             if name == failure:
                 raise RuntimeError("fixture failure")
-            if failure is None and len(started) == 5:
+            if failure is None and len(started) == 6:
                 stop.set()
             await asyncio.Event().wait()
         finally:
@@ -40,6 +42,7 @@ async def test_all_loops_are_supervised_and_cleaned_up(monkeypatch, failure):
         AIFunctionRegistrationWorker, "run_forever", lambda self, stop: run("ai-functions")
     )
     monkeypatch.setattr(catalog, "run", lambda stop: run("catalog"))
+    monkeypatch.setattr(routine_load, "run", lambda stop: run("routine-load"))
     monkeypatch.setattr(news, "run", lambda stop: run("news"))
     monkeypatch.setattr(search.search_service, "run", lambda: run("search"))
     monkeypatch.setattr(ml_engine_service, "sweep_ephemeral", lambda: run("ml-retention"))
@@ -49,7 +52,9 @@ async def test_all_loops_are_supervised_and_cleaned_up(monkeypatch, failure):
         assert any(isinstance(e, RuntimeError) for e in exc.value.exceptions)
     else:
         await asyncio.wait_for(MaintenanceWorker().run_forever(stop), 1)
-    assert started == ended == {"catalog", "news", "search", "ml-retention", "ai-functions"}
+    assert started == ended == {
+        "catalog", "routine-load", "news", "search", "ml-retention", "ai-functions"
+    }
 
 
 async def test_search_cancellation_drains_the_builds(monkeypatch):

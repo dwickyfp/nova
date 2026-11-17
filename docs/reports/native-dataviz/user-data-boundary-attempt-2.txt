@@ -1,0 +1,2 @@
+$ uv run python scripts/check_user_data_system_access.py
+No system/root shortcuts found in user-data adapters.

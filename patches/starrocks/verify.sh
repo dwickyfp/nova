@@ -15,6 +15,12 @@ git -C "${work_dir}/starrocks" sparse-checkout set \
     /fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerStarRocksAccessRequest.java \
     /fe/fe-core/src/main/java/com/starrocks/scheduler/TaskRun.java \
     /fe/fe-core/src/main/java/com/starrocks/scheduler/TaskManager.java \
+    /fe/fe-core/src/main/java/com/starrocks/service/InformationSchemaDataSource.java \
+    /fe/fe-grammar/src/main/antlr/com/starrocks/grammar/StarRocks.g4 \
+    /fe/fe-grammar/src/main/antlr/com/starrocks/grammar/StarRocksLex.g4 \
+    /fe/fe-parser/src/main/java/com/starrocks/sql/ast/StatementBase.java \
+    /fe/fe-core/src/main/java/com/starrocks/sql/parser/AstBuilder.java \
+    /fe/fe-core/src/main/java/com/starrocks/qe/StmtExecutor.java \
     /fe/fe-core/src/main/java/com/starrocks/connector/jdbc/JDBCMetadata.java \
     /fe/fe-core/src/main/java/com/starrocks/connector/jdbc/JDBCDriverClassLoaders.java \
     /fe/fe-core/src/main/java/com/starrocks/connector/jdbc/SnowflakeSchemaResolver.java \
@@ -30,4 +36,6 @@ git -C "${work_dir}/starrocks" apply "${repo_root}/patches/starrocks/4.1.4-range
 git -C "${work_dir}/starrocks" apply --check "${repo_root}/patches/starrocks/4.1.4-ranger-rpc-context.patch"
 git -C "${work_dir}/starrocks" apply --check "${repo_root}/patches/starrocks/4.1.4-task-active-role.patch"
 git -C "${work_dir}/starrocks" apply --check "${repo_root}/patches/starrocks/4.1.4-jdbc-snowflake.patch"
+git -C "${work_dir}/starrocks" apply --check "${repo_root}/patches/starrocks/4.1.4-view-source-identity.patch"
+git -C "${work_dir}/starrocks" apply --check "${repo_root}/patches/starrocks/4.1.4-query-schema.patch"
 echo "Patch applies cleanly to StarRocks 4.1.4 (4a9848edf03f5c936dac664b2d52527f48e72eb0)."

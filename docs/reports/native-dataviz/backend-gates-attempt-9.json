@@ -1,0 +1,41 @@
+[
+  {
+    "command": [
+      "uv",
+      "run",
+      "pytest",
+      "tests/unit",
+      "--cov=app",
+      "--cov-branch",
+      "--cov-report=term-missing",
+      "--cov-report=xml:/Users/dwickyferiansyahputra/Public/Research/nova/docs/reports/native-dataviz/backend-coverage-attempt-9.xml",
+      "--junitxml=/Users/dwickyferiansyahputra/Public/Research/nova/docs/reports/native-dataviz/backend-unit-attempt-9.xml"
+    ],
+    "file": "backend-unit-attempt-9.txt",
+    "returncode": 0,
+    "seconds": 657.42
+  },
+  {
+    "command": [
+      "uv",
+      "run",
+      "python",
+      "-m",
+      "tests.eval.report"
+    ],
+    "file": "scorecard-attempt-7.txt",
+    "returncode": 0,
+    "seconds": 2.04
+  },
+  {
+    "command": [
+      "uv",
+      "run",
+      "python",
+      "scripts/check_user_data_system_access.py"
+    ],
+    "file": "user-data-boundary-attempt-6.txt",
+    "returncode": 0,
+    "seconds": 0.1
+  }
+]

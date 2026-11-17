@@ -1,0 +1,9 @@
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: 'pnpm@11.8.0',
+npm warn EBADENGINE   required: { node: '>=22.13' },
+npm warn EBADENGINE   current: { node: 'v22.12.0', npm: '11.0.0' }
+npm warn EBADENGINE }
+v22.22.0
+11.8.0
+Already up to date
+Done in 695ms using pnpm v11.8.0

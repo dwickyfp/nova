@@ -17,10 +17,6 @@ from app.main import create_app
 NON_SESSION_OPERATIONS = {
     ("POST", "/api/v1/auth/login"),
     ("POST", "/api/v1/internal/ml/predict"),
-    ("POST", "/api/v1/internal/superset/identity"),
-    ("POST", "/api/v1/internal/superset/token"),
-    ("POST", "/api/v1/internal/superset/audit"),
-    ("POST", "/api/v1/internal/superset/delegate"),
     ("GET", "/health"),
     ("GET", "/ready"),
 }

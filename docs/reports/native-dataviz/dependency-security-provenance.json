@@ -1,0 +1,25 @@
+{
+  "xlsx": {
+    "version": "0.20.3",
+    "source": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+    "documentation": "https://docs.sheetjs.com/docs/getting-started/installation/nodejs/",
+    "license": "Apache-2.0",
+    "integrity": "sha512-oLDq3jw7AcLqKWH2AhCpVTZl8mf6X2YReP+Neh0SJUzV/BdZYjth94tG5toiMB1PPrYtxOCfaoUCkvtuH+3AJA==",
+    "bytes": 2409319,
+    "verified_in_lock": true
+  },
+  "fixed_packages": {
+    "vite": "8.3.8",
+    "dompurify": "3.4.17",
+    "source-map-js": "1.2.2",
+    "follow-redirects": "1.16.3"
+  },
+  "source": "Official SheetJS tarball and npm registry package metadata; existing major versions retained.",
+  "advisory_counts": {
+    "info": 0,
+    "low": 2,
+    "moderate": 4,
+    "high": 0,
+    "critical": 0
+  }
+}

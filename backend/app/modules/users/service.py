@@ -8,6 +8,7 @@ from collections import defaultdict
 import asyncmy
 import asyncmy.cursors
 
+from app import mysql_driver_guard  # noqa: F401 - refuse mapping parameters
 from app.common.metadata_audit import AuditReader, audit_filter
 from app.common.sql_guard import normalize_role_name
 from app.core.config import settings

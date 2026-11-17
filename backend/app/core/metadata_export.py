@@ -291,6 +291,7 @@ async def export_snapshot(
 async def _run(args: argparse.Namespace) -> dict[str, Any]:
     import asyncmy
 
+    from app import mysql_driver_guard  # noqa: F401 - refuse mapping parameters
     from app.core.config import settings
     from app.core.database import _timezone_init_command
 

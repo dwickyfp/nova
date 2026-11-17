@@ -1,0 +1,514 @@
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+      Coverage enabled with v8
+
+
+ Test Files  2 passed (2)
+      Tests  47 passed (47)
+   Start at  22:53:49
+   Duration  11.63s (transform 0ms, setup 0ms, import 4.16s, tests 10.95s, environment 0ms)
+
+ % Coverage report from v8
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |    2.68 |     2.21 |     2.1 |     2.7 |                   
+ src               |       0 |        0 |       0 |       0 |                   
+  main.tsx         |       0 |        0 |       0 |       0 | 23-102            
+ src/components    |       0 |        0 |       0 |       0 |                   
+  coming-soon.tsx  |       0 |      100 |       0 |       0 | 4                 
+  command-menu.tsx |       0 |        0 |       0 |       0 | 19-82             
+  ...ig-drawer.tsx |       0 |        0 |       0 |       0 | 31-354            
+  ...rm-dialog.tsx |       0 |        0 |       0 |       0 | 44-45             
+  ...fo-dialog.tsx |       0 |        0 |       0 |       0 | 33-313            
+  date-picker.tsx  |       0 |        0 |       0 |       0 | 22-45             
+  learn-more.tsx   |       0 |      100 |       0 |       0 | 22                
+  long-text.tsx    |       0 |        0 |       0 |       0 | 26-83             
+  ...-progress.tsx |       0 |        0 |       0 |       0 | 6-17              
+  ...ord-input.tsx |       0 |        0 |       0 |       0 | 19-36             
+  search.tsx       |       0 |        0 |       0 |       0 | 11-21             
+  ...-dropdown.tsx |       0 |        0 |       0 |       0 | 33-54             
+  ...ut-dialog.tsx |       0 |      100 |       0 |       0 | 11-25             
+  skip-to-main.tsx |       0 |      100 |       0 |       0 | 2                 
+  theme-switch.tsx |       0 |        0 |       0 |       0 | 14-48             
+ ...ts/ai-elements |       0 |        0 |       0 |       0 |                   
+  file-tree.tsx    |       0 |        0 |       0 |       0 | 32-241            
+ ...nts/data-table |       0 |        0 |       0 |       0 |                   
+  bulk-actions.tsx |       0 |        0 |       0 |       0 | 35-126            
+  ...mn-header.tsx |       0 |        0 |       0 |       0 | 29-64             
+  ...ed-filter.tsx |       0 |        0 |       0 |       0 | 38-133            
+  pagination.tsx   |       0 |        0 |       0 |       0 | 27-120            
+  ...-controls.tsx |       0 |        0 |       0 |       0 | 19-190            
+  toolbar.tsx      |       0 |        0 |       0 |       0 | 30-73             
+  view-options.tsx |       0 |        0 |       0 |       0 | 20-47             
+ ...ponents/layout |       0 |        0 |       0 |       0 |                   
+  app-sidebar.tsx  |       0 |        0 |       0 |       0 | 18-28             
+  app-title.tsx    |       0 |      100 |       0 |       0 | 11-21             
+  ...ed-layout.tsx |       0 |        0 |       0 |       0 | 37-111            
+  header.tsx       |       0 |        0 |       0 |       0 | 12-26             
+  main.tsx         |       0 |        0 |       0 |       0 | 11-12             
+  nav-group.tsx    |       0 |        0 |       0 |       0 | 37-251            
+  nav-user.tsx     |       0 |        0 |       0 |       0 | 48-267            
+  ...-switcher.tsx |       0 |        0 |       0 |       0 | 28-64             
+  top-nav.tsx      |       0 |        0 |       0 |       0 | 22-58             
+ ...ts/layout/data |       0 |      100 |     100 |       0 |                   
+  sidebar-data.ts  |       0 |      100 |     100 |       0 | 32                
+ src/config        |       0 |      100 |     100 |       0 |                   
+  fonts.ts         |       0 |      100 |     100 |       0 | 2                 
+ src/context       |    8.33 |      2.7 |     2.5 |    7.93 |                   
+  ...-provider.tsx |       0 |        0 |       0 |       0 | 7-60              
+  ...-provider.tsx |       0 |        0 |       0 |       0 | 7-57              
+  ...-provider.tsx |       0 |        0 |       0 |       0 | 8-84              
+  ...-provider.tsx |       0 |        0 |       0 |       0 | 9-48              
+  ...-provider.tsx |   26.19 |     7.14 |    8.33 |   25.64 | 29-30,41-96       
+ ..._archive/pipes |       0 |        0 |       0 |       0 |                   
+  api.ts           |       0 |      100 |       0 |       0 | 35-52             
+  index.tsx        |       0 |        0 |       0 |       0 | 27-423            
+ ...access-control |       0 |        0 |       0 |       0 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 95-1296           
+ ...admin-settings |       0 |        0 |       0 |       0 |                   
+  api.ts           |       0 |        0 |       0 |       0 | 52-81             
+  index.tsx        |       0 |        0 |       0 |       0 | 11-51             
+  ...ables-tab.tsx |       0 |        0 |       0 |       0 | 33-289            
+ ...eatures/agents |    3.48 |     0.91 |    1.97 |    3.78 |                   
+  ...lder-page.tsx |       0 |        0 |       0 |       0 | 23-191            
+  api.ts           |    9.62 |     1.56 |    4.05 |   10.74 | ...1048-1056,1064 
+  harness-api.ts   |       0 |      100 |       0 |       0 | 4-154             
+  index.tsx        |       0 |        0 |       0 |       0 | 29-246            
+  metadata-api.ts  |       0 |        0 |       0 |       0 | 17-71             
+  quality-api.ts   |   34.78 |     12.5 |   16.66 |   31.81 | 256-283,293-331   
+  ...lder-page.tsx |       0 |        0 |       0 |       0 | 56-604            
+  ...ntic-draft.ts |       0 |        0 |       0 |       0 | 15-202            
+  ...stry-page.tsx |       0 |        0 |       0 |       0 | 25-194            
+  ...igence-api.ts |       0 |        0 |       0 |       0 | 3-107             
+  ...stry-page.tsx |       0 |        0 |       0 |       0 | 35-323            
+ ...s/agent-detail |    8.31 |     6.25 |    7.45 |    8.68 |                   
+  access-prompt.ts |       0 |        0 |       0 |       0 | 3-23              
+  access-tab.tsx   |       0 |        0 |       0 |       0 | 39-359            
+  agent-draft.ts   |       0 |        0 |       0 |       0 | 15-18             
+  ...ation-tab.tsx |       0 |        0 |       0 |       0 | 48-819            
+  ...ol-editor.tsx |       0 |        0 |       0 |       0 | 36-416            
+  harness-tab.tsx  |       0 |        0 |       0 |       0 | 40-1032           
+  ...-overview.tsx |       0 |        0 |       0 |       0 | 46-225            
+  improve-tab.tsx  |       0 |        0 |       0 |       0 | 30-447            
+  model-select.tsx |       0 |        0 |       0 |       0 | 37-115            
+  ...ility-tab.tsx |       0 |        0 |       0 |       0 | 39-233            
+  overview-tab.tsx |       0 |        0 |       0 |       0 | 23-120            
+  ...se-editor.tsx |       6 |        0 |       0 |    4.54 | 87-330            
+  ...ty-doctor.tsx |       0 |        0 |       0 |       0 | 14-152            
+  ...sal-draft.tsx |       0 |        0 |       0 |       0 | 22-205            
+  ...al-review.tsx |       0 |        0 |       0 |       0 | 27-163            
+  ...y-results.tsx |    3.19 |        0 |       0 |    3.48 | 15-661            
+  quality-tab.tsx  |       0 |        0 |       0 |       0 | 42-1073           
+  ...-bindings.tsx |   93.33 |    82.14 |   96.15 |    97.5 | 249               
+  ...race-view.tsx |       0 |        0 |       0 |       0 | 105-1722          
+  ...n-history.tsx |    83.9 |    65.78 |   77.77 |   85.36 | ...65,427-430,456 
+ ...s/ai-providers |       0 |        0 |       0 |       0 |                   
+  ...l-control.tsx |       0 |        0 |       0 |       0 | 36-174            
+  ...tions-tab.tsx |       0 |        0 |       0 |       0 | 105-899           
+  index.tsx        |       0 |      100 |       0 |       0 | 12-14             
+  ...iders-tab.tsx |       0 |        0 |       0 |       0 | 94-1171           
+  ...y-control.tsx |       0 |        0 |       0 |       0 | 18-184            
+ ...ures/assistant |    1.96 |        0 |    1.73 |    2.09 |                   
+  ...ity-trace.tsx |       0 |        0 |       0 |       0 | 10-37             
+  app-context.ts   |    7.44 |        0 |       0 |    8.97 | 87-276,283-284    
+  ...-selector.tsx |       0 |        0 |       0 |       0 | 21-67             
+  ...-composer.tsx |       0 |        0 |       0 |       0 | 58-226            
+  ...tant-dock.tsx |       0 |      100 |       0 |       0 | 13-16             
+  ...pty-state.tsx |       0 |        0 |       0 |       0 | 27-123            
+  ...anel-state.ts |       0 |        0 |       0 |       0 | 2-102             
+  ...ant-panel.tsx |       0 |        0 |       0 |       0 | 121-346           
+  ...-provider.tsx |       0 |        0 |       0 |       0 | 141-598           
+  ...nt-toggle.tsx |       0 |        0 |       0 |       0 | 29-206            
+  code-card.tsx    |    4.39 |        0 |       0 |    3.61 | 45-55,74-432      
+  events.ts        |     2.2 |        0 |       0 |    2.39 | ...60-366,381-569 
+  markdown.tsx     |   31.48 |        0 |   31.81 |   30.76 | ...86-113,119-171 
+  ...sult-table.ts |    1.92 |        0 |       0 |     2.7 | 13-65             
+  message-list.tsx |       0 |        0 |       0 |       0 | 46-311            
+  model-client.ts  |       0 |        0 |       0 |       0 | 37-60             
+  ...-selector.tsx |       0 |        0 |       0 |       0 | 24-103            
+  neva-mark.tsx    |       0 |      100 |       0 |       0 | 4                 
+  ...rface-hook.ts |       0 |        0 |       0 |       0 | 13-38             
+  ...ze-handle.tsx |       0 |        0 |       0 |       0 | 18-56             
+  query-attach.ts  |       0 |        0 |       0 |       0 | 60-241            
+  stream-client.ts |       0 |        0 |       0 |       0 | 65-180            
+  ...e-registry.ts |       0 |        0 |       0 |       0 | 32-188            
+  thread-client.ts |       0 |        0 |       0 |       0 | 40-122            
+  ...d-history.tsx |       0 |        0 |       0 |       0 | 46-310            
+  ...call-card.tsx |       0 |        0 |       0 |       0 | 16-284            
+  types.ts         |      20 |        0 |       0 |      25 | 207-209           
+  ...nversation.ts |       0 |        0 |       0 |       0 | 57-218            
+  ...tant-panel.ts |       0 |      100 |       0 |       0 | 3-20              
+  ...transcript.ts |       0 |        0 |       0 |       0 | 87-530            
+  ...stant-turn.ts |       0 |        0 |       0 |       0 | 39-456            
+  ...nel-resize.ts |       0 |        0 |       0 |       0 | 25-83             
+  ...-assistant.ts |       0 |        0 |       0 |       0 | 27-38             
+ ...s/auth/sign-in |       0 |      100 |       0 |       0 |                   
+  sign-in-2.tsx    |       0 |      100 |       0 |       0 | 7-8               
+ ...-in/components |       0 |        0 |       0 |       0 |                   
+  ...in-splash.tsx |       0 |        0 |       0 |       0 | 6-18              
+  ...in-visual.tsx |       0 |      100 |       0 |       0 | 4                 
+  ...auth-form.tsx |       0 |        0 |       0 |       0 | 24-421            
+ src/features/bi   |       0 |        0 |       0 |       0 |                   
+  bi-frame.tsx     |       0 |        0 |       0 |       0 | 23-195            
+  bi-launch.tsx    |       0 |        0 |       0 |       0 | 12-51             
+  bi-target.ts     |       0 |        0 |       0 |       0 | 1-6               
+  bi-workspace.tsx |       0 |        0 |       0 |       0 | 11-70             
+  ...rd-filters.ts |       0 |        0 |       0 |       0 | 9-52              
+  ...et-loading.ts |       0 |      100 |       0 |       0 | 2-12              
+  ...bi-session.ts |       0 |        0 |       0 |       0 | 11-56             
+ ...atures/cluster |       0 |        0 |       0 |       0 |                   
+  api.ts           |       0 |        0 |       0 |       0 | 21-168            
+  index.tsx        |       0 |        0 |       0 |       0 | 49-469            
+ ...es/connections |       0 |        0 |       0 |       0 |                   
+  api.ts           |       0 |      100 |       0 |       0 | 54-93             
+  ...n-dialogs.tsx |       0 |        0 |       0 |       0 | 42-721            
+  index.tsx        |       0 |        0 |       0 |       0 | 37-267            
+  sources.ts       |       0 |        0 |       0 |       0 | 35-109            
+ ...ures/dashboard |       0 |        0 |       0 |       0 |                   
+  docs-matches.tsx |       0 |        0 |       0 |       0 | 13-36             
+  index.tsx        |       0 |        0 |       0 |       0 | 85-511            
+ ...ard/components |       0 |      100 |       0 |       0 |                   
+  ...ics-chart.tsx |       0 |      100 |       0 |       0 | 4-46              
+  analytics.tsx    |       0 |      100 |       0 |       0 | 11-168            
+  overview.tsx     |       0 |      100 |       0 |       0 | 4-75              
+  recent-sales.tsx |       0 |      100 |       0 |       0 | 4                 
+ ...abase-explorer |       0 |        0 |       0 |       0 |                   
+  ...tadata-api.ts |       0 |        0 |       0 |       0 | 67-131            
+  ...a-section.tsx |       0 |        0 |       0 |       0 | 41-535            
+  ...og-search.tsx |       0 |        0 |       0 |       0 | 9-159             
+  ...se-dialog.tsx |       0 |        0 |       0 |       0 | 20-99             
+  ...er-detail.tsx |       0 |        0 |       0 |       0 | 110-1182          
+  helpers.ts       |       0 |        0 |       0 |       0 | 23-404            
+  index.tsx        |       0 |        0 |       0 |       0 | 73-867            
+  ...-data-tab.tsx |       0 |        0 |       0 |       0 | 21-119            
+  ...ew-request.ts |       0 |        0 |       0 |       0 | 1-33              
+  ...ode-block.tsx |       0 |        0 |       0 |       0 | 10-12             
+  ...ighlighter.ts |       0 |      100 |       0 |       0 | 4-12              
+  ...les-panel.tsx |       0 |        0 |       0 |       0 | 56-461            
+  ...-node-row.tsx |       0 |        0 |       0 |       0 | 42-182            
+ src/features/docs |       0 |        0 |       0 |       0 |                   
+  content.ts       |       0 |        0 |       0 |       0 | 18-214            
+  docs-layout.tsx  |       0 |        0 |       0 |       0 | 19-93             
+  ...-markdown.tsx |       0 |        0 |       0 |       0 | 15-214            
+  docs-page.tsx    |       0 |        0 |       0 |       0 | 9-137             
+  docs-search.tsx  |       0 |        0 |       0 |       0 | 28-116            
+  nav.ts           |       0 |      100 |     100 |       0 | 13                
+ ...eatures/errors |       0 |        0 |       0 |       0 |                   
+  forbidden.tsx    |       0 |      100 |       0 |       0 | 5-20              
+  ...ral-error.tsx |       0 |        0 |       0 |       0 | 13-30             
+  ...nce-error.tsx |       0 |      100 |       0 |       0 | 4                 
+  ...und-error.tsx |       0 |      100 |       0 |       0 | 5-20              
+  ...zed-error.tsx |       0 |      100 |       0 |       0 | 5-20              
+ ...ernal-catalogs |       0 |        0 |       0 |       0 |                   
+  api.ts           |       0 |        0 |       0 |       0 | 53-90             
+  ...g-dialogs.tsx |       0 |        0 |       0 |       0 | 15-32             
+ ...ures/functions |       0 |        0 |       0 |       0 |                   
+  api.ts           |       0 |        0 |       0 |       0 | 49-101            
+  index.tsx        |       0 |        0 |       0 |       0 | 27-448            
+ ...s/intelligence |       0 |        0 |       0 |       0 |                   
+  ...lifecycle.tsx |       0 |        0 |       0 |       0 | 18-460            
+  ...n-preview.tsx |       0 |        0 |       0 |       0 | 31-274            
+  ...lot-panel.tsx |       0 |        0 |       0 |       0 | 52-551            
+  context-api.ts   |       0 |      100 |       0 |       0 | 40-59             
+  ...inspector.tsx |       0 |        0 |       0 |       0 | 23-207            
+  ...n-compose.tsx |       0 |        0 |       0 |       0 | 45-468            
+  ...overnance.tsx |       0 |        0 |       0 |       0 | 33-146            
+  ...ence-page.tsx |       0 |        0 |       0 |       0 | 58-904            
+  learning-api.ts  |       0 |      100 |       0 |       0 | 49                
+  lifecycle-api.ts |       0 |        0 |       0 |       0 | 238-356           
+  ...ta-fields.tsx |       0 |        0 |       0 |       0 | 15-85             
+  ...tor-panel.tsx |       0 |        0 |       0 |       0 | 44-466            
+  ...-settings.tsx |       0 |        0 |       0 |       0 | 20-363            
+  ...io-fields.tsx |       0 |        0 |       0 |       0 | 25-88             
+  ...st-support.ts |       0 |      100 |     100 |       0 | 4                 
+  ...rio-schema.ts |       0 |        0 |       0 |       0 | 53-377            
+  ...-datasets.tsx |       0 |        0 |       0 |       0 | 8-68              
+  ...ew-detail.tsx |       0 |        0 |       0 |       0 | 19-374            
+  ...ew-glance.tsx |       0 |        0 |       0 |       0 | 11-351            
+  ...oute-page.tsx |       0 |      100 |       0 |       0 | 5-6               
+  ...-views-api.ts |       0 |      100 |       0 |       0 | 215-255           
+  ...on-columns.ts |       0 |        0 |       0 |       0 | 5-8               
+ ...ures/migration |       0 |        0 |       0 |       0 |                   
+  api.ts           |       0 |        0 |       0 |       0 | 100-257           
+  index.tsx        |       0 |        0 |       0 |       0 | 41-1262           
+ ...ures/ml-models |       0 |        0 |       0 |       0 |                   
+  aliases-tab.tsx  |       0 |        0 |       0 |       0 | 49-335            
+  index.tsx        |       0 |      100 |       0 |       0 | 13-15             
+  model-scope.ts   |       0 |        0 |       0 |       0 | 22-57             
+  models-tab.tsx   |       0 |        0 |       0 |       0 | 91-972            
+  predict-tab.tsx  |       0 |        0 |       0 |       0 | 48-336            
+ ...res/monitoring |       0 |      100 |       0 |       0 |                   
+  index.tsx        |       0 |      100 |       0 |       0 | 8-18              
+ ...active-queries |       0 |        0 |       0 |       0 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 59-360            
+ .../monitoring/ai |       0 |        0 |       0 |       0 |                   
+  api.ts           |       0 |        0 |       0 |       0 | 73-143            
+  index.tsx        |       0 |        0 |       0 |       0 | 51-765            
+ ...ng/audit-trail |       0 |        0 |       0 |       0 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 66-399            
+ ...ring/autopilot |       0 |        0 |       0 |       0 |                   
+  api.ts           |       0 |      100 |       0 |       0 | 135-166           
+  index.tsx        |       0 |        0 |       0 |       0 | 62-1049           
+ ...ing/components |       0 |        0 |       0 |       0 |                   
+  ...dable-row.tsx |       0 |        0 |       0 |       0 | 25-177            
+  ...ng-header.tsx |       0 |        0 |       0 |       0 | 20-23             
+ ...ing/data-loads |       0 |        0 |       0 |       0 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 70-475            
+ ...itoring/health |       0 |        0 |       0 |       0 |                   
+  api.ts           |       0 |        0 |       0 |       0 | 53-162            
+  index.tsx        |       0 |        0 |       0 |       0 | 35-283            
+ ...toring/queries |       0 |      100 |       0 |       0 |                   
+  index.tsx        |       0 |      100 |       0 |       0 | 6-49              
+ ...ing/query-cost |       0 |        0 |       0 |       0 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 108-771           
+ .../query-history |       0 |        0 |       0 |       0 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 69-434            
+ ...native-dataviz |       0 |        0 |       0 |       0 |                   
+  data-table.tsx   |       0 |        0 |       0 |       0 | 19-148            
+  documents.ts     |       0 |        0 |       0 |       0 | 28-282            
+ ...aviz/contracts |       0 |      100 |       0 |       0 |                   
+  index.ts         |       0 |      100 |       0 |       0 | 40-79             
+  schema.ts        |       0 |      100 |     100 |       0 | 2                 
+ ...tures/ontology |       0 |        0 |       0 |       0 |                   
+  api.ts           |       0 |        0 |       0 |       0 | 460-544           
+  checks-tab.tsx   |       0 |        0 |       0 |       0 | 28-204            
+  ...pt-detail.tsx |       0 |        0 |       0 |       0 | 33-250            
+  concepts-tab.tsx |       0 |        0 |       0 |       0 | 32-202            
+  derived-tab.tsx  |       0 |        0 |       0 |       0 | 44-556            
+  domains-tab.tsx  |       0 |        0 |       0 |       0 | 38-275            
+  ...ation-tab.tsx |       0 |        0 |       0 |       0 | 27-422            
+  index.tsx        |       0 |        0 |       0 |       0 | 33-94             
+  model.ts         |       0 |        0 |       0 |       0 | 17-162            
+  overview-tab.tsx |       0 |        0 |       0 |       0 | 25-557            
+  ...sal-forms.tsx |       0 |        0 |       0 |       0 | 45-796            
+  ...osals-tab.tsx |       0 |        0 |       0 |       0 | 27-261            
+  releases-tab.tsx |       0 |        0 |       0 |       0 | 23-284            
+ ...features/roles |       0 |        0 |       0 |       0 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 86-613            
+  role-detail.tsx  |       0 |        0 |       0 |       0 | 59-590            
+ ...tures/settings |       0 |        0 |       0 |       0 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 23-213            
+ ...eatures/stages |       0 |        0 |       0 |       0 |                   
+  api.ts           |       0 |        0 |       0 |       0 | 41-113            
+  index.tsx        |       0 |        0 |       0 |       0 | 41-408            
+  ...e-browser.tsx |       0 |        0 |       0 |       0 | 49-475            
+ ...eatures/studio |       0 |        0 |       0 |       0 |                   
+  ...ry-dialog.tsx |       0 |        0 |       0 |       0 | 34-218            
+  ...er-footer.tsx |       0 |        0 |       0 |       0 | 49-231            
+  ...chart-spec.ts |       0 |        0 |       0 |       0 | 8-17              
+  ...-explorer.tsx |       0 |        0 |       0 |       0 | 54-776            
+  ...ilter-bar.tsx |       0 |        0 |       0 |       0 | 21-248            
+  ...ct-filters.ts |       0 |        0 |       0 |       0 | 28-205            
+  ...act-source.ts |       0 |      100 |       0 |       0 | 14-21             
+  chart-title.ts   |       0 |        0 |       0 |       0 | 10-18             
+  consent-card.tsx |       0 |        0 |       0 |       0 | 29-104            
+  ...arch-card.tsx |       0 |        0 |       0 |       0 | 9-91              
+  default-agent.ts |       0 |        0 |       0 |       0 | 4-33              
+  ...nce-health.ts |       0 |        0 |       0 |       0 | 5-121             
+  greeting.ts      |       0 |        0 |       0 |       0 | 5-40              
+  index.tsx        |       0 |        0 |       0 |       0 | 24-450            
+  ...dge-panel.tsx |       0 |        0 |       0 |       0 | 40-421            
+  ...onversion.tsx |       0 |        0 |       0 |       0 | 24-191            
+  ...ss-summary.ts |       0 |        0 |       0 |       0 | 9-42              
+  rail-model.ts    |       0 |        0 |       0 |       0 | 4-23              
+  result-cards.tsx |       0 |        0 |       0 |       0 | 9-73              
+  result-table.tsx |       0 |        0 |       0 |       0 | 25-278            
+  ...sal-panel.tsx |       0 |        0 |       0 |       0 | 16-174            
+  ...l-document.ts |       0 |        0 |       0 |       0 | 3-17              
+  skill-editor.tsx |       0 |        0 |       0 |       0 | 27-93             
+  skill-upload.tsx |       0 |        0 |       0 |       0 | 18-202            
+  ...ount-menu.tsx |       0 |        0 |       0 |       0 | 34-250            
+  ...artifacts.tsx |       0 |        0 |       0 |       0 | 53-942            
+  ...ttachments.ts |       0 |        0 |       0 |       0 | 14-108            
+  ...abilities.tsx |       0 |        0 |       0 |       0 | 42-377            
+  studio-chat.tsx  |       0 |        0 |       0 |       0 | 69-1218           
+  ...-composer.tsx |       0 |        0 |       0 |       0 | 21-215            
+  ...elligence.tsx |       0 |        0 |       0 |       0 | 34-820            
+  ...o-sidebar.tsx |       0 |        0 |       0 |       0 | 38-431            
+  studio-tabs.tsx  |       0 |        0 |       0 |       0 | 5-86              
+  ...transcript.ts |       0 |        0 |       0 |       0 | 24-1008           
+  text-shimmer.tsx |       0 |      100 |       0 |       0 | 17                
+  thought-turn.tsx |       0 |        0 |       0 |       0 | 67-520            
+  thread-time.ts   |       0 |        0 |       0 |       0 | 9-28              
+  thread-title.ts  |       0 |        0 |       0 |       0 | 2-10              
+  tool-preview.ts  |       0 |        0 |       0 |       0 | 2-14              
+  ...tent-order.ts |       0 |        0 |       0 |       0 | 5-14              
+  turn-content.tsx |       0 |        0 |       0 |       0 | 48-196            
+  ...nt-daypart.ts |       0 |      100 |       0 |       0 | 6-12              
+  ...ipt-stream.ts |       0 |        0 |       0 |       0 | 5-43              
+  ...ge-footer.tsx |       0 |        0 |       0 |       0 | 15-51             
+  workflow-api.ts  |       0 |        0 |       0 |       0 | 41-71             
+ ...studio/dataviz |       0 |        0 |       0 |       0 |                   
+  ...o-dataviz.tsx |       0 |        0 |       0 |       0 | 47-321            
+  api.ts           |       0 |        0 |       0 |       0 | 63-90             
+  ...tant-agent.ts |       0 |      100 |     100 |       0 | 9-11              
+  ...ard-bridge.ts |       0 |        0 |       0 |       0 | 29-142            
+  ...workspace.tsx |       0 |        0 |       0 |       0 | 22-402            
+  superset-bar.ts  |       0 |        0 |       0 |       0 | 22-76             
+  ...capability.ts |       0 |        0 |       0 |       0 | 5-97              
+ ...intelligent-ui |       0 |        0 |       0 |       0 |                   
+  api.ts           |       0 |        0 |       0 |       0 | 5-24              
+  ...ct-button.tsx |       0 |        0 |       0 |       0 | 16-19             
+  ...og-support.ts |       0 |        0 |       0 |       0 | 7                 
+  catalog-v2.ts    |       0 |        0 |       0 |       0 | 12-428            
+  catalog.ts       |       0 |        0 |       0 |       0 | 12-500            
+  ...spec-block.ts |       0 |        0 |       0 |       0 | 7-163             
+  components.tsx   |       0 |        0 |       0 |       0 | 33-792            
+  data-chart.tsx   |       0 |        0 |       0 |       0 | 26-218            
+  functions.ts     |       0 |        0 |       0 |       0 | 4-571             
+  ...ap-legacy.tsx |       0 |        0 |       0 |       0 | 11-152            
+  geo-map.tsx      |       0 |        0 |       0 |       0 | 25-300            
+  geometry.ts      |       0 |        0 |       0 |       0 | 4-84              
+  html-policy.ts   |       0 |        0 |       0 |       0 | 3-134             
+  map-data.ts      |       0 |        0 |       0 |       0 | 15-63             
+  map-flag.ts      |       0 |      100 |     100 |       0 | 2                 
+  map-metrics.ts   |       0 |        0 |       0 |       0 | 6-13              
+  map-options.ts   |       0 |        0 |       0 |       0 | 3-43              
+  map-style.ts     |       0 |        0 |       0 |       0 | 9-52              
+  map-surface.tsx  |       0 |        0 |       0 |       0 | 30-295            
+  media.tsx        |       0 |        0 |       0 |       0 | 8-196             
+  public-map.tsx   |       0 |        0 |       0 |       0 | 36-256            
+  renderer.tsx     |       0 |        0 |       0 |       0 | 29-456            
+  route-data.ts    |       0 |        0 |       0 |       0 | 20-92             
+  route-road.ts    |       0 |        0 |       0 |       0 | 8-97              
+  ...stops-map.tsx |       0 |        0 |       0 |       0 | 19-312            
+  ...me-context.ts |       0 |      100 |       0 |       0 | 15                
+  state.ts         |       0 |      100 |       0 |       0 | 1-9               
+  ui-chart.tsx     |       0 |        0 |       0 |       0 | 15-18             
+  validator-v2.ts  |       0 |        0 |       0 |       0 | 30-475            
+  validator.ts     |       0 |        0 |       0 |       0 | 31-496            
+ ...es/studio/news |       0 |        0 |       0 |       0 |                   
+  chart-kind.ts    |       0 |        0 |       0 |       0 | 10-13             
+  echart.tsx       |       0 |        0 |       0 |       0 | 16-125            
+  format.ts        |       0 |        0 |       0 |       0 | 3-91              
+  highlight.tsx    |       0 |        0 |       0 |       0 | 12-47             
+  ...t-section.tsx |       0 |        0 |       0 |       0 | 17-203            
+  newspaper-api.ts |       0 |        0 |       0 |       0 | 136-168           
+  ...aper-page.tsx |       0 |        0 |       0 |       0 | 36-369            
+  reactions.tsx    |       0 |        0 |       0 |       0 | 21-45             
+  story-chart.tsx  |       0 |        0 |       0 |       0 | 7-353             
+  story-panel.tsx  |       0 |        0 |       0 |       0 | 25-216            
+  story-parts.tsx  |       0 |        0 |       0 |       0 | 10-54             
+ ...-orchestration |       0 |        0 |       0 |       0 |                   
+  api.ts           |       0 |      100 |       0 |       0 | 14-262            
+  presentation.ts  |       0 |        0 |       0 |       0 | 9-113             
+  ...or-dialog.tsx |       0 |        0 |       0 |       0 | 25-97             
+  ...ry-drawer.tsx |       0 |        0 |       0 |       0 | 13-169            
+  run-history.tsx  |       0 |        0 |       0 |       0 | 29-264            
+  task-detail.tsx  |       0 |        0 |       0 |       0 | 20-136            
+  ...low-layout.ts |       0 |        0 |       0 |       0 | 23-190            
+  task-flow.tsx    |       0 |        0 |       0 |       0 | 30-155            
+  task-list.tsx    |       0 |        0 |       0 |       0 | 46-443            
+  task-node.tsx    |       0 |        0 |       0 |       0 | 6-50              
+  ...ql-dialog.tsx |       0 |        0 |       0 |       0 | 26-74             
+ ...features/tasks |       0 |      100 |       0 |       0 |                   
+  index.tsx        |       0 |      100 |       0 |       0 | 11                
+ ...sks/components |       0 |        0 |       0 |       0 |                   
+  ...k-actions.tsx |       0 |        0 |       0 |       0 | 30-171            
+  ...w-actions.tsx |       0 |      100 |       0 |       0 | 29-72             
+  ...s-columns.tsx |       0 |        0 |       0 |       0 | 9-121             
+  ...s-dialogs.tsx |       0 |        0 |       0 |       0 | 8-52              
+  ...rt-dialog.tsx |       0 |        0 |       0 |       0 | 25-88             
+  ...te-dialog.tsx |       0 |        0 |       0 |       0 | 1-85              
+  ...te-drawer.tsx |       0 |        0 |       0 |       0 | 34-167            
+  ...y-buttons.tsx |       0 |      100 |       0 |       0 | 6-16              
+  ...-provider.tsx |       0 |        0 |       0 |       0 | 14-35             
+  tasks-table.tsx  |       0 |        0 |       0 |       0 | 31-165            
+ ...res/tasks/data |       0 |      100 |       0 |       0 |                   
+  data.tsx         |       0 |      100 |     100 |       0 | 13-56             
+  schema.ts        |       0 |      100 |     100 |       0 | 5                 
+  tasks.ts         |       0 |      100 |       0 |       0 | 4-17              
+ ...features/users |       0 |        0 |       0 |       0 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 182-2377          
+  user-detail.tsx  |       0 |        0 |       0 |       0 | 45-371            
+ ...ers/components |       0 |        0 |       0 |       0 |                   
+  ...k-actions.tsx |       0 |        0 |       0 |       0 | 23-117            
+  ...w-actions.tsx |       0 |      100 |       0 |       0 | 21-50             
+  ...on-dialog.tsx |       0 |        0 |       0 |       0 | 1-299             
+  ...s-columns.tsx |       0 |        0 |       0 |       0 | 11-129            
+  ...te-dialog.tsx |       0 |        0 |       0 |       0 | 1-71              
+  ...s-dialogs.tsx |       0 |        0 |       0 |       0 | 7-42              
+  ...te-dialog.tsx |       0 |        0 |       0 |       0 | 29-124            
+  ...te-dialog.tsx |       0 |        0 |       0 |       0 | 1-85              
+  ...y-buttons.tsx |       0 |      100 |       0 |       0 | 6-16              
+  ...-provider.tsx |       0 |        0 |       0 |       0 | 14-35             
+  users-table.tsx  |       0 |        0 |       0 |       0 | 38-160            
+ ...res/users/data |       0 |      100 |       0 |       0 |                   
+  data.ts          |       0 |      100 |     100 |       0 | 4-14              
+  schema.ts        |       0 |      100 |     100 |       0 | 3-18              
+  users.ts         |       0 |      100 |       0 |       0 | 4-9               
+ src/features/viz  |       0 |        0 |       0 |       0 |                   
+  chart-frame.tsx  |       0 |        0 |       0 |       0 | 8-55              
+  ...fact-card.tsx |       0 |        0 |       0 |       0 | 11-31             
+  ...rd-canvas.tsx |       0 |        0 |       0 |       0 | 36-296            
+  insight.ts       |       0 |        0 |       0 |       0 | 23-203            
+  view-answer.tsx  |       0 |        0 |       0 |       0 | 5                 
+  viz-view.tsx     |       0 |        0 |       0 |       0 | 39-825            
+ ...res/workspaces |    1.14 |     0.32 |    0.54 |    1.25 |                   
+  ...alization.tsx |    2.04 |        0 |       0 |    2.27 | ...8-195,206-1277 
+  ...-selector.tsx |       0 |        0 |       0 |       0 | 28-152            
+  explain-plan.ts  |       0 |        0 |       0 |       0 | 4-26              
+  explain-tree.tsx |       0 |        0 |       0 |       0 | 10-175            
+  ...ry-dialog.tsx |       0 |        0 |       0 |       0 | 40-205            
+  ...ory-format.ts |       0 |        0 |       0 |       0 | 4-14              
+  index.tsx        |       0 |        0 |       0 |       0 | 152-4322          
+  ...ne-select.tsx |       0 |        0 |       0 |       0 | 26-79             
+  monaco-theme.ts  |   81.25 |       75 |   66.66 |   81.25 | 47-71             
+  neva-feedback.ts |    8.33 |        0 |       0 |    9.37 | 24-119            
+  ...firmation.tsx |       0 |        0 |       0 |       0 | 14-44             
+  ...y-history.tsx |       0 |        0 |       0 |       0 | 17-134            
+  ...y-messages.ts |       0 |        0 |       0 |       0 | 11-32             
+  ...ite-blocks.ts |       0 |        0 |       0 |       0 | 21-51             
+  ...te-review.tsx |       0 |        0 |       0 |       0 | 21-54             
+  session-role.ts  |       0 |        0 |       0 |       0 | 13-27             
+  ...statements.ts |       0 |        0 |       0 |       0 | 4-119             
+  ...completion.ts |       0 |        0 |       0 |       0 | 32-135            
+  ...-templates.ts |       0 |      100 |       0 |       0 | 4-107             
+  ...h-popover.tsx |       0 |        0 |       0 |       0 | 29-348            
+  ...tab-strip.tsx |       0 |        0 |       0 |       0 | 42-439            
+ ...paces/explorer |       0 |        0 |       0 |       0 |                   
+  api.ts           |       0 |        0 |       0 |       0 | 4-46              
+  controller.ts    |       0 |      100 |       0 |       0 | 23-27             
+  ...em-button.tsx |       0 |        0 |       0 |       0 | 27-76             
+  share-dialog.tsx |       0 |        0 |       0 |       0 | 17-172            
+  tree-data.ts     |       0 |        0 |       0 |       0 | 5-68              
+  ...-explorer.tsx |       0 |        0 |       0 |       0 | 71-664            
+ ...paces/notebook |    24.3 |    27.69 |   22.59 |   23.44 |                   
+  api.ts           |    8.69 |        0 |       0 |    9.09 | 19-91             
+  cell-editor.tsx  |   90.32 |    72.72 |   86.36 |   94.93 | 96,133,141-142    
+  cell.tsx         |   73.87 |    79.89 |      70 |   76.84 | ...60-468,487,510 
+  helpers.ts       |   91.66 |    91.11 |   83.33 |   91.89 | 16,42,68          
+  names.ts         |   93.75 |    83.33 |     100 |     100 | 10                
+  neva.tsx         |       0 |        0 |       0 |       0 | 20-205            
+  ...ok-editor.tsx |       0 |        0 |       0 |       0 | 63-930            
+  outputs.tsx      |   62.02 |     57.3 |   66.66 |   61.64 | ...87-396,400-406 
+  ...e-control.tsx |       0 |        0 |       0 |       0 | 20-211            
+  side-panel.tsx   |       0 |        0 |       0 |       0 | 18-326            
+  stream.ts        |   29.03 |     37.5 |   14.28 |      24 | 25-103            
+  use-notebook.ts  |    3.89 |     8.06 |    1.49 |    2.77 | 42,62-653         
+ src/hooks         |       0 |        0 |       0 |       0 |                   
+  ...log-state.tsx |       0 |        0 |       0 |       0 | 12-17             
+  use-mobile.tsx   |       0 |      100 |       0 |       0 | 3-14              
+  ...-url-state.ts |       0 |        0 |       0 |       0 | 77-210            
+ src/lib           |   24.82 |    11.11 |   25.86 |    27.8 |                   
+  api-client.ts    |   25.54 |    14.28 |      20 |   28.33 | ...30,239,248-282 
+  cookies.ts       |      40 |    22.22 |   33.33 |      50 | 17-18,31-42       
+  datetime.ts      |       0 |        0 |       0 |       0 | 13-65             
+  format.ts        |       0 |        0 |       0 |       0 | 9-74              
+  ...rver-error.ts |       0 |        0 |       0 |       0 | 5-27              
+  read-token.ts    |   68.29 |    43.75 |    87.5 |   72.22 | 85-94             
+  ...tted-data.tsx |       0 |        0 |       0 |       0 | 7                 
+  ...i-devtools.ts |       0 |      100 |     100 |       0 | 4                 
+  utils.ts         |    2.94 |        0 |      20 |    3.57 | 9-74              
+ src/stores        |   19.23 |    10.52 |    7.14 |   21.73 |                   
+  auth-store.ts    |    23.8 |    13.33 |    9.09 |   26.31 | 27-32,43-65       
+  ...zone-store.ts |       0 |        0 |       0 |       0 | 4-26              
+-------------------|---------|----------|---------|---------|-------------------
+
+=============================== Coverage summary ===============================
+Statements   : 2.68% ( 594/22088 )
+Branches     : 2.21% ( 479/21644 )
+Functions    : 2.1% ( 161/7632 )
+Lines        : 2.7% ( 532/19650 )
+================================================================================

@@ -1,0 +1,15 @@
+
+> shadcn-admin@2.2.1 test /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+> vitest run --browser.headless src/features/studio/intelligent-ui/renderer.test.tsx
+
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+
+3:42:34 AM [vite] (client) Re-optimizing dependencies because vite config has changed
+3:42:36 AM [vite] (client) [optimizer] bundling dependencies...
+
+ Test Files  1 passed (1)
+      Tests  29 passed (29)
+   Start at  03:42:33
+   Duration  12.49s (transform 0ms, setup 0ms, import 1.64s, tests 7.22s, environment 0ms)
+

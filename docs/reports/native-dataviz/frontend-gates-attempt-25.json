@@ -1,0 +1,52 @@
+[
+  {
+    "command": [
+      "pnpm",
+      "install",
+      "--frozen-lockfile"
+    ],
+    "file": "frontend-install-attempt-25.txt",
+    "returncode": 0,
+    "seconds": 0.35
+  },
+  {
+    "command": [
+      "pnpm",
+      "exec",
+      "playwright",
+      "install",
+      "--with-deps",
+      "chromium"
+    ],
+    "file": "frontend-browser-install-attempt-25.txt",
+    "returncode": 0,
+    "seconds": 0.64
+  },
+  {
+    "command": [
+      "pnpm",
+      "lint"
+    ],
+    "file": "frontend-lint-attempt-25.txt",
+    "returncode": 0,
+    "seconds": 11.46
+  },
+  {
+    "command": [
+      "pnpm",
+      "build"
+    ],
+    "file": "frontend-build-attempt-25.txt",
+    "returncode": 0,
+    "seconds": 31.89
+  },
+  {
+    "command": [
+      "pnpm",
+      "test:coverage"
+    ],
+    "file": "frontend-coverage-attempt-25.txt",
+    "returncode": 1,
+    "seconds": 232.35
+  }
+]

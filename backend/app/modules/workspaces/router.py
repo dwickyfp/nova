@@ -12,7 +12,10 @@ Changes need edit permission; managing a shared workspace needs ownership.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+import mimetypes
+from urllib.parse import quote
+
+from fastapi import APIRouter, Depends, Response
 
 from app.core.deps import get_current_user
 from app.modules.workspaces.actor import acting_as
@@ -134,6 +137,23 @@ async def get_workspace_file(entry_id: str, user: dict = Depends(get_current_use
     entry, content = await workspace_service.get_file(space.namespace, entry_id)
     return WorkspaceFileResponse(
         entry=WorkspaceEntry.model_validate(entry), content=content, space=_space(space)
+    )
+
+
+@router.get("/files/{entry_id}/download")
+async def download_workspace_file(entry_id: str, user: dict = Depends(get_current_user)):
+    """The file's bytes, for anyone who may view its workspace (workbooks, uploads)."""
+    space = await space_service.for_entry(user, entry_id)
+    entry, data = await workspace_service.read_entry_bytes(space.namespace, entry_id)
+    name = str(entry["name"])
+    return Response(
+        content=data,
+        media_type=mimetypes.guess_type(name)[0] or "application/octet-stream",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(name, safe='')}",
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 

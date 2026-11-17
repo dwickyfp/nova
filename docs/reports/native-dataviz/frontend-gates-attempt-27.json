@@ -1,0 +1,13 @@
+[
+  {
+    "command": [
+      "pnpm",
+      "test:coverage",
+      "--browser.fileParallelism=false",
+      "--maxWorkers=1"
+    ],
+    "file": "frontend-coverage-attempt-27.txt",
+    "returncode": 130,
+    "seconds": 274.45
+  }
+]

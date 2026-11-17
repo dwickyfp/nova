@@ -67,13 +67,16 @@ jobs:
               "tests/integration/test_metadata_retired_agents.py",
               "tests/integration/test_metadata_stages.py",
               "tests/integration/test_metadata_workspaces.py",
+              "tests/integration/test_metadata_viz.py",
               "tests/integration/test_metadata_workspace_files.py",
               "tests/integration/test_metadata_workspace_service.py",
               "tests/integration/test_metadata_notebooks.py",
               "tests/integration/test_metadata_tasks.py",
+              "tests/integration/test_metadata_pipes.py",
               "tests/integration/test_metadata_streams.py",
               "tests/integration/test_metadata_ml_engine.py",
               "tests/integration/test_metadata_catalog.py",
+              "tests/integration/test_metadata_routine_loads.py",
               "tests/integration/test_metadata_ontology.py",
               "tests/integration/test_metadata_agents.py",
               "tests/integration/test_agent_rule_proposal_live.py",
@@ -144,6 +147,14 @@ jobs:
       - name: Install dependencies
         working-directory: backend
         run: uv sync --locked
+
+      - name: Native visualization contract drift
+        working-directory: backend
+        run: uv run python scripts/generate_viz_contracts.py --check
+
+      - name: Dependency licenses and license-key APIs
+        working-directory: backend
+        run: uv run python scripts/check_licenses.py
 
       - name: ruff (full tree, report-only)
         working-directory: backend
@@ -368,17 +379,11 @@ jobs:
           db_password="CiD9$(openssl rand -hex 24)"
           signing_key="$(openssl rand -hex 32)"
           encryption_key="$(openssl rand -base64 32 | tr '+/' '-_')"
-          bi_token="$(openssl rand -hex 32)"
-          bi_db_password="CiS9$(openssl rand -hex 24)"
-          bi_secret="$(openssl rand -hex 32)"
           sandbox_key="$(openssl rand -hex 32)"
           echo "::add-mask::$admin_password"
           echo "::add-mask::$db_password"
           echo "::add-mask::$signing_key"
           echo "::add-mask::$encryption_key"
-          echo "::add-mask::$bi_token"
-          echo "::add-mask::$bi_db_password"
-          echo "::add-mask::$bi_secret"
           echo "::add-mask::$sandbox_key"
           {
             echo "RANGER_ADMIN_PASSWORD=$admin_password"
@@ -390,9 +395,6 @@ jobs:
             # in the file from which the Ranger definitions are inherited.
             echo "NOVA_SECRET_KEY=$signing_key"
             echo "NOVA_FERNET_KEY=$encryption_key"
-            echo "NOVA_SUPERSET_SERVICE_TOKEN=$bi_token"
-            echo "SUPERSET_DB_PASSWORD=$bi_db_password"
-            echo "SUPERSET_SECRET_KEY=$bi_secret"
             # The notebook sandbox server (not started here) refuses to run
             # without an API key, so Compose requires one to read the file.
             echo "NOVA_OPENSANDBOX_API_KEY=$sandbox_key"
@@ -590,6 +592,11 @@ jobs:
 
       - name: Build
         run: pnpm build
+      - name: Bundle budget
+        run: pnpm check:bundle
+
+      - name: Dependency licenses and license-key APIs
+        run: pnpm check:licenses
 
       - name: Test with coverage
         run: pnpm test:coverage
@@ -602,38 +609,6 @@ jobs:
           path: frontend/coverage
           retention-days: 7
           if-no-files-found: ignore
-
-  superset:
-    name: Superset integration (image build, unit tests)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build the Nova Superset image
-        run: docker build -f superset/Dockerfile -t nova-superset:ci .
-
-      # The web image (web app, bootstrap, beat) carries no browser; only the
-      # worker's `jobs` image draws thumbnails and report screenshots
-      # (docs/operations/superset-lean-deployment.md).
-      - name: Web image has no browser and loads Nova's configuration
-        run: |
-          docker build -f superset/Dockerfile --target web -t nova-superset-web:ci .
-          docker run --rm --entrypoint sh nova-superset-web:ci -c \
-            '! /app/.venv/bin/python -c "import playwright" 2>/dev/null && test ! -d /app/.playwright'
-          docker run --rm -e SUPERSET_SECRET_KEY=ci-only-secret -e SUPERSET_DB_PASSWORD=ci-only-password \
-            --entrypoint /app/.venv/bin/python nova-superset-web:ci \
-            -c "import superset_config as c; assert c.CELERY_CONFIG.beat_schedule['reports.scheduler']['options']['expires'] < 60"
-
-      # The package runs inside the pinned Superset release, so its tests do
-      # too. The secrets are throwaway values for configuration import only.
-      - name: nova_superset unit tests
-        run: >-
-          docker run --rm
-          -e SUPERSET_SECRET_KEY=ci-only-secret
-          -e SUPERSET_DB_PASSWORD=ci-only-password
-          -v "$PWD/superset/tests:/app/nova-tests:ro"
-          --entrypoint python nova-superset:ci
-          -m unittest discover -s /app/nova-tests -v
 
   notebook-runtime:
     name: Notebook runtime image (build, kernel tests)

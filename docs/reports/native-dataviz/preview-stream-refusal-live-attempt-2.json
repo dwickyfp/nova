@@ -1,0 +1,24 @@
+{
+  "result": "PASS",
+  "scope": "Synthetic caller SELECT; no persistent writes",
+  "checks": [
+    {
+      "name": "long cell",
+      "expected_status": 422,
+      "passed": true,
+      "error_type": "NovaException",
+      "status_code": 422
+    },
+    {
+      "name": "encoded byte budget",
+      "expected_status": 413,
+      "passed": true,
+      "error_type": "NovaException",
+      "status_code": 413
+    },
+    {
+      "name": "cancellation preserves CancelledError",
+      "passed": true
+    }
+  ]
+}

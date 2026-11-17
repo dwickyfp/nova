@@ -1,0 +1,44 @@
+{
+  "scenario": "NDV-PERF-003",
+  "date": "2026-11-16",
+  "result": "PASS",
+  "setup": "QA user alice (role marketing) in the built-in browser against the dev stack; dashboard of 3 pages with 17, 17 and 16 chart widgets over 5 charts, seeded by backend/scripts/seed_native_perf_dashboard.py and removed afterwards",
+  "attempt_1": {
+    "result": "FAIL",
+    "finding": "Switching pages every 1.5 s produced 53 query requests: 3 answered, 42 refused with 429, 8 aborted; an earlier rapid-switching run produced about 9,400 requests. Cause: switching pages aborted queries already sent; the browser freed their slot at once while the server kept running them, so the next page exceeded the server's 4 concurrent dataset queries and retried.",
+    "fix": "A query that was sent is no longer aborted (charts, table totals, filter options); only queries still waiting in the page queue are dropped. Test: frontend/src/features/native-dataviz/dashboard/model.test.ts 'lets a chart request that was sent finish when its chart goes away' (fails on the old code)."
+  },
+  "attempt_2": {
+    "result": "PASS",
+    "six_page_switches": {
+      "queries": 13,
+      "status": {
+        "200": 13
+      },
+      "alerts": 0
+    },
+    "memory": {
+      "passes": 12,
+      "page_switches": 36,
+      "used_js_heap_mb_after_each_pass": [
+        218,
+        151,
+        138,
+        155,
+        180,
+        194,
+        147,
+        138,
+        164,
+        184,
+        206,
+        154
+      ],
+      "trend": "none; garbage-collection sawtooth between 138 and 218 MB"
+    },
+    "dom_nodes": 842,
+    "chart_canvases": 11,
+    "mounted_widgets": "only the open page (17 or 16)"
+  },
+  "limits": "Measured in a shared desktop browser pane on the development host; usedJSHeapSize is Chromium's sampled heap without forced garbage collection."
+}

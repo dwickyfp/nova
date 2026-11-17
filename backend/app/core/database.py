@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 import asyncmy
 import asyncmy.cursors
 
+from app import mysql_driver_guard  # noqa: F401 - refuse mapping parameters
 from app.core.config import settings
 from app.modules.assistant.measurements import (
     metadata_borrows_observed,

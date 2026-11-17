@@ -1,0 +1,5 @@
+$ npx --yes --package=node@22.22.0 --package=pnpm@11.8.0 -c pnpm exec tsc -b && pnpm test src/features/native-dataviz/documents.test.ts src/features/native-dataviz/contracts/contracts.test.ts src/lib/api-client.test.ts src/features/docs/content.test.ts --browser.fileParallelism=false --no-file-parallelism --maxWorkers=1
+src/features/native-dataviz/contracts/index.ts(52,3): error TS2345: Argument of type '{ enum: string[]; title: string; type: string; }' is not assignable to parameter of type 'boolean | JSONSchema'.
+  Type '{ enum: string[]; title: string; type: string; }' is not assignable to type 'JSONSchema'.
+    Types of property 'type' are incompatible.
+      Type 'string' is not assignable to type 'SchemaType | SchemaType[] | undefined'.

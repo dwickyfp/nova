@@ -1,0 +1,83 @@
+{
+  "result": "FAIL",
+  "owned_database": "ndv_src_fabff68e144a",
+  "owned_roles": [
+    "ndv_read_fabff68e144a",
+    "ndv_none_fabff68e144a"
+  ],
+  "steps": [
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "table and view have distinct physical IDs",
+      "passed": true
+    },
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "empty source has authoritative decimal schema",
+      "passed": true
+    },
+    {
+      "check": "stable source schema",
+      "passed": true
+    },
+    {
+      "check": "inactive role cannot discover view identity",
+      "passed": true
+    },
+    {
+      "check": "missing view is refused",
+      "passed": true
+    },
+    {
+      "check": "QA attributes unchanged",
+      "passed": true
+    },
+    {
+      "check": "QA grants unchanged",
+      "passed": true
+    }
+  ],
+  "cleanup_errors": [],
+  "synthetic_view_schema": [
+    {
+      "name": "id",
+      "physical_type": "bigint(20)",
+      "nullable": false
+    },
+    {
+      "name": "amount",
+      "physical_type": "decimal(38, 12)",
+      "nullable": true
+    }
+  ],
+  "error_type": "StarRocksError",
+  "error_location": [
+    {
+      "file": "verify_native_source_identity_live.py",
+      "line": 75,
+      "function": "execute"
+    },
+    {
+      "file": "repository.py",
+      "line": 309,
+      "function": "execute_as_user"
+    },
+    {
+      "file": "repository.py",
+      "line": 468,
+      "function": "_execute_on"
+    }
+  ],
+  "engine_version": "4.1.4",
+  "ranger_service": "nova_starrocks"
+}

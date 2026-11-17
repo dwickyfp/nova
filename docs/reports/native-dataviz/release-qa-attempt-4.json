@@ -1,0 +1,58 @@
+{
+  "attempt": 4,
+  "date": "2026-11-16",
+  "builds_on": "release-qa-attempt-3.json",
+  "closed": [
+    "NDV-AGENT-007",
+    "NDV-AGENT-009",
+    "NDV-AGENT-021",
+    "NDV-CACHE-011",
+    "NDV-CHART-016",
+    "NDV-FILTER-008",
+    "NDV-INTER-003",
+    "NDV-METRIC-015",
+    "NDV-OSS-008",
+    "NDV-PERF-003",
+    "NDV-STORE-003"
+  ],
+  "counts": {
+    "PASS": 159,
+    "NOT_RUN": 78,
+    "OUT_OF_SCOPE": 17
+  },
+  "features_added": [
+    "server-side table pages",
+    "No value choice for True / false filters",
+    "explanation on charts that cannot filter",
+    "Neva approvals name each affected widget",
+    "no claimed dashboard change without a saved receipt",
+    "grid cells shown while editing a dashboard"
+  ],
+  "defects_found_and_fixed": {
+    "NDV-STORE-003": "scheduled export retries wrote a second workbook or clashed; now one workbook per occurrence with an in-file receipt",
+    "NDV-PERF-003": "page switches aborted sent queries and freed slots early, causing 429 storms; sent queries now finish",
+    "tests": "MySQL driver guard tests needed an event loop in the full suite (gate 26 failure, fixed in 27)"
+  },
+  "security": {
+    "python": "7 packages upgraded; python-jose replaced by PyJWT; asyncmy PYSEC-2026-286 mitigated by a driver guard",
+    "frontend": "katex and esbuild upgraded; pnpm audit clean",
+    "record": "dependency-audit-2.json"
+  },
+  "live": [
+    "qa-live-attempt-8.json (attempt 7 kept as a failure)",
+    "load-live-attempt-3.json (attempts 1-2 kept as failures)",
+    "perf-live-attempt-1.json"
+  ],
+  "environment": [
+    "StarRocks FE container exited (code 255) and was restarted with its data",
+    "local scipy 1.17.1 (the 1.15.3 wheel used before was gone)",
+    "dev MySQL proxy predates the metadata upgrade and refuses logins until restarted"
+  ],
+  "verification": {
+    "backend_gate_26": "FAIL: 4 MySQL driver guard tests had no event loop in the full suite",
+    "backend_gate_27": "mypy, changed-file Ruff, 12,110 unit, scorecard, boundary passed",
+    "eval": "366 passed",
+    "pg17_full": "1,085 passed, 8 skipped (PgBouncer acceptance runs in CI)",
+    "frontend": "lint 0 errors, build, bundle budget passed. Full suite: run 31 stopped when qa-filter-bar.test.tsx let FilterBar reach the network and a 401 sent the test page to sign-in (fixed by stubbing fetch); run 32 1,894/1,895 (NDV-FILTER-022 debounce timing under load; passes 5/5 alone); runs 33 and 34 1,894/1,895 (dataset-create.test.tsx timing out at 15 s while the host load average was about 20 from another session's Rust build; the same file failed in run 29 before this round; it then passed 14/14 alone). No full run was clean; the remaining failures are host-load timeouts in unchanged tests."
+  }
+}

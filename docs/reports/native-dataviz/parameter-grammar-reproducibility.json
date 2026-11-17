@@ -1,0 +1,14 @@
+{
+  "result": "PASS",
+  "artifacts": {
+    "StarRocksVisitor.py": "f094f5e981f7bee774f2add41ea0684cb38db3aa7c828c320c2e07a3ada617c3",
+    "StarRocksLexer.tokens": "48df6e840ee461213b3b5b7e14a5b19d2882196956eb1b8dc3bd6dd48740769f",
+    "StarRocksParser.py": "762b448ba7ff77df815e7d7e4e748789d457a5340ed6bca9d2974d0e1fa17372",
+    "__init__.py": "057ccfe675ba18d9c94cb0c38a0d15d49cbc21186b302b1b7d86d419c752e95f",
+    "StarRocks.g4": "d63481618134cc2bbcb0bbeed99fef25decfd9be44e0dfacc973df319edba3ec",
+    "StarRocksLexer.py": "05e2c8eab65e5f0553b772ba40d0b474405b139c7582340add8411bf1726c9fa",
+    "StarRocks.tokens": "5ac501e32d96e2415f9a39023067b7a1abea593e245cc25052524c8dd9cd851b",
+    "StarRocksLex.g4": "cb15e02aedfc2729141db0d5dffbe3d1acba07833cc6ac75ef6a5e0dbf19ea8a"
+  },
+  "unexpected_interp": []
+}

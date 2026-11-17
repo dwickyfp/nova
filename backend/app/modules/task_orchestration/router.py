@@ -183,6 +183,9 @@ class _GraphAccess:
             # exists, not every dangling edge.
             if not tasks:
                 continue
+            # A pipe's schedule is shown with its pipe, not as a task graph.
+            if any(task.get("handler") == "pipe.load" for task in tasks):
+                continue
             if all(_owned_by_caller(task, self._user) for task in tasks):
                 visible.append(graph_id)
         self._visible = visible

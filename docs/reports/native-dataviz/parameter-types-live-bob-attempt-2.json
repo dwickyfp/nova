@@ -1,0 +1,37 @@
+{
+  "result": "FAIL",
+  "principal": "bob",
+  "steps": [
+    {
+      "check": "governed parameter execution succeeded",
+      "passed": true
+    },
+    {
+      "check": "execution identity and engine correlation retained",
+      "passed": true
+    },
+    {
+      "check": "Ranger row filter applies to the active principal",
+      "passed": true
+    }
+  ],
+  "error_type": "MetadataTimeout",
+  "error_location": [
+    {
+      "file": "metadata_scope.py",
+      "line": 83,
+      "function": "_open"
+    },
+    {
+      "file": "contextlib.py",
+      "line": 210,
+      "function": "__aenter__"
+    },
+    {
+      "file": "metadata_db.py",
+      "line": 368,
+      "function": "transaction"
+    }
+  ],
+  "scope": "Direct QueryService with existing caller credentials and active roles; read-only. Includes Nova history checks. Engine audit/profile redaction is not tested."
+}

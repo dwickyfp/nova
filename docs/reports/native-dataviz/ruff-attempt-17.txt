@@ -1,0 +1,11 @@
+E501 Line too long (101 > 100)
+  --> app/modules/viz/contracts/datasets.py:77:101
+   |
+75 |             raise ValueError("Default is outside the allowed values")
+76 |         if self.sensitive and (self.defaults or self.allowed):
+77 |             raise ValueError("Sensitive parameter defaults and allowed values must not be persisted")
+   |                                                                                                     ^
+78 |         return self
+   |
+
+Found 1 error.

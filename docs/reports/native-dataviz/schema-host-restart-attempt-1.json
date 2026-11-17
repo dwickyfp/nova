@@ -1,0 +1,125 @@
+{
+  "old_supervisor_pid": 45573,
+  "private_log_backup": "/Users/dwickyferiansyahputra/.local/share/nova/dataviz-runtime-before-schema-20261113T200549Z",
+  "stopped": true,
+  "new_supervisor_pid": 11732,
+  "private_supervisor_log": "/Users/dwickyferiansyahputra/.local/share/nova/native-dataviz-runtime/schema-host-supervisor-1.log",
+  "readiness": [
+    {
+      "8000": "URLError",
+      "8001": "URLError",
+      "5173": "URLError"
+    },
+    {
+      "8000": "URLError",
+      "8001": "URLError",
+      "5173": "URLError"
+    },
+    {
+      "8000": "URLError",
+      "8001": "URLError",
+      "5173": "URLError"
+    },
+    {
+      "8000": "URLError",
+      "8001": "URLError",
+      "5173": "URLError"
+    },
+    {
+      "8000": "URLError",
+      "8001": "URLError",
+      "5173": "URLError"
+    },
+    {
+      "8000": "URLError",
+      "8001": "URLError",
+      "5173": "URLError"
+    },
+    {
+      "8000": "URLError",
+      "8001": "URLError",
+      "5173": "URLError"
+    },
+    {
+      "8000": "URLError",
+      "8001": "URLError",
+      "5173": "URLError"
+    },
+    {
+      "8000": "URLError",
+      "8001": "URLError",
+      "5173": "URLError"
+    },
+    {
+      "8000": "URLError",
+      "8001": "URLError",
+      "5173": 200
+    },
+    {
+      "8000": "URLError",
+      "8001": "URLError",
+      "5173": "TimeoutError"
+    },
+    {
+      "8000": "URLError",
+      "8001": "URLError",
+      "5173": "TimeoutError"
+    },
+    {
+      "8000": "URLError",
+      "8001": "URLError",
+      "5173": 200
+    },
+    {
+      "8000": "URLError",
+      "8001": "URLError",
+      "5173": 200
+    },
+    {
+      "8000": "URLError",
+      "8001": "URLError",
+      "5173": 200
+    },
+    {
+      "8000": "URLError",
+      "8001": "URLError",
+      "5173": 200
+    },
+    {
+      "8000": "URLError",
+      "8001": "URLError",
+      "5173": 200
+    },
+    {
+      "8000": "URLError",
+      "8001": "URLError",
+      "5173": 200
+    },
+    {
+      "8000": "URLError",
+      "8001": "URLError",
+      "5173": 200
+    },
+    {
+      "8000": "URLError",
+      "8001": "URLError",
+      "5173": 200
+    },
+    {
+      "8000": "URLError",
+      "8001": "TimeoutError",
+      "5173": "TimeoutError"
+    },
+    {
+      "8000": "TimeoutError",
+      "8001": 200,
+      "5173": 200
+    },
+    {
+      "8000": 200,
+      "8001": 200,
+      "5173": 200
+    }
+  ],
+  "result": "PASS"
+}

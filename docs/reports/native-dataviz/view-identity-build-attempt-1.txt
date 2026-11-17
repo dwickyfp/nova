@@ -1,0 +1,142 @@
+ Image docker-starrocks-fe Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 1.74kB done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from starrocks-fe.Dockerfile
+#2 transferring dockerfile:
+#2 transferring dockerfile: 8.36kB 0.0s done
+#2 DONE 0.3s
+
+#3 [internal] load metadata for docker.io/library/eclipse-temurin:17.0.12_7-jdk-jammy
+#3 ...
+
+#4 [internal] load metadata for docker.io/starrocks/fe-ubuntu:4.1.4
+#4 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/eclipse-temurin:17.0.12_7-jdk-jammy
+#3 DONE 2.5s
+
+#5 [internal] load .dockerignore
+#5 transferring context: 305B 0.0s done
+#5 DONE 0.1s
+
+#6 [patcher  1/22] FROM docker.io/library/eclipse-temurin:17.0.12_7-jdk-jammy@sha256:56c8b3a8f4299e0190095333cf85e647e810bdf167e59f224a1fd432e47a8f12
+#6 DONE 0.0s
+
+#7 [internal] load build context
+#7 transferring context: 68.97kB 0.0s done
+#7 DONE 0.5s
+
+#8 [upstream 1/1] FROM docker.io/starrocks/fe-ubuntu:4.1.4
+#8 DONE 1.3s
+
+#9 [patcher  7/22] RUN git -C /src apply --check /tmp/ranger-rpc-context.patch     && git -C /src apply /tmp/ranger-rpc-context.patch
+#9 CACHED
+
+#10 [patcher 10/22] RUN git -C /src apply --check /tmp/task-active-role.patch     && git -C /src apply /tmp/task-active-role.patch
+#10 CACHED
+
+#11 [patcher  4/22] COPY patches/starrocks/4.1.4-ranger-active-role.patch /tmp/ranger-active-role.patch
+#11 CACHED
+
+#12 [patcher  8/22] RUN git -C /src sparse-checkout add /fe/fe-core/src/main/java/com/starrocks/scheduler/TaskRun.java     /fe/fe-core/src/main/java/com/starrocks/scheduler/TaskManager.java
+#12 CACHED
+
+#13 [patcher  2/22] RUN apt-get update     && apt-get install -y --no-install-recommends curl git     && rm -rf /var/lib/apt/lists/*
+#13 CACHED
+
+#14 [patcher  6/22] COPY patches/starrocks/4.1.4-ranger-rpc-context.patch /tmp/ranger-rpc-context.patch
+#14 CACHED
+
+#15 [patcher 11/22] RUN git -C /src sparse-checkout add /fe/fe-core/src/main/java/com/starrocks/connector/jdbc/JDBCMetadata.java     /fe/fe-core/src/main/java/com/starrocks/connector/jdbc/JDBCDriverClassLoaders.java     /fe/fe-core/src/main/java/com/starrocks/connector/jdbc/SnowflakeSchemaResolver.java     /fe/fe-core/src/main/java/com/starrocks/planner/JDBCScanNode.java     /fe/fe-core/src/test/java/com/starrocks/connector/jdbc/SnowflakeSchemaResolverTest.java
+#15 CACHED
+
+#16 [patcher 12/22] COPY patches/starrocks/4.1.4-jdbc-snowflake.patch /tmp/jdbc-snowflake.patch
+#16 CACHED
+
+#17 [patcher  9/22] COPY patches/starrocks/4.1.4-task-active-role.patch /tmp/task-active-role.patch
+#17 CACHED
+
+#18 [patcher  3/22] RUN git init /src     && git -C /src remote add origin https://github.com/StarRocks/starrocks.git     && git -C /src sparse-checkout init --no-cone     && git -C /src sparse-checkout set        /conf/ranger/ranger-starrocks-security.xml        /fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerAccessController.java        /fe/fe-core/src/main/java/com/starrocks/authorization/ranger/starrocks/RangerStarRocksAccessController.java        /fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerStarRocksAccessRequest.java        /fe/fe-core/src/test/java/com/starrocks/authorization/ranger/RangerInterfaceTest.java        /fe/fe-core/src/test/resources/ranger-starrocks-security.xml     && git -C /src fetch --filter=blob:none --depth 1 origin 4a9848edf03f5c936dac664b2d52527f48e72eb0     && git -C /src checkout FETCH_HEAD
+#18 CACHED
+
+#19 [patcher  5/22] RUN git -C /src apply --check /tmp/ranger-active-role.patch     && git -C /src apply /tmp/ranger-active-role.patch
+#19 CACHED
+
+#20 [patcher 13/22] RUN git -C /src apply --check /tmp/jdbc-snowflake.patch     && git -C /src apply /tmp/jdbc-snowflake.patch
+#20 CACHED
+
+#21 [patcher 14/22] RUN git -C /src sparse-checkout add /fe/fe-core/src/main/java/com/starrocks/service/InformationSchemaDataSource.java
+#21 DONE 3.6s
+
+#22 [patcher 15/22] COPY patches/starrocks/4.1.4-view-source-identity.patch /tmp/view-source-identity.patch
+#22 DONE 1.0s
+
+#23 [patcher 16/22] RUN git -C /src apply --check /tmp/view-source-identity.patch     && git -C /src apply /tmp/view-source-identity.patch
+#23 DONE 1.6s
+
+#24 [patcher 17/22] COPY --from=upstream /opt/starrocks/fe/lib /opt/starrocks/fe/lib
+#24 DONE 0.9s
+
+#25 [patcher 18/22] RUN curl -fsSLo /opt/starrocks/fe/lib/nashorn-core-15.4.jar        https://repo1.maven.org/maven2/org/openjdk/nashorn/nashorn-core/15.4/nashorn-core-15.4.jar     && echo "6f816e84dfd63a81d4eaa7829c08337bbaff3ec683ff3bf6bbd90d017a00dc6f  /opt/starrocks/fe/lib/nashorn-core-15.4.jar" | sha256sum -c -     && curl -fsSLo /opt/starrocks/fe/lib/asm-commons-9.4.jar        https://repo1.maven.org/maven2/org/ow2/asm/asm-commons/9.4/asm-commons-9.4.jar     && echo "0c128a9ec3f33c98959272f6d16cf14247b508f58951574bcdbd2b56d6326364  /opt/starrocks/fe/lib/asm-commons-9.4.jar" | sha256sum -c -
+#25 3.071 /opt/starrocks/fe/lib/nashorn-core-15.4.jar: OK
+#25 3.292 /opt/starrocks/fe/lib/asm-commons-9.4.jar: OK
+#25 DONE 4.1s
+
+#26 [patcher 19/22] RUN mkdir -p /opt/starrocks/drivers     && curl -fsSLo /opt/starrocks/drivers/snowflake-jdbc-3.28.0.jar        https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/3.28.0/snowflake-jdbc-3.28.0.jar     && echo "41e3e99fde1aa90516448306885b345df7600db650258e7dfd0ea79c02f6cb49  /opt/starrocks/drivers/snowflake-jdbc-3.28.0.jar" | sha256sum -c -     && curl -fsSLo /tmp/junit-console.jar        https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/1.11.4/junit-platform-console-standalone-1.11.4.jar     && echo "b016ef6b1c3454d6d7c2c88ce081dabf289699686af6622d6e4e2e1b54b4a2fc  /tmp/junit-console.jar" | sha256sum -c -
+#26 157.4 /opt/starrocks/drivers/snowflake-jdbc-3.28.0.jar: OK
+#26 160.7 /tmp/junit-console.jar: OK
+#26 DONE 161.8s
+
+#27 [patcher 20/22] RUN mkdir -p /tmp/classes     && javac -encoding UTF-8 -cp '/opt/starrocks/fe/lib/*' -d /tmp/classes        /src/fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerStarRocksAccessRequest.java        /src/fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerAccessController.java        /src/fe/fe-core/src/main/java/com/starrocks/authorization/ranger/starrocks/RangerStarRocksAccessController.java        /src/fe/fe-core/src/main/java/com/starrocks/scheduler/TaskRun.java        /src/fe/fe-core/src/main/java/com/starrocks/scheduler/TaskManager.java        /src/fe/fe-core/src/main/java/com/starrocks/service/InformationSchemaDataSource.java        /src/fe/fe-core/src/main/java/com/starrocks/connector/jdbc/JDBCMetadata.java        /src/fe/fe-core/src/main/java/com/starrocks/connector/jdbc/JDBCDriverClassLoaders.java        /src/fe/fe-core/src/main/java/com/starrocks/connector/jdbc/SnowflakeSchemaResolver.java        /src/fe/fe-core/src/main/java/com/starrocks/planner/JDBCScanNode.java
+#27 15.93 Note: /src/fe/fe-core/src/main/java/com/starrocks/planner/JDBCScanNode.java uses or overrides a deprecated API.
+#27 15.93 Note: Recompile with -Xlint:deprecation for details.
+#27 DONE 16.8s
+
+#28 [patcher 21/22] RUN mkdir -p /tmp/test-classes     && javac -encoding UTF-8 -cp "/tmp/classes:/opt/starrocks/fe/lib/*:/tmp/junit-console.jar" -d /tmp/test-classes        /src/fe/fe-core/src/test/java/com/starrocks/connector/jdbc/SnowflakeSchemaResolverTest.java     && java -jar /tmp/junit-console.jar execute --disable-banner --details=summary --fail-if-no-tests        -cp "/tmp/test-classes:/tmp/classes:$(ls /opt/starrocks/fe/lib/*.jar | tr '\n' ':')"        --select-class com.starrocks.connector.jdbc.SnowflakeSchemaResolverTest
+#28 21.99 
+#28 21.99 Test run finished after 4806 ms
+#28 21.99 [         4 containers found      ]
+#28 21.99 [         0 containers skipped    ]
+#28 21.99 [         4 containers started    ]
+#28 21.99 [         0 containers aborted    ]
+#28 21.99 [         4 containers successful ]
+#28 21.99 [         0 containers failed     ]
+#28 21.99 [        12 tests found           ]
+#28 21.99 [         0 tests skipped         ]
+#28 21.99 [        12 tests started         ]
+#28 21.99 [         0 tests aborted         ]
+#28 21.99 [        12 tests successful      ]
+#28 21.99 [         0 tests failed          ]
+#28 21.99 
+#28 DONE 23.6s
+
+#29 [patcher 22/22] RUN jar uf /opt/starrocks/fe/lib/fe-core-4.1.4.jar -C /tmp/classes com/starrocks/authorization/ranger        -C /tmp/classes com/starrocks/scheduler        -C /tmp/classes com/starrocks/connector/jdbc        -C /tmp/classes com/starrocks/service        -C /tmp/classes com/starrocks/planner
+#29 DONE 11.6s
+
+#30 [stage-2 2/6] COPY --from=patcher /opt/starrocks/fe/lib/fe-core-4.1.4.jar /opt/starrocks/fe/lib/fe-core-4.1.4.jar
+#30 DONE 0.3s
+
+#31 [stage-2 3/6] COPY --from=patcher /opt/starrocks/fe/lib/nashorn-core-15.4.jar /opt/starrocks/fe/lib/nashorn-core-15.4.jar
+#31 DONE 0.9s
+
+#32 [stage-2 4/6] COPY --from=patcher /opt/starrocks/fe/lib/asm-commons-9.4.jar /opt/starrocks/fe/lib/asm-commons-9.4.jar
+#32 DONE 0.2s
+
+#33 [stage-2 5/6] RUN mkdir -p /opt/starrocks/drivers     && cp /opt/starrocks/fe/lib/postgresql-42.7.12.jar           /opt/starrocks/fe/lib/mariadb-java-client-3.3.2.jar /opt/starrocks/drivers/
+#33 DONE 0.5s
+
+#34 [stage-2 6/6] COPY --from=patcher /opt/starrocks/drivers/snowflake-jdbc-3.28.0.jar /opt/starrocks/drivers/snowflake-jdbc-3.28.0.jar
+#34 DONE 0.3s
+
+#35 exporting to image
+#35 exporting layers
+#35 exporting layers 1.0s done
+#35 writing image sha256:36121bef586cb22ff793a0076c259d1b60fbe9b05548abe75cd2a3ee474fab3a 0.0s done
+#35 naming to docker.io/library/docker-starrocks-fe 0.0s done
+#35 DONE 1.2s
+
+#36 resolving provenance for metadata file
+#36 DONE 0.5s
+ Image docker-starrocks-fe Built 

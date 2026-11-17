@@ -1,0 +1,50 @@
+{
+  "result": "FAIL",
+  "owned_database": "ndv_src_37e863024b0a",
+  "owned_roles": [
+    "ndv_read_37e863024b0a",
+    "ndv_none_37e863024b0a"
+  ],
+  "steps": [
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "QA attributes unchanged",
+      "passed": true
+    },
+    {
+      "check": "QA grants unchanged",
+      "passed": true
+    }
+  ],
+  "cleanup_errors": [],
+  "error_type": "SemanticError",
+  "error_location": [
+    {
+      "file": "verify_native_source_identity_live.py",
+      "line": 210,
+      "function": "run"
+    },
+    {
+      "file": "starrocks.py",
+      "line": 228,
+      "function": "get_source_schema"
+    },
+    {
+      "file": "starrocks.py",
+      "line": 215,
+      "function": "get_source_identity"
+    }
+  ],
+  "engine_version": "4.1.4",
+  "limits": [
+    "ALTER VIEW RENAME is absent from the pinned grammar; table rename and view drop/recreate are verified separately"
+  ],
+  "ranger_service": "nova_starrocks"
+}

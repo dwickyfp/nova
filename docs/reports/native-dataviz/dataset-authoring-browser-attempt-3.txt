@@ -1,0 +1,258 @@
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+
+ ❯ |browser (chromium)| src/features/native-dataviz/dataset-create.test.tsx (9 tests | 6 failed) 95966ms
+     × inspects authoritative columns and atomically saves the source without fetching rows 15066ms
+     × invalidates inspected columns when a different object is selected 15031ms
+     × retries the identical command after a lost response without inspecting a changed source 15049ms
+     × retains a conflict draft and uses a fresh command only after reload and reinspection 15019ms
+     × keeps populated authoring within a narrow light viewport 15054ms
+     × keeps populated authoring within a narrow dark viewport 15029ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |browser (chromium)| src/features/native-dataviz/dataset-create.test.tsx > dashboard dataset authoring > inspects authoritative columns and atomically saves the source without fetching rows
+VitestBrowserElementError: Cannot find element with locator: getByRole('table', { name: 'Inspected dataset fields' })
+
+[36m<body>[39m
+  [0m
+  
+
+[0m
+  [36m<div>[39m
+    [36m<section[39m
+      [33maria-label[39m=[32m"Add dataset"[39m
+      [33mclass[39m=[32m"min-w-0 space-y-4"[39m
+    [36m>[39m
+      [36m<div[39m …[36m />[39m
+      [36m<div[39m …[36m />[39m
+      [36m<button[39m …[36m />[39m
+      [36m<div[39m …[36m />[39m
+      [36m<div[39m …[36m />[39m
+      [36m<div[39m …[36m />[39m
+    [36m</section>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Failure screenshot:
+  - src/features/native-dataviz/__screenshots__/dataset-create.test.tsx/dashboard-dataset-authoring-inspects-authoritative-columns-and-atomically-saves-the-source-without-fetching-rows-1.png
+
+ ❯ inspectObject src/features/native-dataviz/dataset-create.test.tsx:79:86
+     77|   await chooseObject()
+     78|   await page.getByRole('button', { name: 'Inspect columns', exact: tru…
+     79|   await expect.element(page.getByRole('table', { name: 'Inspected data…
+       |                                                                                      ^
+     80| }
+     81| const saves = () => fetchMock.mock.calls.filter(([url]) => url.endsWit…
+ ❯ src/features/native-dataviz/dataset-create.test.tsx:104:4
+
+Caused by: Error: Matcher did not succeed in time.
+ ❯ inspectObject src/features/native-dataviz/dataset-create.test.tsx:79:2
+ ❯ src/features/native-dataviz/dataset-create.test.tsx:104:4
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  |browser (chromium)| src/features/native-dataviz/dataset-create.test.tsx > dashboard dataset authoring > invalidates inspected columns when a different object is selected
+VitestBrowserElementError: Cannot find element with locator: getByRole('table', { name: 'Inspected dataset fields' })
+
+[36m<body>[39m
+  [0m
+  
+
+[0m
+  [36m<div>[39m
+    [36m<section[39m
+      [33maria-label[39m=[32m"Add dataset"[39m
+      [33mclass[39m=[32m"min-w-0 space-y-4"[39m
+    [36m>[39m
+      [36m<div[39m …[36m />[39m
+      [36m<div[39m …[36m />[39m
+      [36m<button[39m …[36m />[39m
+      [36m<div[39m …[36m />[39m
+      [36m<div[39m …[36m />[39m
+      [36m<div[39m …[36m />[39m
+    [36m</section>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Failure screenshot:
+  - src/features/native-dataviz/__screenshots__/dataset-create.test.tsx/dashboard-dataset-authoring-invalidates-inspected-columns-when-a-different-object-is-selected-1.png
+
+ ❯ inspectObject src/features/native-dataviz/dataset-create.test.tsx:79:86
+     77|   await chooseObject()
+     78|   await page.getByRole('button', { name: 'Inspect columns', exact: tru…
+     79|   await expect.element(page.getByRole('table', { name: 'Inspected data…
+       |                                                                                      ^
+     80| }
+     81| const saves = () => fetchMock.mock.calls.filter(([url]) => url.endsWit…
+ ❯ src/features/native-dataviz/dataset-create.test.tsx:126:4
+
+Caused by: Error: Matcher did not succeed in time.
+ ❯ inspectObject src/features/native-dataviz/dataset-create.test.tsx:79:2
+ ❯ src/features/native-dataviz/dataset-create.test.tsx:126:4
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  |browser (chromium)| src/features/native-dataviz/dataset-create.test.tsx > dashboard dataset authoring > retries the identical command after a lost response without inspecting a changed source
+VitestBrowserElementError: Cannot find element with locator: getByRole('table', { name: 'Inspected dataset fields' })
+
+[36m<body>[39m
+  [0m
+  
+
+[0m
+  [36m<div>[39m
+    [36m<section[39m
+      [33maria-label[39m=[32m"Add dataset"[39m
+      [33mclass[39m=[32m"min-w-0 space-y-4"[39m
+    [36m>[39m
+      [36m<div[39m …[36m />[39m
+      [36m<div[39m …[36m />[39m
+      [36m<button[39m …[36m />[39m
+      [36m<div[39m …[36m />[39m
+      [36m<div[39m …[36m />[39m
+      [36m<div[39m …[36m />[39m
+    [36m</section>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Failure screenshot:
+  - src/features/native-dataviz/__screenshots__/dataset-create.test.tsx/dashboard-dataset-authoring-retries-the-identical-command-after-a-lost-response-without-inspecting-a-changed-source-1.png
+
+ ❯ inspectObject src/features/native-dataviz/dataset-create.test.tsx:79:86
+     77|   await chooseObject()
+     78|   await page.getByRole('button', { name: 'Inspect columns', exact: tru…
+     79|   await expect.element(page.getByRole('table', { name: 'Inspected data…
+       |                                                                                      ^
+     80| }
+     81| const saves = () => fetchMock.mock.calls.filter(([url]) => url.endsWit…
+ ❯ src/features/native-dataviz/dataset-create.test.tsx:141:4
+
+Caused by: Error: Matcher did not succeed in time.
+ ❯ inspectObject src/features/native-dataviz/dataset-create.test.tsx:79:2
+ ❯ src/features/native-dataviz/dataset-create.test.tsx:141:4
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  |browser (chromium)| src/features/native-dataviz/dataset-create.test.tsx > dashboard dataset authoring > retains a conflict draft and uses a fresh command only after reload and reinspection
+VitestBrowserElementError: Cannot find element with locator: getByRole('table', { name: 'Inspected dataset fields' })
+
+[36m<body>[39m
+  [0m
+  
+
+[0m
+  [36m<div>[39m
+    [36m<section[39m
+      [33maria-label[39m=[32m"Add dataset"[39m
+      [33mclass[39m=[32m"min-w-0 space-y-4"[39m
+    [36m>[39m
+      [36m<div[39m …[36m />[39m
+      [36m<div[39m …[36m />[39m
+      [36m<button[39m …[36m />[39m
+      [36m<div[39m …[36m />[39m
+      [36m<div[39m …[36m />[39m
+      [36m<div[39m …[36m />[39m
+    [36m</section>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Failure screenshot:
+  - src/features/native-dataviz/__screenshots__/dataset-create.test.tsx/dashboard-dataset-authoring-retains-a-conflict-draft-and-uses-a-fresh-command-only-after-reload-and-reinspection-1.png
+
+ ❯ inspectObject src/features/native-dataviz/dataset-create.test.tsx:79:86
+     77|   await chooseObject()
+     78|   await page.getByRole('button', { name: 'Inspect columns', exact: tru…
+     79|   await expect.element(page.getByRole('table', { name: 'Inspected data…
+       |                                                                                      ^
+     80| }
+     81| const saves = () => fetchMock.mock.calls.filter(([url]) => url.endsWit…
+ ❯ src/features/native-dataviz/dataset-create.test.tsx:162:4
+
+Caused by: Error: Matcher did not succeed in time.
+ ❯ inspectObject src/features/native-dataviz/dataset-create.test.tsx:79:2
+ ❯ src/features/native-dataviz/dataset-create.test.tsx:162:4
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+ FAIL  |browser (chromium)| src/features/native-dataviz/dataset-create.test.tsx > dashboard dataset authoring > keeps populated authoring within a narrow light viewport
+ FAIL  |browser (chromium)| src/features/native-dataviz/dataset-create.test.tsx > dashboard dataset authoring > keeps populated authoring within a narrow dark viewport
+VitestBrowserElementError: Cannot find element with locator: getByRole('table', { name: 'Inspected dataset fields' })
+
+[36m<body[39m
+  [33mclass[39m=[32m"monaco-enable-motion underline-links"[39m
+  [33mstyle[39m=[32m""[39m
+[36m>[39m
+  [0m
+  
+
+[0m
+  [36m<div[39m
+    [33maria-hidden[39m=[32m"true"[39m
+    [33mclass[39m=[32m"context-view"[39m
+    [33mstyle[39m=[32m"display: none;"[39m
+  [36m/>[39m
+  [36m<div[39m
+    [33mclass[39m=[32m"monaco-aria-container"[39m
+  [36m>[39m
+    [36m<div[39m
+      [33maria-atomic[39m=[32m"true"[39m
+      [33mclass[39m=[32m"monaco-alert"[39m
+      [33mrole[39m=[32m"alert"[39m
+    [36m/>[39m
+    [36m<div[39m
+      [33maria-atomic[39m=[32m"true"[39m
+      [33mclass[39m=[32m"monaco-alert"[39m
+      [33mrole[39m=[32m"alert"[39m
+    [36m/>[39m
+    [36m<div[39m
+      [33maria-atomic[39m=[32m"true"[39m
+      [33maria-live[39m=[32m"polite"[39m
+      [33mclass[39m=[32m"monaco-status"[39m
+    [36m/>[39m
+    [36m<div[39m
+      [33maria-atomic[39m=[32m"true"[39m
+      [33maria-live[39m=[32m"polite"[39m
+      [33mclass[39m=[32m"monaco-status"[39m
+    [36m/>[39m
+  [36m</div>[39m
+  [36m<div>[39m
+    [36m<section[39m
+      [33maria-label[39m=[32m"Add dataset"[39m
+      [33mclass[39m=[32m"min-w-0 space-y-4"[39m
+    [36m>[39m
+      [36m<div[39m …[36m />[39m
+      [36m<div[39m …[36m />[39m
+      [36m<button[39m …[36m />[39m
+      [36m<div[39m …[36m />[39m
+      [36m<div[39m …[36m />[39m
+      [36m<div[39m …[36m />[39m
+    [36m</section>[39m
+  [36m</div>[39m
+[36m</body>[39m...
+
+Failure screenshots:
+  - src/features/native-dataviz/__screenshots__/dataset-create.test.tsx/dashboard-dataset-authoring-keeps-populated-authoring-within-a-narrow-light-viewport-1.png
+  - src/features/native-dataviz/__screenshots__/dataset-create.test.tsx/dashboard-dataset-authoring-keeps-populated-authoring-within-a-narrow-dark-viewport-1.png
+
+ ❯ inspectObject src/features/native-dataviz/dataset-create.test.tsx:79:86
+     77|   await chooseObject()
+     78|   await page.getByRole('button', { name: 'Inspect columns', exact: tru…
+     79|   await expect.element(page.getByRole('table', { name: 'Inspected data…
+       |                                                                                      ^
+     80| }
+     81| const saves = () => fetchMock.mock.calls.filter(([url]) => url.endsWit…
+ ❯ src/features/native-dataviz/dataset-create.test.tsx:243:4
+
+Caused by: Error: Matcher did not succeed in time.
+ ❯ inspectObject src/features/native-dataviz/dataset-create.test.tsx:79:2
+ ❯ src/features/native-dataviz/dataset-create.test.tsx:243:4
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  6 failed | 18 passed (24)
+   Start at  00:25:34
+   Duration  98.77s (transform 0ms, setup 0ms, import 3.25s, tests 100.16s, environment 0ms)
+

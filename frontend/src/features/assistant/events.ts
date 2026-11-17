@@ -235,6 +235,32 @@ export function parseAssistantEvent(
           ...(locations?.length ? { locations } : {}),
         };
       }
+      case "dashboard_changed": {
+        const id = record.tool_call_id;
+        if (typeof id !== "string" || typeof record.dashboard_id !== "string" ||
+          typeof record.revision !== "number" || !Number.isInteger(record.revision)) return null;
+        return {
+          type: "dashboard_changed", tool_call_id: id, dashboard_id: record.dashboard_id,
+          revision: record.revision,
+          ...(record.created === true ? { created: true } : {}),
+          ...(record.published === true ? { published: true } : {}),
+        };
+      }
+      case "dashboard_activity": {
+        const actions = ["add", "change", "move", "remove", "arrange", "filter", "data", "publish"];
+        const id = record.tool_call_id;
+        if (typeof id !== "string" || typeof record.dashboard_id !== "string" ||
+          typeof record.action !== "string" || !actions.includes(record.action)) return null;
+        const widgets = Array.isArray(record.widget_ids)
+          ? record.widget_ids.filter((item): item is string => typeof item === "string").slice(0, 12)
+          : [];
+        return {
+          type: "dashboard_activity", tool_call_id: id, dashboard_id: record.dashboard_id,
+          action: record.action as "add" | "change" | "move" | "remove" | "arrange" | "filter" | "data" | "publish",
+          widget_ids: widgets,
+          ...(typeof record.page_id === "string" ? { page_id: record.page_id } : {}),
+        };
+      }
       case "tool_detail": {
         const id = record.tool_call_id;
         const text = record.text;

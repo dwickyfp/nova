@@ -1,0 +1,12 @@
+{
+  "recorded_at": "2026-11-13T21:46:34.610484+00:00",
+  "status": "OPEN_REVIEW_FINDING",
+  "scope": "Published dataset SQL confidentiality beyond the document HTTP projection",
+  "source_evidence": [
+    "backend/app/modules/viz/dataset_service.py: preview and inspection call QueryService with generated source SQL",
+    "backend/app/sql_frontend/execution/adapters.py: execute_engine_sql records sql_text and rewritten_sql",
+    "backend/app/modules/query/service.py: get_history selects sql_text for the caller"
+  ],
+  "finding": "Source review indicates dataset-generated SQL can enter caller-visible query history even though the dataset publication DTO omits it. A runtime canary and shared query/audit provenance boundary are required. Existing credential redaction is not a source-definition permission check.",
+  "limits": "Source-backed finding; not yet established by a dedicated runtime history assertion. Full backend attempt 12 runs on the preceding implementation and must not be treated as proof that this boundary is closed."
+}

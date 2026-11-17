@@ -1,0 +1,11 @@
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+
+2:12:42 AM [vite] (client) Re-optimizing dependencies because vite config has changed
+2:12:44 AM [vite] (client) [optimizer] bundling dependencies...
+
+ Test Files  5 passed (5)
+      Tests  54 passed (54)
+   Start at  02:12:42
+   Duration  8.79s (transform 0ms, setup 0ms, import 1.28s, tests 357ms, environment 0ms)
+

@@ -28,6 +28,9 @@ from app.core.metadata_db import MetadataConflict, MetadataPermissionDenied
 from app.modules.access_control.domain import ProjectionState
 from app.modules.access_control.security_context import SecurityContext
 
+# Raised by the business-policy insert trigger when a newer revision is already committed.
+_POLICY_REVISION_RACE = "A policy revision follows the one it was edited from"
+
 SECURITY_ADMIN_ROLES = frozenset({"ACCOUNTADMIN", "SECURITYADMIN", "security_admin"})
 
 
@@ -225,9 +228,16 @@ class AccessControlMetadataRepository:
         digest = hashlib.sha256(
             json.dumps(stored, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()[:32]
-        row = await self._one(
-            "INSERT INTO nova_meta.config_business_policies (id,revision,definition) "
-            "VALUES (%s,%s,%s) RETURNING *", ("default:" + digest, read + 1, Jsonb(stored)),
-        )
+        try:
+            row = await self._one(
+                "INSERT INTO nova_meta.config_business_policies (id,revision,definition) "
+                "VALUES (%s,%s,%s) RETURNING *", ("default:" + digest, read + 1, Jsonb(stored)),
+            )
+        except psycopg.errors.CheckViolation as exc:
+            # Another editor committed from the same revision after it was read:
+            # the trigger sees their row, which is a revision conflict.
+            if exc.diag.message_primary == _POLICY_REVISION_RACE:
+                raise MetadataConflict() from None
+            raise
         assert row is not None
         return row

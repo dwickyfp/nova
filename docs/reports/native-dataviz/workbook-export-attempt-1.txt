@@ -1,0 +1,11 @@
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+
+1:40:20 AM [vite] (client) Re-optimizing dependencies because lockfile has changed
+1:40:22 AM [vite] (client) [optimizer] bundling dependencies...
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  01:40:20
+   Duration  3.91s (transform 0ms, setup 0ms, import 111ms, tests 27ms, environment 0ms)
+

@@ -1,0 +1,75 @@
+E501 Line too long (101 > 100)
+   --> scripts/verify_native_datasets_live.py:350:101
+    |
+348 |             await probe.request(
+349 |                 "source edit changed idempotent intent", "PATCH", path + "/draft", owner,
+350 |                 operation=edit_key, revision=1, body={**edit, "title": "Another intent"}, status=409,
+    |                                                                                                     ^
+351 |             )
+352 |             current = await probe.request("edited draft", "GET", path + "?draft=true", owner)
+    |
+
+E501 Line too long (102 > 100)
+   --> tests/unit/test_native_viz_datasets.py:535:101
+    |
+533 |     current = DatasetDefinition(**inspected.model_dump(), title="Old title")
+534 |     repository = SimpleNamespace(
+535 |         require_kind=AsyncMock(), read=AsyncMock(return_value={"definition": current, "revision": 1}),
+    |                                                                                                     ^^
+536 |         replace=AsyncMock(return_value={"receipt": "committed"}),
+537 |     )
+    |
+
+E501 Line too long (102 > 100)
+   --> tests/unit/test_native_viz_datasets.py:574:101
+    |
+572 |     case = update_setup
+573 |     key = uuid4()
+574 |     result = await case.service.update(case.user, case.request, operation_id=key, expected_revision=1)
+    |                                                                                                     ^^
+575 |     assert result == {"receipt": "committed"}
+576 |     assert len(case.transactions) == 2 and case.transactions[0]["read_only"]
+    |
+
+E501 Line too long (101 > 100)
+   --> tests/unit/test_native_viz_datasets.py:588:101
+    |
+586 |     case.repository.read.side_effect = MetadataPermissionDenied()
+587 |     with pytest.raises(MetadataPermissionDenied):
+588 |         await case.service.update(case.user, case.request, operation_id=uuid4(), expected_revision=1)
+    |                                                                                                     ^
+589 |     case.execute.assert_not_awaited()
+590 |     case.provider.get_source_schema.assert_not_awaited()
+    |
+
+E501 Line too long (101 > 100)
+   --> tests/unit/test_native_viz_datasets.py:598:101
+    |
+596 |     case.provider.get_source_schema.return_value = replace(source, physical_id="999999")
+597 |     with pytest.raises(NovaException, match="SCHEMA_STALE"):
+598 |         await case.service.update(case.user, case.request, operation_id=uuid4(), expected_revision=1)
+    |                                                                                                     ^
+599 |     case.repository.replace.assert_not_awaited()
+    |
+
+E501 Line too long (101 > 100)
+   --> tests/unit/test_native_viz_datasets.py:606:101
+    |
+604 |     case.repository.replace.side_effect = MetadataConflict()
+605 |     with pytest.raises(MetadataConflict):
+606 |         await case.service.update(case.user, case.request, operation_id=uuid4(), expected_revision=1)
+    |                                                                                                     ^
+    |
+
+E501 Line too long (101 > 100)
+   --> tests/unit/test_native_viz_datasets.py:614:101
+    |
+612 |     case.repository.read.return_value = {"definition": document, "revision": 1}
+613 |     with pytest.raises(NovaException, match="semantic bindings"):
+614 |         await case.service.update(case.user, case.request, operation_id=uuid4(), expected_revision=1)
+    |                                                                                                     ^
+615 |     case.execute.assert_not_awaited()
+616 |     case.repository.replace.assert_not_awaited()
+    |
+
+Found 7 errors.

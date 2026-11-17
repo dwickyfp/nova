@@ -31,7 +31,6 @@ flowchart LR
     LOOP --> REDIS
     API --> OBJECTS[Managed storage]
     WORKER --> OBJECTS
-    API --> SUPERSET[Superset API and its separate metadata DB]
     API --> RANGER[Ranger administration and its separate policy DB]
     PG[PostgreSQL transaction foundation] -. fixture only .-> TESTS[PG17 boundary tests]
     MIGRATOR[One-shot schema installer] --> PG
@@ -84,7 +83,7 @@ execution paths and must not collapse into PG service credentials.
 | Stream consumption | Source/target engine data and transaction journals, Nova control receipts | Engine journal commits with data; PG cursor publication follows verified receipt |
 | Agent/tool continuation | Message/run/event rows, process-local consent, external tool effect | Durable scoped consent consumption and immutable tool intent/receipt |
 | ML publication | Registry/version rows, training process and artifact bytes | Isolated execution, provenance, fenced reservation and verified artifact receipt |
-| Dataviz publication | Nova publication ledger and Superset objects | Fenced publication saga and external object identity verification |
+| Dataviz publication | Native Dataviz document revisions in Nova control metadata (Superset removed 2026-11-16) | Revision compare-and-swap; publication changes only Nova metadata |
 | Governance change | Ranger policy DB, engine role marker and Nova projection | Independently verified enforcement and security revision invalidation |
 | Usage reporting | Process buffers and appended control rows | Durable batch identity and reconciliation of uncertain commits |
 

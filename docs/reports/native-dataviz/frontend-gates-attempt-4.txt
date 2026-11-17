@@ -1,0 +1,944 @@
+$ node scripts/build-ui-validator.mjs
+$ node scripts/build-ui-validator.mjs --check
+$ eslint .
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/components/data-table/simple-table-controls.tsx
+  19:14  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/components/ui/badge.tsx
+  45:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/components/ui/button.tsx
+  58:18  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/components/ui/form.tsx
+  156:3  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/components/ui/map/index.tsx
+  2783:3  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/components/ui/sidebar.tsx
+  738:3  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/features/agents/agent-detail/quality-case-editor.tsx
+  18:14  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+  86:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/features/agents/agent-detail/version-history.tsx
+  57:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/features/assistant/activity-trace.tsx
+  9:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/features/docs/docs-markdown.tsx
+  90:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/features/docs/index.tsx
+  3:10  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/features/intelligence/semantic-view-glance.tsx
+   10:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+  209:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/features/monitoring/queries/index.tsx
+  19:14  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/features/tasks/components/tasks-table.tsx
+  68:3  warning  Unused eslint-disable directive (no problems were reported from 'react-hooks/incompatible-library')
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/features/viz/viz-view.tsx
+   42:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+  250:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/features/workspaces/index.tsx
+  4115:45  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4125:50  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  4125:62  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/features/workspaces/query-confirmation.tsx
+  13:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/routes/_authenticated/analytics.tsx
+  16:10  warning  Fast refresh only works when a file only exports components. Move your component(s) to a separate file. If all exports are HOCs, add them to the `extraHOCs` option  react-refresh/only-export-components
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/routes/_authenticated/functions/index.tsx
+  11:10  warning  Fast refresh only works when a file only exports components. Move your component(s) to a separate file. If all exports are HOCs, add them to the `extraHOCs` option  react-refresh/only-export-components
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/routes/_authenticated/monitoring/queries.tsx
+  14:10  warning  Fast refresh only works when a file only exports components. Move your component(s) to a separate file. If all exports are HOCs, add them to the `extraHOCs` option  react-refresh/only-export-components
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/routes/_authenticated/roles/$name.tsx
+  4:10  warning  Fast refresh only works when a file only exports components. Move your component(s) to a separate file. If all exports are HOCs, add them to the `extraHOCs` option  react-refresh/only-export-components
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/routes/_authenticated/settings/index.tsx
+  15:10  warning  Fast refresh only works when a file only exports components. Move your component(s) to a separate file. If all exports are HOCs, add them to the `extraHOCs` option  react-refresh/only-export-components
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/routes/_authenticated/tasks/$graphId.tsx
+  8:10  warning  Fast refresh only works when a file only exports components. Move your component(s) to a separate file. If all exports are HOCs, add them to the `extraHOCs` option  react-refresh/only-export-components
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/routes/_authenticated/tasks/index.tsx
+  12:10  warning  Fast refresh only works when a file only exports components. Move your component(s) to a separate file. If all exports are HOCs, add them to the `extraHOCs` option  react-refresh/only-export-components
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/routes/_authenticated/users/$username.tsx
+  4:10  warning  Fast refresh only works when a file only exports components. Move your component(s) to a separate file. If all exports are HOCs, add them to the `extraHOCs` option  react-refresh/only-export-components
+
+/Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/routes/bi-launch.tsx
+  37:10  warning  Fast refresh only works when a file only exports components. Move your component(s) to a separate file. If all exports are HOCs, add them to the `extraHOCs` option  react-refresh/only-export-components
+
+✖ 31 problems (0 errors, 31 warnings)
+  0 errors and 1 warning potentially fixable with the `--fix` option.
+
+$ tsc -b && vite build
+vite v8.3.0 building client environment for production...
+transforming...
+✓ 6100 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/assets/KaTeX_Size3-Regular-CTq5MqoE.woff           4.42 kB
+dist/assets/KaTeX_Size4-Regular-Dl5lxZxV.woff2          4.92 kB
+dist/assets/KaTeX_Size2-Regular-Dy4dx90m.woff2          5.20 kB
+dist/assets/KaTeX_Size1-Regular-mCD8mA8B.woff2          5.46 kB
+dist/assets/KaTeX_Size4-Regular-BF-4gkZK.woff           5.98 kB
+dist/assets/KaTeX_Size2-Regular-oD1tc_U0.woff           6.18 kB
+dist/index.html                                         6.19 kB │ gzip:  1.31 kB
+dist/assets/KaTeX_Size1-Regular-C195tn64.woff           6.49 kB
+dist/assets/KaTeX_Caligraphic-Regular-Di6jR-x-.woff2    6.90 kB
+dist/assets/KaTeX_Caligraphic-Bold-Dq_IR9rO.woff2       6.91 kB
+dist/assets/KaTeX_Size3-Regular-DgpXs0kz.ttf            7.58 kB
+dist/assets/KaTeX_Caligraphic-Regular-CTRA-rTL.woff     7.65 kB
+dist/assets/KaTeX_Caligraphic-Bold-BEiXGLvX.woff        7.71 kB
+dist/assets/KaTeX_Script-Regular-D3wIWfF6.woff2         9.64 kB
+dist/assets/KaTeX_SansSerif-Regular-DDBCnlJ7.woff2     10.34 kB
+dist/assets/KaTeX_Size4-Regular-DWFBv043.ttf           10.36 kB
+dist/assets/KaTeX_Script-Regular-D5yQViql.woff         10.58 kB
+dist/assets/KaTeX_Fraktur-Regular-CTYiF6lA.woff2       11.31 kB
+dist/assets/KaTeX_Fraktur-Bold-CL6g_b3V.woff2          11.34 kB
+dist/assets/KaTeX_Size2-Regular-B7gKUWhC.ttf           11.50 kB
+dist/assets/KaTeX_SansSerif-Italic-C3H0VqGB.woff2      12.02 kB
+dist/assets/KaTeX_SansSerif-Bold-D1sUS0GD.woff2        12.21 kB
+dist/assets/KaTeX_Size1-Regular-Dbsnue_I.ttf           12.22 kB
+dist/assets/KaTeX_SansSerif-Regular-CS6fqUqJ.woff      12.31 kB
+dist/assets/KaTeX_Caligraphic-Regular-wX97UBjC.ttf     12.34 kB
+dist/assets/KaTeX_Caligraphic-Bold-ATXxdsX0.ttf        12.36 kB
+dist/assets/KaTeX_Fraktur-Regular-Dxdc4cR9.woff        13.20 kB
+dist/assets/KaTeX_Fraktur-Bold-BsDP51OF.woff           13.29 kB
+dist/assets/KaTeX_Typewriter-Regular-CO6r4hn1.woff2    13.56 kB
+dist/assets/KaTeX_SansSerif-Italic-DN2j7dab.woff       14.11 kB
+dist/assets/KaTeX_SansSerif-Bold-DbIhKOiC.woff         14.40 kB
+dist/assets/KaTeX_Typewriter-Regular-C0xS9mPB.woff     16.02 kB
+dist/assets/KaTeX_Math-BoldItalic-CZnvNsCZ.woff2       16.40 kB
+dist/assets/KaTeX_Math-Italic-t53AETM-.woff2           16.44 kB
+dist/assets/KaTeX_Script-Regular-C5JkGWo-.ttf          16.64 kB
+dist/assets/KaTeX_Main-BoldItalic-DxDJ3AOS.woff2       16.78 kB
+dist/assets/KaTeX_Main-Italic-NWA7e6Wa.woff2           16.98 kB
+dist/assets/KaTeX_Math-BoldItalic-iY-2wyZ7.woff        18.66 kB
+dist/assets/KaTeX_Math-Italic-DA0__PXp.woff            18.74 kB
+dist/assets/KaTeX_Main-BoldItalic-SpSLRI95.woff        19.41 kB
+dist/assets/KaTeX_SansSerif-Regular-BNo7hRIc.ttf       19.43 kB
+dist/assets/KaTeX_Fraktur-Regular-CB_wures.ttf         19.57 kB
+dist/assets/KaTeX_Fraktur-Bold-BdnERNNW.ttf            19.58 kB
+dist/assets/KaTeX_Main-Italic-BMLOBm91.woff            19.67 kB
+dist/assets/KaTeX_SansSerif-Italic-YYjJ1zSn.ttf        22.36 kB
+dist/assets/KaTeX_SansSerif-Bold-CFMepnvq.ttf          24.50 kB
+dist/assets/KaTeX_Main-Bold-Cx986IdX.woff2             25.32 kB
+dist/assets/KaTeX_Main-Regular-B22Nviop.woff2          26.27 kB
+dist/assets/KaTeX_Typewriter-Regular-D3Ib7_Hf.ttf      27.55 kB
+dist/assets/KaTeX_AMS-Regular-BQhdFMY1.woff2           28.07 kB
+dist/assets/KaTeX_Main-Bold-Jm3AIy58.woff              29.91 kB
+dist/assets/KaTeX_Main-Regular-Dr94JaBh.woff           30.77 kB
+dist/assets/KaTeX_Math-BoldItalic-B3XSjfu4.ttf         31.19 kB
+dist/assets/KaTeX_Math-Italic-flOr_0UB.ttf             31.30 kB
+dist/assets/KaTeX_Main-BoldItalic-DzxPMmG6.ttf         32.96 kB
+dist/assets/KaTeX_AMS-Regular-DMm9YOAa.woff            33.51 kB
+dist/assets/KaTeX_Main-Italic-3WenGoN9.ttf             33.58 kB
+dist/assets/KaTeX_Main-Bold-waoOVXN0.ttf               51.33 kB
+dist/assets/KaTeX_Main-Regular-ypZvNtVU.ttf            53.58 kB
+dist/assets/KaTeX_AMS-Regular-DRggAlZN.ttf             63.63 kB
+dist/assets/codicon-ngg6Pgfi.ttf                      121.97 kB
+dist/assets/editor.worker-O-CH8JUO.js                 280.57 kB
+dist/assets/maplibre-gl-worker-C24SsKwV.js            507.96 kB
+dist/assets/vendor-BG1u1H5L.css                         0.09 kB │ gzip:  0.09 kB
+dist/assets/vendor-C0o0WN9P.css                         0.11 kB │ gzip:  0.11 kB
+dist/assets/vendor-uPAAwZJh.css                         0.23 kB │ gzip:  0.14 kB
+dist/assets/vendor-CQwDAmTo.css                         0.24 kB │ gzip:  0.16 kB
+dist/assets/vendor-CRrTnOCY.css                         0.42 kB │ gzip:  0.21 kB
+dist/assets/vendor-Db0iUD3Z.css                         0.50 kB │ gzip:  0.18 kB
+dist/assets/chart-frame-CHDixO1V.css                    0.53 kB │ gzip:  0.17 kB
+dist/assets/map-surface-BUAoC-QJ.css                    0.73 kB │ gzip:  0.35 kB
+dist/assets/vendor-1q1_nmQd.css                         0.85 kB │ gzip:  0.33 kB
+dist/assets/vendor-DnvFQ7hy.css                         0.87 kB │ gzip:  0.33 kB
+dist/assets/sign-in-DMinOwYb.css                        0.91 kB │ gzip:  0.34 kB
+dist/assets/vendor-hChFM6vY.css                         1.15 kB │ gzip:  0.37 kB
+dist/assets/vendor-D5pr94dC.css                         1.30 kB │ gzip:  0.35 kB
+dist/assets/vendor-BXCck7BZ.css                         2.31 kB │ gzip:  0.60 kB
+dist/assets/vendor-BqO4pTli.css                         2.58 kB │ gzip:  0.65 kB
+dist/assets/vendor-Dde3G5f_.css                         2.92 kB │ gzip:  0.77 kB
+dist/assets/vendor-BOFCtWkG.css                         2.96 kB │ gzip:  0.74 kB
+dist/assets/vendor-DUzbJ6Yw.css                         3.43 kB │ gzip:  0.85 kB
+dist/assets/vendor-WVUxdzeO.css                         3.72 kB │ gzip:  0.88 kB
+dist/assets/vendor-DiWif_cv.css                         4.02 kB │ gzip:  0.93 kB
+dist/assets/vendor-DzgHyQEr.css                         4.97 kB │ gzip:  1.33 kB
+dist/assets/vendor-DrGymszL.css                         5.58 kB │ gzip:  1.34 kB
+dist/assets/vendor-g-Fs7Hbc.css                         6.83 kB │ gzip:  1.73 kB
+dist/assets/vendor-CuJOsd9u.css                         6.93 kB │ gzip:  1.54 kB
+dist/assets/vendor-TXy0gsga.css                         7.19 kB │ gzip:  1.36 kB
+dist/assets/vendor-DbrS-0T7.css                         7.64 kB │ gzip:  2.06 kB
+dist/assets/vendor-CfRhgr0R.css                         7.73 kB │ gzip:  1.18 kB
+dist/assets/vendor-BjkoYTIA.css                         8.22 kB │ gzip:  1.70 kB
+dist/assets/vendor-piW3Z7Oj.css                         8.98 kB │ gzip:  1.59 kB
+dist/assets/vendor-CHscQ8Kj.css                        11.93 kB │ gzip:  2.29 kB
+dist/assets/vendor-CsCYCMsa.css                        12.22 kB │ gzip:  2.40 kB
+dist/assets/vendor-CQi7XLd3.css                        12.76 kB │ gzip:  2.14 kB
+dist/assets/vendor-DLioOiRN.css                        15.41 kB │ gzip:  2.56 kB
+dist/assets/vendor-yAuyBjmG.css                        17.21 kB │ gzip:  3.31 kB
+dist/assets/vendor-D-WqhgTN.css                        28.39 kB │ gzip:  7.88 kB
+dist/assets/vendor-B8-mEBLf.css                        82.96 kB │ gzip: 10.72 kB
+dist/assets/frontend-BDkDsDWz.css                     195.03 kB │ gzip: 30.95 kB
+dist/assets/app-x2nJDzSn.js                             0.04 kB │ gzip:  0.06 kB
+dist/assets/vendor-BM1JdirJ.js                          0.09 kB │ gzip:  0.11 kB
+dist/assets/vendor-DSlrfi06.js                          0.15 kB │ gzip:  0.14 kB
+dist/assets/vendor-DR3mmyU8.js                          0.16 kB │ gzip:  0.15 kB
+dist/assets/docs-Bbkp_Fg5.js                            0.17 kB │ gzip:  0.15 kB
+dist/assets/route-DLchjD53.js                           0.18 kB │ gzip:  0.16 kB
+dist/assets/_slug-DHzzy6N2.js                           0.18 kB │ gzip:  0.16 kB
+dist/assets/bi-target-Bj6XxIG8.js                       0.18 kB │ gzip:  0.16 kB
+dist/assets/vendor-DnwU0ynI.js                          0.21 kB │ gzip:  0.18 kB
+dist/assets/vendor-BQUJa1mN.js                          0.22 kB │ gzip:  0.18 kB
+dist/assets/vendor-rtTXPxzD.js                          0.22 kB │ gzip:  0.18 kB
+dist/assets/vendor-BpxKBKr1.js                          0.23 kB │ gzip:  0.19 kB
+dist/assets/ai-search-Cw-MuOwg.js                       0.26 kB │ gzip:  0.21 kB
+dist/assets/entities-D8yX9MCw.js                        0.26 kB │ gzip:  0.21 kB
+dist/assets/feature-store-XUS2NrFG.js                   0.26 kB │ gzip:  0.21 kB
+dist/assets/semantic-views-D1y_Lyqm.js                  0.26 kB │ gzip:  0.21 kB
+dist/assets/vendor-Dg2sgiFy.js                          0.30 kB │ gzip:  0.24 kB
+dist/assets/docs-BHuZ_w4i.js                            0.31 kB │ gzip:  0.23 kB
+dist/assets/_slug-nbJUVoSf.js                           0.33 kB │ gzip:  0.24 kB
+dist/assets/sql-highlighter-BoCnEbxi.js                 0.34 kB │ gzip:  0.27 kB
+dist/assets/skeleton-DWaDl9-b.js                        0.34 kB │ gzip:  0.25 kB
+dist/assets/_graphId-CVQK_DVS.js                        0.35 kB │ gzip:  0.25 kB
+dist/assets/use-mobile-Cn8DAP5E.js                      0.39 kB │ gzip:  0.27 kB
+dist/assets/queries-B0OqCr41.js                         0.44 kB │ gzip:  0.31 kB
+dist/assets/cookies-BOAb6lYH.js                         0.44 kB │ gzip:  0.27 kB
+dist/assets/vendor-DCh21sS9.js                          0.45 kB │ gzip:  0.32 kB
+dist/assets/semantic-views_._viewId-fbwugJgf.js         0.46 kB │ gzip:  0.30 kB
+dist/assets/collapsible-BQWGVJjj.js                     0.47 kB │ gzip:  0.25 kB
+dist/assets/utils-B7Bw2d4a.js                           0.53 kB │ gzip:  0.30 kB
+dist/assets/vendor-nzkF2jQ0.js                          0.53 kB │ gzip:  0.32 kB
+dist/assets/main-Dv1UaKAm.js                            0.53 kB │ gzip:  0.36 kB
+dist/assets/sql-code-block-CSS3MJ7O.js                  0.56 kB │ gzip:  0.38 kB
+dist/assets/label-Bg78mmxh.js                           0.57 kB │ gzip:  0.36 kB
+dist/assets/monitoring-header-CxwvILXe.js               0.59 kB │ gzip:  0.36 kB
+dist/assets/logo-DRd6860e.js                            0.59 kB │ gzip:  0.37 kB
+dist/assets/vendor-pG-jIfY-.js                          0.60 kB │ gzip:  0.26 kB
+dist/assets/avatar-C_gTLxNe.js                          0.61 kB │ gzip:  0.35 kB
+dist/assets/vendor-BL3JTg9k.js                          0.64 kB │ gzip:  0.41 kB
+dist/assets/metadata-api-CP9tvqP9.js                    0.65 kB │ gzip:  0.38 kB
+dist/assets/tasks-Dhq2XWLd.js                           0.70 kB │ gzip:  0.39 kB
+dist/assets/page-header-Iper7maD.js                     0.73 kB │ gzip:  0.42 kB
+dist/assets/api-CLQnpnpe.js                             0.75 kB │ gzip:  0.43 kB
+dist/assets/sign-out-dialog-DjziTgXP.js                 0.77 kB │ gzip:  0.46 kB
+dist/assets/textarea-DaveWmPq.js                        0.77 kB │ gzip:  0.46 kB
+dist/assets/datetime-V2AlUGfo.js                        0.78 kB │ gzip:  0.45 kB
+dist/assets/monitoring-Yyis5Sim.js                      0.83 kB │ gzip:  0.43 kB
+dist/assets/rolldown-runtime-B0Z9INg1.js                0.90 kB │ gzip:  0.51 kB
+dist/assets/card-C8Ok2JY6.js                            0.91 kB │ gzip:  0.44 kB
+dist/assets/format-Bl_RYuI0.js                          0.95 kB │ gzip:  0.52 kB
+dist/assets/input-BWVWDs05.js                           0.96 kB │ gzip:  0.52 kB
+dist/assets/vendor-DJLl4dEx.js                          0.98 kB │ gzip:  0.55 kB
+dist/assets/empty-state-CYy8Qece.js                     0.98 kB │ gzip:  0.52 kB
+dist/assets/vendor-CJ4YS7I1.js                          0.99 kB │ gzip:  0.53 kB
+dist/assets/semantic-views-api-DVoymA1Z.js              0.99 kB │ gzip:  0.46 kB
+dist/assets/auth-store-CZrugXEj.js                      1.04 kB │ gzip:  0.47 kB
+dist/assets/header-DItEEkxR.js                          1.05 kB │ gzip:  0.62 kB
+dist/assets/checkbox-By7pgrMn.js                        1.09 kB │ gzip:  0.55 kB
+dist/assets/popover--7iB-tBj.js                         1.10 kB │ gzip:  0.53 kB
+dist/assets/switch-CEeeigjR.js                          1.12 kB │ gzip:  0.55 kB
+dist/assets/vendor-D1ZST0my.js                          1.15 kB │ gzip:  0.62 kB
+dist/assets/radio-group-CvipLoX7.js                     1.16 kB │ gzip:  0.59 kB
+dist/assets/scroll-area-DW_gEW1o.js                     1.20 kB │ gzip:  0.59 kB
+dist/assets/search-CaRl1MOl.js                          1.23 kB │ gzip:  0.72 kB
+dist/assets/vendor-BldtbdoP.js                          1.23 kB │ gzip:  0.62 kB
+dist/assets/alert-CGk6hSBZ.js                           1.24 kB │ gzip:  0.61 kB
+dist/assets/table-CHC_lwlj.js                           1.30 kB │ gzip:  0.54 kB
+dist/assets/vendor-BiwEQu6f.js                          1.32 kB │ gzip:  0.75 kB
+dist/assets/vendor-B_FMapBz.js                          1.33 kB │ gzip:  0.72 kB
+dist/assets/vendor-Bo1VZmMe.js                          1.34 kB │ gzip:  0.64 kB
+dist/assets/tooltip-C-RkUNTM.js                         1.34 kB │ gzip:  0.64 kB
+dist/assets/read-token-CDFF3JD6.js                      1.36 kB │ gzip:  0.81 kB
+dist/assets/bi-launch-Dl1KeSL3.js                       1.36 kB │ gzip:  0.74 kB
+dist/assets/badge-CWkyBPF3.js                           1.38 kB │ gzip:  0.66 kB
+dist/assets/neva-feedback-Bfjw28lh.js                   1.46 kB │ gzip:  0.81 kB
+dist/assets/api-CODVM-a6.js                             1.60 kB │ gzip:  0.85 kB
+dist/assets/metric-card-B8aAWcUn.js                     1.62 kB │ gzip:  0.73 kB
+dist/assets/vendor-BjgRoKQg.js                          1.66 kB │ gzip:  0.80 kB
+dist/assets/vendor-Cc-r7WKq.js                          1.69 kB │ gzip:  0.57 kB
+dist/assets/loading-overlay-B3AqAocr.js                 1.75 kB │ gzip:  0.72 kB
+dist/assets/button-DI-0zBZ-.js                          1.78 kB │ gzip:  0.81 kB
+dist/assets/vendor-BYczc2fX.js                          1.83 kB │ gzip:  0.86 kB
+dist/assets/vendor-dmxV5cNj.js                          2.14 kB │ gzip:  0.87 kB
+dist/assets/map-data-Bl7c5wLm.js                        2.21 kB │ gzip:  1.12 kB
+dist/assets/use-client-daypart-u59ySVzW.js              2.46 kB │ gzip:  1.24 kB
+dist/assets/vendor-BtzhXvLR.js                          2.49 kB │ gzip:  1.17 kB
+dist/assets/analytics-BVW8mJE5.js                       2.50 kB │ gzip:  1.19 kB
+dist/assets/status-badge-DudwfUiZ.js                    2.50 kB │ gzip:  1.04 kB
+dist/assets/vendor-DxpM0RJb.js                          2.56 kB │ gzip:  1.18 kB
+dist/assets/dialog-CfG8Vo5x.js                          2.63 kB │ gzip:  0.98 kB
+dist/assets/map-options-Ctu4EX0z.js                     2.65 kB │ gzip:  1.20 kB
+dist/assets/searchable-select-1NLLFa7Q.js               2.73 kB │ gzip:  1.09 kB
+dist/assets/sheet-BexjkboY.js                           2.76 kB │ gzip:  0.96 kB
+dist/assets/confirm-dialog-VaCHu8ie.js                  2.78 kB │ gzip:  1.05 kB
+dist/assets/expandable-row-D_Bda99m.js                  2.85 kB │ gzip:  1.20 kB
+dist/assets/tabs-DlWWFOIl.js                            2.92 kB │ gzip:  1.37 kB
+dist/assets/surface-registry-D9Bu6apt.js                2.93 kB │ gzip:  1.33 kB
+dist/assets/starter-templates-CrRITH_R.js               3.03 kB │ gzip:  1.43 kB
+dist/assets/vendor-ClEohA8B.js                          3.09 kB │ gzip:  1.39 kB
+dist/assets/command-CBd0WjK8.js                         3.12 kB │ gzip:  1.11 kB
+dist/assets/api-client-BP_5j2o8.js                      3.30 kB │ gzip:  1.48 kB
+dist/assets/simple-table-controls-B0DJ6m4E.js           3.43 kB │ gzip:  1.24 kB
+dist/assets/vendor-D24MX6ix.js                          3.55 kB │ gzip:  1.60 kB
+dist/assets/vendor-BLbao0ok.js                          3.55 kB │ gzip:  1.16 kB
+dist/assets/vendor-Cy6ZSJwZ.js                          3.60 kB │ gzip:  1.57 kB
+dist/assets/vendor-Cr5Rn3hx.js                          3.67 kB │ gzip:  1.32 kB
+dist/assets/dropdown-menu-CkPdS42_.js                   3.70 kB │ gzip:  1.12 kB
+dist/assets/select-Cp-tTDx6.js                          3.86 kB │ gzip:  1.38 kB
+dist/assets/context-menu-CzBtt0c3.js                    3.90 kB │ gzip:  1.10 kB
+dist/assets/bi-frame-OSm1-LCs.js                        4.19 kB │ gzip:  1.94 kB
+dist/assets/vendor-BeV2qCjS.js                          4.30 kB │ gzip:  1.92 kB
+dist/assets/app-context-D_gz2rkP.js                     4.71 kB │ gzip:  1.81 kB
+dist/assets/search-provider-ED-24ZlH.js                 4.75 kB │ gzip:  1.96 kB
+dist/assets/skills-C5LihEz8.js                          4.78 kB │ gzip:  1.93 kB
+dist/assets/vendor-Dbd6ZkDp.js                          4.80 kB │ gzip:  1.94 kB
+dist/assets/public-map-BKCMb_Un.js                      4.83 kB │ gzip:  2.10 kB
+dist/assets/context-inspector-Dut1HUK3.js               5.10 kB │ gzip:  2.02 kB
+dist/assets/profile-BvKUS3cC.js                         5.33 kB │ gzip:  2.12 kB
+dist/assets/data-chart-V8zEDFsZ.js                      5.37 kB │ gzip:  2.05 kB
+dist/assets/vendor-ozwKc9Vb.js                          5.47 kB │ gzip:  2.38 kB
+dist/assets/agents-D6anFRhp.js                          6.34 kB │ gzip:  2.48 kB
+dist/assets/audit-pXONbrBP.js                           6.49 kB │ gzip:  2.60 kB
+dist/assets/active-queries-BMRvhcHw.js                  6.56 kB │ gzip:  2.53 kB
+dist/assets/connections-5JXA6YN-.js                     6.73 kB │ gzip:  2.37 kB
+dist/assets/vendor-d8w5Lnz7.js                          6.78 kB │ gzip:  2.79 kB
+dist/assets/vendor-CDwTk3WD.js                          6.84 kB │ gzip:  2.89 kB
+dist/assets/vendor-mzzsTZp4.js                          7.36 kB │ gzip:  3.21 kB
+dist/assets/query-history-drHfiGFP.js                   7.55 kB │ gzip:  2.97 kB
+dist/assets/api-C0sNE7cB.js                             7.70 kB │ gzip:  2.20 kB
+dist/assets/settings-WLkJiuT4.js                        7.70 kB │ gzip:  2.83 kB
+dist/assets/loads-D2V4f787.js                           7.80 kB │ gzip:  2.88 kB
+dist/assets/health-9u8rpZXP.js                          7.80 kB │ gzip:  2.52 kB
+dist/assets/tools-wW-nfw5Y.js                           8.28 kB │ gzip:  2.70 kB
+dist/assets/_username-BagmWWxt.js                       8.56 kB │ gzip:  2.95 kB
+dist/assets/cluster-COkO37G0.js                         9.18 kB │ gzip:  3.02 kB
+dist/assets/vendor-BraHaSTD.js                          9.41 kB │ gzip:  3.53 kB
+dist/assets/vendor-65Q9k8iu.js                          9.52 kB │ gzip:  3.89 kB
+dist/assets/thread-client-C6a_kKWi.js                   9.86 kB │ gzip:  3.09 kB
+dist/assets/roles-CrVofJVl.js                          10.83 kB │ gzip:  3.69 kB
+dist/assets/vendor-BmCEAYU0.js                         11.45 kB │ gzip:  4.07 kB
+dist/assets/vendor-DdhifmFQ.js                         11.52 kB │ gzip:  3.93 kB
+dist/assets/sidebar-DjSShwrG.js                        11.98 kB │ gzip:  3.48 kB
+dist/assets/vendor-DMW0jph6.js                         12.08 kB │ gzip:  4.76 kB
+dist/assets/query-cost-DsfS-dXy.js                     12.16 kB │ gzip:  4.39 kB
+dist/assets/vendor-CPWYdACG.js                         12.24 kB │ gzip:  3.77 kB
+dist/assets/functions-Byt1uDFJ.js                      12.47 kB │ gzip:  3.52 kB
+dist/assets/_name-TKWf1qlQ.js                          12.61 kB │ gzip:  3.53 kB
+dist/assets/_authenticated-CRukISn3.js                 12.77 kB │ gzip:  4.36 kB
+dist/assets/sign-in-BZi4Rlcw.js                        13.05 kB │ gzip:  4.15 kB
+dist/assets/geo-map-BECUBQE_.js                        13.79 kB │ gzip:  4.73 kB
+dist/assets/vendor-C92XAT5A.js                         14.01 kB │ gzip:  3.48 kB
+dist/assets/connection-dialogs-OCItDOP0.js             15.41 kB │ gzip:  4.78 kB
+dist/assets/vendor-teUzofbU.js                         17.32 kB │ gzip:  5.09 kB
+dist/assets/docs-B93ReHSe.js                           17.65 kB │ gzip:  5.48 kB
+dist/assets/vendor-DqS88GhS.js                         17.88 kB │ gzip:  4.64 kB
+dist/assets/semantic-views_.builder-Cpkxuray.js        18.23 kB │ gzip:  5.12 kB
+dist/assets/vendor-COJ33qMY.js                         18.39 kB │ gzip:  6.29 kB
+dist/assets/ai-B534L8-C.js                             18.70 kB │ gzip:  5.96 kB
+dist/assets/vendor-YdXsk9op.js                         19.07 kB │ gzip:  6.35 kB
+dist/assets/vendor-CFi5B9vy.js                         19.25 kB │ gzip:  6.57 kB
+dist/assets/vendor-D7PoL3LJ.js                         19.47 kB │ gzip:  7.45 kB
+dist/assets/vendor-CTym6sX9.js                         19.91 kB │ gzip:  7.43 kB
+dist/assets/vendor-BjLpI8v7.js                         20.63 kB │ gzip:  4.62 kB
+dist/assets/vendor-BK5G-XOA.js                         20.64 kB │ gzip:  7.39 kB
+dist/assets/vendor-Bo_udMq4.js                         20.69 kB │ gzip:  7.54 kB
+dist/assets/stages-CDXaCyZj.js                         20.74 kB │ gzip:  5.84 kB
+dist/assets/vendor-DPaI7D16.js                         21.44 kB │ gzip:  6.35 kB
+dist/assets/route-CGjvTKTj.js                          22.05 kB │ gzip:  6.98 kB
+dist/assets/access-control-BIZmGfUy.js                 22.08 kB │ gzip:  6.64 kB
+dist/assets/autopilot-NvP5c2F_.js                      22.69 kB │ gzip:  6.99 kB
+dist/assets/assistant-provider-BuwOSNfN.js             23.64 kB │ gzip:  8.31 kB
+dist/assets/migration-aZKev0Fq.js                      23.84 kB │ gzip:  6.73 kB
+dist/assets/vendor-CoxXR2cO.js                         24.55 kB │ gzip:  6.69 kB
+dist/assets/vendor-Vdfs5GJg.js                         28.90 kB │ gzip: 10.87 kB
+dist/assets/vendor-tlmAyIq-.js                         30.05 kB │ gzip: 11.25 kB
+dist/assets/map-surface-SqrbU-8f.js                    30.62 kB │ gzip: 10.43 kB
+dist/assets/vendor-MY1QRHVV.js                         32.38 kB │ gzip: 10.67 kB
+dist/assets/task-orchestration-Bq9lNLaN.js             32.79 kB │ gzip:  9.98 kB
+dist/assets/vendor-64q9k204.js                         33.70 kB │ gzip:  9.45 kB
+dist/assets/ml-models-DzbEQG9T.js                      34.36 kB │ gzip:  8.13 kB
+dist/assets/vendor-lgTHEyoz.js                         36.96 kB │ gzip:  9.60 kB
+dist/assets/agent-memory-dialog-Dn0rnxYg.js            38.57 kB │ gzip: 11.84 kB
+dist/assets/users-S6W6Z2nn.js                          39.78 kB │ gzip:  9.54 kB
+dist/assets/assistant-dock-CbHIXsOr.js                 40.52 kB │ gzip: 12.76 kB
+dist/assets/vendor-DgalKvHV.js                         40.78 kB │ gzip: 11.94 kB
+dist/assets/ai-providers-BqQwguCa.js                   43.16 kB │ gzip:  9.95 kB
+dist/assets/vendor-DRBJZo79.js                         43.89 kB │ gzip: 13.32 kB
+dist/assets/vendor-6bdNQK66.js                         44.23 kB │ gzip: 12.51 kB
+dist/assets/vendor-kZ1m-ODO.js                         45.09 kB │ gzip: 16.25 kB
+dist/assets/vendor-44Q1LtbC.js                         46.12 kB │ gzip: 12.37 kB
+dist/assets/frontend-qQyxhnjf.js                       46.82 kB │ gzip: 12.99 kB
+dist/assets/chart-frame-DbdQGBkE.js                    47.52 kB │ gzip: 15.72 kB
+dist/assets/vendor-CfpTByFP.js                         49.88 kB │ gzip: 18.65 kB
+dist/assets/vendor-DEMqCOh5.js                         50.59 kB │ gzip: 11.41 kB
+dist/assets/vendor-EuTlKTso.js                         50.85 kB │ gzip: 13.72 kB
+dist/assets/vendor-C3ThXlrx.js                         54.65 kB │ gzip: 20.48 kB
+dist/assets/vendor-DBxoDHyB.js                         58.16 kB │ gzip: 19.53 kB
+dist/assets/vendor-DEE4VpKw.js                         60.01 kB │ gzip: 14.34 kB
+dist/assets/vendor-BGMNEl0W.js                         60.46 kB │ gzip: 17.61 kB
+dist/assets/vendor-CGjkEimf.js                         62.19 kB │ gzip: 19.32 kB
+dist/assets/vendor-Cp5NeLoB.js                         62.28 kB │ gzip: 18.09 kB
+dist/assets/vendor-DkPj2Sg_.js                         62.32 kB │ gzip: 22.11 kB
+dist/assets/vendor-61MhcuzU.js                         64.60 kB │ gzip: 19.72 kB
+dist/assets/vendor-DF8JfNf6.js                         65.12 kB │ gzip: 17.85 kB
+dist/assets/vendor-C6iuY3E8.js                         65.62 kB │ gzip: 16.07 kB
+dist/assets/vendor-C97GM7eP.js                         68.43 kB │ gzip: 23.16 kB
+dist/assets/vendor-CoyylAR1.js                         68.94 kB │ gzip: 21.20 kB
+dist/assets/vendor-DnTk11PA.js                         69.22 kB │ gzip: 18.78 kB
+dist/assets/vendor-C1ZOXlDx.js                         70.57 kB │ gzip: 17.39 kB
+dist/assets/vendor-CTwC6t0b.js                         70.63 kB │ gzip: 23.98 kB
+dist/assets/vendor-DxPQcEOD.js                         71.35 kB │ gzip: 18.69 kB
+dist/assets/vendor-CbaI8W6k.js                         72.40 kB │ gzip: 18.32 kB
+dist/assets/vendor-cw1_ZkGY.js                         74.71 kB │ gzip: 25.43 kB
+dist/assets/vendor-DTA6jV89.js                         75.39 kB │ gzip: 27.82 kB
+dist/assets/vendor-B2SuxKzs.js                         75.90 kB │ gzip: 23.88 kB
+dist/assets/vendor-BZlZCFzO.js                         78.59 kB │ gzip: 27.36 kB
+dist/assets/vendor-vFnvQ1QP.js                         78.98 kB │ gzip: 29.47 kB
+dist/assets/vendor-Btly5y2r.js                         80.52 kB │ gzip: 26.10 kB
+dist/assets/vendor-muF6tuEK.js                         82.11 kB │ gzip: 27.78 kB
+dist/assets/vendor-D4ME__i6.js                         83.75 kB │ gzip: 21.25 kB
+dist/assets/vendor-0P3MX2IT.js                         85.67 kB │ gzip: 23.39 kB
+dist/assets/vendor-BoxS9_l_.js                         89.10 kB │ gzip: 23.60 kB
+dist/assets/vendor-1gjWv4Ym.js                         90.00 kB │ gzip: 24.56 kB
+dist/assets/vendor-CeoSjXLF.js                         90.72 kB │ gzip: 26.99 kB
+dist/assets/vendor-KAjXUd_P.js                         92.17 kB │ gzip: 25.72 kB
+dist/assets/intelligence-page-DvMiezMy.js              93.38 kB │ gzip: 22.93 kB
+dist/assets/vendor-Bv0nh0cL.js                         93.64 kB │ gzip: 31.80 kB
+dist/assets/database-explorer-DhrKiNAV.js              93.85 kB │ gzip: 21.82 kB
+dist/assets/vendor-BRs9V-aI.js                         93.98 kB │ gzip: 24.69 kB
+dist/assets/vendor-DyxRFXeH.js                         94.03 kB │ gzip: 27.00 kB
+dist/assets/result-cards-07iTQ7Ld.js                   94.27 kB │ gzip: 27.65 kB
+dist/assets/vendor-BTLqDH5a.js                         97.28 kB │ gzip: 28.35 kB
+dist/assets/vendor-96q4pCpx.js                         97.31 kB │ gzip: 27.86 kB
+dist/assets/business-ontology-CEvh4W8W.js              97.68 kB │ gzip: 25.64 kB
+dist/assets/vendor-aAO01zOw.js                         97.70 kB │ gzip: 33.09 kB
+dist/assets/vendor-B0siojts.js                        100.82 kB │ gzip: 26.10 kB
+dist/assets/vendor-B6I0x1km.js                        100.98 kB │ gzip: 33.11 kB
+dist/assets/vendor-BC4UJn-S.js                        102.79 kB │ gzip: 28.57 kB
+dist/assets/vendor-B2d8oFLO.js                        103.86 kB │ gzip: 32.73 kB
+dist/assets/vendor-C3qXJ6WI.js                        105.48 kB │ gzip: 25.33 kB
+dist/assets/vendor-tIum9tPx.js                        107.66 kB │ gzip: 35.83 kB
+dist/assets/vendor-DYqyjDXl.js                        108.15 kB │ gzip: 28.72 kB
+dist/assets/vendor-DguoFaS8.js                        108.23 kB │ gzip: 35.10 kB
+dist/assets/vendor-Dn3ZT5XL.js                        108.73 kB │ gzip: 36.97 kB
+dist/assets/vendor-tKZlAfAt.js                        109.33 kB │ gzip: 26.54 kB
+dist/assets/vendor-5zVq5hUW.js                        109.96 kB │ gzip: 28.92 kB
+dist/assets/vendor-BO0qhX7e.js                        110.35 kB │ gzip: 29.20 kB
+dist/assets/vendor-IYeO-WGY.js                        113.85 kB │ gzip: 38.96 kB
+dist/assets/vendor-DiO1uk6B.js                        116.14 kB │ gzip: 37.76 kB
+dist/assets/vendor-CagZsIne.js                        116.44 kB │ gzip: 31.55 kB
+dist/assets/vendor-DB9HnN6q.js                        117.29 kB │ gzip: 35.31 kB
+dist/assets/vendor-eu2L9VWU.js                        119.81 kB │ gzip: 29.22 kB
+dist/assets/vendor-DgK64cHR.js                        122.14 kB │ gzip: 32.04 kB
+dist/assets/vendor-CxeELyfi.js                        123.97 kB │ gzip: 31.85 kB
+dist/assets/vendor-B4EjlCZR.js                        124.91 kB │ gzip: 33.10 kB
+dist/assets/vendor-B1s87Uco.js                        128.07 kB │ gzip: 41.34 kB
+dist/assets/vendor-D3uCiL0F.js                        130.15 kB │ gzip: 32.64 kB
+dist/assets/vendor-CdQbkDtu.js                        134.54 kB │ gzip: 33.86 kB
+dist/assets/vendor-DZpys1SA.js                        141.46 kB │ gzip: 35.57 kB
+dist/assets/vendor-DYLp1y62.js                        142.81 kB │ gzip: 46.71 kB
+dist/assets/vendor-Chr3Uc4-.js                        145.88 kB │ gzip: 43.83 kB
+dist/assets/vendor-CTP85mHj.js                        146.35 kB │ gzip: 33.50 kB
+dist/assets/vendor-BoJDtQ5b.js                        147.39 kB │ gzip: 37.41 kB
+dist/assets/vendor-CaEnoubT.js                        148.58 kB │ gzip: 35.16 kB
+dist/assets/vendor-BOdgfzWi.js                        149.05 kB │ gzip: 36.73 kB
+dist/assets/vendor-GalRjlyr.js                        156.44 kB │ gzip: 53.93 kB
+dist/assets/vendor-Bnd4CF4W.js                        162.99 kB │ gzip: 51.91 kB
+dist/assets/vendor-CWmVlaqK.js                        171.86 kB │ gzip: 46.82 kB
+dist/assets/vendor-Db7dT3sU.js                        172.70 kB │ gzip: 39.93 kB
+dist/assets/studio-Ci8nA2Qh.js                        188.46 kB │ gzip: 53.04 kB
+dist/assets/_agentId-B5n2qcDN.js                      195.93 kB │ gzip: 49.35 kB
+dist/assets/vendor-CBajXiaO.js                        203.14 kB │ gzip: 63.52 kB
+dist/assets/workspaces-CvjpSz5F.js                    208.26 kB │ gzip: 63.43 kB
+dist/assets/vendor-won62DZC.js                        212.23 kB │ gzip: 61.86 kB
+dist/assets/content-ZTG67KWI.js                       260.25 kB │ gzip: 85.70 kB
+dist/assets/vendor-7zXJ8eug.js                        264.22 kB │ gzip: 78.47 kB
+dist/assets/vendor-BVyGVniz.js                        281.70 kB │ gzip: 93.86 kB
+
+✓ built in 4.91s
+$ vitest run --coverage --browser.headless
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+      Coverage enabled with v8
+
+9:23:59 PM [vite] (client) Re-optimizing dependencies because lockfile has changed
+9:24:01 PM [vite] (client) [optimizer] bundling dependencies...
+9:24:53 PM [vite] (client) [console.error] Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["bi","session",0]
+9:24:54 PM [vite] (client) [console.error] Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["bi","session",0]
+9:24:54 PM [vite] (client) [console.error] Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["bi","session",0]
+9:24:55 PM [vite] (client) [console.error] Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["bi","session",0]
+9:26:15 PM [vite] (client) [console.error] You seem to have overlapping act() calls, this is not supported. Be sure to await previous act() calls before making a new one. 
+9:26:15 PM [vite] (client) [console.error] You seem to have overlapping act() calls, this is not supported. Be sure to await previous act() calls before making a new one. 
+
+ Test Files  199 passed (199)
+      Tests  1663 passed (1663)
+   Start at  21:23:59
+   Duration  149.52s (transform 953ms, setup 0ms, import 202.76s, tests 584.48s, environment 0ms)
+
+ % Coverage report from v8
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   58.17 |     56.1 |   52.85 |   59.04 |                   
+ src               |       0 |        0 |       0 |       0 |                   
+  main.tsx         |       0 |        0 |       0 |       0 | 23-102            
+ src/components    |   55.62 |    44.06 |   55.69 |   56.66 |                   
+  coming-soon.tsx  |       0 |      100 |       0 |       0 | 4                 
+  command-menu.tsx |   83.33 |      100 |   73.33 |   88.88 | 75,82             
+  ...ig-drawer.tsx |   94.87 |     90.9 |     100 |   94.87 | 284-285           
+  ...fo-dialog.tsx |   31.11 |    30.95 |   22.22 |   30.55 | ...,68-69,132-313 
+  date-picker.tsx  |       0 |        0 |       0 |       0 | 22-45             
+  learn-more.tsx   |       0 |      100 |       0 |       0 | 22                
+  long-text.tsx    |       0 |        0 |       0 |       0 | 26-83             
+  ...-progress.tsx |       0 |        0 |       0 |       0 | 6-17              
+  ...ord-input.tsx |     100 |    81.81 |     100 |     100 | 1                 
+  search.tsx       |      25 |        0 |       0 |      25 | 11-21             
+  ...-dropdown.tsx |     100 |     62.5 |     100 |     100 | 33-44             
+  theme-switch.tsx |       0 |        0 |       0 |       0 | 14-48             
+ ...ts/ai-elements |   47.36 |    30.61 |   53.33 |   52.94 |                   
+  file-tree.tsx    |   47.36 |    30.61 |   53.33 |   52.94 | ...33-151,206-207 
+ ...nts/data-table |   13.39 |     8.43 |   14.89 |   13.08 |                   
+  bulk-actions.tsx |       0 |        0 |       0 |       0 | 35-126            
+  ...mn-header.tsx |       0 |        0 |       0 |       0 | 29-64             
+  ...ed-filter.tsx |       0 |        0 |       0 |       0 | 38-133            
+  pagination.tsx   |       0 |        0 |       0 |       0 | 27-120            
+  ...-controls.tsx |   78.94 |       70 |   63.63 |   77.77 | 132,157-167,190   
+  toolbar.tsx      |       0 |        0 |       0 |       0 | 30-73             
+  view-options.tsx |       0 |        0 |       0 |       0 | 20-47             
+ ...ponents/layout |      75 |    72.36 |   65.38 |   73.39 |                   
+  app-title.tsx    |      75 |      100 |      50 |      75 | 21                
+  ...ed-layout.tsx |   73.91 |    56.25 |   85.71 |   66.66 | 90-107            
+  header.tsx       |      90 |    45.45 |      75 |    87.5 | 16                
+  main.tsx         |     100 |    91.66 |     100 |     100 | 14                
+  nav-group.tsx    |   88.57 |    79.45 |      80 |   90.62 | 62,79,149         
+  nav-user.tsx     |   67.64 |    78.12 |   57.14 |   67.74 | ...67,214-242,267 
+  ...-switcher.tsx |       0 |        0 |       0 |       0 | 28-64             
+  top-nav.tsx      |       0 |        0 |       0 |       0 | 22-58             
+ src/config        |       0 |      100 |     100 |       0 |                   
+  fonts.ts         |       0 |      100 |     100 |       0 | 2                 
+ src/context       |   73.91 |    59.45 |      70 |   74.41 |                   
+  ...-provider.tsx |   95.45 |       75 |     100 |   95.23 | 58                
+  ...-provider.tsx |       0 |        0 |       0 |       0 | 7-57              
+  ...-provider.tsx |   96.55 |    83.33 |     100 |   96.42 | 82                
+  ...-provider.tsx |   94.73 |    85.71 |   85.71 |   93.75 | 45                
+  ...-provider.tsx |   83.33 |    57.14 |      75 |   87.17 | 29-30,65-67       
+ ..._archive/pipes |   10.63 |        0 |   10.86 |   10.34 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 27-423            
+ ...access-control |   65.97 |    57.35 |   54.11 |   65.77 |                   
+  index.tsx        |   65.97 |    57.35 |   54.11 |   65.77 | ...1159,1295-1296 
+ ...admin-settings |   67.16 |    57.77 |   57.14 |   66.66 |                   
+  ...ables-tab.tsx |   53.19 |    47.22 |   36.84 |   52.38 | ...44-174,217-289 
+ ...eatures/agents |   44.55 |    52.29 |   26.97 |   45.19 |                   
+  ...lder-page.tsx |       0 |        0 |       0 |       0 | 23-191            
+  api.ts           |   51.85 |    65.62 |   32.43 |   52.06 | ...1048-1052,1064 
+  harness-api.ts   |   88.88 |      100 |   83.33 |    87.5 | 154               
+  index.tsx        |       0 |        0 |       0 |       0 | 29-246            
+  metadata-api.ts  |    90.9 |       60 |   83.33 |      90 | 63                
+  quality-api.ts   |    91.3 |     87.5 |   88.88 |    90.9 | 260,283           
+  ...lder-page.tsx |   25.64 |     29.5 |    8.75 |   29.78 | ...29,535,562-604 
+  ...ntic-draft.ts |   94.56 |    88.88 |      75 |    97.4 | 200-202           
+  ...stry-page.tsx |       0 |        0 |       0 |       0 | 25-194            
+  ...igence-api.ts |   26.92 |    11.11 |   44.44 |   26.92 | 46,69-107         
+  ...stry-page.tsx |   52.11 |     65.9 |   38.46 |   50.81 | ...93,210,240-323 
+ ...s/agent-detail |   74.52 |    68.11 |    65.4 |   76.22 |                   
+  access-prompt.ts |     100 |       50 |     100 |     100 | 20-30             
+  access-tab.tsx   |   57.37 |    70.66 |   44.44 |   57.89 | ...53,200,293-359 
+  agent-draft.ts   |     100 |       50 |     100 |     100 | 18-19             
+  ...ation-tab.tsx |   70.42 |    62.41 |   61.76 |   70.45 | ...80,714,794-819 
+  ...ol-editor.tsx |    37.7 |    43.39 |   17.77 |   42.85 | ...16,355-364,380 
+  harness-tab.tsx  |   72.03 |    68.55 |   58.18 |   74.33 | ...-987,1006-1032 
+  ...-overview.tsx |   97.56 |    82.35 |   94.11 |   97.36 | 92                
+  improve-tab.tsx  |   43.07 |    18.75 |    28.2 |   41.37 | ...39-397,423-447 
+  model-select.tsx |   95.65 |     82.5 |    90.9 |      95 | 115               
+  ...ility-tab.tsx |       0 |        0 |       0 |       0 | 39-233            
+  overview-tab.tsx |       0 |        0 |       0 |       0 | 23-120            
+  ...se-editor.tsx |      74 |    76.36 |      64 |   77.27 | ...49-253,298-330 
+  ...ty-doctor.tsx |   86.66 |    80.95 |   84.61 |   86.66 | 147-152           
+  ...sal-draft.tsx |   85.18 |    57.69 |      70 |   84.61 | 36-44,165-205     
+  ...al-review.tsx |      85 |    78.57 |      75 |   83.33 | 101,131-155       
+  ...y-results.tsx |   90.42 |     74.2 |   89.79 |   93.02 | ...97,619,641-661 
+  quality-tab.tsx  |   85.25 |     76.5 |   73.17 |   84.93 | ...-999,1023-1037 
+  ...-bindings.tsx |   93.33 |    82.14 |   96.15 |    97.5 | 249               
+  ...race-view.tsx |   83.33 |     67.1 |   87.15 |   87.03 | ...1679,1716-1718 
+  ...n-history.tsx |   89.65 |    84.21 |   86.11 |   91.46 | ...90,365,427-430 
+ ...s/ai-providers |   39.41 |    34.73 |      32 |   40.54 |                   
+  ...l-control.tsx |   95.34 |    88.37 |   92.85 |   95.12 | 66,174            
+  ...tions-tab.tsx |       0 |        0 |       0 |       0 | 105-899           
+  index.tsx        |       0 |      100 |       0 |       0 | 12-14             
+  ...iders-tab.tsx |    45.7 |    31.57 |   34.32 |   47.26 | ...1025,1049-1171 
+  ...y-control.tsx |   94.11 |    86.95 |    92.3 |   95.83 | 42,184            
+ ...ures/assistant |   87.69 |    78.28 |   85.89 |   90.25 |                   
+  ...ity-trace.tsx |   92.85 |    72.22 |   83.33 |    90.9 | 36                
+  app-context.ts   |   68.08 |    56.55 |     100 |   75.64 | 133-134,249-274   
+  ...-composer.tsx |   84.31 |    80.88 |      60 |   88.88 | 92,154-186,226    
+  ...pty-state.tsx |   88.57 |    80.55 |     100 |     100 | ...,44-48,121-127 
+  ...ant-panel.tsx |   79.48 |    74.13 |      75 |   82.85 | ...41,161-163,286 
+  ...-provider.tsx |   84.76 |    77.77 |      74 |   86.46 | ...25,513,595-598 
+  ...nt-toggle.tsx |   87.87 |    80.48 |     100 |   96.36 | 142-143           
+  code-card.tsx    |    91.2 |    84.07 |   94.44 |   92.77 | 52,190-206,396    
+  events.ts        |    89.5 |     83.1 |   95.65 |   89.82 | ...87-196,249,288 
+  markdown.tsx     |   88.88 |       85 |   81.81 |   88.46 | ...19,126,132-148 
+  ...sult-table.ts |   94.23 |    86.76 |     100 |     100 | ...27,34,39,49,57 
+  message-list.tsx |    90.9 |    75.55 |    92.3 |   93.54 | 125,164           
+  model-client.ts  |     100 |    83.33 |     100 |     100 | 55                
+  ...-selector.tsx |   80.64 |    75.86 |      75 |   84.61 | 28-30,87          
+  ...rface-hook.ts |   84.21 |       50 |   71.42 |   85.71 | 32-33             
+  query-attach.ts  |   95.45 |    84.21 |   91.66 |   95.06 | 62-63,133-134     
+  stream-client.ts |   80.95 |    78.04 |    62.5 |   82.05 | ...03,107,172-176 
+  ...e-registry.ts |   97.33 |    91.11 |     100 |   98.41 | 112               
+  thread-client.ts |   95.45 |      100 |   88.88 |   94.73 | 65                
+  ...d-history.tsx |   80.82 |    69.49 |   80.76 |   85.48 | ...25,213-229,295 
+  ...call-card.tsx |      85 |    91.35 |     100 |   85.71 | 110,113,122-124   
+  ...nversation.ts |    92.3 |    82.14 |   66.66 |   95.55 | 136-149           
+  ...tant-panel.ts |      90 |       60 |   83.33 |    87.5 | 20                
+  ...transcript.ts |   77.41 |     62.5 |    82.5 |   79.43 | ...06-418,487,522 
+  ...stant-turn.ts |   91.08 |    78.44 |   88.88 |   94.02 | ...22,345,400-404 
+  ...nel-resize.ts |   97.43 |    66.66 |     100 |     100 | 35-57             
+ ...-in/components |   74.01 |    70.49 |   81.81 |   76.06 |                   
+  ...in-visual.tsx |      50 |      100 |       0 |      50 | 4                 
+  ...auth-form.tsx |   72.17 |    69.49 |   83.33 |   74.76 | ...53-256,273-279 
+ src/features/bi   |    94.7 |    90.82 |   95.91 |   97.52 |                   
+  bi-frame.tsx     |   98.46 |    94.91 |     100 |     100 | 160-172           
+  bi-launch.tsx    |   88.88 |    71.42 |    87.5 |   92.85 | 12                
+  bi-workspace.tsx |   84.61 |       50 |   85.71 |      90 | 17,70             
+  ...rd-filters.ts |   94.73 |    94.44 |     100 |     100 | 47                
+ ...atures/cluster |      60 |    39.25 |   58.82 |   58.13 |                   
+  api.ts           |   97.67 |    91.66 |   93.33 |   97.36 | 162               
+  index.tsx        |   31.57 |    24.09 |   31.57 |   27.08 | ...,63,69,194-469 
+ ...es/connections |   55.15 |    48.79 |   50.64 |   56.95 |                   
+  api.ts           |   77.77 |      100 |   71.42 |   77.77 | 73-80             
+  ...n-dialogs.tsx |   60.65 |    59.58 |    61.9 |    62.2 | ...40-679,707-717 
+  index.tsx        |       0 |        0 |       0 |       0 | 37-267            
+  sources.ts       |    91.3 |    66.66 |   88.88 |   94.44 | 100               
+ ...ures/dashboard |       0 |        0 |       0 |       0 |                   
+  docs-matches.tsx |       0 |        0 |       0 |       0 | 13-36             
+  index.tsx        |       0 |        0 |       0 |       0 | 85-511            
+ ...ard/components |       0 |      100 |       0 |       0 |                   
+  ...ics-chart.tsx |       0 |      100 |       0 |       0 | 4-46              
+  analytics.tsx    |       0 |      100 |       0 |       0 | 11-168            
+  overview.tsx     |       0 |      100 |       0 |       0 | 4-75              
+  recent-sales.tsx |       0 |      100 |       0 |       0 | 4                 
+ ...abase-explorer |    23.9 |    21.62 |   23.64 |   24.45 |                   
+  ...tadata-api.ts |   58.06 |     62.5 |      25 |   57.69 | 98-131            
+  ...a-section.tsx |   48.71 |    47.69 |   39.21 |   53.12 | ...94,445,514-535 
+  ...og-search.tsx |   80.95 |    67.18 |   76.19 |   85.18 | ...02-103,141-144 
+  ...se-dialog.tsx |       0 |        0 |       0 |       0 | 20-99             
+  ...er-detail.tsx |   17.54 |    13.31 |    5.71 |   17.11 | ...1094,1121-1182 
+  helpers.ts       |   46.51 |    33.14 |    62.5 |   50.98 | ...28-135,384-404 
+  index.tsx        |       0 |        0 |       0 |       0 | 73-867            
+  ...-data-tab.tsx |    7.69 |        0 |       0 |    4.54 | 21-119            
+  ...ode-block.tsx |     100 |    66.66 |     100 |     100 | 17                
+  ...ighlighter.ts |      75 |      100 |     100 |      75 | 12                
+  ...les-panel.tsx |     1.9 |        0 |       0 |    2.24 | 56-461            
+  ...-node-row.tsx |       0 |        0 |       0 |       0 | 42-182            
+ src/features/docs |   62.12 |    54.48 |   48.23 |   64.53 |                   
+  content.ts       |      90 |    74.46 |   79.16 |   93.24 | ...35,158-159,195 
+  docs-layout.tsx  |       0 |        0 |       0 |       0 | 19-93             
+  ...-markdown.tsx |   82.05 |    74.57 |   78.57 |   84.72 | ...30,151,156,178 
+  docs-page.tsx    |       0 |        0 |       0 |       0 | 9-137             
+  docs-search.tsx  |       0 |        0 |       0 |       0 | 28-116            
+ ...eatures/errors |       0 |        0 |       0 |       0 |                   
+  forbidden.tsx    |       0 |      100 |       0 |       0 | 5-20              
+  ...ral-error.tsx |       0 |        0 |       0 |       0 | 13-30             
+  ...nce-error.tsx |       0 |      100 |       0 |       0 | 4                 
+  ...und-error.tsx |       0 |      100 |       0 |       0 | 5-20              
+  ...zed-error.tsx |       0 |      100 |       0 |       0 | 5-20              
+ ...ernal-catalogs |   39.13 |    33.33 |   66.66 |    40.9 |                   
+  api.ts           |      90 |      100 |   85.71 |      90 | 60                
+  ...g-dialogs.tsx |       0 |        0 |       0 |       0 | 15-32             
+ ...ures/functions |   30.39 |    14.28 |      20 |   28.57 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 27-448            
+ ...s/intelligence |   72.74 |    72.95 |   63.21 |   72.54 |                   
+  ...lifecycle.tsx |   85.71 |    89.68 |   81.48 |   86.66 | ...69,363,430-433 
+  ...n-preview.tsx |   96.36 |       96 |     100 |   97.95 | 227               
+  ...lot-panel.tsx |    1.94 |        0 |       0 |    1.02 | 52-551            
+  context-api.ts   |       0 |      100 |       0 |       0 | 40-59             
+  ...inspector.tsx |   61.11 |    66.07 |   33.33 |   57.57 | ...07-167,188-207 
+  ...n-compose.tsx |   95.12 |    84.61 |   95.34 |   94.52 | 115-144,204,268   
+  ...overnance.tsx |    87.5 |      100 |   81.81 |   86.95 | 88,120-121        
+  ...ence-page.tsx |   67.97 |    73.46 |    54.3 |   69.03 | ...84,793-813,856 
+  learning-api.ts  |       0 |      100 |       0 |       0 | 49                
+  lifecycle-api.ts |    61.9 |    47.61 |   42.85 |    61.9 | 310-356           
+  ...ta-fields.tsx |   92.59 |    90.47 |   85.71 |   91.66 | 30,68             
+  ...tor-panel.tsx |   76.69 |    77.33 |   64.86 |   77.89 | ...48-376,411-466 
+  ...-settings.tsx |   77.96 |     84.5 |   63.63 |   76.36 | ...42-352,362-363 
+  ...io-fields.tsx |   84.61 |    70.27 |   66.66 |   83.33 | 45-56             
+  ...rio-schema.ts |   90.78 |    89.92 |     100 |   90.66 | ...69,175,193,206 
+  ...-datasets.tsx |     100 |    75.75 |     100 |     100 | ...2,67-72,93-100 
+  ...ew-detail.tsx |   78.89 |    61.18 |    74.5 |   79.34 | ...30,337-338,369 
+  ...ew-glance.tsx |   97.43 |    79.33 |   97.22 |    97.1 | 21,249            
+  ...oute-page.tsx |       0 |      100 |       0 |       0 | 5-6               
+  ...-views-api.ts |    42.1 |      100 |   35.29 |   38.88 | ...33,240,250-255 
+ ...ures/migration |   82.83 |    85.41 |      80 |   83.56 |                   
+  api.ts           |   91.66 |      100 |    90.9 |   91.66 | 143               
+  index.tsx        |   82.47 |    85.36 |   78.37 |   83.21 | ...1020-1030,1238 
+ ...ures/ml-models |   22.12 |    16.94 |   23.72 |   21.26 |                   
+  aliases-tab.tsx  |       0 |        0 |       0 |       0 | 49-335            
+  index.tsx        |       0 |      100 |       0 |       0 | 13-15             
+  models-tab.tsx   |   38.78 |     23.4 |   33.33 |   38.57 | ...15,642,683-972 
+  predict-tab.tsx  |       0 |        0 |       0 |       0 | 48-336            
+ ...res/monitoring |      75 |      100 |      50 |   66.66 |                   
+  index.tsx        |      75 |      100 |      50 |   66.66 | 18                
+ ...active-queries |       0 |        0 |       0 |       0 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 59-360            
+ .../monitoring/ai |     100 |    80.28 |     100 |     100 |                   
+  api.ts           |     100 |       75 |     100 |     100 | 79,121,127-143    
+  index.tsx        |     100 |    82.07 |     100 |     100 | ...89,756,778-783 
+ ...ng/audit-trail |       0 |        0 |       0 |       0 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 66-399            
+ ...ring/autopilot |   59.44 |    61.25 |   53.16 |   61.19 |                   
+  api.ts           |   44.44 |      100 |   28.57 |   44.44 | 145-166           
+  index.tsx        |   60.44 |    61.25 |   55.55 |    62.4 | ...0,846,884-1049 
+ ...ing/components |   47.05 |    13.33 |   44.44 |   43.75 |                   
+  ...dable-row.tsx |   38.46 |        8 |    37.5 |   33.33 | 97-177            
+  ...ng-header.tsx |      75 |       40 |     100 |      75 | 23                
+ ...ing/data-loads |       0 |        0 |       0 |       0 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 70-475            
+ ...itoring/health |   84.21 |    63.76 |      90 |   84.61 |                   
+  api.ts           |   80.64 |       60 |     100 |   82.14 | ...30-132,161-162 
+  index.tsx        |   88.46 |    64.81 |   81.81 |    87.5 | 146-147,273       
+ ...toring/queries |       0 |      100 |       0 |       0 |                   
+  index.tsx        |       0 |      100 |       0 |       0 | 6-49              
+ ...ing/query-cost |       0 |        0 |       0 |       0 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 108-771           
+ .../query-history |   55.55 |    51.25 |   35.71 |   59.74 |                   
+  index.tsx        |   55.55 |    51.25 |   35.71 |   59.74 | ...22-224,250-434 
+ ...tures/ontology |    66.1 |    57.96 |   54.04 |   66.57 |                   
+  api.ts           |    6.66 |        0 |    2.77 |    7.14 | 468-544           
+  checks-tab.tsx   |   89.47 |     67.5 |      75 |   89.18 | 62,119,165,201    
+  ...pt-detail.tsx |   73.17 |    43.75 |      60 |   75.67 | ...58,206,239-250 
+  concepts-tab.tsx |   79.31 |    79.41 |   57.14 |   78.57 | ...97,128,149,202 
+  derived-tab.tsx  |   84.07 |    57.54 |   75.75 |   82.52 | ...04,469,515,553 
+  domains-tab.tsx  |   81.57 |    60.65 |   63.15 |   81.08 | ...27,181,235,259 
+  ...ation-tab.tsx |   51.69 |    36.61 |   39.53 |    54.9 | ...69,284-344,382 
+  index.tsx        |       0 |        0 |       0 |       0 | 33-94             
+  model.ts         |   90.38 |    67.44 |    90.9 |   93.47 | 133,145-147       
+  overview-tab.tsx |   78.46 |    67.03 |   68.57 |   77.58 | ...88,335-336,534 
+  ...sal-forms.tsx |    62.5 |       64 |   51.85 |   63.82 | ...10-713,768,790 
+  ...osals-tab.tsx |   78.68 |    74.57 |   61.29 |      78 | ...80,226,243-261 
+  releases-tab.tsx |   52.45 |    66.12 |   35.71 |   51.72 | ...52-259,262-284 
+ ...features/roles |       0 |        0 |       0 |       0 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 86-613            
+  role-detail.tsx  |       0 |        0 |       0 |       0 | 59-590            
+ ...tures/settings |       0 |        0 |       0 |       0 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 23-213            
+ ...eatures/stages |   34.18 |    25.75 |   33.69 |   34.52 |                   
+  api.ts           |   69.23 |    41.66 |   84.61 |      75 | 94-105            
+  index.tsx        |   68.11 |    76.31 |    60.6 |    66.1 | ...82,379,395-408 
+  ...e-browser.tsx |    1.98 |        0 |       0 |    1.17 | 49-475            
+ ...eatures/studio |   81.24 |    79.07 |   74.52 |   83.29 |                   
+  ...ry-dialog.tsx |   83.87 |    70.73 |      75 |   84.61 | 58,88,138,208     
+  ...er-footer.tsx |   94.82 |     90.9 |    92.3 |   97.95 | 76                
+  ...chart-spec.ts |       0 |        0 |       0 |       0 | 8-17              
+  ...-explorer.tsx |   81.92 |    72.91 |   70.58 |   82.58 | ...64,702,761-762 
+  ...ilter-bar.tsx |      75 |    62.16 |    62.5 |   76.92 | ...55,185,228-248 
+  ...ct-filters.ts |    87.8 |    83.09 |     100 |   89.85 | ...29,135-137,143 
+  ...act-source.ts |   66.66 |      100 |     100 |   66.66 | 21                
+  consent-card.tsx |   77.77 |       75 |      80 |   81.25 | 42-45,104         
+  ...arch-card.tsx |     100 |     87.5 |     100 |     100 | 77-79             
+  default-agent.ts |   91.66 |      100 |     100 |   88.88 | 10                
+  ...nce-health.ts |   91.89 |    94.23 |     100 |     100 | 73,104,118        
+  greeting.ts      |   93.75 |    93.33 |     100 |    92.3 | 8                 
+  index.tsx        |   77.58 |    79.02 |   70.49 |   84.28 | ...67-370,422-437 
+  ...dge-panel.tsx |   87.01 |     78.7 |   78.57 |   87.67 | ...89-290,374,411 
+  ...onversion.tsx |   90.74 |       82 |   84.61 |      90 | 35,93,133,164     
+  ...ss-summary.ts |   93.75 |       90 |     100 |     100 | 21,28,35          
+  result-cards.tsx |   88.23 |    68.96 |     100 |   85.71 | 20,59             
+  result-table.tsx |   69.11 |    71.79 |   81.81 |   72.88 | ...96-112,274-278 
+  ...sal-panel.tsx |      80 |    81.66 |    82.6 |   87.14 | ...22,135,142,167 
+  ...l-document.ts |    87.5 |       75 |     100 |   85.71 | 9                 
+  skill-editor.tsx |    87.5 |    73.68 |   83.33 |   92.85 | 49                
+  skill-upload.tsx |   77.08 |    80.39 |   66.66 |   81.81 | 49-50,64,73-132   
+  ...ount-menu.tsx |   71.42 |    82.92 |   64.28 |   71.87 | ...60,177,209,234 
+  ...artifacts.tsx |   66.48 |    73.36 |    50.9 |   67.85 | ...39-850,917,942 
+  ...ttachments.ts |   78.72 |    76.31 |    87.5 |   82.92 | ...,84,89,100,103 
+  ...abilities.tsx |    91.3 |    81.96 |      88 |   92.85 | 230-261,317       
+  studio-chat.tsx  |   82.32 |    80.62 |   78.94 |   85.99 | ...1072,1132-1158 
+  ...-composer.tsx |      90 |    95.65 |      90 |   88.23 | 22,163            
+  ...elligence.tsx |      50 |    54.18 |   38.33 |    48.8 | ...01,724,749-820 
+  ...o-sidebar.tsx |   91.48 |     88.6 |   94.73 |   90.69 | 338-339,369-370   
+  studio-tabs.tsx  |   93.75 |    86.66 |     100 |     100 | 62-64             
+  ...transcript.ts |   89.85 |    84.33 |   85.36 |   91.23 | ...-983,1002,1008 
+  thought-turn.tsx |    97.1 |     94.7 |     100 |   97.34 | 244-245,480       
+  thread-time.ts   |   73.33 |       60 |     100 |   81.81 | 21-22             
+  tool-preview.ts  |     100 |       50 |     100 |     100 | 14                
+  turn-content.tsx |   82.75 |    82.66 |   76.92 |      80 | 75,100,194-196    
+  ...nt-daypart.ts |    90.9 |      100 |      80 |     100 |                   
+  ...ipt-stream.ts |   93.75 |     87.5 |     100 |   92.59 | 32-33             
+  ...ge-footer.tsx |   57.89 |    83.33 |      40 |   53.33 | 26-32,51          
+  workflow-api.ts  |   11.11 |        0 |       0 |   13.63 | 41-45,50-65,70-71 
+ ...studio/dataviz |   75.37 |    71.94 |   73.83 |   77.14 |                   
+  ...o-dataviz.tsx |   86.66 |    67.85 |   77.41 |   89.23 | ...32-249,287,305 
+  api.ts           |   66.66 |      100 |      50 |   66.66 | 78-90             
+  ...ard-bridge.ts |   79.31 |    86.04 |   81.25 |   82.35 | 63,79,120-131,142 
+  ...workspace.tsx |   59.84 |    66.66 |   57.89 |   59.63 | ...03,249-355,377 
+  superset-bar.ts  |   91.42 |    81.25 |     100 |    93.1 | 53,63             
+  ...capability.ts |      92 |    66.66 |     100 |     100 | 19-20,33-46       
+ ...intelligent-ui |   69.55 |    64.85 |   66.03 |   70.73 |                   
+  api.ts           |   14.28 |        0 |       0 |   14.28 | 5-7,13-24         
+  catalog-v2.ts    |   96.42 |    66.66 |    87.5 |     100 | 382               
+  catalog.ts       |   95.16 |       88 |   91.66 |   98.14 | 404               
+  ...spec-block.ts |   94.44 |    84.67 |     100 |   93.67 | 101-104,115       
+  components.tsx   |   57.22 |    50.27 |   63.46 |   56.08 | ...22,745-767,792 
+  data-chart.tsx   |   83.87 |       75 |   66.66 |   85.18 | 94-95,211-213     
+  functions.ts     |   99.35 |    97.75 |     100 |     100 | 277,481           
+  ...ap-legacy.tsx |    1.55 |        0 |       0 |    1.04 | 11-152            
+  geo-map.tsx      |    80.3 |    63.63 |   70.96 |   81.35 | ...03,128-211,227 
+  geometry.ts      |   95.38 |    93.05 |     100 |     100 | 29,58,63,79       
+  html-policy.ts   |   73.52 |       70 |     100 |   74.19 | ...11,120-122,127 
+  map-data.ts      |     100 |    96.29 |     100 |     100 | 44                
+  map-metrics.ts   |     100 |      100 |   66.66 |     100 |                   
+  map-surface.tsx  |   80.72 |    78.46 |      75 |   78.94 | ...45-246,275-277 
+  media.tsx        |    43.9 |    45.76 |   27.27 |   44.92 | 39,64,83,92-196   
+  public-map.tsx   |       0 |        0 |       0 |       0 | 36-256            
+  renderer.tsx     |   89.17 |    83.72 |   84.78 |      90 | ...27,356,366,398 
+  route-data.ts    |   95.45 |       75 |     100 |   94.73 | 26-27             
+  route-road.ts    |   87.75 |       80 |      80 |   95.12 | 81,95             
+  ...stops-map.tsx |    5.15 |        0 |       0 |     4.7 | 26-312            
+  ...me-context.ts |     100 |      100 |       0 |     100 |                   
+  ui-chart.tsx     |     100 |       75 |     100 |     100 | 19                
+  validator-v2.ts  |   55.55 |    48.42 |   57.14 |   56.81 | ...55,470,472,474 
+  validator.ts     |   87.54 |    87.94 |   97.29 |    88.6 | ...09,414,491,493 
+ ...es/studio/news |   91.16 |    83.33 |    89.2 |   92.52 |                   
+  chart-kind.ts    |      60 |       50 |     100 |     100 | 10-11             
+  echart.tsx       |   94.54 |    71.42 |     100 |   95.91 | 110,120           
+  format.ts        |   88.23 |    76.31 |     100 |   96.55 | 57                
+  highlight.tsx    |     100 |    86.66 |     100 |     100 | 12,35             
+  ...t-section.tsx |   94.23 |    77.27 |   86.95 |   93.18 | 69,75,97          
+  newspaper-api.ts |   28.57 |        0 |   16.66 |   28.57 | 138-153,168       
+  ...aper-page.tsx |   98.36 |    94.59 |   97.14 |   98.14 | 296               
+  story-chart.tsx  |   84.44 |    74.41 |   86.95 |   85.36 | 50-57,175-176,245 
+  story-panel.tsx  |      85 |     87.5 |      75 |   84.21 | 57,192,216        
+  story-parts.tsx  |     100 |    94.73 |     100 |     100 | 10                
+ ...-orchestration |   87.11 |    76.85 |   83.87 |   87.33 |                   
+  presentation.ts  |   91.66 |       86 |     100 |   90.69 | 42-44,66          
+  ...or-dialog.tsx |     100 |    78.94 |     100 |     100 | 71-76,99-102      
+  ...ry-drawer.tsx |   77.63 |    66.66 |   88.23 |   80.88 | 78-86,102-109     
+  run-history.tsx  |   86.11 |       72 |   76.92 |   85.29 | 55-71,222-232,243 
+  task-detail.tsx  |   71.42 |    77.77 |      50 |   68.42 | ...1,63-76,95-136 
+  ...low-layout.ts |   96.15 |    86.79 |     100 |   96.87 | 159,163           
+  task-flow.tsx    |   94.59 |     87.5 |     100 |   93.54 | 126,144           
+  task-list.tsx    |   76.11 |    68.47 |   68.75 |   77.41 | ...33,325,332-334 
+  task-node.tsx    |     100 |    83.33 |     100 |     100 | 18                
+  ...ql-dialog.tsx |   88.88 |    77.27 |   66.66 |    87.5 | 74                
+ ...features/tasks |       0 |      100 |       0 |       0 |                   
+  index.tsx        |       0 |      100 |       0 |       0 | 11                
+ ...sks/components |   29.29 |    23.52 |   23.37 |   30.06 |                   
+  ...k-actions.tsx |       0 |        0 |       0 |       0 | 30-171            
+  ...w-actions.tsx |       0 |      100 |       0 |       0 | 29-72             
+  ...s-columns.tsx |       0 |        0 |       0 |       0 | 9-121             
+  ...s-dialogs.tsx |       0 |        0 |       0 |       0 | 8-52              
+  ...rt-dialog.tsx |     100 |       75 |     100 |     100 | 56                
+  ...te-dialog.tsx |   88.23 |       50 |     100 |   88.23 | 32-33             
+  ...y-buttons.tsx |       0 |      100 |       0 |       0 | 6-16              
+  ...-provider.tsx |       0 |        0 |       0 |       0 | 14-35             
+  tasks-table.tsx  |       0 |        0 |       0 |       0 | 31-165            
+ ...res/tasks/data |       0 |      100 |       0 |       0 |                   
+  data.tsx         |       0 |      100 |     100 |       0 | 13-56             
+  schema.ts        |       0 |      100 |     100 |       0 | 5                 
+  tasks.ts         |       0 |      100 |       0 |       0 | 4-17              
+ ...features/users |       0 |        0 |       0 |       0 |                   
+  index.tsx        |       0 |        0 |       0 |       0 | 182-2377          
+  user-detail.tsx  |       0 |        0 |       0 |       0 | 45-371            
+ ...ers/components |   44.76 |    49.23 |    40.9 |   44.17 |                   
+  ...k-actions.tsx |       0 |        0 |       0 |       0 | 23-117            
+  ...w-actions.tsx |       0 |      100 |       0 |       0 | 21-50             
+  ...on-dialog.tsx |   94.87 |    96.42 |      95 |   94.11 | 142-143           
+  ...s-columns.tsx |       0 |        0 |       0 |       0 | 11-129            
+  ...te-dialog.tsx |    90.9 |       50 |     100 |     100 | 26                
+  ...s-dialogs.tsx |       0 |        0 |       0 |       0 | 7-42              
+  ...te-dialog.tsx |     100 |       50 |     100 |     100 | 32                
+  ...te-dialog.tsx |   88.23 |       50 |     100 |   88.23 | 32-33             
+  ...y-buttons.tsx |       0 |      100 |       0 |       0 | 6-16              
+  ...-provider.tsx |       0 |        0 |       0 |       0 | 14-35             
+  users-table.tsx  |       0 |        0 |       0 |       0 | 38-160            
+ ...res/users/data |      20 |      100 |       0 |      20 |                   
+  schema.ts        |       0 |      100 |     100 |       0 | 3-18              
+  users.ts         |       0 |      100 |       0 |       0 | 4-9               
+ src/features/viz  |   71.75 |     57.9 |   67.18 |   72.94 |                   
+  chart-frame.tsx  |   91.66 |    86.66 |     100 |     100 | 38,49             
+  ...fact-card.tsx |      20 |        0 |       0 |      20 | 11-31             
+  ...rd-canvas.tsx |   34.28 |       28 |   30.76 |   34.48 | ...24,164,247-296 
+  insight.ts       |   93.91 |    79.16 |     100 |    95.5 | 116-119           
+  view-answer.tsx  |       0 |        0 |       0 |       0 | 5                 
+  viz-view.tsx     |   71.35 |    60.07 |   68.75 |   73.37 | ...61-766,802-825 
+ ...res/workspaces |    37.5 |    34.02 |   32.67 |    38.3 |                   
+  ...alization.tsx |    2.04 |        0 |       0 |    2.27 | ...8-195,206-1277 
+  ...-selector.tsx |   53.12 |    58.33 |   41.66 |   51.85 | ...08-132,151-152 
+  explain-plan.ts  |   88.88 |    81.81 |     100 |     100 | 16,26             
+  explain-tree.tsx |    5.26 |        0 |       0 |    3.92 | 34-175            
+  ...ry-dialog.tsx |   36.92 |    23.25 |   29.41 |   35.84 | ...22-125,200-205 
+  index.tsx        |   26.75 |    21.81 |   22.22 |   27.64 | ...4172,4182-4322 
+  ...ne-select.tsx |       0 |        0 |       0 |       0 | 26-79             
+  monaco-theme.ts  |   81.25 |       75 |   66.66 |   81.25 | 47-71             
+  neva-feedback.ts |     100 |     98.3 |     100 |     100 | 37                
+  ...firmation.tsx |     100 |       75 |     100 |     100 | 37-44             
+  ...y-history.tsx |       5 |        0 |       0 |    5.55 | 17-134            
+  ...y-messages.ts |     100 |    93.75 |     100 |     100 | 11                
+  ...te-review.tsx |     100 |       70 |     100 |     100 | 35-58,79,83,88-91 
+  session-role.ts  |     100 |     92.3 |     100 |     100 | 23                
+  ...statements.ts |   95.94 |     90.9 |     100 |   95.58 | 64,101,110        
+  ...completion.ts |   82.69 |    65.51 |     100 |   90.47 | 71,88,134-135     
+  ...-templates.ts |   81.81 |      100 |      60 |      90 | 90                
+  ...h-popover.tsx |    88.6 |    79.03 |   88.88 |   91.04 | ...5,57,72,99,229 
+  ...tab-strip.tsx |   75.72 |    70.89 |   83.33 |   82.19 | ...08-315,371-389 
+ ...paces/explorer |   47.68 |       40 |   41.46 |   49.21 |                   
+  api.ts           |   31.25 |      100 |   15.38 |   31.25 | 26-46             
+  controller.ts    |   77.77 |      100 |   33.33 |     100 |                   
+  ...em-button.tsx |      90 |      100 |   83.33 |      90 | 60                
+  share-dialog.tsx |      40 |    38.46 |   19.04 |   41.66 | ...,63-76,101-172 
+  tree-data.ts     |     100 |    88.88 |     100 |     100 | 15,28             
+  ...-explorer.tsx |   36.41 |    31.81 |   34.92 |    38.6 | ...51,478,502-664 
+ ...paces/notebook |   25.17 |    27.69 |   22.89 |   24.07 |                   
+  api.ts           |    8.69 |        0 |       0 |    9.09 | 19-91             
+  cell-editor.tsx  |   90.32 |    72.72 |   86.36 |   94.93 | 96,133,141-142    
+  cell.tsx         |   74.77 |    79.89 |    72.5 |   76.84 | ...60-468,487,510 
+  helpers.ts       |   91.66 |    91.11 |   83.33 |   91.89 | 16,42,68          
+  names.ts         |   93.75 |    83.33 |     100 |     100 | 10                
+  neva.tsx         |    9.09 |        0 |       0 |    8.57 | 37-205            
+  ...ok-editor.tsx |    1.13 |        0 |       0 |    0.94 | 72-893,918-930    
+  outputs.tsx      |   62.02 |     57.3 |   66.66 |   61.64 | ...87-396,400-406 
+  ...e-control.tsx |    4.76 |        0 |       0 |    2.43 | 20-211            
+  side-panel.tsx   |    2.94 |        0 |       0 |    1.56 | 18-326            
+  stream.ts        |   29.03 |     37.5 |   14.28 |      24 | 25-103            
+  use-notebook.ts  |    3.89 |     8.06 |    1.49 |    2.77 | 42,62-653         
+ src/hooks         |   94.31 |    76.66 |    87.5 |      95 |                   
+  ...log-state.tsx |   66.66 |    33.33 |   33.33 |      80 | 15                
+  use-mobile.tsx   |    90.9 |       60 |   83.33 |   88.88 | 14                
+  ...-url-state.ts |   97.18 |    79.26 |     100 |   96.96 | 173-174           
+ src/lib           |   69.23 |    59.43 |   67.85 |   74.54 |                   
+  api-client.ts    |    72.8 |    72.72 |   71.42 |   76.53 | ...43-244,247-248 
+  cookies.ts       |      80 |    66.66 |     100 |     100 | 12,31-40          
+  datetime.ts      |     100 |    94.11 |     100 |     100 | 24                
+  format.ts        |    3.12 |        0 |       0 |    4.16 | 13-74             
+  read-token.ts    |   92.68 |       75 |     100 |     100 | 53-63,85          
+  ...tted-data.tsx |      50 |        0 |       0 |      50 | 7                 
+  ...i-devtools.ts |       0 |      100 |     100 |       0 | 4                 
+  utils.ts         |   70.58 |       40 |      40 |   71.42 | 9,67-74           
+ src/stores        |     100 |    89.47 |   92.85 |     100 |                   
+  auth-store.ts    |     100 |      100 |    90.9 |     100 |                   
+  ...zone-store.ts |     100 |       50 |     100 |     100 | 22                
+-------------------|---------|----------|---------|---------|-------------------
+
+=============================== Coverage summary ===============================
+Statements   : 58.17% ( 12906/22185 )
+Branches     : 56.1% ( 12044/21465 )
+Functions    : 52.85% ( 4007/7581 )
+Lines        : 59.04% ( 11584/19620 )
+================================================================================

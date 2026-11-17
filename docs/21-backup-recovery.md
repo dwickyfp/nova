@@ -74,17 +74,13 @@ PROPERTIES(
 
 ---
 
-### BI (Superset) metadata
+### BI metadata (historical)
 
-Superset keeps charts, dashboards, datasets, alerts and reports in its own
-PostgreSQL database. Creating a snapshot of `NOVA_SYSTEM` through Nova also
-saves a dump of that database in Nova's managed storage under the same
-repository and label; restoring the whole `NOVA_SYSTEM` snapshot (no table list)
-restores it. The response's `bi_metadata` field says whether BI metadata was
-saved, restored, absent from the snapshot, or failed, and each step is in
-`AUDIT_LOG` (`BACKUP_BI_METADATA`, `RESTORE_BI_METADATA`). Restart the Superset
-services after a restore. Studio artifacts in `NOVA_SYSTEM` point at Superset
-objects by id, so restore the two together.
+Until 2026-11-16 a `NOVA_SYSTEM` snapshot also carried a dump of Apache
+Superset's metadata database. Superset has been removed
+([Architecture 17](arch-17-superset.md)); snapshots no longer include a BI
+dump. Native Dataviz charts, dashboards and datasets are Nova control
+metadata and are recovered with it.
 
 ---
 

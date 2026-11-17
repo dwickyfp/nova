@@ -1,0 +1,37 @@
+{
+  "started_at": "2026-11-17T13:14:37.544101+00:00",
+  "run": "f22857",
+  "hardware": {
+    "os": "macOS-27.0.1-arm64-arm-64bit",
+    "cpu": "Apple M3",
+    "cores": 8,
+    "memory_bytes": "17179869184",
+    "engine": "StarRocks in Docker on this host",
+    "servers": "dev.sh (uvicorn --reload)"
+  },
+  "result": "FAIL",
+  "cleanup": "PARTIAL",
+  "fixture_seconds": 4.4,
+  "error_type": "AssertionError",
+  "error": "POST publish returned 422",
+  "steps": [
+    {
+      "step": "fixture: CREATE DATABASE ndv_perf_f22857",
+      "passed": true
+    },
+    {
+      "step": "fixture: CREATE TABLE ndv_perf_f22857.orders (id BIGINT, ",
+      "passed": true
+    },
+    {
+      "step": "fixture: INSERT INTO ndv_perf_f22857.orders SELECT genera",
+      "passed": false
+    },
+    {
+      "step": "fixture: one million orders",
+      "passed": false,
+      "rows": 0
+    }
+  ],
+  "finished_at": "2026-11-17T13:15:03.045756+00:00"
+}

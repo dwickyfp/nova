@@ -1,0 +1,146 @@
+E501 Line too long (101 > 100)
+  --> tests/unit/test_native_viz_datasets.py:65:101
+   |
+65 | async def test_empty_source_has_catalog_owned_exact_schema_and_stable_ids(setup, inspection_request):
+   |                                                                                                     ^
+66 |     result = await setup.service.inspect(setup.user, inspection_request)
+67 |     assert result.source.physical_id == "10081"
+   |
+
+E501 Line too long (102 > 100)
+  --> tests/unit/test_native_viz_datasets.py:81:101
+   |
+79 |     )
+80 |     assert call["max_rows"] == 1
+81 |     assert (call["username"], call["role"], call["session_id"], call["security_context_version"]) == (
+   |                                                                                                     ^^
+82 |         "alice", "ANALYST", "alice-login", 5,
+83 |     )
+   |
+
+E501 Line too long (113 > 100)
+  --> tests/unit/test_native_viz_datasets.py:89:101
+   |
+87 |     selection = inspection_request.source.model_copy(update={"columns": ("AMOUNT", "id")})
+88 |     setup.execute.return_value = QueryResult(columns=["amount", "id"])
+89 |     result = await setup.service.inspect(setup.user, inspection_request.model_copy(update={"source": selection}))
+   |                                                                                                     ^^^^^^^^^^^^^
+90 |     assert [f.source_column for f in result.fields] == ["amount", "id"]
+   |
+
+E501 Line too long (104 > 100)
+  --> tests/unit/test_native_viz_datasets.py:95:101
+   |
+93 | @pytest.mark.parametrize("data_type", ["bigint", "decimal(38,12)", "varchar(100)", "char(2)",
+94 |                                        "boolean", "date", "datetime"])
+95 | async def test_supported_source_types_need_no_sample_rows(setup, inspection_request, source, data_type):
+   |                                                                                                     ^^^^
+96 |     table = replace(source, columns=(BoundColumn("value", data_type, 1, True),))
+97 |     setup.provider.get_source_schema.return_value = table
+   |
+
+E501 Line too long (109 > 100)
+   --> tests/unit/test_native_viz_datasets.py:105:101
+    |
+103 | @pytest.mark.parametrize("data_type", ["largeint", "double", "array<int>", "map<int,int>",
+104 |                                        "json", "hll", "unknown"])
+105 | async def test_unrepresentable_types_fail_before_query_instead_of_guessing(setup, inspection_request, source,
+    |                                                                                                     ^^^^^^^^^
+106 |                                                                          data_type):
+107 |     setup.provider.get_source_schema.return_value = replace(
+    |
+
+E501 Line too long (109 > 100)
+   --> tests/unit/test_native_viz_datasets.py:117:101
+    |
+116 | @pytest.mark.parametrize("change", ["physical_id", "schema_version"])
+117 | async def test_replacement_or_schema_change_during_query_is_stale(setup, inspection_request, source, change):
+    |                                                                                                     ^^^^^^^^^
+118 |     setup.provider.get_source_schema.side_effect = [source, replace(source, **{change: "different"})]
+119 |     with pytest.raises(NovaException, match="SCHEMA_STALE") as error:
+    |
+
+E501 Line too long (101 > 100)
+   --> tests/unit/test_native_viz_datasets.py:118:101
+    |
+116 | @pytest.mark.parametrize("change", ["physical_id", "schema_version"])
+117 | async def test_replacement_or_schema_change_during_query_is_stale(setup, inspection_request, source, change):
+118 |     setup.provider.get_source_schema.side_effect = [source, replace(source, **{change: "different"})]
+    |                                                                                                     ^
+119 |     with pytest.raises(NovaException, match="SCHEMA_STALE") as error:
+120 |         await setup.service.inspect(setup.user, inspection_request)
+    |
+
+E501 Line too long (103 > 100)
+   --> tests/unit/test_native_viz_datasets.py:124:101
+    |
+124 | async def test_catalog_reflection_does_not_substitute_for_select_permission(setup, inspection_request):
+    |                                                                                                     ^^^
+125 |     setup.execute.side_effect = StarRocksError("private-engine-error-marker")
+126 |     with pytest.raises(NovaException) as error:
+    |
+
+E501 Line too long (104 > 100)
+   --> tests/unit/test_native_viz_datasets.py:136:101
+    |
+134 |                                    QueryResult(columns=["id", "amount", "created_at"], rows=[[1]]),
+135 |                                    QueryResult(error="private-engine-marker")])
+136 | async def test_projection_protocol_mismatch_does_not_infer_from_rows(setup, inspection_request, result):
+    |                                                                                                     ^^^^
+137 |     setup.execute.return_value = result
+138 |     with pytest.raises(NovaException) as error:
+    |
+
+E501 Line too long (115 > 100)
+   --> tests/unit/test_native_viz_datasets.py:178:101
+    |
+178 | async def test_create_commits_only_server_derived_schema_after_external_io(setup, inspection_request, monkeypatch):
+    |                                                                                                     ^^^^^^^^^^^^^^^
+179 |     workspace = AsyncMock(return_value=SimpleNamespace(id="personal:alice"))
+180 |     monkeypatch.setattr(module, "document_workspace", workspace)
+    |
+
+E501 Line too long (106 > 100)
+   --> tests/unit/test_native_viz_datasets.py:190:101
+    |
+189 |     monkeypatch.setattr(module, "document_transaction", transaction)
+190 |     body = ObjectDatasetCreate(**inspection_request.model_dump(), workspace_id="personal", title="Orders",
+    |                                                                                                     ^^^^^^
+191 |                                expected_physical_id="10081", expected_schema_fingerprint="a" * 64)
+192 |     key = uuid4()
+    |
+
+E501 Line too long (104 > 100)
+   --> tests/unit/test_native_viz_datasets.py:204:101
+    |
+202 | @pytest.mark.parametrize("field,value", [("expected_physical_id", "old-object"),
+203 |                                          ("expected_schema_fingerprint", "b" * 64)])
+204 | async def test_stale_inspection_cannot_open_metadata_transaction(setup, inspection_request, monkeypatch,
+    |                                                                                                     ^^^^
+205 |                                                               field, value):
+206 |     monkeypatch.setattr(module, "document_workspace", AsyncMock(return_value=SimpleNamespace(id="p")))
+    |
+
+E501 Line too long (102 > 100)
+   --> tests/unit/test_native_viz_datasets.py:206:101
+    |
+204 | async def test_stale_inspection_cannot_open_metadata_transaction(setup, inspection_request, monkeypatch,
+205 |                                                               field, value):
+206 |     monkeypatch.setattr(module, "document_workspace", AsyncMock(return_value=SimpleNamespace(id="p")))
+    |                                                                                                     ^^
+207 |     transaction = AsyncMock(side_effect=AssertionError("Must not commit"))
+208 |     monkeypatch.setattr(module, "document_transaction", transaction)
+    |
+
+E501 Line too long (101 > 100)
+   --> tests/unit/test_native_viz_datasets.py:210:101
+    |
+208 |     monkeypatch.setattr(module, "document_transaction", transaction)
+209 |     values = {**inspection_request.model_dump(), "workspace_id": "personal", "title": "Orders",
+210 |               "expected_physical_id": "10081", "expected_schema_fingerprint": "a" * 64, field: value}
+    |                                                                                                     ^
+211 |     with pytest.raises(NovaException, match="SCHEMA_STALE"):
+212 |         await setup.service.create(setup.user, ObjectDatasetCreate(**values), operation_id=uuid4())
+    |
+
+Found 14 errors.

@@ -449,8 +449,11 @@ function applyEvent(
           turn_state: "error",
         },
       ];
+    // Dashboard changes and Neva's pointer are handled by the dashboard page.
     case "ping":
     case "client_action":
+    case "dashboard_changed":
+    case "dashboard_activity":
       return state;
   }
 }

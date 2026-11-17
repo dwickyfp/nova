@@ -1,0 +1,34 @@
+E501 Line too long (103 > 100)
+  --> backend/scripts/verify_native_documents_live.py:58:101
+   |
+56 |     tokens: list[str] = []
+57 |     created = False
+58 |     async with httpx.AsyncClient(base_url=args.base_url, timeout=30, follow_redirects=False) as client:
+   |                                                                                                     ^^^
+59 |         probe = LiveCheck(client)
+60 |         try:
+   |
+
+E501 Line too long (103 > 100)
+   --> backend/scripts/verify_native_documents_live.py:127:101
+    |
+125 |                         and restored.json()["definition"] == publication.json()["definition"])
+126 |             history = await probe.request("history", "GET", path + "/revisions", owner)
+127 |             probe.check("history retained", [item["revision"] for item in history.json()] == [3, 2, 1])
+    |                                                                                                     ^^^
+128 |             events = await probe.request("event replay", "GET", path + "/events", owner)
+129 |             probe.check("only committed events", [item["event_kind"]
+    |
+
+E501 Line too long (105 > 100)
+   --> backend/scripts/verify_native_documents_live.py:130:101
+    |
+128 |             events = await probe.request("event replay", "GET", path + "/events", owner)
+129 |             probe.check("only committed events", [item["event_kind"]
+130 |                         for item in events.json()["events"]] == ["create", "publish", "edit", "restore"])
+    |                                                                                                     ^^^^^
+131 |             report["result"] = "PASS"
+132 |         except Exception as error:
+    |
+
+Found 3 errors.

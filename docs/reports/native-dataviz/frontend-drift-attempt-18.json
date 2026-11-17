@@ -1,0 +1,21 @@
+{
+  "changed_since_start": [
+    "frontend/src/features/studio/__screenshots__/nova-skill-upload-dark-1440.png",
+    "frontend/src/features/studio/__screenshots__/nova-skill-upload-dark-375.png",
+    "frontend/src/features/studio/news/__screenshots__/newspaper-page.test.tsx/lays-out-the-edition-at-1280-px-without-page-overflow-1.png",
+    "frontend/src/features/agents/agent-detail/__screenshots__/thread-trace-view.test.tsx/ThreadTraceView-keeps-legacy-score--Not-recorded--distinct-from-correctness-at-320-px-in--dark--mode-1.png",
+    "frontend/src/features/agents/agent-detail/__screenshots__/quality-tab.test.tsx/Agent-Quality-sends-selected-behavioral-gates-and-bounded-performance-limits-with-the-evaluation-1.png",
+    "frontend/src/features/task-orchestration/__screenshots__/task-detail.test.tsx/TaskDetail-centres-the-graph-above-history-at-320px-in-light-with-12-runs-1.png",
+    "frontend/src/features/task-orchestration/__screenshots__/task-detail.test.tsx/TaskDetail-centres-the-graph-above-history-at-1280px-in-dark-with-12-runs-1.png",
+    "frontend/src/features/task-orchestration/__screenshots__/task-detail.test.tsx/TaskDetail-centres-the-graph-above-history-at-1280px-in-light-with-0-runs-1.png",
+    "frontend/src/features/task-orchestration/__screenshots__/task-list.test.tsx/TaskList-opens-failed-run-errors-without-navigating-at-1280px-1.png",
+    "frontend/src/features/monitoring/ai/__screenshots__/ai-monitoring-1280-false-true.png",
+    "frontend/src/features/ai-providers/__screenshots__/default-model-control.test.tsx/saves-the-registered-default-at-320-px-1.png",
+    "frontend/src/features/ai-providers/__screenshots__/default-model-control.test.tsx/saves-the-registered-default-at-1280-px-1.png",
+    "frontend/src/features/ai-providers/__screenshots__/providers-tab.test.tsx/registers-and-edits-an-LLM-provider-at-1280px-1.png",
+    "frontend/src/features/ai-providers/__screenshots__/providers-tab.test.tsx/registers-and-edits-an-LLM-provider-at-320px-1.png"
+  ],
+  "classification": "Only ignored browser-test screenshot outputs changed; no application source, tests, dependencies or configuration changed during the gates.",
+  "source_result": "UNCHANGED",
+  "all_changed_files_ignored": true
+}

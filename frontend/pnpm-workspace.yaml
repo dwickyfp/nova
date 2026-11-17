@@ -1,6 +1,12 @@
 allowBuilds:
   esbuild: true
   '@openuidev/lang-core': false
+overrides:
+  # Retain the existing major while fixing deserialization and resource-exhaustion advisories.
+  'seroval@<1.6.11': 1.6.11
+  'dompurify@<3.4.17': 3.4.17
+  'source-map-js@<1.2.2': 1.2.2
+  'follow-redirects@<1.16.3': 1.16.3
 minimumReleaseAgeExclude:
   - '@openuidev/devtools@0.3.0'
   - '@openuidev/lang-core@1.0.0'

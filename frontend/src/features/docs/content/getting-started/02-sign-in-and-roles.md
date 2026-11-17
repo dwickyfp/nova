@@ -91,6 +91,7 @@ whole session, including later worksheets.
 | *Role is not granted to this user* | You do not have that role, or it was given to you after you signed in. Sign out and sign in again to pick up new roles. |
 | *Exactly one named role must be active* | `SET ROLE ALL` and `SET ROLE NONE` are not allowed. Nova always works under exactly one role. |
 | *Invalid username or password* | The username or password is wrong. Ask your administrator to reset your password. |
+| *Sign-in is unavailable because the data engine is not responding* | Your password was not checked, so it may be right. Wait a moment and sign in again. If it keeps happening, tell your administrator. |
 
 ## Sign out
 

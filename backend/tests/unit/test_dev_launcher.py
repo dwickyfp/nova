@@ -52,7 +52,7 @@ while True:
     docker.chmod(0o700)
     environment = {
         **os.environ, "PATH": f"{binaries}:{os.environ['PATH']}",
-        "RANGER_PASSWORD": "fixture", "SUPERSET_SERVICE_TOKEN": "fixture",
+        "RANGER_PASSWORD": "fixture",
         "CHILD_RECORD": str(tmp_path / "children"), "DEV_STARTUP_SECONDS": "1",
     }
     names = ["BACKEND_PORT", "QUERY_PORT", "PROXY_PORT"] + [

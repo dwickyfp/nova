@@ -1,0 +1,18 @@
+{
+  "baseline_commit": "da4ab34c3ebbd379a001830a930ea77ac4df05cd",
+  "schema_before": 53,
+  "schema_after": 54,
+  "migration": "0054_viz_export_task_reads.sql",
+  "migration_sha256": "89ac799d9b2bfe66b1cc9d0965964450b2aa59535b9dc841a0b331eb5f739702",
+  "metadata_epoch_preserved": true,
+  "tables_count_checked": 192,
+  "all_counts_preserved": true,
+  "backup": {
+    "bytes": 124176291,
+    "sha256": "cc96ecd8ec777372866d3506e4accc7a8f0b9e6e052f8f125eb0afcb5b8fbea1",
+    "toc_verified": true
+  },
+  "fixture_evidence": "tests/integration/viz export, viz, workspaces, workspace service, tasks, migrator and intelligence PG17 suites (pg-0054.xml)",
+  "launcher": "not stopped; processes refused metadata work while frozen and reloaded at 54",
+  "recorded_at": "2026-11-16T05:45:03.059278+00:00"
+}

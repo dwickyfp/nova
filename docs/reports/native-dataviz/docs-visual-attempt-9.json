@@ -1,0 +1,17 @@
+{
+  "recorded_at": "2026-11-13T21:50:43.060924+00:00",
+  "result": "PASS",
+  "surface": "Existing authenticated Nova QA Chrome tab, native app control",
+  "page": "/docs/dataviz/native-documents#drafts-and-publications",
+  "viewport": [
+    1920,
+    1080
+  ],
+  "theme": "dark",
+  "observations": [
+    "Publication text describes the response projection without claiming that other query/history paths are already protected",
+    "Authorized draft and immutable publication descriptions remain visible and readable"
+  ],
+  "evidence": "AX state and screenshot observed in this conversation; no local screenshot file was created",
+  "limits": "Docs only; not native editor/mobile/light-theme acceptance"
+}

@@ -1,0 +1,122 @@
+ Image docker-starrocks-fe Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 1.74kB done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from starrocks-fe.Dockerfile
+#2 transferring dockerfile: 10.71kB done
+#2 DONE 0.1s
+
+#3 [internal] load metadata for docker.io/library/eclipse-temurin:17.0.12_7-jdk-jammy
+#3 ...
+
+#4 [internal] load metadata for docker.io/starrocks/fe-ubuntu:4.1.4
+#4 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/eclipse-temurin:17.0.12_7-jdk-jammy
+#3 DONE 1.5s
+
+#5 [internal] load .dockerignore
+#5 transferring context: 305B done
+#5 DONE 0.0s
+
+#6 [patcher  1/26] FROM docker.io/library/eclipse-temurin:17.0.12_7-jdk-jammy@sha256:56c8b3a8f4299e0190095333cf85e647e810bdf167e59f224a1fd432e47a8f12
+#6 DONE 0.0s
+
+#7 [internal] load build context
+#7 transferring context: 11.57kB done
+#7 DONE 0.1s
+
+#8 [upstream 1/1] FROM docker.io/starrocks/fe-ubuntu:4.1.4
+#8 DONE 0.2s
+
+#9 [patcher  8/26] RUN git -C /src sparse-checkout add /fe/fe-core/src/main/java/com/starrocks/scheduler/TaskRun.java     /fe/fe-core/src/main/java/com/starrocks/scheduler/TaskManager.java
+#9 CACHED
+
+#10 [patcher 14/26] RUN git -C /src sparse-checkout add /fe/fe-core/src/main/java/com/starrocks/service/InformationSchemaDataSource.java
+#10 CACHED
+
+#11 [patcher 15/26] COPY patches/starrocks/4.1.4-view-source-identity.patch /tmp/view-source-identity.patch
+#11 CACHED
+
+#12 [patcher  2/26] RUN apt-get update     && apt-get install -y --no-install-recommends curl git     && rm -rf /var/lib/apt/lists/*
+#12 CACHED
+
+#13 [patcher 13/26] RUN git -C /src apply --check /tmp/jdbc-snowflake.patch     && git -C /src apply /tmp/jdbc-snowflake.patch
+#13 CACHED
+
+#14 [patcher  5/26] RUN git -C /src apply --check /tmp/ranger-active-role.patch     && git -C /src apply /tmp/ranger-active-role.patch
+#14 CACHED
+
+#15 [patcher  7/26] RUN git -C /src apply --check /tmp/ranger-rpc-context.patch     && git -C /src apply /tmp/ranger-rpc-context.patch
+#15 CACHED
+
+#16 [patcher  4/26] COPY patches/starrocks/4.1.4-ranger-active-role.patch /tmp/ranger-active-role.patch
+#16 CACHED
+
+#17 [patcher  6/26] COPY patches/starrocks/4.1.4-ranger-rpc-context.patch /tmp/ranger-rpc-context.patch
+#17 CACHED
+
+#18 [patcher 12/26] COPY patches/starrocks/4.1.4-jdbc-snowflake.patch /tmp/jdbc-snowflake.patch
+#18 CACHED
+
+#19 [patcher  9/26] COPY patches/starrocks/4.1.4-task-active-role.patch /tmp/task-active-role.patch
+#19 CACHED
+
+#20 [patcher 11/26] RUN git -C /src sparse-checkout add /fe/fe-core/src/main/java/com/starrocks/connector/jdbc/JDBCMetadata.java     /fe/fe-core/src/main/java/com/starrocks/connector/jdbc/JDBCDriverClassLoaders.java     /fe/fe-core/src/main/java/com/starrocks/connector/jdbc/SnowflakeSchemaResolver.java     /fe/fe-core/src/main/java/com/starrocks/planner/JDBCScanNode.java     /fe/fe-core/src/test/java/com/starrocks/connector/jdbc/SnowflakeSchemaResolverTest.java
+#20 CACHED
+
+#21 [patcher 10/26] RUN git -C /src apply --check /tmp/task-active-role.patch     && git -C /src apply /tmp/task-active-role.patch
+#21 CACHED
+
+#22 [patcher  3/26] RUN git init /src     && git -C /src remote add origin https://github.com/StarRocks/starrocks.git     && git -C /src sparse-checkout init --no-cone     && git -C /src sparse-checkout set        /conf/ranger/ranger-starrocks-security.xml        /fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerAccessController.java        /fe/fe-core/src/main/java/com/starrocks/authorization/ranger/starrocks/RangerStarRocksAccessController.java        /fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerStarRocksAccessRequest.java        /fe/fe-core/src/test/java/com/starrocks/authorization/ranger/RangerInterfaceTest.java        /fe/fe-core/src/test/resources/ranger-starrocks-security.xml     && git -C /src fetch --filter=blob:none --depth 1 origin 4a9848edf03f5c936dac664b2d52527f48e72eb0     && git -C /src checkout FETCH_HEAD
+#22 CACHED
+
+#23 [patcher 16/26] RUN git -C /src apply --check /tmp/view-source-identity.patch     && git -C /src apply /tmp/view-source-identity.patch
+#23 CACHED
+
+#24 [patcher 17/26] COPY --from=upstream /opt/starrocks/fe/lib /opt/starrocks/fe/lib
+#24 DONE 0.2s
+
+#25 [patcher 18/26] RUN curl -fsSLo /opt/starrocks/fe/lib/nashorn-core-15.4.jar        https://repo1.maven.org/maven2/org/openjdk/nashorn/nashorn-core/15.4/nashorn-core-15.4.jar     && echo "6f816e84dfd63a81d4eaa7829c08337bbaff3ec683ff3bf6bbd90d017a00dc6f  /opt/starrocks/fe/lib/nashorn-core-15.4.jar" | sha256sum -c -     && curl -fsSLo /opt/starrocks/fe/lib/asm-commons-9.4.jar        https://repo1.maven.org/maven2/org/ow2/asm/asm-commons/9.4/asm-commons-9.4.jar     && echo "0c128a9ec3f33c98959272f6d16cf14247b508f58951574bcdbd2b56d6326364  /opt/starrocks/fe/lib/asm-commons-9.4.jar" | sha256sum -c -
+#25 2.037 /opt/starrocks/fe/lib/nashorn-core-15.4.jar: OK
+#25 2.192 /opt/starrocks/fe/lib/asm-commons-9.4.jar: OK
+#25 DONE 2.3s
+
+#26 [patcher 19/26] RUN mkdir -p /opt/starrocks/drivers     && curl -fsSLo /opt/starrocks/drivers/snowflake-jdbc-3.28.0.jar        https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/3.28.0/snowflake-jdbc-3.28.0.jar     && echo "41e3e99fde1aa90516448306885b345df7600db650258e7dfd0ea79c02f6cb49  /opt/starrocks/drivers/snowflake-jdbc-3.28.0.jar" | sha256sum -c -     && curl -fsSLo /tmp/junit-console.jar        https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/1.11.4/junit-platform-console-standalone-1.11.4.jar     && echo "b016ef6b1c3454d6d7c2c88ce081dabf289699686af6622d6e4e2e1b54b4a2fc  /tmp/junit-console.jar" | sha256sum -c -
+#26 9.201 curl: (92) HTTP/2 stream 0 was not closed cleanly: INTERNAL_ERROR (err 2)
+#26 ERROR: process "/bin/sh -c mkdir -p /opt/starrocks/drivers     && curl -fsSLo /opt/starrocks/drivers/snowflake-jdbc-${SNOWFLAKE_JDBC_VERSION}.jar        https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/${SNOWFLAKE_JDBC_VERSION}/snowflake-jdbc-${SNOWFLAKE_JDBC_VERSION}.jar     && echo \"${SNOWFLAKE_JDBC_SHA256}  /opt/starrocks/drivers/snowflake-jdbc-${SNOWFLAKE_JDBC_VERSION}.jar\" | sha256sum -c -     && curl -fsSLo /tmp/junit-console.jar        https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/${JUNIT_CONSOLE_VERSION}/junit-platform-console-standalone-${JUNIT_CONSOLE_VERSION}.jar     && echo \"${JUNIT_CONSOLE_SHA256}  /tmp/junit-console.jar\" | sha256sum -c -" did not complete successfully: exit code: 92
+------
+ > [patcher 19/26] RUN mkdir -p /opt/starrocks/drivers     && curl -fsSLo /opt/starrocks/drivers/snowflake-jdbc-3.28.0.jar        https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/3.28.0/snowflake-jdbc-3.28.0.jar     && echo "41e3e99fde1aa90516448306885b345df7600db650258e7dfd0ea79c02f6cb49  /opt/starrocks/drivers/snowflake-jdbc-3.28.0.jar" | sha256sum -c -     && curl -fsSLo /tmp/junit-console.jar        https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/1.11.4/junit-platform-console-standalone-1.11.4.jar     && echo "b016ef6b1c3454d6d7c2c88ce081dabf289699686af6622d6e4e2e1b54b4a2fc  /tmp/junit-console.jar" | sha256sum -c -:
+9.201 curl: (92) HTTP/2 stream 0 was not closed cleanly: INTERNAL_ERROR (err 2)
+------
+starrocks-fe.Dockerfile:63
+
+--------------------
+
+  62 |     # same file at the same path for the JDBC scanner.
+
+  63 | >>> RUN mkdir -p /opt/starrocks/drivers \
+
+  64 | >>>     && curl -fsSLo /opt/starrocks/drivers/snowflake-jdbc-${SNOWFLAKE_JDBC_VERSION}.jar \
+
+  65 | >>>        https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/${SNOWFLAKE_JDBC_VERSION}/snowflake-jdbc-${SNOWFLAKE_JDBC_VERSION}.jar \
+
+  66 | >>>     && echo "${SNOWFLAKE_JDBC_SHA256}  /opt/starrocks/drivers/snowflake-jdbc-${SNOWFLAKE_JDBC_VERSION}.jar" | sha256sum -c - \
+
+  67 | >>>     && curl -fsSLo /tmp/junit-console.jar \
+
+  68 | >>>        https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/${JUNIT_CONSOLE_VERSION}/junit-platform-console-standalone-${JUNIT_CONSOLE_VERSION}.jar \
+
+  69 | >>>     && echo "${JUNIT_CONSOLE_SHA256}  /tmp/junit-console.jar" | sha256sum -c -
+
+  70 |     RUN mkdir -p /tmp/classes \
+
+--------------------
+
+failed to solve: process "/bin/sh -c mkdir -p /opt/starrocks/drivers     && curl -fsSLo /opt/starrocks/drivers/snowflake-jdbc-${SNOWFLAKE_JDBC_VERSION}.jar        https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/${SNOWFLAKE_JDBC_VERSION}/snowflake-jdbc-${SNOWFLAKE_JDBC_VERSION}.jar     && echo \"${SNOWFLAKE_JDBC_SHA256}  /opt/starrocks/drivers/snowflake-jdbc-${SNOWFLAKE_JDBC_VERSION}.jar\" | sha256sum -c -     && curl -fsSLo /tmp/junit-console.jar        https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/${JUNIT_CONSOLE_VERSION}/junit-platform-console-standalone-${JUNIT_CONSOLE_VERSION}.jar     && echo \"${JUNIT_CONSOLE_SHA256}  /tmp/junit-console.jar\" | sha256sum -c -" did not complete successfully: exit code: 92
+
+
+
+View build details: docker-desktop://dashboard/build/default/default/vyor2m74zku9lakwie3x1sf2f
+

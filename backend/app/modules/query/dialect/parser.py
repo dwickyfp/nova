@@ -76,6 +76,9 @@ class CommandType(Enum):
     STAGE_BROWSE = "stage_browse"  # LIST FILES @stage
     STAGE_LOAD = "stage_load"  # COPY INTO table FROM @stage
     STAGE_EXPORT = "stage_export"  # COPY INTO @stage FROM table
+    STAGE_UNLOAD = "stage_unload"  # INSERT INTO FILES / INTO OUTFILE / EXPORT to '@stage/...'
+    STAGE_BROKER_LOAD = "stage_broker_load"  # LOAD LABEL ... DATA INFILE("@stage/...")
+    STAGE_REPOSITORY = "stage_repository"  # CREATE REPOSITORY ... ON LOCATION "@stage/..."
     REGULAR = "regular"  # No @stage references
 
 

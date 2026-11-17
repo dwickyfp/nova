@@ -1,0 +1,56 @@
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+
+ ❯ |browser (chromium)| src/features/native-dataviz/documents.test.ts (55 tests | 1 failed) 502ms
+     × reads an immutable revision only in the authorized draft scope 406ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |browser (chromium)| src/features/native-dataviz/documents.test.ts > native document transport > reads an immutable revision only in the authorized draft scope
+AssertionError: expected { …(6) } to deeply equal { …(6) }
+
+Failure screenshot:
+  - src/features/native-dataviz/__screenshots__/documents.test.ts/native-document-transport-reads-an-immutable-revision-only-in-the-authorized-draft-scope-1.png
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[33m@@ -1,14 +1,21 @@[39m
+[2m  {[22m
+[2m    "definition": {[22m
+[31m+     "actions": [],[39m
+[31m+     "columns": 12,[39m
+[2m      "dashboard_id": "aaaaaaaa-0000-4000-8000-000000000001",[22m
+[31m+     "datasets": [],[39m
+[31m+     "description": "",[39m
+[31m+     "filters": [],[39m
+[2m      "pages": [[22m
+[2m        {[22m
+[2m          "page_id": "aaaaaaaa-0000-4000-8000-000000000002",[22m
+[2m          "title": "Overview",[22m
+[31m+         "widgets": [],[39m
+[2m        },[22m
+[2m      ],[22m
+[31m+     "schema_version": 2,[39m
+[2m      "title": "Sales",[22m
+[2m    },[22m
+[2m    "grants_revision": 1,[22m
+[2m    "metadata_revision": 6,[22m
+[2m    "publication_id": null,[22m
+
+ ❯ src/features/native-dataviz/documents.test.ts:35:83
+     33|       grants_revision: 1, publication_id: null, definition: document }
+     34|     fetchMock.mockResolvedValueOnce(response(snapshot))
+     35|     await expect(client().read('dashboards', id(1), { draft: true, rev…
+       |                                                                                   ^
+     36|     expect(fetchMock.mock.calls[0][0]).toBe(`/api/v1/viz/dashboards/${…
+     37|     await expect(client().read('dashboards', id(1), { revision: 2 })).…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 3 passed (4)
+      Tests  1 failed | 78 passed (79)
+   Start at  00:27:58
+   Duration  15.72s (transform 0ms, setup 0ms, import 4.67s, tests 17.43s, environment 0ms)
+

@@ -1,0 +1,27 @@
+{
+  "recorded_at": "2026-11-14T15:53:49.158966+00:00",
+  "status": "NOVA_HISTORY_BOUNDARY_VERIFIED",
+  "reproduction": "sql-dataset-history-live-attempt-2.json",
+  "governed_verification": [
+    "sql-dataset-history-live-attempt-5.json",
+    "semantic-dataset-live-attempt-6.json",
+    "source-identity-live-attempt-35.json"
+  ],
+  "retained_failures": [
+    "source-identity-live-attempt-31.json",
+    "source-identity-live-attempt-34.json"
+  ],
+  "unit_regression": "backend-unit-summary-attempt-13.json",
+  "source_drift": "backend-drift-attempt-13.json",
+  "implemented": [
+    "Task-local dataset provenance covers nested query calls",
+    "Shared audit retains actor, active role, operation, revision and correlation without SQL/formula/error snippets",
+    "Private generated queries are excluded from Autopilot source sampling and engine profiles",
+    "Borrowed engine sessions refused for dataset queries"
+  ],
+  "limits": [
+    "Existing audit history is retained",
+    "Engine process-list, audit-log and dump redaction remains unverified",
+    "Dataset parameter authoring and native editors remain incomplete"
+  ]
+}

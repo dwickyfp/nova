@@ -1,0 +1,43 @@
+{
+  "toolchain": {
+    "node": "v22.22.0",
+    "pnpm": "11.8.0"
+  },
+  "steps": [
+    {
+      "command": [
+        "pnpm",
+        "install",
+        "--frozen-lockfile"
+      ],
+      "returncode": 0
+    },
+    {
+      "command": [
+        "pnpm",
+        "lint"
+      ],
+      "returncode": 0,
+      "summary": "0 errors, 31 warnings (existing Fast Refresh/unused-directive warnings; none in native-dataviz)",
+      "file": "frontend-lint-attempt-28.txt"
+    },
+    {
+      "command": [
+        "pnpm",
+        "build"
+      ],
+      "returncode": 0
+    },
+    {
+      "command": [
+        "pnpm",
+        "test:coverage"
+      ],
+      "returncode": 0,
+      "summary": "210 files, 1801 tests passed; statements 59.26%, branches 57.13%",
+      "file": "frontend-coverage-attempt-28.txt"
+    }
+  ],
+  "seconds": 203,
+  "note": "Run after all frontend edits in this batch (parameter controls, declaration editor, contract-default expectation updates). No frontend source changed during or after the run."
+}

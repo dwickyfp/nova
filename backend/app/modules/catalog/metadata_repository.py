@@ -582,7 +582,7 @@ class CatalogMetadataRepository:
     async def delete_connection(self, name: str) -> bool:
         """Remove a connection and both of its credentials together."""
         await self._bound()
-        for table in _CREDENTIAL_TABLES.values():
+        for table in (*_CREDENTIAL_TABLES.values(), "nova_meta.catalog_connection_roles"):
             await self.connection.execute(f"DELETE FROM {table} WHERE connection_name=%s", (name,))
         cursor = await self.connection.execute(
             "DELETE FROM nova_meta.catalog_connections WHERE name=%s", (name,),

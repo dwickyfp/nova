@@ -1,0 +1,16 @@
+NDV-CHART-009 live check, attempt 1 (2026-11-17, local dev stack, Vite 5173, StarRocks 29030)
+Principal: nova_admin, dashboard "Demo sales overview" draft, chart builder preview (nothing saved).
+
+Defect found before the change: a pie capped at "Show the top N" drew only the N largest values
+and labelled them "{name}: {share}%", where the share was of the drawn slices, not of the total.
+The builder always saved overflow "error", which nothing honoured.
+
+After the change, new pie of units (Sum) by order month, Show the top = 3:
+- Grouped request (limit 3) returned truncated=true: Aug 2026 1766, Apr 2026 1703, May 2026 1652.
+- Total request (same filters, no grouping, limit 1) returned 15257, equal to the dashboard KPI "Units sold 15,257".
+- Other = 15257 - (1766 + 1703 + 1652) = 10136; note "Showing the top 3 and the rest as Other."
+- Combine the rest into Other switched off: note "Showing the top 3 only.", three slices, no shares.
+- Other uses the neutral data-mark colour: contrast against the card 3.39:1 (light) and 3.85:1 (dark),
+  above the 3:1 non-text minimum. The first attempt used the axis colour (1.4:1 light, translucent in dark)
+  and was replaced after reviewing the screenshots.
+Screenshots (light/dark, Other on and off) were reviewed for layout; not committed.

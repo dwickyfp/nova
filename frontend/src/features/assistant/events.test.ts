@@ -372,3 +372,22 @@ describe("readSseFrames", () => {
     expect(frames).toEqual([{ event: "ping", data: "{}" }]);
   });
 });
+
+describe("parseAssistantEvent native dashboard events", () => {
+  it("keeps a committed dashboard change so the page reloads it", () => {
+    expect(parseAssistantEvent("dashboard_changed", JSON.stringify({
+      tool_call_id: "c1", dashboard_id: "d1", revision: 5, published: true, secret: "x",
+    }))).toEqual({ type: "dashboard_changed", tool_call_id: "c1", dashboard_id: "d1", revision: 5, published: true });
+    expect(parseAssistantEvent("dashboard_changed", JSON.stringify({ tool_call_id: "c1", dashboard_id: "d1", revision: "5" }))).toBeNull();
+  });
+
+  it("keeps Neva's proposed target, bounded, and drops anything unknown", () => {
+    const ids = Array.from({ length: 20 }, (_, index) => `w${index}`);
+    const parsed = parseAssistantEvent("dashboard_activity", JSON.stringify({
+      tool_call_id: "c1", dashboard_id: "d1", action: "move", widget_ids: [...ids, 7], page_id: "p1", sql: "DROP",
+    }));
+    expect(parsed).toEqual({ type: "dashboard_activity", tool_call_id: "c1", dashboard_id: "d1", action: "move",
+      widget_ids: ids.slice(0, 12), page_id: "p1" });
+    expect(parseAssistantEvent("dashboard_activity", JSON.stringify({ tool_call_id: "c1", dashboard_id: "d1", action: "drop" }))).toBeNull();
+  });
+});

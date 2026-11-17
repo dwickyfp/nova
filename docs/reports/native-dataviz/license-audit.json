@@ -1,0 +1,69 @@
+{
+  "scope": "Declared license inventory, including development and platform-specific packages. Not a distribution/notice compliance sign-off. No source-available/commercial dependency is accepted by this allowlist.",
+  "results": [
+    {
+      "ecosystem": "pypi",
+      "sbom": "backend-sbom.cdx.json",
+      "sha256": "6674c0df1254d26e2f92cdcd54a25e65fdac0ac3eff33e26ea80592e4d9e4bac",
+      "component_count": 141,
+      "missing_or_unreviewed_license_metadata": [],
+      "version_specific_enrichment": [
+        "antlr4-python3-runtime",
+        "lupa",
+        "tiktoken"
+      ],
+      "classifier_only_or_additional_metadata": [
+        "adagio",
+        "babel",
+        "certifi",
+        "cloudpickle",
+        "contourpy",
+        "coreforecast",
+        "cycler",
+        "httpx",
+        "kiwisolver",
+        "nodeenv",
+        "numba",
+        "opensandbox",
+        "opensandbox-code-interpreter",
+        "pandas",
+        "pathspec",
+        "patsy",
+        "pyOpenSSL",
+        "python-dateutil",
+        "requests",
+        "rsa",
+        "s3transfer",
+        "scipy",
+        "snowflake-connector-python",
+        "sortedcontainers",
+        "statsforecast",
+        "threadpoolctl",
+        "utilsforecast",
+        "uvloop",
+        "xgboost"
+      ]
+    },
+    {
+      "ecosystem": "npm",
+      "sbom": "frontend-sbom.cdx.json",
+      "sha256": "00cfd9f02a77ffb0d07d1654db17d31a029cb4ceef3a8f548a2daf78a7a20984",
+      "component_count": 739,
+      "missing_or_unreviewed_license_metadata": [],
+      "version_specific_enrichment": [
+        "@typescript-eslint/eslint-plugin",
+        "@typescript-eslint/parser",
+        "@typescript-eslint/typescript-estree"
+      ],
+      "classifier_only_or_additional_metadata": []
+    }
+  ],
+  "native_required_libraries": {
+    "gridstack@14.1.0": "MIT",
+    "echarts@6.1.0": "Apache-2.0",
+    "@tanstack/react-table": "MIT",
+    "@tanstack/react-virtual": "MIT",
+    "zod@4.6.6": "MIT"
+  },
+  "license_metadata_complete": true
+}

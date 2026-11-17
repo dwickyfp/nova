@@ -1,0 +1,13 @@
+{
+  "recorded_at": "2026-11-14T17:07:28.608441+00:00",
+  "result": "PASS",
+  "surface": "Existing Chrome Nova QA tab, native application control",
+  "path": "/docs/dataviz/native-documents#dashboard-datasets",
+  "observations": [
+    "Atomic dataset/dashboard save and revision conflict behavior visible",
+    "Workspace creation and dashboard edit permission requirements visible",
+    "Draft and retained publication deletion guard visible"
+  ],
+  "evidence": "Accessibility content and screenshot observed in conversation; no saved image artifact claimed",
+  "limits": "Documentation visual check only"
+}

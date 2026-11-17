@@ -1,0 +1,1 @@
+$ node scripts/build-ui-validator.mjs --check

@@ -109,7 +109,7 @@ class ExplorerService:
                 if f["name"] in function_names
             ]
             pipes_raw = [
-                p for p in await explorer_repo.list_pipes(database)
+                p for p in await explorer_repo.list_pipes(database, user=user)
                 if _relation_name(p.get("target_table")) in base_tables
             ]
             # Only stages in schemas the caller may read; Ranger decides each
@@ -360,7 +360,7 @@ class ExplorerService:
     async def get_pipe_detail(
         self, database: str, pipe: str, *, user: dict
     ) -> PipeDetailResponse | None:
-        raw = await explorer_repo.get_pipe_detail(database, pipe)
+        raw = await explorer_repo.get_pipe_detail(database, pipe, user=user)
         if not raw:
             return None
         relations = await self._visible_relations(user, database)

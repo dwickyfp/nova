@@ -1,0 +1,33 @@
+{
+  "result": "PASS",
+  "steps": [
+    {
+      "check": "one explicit login role",
+      "passed": true
+    },
+    {
+      "check": "proxy exposes authoritative typed schema",
+      "passed": true
+    },
+    {
+      "check": "Ranger row filter retained",
+      "passed": true
+    },
+    {
+      "check": "role-scoped masks retained",
+      "passed": true
+    },
+    {
+      "check": "NONE cannot replace named active role",
+      "passed": true
+    },
+    {
+      "check": "ALL cannot replace named active role",
+      "passed": true
+    },
+    {
+      "check": "refused changes preserve role",
+      "passed": true
+    }
+  ]
+}

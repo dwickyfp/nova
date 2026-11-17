@@ -1,0 +1,399 @@
+{
+  "started_at": "2026-11-17T12:52:47.146848+00:00",
+  "resource_id": "8ff2d795-d01d-4667-bb16-f4744c87a7a1",
+  "scope": "sql dataset API, real StarRocks/Ranger and PG17 metadata",
+  "result": "FAIL",
+  "cleanup": "SOFT_DELETED",
+  "error_type": "AssertionError",
+  "steps": [
+    {
+      "check": "QA login",
+      "passed": true
+    },
+    {
+      "check": "QA admitted",
+      "passed": true
+    },
+    {
+      "check": "non-admin role",
+      "passed": true
+    },
+    {
+      "check": "QA login",
+      "passed": true
+    },
+    {
+      "check": "QA admitted",
+      "passed": true
+    },
+    {
+      "check": "non-admin role",
+      "passed": true
+    },
+    {
+      "request": "inactive fixture role cannot inspect source",
+      "status": 403,
+      "expected_status": 403
+    },
+    {
+      "check": "inactive fixture role cannot inspect source",
+      "passed": true
+    },
+    {
+      "check": "source refusal has no private name",
+      "passed": true
+    },
+    {
+      "request": "inactive role cannot create source dataset",
+      "status": 403,
+      "expected_status": 403
+    },
+    {
+      "check": "inactive role cannot create source dataset",
+      "passed": true
+    },
+    {
+      "check": "create refusal has no private name",
+      "passed": true
+    },
+    {
+      "request": "activate fixture role",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "activate fixture role",
+      "passed": true
+    },
+    {
+      "check": "exact active role",
+      "passed": true
+    },
+    {
+      "request": "denied create left no dataset",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "denied create left no dataset",
+      "passed": true
+    },
+    {
+      "request": "inspect",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "inspect",
+      "passed": true
+    },
+    {
+      "check": "schema without data",
+      "passed": true
+    },
+    {
+      "check": "physical identity",
+      "passed": true
+    },
+    {
+      "check": "source lineage and qualified name",
+      "passed": true,
+      "sources": [
+        {
+          "kind": "view",
+          "catalog": "default_catalog",
+          "database": "ndv_src_c65dac564740",
+          "schema_name": "default",
+          "object_name": "source_view"
+        }
+      ]
+    },
+    {
+      "check": "parsed query digest",
+      "passed": true
+    },
+    {
+      "check": "authoritative fields",
+      "passed": true
+    },
+    {
+      "check": "no browser cache",
+      "passed": true
+    },
+    {
+      "request": "stale binding refused",
+      "status": 409,
+      "expected_status": 409
+    },
+    {
+      "check": "stale binding refused",
+      "passed": true
+    },
+    {
+      "request": "spoofed schema refused",
+      "status": 422,
+      "expected_status": 422
+    },
+    {
+      "check": "spoofed schema refused",
+      "passed": true
+    },
+    {
+      "request": "create",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "create",
+      "passed": true
+    },
+    {
+      "request": "replay",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "replay",
+      "passed": true
+    },
+    {
+      "check": "same receipt",
+      "passed": true
+    },
+    {
+      "request": "create owned dataset dashboard",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "create owned dataset dashboard",
+      "passed": true
+    },
+    {
+      "request": "attach dashboard dataset",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "attach dashboard dataset",
+      "passed": true
+    },
+    {
+      "request": "replay dataset attachment",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "replay dataset attachment",
+      "passed": true
+    },
+    {
+      "check": "dataset attachment receipt stable",
+      "passed": true
+    },
+    {
+      "request": "read attached dataset",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "read attached dataset",
+      "passed": true
+    },
+    {
+      "check": "dashboard pins dataset without creating widgets",
+      "passed": true
+    },
+    {
+      "request": "dashboard protects registered dataset",
+      "status": 409,
+      "expected_status": 409
+    },
+    {
+      "check": "dashboard protects registered dataset",
+      "passed": true
+    },
+    {
+      "request": "inspect new dashboard dataset",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "inspect new dashboard dataset",
+      "passed": true
+    },
+    {
+      "request": "create dataset in dashboard atomically",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "create dataset in dashboard atomically",
+      "passed": true
+    },
+    {
+      "request": "replay atomic dataset creation",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "replay atomic dataset creation",
+      "passed": true
+    },
+    {
+      "check": "atomic dataset creation receipt stable",
+      "passed": true
+    },
+    {
+      "request": "read newly attached dataset",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "read newly attached dataset",
+      "passed": true
+    },
+    {
+      "check": "atomic dataset creation retains server fields",
+      "passed": true
+    },
+    {
+      "request": "read dashboard after dataset creation",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "read dashboard after dataset creation",
+      "passed": true
+    },
+    {
+      "check": "atomic dataset creation appends one reference",
+      "passed": true
+    },
+    {
+      "request": "read pinned dashboard dataset index",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "read pinned dashboard dataset index",
+      "passed": true
+    },
+    {
+      "check": "dataset index retains old dashboard references and titles",
+      "passed": true
+    },
+    {
+      "request": "edit attached dataset independently",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "edit attached dataset independently",
+      "passed": true
+    },
+    {
+      "request": "read current dashboard dataset index",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "read current dashboard dataset index",
+      "passed": true
+    },
+    {
+      "check": "dataset index appends only confirmed creation",
+      "passed": true
+    },
+    {
+      "request": "preview pinned dataset after later draft edit",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "preview pinned dataset after later draft edit",
+      "passed": true
+    },
+    {
+      "check": "preview retains pinned fields and revision",
+      "passed": true
+    },
+    {
+      "request": "read immutable dashboard revision",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "read immutable dashboard revision",
+      "passed": true
+    },
+    {
+      "check": "historical read does not substitute latest draft",
+      "passed": true
+    },
+    {
+      "request": "historical read requires draft editing scope",
+      "status": 200,
+      "expected_status": 422
+    },
+    {
+      "check": "historical read requires draft editing scope",
+      "passed": false
+    },
+    {
+      "request": "delete owned dataset dashboard",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "delete owned dataset dashboard",
+      "passed": true
+    },
+    {
+      "request": "delete owned dashboard dataset",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "delete owned dashboard dataset",
+      "passed": true
+    },
+    {
+      "request": "delete owned dataset",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "delete owned dataset",
+      "passed": true
+    },
+    {
+      "request": "deleted dataset hidden",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "deleted dataset hidden",
+      "passed": true
+    },
+    {
+      "request": "logout",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "logout",
+      "passed": true
+    },
+    {
+      "request": "logout",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "logout",
+      "passed": true
+    }
+  ],
+  "finished_at": "2026-11-17T12:54:01.206417+00:00"
+}

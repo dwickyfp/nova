@@ -1,0 +1,8 @@
+{
+  "recorded_at": "2026-11-14T18:10:41.999561+00:00",
+  "result": "CANCELLED_NOT_PASS",
+  "observation": "Host load average 261.59 with approximately 78 MiB free physical pages; widespread browser timeouts and slow simple file reads. Exact cause of host pressure not established.",
+  "action": "Stop only task-owned batch27 orchestrator, then interrupt its coverage run; preserve development services, data and volumes. Backend16 not started.",
+  "source_unchanged": true,
+  "next": "Repeat tests with browser file parallelism disabled; retain assertions and timeouts."
+}

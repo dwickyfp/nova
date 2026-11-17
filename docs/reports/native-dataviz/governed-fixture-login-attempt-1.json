@@ -1,0 +1,16 @@
+[
+  {
+    "fixture_user": "alice",
+    "http_status": 200,
+    "status": "AUTHENTICATED",
+    "active_role": "marketing",
+    "logout_status": 200
+  },
+  {
+    "fixture_user": "bob",
+    "http_status": 200,
+    "status": "AUTHENTICATED",
+    "active_role": "marketing",
+    "logout_status": 200
+  }
+]

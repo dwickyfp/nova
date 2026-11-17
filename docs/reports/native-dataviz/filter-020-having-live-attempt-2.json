@@ -1,0 +1,193 @@
+{
+  "started_at": "2026-11-17T12:15:00.881690+00:00",
+  "resource_id": "455131ff-7e6e-4238-9605-f74139ea4b5f",
+  "scope": "shared native dataset read by three people under Ranger row filters",
+  "result": "FAIL",
+  "cleanup": "REMOVED",
+  "error_type": "AssertionError",
+  "error": "bob query as marketing",
+  "steps": [
+    {
+      "check": "alice login",
+      "passed": true
+    },
+    {
+      "check": "alice admitted",
+      "passed": true
+    },
+    {
+      "check": "alice login",
+      "passed": true
+    },
+    {
+      "check": "alice admitted",
+      "passed": true
+    },
+    {
+      "check": "bob login",
+      "passed": true
+    },
+    {
+      "check": "bob admitted",
+      "passed": true
+    },
+    {
+      "request": "author uses regional_manager",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "author uses regional_manager",
+      "passed": true
+    },
+    {
+      "check": "author role is regional_manager",
+      "passed": true
+    },
+    {
+      "request": "alice uses marketing",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "alice uses marketing",
+      "passed": true
+    },
+    {
+      "check": "alice active role is marketing",
+      "passed": true
+    },
+    {
+      "request": "bob uses marketing",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "bob uses marketing",
+      "passed": true
+    },
+    {
+      "check": "bob active role is marketing",
+      "passed": true
+    },
+    {
+      "request": "shared workspace",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "shared workspace",
+      "passed": true
+    },
+    {
+      "request": "share with marketing",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "share with marketing",
+      "passed": true
+    },
+    {
+      "request": "inspect",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "inspect",
+      "passed": true
+    },
+    {
+      "check": "schema without rows",
+      "passed": true
+    },
+    {
+      "request": "create in shared workspace",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "create in shared workspace",
+      "passed": true
+    },
+    {
+      "request": "publish",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "publish",
+      "passed": true
+    },
+    {
+      "request": "author query as regional_manager",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "author query as regional_manager",
+      "passed": true
+    },
+    {
+      "check": "regional_manager sees both cities",
+      "passed": true,
+      "rows": [
+        [
+          "Bandung",
+          "600.00"
+        ],
+        [
+          "Jakarta",
+          "400.00"
+        ]
+      ]
+    },
+    {
+      "request": "alice query as marketing",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "alice query as marketing",
+      "passed": true
+    },
+    {
+      "check": "alice sees only Jakarta",
+      "passed": true,
+      "rows": [
+        [
+          "Jakarta",
+          "400.00"
+        ]
+      ]
+    },
+    {
+      "request": "bob query as marketing",
+      "status": 404,
+      "expected_status": 200
+    },
+    {
+      "check": "bob query as marketing",
+      "passed": false
+    },
+    {
+      "request": "delete dataset",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "delete dataset",
+      "passed": true
+    },
+    {
+      "request": "delete workspace",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "delete workspace",
+      "passed": true
+    }
+  ],
+  "finished_at": "2026-11-17T12:15:21.793533+00:00"
+}

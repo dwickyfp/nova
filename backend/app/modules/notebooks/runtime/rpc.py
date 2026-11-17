@@ -107,7 +107,7 @@ async def handle(
 async def _caller(session_id: str) -> Caller:
     try:
         session = await data_tokens.resolve_session(session_id)
-    except data_tokens.BiCredentialError:
+    except data_tokens.DataTokenError:
         raise RpcError("Sign in to Nova again to write from this notebook") from None
     return Caller(
         username=session.username,

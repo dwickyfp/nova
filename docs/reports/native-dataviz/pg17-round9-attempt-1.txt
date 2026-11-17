@@ -1,0 +1,15 @@
+## tests/integration/test_metadata_workspace_objects.py
+....                                                                     [100%]
+4 passed in 89.37s (0:01:29)
+## tests/integration/test_metadata_scheduled_export_crash.py
+.                                                                        [100%]
+1 passed in 19.22s
+## tests/integration/test_metadata_viz_export.py
+ERROR tests/integration/test_metadata_viz_export.py::test_task_login_cannot_change_or_remove_files
+ERROR tests/integration/test_metadata_viz_export.py::test_a_scheduled_export_file_is_private_to_the_workspace
+4 passed, 3 errors in 254.04s (0:04:14)
+## tests/integration/test_metadata_workspace_files.py
+ERROR tests/integration/test_metadata_workspace_files.py::test_import_preserves_duplicate_versions_and_numbers_new_ones_above
+ERROR tests/integration/test_metadata_workspace_files.py::test_scope_rejects_changed_context
+40 errors in 52.09s
+missing tests/integration/test_metadata_migrations.py

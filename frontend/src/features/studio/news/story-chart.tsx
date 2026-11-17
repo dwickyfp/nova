@@ -41,7 +41,7 @@ export function TrendChart({
       return {
         animation: false,
         textStyle: { fontFamily: "inherit" },
-        grid: { left: 4, right: 16, top: 16, bottom: 4, containLabel: true },
+        grid: { left: 4, right: 16, top: 16, bottom: 4, outerBoundsMode: "same", outerBoundsContain: "axisLabel" },
         tooltip: {
           ...tooltip(t),
           trigger: "axis",
@@ -167,7 +167,7 @@ export function DriverChart({ story, caption = true }: { story: Story; caption?:
       return {
         animation: false,
         textStyle: { fontFamily: "inherit" },
-        grid: { left: 4, right: 16, top: 4, bottom: 4, containLabel: true },
+        grid: { left: 4, right: 16, top: 4, bottom: 4, outerBoundsMode: "same", outerBoundsContain: "axisLabel" },
         tooltip: {
           ...tooltip(t),
           trigger: "item",
@@ -237,7 +237,7 @@ export function WeekdayChart({ story, height = 150 }: { story: Story; height?: n
       return {
         animation: false,
         textStyle: { fontFamily: "inherit" },
-        grid: { left: 4, right: 12, top: 20, bottom: 4, containLabel: true },
+        grid: { left: 4, right: 12, top: 20, bottom: 4, outerBoundsMode: "same", outerBoundsContain: "axisLabel" },
         tooltip: {
           ...tooltip(t),
           trigger: "item",

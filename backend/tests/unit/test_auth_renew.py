@@ -1,7 +1,7 @@
 """Token renewal: a live session keeps its user signed in, an ended one does not.
 
-Studio and the Dataviz frame renew the access token before it lapses, so a user
-working in Superset is not sent to sign in while their Nova session is alive.
+Studio and Dataviz renew the access token before it lapses, so a user working
+in them is not sent to sign in while their Nova session is alive.
 Renewal is not activity, and only the server-side session decides.
 """
 
@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import jwt
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from jose import jwt
 
 from app.core import security
 from app.core.config import settings
@@ -56,16 +56,18 @@ def test_an_expired_token_of_a_live_session_is_renewed_without_extending_it(clie
     assert refreshed == []
 
 
+# Built at test time: the signing key is set by the unit conftest, after collection.
 @pytest.mark.parametrize(
-    "token",
+    "make_token",
     [
-        _token(sid="ended"),
-        _token(sub="mallory"),
-        _token(expired_ago=timedelta(hours=13)),
-        _token(key="not-the-key-" * 4),
-        "garbage",
+        lambda: _token(sid="ended"),
+        lambda: _token(sub="mallory"),
+        lambda: _token(expired_ago=timedelta(hours=13)),
+        lambda: _token(key="not-the-key-" * 4),
+        lambda: "garbage",
     ],
+    ids=["ended-session", "other-user", "past-grace", "wrong-key", "garbage"],
 )
-def test_renewal_is_refused_without_a_live_matching_session(client, token):
+def test_renewal_is_refused_without_a_live_matching_session(client, make_token):
     http, _sessions, _refreshed = client
-    assert _renew(http, token).status_code == 401
+    assert _renew(http, make_token()).status_code == 401

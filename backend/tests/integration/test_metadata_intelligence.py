@@ -486,6 +486,10 @@ async def test_workload_privileges(iq, workload):
     if workload in VIEW_READERS:
         async with iq.transaction(workload, read_only=True) as (repo, _):
             assert (await repo.get_view(view["id"]))["name"] == "sales"
+    elif workload == "query":
+        async with iq.transaction(workload, read_only=True) as (repo, _):
+            assert await repo.get_view(view["id"]) is None
+            assert await repo.get_version(view["id"], 1) is None
     else:
         with pytest.raises(MetadataPermissionDenied):
             async with iq.transaction(workload, read_only=True) as (repo, _):
@@ -827,7 +831,8 @@ async def test_legacy_semantic_models_are_read_only_but_count_usage(iq):
 
 
 FEATURE_READERS = {"web"}
-ENTITY_READERS = {"web", "agent", "maintenance"}
+# The task login reads entities for Semantic View datasets in scheduled exports (0054).
+ENTITY_READERS = {"web", "agent", "maintenance", "query", "task"}
 
 
 @pytest.mark.parametrize("workload", [role.removeprefix("nova_meta_") for role in WORKLOAD_ROLES])

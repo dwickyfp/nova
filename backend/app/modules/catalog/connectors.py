@@ -9,8 +9,9 @@ every catalog type still accepts afterwards:
 * foreign catalogs (one per registered source type, plus ``mysql`` and raw
   ``jdbc`` catalogs made before or outside Nova), altered only in their pool
   and cache properties;
-* Iceberg and Hive catalogs made before sources replaced them, which can still
-  be altered and dropped but no longer created.
+* Iceberg and Hive catalogs made in raw SQL before sources replaced them,
+  which can still be altered and dropped (an Iceberg catalog built from an
+  Iceberg REST connection follows its source's rules instead).
 """
 
 from __future__ import annotations
@@ -87,10 +88,11 @@ class StarRocksNativeConnector:
 
 
 class JdbcConnector:
-    """A foreign catalog: the engine's JDBC catalog over a source.
+    """A foreign catalog: the engine catalog built from a connection's source.
 
-    Its driver, endpoint, and identity come from the connection; only the pool
-    and metadata-cache properties can be altered here.
+    Its driver or service, endpoint, and identity come from the connection;
+    only the properties the source allows (pool and metadata-cache settings)
+    can be altered here.
     """
 
     def __init__(self, catalog_type: str) -> None:
@@ -98,8 +100,12 @@ class JdbcConnector:
 
     def build_alter_sql(self, name: str, body: ExternalCatalogAlter) -> str:
         if body.metastore_uri:
-            raise CatalogError("A JDBC catalog has no metastore; change its connection")
-        params = check_jdbc_properties(body.properties)
+            raise CatalogError("This catalog's address comes from its connection")
+        source = SOURCES.get(self.catalog_type)
+        params = (
+            source.check_properties(body.properties)
+            if source is not None else check_jdbc_properties(body.properties)
+        )
         if not params:
             raise CatalogError("Nothing to alter: no properties supplied")
         return f"ALTER CATALOG {safe_catalog_name(name)} SET ({_properties_clause(params)})"
@@ -110,9 +116,12 @@ class JdbcConnector:
 
 _ALL: list[CatalogConnector] = [
     StarRocksNativeConnector(),
+    *(JdbcConnector(source_type) for source_type, source in SOURCES.items()
+      if source.provides_catalog and source_type != "iceberg"),
+    # Iceberg and Hive catalogs made in raw SQL before Iceberg became a source
+    # keep their metastore rules; one built from a connection uses the source's.
     LakehouseConnector("iceberg"),
     LakehouseConnector("hive"),
-    *(JdbcConnector(source_type) for source_type in SOURCES),
     # Foreign catalogs no source creates any more, and JDBC catalogs made in
     # raw SQL, which the sync records with the engine's type.
     JdbcConnector("mysql"),
@@ -121,9 +130,18 @@ _ALL: list[CatalogConnector] = [
 _CONNECTORS: dict[str, CatalogConnector] = {c.catalog_type: c for c in _ALL}
 
 
-def connector_for(catalog_type: str) -> CatalogConnector:
-    """The connector for an engine or stored catalog type (case-insensitive)."""
-    connector = _CONNECTORS.get((catalog_type or "").strip().lower())
+def connector_for(catalog_type: str, *, connection_backed: bool = False) -> CatalogConnector:
+    """The connector for an engine or stored catalog type (case-insensitive).
+
+    ``connection_backed``: the catalog was built from a Nova connection, so
+    its address, storage and identity come from that connection and only the
+    source's own properties can be altered.
+    """
+    key = (catalog_type or "").strip().lower()
+    source = SOURCES.get(key)
+    if connection_backed and source is not None and source.provides_catalog:
+        return JdbcConnector(key)
+    connector = _CONNECTORS.get(key)
     if connector is None:
         raise CatalogError(f"Unsupported catalog type: {catalog_type!r}")
     return connector

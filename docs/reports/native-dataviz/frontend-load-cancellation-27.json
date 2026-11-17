@@ -1,0 +1,7 @@
+{
+  "recorded_at": "2026-11-14T18:16:09.925052+00:00",
+  "result": "CANCELLED_NOT_PASS",
+  "observation": "Host pressure persisted under serial browser execution: load average 262.86, 8258 MiB swap used, 132 runnable processes. Browser timing and screenshot operations timed out.",
+  "action": "Interrupt only task-owned serial coverage process. Leave all shared services/applications intact.",
+  "next": "Diagnose task-owned process pressure before another full gate. Assertions and timeouts remain unchanged."
+}

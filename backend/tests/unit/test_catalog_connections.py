@@ -107,6 +107,8 @@ class MemoryConnections:
         self.rows: dict[str, dict] = {}
         self.secrets: dict[str, tuple[str, str]] = {}
         self.write_secrets: dict[str, tuple[str, str]] = {}
+        self.grants: dict[str, list[str]] = {}
+        self.jobs: dict[str, list[str]] = {}
         self.reads = 0
 
     async def list(self):
@@ -137,6 +139,15 @@ class MemoryConnections:
     async def read_credentials(self, name, *, write=False):
         self.reads += 1
         return self._store(write).get(name)
+
+    async def roles(self, name):
+        return sorted(self.grants.get(name, []))
+
+    async def set_roles(self, name, roles, by):
+        self.grants[name] = list(roles)
+
+    async def live_routine_loads(self, name):
+        return list(self.jobs.get(name, []))
 
 
 class MemoryCatalogs:
@@ -304,7 +315,7 @@ async def test_a_connection_of_a_retired_type_cannot_back_a_new_catalog(audits, 
     await svc.create(name="pg_shop", connector_type="postgres", endpoint="pg/shop",
                      secret_ref=None, username="reader", password=PASSWORD, user=ADMIN)
     svc.repo.rows["pg_shop"]["connector_type"] = "mysql"
-    with pytest.raises(CatalogError, match="can no longer back a catalog"):
+    with pytest.raises(CatalogError, match="cannot back a catalog"):
         await svc.create_foreign_catalog(name="my_x", connection="pg_shop", user=ADMIN)
     engine.assert_not_awaited()
 

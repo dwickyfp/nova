@@ -347,3 +347,79 @@ REPORT_WIDGET_RESULTS = Counter(
     "Governed report widget outcomes without source identifiers or data.",
     ("widget_type", "status"),
 )
+
+
+# ── Native Dataviz ─────────────────────────────────────────────────────────
+# Labels are closed sets: never a user, role, dashboard, dataset, field or
+# error text. A refusal and an admission rejection are counted apart, so an
+# alert on refusals is not raised by load, and the other way round.
+
+DATAVIZ_OPERATIONS = frozenset({"query", "preview"})
+DATAVIZ_OUTCOMES = frozenset({
+    "ok", "refused", "invalid", "rejected", "timeout", "cancelled", "error",
+})
+DATAVIZ_EXPORT_OUTCOMES = frozenset({"saved", "existing", "unavailable", "error"})
+
+DATAVIZ_READS = Counter(
+    "nova_dataviz_reads_total",
+    "Native Dataviz chart queries and dataset previews by outcome.",
+    ("operation", "outcome"),
+)
+DATAVIZ_READ_DURATION = Histogram(
+    "nova_dataviz_read_duration_seconds",
+    "Native Dataviz chart query and dataset preview duration, admission included.",
+    ("operation", "outcome"),
+    buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 3, 5, 10, 30, 60),
+)
+DATAVIZ_EXPORTS = Counter(
+    "nova_dataviz_scheduled_exports_total",
+    "Scheduled dashboard exports by outcome (existing: a retried run found its saved file).",
+    ("outcome",),
+)
+
+
+def dataviz_outcome(error: BaseException | None) -> str:
+    """A bounded outcome for a Dataviz read, from the error it ended with."""
+    import asyncio
+
+    from app.core.exceptions import NovaException
+
+    if error is None:
+        return "ok"
+    if isinstance(error, asyncio.CancelledError):
+        return "cancelled"
+    if isinstance(error, NovaException):
+        status = error.status_code
+        if status in {401, 403, 404}:
+            return "refused"
+        if status == 422:
+            return "invalid"
+        if status in {409, 429, 503}:
+            return "rejected"
+        if status == 504:
+            return "timeout"
+    return "error"
+
+
+@contextmanager
+def dataviz_read(operation: str):
+    """Count and time one Dataviz read; the body's error passes through unchanged."""
+    if operation not in DATAVIZ_OPERATIONS:
+        raise ValueError("Unknown Dataviz metric operation")
+    started = time.perf_counter()
+    error: BaseException | None = None
+    try:
+        yield
+    except BaseException as exc:
+        error = exc
+        raise
+    finally:
+        outcome = dataviz_outcome(error)
+        DATAVIZ_READS.labels(operation, outcome).inc()
+        DATAVIZ_READ_DURATION.labels(operation, outcome).observe(time.perf_counter() - started)
+
+
+def dataviz_export(outcome: str) -> None:
+    if outcome not in DATAVIZ_EXPORT_OUTCOMES:
+        raise ValueError("Unknown Dataviz export outcome")
+    DATAVIZ_EXPORTS.labels(outcome).inc()

@@ -1,0 +1,663 @@
+{
+  "workstream": "W3 pipes over stages",
+  "recorded_at": "2026-11-16T16:31:41.722886+00:00",
+  "base_commit": "18ae8035e9dfa9ba6b790c0a390017fa943c2157",
+  "working_tree": "uncommitted W3 changes",
+  "metadata_schema": 56,
+  "engine": "StarRocks 4.1.4 (dev stack, patched FE, Ranger)",
+  "path": "HTTP POST /api/v1/query/execute as nova_admin; worker = dev task worker",
+  "owner_role": "stream_lab_role",
+  "database": "compat_pipe_live",
+  "stage": "@compat_pipe_live.compat_pipe_live.pipe_landing",
+  "steps": [
+    {
+      "step": "setup",
+      "passed": true,
+      "at_seconds": 43.7,
+      "tables": [
+        "orders",
+        "orders_pq"
+      ],
+      "files": [
+        "orders/a1.csv",
+        "pq/p1.parquet"
+      ]
+    },
+    {
+      "step": "create shorthand CSV pipe",
+      "passed": true,
+      "at_seconds": 45.2,
+      "result": [
+        [
+          "compat_pipe_live.orders_pipe",
+          "compat_pipe_live.orders",
+          "RUNNING",
+          "stream_lab_role"
+        ]
+      ],
+      "error": null,
+      "warnings": [
+        "Pipe created. It loads the files already in its path now, and new files as they arrive while it is RUNNING."
+      ]
+    },
+    {
+      "step": "create FILES() Parquet pipe without auto ingest",
+      "passed": true,
+      "at_seconds": 46.0,
+      "result": [
+        [
+          "compat_pipe_live.pq_pipe",
+          "compat_pipe_live.orders_pq",
+          "RUNNING",
+          "stream_lab_role"
+        ]
+      ],
+      "error": null
+    },
+    {
+      "step": "storage URL refused",
+      "passed": true,
+      "at_seconds": 46.1,
+      "error": "A pipe reads files from a stage: FILES(\"path\" = \"@stage/folder/*.parquet\", ...)"
+    },
+    {
+      "step": "first load at creation",
+      "passed": true,
+      "at_seconds": 101.4,
+      "orders": 3,
+      "orders_pq": 2,
+      "files": [
+        [
+          "@compat_pipe_live.compat_pipe_live.pipe_landing/orders/a1.csv",
+          "0aaca6c1122ee88c1007c133df0c2bbd",
+          "FINISHED",
+          null
+        ]
+      ]
+    },
+    {
+      "step": "AUTO_INGEST=FALSE pipe finishes",
+      "passed": true,
+      "at_seconds": 102.1,
+      "show": [
+        [
+          "compat_pipe_live",
+          "70f5635d-11c9-4d7e-803c-6a35e8e43343",
+          "pq_pipe",
+          "compat_pipe_live.orders_pq",
+          "FINISHED",
+          "{\"loadedFiles\":1,\"loadedBytes\":719,\"loadingFiles\":0,\"errorFiles\":0,\"loadedRows\":2,\"LastLoadedTime\":\"2026-11-16 23:27:07\"}",
+          null,
+          "2026-11-16T23:26:13",
+          "stream_lab_role"
+        ]
+      ]
+    },
+    {
+      "step": "new file loaded by the next poll",
+      "passed": true,
+      "at_seconds": 143.4,
+      "seconds": 39.5,
+      "files": [
+        [
+          "@compat_pipe_live.compat_pipe_live.pipe_landing/orders/a1.csv",
+          "0aaca6c1122ee88c1007c133df0c2bbd",
+          "FINISHED",
+          null
+        ],
+        [
+          "@compat_pipe_live.compat_pipe_live.pipe_landing/orders/a2.csv",
+          "1e51b951ff06b2c6642416463ba022de",
+          "FINISHED",
+          null
+        ]
+      ]
+    },
+    {
+      "step": "each row loaded exactly once",
+      "passed": true,
+      "at_seconds": 144.0,
+      "duplicates": 0,
+      "ids": [
+        [
+          1
+        ],
+        [
+          2
+        ],
+        [
+          3
+        ],
+        [
+          4
+        ],
+        [
+          5
+        ]
+      ]
+    },
+    {
+      "step": "suspend",
+      "passed": true,
+      "at_seconds": 144.1,
+      "result": [
+        [
+          "compat_pipe_live.orders_pipe",
+          "SUSPENDED"
+        ]
+      ]
+    },
+    {
+      "step": "suspended pipe loads nothing",
+      "passed": true,
+      "at_seconds": 180.6,
+      "count": 5,
+      "files": [
+        [
+          "@compat_pipe_live.compat_pipe_live.pipe_landing/orders/a1.csv",
+          "0aaca6c1122ee88c1007c133df0c2bbd",
+          "FINISHED",
+          null
+        ],
+        [
+          "@compat_pipe_live.compat_pipe_live.pipe_landing/orders/a2.csv",
+          "1e51b951ff06b2c6642416463ba022de",
+          "FINISHED",
+          null
+        ]
+      ]
+    },
+    {
+      "step": "resume loads the waiting file",
+      "passed": true,
+      "at_seconds": 200.5,
+      "result": [
+        [
+          "compat_pipe_live.orders_pipe",
+          "RUNNING"
+        ]
+      ],
+      "files": [
+        [
+          "@compat_pipe_live.compat_pipe_live.pipe_landing/orders/a1.csv",
+          "0aaca6c1122ee88c1007c133df0c2bbd",
+          "FINISHED",
+          null
+        ],
+        [
+          "@compat_pipe_live.compat_pipe_live.pipe_landing/orders/a2.csv",
+          "1e51b951ff06b2c6642416463ba022de",
+          "FINISHED",
+          null
+        ],
+        [
+          "@compat_pipe_live.compat_pipe_live.pipe_landing/orders/a3.csv",
+          "a5fa70ba34bd962dd5acc4f4f2168a11",
+          "FINISHED",
+          null
+        ]
+      ]
+    },
+    {
+      "step": "bad file is ERROR in the ledger",
+      "passed": true,
+      "at_seconds": 208.3,
+      "files": [
+        [
+          "@compat_pipe_live.compat_pipe_live.pipe_landing/orders/a1.csv",
+          "0aaca6c1122ee88c1007c133df0c2bbd",
+          "FINISHED",
+          null
+        ],
+        [
+          "@compat_pipe_live.compat_pipe_live.pipe_landing/orders/a2.csv",
+          "1e51b951ff06b2c6642416463ba022de",
+          "FINISHED",
+          null
+        ],
+        [
+          "@compat_pipe_live.compat_pipe_live.pipe_landing/orders/a3.csv",
+          "a5fa70ba34bd962dd5acc4f4f2168a11",
+          "FINISHED",
+          null
+        ],
+        [
+          "@compat_pipe_live.compat_pipe_live.pipe_landing/orders/a4.csv",
+          "e20aad6d16514807bedf703aa383758b",
+          "ERROR",
+          "Insert has filtered data, txn_id = 3086730, tracking sql = select tracking_log from information_schema.load_tracking_logs where job_id=3113014"
+        ]
+      ],
+      "show": [
+        [
+          "compat_pipe_live",
+          "ebbd7c19-9256-4731-a1db-dce2402499d1",
+          "orders_pipe",
+          "compat_pipe_live.orders",
+          "RUNNING",
+          "{\"loadedFiles\":3,\"loadedBytes\":111,\"loadingFiles\":0,\"errorFiles\":1,\"loadedRows\":6,\"LastLoadedTime\":\"2026-11-16 23:28:46\"}",
+          "orders/a4.csv: Insert has filtered data, txn_id = 3086730, tracking sql = select tracking_log from information_schema.load_tracking_logs where job_id=3113014",
+          "2026-11-16T23:26:12",
+          "stream_lab_role"
+        ]
+      ]
+    },
+    {
+      "step": "RETRY FILE after fixing the table",
+      "passed": true,
+      "at_seconds": 278.8,
+      "retry": [
+        [
+          "compat_pipe_live.orders_pipe",
+          "RUNNING"
+        ]
+      ],
+      "warnings": [
+        "1 file(s) queued to load again"
+      ],
+      "files": [
+        [
+          "@compat_pipe_live.compat_pipe_live.pipe_landing/orders/a1.csv",
+          "0aaca6c1122ee88c1007c133df0c2bbd",
+          "FINISHED",
+          null
+        ],
+        [
+          "@compat_pipe_live.compat_pipe_live.pipe_landing/orders/a2.csv",
+          "1e51b951ff06b2c6642416463ba022de",
+          "FINISHED",
+          null
+        ],
+        [
+          "@compat_pipe_live.compat_pipe_live.pipe_landing/orders/a3.csv",
+          "a5fa70ba34bd962dd5acc4f4f2168a11",
+          "FINISHED",
+          null
+        ],
+        [
+          "@compat_pipe_live.compat_pipe_live.pipe_landing/orders/a4.csv",
+          "e20aad6d16514807bedf703aa383758b",
+          "FINISHED",
+          null
+        ]
+      ],
+      "row": [
+        [
+          7,
+          "eta",
+          null
+        ]
+      ]
+    },
+    {
+      "step": "retrying a finished file is refused",
+      "passed": true,
+      "at_seconds": 278.9,
+      "error": "File @compat_pipe_live.compat_pipe_live.pipe_landing/orders/a4.csv has not failed (it is FINISHED); only failed files are retried"
+    },
+    {
+      "step": "revoked INSERT suspends the pipe and loads nothing",
+      "passed": true,
+      "at_seconds": 314.8,
+      "show": [
+        [
+          "compat_pipe_live",
+          "ebbd7c19-9256-4731-a1db-dce2402499d1",
+          "orders_pipe",
+          "compat_pipe_live.orders",
+          "SUSPENDED",
+          "{\"loadedFiles\":4,\"loadedBytes\":136,\"loadingFiles\":0,\"errorFiles\":0,\"loadedRows\":7,\"LastLoadedTime\":\"2026-11-16 23:30:03\"}",
+          "The role stream_lab_role can no longer insert into compat_pipe_live.orders",
+          "2026-11-16T23:26:12",
+          "stream_lab_role"
+        ]
+      ]
+    },
+    {
+      "step": "resume refused while access is missing",
+      "passed": true,
+      "at_seconds": 314.9,
+      "error": "The role stream_lab_role cannot insert into compat_pipe_live.orders"
+    },
+    {
+      "step": "access given back: RESUME loads the waiting file",
+      "passed": true,
+      "at_seconds": 373.5,
+      "result": [
+        [
+          "compat_pipe_live.orders_pipe",
+          "RUNNING"
+        ]
+      ]
+    },
+    {
+      "step": "SHOW PIPES",
+      "passed": true,
+      "at_seconds": 374.2,
+      "columns": [
+        "DATABASE_NAME",
+        "PIPE_ID",
+        "PIPE_NAME",
+        "TABLE_NAME",
+        "STATE",
+        "LOAD_STATUS",
+        "LAST_ERROR",
+        "CREATED_TIME",
+        "OWNER_ROLE"
+      ],
+      "rows": [
+        [
+          "compat_pipe_live",
+          "ebbd7c19-9256-4731-a1db-dce2402499d1",
+          "orders_pipe",
+          "compat_pipe_live.orders",
+          "RUNNING",
+          "{\"loadedFiles\":5,\"loadedBytes\":162,\"loadingFiles\":0,\"errorFiles\":0,\"loadedRows\":8,\"LastLoadedTime\":\"2026-11-16 23:31:39\"}",
+          null,
+          "2026-11-16T23:26:12",
+          "stream_lab_role"
+        ],
+        [
+          "compat_pipe_live",
+          "70f5635d-11c9-4d7e-803c-6a35e8e43343",
+          "pq_pipe",
+          "compat_pipe_live.orders_pq",
+          "FINISHED",
+          "{\"loadedFiles\":1,\"loadedBytes\":719,\"loadingFiles\":0,\"errorFiles\":0,\"loadedRows\":2,\"LastLoadedTime\":\"2026-11-16 23:27:07\"}",
+          null,
+          "2026-11-16T23:26:13",
+          "stream_lab_role"
+        ]
+      ],
+      "error": null
+    },
+    {
+      "step": "SHOW PIPES LIKE",
+      "passed": true,
+      "at_seconds": 374.2,
+      "columns": [
+        "DATABASE_NAME",
+        "PIPE_ID",
+        "PIPE_NAME",
+        "TABLE_NAME",
+        "STATE",
+        "LOAD_STATUS",
+        "LAST_ERROR",
+        "CREATED_TIME",
+        "OWNER_ROLE"
+      ],
+      "rows": [
+        [
+          "compat_pipe_live",
+          "ebbd7c19-9256-4731-a1db-dce2402499d1",
+          "orders_pipe",
+          "compat_pipe_live.orders",
+          "RUNNING",
+          "{\"loadedFiles\":5,\"loadedBytes\":162,\"loadingFiles\":0,\"errorFiles\":0,\"loadedRows\":8,\"LastLoadedTime\":\"2026-11-16 23:31:39\"}",
+          null,
+          "2026-11-16T23:26:12",
+          "stream_lab_role"
+        ]
+      ],
+      "error": null
+    },
+    {
+      "step": "SHOW PIPES WHERE/ORDER/LIMIT",
+      "passed": true,
+      "at_seconds": 374.2,
+      "columns": [
+        "DATABASE_NAME",
+        "PIPE_ID",
+        "PIPE_NAME",
+        "TABLE_NAME",
+        "STATE",
+        "LOAD_STATUS",
+        "LAST_ERROR",
+        "CREATED_TIME",
+        "OWNER_ROLE"
+      ],
+      "rows": [
+        [
+          "compat_pipe_live",
+          "ebbd7c19-9256-4731-a1db-dce2402499d1",
+          "orders_pipe",
+          "compat_pipe_live.orders",
+          "RUNNING",
+          "{\"loadedFiles\":5,\"loadedBytes\":162,\"loadingFiles\":0,\"errorFiles\":0,\"loadedRows\":8,\"LastLoadedTime\":\"2026-11-16 23:31:39\"}",
+          null,
+          "2026-11-16T23:26:12",
+          "stream_lab_role"
+        ]
+      ],
+      "error": null
+    },
+    {
+      "step": "DESC PIPE",
+      "passed": true,
+      "at_seconds": 374.2,
+      "columns": [
+        "DATABASE_NAME",
+        "PIPE_ID",
+        "PIPE_NAME",
+        "TABLE_NAME",
+        "SOURCE",
+        "SQL",
+        "PROPERTIES",
+        "STATE",
+        "OWNER_ROLE",
+        "LAST_ERROR"
+      ],
+      "rows": [
+        [
+          "compat_pipe_live",
+          "ebbd7c19-9256-4731-a1db-dce2402499d1",
+          "orders_pipe",
+          "compat_pipe_live.orders",
+          "@compat_pipe_live.compat_pipe_live.pipe_landing/orders/*.csv",
+          "INSERT INTO compat_pipe_live.orders (id, name, amount) SELECT id, name, amount FROM @pipe_landing/orders/*.csv",
+          "{\"AUTO_INGEST\":\"TRUE\",\"POLL_INTERVAL\":\"10\",\"BATCH_SIZE\":\"1GB\",\"BATCH_FILES\":\"2\"}",
+          "RUNNING",
+          "stream_lab_role",
+          null
+        ]
+      ],
+      "error": null
+    },
+    {
+      "step": "information_schema.pipes",
+      "passed": true,
+      "at_seconds": 374.2,
+      "columns": [
+        "PIPE_NAME",
+        "STATE",
+        "LOAD_STATUS"
+      ],
+      "rows": [
+        [
+          "orders_pipe",
+          "RUNNING",
+          "{\"loadedFiles\":5,\"loadedBytes\":162,\"loadingFiles\":0,\"errorFiles\":0,\"loadedRows\":8,\"LastLoadedTime\":\"2026-11-16 23:31:39\"}"
+        ],
+        [
+          "pq_pipe",
+          "FINISHED",
+          "{\"loadedFiles\":1,\"loadedBytes\":719,\"loadingFiles\":0,\"errorFiles\":0,\"loadedRows\":2,\"LastLoadedTime\":\"2026-11-16 23:27:07\"}"
+        ]
+      ],
+      "error": null
+    },
+    {
+      "step": "information_schema.pipe_files",
+      "passed": true,
+      "at_seconds": 374.2,
+      "columns": [
+        "LOAD_STATE",
+        "count(*)"
+      ],
+      "rows": [
+        [
+          "FINISHED",
+          5
+        ]
+      ],
+      "error": null
+    },
+    {
+      "step": "ALTER PIPE SET",
+      "passed": true,
+      "at_seconds": 374.2,
+      "columns": [
+        "pipe",
+        "state"
+      ],
+      "rows": [
+        [
+          "compat_pipe_live.orders_pipe",
+          "RUNNING"
+        ]
+      ],
+      "error": null
+    },
+    {
+      "step": "no storage address or key in any result",
+      "passed": true,
+      "at_seconds": 374.2
+    },
+    {
+      "step": "drop orders_pipe",
+      "passed": true,
+      "at_seconds": 374.3,
+      "result": [
+        [
+          "compat_pipe_live.orders_pipe",
+          true
+        ]
+      ]
+    },
+    {
+      "step": "drop pq_pipe",
+      "passed": true,
+      "at_seconds": 374.4,
+      "result": [
+        [
+          "compat_pipe_live.pq_pipe",
+          true
+        ]
+      ]
+    },
+    {
+      "step": "dropped pipes are gone; loaded rows stay",
+      "passed": true,
+      "at_seconds": 374.5,
+      "show": []
+    },
+    {
+      "step": "DROP PIPE IF EXISTS on a missing pipe",
+      "passed": true,
+      "at_seconds": 374.5,
+      "warnings": [
+        "The pipe does not exist; nothing changed"
+      ]
+    }
+  ],
+  "passed": true,
+  "earlier_attempts": [
+    {
+      "attempt": 1,
+      "outcome": "failed at 'bad file is ERROR in the ledger'",
+      "defect": "EngineFailure was a frozen dataclass; raising it 'from None' failed, so a rejected batch was left LOADING and its CANCELLED label was re-queued every run. Fixed: plain exception; a CANCELLED single-file batch becomes ERROR."
+    },
+    {
+      "attempt": 2,
+      "outcome": "failed at 'RETRY FILE after fixing the table' (90 s wait)",
+      "observed": "the retried file loaded 89-90 s after RETRY while the full unit suite ran on the same host; the label was CANCELLED twice then FINISHED once",
+      "steps": [
+        {
+          "step": "setup",
+          "passed": true,
+          "at_seconds": 14.7
+        },
+        {
+          "step": "create shorthand CSV pipe",
+          "passed": true,
+          "at_seconds": 16.5
+        },
+        {
+          "step": "create FILES() Parquet pipe without auto ingest",
+          "passed": true,
+          "at_seconds": 18.2
+        },
+        {
+          "step": "storage URL refused",
+          "passed": true,
+          "at_seconds": 18.7
+        },
+        {
+          "step": "first load at creation",
+          "passed": true,
+          "at_seconds": 54.3
+        },
+        {
+          "step": "AUTO_INGEST=FALSE pipe finishes",
+          "passed": true,
+          "at_seconds": 54.6
+        },
+        {
+          "step": "new file loaded by the next poll",
+          "passed": true,
+          "at_seconds": 71.7
+        },
+        {
+          "step": "each row loaded exactly once",
+          "passed": true,
+          "at_seconds": 73.4
+        },
+        {
+          "step": "suspend",
+          "passed": true,
+          "at_seconds": 74.2
+        },
+        {
+          "step": "suspended pipe loads nothing",
+          "passed": true,
+          "at_seconds": 114.2
+        },
+        {
+          "step": "resume loads the waiting file",
+          "passed": true,
+          "at_seconds": 118.9
+        },
+        {
+          "step": "bad file is ERROR in the ledger",
+          "passed": true,
+          "at_seconds": 137.2
+        },
+        {
+          "step": "RETRY FILE after fixing the table",
+          "passed": false,
+          "at_seconds": 243.9
+        }
+      ]
+    },
+    {
+      "attempt": 3,
+      "outcome": "stopped at the access-revocation step: the helper script that revokes the Ranger grant had no metadata pool (test harness defect); every earlier step passed"
+    },
+    {
+      "attempt": 4,
+      "outcome": "stopped after revoking INSERT: the harness uploaded the next file under the owner role, which had just lost stage write (test harness defect); all 14 earlier steps passed"
+    }
+  ],
+  "cleanup": {
+    "pipes_dropped": true,
+    "database_dropped": "compat_pipe_live",
+    "stage_files_deleted": 6,
+    "stage": "pipe_landing deleted (tombstoned registration)",
+    "ranger_grant": "stream_lab_role on compat_pipe_live.* revoked",
+    "pg_rows_left": {
+      "config_pipes": 0,
+      "pipe_files": 0,
+      "pipe.load tasks": 0
+    }
+  }
+}

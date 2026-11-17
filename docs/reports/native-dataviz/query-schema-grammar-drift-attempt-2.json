@@ -1,0 +1,14 @@
+{
+  "result": "PASS",
+  "generation_exit": 0,
+  "unstaged_drift_exit": 0,
+  "byte_identical": true,
+  "hashes": {
+    "StarRocks.g4": "5b6346a18bbac596746fe1f2ce48b58cb829622587ad0f58e472b8dc92618dc7",
+    "StarRocksLexer.py": "05e2c8eab65e5f0553b772ba40d0b474405b139c7582340add8411bf1726c9fa",
+    "StarRocksParser.py": "c81b99bfa36567cb65c08f71271068e213a03b88b9901469fb3d9ad0c7b0ec77",
+    "StarRocksVisitor.py": "f094f5e981f7bee774f2add41ea0684cb38db3aa7c828c320c2e07a3ada617c3"
+  },
+  "untracked": [],
+  "scope": "Canonical regeneration after Nova SCHEMA grammar markers; owned expected grammar artifacts staged before comparison"
+}

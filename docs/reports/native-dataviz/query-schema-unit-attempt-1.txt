@@ -1,0 +1,51 @@
+FFF..................................................................... [ 41%]
+........................................................................ [ 82%]
+...............................                                          [100%]
+=================================== FAILURES ===================================
+________ test_schema_statement_uses_the_shared_typed_read_plan[EXPLAIN] ________
+
+prefix = 'EXPLAIN'
+
+    @pytest.mark.parametrize("prefix", ["EXPLAIN", "DESC", "DESCRIBE"])
+    async def test_schema_statement_uses_the_shared_typed_read_plan(prefix):
+        sql = prefix + " SCHEMA WITH x AS (SELECT id FROM t) SELECT id + 1 AS result FROM x"
+        statement = ast_builders.build(parse_statement(sql))
+        assert isinstance(statement, QuerySchemaStatement)
+>       plan = await SQLPlanner().plan(statement, PlanningContext(username="alice", role="analyst"))
+                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: PlanningContext.__init__() got an unexpected keyword argument 'username'
+
+tests/unit/test_sql_frontend_query_schema.py:22: TypeError
+_________ test_schema_statement_uses_the_shared_typed_read_plan[DESC] __________
+
+prefix = 'DESC'
+
+    @pytest.mark.parametrize("prefix", ["EXPLAIN", "DESC", "DESCRIBE"])
+    async def test_schema_statement_uses_the_shared_typed_read_plan(prefix):
+        sql = prefix + " SCHEMA WITH x AS (SELECT id FROM t) SELECT id + 1 AS result FROM x"
+        statement = ast_builders.build(parse_statement(sql))
+        assert isinstance(statement, QuerySchemaStatement)
+>       plan = await SQLPlanner().plan(statement, PlanningContext(username="alice", role="analyst"))
+                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: PlanningContext.__init__() got an unexpected keyword argument 'username'
+
+tests/unit/test_sql_frontend_query_schema.py:22: TypeError
+_______ test_schema_statement_uses_the_shared_typed_read_plan[DESCRIBE] ________
+
+prefix = 'DESCRIBE'
+
+    @pytest.mark.parametrize("prefix", ["EXPLAIN", "DESC", "DESCRIBE"])
+    async def test_schema_statement_uses_the_shared_typed_read_plan(prefix):
+        sql = prefix + " SCHEMA WITH x AS (SELECT id FROM t) SELECT id + 1 AS result FROM x"
+        statement = ast_builders.build(parse_statement(sql))
+        assert isinstance(statement, QuerySchemaStatement)
+>       plan = await SQLPlanner().plan(statement, PlanningContext(username="alice", role="analyst"))
+                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: PlanningContext.__init__() got an unexpected keyword argument 'username'
+
+tests/unit/test_sql_frontend_query_schema.py:22: TypeError
+=========================== short test summary info ============================
+FAILED tests/unit/test_sql_frontend_query_schema.py::test_schema_statement_uses_the_shared_typed_read_plan[EXPLAIN]
+FAILED tests/unit/test_sql_frontend_query_schema.py::test_schema_statement_uses_the_shared_typed_read_plan[DESC]
+FAILED tests/unit/test_sql_frontend_query_schema.py::test_schema_statement_uses_the_shared_typed_read_plan[DESCRIBE]
+3 failed, 172 passed in 5.65s

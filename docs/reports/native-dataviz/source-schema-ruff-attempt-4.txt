@@ -1,0 +1,14 @@
+SIM117 Use a single `with` statement with multiple contexts instead of nested `with` statements
+   --> backend/scripts/verify_native_source_identity_live.py:223:13
+    |
+221 |           await denied("missing view is refused", role, "absent_view")
+222 |           for ambiguous in ("NONE", "ALL"):
+223 | /             async with db.user_conn(principal, password) as connection:
+224 | |                 async with connection.cursor() as cursor:
+    | |_________________________________________________________^
+225 |                       await cursor.execute("SET ROLE " + ambiguous)
+226 |                       try:
+    |
+help: Combine `with` statements
+
+Found 1 error.

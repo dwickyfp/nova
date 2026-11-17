@@ -1,0 +1,51 @@
+
+> shadcn-admin@2.2.1 test:coverage /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+> vitest run --coverage --browser.headless
+
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+      Coverage enabled with v8
+
+3:38:42 AM [vite] (client) Re-optimizing dependencies because vite config has changed
+3:38:43 AM [vite] (client) [optimizer] scanning dependencies...
+3:38:44 AM [vite] (client) [optimizer] bundling dependencies...
+ ❯ |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx (29 tests | 1 failed) 42122ms
+   × asks nothing and shows no Dataviz action without a stored answer 15840ms
+3:40:20 AM [vite] (client) [console.error] Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["bi","session",0]
+3:40:21 AM [vite] (client) [console.error] Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["bi","session",0]
+3:40:23 AM [vite] (client) [console.error] Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["bi","session",0]
+3:40:24 AM [vite] (client) [console.error] Query data cannot be undefined. Please make sure to return a value other than undefined from your query function. Affected query key: ["bi","session",0]
+3:41:12 AM [vite] (client) [console.error] You seem to have overlapping act() calls, this is not supported. Be sure to await previous act() calls before making a new one. 
+3:41:12 AM [vite] (client) [console.error] You seem to have overlapping act() calls, this is not supported. Be sure to await previous act() calls before making a new one. 
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |browser (chromium)| src/features/studio/intelligent-ui/renderer.test.tsx > asks nothing and shows no Dataviz action without a stored answer
+Error: strict mode violation: page.getByText('Revenue') resolved to 2 elements:
+    1) <p class="min-w-0 flex-1 text-sm font-medium">Revenue</p> aka getByText('Revenue', { exact: true })
+    2) <span class="recharts-tooltip-item-name">revenue</span> aka getByText('revenue', { exact: true })
+
+
+Failure screenshot:
+  - src/features/studio/intelligent-ui/__screenshots__/renderer.test.tsx/asks-nothing-and-shows-no-Dataviz-action-without-a-stored-answer-1.png
+
+ ❯ src/features/studio/intelligent-ui/renderer.test.tsx:133:52
+    131|     provenance: { scope: "verified_result_rows", assumption: false, ev…
+    132|   const screen = await render(<IntelligentUi block={ui} complete />);
+    133|   await expect.element(screen.getByText("Revenue")).toBeVisible();
+       |                                                    ^
+    134|   expect(screen.getByRole("button", { name: "Add to Dataviz" }).query(…
+    135|   expect(dataviz.check).not.toHaveBeenCalled();
+
+Caused by: Error: Matcher did not succeed in time.
+ ❯ src/features/studio/intelligent-ui/renderer.test.tsx:133:2
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 201 passed (202)
+      Tests  1 failed | 1716 passed (1717)
+   Start at  03:38:41
+   Duration  163.84s (transform 1.34s, setup 0ms, import 188.01s, tests 693.42s, environment 1ms)
+
+ ELIFECYCLE  Command failed with exit code 1.

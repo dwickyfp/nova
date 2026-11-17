@@ -1,0 +1,83 @@
+{
+  "metadata_only": true,
+  "identity_password_columns_excluded": true,
+  "raw_payloads_private": true,
+  "tables": {
+    "ab_user": {
+      "count": 3,
+      "sha256": "53ad0693ff545ad1c2998f4a0032d405ed8abeb06a044ec1d4bc066828ee9c36"
+    },
+    "ab_role": {
+      "count": 10,
+      "sha256": "f190f2bfa10725fdb343b0243e9b8fb9130b45a83a22e58c338e5f54830d4e65"
+    },
+    "ab_group": {
+      "count": 0,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    "key_value_metadata": {
+      "count": 0,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    "ab_user_role": {
+      "count": 5,
+      "sha256": "81471352ab77495ad81f341f81ef886d23e3b933291d85e1d9d7cbdd49de50d3"
+    },
+    "ab_user_group": {
+      "count": 0,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    "ab_group_role": {
+      "count": 0,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    "ab_permission_view_role": {
+      "count": 813,
+      "sha256": "e7cdf2234fc9c1b7f9f9e088faa99224237f28bd35aa254e0933819fd6dcfdf3"
+    },
+    "ab_permission_view": {
+      "count": 265,
+      "sha256": "51e70db3ce3a40489581336d9b613644569f0e448c2dfff23dfa611e1e6ced92"
+    },
+    "ab_permission": {
+      "count": 85,
+      "sha256": "93d8836a09dd1e19dbde7fc3778ca803884b2b03fcf0ba9616546e7946861a8e"
+    },
+    "ab_view_menu": {
+      "count": 137,
+      "sha256": "ae7f2ba523ac7be94226b2c95d0d3c9f52e858c28042fdd1c1f08887ed2cf0c3"
+    },
+    "config_studio_artifacts": {
+      "count": 10,
+      "sha256": "404ad845f0bbbad46f0d51fa2698f2b1d0aa2f60f2d336ee266b815adf571742"
+    },
+    "config_studio_dashboards": {
+      "count": 0,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    "config_dataviz_publications": {
+      "count": 6,
+      "sha256": "bfcb2257137c77b82ed3986375ef8ce969b6e9e4383d040e98b635e0ab5a91cf"
+    },
+    "config_semantic_bi_datasets": {
+      "count": 22,
+      "sha256": "f3b7661451b4662d10ce1362ecd51ab7d40b457c81061a429840652dd6d999e8"
+    },
+    "config_bi_author_roles": {
+      "count": 0,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    "config_bi_author_role_set": {
+      "count": 0,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    "config_dashboards": {
+      "count": 0,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    "config_dashboard_widgets": {
+      "count": 0,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    }
+  }
+}

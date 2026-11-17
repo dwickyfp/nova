@@ -1,0 +1,15 @@
+{
+  "recorded_at": "2026-11-14T16:53:56.508489+00:00",
+  "status": "CONFIRMED_OPEN",
+  "severity": "HIGH",
+  "finding": "A dataset reference in an unpublished dashboard draft is absent from the PG dependency index. Deletion incorrectly succeeds.",
+  "evidence": [
+    "source-identity-live-attempt-37.json",
+    "dataset-replay-live-attempt-2.json"
+  ],
+  "observed": "POST datasets.replace succeeded and readback pinned the dataset, but DELETE dataset returned 200 instead of 409.",
+  "cause": "Migration 0050 viz_dependency_edges extracts dataset_id/dataset_revision and chart_id/revision; DashboardDefinition.datasets uses dataset_id/revision.",
+  "previous_test_gap": "Registry deletion tests published the dashboard first, allowing publication references to mask the missing draft dependency.",
+  "required_fix": "Add immutable migration 0052 to extend dependency extraction and backfill existing revisions; test unpublished draft deletion, migration from 51 and preserved retention.",
+  "cleanup": "Owned dashboard and source tombstoned; unique source/role/policy fixtures cleaned. No deletion of unrelated user data."
+}

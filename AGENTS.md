@@ -1,20 +1,3 @@
-<!-- DEVMESH:START version="1" -->
-
-## DevMesh Collaboration
-
-This repository is attached to DevMesh. For substantial work in a DevMesh session:
-- Retrieve the current handoff and preserve its goal, constraints, non-goals, and acceptance criteria.
-- Answer repository-local questions using source, tests, documentation, and runtime evidence.
-- Request ChatGPT research only for consequential external uncertainty or architecture reasoning.
-- Report conflicts with the handoff; provide concrete evidence for code investigations.
-- Preserve the session and Codex thread across collaboration round-trips.
-- Checkpoint before blocking collaboration and satisfy the Definition of Done before completion.
-
-Skills provide the workflow; DevMesh MCP provides dynamic state.
-Project configuration: `.devmesh/project.json`.
-
-<!-- DEVMESH:END -->
-
 # Nova engineering contract
 
 Nova shares governed data access across Console, Studio, notebooks, HTTP and
@@ -103,7 +86,7 @@ path and describe the request as complete.
 | Durable jobs, definitions, outbox, claims, fencing, consent and receipts | PostgreSQL |
 | Sessions, caches and wakeups | Redis; separate critical and cache workloads |
 | File, notebook and model payloads | Existing managed object/file storage owner |
-| Ranger and Superset application metadata | Their separate databases |
+| Ranger application metadata | Its separate database |
 
 Existing domains remain on `NOVA_SYSTEM` until verified cutover. Inventory every
 writer before porting. Do not introduce production dual-write, an opt-in metadata
@@ -191,8 +174,8 @@ Read cross-scope guides even when the edited file is outside their directory.
 | Workspace files, versions, shares, object publication | [Workspaces](backend/app/modules/workspaces/AGENTS.md) |
 | Notebook documents/runtime, OpenSandbox, `nova_runtime`, data tokens | [Notebooks](backend/app/modules/notebooks/AGENTS.md), [architecture](docs/arch-20-nova-notebook.md), [Access control](backend/app/modules/access_control/AGENTS.md) |
 | Query Autopilot and recommendation/apply lifecycle | [Autopilot](backend/app/modules/query_autopilot/AGENTS.md) |
-| Superset, saved charts/dashboards, `/bi`, BI tokens, legacy artifacts | [Superset](docs/arch-17-superset.md), [Access control](backend/app/modules/access_control/AGENTS.md), `superset/`, `backend/app/modules/superset/` |
-| Studio Dataviz, publication/repair, assistant and role-scoped dashboards | [Dataviz](docs/arch-19-studio-dataviz.md), [Superset](docs/arch-17-superset.md), `frontend/src/features/studio/dataviz/` |
+| Studio Dataviz tab, Dataviz assistant and role-scoped dashboards | [Native visualization](backend/app/modules/viz/AGENTS.md), [Dataviz](docs/arch-19-studio-dataviz.md), `frontend/src/features/studio/dataviz/`, `frontend/src/features/native-dataviz/` |
+| Native datasets, chart/dashboard definitions, source authoring, preview or native document API | [Native visualization](backend/app/modules/viz/AGENTS.md), [implementation boundary](docs/architecture/native-dataviz/IMPLEMENTATION.md), [Access control](backend/app/modules/access_control/AGENTS.md) |
 | Inline charts, ShowMe, presentation models, legacy views | [Viz](docs/arch-16-viz-core.md), `backend/app/modules/viz/` |
 | Ontology domains, concepts, relations, metrics, releases | [Ontology](docs/arch-18-business-ontology.md), [Access control](backend/app/modules/access_control/AGENTS.md), `backend/app/modules/ontology/` |
 | Frontend routes, components, labels or layout | [Frontend](frontend/AGENTS.md), [Design](DESIGN.md) |
@@ -217,7 +200,6 @@ behavior gates; focused tests do not replace applicable suites.
 | Ranger/security/engine patch | Applicable backend/integration checks plus patched-FE policy and role acceptance |
 | Frontend code | `pnpm lint`, `pnpm build`, `pnpm test:coverage`, browser setup and affected layout/state checks |
 | Notebook runtime image | Image build/kernel tests and affected governed notebook flows |
-| Superset image or `nova_superset` | CI Superset image/package checks and governed Superset acceptance |
 | Runtime or deployment | Applicable code checks, Compose validation, affected startup/readiness/shutdown and recovery/replica checks |
 
 Full-tree Ruff is report-only; changed-file Ruff and full-application mypy are

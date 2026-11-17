@@ -1,0 +1,1 @@
+Patch applies cleanly to StarRocks 4.1.4 (4a9848edf03f5c936dac664b2d52527f48e72eb0).

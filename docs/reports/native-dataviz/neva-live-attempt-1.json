@@ -1,0 +1,167 @@
+{
+  "started_at": "2026-11-17T12:20:27.749232+00:00",
+  "run": "8555",
+  "scope": "Neva on a native dashboard with the live model",
+  "result": "FAIL",
+  "cleanup": "REMOVED",
+  "turns": {
+    "AGENT-005": {
+      "tools": [
+        "native_dashboard_read",
+        "native_dataset_query"
+      ],
+      "finish": "stop",
+      "answer": "The total amount you're looking at is **600**, with the on-screen **City = Bandung** filter applied. No date filter is applied; the dataset\u2019s date coverage is unspecified.",
+      "seconds": 27.6
+    },
+    "AGENT-018": {
+      "tools": [
+        "native_dashboard_list"
+      ],
+      "finish": "required_capability_incomplete",
+      "answer": "",
+      "seconds": 22.1
+    },
+    "AGENT-019": {
+      "tools": [
+        "native_dashboard_read"
+      ],
+      "finish": "stop",
+      "answer": "**\u201cNeva QA 8555 Overview v2\u201d** has one page, **Overview**, containing:\n\n- **\u201cAmount by city\u201d**: a bar chart showing the sum of `amount`, grouped by `city`.\n- **Data source:** \u201cNeva QA 8555 sales.\u201d\n- **Filters:** none configured. No reporting period is specified.\n\nThe dashboard is editable and unpublished. It changed since your page loaded: the page shows **version 1**, while the latest saved dashboard is **version 2**.",
+      "seconds": 25.1
+    },
+    "AGENT-019-bob": {
+      "tools": [
+        "native_dashboard_read"
+      ],
+      "finish": "error",
+      "answer": "",
+      "seconds": 22.8
+    },
+    "REVIS-011": {
+      "tools": [],
+      "finish": "required_capability_incomplete",
+      "answer": "",
+      "seconds": 17.3
+    },
+    "AGENT-006": {
+      "tools": [
+        "native_dashboard_read",
+        "native_chart_update"
+      ],
+      "finish": "stop",
+      "answer": "The change was not applied because approval was declined. \u201cAmount by city\u201d remains a bar chart, and the dashboard is unchanged.",
+      "seconds": 26.0,
+      "approval": "Change a chart on the dashboard: title, chart type, grouping, numbers, color, sort, orientation, stack, x, y, size, donut, pivot columns, totals, shading (to pie chart). This cannot be saved as proposed: The request is incomplete or invalid: x: String should have at least 1 character; y: String should have at least 1 character; size: String should have at least 1 character"
+    }
+  },
+  "steps": [
+    {
+      "check": "alice uses regional_manager",
+      "passed": true
+    },
+    {
+      "check": "create dataset",
+      "passed": true
+    },
+    {
+      "check": "create chart",
+      "passed": true,
+      "status": 201
+    },
+    {
+      "check": "create dashboard",
+      "passed": true,
+      "status": 201
+    },
+    {
+      "check": "create dashboard",
+      "passed": true,
+      "status": 201
+    },
+    {
+      "check": "create dashboard",
+      "passed": true,
+      "status": 201
+    },
+    {
+      "check": "dashboard moved to revision 2",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "check": "AGENT-005: Neva queried the dashboard data",
+      "passed": true
+    },
+    {
+      "check": "AGENT-005: the total is Bandung's 600, not every city's 1,000",
+      "passed": true,
+      "answer": "The total amount you're looking at is **600**, with the on-screen **City = Bandung** filter applied. No date filter is applied; the dataset\u2019s date coverage is unspecified."
+    },
+    {
+      "check": "AGENT-018: Neva looked the name up",
+      "passed": true
+    },
+    {
+      "check": "AGENT-018: both matching dashboards are named",
+      "passed": false,
+      "answer": ""
+    },
+    {
+      "check": "AGENT-018: no change was proposed or made",
+      "passed": true
+    },
+    {
+      "check": "AGENT-019: the latest version is described",
+      "passed": true,
+      "answer": "**\u201cNeva QA 8555 Overview v2\u201d** has one page, **Overview**, containing:\n\n- **\u201cAmount by city\u201d**: a bar chart showing the sum of `amount`, grouped by `city`.\n- **Data source:** \u201cNeva QA 8555 sales.\u201d\n- **Filters:** none configured. No reporting period is specified.\n\nThe dashboard is editable and unpublished. It changed since your page loaded: the page shows **version 1**, while the latest saved dashb"
+    },
+    {
+      "check": "REVIS-014 / DATA-017: no dashboard, chart or dataset was copied",
+      "passed": true,
+      "before": {
+        "dashboards": 3,
+        "charts": 1,
+        "datasets": 1
+      },
+      "after": {
+        "dashboards": 3,
+        "charts": 1,
+        "datasets": 1
+      }
+    },
+    {
+      "check": "AGENT-019: a person who cannot open it learns nothing about it",
+      "passed": true,
+      "answer": ""
+    },
+    {
+      "check": "REVIS-011: no change was saved",
+      "passed": true
+    },
+    {
+      "check": "REVIS-011: Neva says the page is gone or asks which page",
+      "passed": false,
+      "answer": ""
+    },
+    {
+      "check": "AGENT-006: the approval says what the chart will show",
+      "passed": false,
+      "approval": "Change a chart on the dashboard: title, chart type, grouping, numbers, color, sort, orientation, stack, x, y, size, donut, pivot columns, totals, shading (to pie chart). This cannot be saved as proposed: The request is incomplete or invalid: x: String should have at least 1 character; y: String should have at least 1 character; size: String should have at least 1 character"
+    },
+    {
+      "check": "AGENT-013: the pointer targets that chart's widget",
+      "passed": false,
+      "pointers": []
+    },
+    {
+      "check": "AGENT-006: denied, so nothing was saved",
+      "passed": true
+    },
+    {
+      "check": "the dashboard is still at revision 2",
+      "passed": true
+    }
+  ],
+  "finished_at": "2026-11-17T12:22:51.305923+00:00"
+}

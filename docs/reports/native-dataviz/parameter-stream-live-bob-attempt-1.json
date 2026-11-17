@@ -1,0 +1,119 @@
+{
+  "result": "PASS",
+  "principal": "bob",
+  "steps": [
+    {
+      "check": "governed parameter execution succeeded",
+      "passed": true
+    },
+    {
+      "check": "execution identity and engine correlation retained",
+      "passed": true
+    },
+    {
+      "check": "Ranger row filter applies to the active principal",
+      "passed": true
+    },
+    {
+      "check": "governed parameter execution succeeded",
+      "passed": true
+    },
+    {
+      "check": "execution identity and engine correlation retained",
+      "passed": true
+    },
+    {
+      "check": "list binding cannot broaden Ranger visibility",
+      "passed": true
+    },
+    {
+      "check": "governed parameter execution succeeded",
+      "passed": true
+    },
+    {
+      "check": "execution identity and engine correlation retained",
+      "passed": true
+    },
+    {
+      "check": "streamed list binding retains Ranger visibility and does not buffer result rows",
+      "passed": true
+    },
+    {
+      "check": "governed parameter execution succeeded",
+      "passed": true
+    },
+    {
+      "check": "execution identity and engine correlation retained",
+      "passed": true
+    },
+    {
+      "check": "injection-shaped text remains a value",
+      "passed": true
+    },
+    {
+      "check": "result metadata contains parameter names only",
+      "passed": true
+    },
+    {
+      "check": "governed parameter execution succeeded",
+      "passed": true
+    },
+    {
+      "check": "execution identity and engine correlation retained",
+      "passed": true
+    },
+    {
+      "check": "int64 decimal date timestamp and boolean retain their values",
+      "passed": true
+    },
+    {
+      "check": "governed parameter execution succeeded",
+      "passed": true
+    },
+    {
+      "check": "execution identity and engine correlation retained",
+      "passed": true
+    },
+    {
+      "check": "streamed decimal preserves all 38 digits",
+      "passed": true
+    },
+    {
+      "check": "stream overrun refuses the query without exposing a bound value",
+      "passed": true
+    },
+    {
+      "check": "governed parameter execution succeeded",
+      "passed": true
+    },
+    {
+      "check": "execution identity and engine correlation retained",
+      "passed": true
+    },
+    {
+      "check": "a fresh managed session succeeds after an overrun",
+      "passed": true
+    },
+    {
+      "check": "governed parameter execution succeeded",
+      "passed": true
+    },
+    {
+      "check": "execution identity and engine correlation retained",
+      "passed": true
+    },
+    {
+      "check": "parameter query matches the governed masked reference",
+      "passed": true
+    },
+    {
+      "check": "normal query audit is durable",
+      "passed": true
+    },
+    {
+      "check": "parameter values absent from Nova history",
+      "passed": true
+    }
+  ],
+  "scope": "Direct QueryService with existing caller credentials and active roles; read-only. Includes Nova history checks. Engine audit/profile redaction is not tested."
+}

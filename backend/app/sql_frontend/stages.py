@@ -1,3 +1,5 @@
+from typing import Any
+
 from app.modules.query.dialect.parser import (
     CommandType,
     ParsedSQL,
@@ -23,7 +25,54 @@ def stage_view(parsed: ParsedStatement) -> ParsedSQL:
                 return reference
 
         refs.append(_stage_reference_from_atom(Atom(), parsed.normalized_sql))
+    from app.sql_frontend.unload import unload_targets
+
+    targets = unload_targets(parsed)
+    for target in targets:
+        refs.append(
+            StageReference(
+                full_match=parsed.normalized_sql[target.start : target.end],
+                stage_name=target.qualifier[0],
+                path_parts=[*target.qualifier[1:], *target.segments],
+                file_name=None,
+                is_directory=target.is_directory,
+                original_text=parsed.normalized_sql,
+                start=target.start,
+                end=target.end,
+                access="write",
+                unload=target.clause,
+            )
+        )
+    from app.sql_frontend.backup_restore import repository_targets
+    from app.sql_frontend.broker_load import broker_load_targets
+
+    loads = broker_load_targets(parsed)
+    repositories = repository_targets(parsed)
+    items: list[Any] = [*loads, *repositories]
+    for item in items:
+        refs.append(
+            StageReference(
+                full_match=parsed.normalized_sql[item.start : item.end],
+                stage_name=item.qualifier[0],
+                path_parts=[*item.qualifier[1:], *item.segments],
+                file_name=None,
+                is_directory=getattr(item, "is_directory", True),
+                original_text=parsed.normalized_sql,
+                start=item.start,
+                end=item.end,
+                # Load files are read; a repository is written unless READ ONLY.
+                access=getattr(item, "access", "read"),
+                unload=item.clause,
+            )
+        )
+    refs.sort(key=lambda ref: ref.start)
     command = CommandType.STAGE_QUERY if refs else CommandType.REGULAR
+    if targets:
+        command = CommandType.STAGE_UNLOAD
+    if loads:
+        command = CommandType.STAGE_BROKER_LOAD
+    if repositories:
+        command = CommandType.STAGE_REPOSITORY
     if kind == "NovaListStatementContext":
         command = CommandType.STAGE_BROWSE
     if kind == "NovaStageInsertStatementContext":
@@ -48,7 +97,10 @@ def planned_stages(plan) -> ParsedSQL:
             StageReference(
                 full_match=binding.slot,
                 stage_name=binding.name,
-                path_parts=list(binding.path[:-1] if binding.file_name else binding.path),
+                path_parts=list(
+                    binding.path[:-1] if binding.file_name and binding.unload is None
+                    else binding.path
+                ),
                 file_name=binding.file_name,
                 is_directory=binding.is_directory,
                 original_text=sql,
@@ -56,6 +108,7 @@ def planned_stages(plan) -> ParsedSQL:
                 end=start + len(binding.slot),
                 access=binding.access,
                 has_alias=binding.has_alias,
+                unload=binding.unload,
             )
         )
     return ParsedSQL(CommandType(plan.stage_command), refs, sql, sql, [])

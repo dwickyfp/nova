@@ -26,6 +26,7 @@ from uuid import uuid4
 import asyncmy
 import asyncmy.cursors
 
+from app import mysql_driver_guard  # noqa: F401 - refuse mapping parameters
 from app.common.metadata_actors import metadata_scope
 from app.core.config import settings
 from app.modules.access_control.security_context import SecurityContext

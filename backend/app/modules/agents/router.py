@@ -161,7 +161,7 @@ router = APIRouter()
 #: ``agents.registry.KNOWN_TOOLS``; the two lists change together.
 #: Retired tools are dropped from a saved selection instead of rejected, so an
 #: agent created before a tool was removed can still be saved.
-RETIRED_TOOLS = frozenset({"smart_report"})
+RETIRED_TOOLS = frozenset({"smart_report", "dashboard_build"})
 
 KNOWN_TOOLS = {
     "load_skill",
@@ -172,7 +172,6 @@ KNOWN_TOOLS = {
     "semantic_view_query",
     "feature_lookup",
     "data_to_chart",
-    "dashboard_build",
     "diagnose_change",
     "context_graph",
     "decision_lab",
@@ -2120,11 +2119,7 @@ async def send_agent_message(
         # for this question, then any other the active role can open.
         agent = dataviz_assistant_config(
             user["username"],
-            semantic_view_ids=await scope_views(
-                user,
-                dashboard_id=body.dataviz.dashboard_id if body.dataviz else None,
-                question=body.content,
-            ),
+            semantic_view_ids=await scope_views(user, question=body.content),
         )
     user_name = user["username"]
     thread_row = await _require_agent_thread(thread_id, agent_id, user_name)
@@ -2168,7 +2163,10 @@ async def send_agent_message(
 
     #: Required tools whose output the server already gave this turn.
     dataviz_settled: tuple[str, ...] = ()
+    #: The dashboard brief says the answer must be a question back.
+    dataviz_question_back = False
     dataviz_aliases: dict[str, str] = {}
+    dashboard_tools: tuple[str, ...] = ()
     if agent_id == SKILL_AUTHOR_ID or is_skill_authoring(body.content, history):
         from app.modules.agents.prompt import build_system_prompt
 
@@ -2176,80 +2174,34 @@ async def send_agent_message(
         system_prompt = build_system_prompt({"name": "Nova Studio"}, actual_tools=[])
         system_prompt += "\n\n" + SKILL_AUTHORING_PROMPT
     elif agent_id != SKILL_AUTHOR_ID:
-        # Dataviz (docs/arch-19-studio-dataviz.md): the same loop gets the
-        # schema-bound Dataviz tools in every Studio turn, so a request to add
-        # a result reaches the one server resolver and pipeline.
-        from app.modules.agents.tools import dataviz as dataviz_tools
+        native = body.dataviz.native_dashboard if body.dataviz is not None else None
+        if is_dataviz_assistant(agent_id) or native is not None:
+            # Native Dataviz dashboards (docs/arch-19-studio-dataviz.md): the
+            # same loop gets tools that read and change them through the
+            # native document service, as the caller.
+            from app.modules.agents.tools import native_dataviz
 
-        dataviz_tools.register(registry)
-        system_prompt += "\n\n" + dataviz_tools.PROMPT
-        from app.modules.superset.dataviz import pending_change
-
-        pending = await pending_change(user, thread_id)
-        if pending:
-            # A change prepared in an earlier turn of this conversation: a later
-            # "yes" applies exactly it (dataviz_apply still asks for consent).
-            changes = "; ".join(pending.get("changes") or [])
-            dataviz_tools.remember_preview(pending["action_token"], changes)
-            system_prompt += (
-                "\n\n## Prepared Dataviz change, not applied yet\n"
-                f"action_token: {pending['action_token']}\nChanges: {changes}\n"
-                "If the user approves it, call dataviz_apply with this action_token."
-            )
-        if body.dataviz is not None and body.dataviz.dashboard_id:
-            from app.modules.superset.client import BiError
-            from app.modules.superset.dashboard_context import brief, dashboard_context
-
-            try:
-                # Verified as the caller: the dashboard, its datasets and fields,
-                # the filter state and the ontology concepts, without SQL or rows.
-                for attempt in (1, 2):
-                    try:
-                        opened = await dashboard_context(
-                            user,
-                            int(body.dataviz.dashboard_id),
-                            native_filters_key=body.dataviz.native_filters_key,
-                            edit_state=body.dataviz.edit_state,
-                        )
-                        break
-                    except BiError as exc:
-                        # One retry for a momentary BI outage, so a blip does
-                        # not move the answer off the dashboard's own data.
-                        if attempt == 2 or exc.status not in (0, 502, 503, 504):
-                            raise
-                        await asyncio.sleep(1.0)
-                system_prompt += "\n\n## The dashboard on screen\n" + brief(opened)
-                dataviz_settled = ("dataviz_context",)
-                if any(
-                    concept.get("definition")
-                    for chart in opened.get("charts", [])
-                    for concept in chart.get("concepts", [])
-                ):
-                    # The brief already states the approved ontology meaning
-                    # of the dashboard's measures, verified as the caller.
-                    dataviz_settled += ("ontology_resolve", "ontology_explain")
-                if is_dataviz_assistant(agent_id) and opened.get("datasets"):
-                    # Numbers come only from the dashboard's own datasets, so
-                    # they match its charts and its verified filters.
+            native_dataviz.register(registry)
+            system_prompt += "\n\n" + native_dataviz.PROMPT
+            if native is not None:
+                text, settles = await native_dataviz.brief_settling(
+                    user, native.model_dump(mode="json"))
+                system_prompt += (
+                    "\n\n## The native dashboard on screen\n"
+                    "\"This dashboard\" means this one. Change it only with the native "
+                    "dashboard tools.\n" + text
+                )
+                dataviz_settled += settles
+                dataviz_question_back = bool(native_dataviz.ASKING_SETTLES & set(settles))
+                if is_dataviz_assistant(agent_id):
+                    # Numbers come from the dashboard's own datasets, and reading
+                    # or changing it stays in reach whatever the planner chose.
                     from app.modules.agents.dataviz_assistant import DASHBOARD_ALIASES
 
                     for name in DASHBOARD_ALIASES:
                         registry.discard(name)
                     dataviz_aliases = dict(DASHBOARD_ALIASES)
-                elif is_dataviz_assistant(agent_id):
-                    logger.warning(
-                        "Dataviz dashboard %s gave no datasets (available=%s)",
-                        body.dataviz.dashboard_id,
-                        opened.get("available"),
-                    )
-            except BiError as exc:
-                logger.warning(
-                    "Dataviz dashboard %s context failed: %s", body.dataviz.dashboard_id, exc.status
-                )
-                system_prompt += (
-                    f"\n\nThe user is looking at Dataviz dashboard "
-                    f"{body.dataviz.dashboard_id}, which could not be read right now."
-                )
+                    dashboard_tools = native_dataviz.TOOL_NAMES
         system_prompt += await _business_terms_note(body.content, user, bound_view_ids(agent))
         try:
             memories = await memory_repository.list(
@@ -2346,7 +2298,7 @@ async def send_agent_message(
     context = LoopContext(
         user_name=user_name,
         # The Dataviz assistant answers in text and tables: its visuals are
-        # the Superset dashboard beside it.
+        # the dashboard beside it.
         intelligent_ui=agent_id != SKILL_AUTHOR_ID and not is_dataviz_assistant(agent_id),
         ui_action_accepted=body.ui_action is not None,
         ui_private_context=bool(body.ui_action) or any(
@@ -2359,9 +2311,11 @@ async def send_agent_message(
         workspace_file_id=thread_row.get("workspace_file_id"),
         session_id=user.get("session_id"),
         thread_id=thread_id,
-        dataviz=body.dataviz.model_dump() if body.dataviz is not None else None,
+        dataviz=body.dataviz.turn_hints() if body.dataviz is not None else None,
         settled_capabilities=dataviz_settled,
+        question_back=dataviz_question_back,
         capability_aliases=dataviz_aliases,
+        dashboard_tools=dashboard_tools,
         user=user,
         attachments=attachments,
         has_attachment_history=any(row.get("attachments") for row in history),

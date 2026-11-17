@@ -159,6 +159,22 @@ function sseResponse(body: string): Response {
   });
 }
 
+function pendingConsentResponse(signal: AbortSignal | null | undefined): Response {
+  let stop: () => void;
+  return new Response(new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(CONSENT_STREAM));
+      // The server holds this stream open while waiting for the decision.
+      stop = () => controller.close();
+      if (signal?.aborted) stop();
+      else signal?.addEventListener("abort", stop, { once: true });
+    },
+    cancel() {
+      signal?.removeEventListener("abort", stop);
+    },
+  }), { headers: { "Content-Type": "text/event-stream" } });
+}
+
 function mockFetch(
   mode: "read_only" | "ask_every_tool" = "read_only",
   extended = false,
@@ -191,7 +207,7 @@ function mockFetch(
       return new Response(String(init?.body), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     if (url.includes("/threads") && url.includes("/messages")) {
-      return sseResponse(mode === "ask_every_tool" ? CONSENT_STREAM : STREAM);
+      return mode === "ask_every_tool" ? pendingConsentResponse(init?.signal) : sseResponse(STREAM);
     }
     // GET one thread returns the thread plus its messages, each carrying the
     // trace the loop recorded.
@@ -939,7 +955,8 @@ describe("studio transcript click-through", () => {
     await expect
       .element(page.getByText(/SUM\(total_netto\)/))
       .not.toBeInTheDocument();
-    await page.getByRole("button", { name: /Ran a SQL query/ }).click();
+    // The summary names the query too; the step itself is the last match.
+    await page.getByRole("button", { name: /Ran a SQL query/ }).last().click();
     await expect.element(page.getByText(/SUM\(total_netto\)/)).toBeVisible();
 
     // The turn has settled: the tool row and its statement are present, and no
@@ -988,6 +1005,12 @@ describe("studio transcript click-through", () => {
     await expect
       .element(page.getByText("Approved query_execute"))
       .toBeVisible();
+    await expect.element(page.getByText("The agent run ended before completion")).not.toBeInTheDocument();
+    const decisions = vi.mocked(globalThis.fetch).mock.calls.filter(([url]) =>
+      String(url).endsWith("/tool-calls/c9/decision"),
+    );
+    expect(decisions).toHaveLength(1);
+    expect(JSON.parse(String(decisions[0][1]?.body))).toMatchObject({ decision: "allow_once" });
   });
 
   it("keeps the composer controls keyboard reachable", async () => {
@@ -1071,7 +1094,8 @@ describe("studio transcript click-through", () => {
     await expect
       .element(page.getByText("Loading skill: revenue"))
       .toBeVisible();
-    await page.getByRole("button", { name: /Ran a SQL query/ }).click();
+    // The summary names the query too; the step itself is the last match.
+    await page.getByRole("button", { name: /Ran a SQL query/ }).last().click();
     await expect.element(page.getByText(/SUM\(total_netto\)/)).toBeVisible();
 
     await expect.element(page.getByText("Omzet per SKU").first()).toBeVisible();

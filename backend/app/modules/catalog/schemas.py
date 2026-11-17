@@ -220,8 +220,16 @@ class ConnectionSummary(BaseModel):
     owner: str | None = None
     comment: str | None = None
     catalogs: list[str] = Field(default_factory=list)
+    #: Kafka connections: the roles allowed to load from it with CREATE ROUTINE LOAD.
+    roles: list[str] = Field(default_factory=list)
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+class ConnectionRoles(BaseModel):
+    """The roles allowed to load from a Kafka connection (replaces the list)."""
+
+    roles: list[str] = Field(default_factory=list, max_length=200)
 
 
 class ConnectionListResponse(BaseModel):

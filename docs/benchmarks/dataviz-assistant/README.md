@@ -1,5 +1,9 @@
 # Dataviz assistant: 5W+1H quality
 
+> Historical: this benchmark ran against the Superset-based Dataviz, which was
+> removed on 2026-11-16 ([Architecture 17](../../arch-17-superset.md)). Its
+> results do not measure native Dataviz.
+
 The Dataviz assistant (`nova-dataviz-assistant`, [arch-19 D6](../../arch-19-studio-dataviz.md))
 must answer what, who, when, where, why and how about the dashboard on screen,
 from that dashboard's own data, with its verified filters and the Supernova

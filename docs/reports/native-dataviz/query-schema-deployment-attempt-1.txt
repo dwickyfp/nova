@@ -1,0 +1,6 @@
+ Container nova-starrocks-fe Recreate 
+ Container nova-starrocks-fe Recreated 
+ Container nova-starrocks-fe Starting 
+ Container nova-starrocks-fe Started 
+ Container nova-starrocks-fe Waiting 
+ Container nova-starrocks-fe Healthy 

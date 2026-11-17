@@ -1,0 +1,13 @@
+{
+  "success": true,
+  "columns": [
+    "id",
+    "city",
+    "amount"
+  ],
+  "row_count": 2,
+  "cities": [
+    "Jakarta"
+  ],
+  "error": null
+}

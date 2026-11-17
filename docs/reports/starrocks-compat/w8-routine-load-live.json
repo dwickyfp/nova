@@ -1,0 +1,1288 @@
+{
+ "date": "2026-11-16",
+ "baseline_commit": "18ae8035e9dfa9ba6b790c0a390017fa943c2157",
+ "branch": "feat/dataviz-native (uncommitted working tree)",
+ "stack": "shared development stack (docker project): StarRocks 4.1.4 patched FE, Ranger, Kafka 3.9.1, Iceberg REST fixture 1.10.0, MinIO; Nova backend from the working tree via dev.sh hot reload; metadata schema 57",
+ "through": "Nova HTTP API http://127.0.0.1:5173/api/v1 (query/execute, catalog/connections, catalog/foreign-catalogs, access-control/data-access) as nova_admin (ACCOUNTADMIN) and alice (marketing, finance); passwords and storage keys read inside the scripts, never printed",
+ "workstream": "W8 Routine Load from Kafka through Nova connections",
+ "migration": "0057_routine_loads.sql applied to the dev metadata DB (docs/reports/starrocks-compat/development-schema-57.json)",
+ "part_a_admin_csv_refusals_and_controls": [
+  {
+   "create_connection": [
+    201,
+    {
+     "name": "w8_kafka",
+     "connector_type": "kafka",
+     "credential_source": "none",
+     "has_credentials": true,
+     "writable": false,
+     "owner": "nova_admin",
+     "comment": "W8 live check",
+     "catalogs": [],
+     "roles": [],
+     "created_at": "2026-11-16T16:22:24.564924Z",
+     "updated_at": "2026-11-16T16:22:24.564924Z"
+    }
+   ]
+  },
+  {
+   "create_sasl_connection": [
+    201,
+    {
+     "name": "w8_kafka_sasl",
+     "connector_type": "kafka",
+     "credential_source": "managed",
+     "has_credentials": true,
+     "writable": false,
+     "owner": "nova_admin",
+     "comment": null,
+     "catalogs": [],
+     "roles": [],
+     "created_at": "2026-11-16T16:22:27.327118Z",
+     "updated_at": "2026-11-16T16:22:27.327118Z"
+    }
+   ]
+  },
+  {
+   "catalog_from_kafka": [
+    400,
+    {
+     "detail": "A kafka connection cannot back a catalog; catalogs are built from iceberg, postgres, snowflake, starrocks connections"
+    }
+   ]
+  },
+  {
+   "as": "nova_admin",
+   "label": null,
+   "sql": "CREATE DATABASE IF NOT EXISTS compat_rl_w8",
+   "ok": true,
+   "error": null,
+   "executed_sql": "CREATE DATABASE IF NOT EXISTS compat_rl_w8",
+   "rows": [],
+   "columns": []
+  },
+  {
+   "as": "nova_admin",
+   "label": null,
+   "sql": "CREATE TABLE orders_csv (order_id INT, customer VARCHAR(32), amount DECIMAL(10,2)) DUPLICATE KEY(order_id) DISTRIBUTED BY HASH(order_id) BUCKETS 1 PROPERTIES (\"replication_num\" = \"1\")",
+   "ok": true,
+   "error": null,
+   "executed_sql": "CREATE TABLE orders_csv (order_id INT, customer VARCHAR(32), amount DECIMAL(10,2)) DUPLICATE KEY(order_id) DISTRIBUTED BY HASH(order_id) BUCKETS 1 PROPERTIES (\"replication_num\" = \"1\")",
+   "rows": [],
+   "columns": []
+  },
+  {
+   "as": "nova_admin",
+   "label": null,
+   "sql": "CREATE TABLE orders_json (order_id INT, customer VARCHAR(32), amount DECIMAL(10,2)) DUPLICATE KEY(order_id) DISTRIBUTED BY HASH(order_id) BUCKETS 1 PROPERTIES (\"replication_num\" = \"1\")",
+   "ok": true,
+   "error": null,
+   "executed_sql": "CREATE TABLE orders_json (order_id INT, customer VARCHAR(32), amount DECIMAL(10,2)) DUPLICATE KEY(order_id) DISTRIBUTED BY HASH(order_id) BUCKETS 1 PROPERTIES (\"replication_num\" = \"1\")",
+   "rows": [],
+   "columns": []
+  },
+  {
+   "as": "nova_admin",
+   "label": "refused: raw broker list",
+   "sql": "CREATE ROUTINE LOAD compat_rl_w8.orders_csv_job ON orders_csv FROM KAFKA (\"kafka_broker_list\" = \"kafka:9092\", \"kafka_topic\" = \"compat_rl_w8_csv\")",
+   "ok": false,
+   "error": "'kafka_broker_list' comes from the Kafka connection; name the connection with \"kafka_connection\" = \"<connection>\" instead",
+   "executed_sql": "",
+   "rows": [],
+   "columns": []
+  },
+  {
+   "as": "nova_admin",
+   "label": "refused: credential property",
+   "sql": "CREATE ROUTINE LOAD compat_rl_w8.orders_csv_job ON orders_csv FROM KAFKA (\"kafka_connection\" = \"w8_kafka\", \"kafka_topic\" = \"compat_rl_w8_csv\", \"property.sasl.password\" = \"x\")",
+   "ok": false,
+   "error": "'property.sasl.password' comes from the Kafka connection; name the connection with \"kafka_connection\" = \"<connection>\" instead",
+   "executed_sql": "",
+   "rows": [],
+   "columns": []
+  },
+  {
+   "as": "nova_admin",
+   "label": "CREATE csv job",
+   "sql": "CREATE ROUTINE LOAD compat_rl_w8.orders_csv_job ON orders_csv\nCOLUMNS TERMINATED BY \",\",\nCOLUMNS (order_id, customer, amount)\nPROPERTIES (\"desired_concurrent_number\" = \"1\", \"format\" = \"csv\", \"max_batch_interval\" = \"5\", \"max_error_number\" = \"0\")\nFROM KAFKA (\"kafka_connection\" = \"w8_kafka\", \"kafka_topic\" = \"compat_rl_w8_csv\", \"kafka_partitions\" = \"0\", \"property.kafka_default_offsets\" = \"OFFSET_BEGINNING\")",
+   "ok": true,
+   "error": null,
+   "executed_sql": "CREATE ROUTINE LOAD compat_rl_w8.orders_csv_job ON orders_csv\nCOLUMNS TERMINATED BY \",\",\nCOLUMNS (order_id, customer, amount)\nPROPERTIES (\"desired_concurrent_number\" = \"1\", \"format\" = \"csv\", \"max_batch_interval\" = \"5\", \"max_error_number\" = \"0\")\nFROM KAFKA ('kafka_broker_list' = 'kafka:9092', \"kafka_topic\" = \"compat_rl_w8_csv\", \"kafka_partitions\" = \"0\", \"property.kafka_default_offsets\" = \"OFFSET_BEGINNING\")",
+   "rows": [
+    [
+     "Routine load compat_rl_w8.orders_csv_job: create done"
+    ]
+   ],
+   "columns": [
+    "Result"
+   ]
+  },
+  {
+   "as": "nova_admin",
+   "label": "CREATE json job",
+   "sql": "CREATE ROUTINE LOAD compat_rl_w8.orders_json_job ON orders_json\nCOLUMNS (order_id, customer, amount)\nPROPERTIES (\"desired_concurrent_number\" = \"1\", \"format\" = \"json\", \"jsonpaths\" = \"[\\\"$.order_id\\\",\\\"$.customer\\\",\\\"$.amount\\\"]\", \"strip_outer_array\" = \"false\", \"max_batch_interval\" = \"5\")\nFROM KAFKA (\"kafka_connection\" = \"w8_kafka\", \"kafka_topic\" = \"compat_rl_w8_json\", \"property.kafka_default_offsets\" = \"OFFSET_BEGINNING\")",
+   "ok": false,
+   "error": "Backslash escapes are not supported in routine load properties",
+   "executed_sql": "",
+   "rows": [],
+   "columns": []
+  },
+  {
+   "as": "nova_admin",
+   "label": "refused: duplicate name",
+   "sql": "CREATE ROUTINE LOAD compat_rl_w8.orders_csv_job ON orders_csv FROM KAFKA (\"kafka_connection\" = \"w8_kafka\", \"kafka_topic\" = \"compat_rl_w8_csv\")",
+   "ok": false,
+   "error": "Routine load compat_rl_w8.orders_csv_job already exists",
+   "executed_sql": "CREATE ROUTINE LOAD compat_rl_w8.orders_csv_job ON orders_csv FROM KAFKA (\"kafka_connection\" = \"w8_kafka\", \"kafka_topic\" = \"compat_rl_w8_csv\")",
+   "rows": [],
+   "columns": []
+  },
+  {
+   "as": "nova_admin",
+   "label": null,
+   "sql": "SELECT * FROM orders_csv ORDER BY order_id",
+   "ok": true,
+   "error": null,
+   "executed_sql": "SELECT * FROM orders_csv ORDER BY order_id",
+   "rows": [
+    [
+     1,
+     "alice",
+     "10.50"
+    ],
+    [
+     2,
+     "bob",
+     "20.00"
+    ],
+    [
+     3,
+     "carol",
+     "7.25"
+    ]
+   ],
+   "columns": [
+    "order_id",
+    "customer",
+    "amount"
+   ]
+  },
+  {
+   "as": "nova_admin",
+   "label": null,
+   "sql": "SELECT * FROM orders_json ORDER BY order_id",
+   "ok": true,
+   "error": null,
+   "executed_sql": "SELECT * FROM orders_json ORDER BY order_id",
+   "rows": [],
+   "columns": [
+    "order_id",
+    "customer",
+    "amount"
+   ]
+  },
+  {
+   "as": "nova_admin",
+   "label": null,
+   "sql": "SHOW ROUTINE LOAD FROM compat_rl_w8",
+   "ok": true,
+   "error": null,
+   "executed_sql": "SHOW ROUTINE LOAD FROM compat_rl_w8",
+   "rows": [
+    [
+     "3112939",
+     "orders_csv_job",
+     "2026-11-16 23:23:03",
+     null,
+     null,
+     "compat_rl_w8",
+     "orders_csv",
+     "RUNNING",
+     "KAFKA",
+     "1",
+     "{\"partial_update_mode\":\"null\",\"timezone\":\"Asia/Jakarta\",\"columnSeparator\":\",\",\"log_rejected_record_num\":\"0\",\"taskTimeoutSecond\":\"60\",\"maxFilterRatio\":\"1.0\",\"strict_mode\":\"false\",\"jsonpaths\":\"\",\"currentTaskConcurrentNum\":\"1\",\"escape\":\"0\",\"enclose\":\"0\",\"partitions\":\"*\",\"rowDelimiter\":\"\\n\",\"partial_update\":\"false\",\"trim_space\":\"false\",\"columnToColumnExpr\":\"`order_id`,`customer`,`amount`\",\"maxBatchIntervalS\":\"5\",\"whereExpr\":\"*\",\"format\":\"csv\",\"json_root\":\"\",\"pause_on_fatal_parse_error\":\"false\",\"taskConsumeSecond\":\"15\",\"desireTaskConcurrentNum\":\"1\",\"maxErrorNum\":\"0\",\"strip_outer_array\":\"false\",\"maxBatchRows\":\"200000\"}",
+     "{\"topic\":\"compat_rl_w8_csv\",\"currentKafkaPartitions\":\"0\",\"brokerList\":\"kafka:9092\"}",
+     "{\"kafka_default_offsets\":\"OFFSET_BEGINNING\",\"group.id\":\"orders_csv_job_9b590c37-e334-4842-9fd2-1d1c56e0495f\"}",
+     "{\"receivedBytes\":36,\"partitionLagTime\":{},\"errorRows\":0,\"committedTaskNum\":1,\"loadedRows\":3,\"loadRowsRate\":1,\"abortedTaskNum\":0,\"totalRows\":3,\"unselectedRows\":0,\"receivedBytesRate\":15,\"taskExecuteTimeMs\":2365}",
+     "{\"0\":\"2\"}",
+     "{\"0\":\"1794846114843\"}",
+     "",
+     "",
+     "",
+     "[2026-11-16 23:24:35] [task id: 01a1e52b-a9dd-7e24-b6df-17239958cb22] [txn id: -1] there is no new data in kafka, wait for 5 seconds to schedule again",
+     "{\"0\":\"3\"}",
+     "{\"0\":\"1\"}"
+    ]
+   ],
+   "columns": [
+    "Id",
+    "Name",
+    "CreateTime",
+    "PauseTime",
+    "EndTime",
+    "DbName",
+    "TableName",
+    "State",
+    "DataSourceType",
+    "CurrentTaskNum",
+    "JobProperties",
+    "DataSourceProperties",
+    "CustomProperties",
+    "Statistic",
+    "Progress",
+    "TimestampProgress",
+    "ReasonOfStateChanged",
+    "ErrorLogUrls",
+    "TrackingSQL",
+    "OtherMsg",
+    "LatestSourcePosition",
+    "OffsetLag"
+   ]
+  },
+  {
+   "as": "nova_admin",
+   "label": null,
+   "sql": "SHOW ROUTINE LOAD TASK FROM compat_rl_w8 WHERE JobName = 'orders_csv_job'",
+   "ok": true,
+   "error": null,
+   "executed_sql": "SHOW ROUTINE LOAD TASK FROM compat_rl_w8 WHERE JobName = 'orders_csv_job'",
+   "rows": [
+    [
+     "01a1e52b-a9dd-7e24-b6df-17239958cb22",
+     "-1",
+     "UNKNOWN",
+     "3112939",
+     "2026-11-16 23:23:26",
+     "2026-11-16 23:24:35",
+     "NULL",
+     "60",
+     "-1",
+     "Progress:{\"0\":3},LatestOffset:null",
+     "there is no new data in kafka, wait for 5 seconds to schedule again"
+    ]
+   ],
+   "columns": [
+    "TaskId",
+    "TxnId",
+    "TxnStatus",
+    "JobId",
+    "CreateTime",
+    "LastScheduledTime",
+    "ExecuteStartTime",
+    "Timeout",
+    "BeId",
+    "DataSourceProperties",
+    "Message"
+   ]
+  },
+  {
+   "as": "nova_admin",
+   "label": null,
+   "sql": "SHOW CREATE ROUTINE LOAD compat_rl_w8.orders_csv_job",
+   "ok": true,
+   "error": null,
+   "executed_sql": "SHOW CREATE ROUTINE LOAD compat_rl_w8.orders_csv_job",
+   "rows": [
+    [
+     "orders_csv_job",
+     "CREATE ROUTINE LOAD compat_rl_w8.orders_csv_job on orders_csv\n COLUMNS TERMINATED BY ',',\nCOLUMNS (order_id, customer, amount)\nPROPERTIES\n(\n\"desired_concurrent_number\"=\"1\",\n\"max_error_number\"=\"0\",\n\"max_filter_ratio\"=\"1.0\",\n\"max_batch_interval\"=\"5\",\n\"max_batch_rows\"=\"200000\",\n\"task_consume_second\"=\"15\",\n\"task_timeout_second\"=\"60\",\n\"format\"=\"csv\",\n\"jsonpaths\"=\"\",\n\"strip_outer_array\"=\"false\",\n\"json_root\"=\"\",\n\"strict_mode\"=\"false\",\n\"pause_on_fatal_parse_error\"=\"false\",\n\"timezone\"=\"Asia/Jakarta\",\n\"partial_update\"=\"false\",\n\"trim_space\"=\"false\",\n\"enclose\"=\"0\",\n\"escape\"=\"0\",\n\"log_rejected_record_num\"=\"0\"\n)\nFROM KAFKA\n(\n\"kafka_broker_list\"=\"kafka:9092\",\n\"kafka_topic\"=\"compat_rl_w8_csv\",\n\"kafka_partitions\"=\"0\",\n\"kafka_offsets\"=\"OFFSET_BEGINNING\",\n\"property.kafka_default_offsets\"=\"OFFSET_BEGINNING\"\n);"
+    ]
+   ],
+   "columns": [
+    "Job",
+    "Create Job"
+   ]
+  },
+  {
+   "as": "nova_admin",
+   "label": null,
+   "sql": "PAUSE ROUTINE LOAD FOR compat_rl_w8.orders_csv_job",
+   "ok": true,
+   "error": null,
+   "executed_sql": "PAUSE ROUTINE LOAD FOR compat_rl_w8.orders_csv_job",
+   "rows": [
+    [
+     "Routine load compat_rl_w8.orders_csv_job: pause done"
+    ]
+   ],
+   "columns": [
+    "Result"
+   ]
+  },
+  {
+   "as": "nova_admin",
+   "label": null,
+   "sql": "ALTER ROUTINE LOAD FOR compat_rl_w8.orders_csv_job PROPERTIES (\"max_batch_interval\" = \"10\")",
+   "ok": true,
+   "error": null,
+   "executed_sql": "ALTER ROUTINE LOAD FOR compat_rl_w8.orders_csv_job PROPERTIES (\"max_batch_interval\" = \"10\")",
+   "rows": [
+    [
+     "Routine load compat_rl_w8.orders_csv_job: alter done"
+    ]
+   ],
+   "columns": [
+    "Result"
+   ]
+  },
+  {
+   "as": "nova_admin",
+   "label": "refused: ALTER broker list",
+   "sql": "ALTER ROUTINE LOAD FOR compat_rl_w8.orders_csv_job FROM KAFKA (\"kafka_broker_list\" = \"other:9092\")",
+   "ok": false,
+   "error": "'kafka_broker_list' comes from the Kafka connection; name the connection with \"kafka_connection\" = \"<connection>\" instead",
+   "executed_sql": "",
+   "rows": [],
+   "columns": []
+  },
+  {
+   "as": "nova_admin",
+   "label": null,
+   "sql": "RESUME ROUTINE LOAD FOR compat_rl_w8.orders_csv_job",
+   "ok": true,
+   "error": null,
+   "executed_sql": "RESUME ROUTINE LOAD FOR compat_rl_w8.orders_csv_job",
+   "rows": [
+    [
+     "Routine load compat_rl_w8.orders_csv_job: resume done"
+    ]
+   ],
+   "columns": [
+    "Result"
+   ]
+  }
+ ],
+ "part_b_json_while_running_pause_resume_stop": [
+  {
+   "as": "nova_admin",
+   "label": "CREATE json job",
+   "sql": "CREATE ROUTINE LOAD compat_rl_w8.orders_json_job ON orders_json\nCOLUMNS (order_id, customer, amount)\nPROPERTIES (\"desired_concurrent_number\" = \"1\", \"format\" = \"json\", \"jsonpaths\" = \"[\\\"$.order_id\\\",\\\"$.customer\\\",\\\"$.amount\\\"]\", \"max_batch_interval\" = \"5\")\nFROM KAFKA (\"kafka_connection\" = \"w8_kafka\", \"kafka_topic\" = \"compat_rl_w8_json\", \"property.kafka_default_offsets\" = \"OFFSET_BEGINNING\")",
+   "ok": true,
+   "error": null,
+   "executed_sql": "CREATE ROUTINE LOAD compat_rl_w8.orders_json_job ON orders_json\nCOLUMNS (order_id, customer, amount)\nPROPERTIES (\"desired_concurrent_number\" = \"1\", \"format\" = \"json\", \"jsonpaths\" = \"[\\\"$.order_id\\\",\\\"$.customer\\\",\\\"$.amount\\\"]\", \"max_batch_interval\" = \"5\")\nFROM KAFKA ('kafka_broker_list' = 'kafka:9092', \"kafka_topic\" = \"compat_rl_w8_json\", \"property.kafka_default_offsets\" = \"OFFSET_BEGINNING\")",
+   "rows": [
+    [
+     "Routine load compat_rl_w8.orders_json_job: create done"
+    ]
+   ],
+   "columns": [
+    "Result"
+   ]
+  },
+  {
+   "json_rows_after_s": 11
+  },
+  {
+   "as": "nova_admin",
+   "label": null,
+   "sql": "SELECT * FROM orders_json ORDER BY order_id",
+   "ok": true,
+   "error": null,
+   "executed_sql": "SELECT * FROM orders_json ORDER BY order_id",
+   "rows": [
+    [
+     1,
+     "alice",
+     "10.50"
+    ],
+    [
+     2,
+     "bob",
+     "20.00"
+    ],
+    [
+     3,
+     "carol",
+     "7.25"
+    ]
+   ],
+   "columns": [
+    "order_id",
+    "customer",
+    "amount"
+   ]
+  },
+  {
+   "csv_4_after_s": 1,
+   "json_4_after_s": 4
+  },
+  {
+   "as": "nova_admin",
+   "label": null,
+   "sql": "SELECT * FROM orders_csv WHERE order_id = 4",
+   "ok": true,
+   "error": null,
+   "executed_sql": "SELECT * FROM orders_csv WHERE order_id = 4",
+   "rows": [
+    [
+     4,
+     "dewi",
+     "5.00"
+    ]
+   ],
+   "columns": [
+    "order_id",
+    "customer",
+    "amount"
+   ]
+  },
+  {
+   "as": "nova_admin",
+   "label": null,
+   "sql": "PAUSE ROUTINE LOAD FOR compat_rl_w8.orders_json_job",
+   "ok": true,
+   "error": null,
+   "executed_sql": "PAUSE ROUTINE LOAD FOR compat_rl_w8.orders_json_job",
+   "rows": [
+    [
+     "Routine load compat_rl_w8.orders_json_job: pause done"
+    ]
+   ],
+   "columns": [
+    "Result"
+   ]
+  },
+  {
+   "as": "nova_admin",
+   "label": "paused: row 5 not loaded yet",
+   "sql": "SELECT COUNT(*) FROM orders_json",
+   "ok": true,
+   "error": null,
+   "executed_sql": "SELECT COUNT(*) FROM orders_json",
+   "rows": [
+    [
+     4
+    ]
+   ],
+   "columns": [
+    "count(*)"
+   ]
+  },
+  {
+   "as": "nova_admin",
+   "label": null,
+   "sql": "RESUME ROUTINE LOAD FOR compat_rl_w8.orders_json_job",
+   "ok": true,
+   "error": null,
+   "executed_sql": "RESUME ROUTINE LOAD FOR compat_rl_w8.orders_json_job",
+   "rows": [
+    [
+     "Routine load compat_rl_w8.orders_json_job: resume done"
+    ]
+   ],
+   "columns": [
+    "Result"
+   ]
+  },
+  {
+   "json_5_after_resume_s": 21
+  },
+  {
+   "as": "nova_admin",
+   "label": null,
+   "sql": "STOP ROUTINE LOAD FOR compat_rl_w8.orders_json_job",
+   "ok": true,
+   "error": null,
+   "executed_sql": "STOP ROUTINE LOAD FOR compat_rl_w8.orders_json_job",
+   "rows": [
+    [
+     "Routine load compat_rl_w8.orders_json_job: stop done"
+    ]
+   ],
+   "columns": [
+    "Result"
+   ]
+  },
+  {
+   "as": "nova_admin",
+   "label": null,
+   "sql": "SHOW ALL ROUTINE LOAD FOR compat_rl_w8.orders_json_job",
+   "ok": true,
+   "error": null,
+   "executed_sql": "SHOW ALL ROUTINE LOAD FOR compat_rl_w8.orders_json_job",
+   "rows": [
+    [
+     "3112960",
+     "orders_json_job",
+     "2026-11-16 23:25:39",
+     null,
+     "2026-11-16 23:26:57",
+     "compat_rl_w8",
+     "orders_json",
+     "STOPPED",
+     "KAFKA",
+     "0",
+     "{\"partitions\":\"*\",\"partial_update\":\"false\",\"columnToColumnExpr\":\"`order_id`,`customer`,`amount`\",\"maxBatchIntervalS\":\"5\",\"partial_update_mode\":\"null\",\"whereExpr\":\"*\",\"dataFormat\":\"json\",\"timezone\":\"Asia/Jakarta\",\"format\":\"json\",\"log_rejected_record_num\":\"0\",\"taskTimeoutSecond\":\"60\",\"json_root\":\"\",\"pause_on_fatal_parse_error\":\"false\",\"maxFilterRatio\":\"1.0\",\"strict_mode\":\"false\",\"jsonpaths\":\"[\\\"$.order_id\\\",\\\"$.customer\\\",\\\"$.amount\\\"]\",\"taskConsumeSecond\":\"15\",\"desireTaskConcurrentNum\":\"1\",\"maxErrorNum\":\"0\",\"strip_outer_array\":\"false\",\"currentTaskConcurrentNum\":\"1\",\"maxBatchRows\":\"200000\"}",
+     "{\"topic\":\"compat_rl_w8_json\",\"currentKafkaPartitions\":\"0\",\"brokerList\":\"kafka:9092\"}",
+     "{\"kafka_default_offsets\":\"OFFSET_BEGINNING\",\"group.id\":\"orders_json_job_eb7a0594-dece-4058-9a21-da8745a5f1c5\"}",
+     "{\"receivedBytes\":228,\"partitionLagTime\":{},\"errorRows\":0,\"committedTaskNum\":3,\"loadedRows\":5,\"loadRowsRate\":1,\"abortedTaskNum\":0,\"totalRows\":5,\"unselectedRows\":0,\"receivedBytesRate\":84,\"taskExecuteTimeMs\":2693}",
+     "{\"0\":\"4\"}",
+     "{\"0\":\"1794846377155\"}",
+     "",
+     "",
+     "",
+     "[2026-11-16 23:26:55] [task id: 01a1e52e-c4ca-7eb7-a91e-e5ae34c1bd2e] [txn id: -1] there is no new data in kafka, wait for 5 seconds to schedule again",
+     "{\"0\":\"5\"}",
+     "{\"0\":\"1\"}"
+    ]
+   ],
+   "columns": [
+    "Id",
+    "Name",
+    "CreateTime",
+    "PauseTime",
+    "EndTime",
+    "DbName",
+    "TableName",
+    "State",
+    "DataSourceType",
+    "CurrentTaskNum",
+    "JobProperties",
+    "DataSourceProperties",
+    "CustomProperties",
+    "Statistic",
+    "Progress",
+    "TimestampProgress",
+    "ReasonOfStateChanged",
+    "ErrorLogUrls",
+    "TrackingSQL",
+    "OtherMsg",
+    "LatestSourcePosition",
+    "OffsetLag"
+   ]
+  },
+  {
+   "as": "nova_admin",
+   "label": "refused: resume after stop",
+   "sql": "RESUME ROUTINE LOAD FOR compat_rl_w8.orders_json_job",
+   "ok": false,
+   "error": "Routine load compat_rl_w8.orders_json_job was not created through Nova; create it again with a Kafka connection (\"kafka_connection\" = ...)",
+   "executed_sql": "RESUME ROUTINE LOAD FOR compat_rl_w8.orders_json_job",
+   "rows": [],
+   "columns": []
+  }
+ ],
+ "part_c_governance_alice": {
+  "first_half_log": [
+   "nova_admin OK  CREATE TABLE alice_orders (order_id INT, customer VARCHAR(32), amount DECIMAL(10,2)) DUPLI =>  []",
+   "alice/marketing ERR refused: no table access and no connection grant => Role marketing may not load from Kafka connection 'w8_kafka'; a security admin allows roles on the Connections page []",
+   "alice sets roles 403",
+   "admin sets roles 200 ['marketing']",
+   "alice/marketing ERR refused: connection allowed, no table write access yet => Role marketing may not write to compat_rl_w8.alice_orders []",
+   "grant 201",
+   "alice/marketing OK  CREATE as alice =>  [[\"Routine load compat_rl_w8.alice_job: create done\"]]",
+   "{'alice_rows': 4, 'after_s': 19}",
+   "alice/marketing OK  SHOW ROUTINE LOAD FOR compat_rl_w8.alice_job =>  [[\"3113011\", \"alice_job\", \"2026-11-16 23:28:45\", null, null, \"compat_rl_w8\", \"alice_orders\", \"RUNNING\", \"KAFKA\", \"1\", \"{\\\"partial_update_mode\\\":\\\"null\\\",\\\"timezone\\\":\\\"Asia/Jakarta\\\",\\\"columnSeparator",
+   "alice/finance ERR refused: another role => Routine load compat_rl_w8.alice_job belongs to role marketing; only that role or an administrator can change it []",
+   "alice/finance ERR refused: another role => Routine load compat_rl_w8.alice_job belongs to role marketing; only that role or an administrator can change it []",
+   "Traceback (most recent call last):",
+   "  File \"/private/tmp/claude-501/-Users-dwickyferiansyahputra--claude-spares-spare-om4SnG/20d96761-7419-429e-8b41-2108cabba765/scratchpad/w89/revoke.py\", line 11, in <module>",
+   "    asyncio.run(main())",
+   "  File \"/Users/dwickyferiansyahputra/.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/asyncio/runners.py\", line 190, in run",
+   "    return runner.run(main)",
+   "           ^^^^^^^^^^^^^^^^",
+   "  File \"/Users/dwickyferiansyahputra/.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/asyncio/runners.py\", line 118, in run",
+   "    return self._loop.run_until_complete(task)",
+   "           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+   "  File \"/Users/dwickyferiansyahputra/.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/asyncio/base_events.py\", line 654, in run_until_complete",
+   "    return future.result()",
+   "           ^^^^^^^^^^^^^^^",
+   "  File \"/private/tmp/claude-501/-Users-dwickyferiansyahputra--claude-spares-spare-om4SnG/20d96761-7419-429e-8b41-2108cabba765/scratchpad/w89/revoke.py\", line 6, in main",
+   "    found = await ranger_client.get_policy(name)",
+   "            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+   "  File \"/Users/dwickyferiansyahputra/Public/Research/nova/backend/app/integrations/ranger/client.py\", line 357, in get_policy",
+   "    (policy for policy in await self.list_policies() if policy.get(\"name\") == name),",
+   "                          ^^^^^^^^^^^^^^^^^^^^^^^^^^",
+   "  File \"/Users/dwickyferiansyahputra/Public/Research/nova/backend/app/integrations/ranger/client.py\", line 328, in list_policies",
+   "    policies = await _shared_read(",
+   "               ^^^^^^^^^^^^^^^^^^^",
+   "  File \"/Users/dwickyferiansyahputra/Public/Research/nova/backend/app/integrations/ranger/client.py\", line 62, in _shared_read",
+   "    return await load()",
+   "           ^^^^^^^^^^^^",
+   "  File \"/Users/dwickyferiansyahputra/Public/Research/nova/backend/app/integrations/ranger/client.py\", line 339, in _list_policies",
+   "    result = await self._request(",
+   "             ^^^^^^^^^^^^^^^^^^^^",
+   "  File \"/Users/dwickyferiansyahputra/Public/Research/nova/backend/app/integrations/ranger/client.py\", line 132, in _request",
+   "    raise RangerError(\"Ranger rejected the configured control-plane identity\")",
+   "app.integrations.ranger.client.RangerError: Ranger rejected the configured control-plane identity",
+   "Traceback (most recent call last):",
+   "  File \"<string>\", line 1, in <module>",
+   "  File \"<string>\", line 44, in <module>",
+   "  File \"/Users/dwickyferiansyahputra/.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/subprocess.py\", line 571, in run",
+   "    raise CalledProcessError(retcode, process.args,",
+   "subprocess.CalledProcessError: Command '['/Users/dwickyferiansyahputra/Public/Research/nova/backend/.venv/bin/python3', 'revoke.py', 'nova-managed/access/marketing/default_catalog/compat_rl_w8/*']' returned non-zero exit status 1."
+  ],
+  "second_half": [
+   {
+    "engine_state_after_revoke": [
+     "PAUSED",
+     "ErrorReason{errCode = 100, msg='User root pauses routine load job'}"
+    ],
+    "paused_after_s": 37
+   },
+   {
+    "admin_count_while_paused": 4
+   },
+   {
+    "as": "alice/marketing",
+    "label": "refused: resume while access is revoked",
+    "sql": "RESUME ROUTINE LOAD FOR compat_rl_w8.alice_job",
+    "ok": false,
+    "error": "Routine load compat_rl_w8.alice_job cannot resume: Role marketing may no longer write to compat_rl_w8.alice_orders",
+    "rows": []
+   },
+   {
+    "grant": 201
+   },
+   {
+    "as": "alice/marketing",
+    "label": "RESUME after access restored",
+    "sql": "RESUME ROUTINE LOAD FOR compat_rl_w8.alice_job",
+    "ok": true,
+    "error": null,
+    "rows": [
+     [
+      "Routine load compat_rl_w8.alice_job: resume done"
+     ]
+    ]
+   },
+   {
+    "alice_rows_after_resume": 5,
+    "after_s": 14
+   },
+   {
+    "engine_state_after_connection_role_removed": [
+     "PAUSED",
+     "ErrorReason{errCode = 100, msg='User root pauses routine load job'}"
+    ],
+    "paused_after_s": 5
+   },
+   {
+    "as": "alice/marketing",
+    "label": "STOP by owner",
+    "sql": "STOP ROUTINE LOAD FOR compat_rl_w8.alice_job",
+    "ok": true,
+    "error": null,
+    "rows": [
+     [
+      "Routine load compat_rl_w8.alice_job: stop done"
+     ]
+    ]
+   }
+  ]
+ },
+ "nova_rows_after_runs": {
+  "jobs": [
+   {
+    "database_name": "compat_rl_w8",
+    "job_name": "orders_csv_job",
+    "table_name": "orders_csv",
+    "connection_name": "w8_kafka",
+    "owner_principal": "nova_admin",
+    "owner_role": "ACCOUNTADMIN",
+    "security_context_version": 2,
+    "engine_job_id": "3112939",
+    "state": "ACTIVE",
+    "pause_reason": null,
+    "last_checked_at": "2026-11-16 16:30:56.700726+00:00",
+    "last_check_error": null,
+    "revision": 11
+   },
+   {
+    "database_name": "compat_rl_w8",
+    "job_name": "orders_json_job",
+    "table_name": "orders_json",
+    "connection_name": "w8_kafka",
+    "owner_principal": "nova_admin",
+    "owner_role": "ACCOUNTADMIN",
+    "security_context_version": 2,
+    "engine_job_id": "3112960",
+    "state": "STOPPED",
+    "pause_reason": null,
+    "last_checked_at": "2026-11-16 16:26:41.632753+00:00",
+    "last_check_error": null,
+    "revision": 5
+   },
+   {
+    "database_name": "compat_rl_w8",
+    "job_name": "alice_job",
+    "table_name": "alice_orders",
+    "connection_name": "w8_kafka",
+    "owner_principal": "alice",
+    "owner_role": "marketing",
+    "security_context_version": 2,
+    "engine_job_id": "3113011",
+    "state": "STOPPED",
+    "pause_reason": null,
+    "last_checked_at": "2026-11-16 16:30:56.354945+00:00",
+    "last_check_error": null,
+    "revision": 7
+   }
+  ],
+  "connection_roles": []
+ },
+ "reconciler_log": [
+  "[worker] 2026-11-16 23:29:53,338 INFO app.modules.routine_load.reconciler: Paused routine load compat_rl_w8.alice_job: Role marketing may no longer write to compat_rl_w8.alice_orders",
+  "[worker] 2026-11-16 23:30:56,373 INFO app.modules.routine_load.reconciler: Paused routine load compat_rl_w8.alice_job: Role marketing may no longer load from connection w8_kafka"
+ ],
+ "docs_examples_run": [
+  {
+   "produced": {
+    "shop_orders": 3,
+    "shop_orders_json": 3
+   }
+  },
+  {
+   "section": "Add a Kafka connection",
+   "as": "nova_admin",
+   "sql": "CREATE CONNECTION events_kafka TYPE = kafka ENDPOINT = 'kafka:9092'",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "Connection events_kafka created"
+    ]
+   ]
+  },
+  {
+   "section": "Add a Kafka connection",
+   "step": "Roles that can load: marketing (API)",
+   "status": 200,
+   "roles": [
+    "marketing"
+   ]
+  },
+  {
+   "section": "Add a Kafka connection",
+   "as": "nova_admin",
+   "sql": "DESCRIBE CONNECTION events_kafka",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "events_kafka",
+     "kafka",
+     "none",
+     "",
+     "nova_admin",
+     null,
+     "2026-11-16 16:37:36.249327+00:00"
+    ]
+   ]
+  },
+  {
+   "section": "Load CSV messages",
+   "as": "nova_admin",
+   "sql": "CREATE DATABASE kafka_demo",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Load CSV messages",
+   "as": "nova_admin",
+   "sql": "CREATE TABLE kafka_demo.orders (\n  order_id INT,\n  customer VARCHAR(32),\n  amount DECIMAL(10, 2)\n) DUPLICATE KEY(order_id) DISTRIBUTED BY HASH(order_id) BUCKETS 1",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Load CSV messages",
+   "as": "nova_admin",
+   "sql": "CREATE ROUTINE LOAD kafka_demo.orders_csv ON orders\nCOLUMNS TERMINATED BY \",\",\nCOLUMNS (order_id, customer, amount)\nPROPERTIES (\n  \"format\" = \"csv\",\n  \"desired_concurrent_number\" = \"1\",\n  \"max_batch_interval\" = \"5\",\n  \"max_error_number\" = \"0\"\n)\nFROM KAFKA (\n  \"kafka_connection\" = \"events_kafka\",\n  \"kafka_topic\" = \"shop_orders\",\n  \"property.kafka_default_offsets\" = \"OFFSET_BEGINNING\"\n)",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "Routine load kafka_demo.orders_csv: create done"
+    ]
+   ]
+  },
+  {
+   "section": "Load CSV messages",
+   "as": "nova_admin",
+   "sql": "SELECT * FROM kafka_demo.orders ORDER BY order_id",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     1,
+     "alice",
+     "10.50"
+    ],
+    [
+     2,
+     "bob",
+     "20.00"
+    ],
+    [
+     3,
+     "carol",
+     "7.25"
+    ]
+   ]
+  },
+  {
+   "section": "Load JSON messages",
+   "as": "nova_admin",
+   "sql": "CREATE TABLE kafka_demo.orders_json (\n  order_id INT,\n  customer VARCHAR(32),\n  amount DECIMAL(10, 2)\n) DUPLICATE KEY(order_id) DISTRIBUTED BY HASH(order_id) BUCKETS 1",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Load JSON messages",
+   "as": "nova_admin",
+   "sql": "CREATE ROUTINE LOAD kafka_demo.orders_from_json ON orders_json\nCOLUMNS (order_id, customer, amount)\nPROPERTIES (\n  \"format\" = \"json\",\n  \"jsonpaths\" = \"[\\\"$.order_id\\\",\\\"$.customer\\\",\\\"$.amount\\\"]\",\n  \"max_batch_interval\" = \"5\"\n)\nFROM KAFKA (\n  \"kafka_connection\" = \"events_kafka\",\n  \"kafka_topic\" = \"shop_orders_json\",\n  \"property.kafka_default_offsets\" = \"OFFSET_BEGINNING\"\n)",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "Routine load kafka_demo.orders_from_json: create done"
+    ]
+   ]
+  },
+  {
+   "section": "Load JSON messages",
+   "as": "nova_admin",
+   "sql": "SELECT COUNT(*) FROM kafka_demo.orders_json",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     3
+    ]
+   ]
+  },
+  {
+   "section": "Compute and filter columns",
+   "as": "nova_admin",
+   "sql": "CREATE TABLE kafka_demo.big_orders (\n  order_id INT,\n  customer VARCHAR(32),\n  amount_cents BIGINT\n) DUPLICATE KEY(order_id) DISTRIBUTED BY HASH(order_id) BUCKETS 1",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Compute and filter columns",
+   "as": "nova_admin",
+   "sql": "CREATE ROUTINE LOAD kafka_demo.big_orders_csv ON big_orders\nCOLUMNS TERMINATED BY \",\",\nCOLUMNS (order_id, customer, amount, amount_cents = amount * 100),\nWHERE amount_cents >= 1000\nPROPERTIES (\"format\" = \"csv\", \"max_batch_interval\" = \"5\")\nFROM KAFKA (\n  \"kafka_connection\" = \"events_kafka\",\n  \"kafka_topic\" = \"shop_orders\",\n  \"property.kafka_default_offsets\" = \"OFFSET_BEGINNING\"\n)",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "Routine load kafka_demo.big_orders_csv: create done"
+    ]
+   ]
+  },
+  {
+   "section": "Compute and filter columns",
+   "as": "nova_admin",
+   "sql": "SELECT * FROM kafka_demo.big_orders ORDER BY order_id",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     1,
+     "alice",
+     1050
+    ],
+    [
+     2,
+     "bob",
+     2000
+    ]
+   ]
+  },
+  {
+   "section": "Watch a load",
+   "as": "nova_admin",
+   "sql": "SHOW ROUTINE LOAD FOR kafka_demo.orders_csv",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "3113343",
+     "orders_csv",
+     "2026-11-16 23:37:36",
+     null,
+     null,
+     "kafka_demo",
+     "orders",
+     "RUNNING",
+     "KAFKA",
+     "1",
+     "{\"partial_update_mode\":\"null\",\"timezone\":\"Asia/Jakarta\",\"columnSeparator\":\",\",\"log_rejected_record_num\":\"0\",\"taskTimeoutSecond\":\"60\",\"maxFilterRatio\":\"1.0\",\"strict_mode\":\"false\",\"jsonpaths\":\"\",\"currentTaskConcurrentNum\":\"1\",\"escape\":\"0\",\"enclose\":\"0\",\"partitions\":\"*\",\"rowDelimiter\":\"\\n\",\"partial_update\":\"false\",\"trim_space\":\"false\",\"columnToColumnExpr\":\"`order_id`,`customer`,`amount`\",\"maxBatchIntervalS\":\"5\",\"whereExpr\":\"*\",\"format\":\"csv\",\"json_root\":\"\",\"pause_on_fatal_parse_error\":\"false\",\"taskConsumeSecond\":\"15\",\"desireTaskConcurrentNum\":\"1\",\"maxErrorNum\":\"0\",\"strip_outer_array\":\"false\",\"maxBatchRows\":\"200000\"}",
+     "{\"topic\":\"shop_orders\",\"currentKafkaPartitions\":\"0\",\"brokerList\":\"kafka:9092\"}",
+     "{\"kafka_default_offsets\":\"OFFSET_BEGINNING\",\"group.id\":\"orders_csv_fc774d75-1a5c-4b69-8dcb-6c48a91bfc4e\"}",
+     "{\"receivedBytes\":36,\"partitionLagTime\":{},\"errorRows\":0,\"committedTaskNum\":1,\"loadedRows\":3,\"loadRowsRate\":5,\"abortedTaskNum\":0,\"totalRows\":3,\"unselectedRows\":0,\"receivedBytesRate\":60,\"taskExecuteTimeMs\":595}",
+     "{\"0\":\"2\"}",
+     "{\"0\":\"1794847052966\"}",
+     "",
+     "",
+     "",
+     "[2026-11-16 23:39:32] [task id: 01a1e538-c2fc-72a3-87c1-98fa112549eb] [txn id: -1] there is no new data in kafka, wait for 5 seconds to schedule again",
+     "{\"0\":\"3\"}",
+     "{\"0\":\"1\"}"
+    ]
+   ]
+  },
+  {
+   "section": "Watch a load",
+   "as": "nova_admin",
+   "sql": "SHOW ROUTINE LOAD FROM kafka_demo",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "3113360",
+     "big_orders_csv",
+     "2026-11-16 23:38:17",
+     null,
+     null,
+     "kafka_demo",
+     "big_orders",
+     "RUNNING",
+     "KAFKA",
+     "1",
+     "{\"partial_update_mode\":\"null\",\"timezone\":\"Asia/Jakarta\",\"columnSeparator\":\",\",\"log_rejected_record_num\":\"0\",\"taskTimeoutSecond\":\"60\",\"maxFilterRatio\":\"1.0\",\"strict_mode\":\"false\",\"jsonpaths\":\"\",\"currentTaskConcurrentNum\":\"1\",\"escape\":\"0\",\"enclose\":\"0\",\"partitions\":\"*\",\"rowDelimiter\":\"\\n\",\"partial_update\":\"false\",\"trim_space\":\"false\",\"columnToColumnExpr\":\"`order_id`,`customer`,`amount`,`amount_cents`=amount * 100\",\"maxBatchIntervalS\":\"5\",\"whereExpr\":\"amount_cents >= 1000\",\"format\":\"csv\",\"json_root\":\"\",\"pause_on_fatal_parse_error\":\"false\",\"taskConsumeSecond\":\"15\",\"desireTaskConcurrentNum\":\"5\",\"maxErrorNum\":\"0\",\"strip_outer_array\":\"false\",\"maxBatchRows\":\"200000\"}",
+     "{\"topic\":\"shop_orders\",\"currentKafkaPartitions\":\"0\",\"brokerList\":\"kafka:9092\"}",
+     "{\"kafka_default_offsets\":\"OFFSET_BEGINNING\",\"group.id\":\"big_orders_csv_7525ed6d-5c59-48cd-b252-fa8e59c9363a\"}",
+     "{\"receivedBytes\":36,\"partitionLagTime\":{},\"errorRows\":0,\"committedTaskNum\":1,\"loadedRows\":2,\"loadRowsRate\":1,\"abortedTaskNum\":0,\"totalRows\":3,\"unselectedRows\":1,\"receivedBytesRate\":20,\"taskExecuteTimeMs\":1738}",
+     "{\"0\":\"2\"}",
+     "{\"0\":\"1794847052966\"}",
+     "",
+     "",
+     "",
+     "[2026-11-16 23:39:34] [task id: 01a1e539-706d-7923-a8fb-f3851e095841] [txn id: -1] there is no new data in kafka, wait for 5 seconds to schedule again",
+     "{\"0\":\"3\"}",
+     "{\"0\":\"1\"}"
+    ],
+    [
+     "3113343",
+     "orders_csv",
+     "2026-11-16 23:37:36",
+     null,
+     null,
+     "kafka_demo",
+     "orders",
+     "RUNNING",
+     "KAFKA",
+     "1",
+     "{\"partial_update_mode\":\"null\",\"timezone\":\"Asia/Jakarta\",\"columnSeparator\":\",\",\"log_rejected_record_num\":\"0\",\"taskTimeoutSecond\":\"60\",\"maxFilterRatio\":\"1.0\",\"strict_mode\":\"false\",\"jsonpaths\":\"\",\"currentTaskConcurrentNum\":\"1\",\"escape\":\"0\",\"enclose\":\"0\",\"partitions\":\"*\",\"rowDelimiter\":\"\\n\",\"partial_update\":\"false\",\"trim_space\":\"false\",\"columnToColumnExpr\":\"`order_id`,`customer`,`amount`\",\"maxBatchIntervalS\":\"5\",\"whereExpr\":\"*\",\"format\":\"csv\",\"json_root\":\"\",\"pause_on_fatal_parse_error\":\"false\",\"taskConsumeSecond\":\"15\",\"desireTaskConcurrentNum\":\"1\",\"maxErrorNum\":\"0\",\"strip_outer_array\":\"false\",\"maxBatchRows\":\"200000\"}",
+     "{\"topic\":\"shop_orders\",\"currentKafkaPartitions\":\"0\",\"brokerList\":\"kafka:9092\"}",
+     "{\"kafka_default_offsets\":\"OFFSET_BEGINNING\",\"group.id\":\"orders_csv_fc774d75-1a5c-4b69-8dcb-6c48a91bfc4e\"}",
+     "{\"receivedBytes\":36,\"partitionLagTime\":{},\"errorRows\":0,\"committedTaskNum\":1,\"loadedRows\":3,\"loadRowsRate\":5,\"abortedTaskNum\":0,\"totalRows\":3,\"unselectedRows\":0,\"receivedBytesRate\":60,\"taskExecuteTimeMs\":595}",
+     "{\"0\":\"2\"}",
+     "{\"0\":\"1794847052966\"}",
+     "",
+     "",
+     "",
+     "[2026-11-16 23:39:32] [task id: 01a1e538-c2fc-72a3-87c1-98fa112549eb] [txn id: -1] there is no new data in kafka, wait for 5 seconds to schedule again",
+     "{\"0\":\"3\"}",
+     "{\"0\":\"1\"}"
+    ],
+    [
+     "3113351",
+     "orders_from_json",
+     "2026-11-16 23:37:57",
+     null,
+     null,
+     "kafka_demo",
+     "orders_json",
+     "RUNNING",
+     "KAFKA",
+     "1",
+     "{\"partitions\":\"*\",\"partial_update\":\"false\",\"columnToColumnExpr\":\"`order_id`,`customer`,`amount`\",\"maxBatchIntervalS\":\"5\",\"partial_update_mode\":\"null\",\"whereExpr\":\"*\",\"dataFormat\":\"json\",\"timezone\":\"Asia/Jakarta\",\"format\":\"json\",\"log_rejected_record_num\":\"0\",\"taskTimeoutSecond\":\"60\",\"json_root\":\"\",\"pause_on_fatal_parse_error\":\"false\",\"maxFilterRatio\":\"1.0\",\"strict_mode\":\"false\",\"jsonpaths\":\"[\\\"$.order_id\\\",\\\"$.customer\\\",\\\"$.amount\\\"]\",\"taskConsumeSecond\":\"15\",\"desireTaskConcurrentNum\":\"5\",\"maxErrorNum\":\"0\",\"strip_outer_array\":\"false\",\"currentTaskConcurrentNum\":\"1\",\"maxBatchRows\":\"200000\"}",
+     "{\"topic\":\"shop_orders_json\",\"currentKafkaPartitions\":\"0\",\"brokerList\":\"kafka:9092\"}",
+     "{\"kafka_default_offsets\":\"OFFSET_BEGINNING\",\"group.id\":\"orders_from_json_db6c0ab0-7956-47ac-b04a-df71815fc435\"}",
+     "{\"receivedBytes\":139,\"partitionLagTime\":{},\"errorRows\":0,\"committedTaskNum\":1,\"loadedRows\":3,\"loadRowsRate\":5,\"abortedTaskNum\":0,\"totalRows\":3,\"unselectedRows\":0,\"receivedBytesRate\":250,\"taskExecuteTimeMs\":555}",
+     "{\"0\":\"2\"}",
+     "{\"0\":\"1794847055828\"}",
+     "",
+     "",
+     "",
+     "[2026-11-16 23:39:32] [task id: 01a1e539-1121-7d5c-92b3-07a8c4bf06d4] [txn id: -1] there is no new data in kafka, wait for 5 seconds to schedule again",
+     "{\"0\":\"3\"}",
+     "{\"0\":\"1\"}"
+    ]
+   ]
+  },
+  {
+   "section": "Watch a load",
+   "as": "nova_admin",
+   "sql": "SHOW ALL ROUTINE LOAD FROM kafka_demo",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "3113360",
+     "big_orders_csv",
+     "2026-11-16 23:38:17",
+     null,
+     null,
+     "kafka_demo",
+     "big_orders",
+     "RUNNING",
+     "KAFKA",
+     "1",
+     "{\"partial_update_mode\":\"null\",\"timezone\":\"Asia/Jakarta\",\"columnSeparator\":\",\",\"log_rejected_record_num\":\"0\",\"taskTimeoutSecond\":\"60\",\"maxFilterRatio\":\"1.0\",\"strict_mode\":\"false\",\"jsonpaths\":\"\",\"currentTaskConcurrentNum\":\"1\",\"escape\":\"0\",\"enclose\":\"0\",\"partitions\":\"*\",\"rowDelimiter\":\"\\n\",\"partial_update\":\"false\",\"trim_space\":\"false\",\"columnToColumnExpr\":\"`order_id`,`customer`,`amount`,`amount_cents`=amount * 100\",\"maxBatchIntervalS\":\"5\",\"whereExpr\":\"amount_cents >= 1000\",\"format\":\"csv\",\"json_root\":\"\",\"pause_on_fatal_parse_error\":\"false\",\"taskConsumeSecond\":\"15\",\"desireTaskConcurrentNum\":\"5\",\"maxErrorNum\":\"0\",\"strip_outer_array\":\"false\",\"maxBatchRows\":\"200000\"}",
+     "{\"topic\":\"shop_orders\",\"currentKafkaPartitions\":\"0\",\"brokerList\":\"kafka:9092\"}",
+     "{\"kafka_default_offsets\":\"OFFSET_BEGINNING\",\"group.id\":\"big_orders_csv_7525ed6d-5c59-48cd-b252-fa8e59c9363a\"}",
+     "{\"receivedBytes\":36,\"partitionLagTime\":{},\"errorRows\":0,\"committedTaskNum\":1,\"loadedRows\":2,\"loadRowsRate\":1,\"abortedTaskNum\":0,\"totalRows\":3,\"unselectedRows\":1,\"receivedBytesRate\":20,\"taskExecuteTimeMs\":1738}",
+     "{\"0\":\"2\"}",
+     "{\"0\":\"1794847052966\"}",
+     "",
+     "",
+     "",
+     "[2026-11-16 23:39:34] [task id: 01a1e539-706d-7923-a8fb-f3851e095841] [txn id: -1] there is no new data in kafka, wait for 5 seconds to schedule again",
+     "{\"0\":\"3\"}",
+     "{\"0\":\"1\"}"
+    ],
+    [
+     "3113343",
+     "orders_csv",
+     "2026-11-16 23:37:36",
+     null,
+     null,
+     "kafka_demo",
+     "orders",
+     "RUNNING",
+     "KAFKA",
+     "1",
+     "{\"partial_update_mode\":\"null\",\"timezone\":\"Asia/Jakarta\",\"columnSeparator\":\",\",\"log_rejected_record_num\":\"0\",\"taskTimeoutSecond\":\"60\",\"maxFilterRatio\":\"1.0\",\"strict_mode\":\"false\",\"jsonpaths\":\"\",\"currentTaskConcurrentNum\":\"1\",\"escape\":\"0\",\"enclose\":\"0\",\"partitions\":\"*\",\"rowDelimiter\":\"\\n\",\"partial_update\":\"false\",\"trim_space\":\"false\",\"columnToColumnExpr\":\"`order_id`,`customer`,`amount`\",\"maxBatchIntervalS\":\"5\",\"whereExpr\":\"*\",\"format\":\"csv\",\"json_root\":\"\",\"pause_on_fatal_parse_error\":\"false\",\"taskConsumeSecond\":\"15\",\"desireTaskConcurrentNum\":\"1\",\"maxErrorNum\":\"0\",\"strip_outer_array\":\"false\",\"maxBatchRows\":\"200000\"}",
+     "{\"topic\":\"shop_orders\",\"currentKafkaPartitions\":\"0\",\"brokerList\":\"kafka:9092\"}",
+     "{\"kafka_default_offsets\":\"OFFSET_BEGINNING\",\"group.id\":\"orders_csv_fc774d75-1a5c-4b69-8dcb-6c48a91bfc4e\"}",
+     "{\"receivedBytes\":36,\"partitionLagTime\":{},\"errorRows\":0,\"committedTaskNum\":1,\"loadedRows\":3,\"loadRowsRate\":5,\"abortedTaskNum\":0,\"totalRows\":3,\"unselectedRows\":0,\"receivedBytesRate\":60,\"taskExecuteTimeMs\":595}",
+     "{\"0\":\"2\"}",
+     "{\"0\":\"1794847052966\"}",
+     "",
+     "",
+     "",
+     "[2026-11-16 23:39:32] [task id: 01a1e538-c2fc-72a3-87c1-98fa112549eb] [txn id: -1] there is no new data in kafka, wait for 5 seconds to schedule again",
+     "{\"0\":\"3\"}",
+     "{\"0\":\"1\"}"
+    ],
+    [
+     "3113351",
+     "orders_from_json",
+     "2026-11-16 23:37:57",
+     null,
+     null,
+     "kafka_demo",
+     "orders_json",
+     "RUNNING",
+     "KAFKA",
+     "1",
+     "{\"partitions\":\"*\",\"partial_update\":\"false\",\"columnToColumnExpr\":\"`order_id`,`customer`,`amount`\",\"maxBatchIntervalS\":\"5\",\"partial_update_mode\":\"null\",\"whereExpr\":\"*\",\"dataFormat\":\"json\",\"timezone\":\"Asia/Jakarta\",\"format\":\"json\",\"log_rejected_record_num\":\"0\",\"taskTimeoutSecond\":\"60\",\"json_root\":\"\",\"pause_on_fatal_parse_error\":\"false\",\"maxFilterRatio\":\"1.0\",\"strict_mode\":\"false\",\"jsonpaths\":\"[\\\"$.order_id\\\",\\\"$.customer\\\",\\\"$.amount\\\"]\",\"taskConsumeSecond\":\"15\",\"desireTaskConcurrentNum\":\"5\",\"maxErrorNum\":\"0\",\"strip_outer_array\":\"false\",\"currentTaskConcurrentNum\":\"1\",\"maxBatchRows\":\"200000\"}",
+     "{\"topic\":\"shop_orders_json\",\"currentKafkaPartitions\":\"0\",\"brokerList\":\"kafka:9092\"}",
+     "{\"kafka_default_offsets\":\"OFFSET_BEGINNING\",\"group.id\":\"orders_from_json_db6c0ab0-7956-47ac-b04a-df71815fc435\"}",
+     "{\"receivedBytes\":139,\"partitionLagTime\":{},\"errorRows\":0,\"committedTaskNum\":1,\"loadedRows\":3,\"loadRowsRate\":5,\"abortedTaskNum\":0,\"totalRows\":3,\"unselectedRows\":0,\"receivedBytesRate\":250,\"taskExecuteTimeMs\":555}",
+     "{\"0\":\"2\"}",
+     "{\"0\":\"1794847055828\"}",
+     "",
+     "",
+     "",
+     "[2026-11-16 23:39:32] [task id: 01a1e539-1121-7d5c-92b3-07a8c4bf06d4] [txn id: -1] there is no new data in kafka, wait for 5 seconds to schedule again",
+     "{\"0\":\"3\"}",
+     "{\"0\":\"1\"}"
+    ]
+   ]
+  },
+  {
+   "section": "Watch a load",
+   "as": "nova_admin",
+   "sql": "SHOW ROUTINE LOAD TASK FROM kafka_demo WHERE JobName = \"orders_csv\"",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "01a1e538-c2fc-72a3-87c1-98fa112549eb",
+     "-1",
+     "UNKNOWN",
+     "3113343",
+     "2026-11-16 23:37:44",
+     "2026-11-16 23:39:32",
+     "NULL",
+     "60",
+     "-1",
+     "Progress:{\"0\":3},LatestOffset:null",
+     "there is no new data in kafka, wait for 5 seconds to schedule again"
+    ]
+   ]
+  },
+  {
+   "section": "Watch a load",
+   "as": "nova_admin",
+   "sql": "SHOW CREATE ROUTINE LOAD kafka_demo.orders_csv",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "orders_csv",
+     "CREATE ROUTINE LOAD kafka_demo.orders_csv on orders\n COLUMNS TERMINATED BY ',',\nCOLUMNS (order_id, customer, amount)\nPROPERTIES\n(\n\"desired_concurrent_number\"=\"1\",\n\"max_error_number\"=\"0\",\n\"max_filter_ratio\"=\"1.0\",\n\"max_batch_interval\"=\"5\",\n\"max_batch_rows\"=\"200000\",\n\"task_consume_second\"=\"15\",\n\"task_timeout_second\"=\"60\",\n\"format\"=\"csv\",\n\"jsonpaths\"=\"\",\n\"strip_outer_array\"=\"false\",\n\"json_root\"=\"\",\n\"strict_mode\"=\"false\",\n\"pause_on_fatal_parse_error\"=\"false\",\n\"timezone\"=\"Asia/Jakarta\",\n\"partial_update\"=\"false\",\n\"trim_space\"=\"false\",\n\"enclose\"=\"0\",\n\"escape\"=\"0\",\n\"log_rejected_record_num\"=\"0\"\n)\nFROM KAFKA\n(\n\"kafka_broker_list\"=\"kafka:9092\",\n\"kafka_topic\"=\"shop_orders\",\n\"kafka_partitions\"=\"0\",\n\"property.kafka_default_offsets\"=\"OFFSET_BEGINNING\"\n);"
+    ]
+   ]
+  },
+  {
+   "section": "Pause, change, resume and stop",
+   "as": "nova_admin",
+   "sql": "PAUSE ROUTINE LOAD FOR kafka_demo.orders_csv",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "Routine load kafka_demo.orders_csv: pause done"
+    ]
+   ]
+  },
+  {
+   "section": "Pause, change, resume and stop",
+   "as": "nova_admin",
+   "sql": "ALTER ROUTINE LOAD FOR kafka_demo.orders_csv PROPERTIES (\"max_batch_interval\" = \"10\")",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "Routine load kafka_demo.orders_csv: alter done"
+    ]
+   ]
+  },
+  {
+   "section": "Pause, change, resume and stop",
+   "as": "nova_admin",
+   "sql": "RESUME ROUTINE LOAD FOR kafka_demo.orders_csv",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "Routine load kafka_demo.orders_csv: resume done"
+    ]
+   ]
+  },
+  {
+   "section": "Pause, change, resume and stop",
+   "as": "nova_admin",
+   "sql": "STOP ROUTINE LOAD FOR kafka_demo.orders_csv",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "Routine load kafka_demo.orders_csv: stop done"
+    ]
+   ]
+  },
+  {
+   "section": "extra: ALTER scope",
+   "as": "nova_admin",
+   "sql": "PAUSE ROUTINE LOAD FOR kafka_demo.big_orders_csv",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "Routine load kafka_demo.big_orders_csv: pause done"
+    ]
+   ]
+  },
+  {
+   "section": "extra: ALTER scope",
+   "as": "nova_admin",
+   "sql": "ALTER ROUTINE LOAD FOR kafka_demo.big_orders_csv COLUMNS (order_id, customer, amount, amount_cents = amount * 1000), WHERE amount >= 20",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "Routine load kafka_demo.big_orders_csv: alter done"
+    ]
+   ]
+  },
+  {
+   "section": "extra: ALTER scope",
+   "as": "nova_admin",
+   "sql": "ALTER ROUTINE LOAD FOR kafka_demo.big_orders_csv FROM KAFKA (\"kafka_partitions\" = \"0\", \"kafka_offsets\" = \"OFFSET_BEGINNING\")",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "Routine load kafka_demo.big_orders_csv: alter done"
+    ]
+   ]
+  },
+  {
+   "section": "extra: ALTER topic refused",
+   "as": "nova_admin",
+   "sql": "ALTER ROUTINE LOAD FOR kafka_demo.big_orders_csv FROM KAFKA (\"kafka_topic\" = \"other\")",
+   "ok": false,
+   "error": "ALTER ROUTINE LOAD cannot change 'kafka_topic'; create a new job instead",
+   "rows": []
+  },
+  {
+   "section": "extra",
+   "as": "nova_admin",
+   "sql": "STOP ROUTINE LOAD FOR kafka_demo.big_orders_csv",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "Routine load kafka_demo.big_orders_csv: stop done"
+    ]
+   ]
+  },
+  {
+   "section": "extra: name reuse after STOP",
+   "as": "nova_admin",
+   "sql": "CREATE ROUTINE LOAD kafka_demo.orders_csv ON orders COLUMNS TERMINATED BY \",\", COLUMNS (order_id, customer, amount) PROPERTIES (\"format\" = \"csv\") FROM KAFKA (\"kafka_connection\" = \"events_kafka\", \"kafka_topic\" = \"shop_orders\")",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "Routine load kafka_demo.orders_csv: create done"
+    ]
+   ]
+  },
+  {
+   "section": "extra",
+   "as": "nova_admin",
+   "sql": "STOP ROUTINE LOAD FOR kafka_demo.orders_csv",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "Routine load kafka_demo.orders_csv: stop done"
+    ]
+   ]
+  },
+  {
+   "section": "extra",
+   "as": "nova_admin",
+   "sql": "STOP ROUTINE LOAD FOR kafka_demo.orders_from_json",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "Routine load kafka_demo.orders_from_json: stop done"
+    ]
+   ]
+  },
+  {
+   "section": "extra: resume after stop",
+   "as": "nova_admin",
+   "sql": "RESUME ROUTINE LOAD FOR kafka_demo.orders_from_json",
+   "ok": false,
+   "error": "Routine load kafka_demo.orders_from_json is stopped; a stopped job cannot be resumed or changed. Create a new one.",
+   "rows": []
+  },
+  {
+   "section": "extra: Pulsar refused",
+   "as": "nova_admin",
+   "sql": "CREATE ROUTINE LOAD kafka_demo.p ON orders FROM PULSAR (\"pulsar_service_url\" = \"pulsar://x:6650\", \"pulsar_topic\" = \"t\")",
+   "ok": false,
+   "error": "Nova loads routine loads from Kafka connections only",
+   "rows": []
+  }
+ ],
+ "secret_handling": {
+  "sasl_password_in_engine_show": "SHOW ROUTINE LOAD CustomProperties shows \"sasl.password\":\"******\" (checked on the engine directly with a SASL job before implementation)",
+  "nova_responses": "CREATE ROUTINE LOAD executed_sql returned to the caller and written to audit/history is redacted; raw kafka_broker_list and property.sasl.* in SQL are refused at planning"
+ },
+ "cleanup": "All jobs stopped; databases compat_rl_w8 and kafka_demo dropped; connections w8_kafka, w8_kafka_sasl, events_kafka dropped; test Ranger policies deleted; topics compat_rl_w8_csv, compat_rl_w8_json, shop_orders, shop_orders_json deleted. Nova keeps the STOPPED job rows as history."
+}

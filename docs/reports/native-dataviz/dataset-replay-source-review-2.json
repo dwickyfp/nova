@@ -1,0 +1,22 @@
+{
+  "recorded_at": "2026-11-14T17:02:02.689963+00:00",
+  "status": "VERIFIED_SERVICE_AND_GOVERNED_RETRY",
+  "finding": "Exact dataset authoring replay previously inspected the source before checking the committed receipt.",
+  "implementation": [
+    "Canonical authoring intent digest in the existing operation receipt",
+    "Read-only receipt preflight bound to caller, role, login, security context and edit access",
+    "Receipt recheck after a source error for concurrent commits",
+    "Legacy definition-digest receipts retain their original validation path"
+  ],
+  "evidence": [
+    "dataset-replay-unit-attempt-3.xml",
+    "pg-attempt-25.json",
+    "dataset-replay-live-attempt-1.json",
+    "source-identity-live-attempt-36.json"
+  ],
+  "limits": [
+    "Full backend gates after this batch are still pending",
+    "Atomic dashboard dataset creation is separately under test",
+    "Later live attempt 37 exposed an independent draft registry deletion dependency bug; it is not counted as a pass"
+  ]
+}

@@ -33,8 +33,6 @@ from app.modules.access_control.role_activation import (
     RoleActivationError,
     role_activation_service,
 )
-from app.modules.superset import tokens as bi_tokens
-from app.modules.superset.access import notebook_peer_allowed, peer_allowed
 from app.observability.metrics import PROXY_QUERIES
 from app.proxy.auth import (
     AuthenticatedUser,
@@ -99,9 +97,9 @@ from app.proxy.session import (
 
 logger = logging.getLogger(__name__)
 
-#: Commands that touch the engine. On a Superset connection each one first
+#: Commands that touch the engine. On a data-token connection each one first
 #: re-checks the Nova session the connection is bound to.
-_BI_CHECKED_COMMANDS = frozenset(
+_TOKEN_CHECKED_COMMANDS = frozenset(
     {
         COM_QUERY,
         COM_INIT_DB,
@@ -136,9 +134,9 @@ class ConnectionContext:
     session_id: str | None = None
     connection: asyncmy.Connection | None = None
     upstream: StarRocksLogin | None = None
-    #: Set when the client logged in with a Superset data token: the Nova
+    #: Set when a sandbox client logged in with a data token: the Nova
     #: session, role and context version the connection is bound to.
-    bi_binding: bi_tokens.TokenBinding | None = None
+    token_binding: data_tokens.TokenBinding | None = None
 
 
 class ProxyConnection:
@@ -337,15 +335,15 @@ class ProxyConnection:
             self._ctx.capabilities = response.capabilities & SERVER_CAPABILITIES
 
             auth_response = response.auth_response
-            delegated: bi_tokens.BiSession | None = None
-            binding = await self._match_bi_token(
+            delegated: data_tokens.TokenSession | None = None
+            binding = await self._match_data_token(
                 response.username, upstream.scramble, response.auth_response
             )
             if binding is not None:
                 try:
-                    bi_session = await bi_tokens.verify_binding(binding)
-                except bi_tokens.BiCredentialError as exc:
-                    await self._audit_bi_refusal(response.username, binding, str(exc))
+                    token_session = await data_tokens.verify_binding(binding)
+                except data_tokens.DataTokenError as exc:
+                    await self._audit_token_refusal(response.username, binding, str(exc))
                     await self._write_error(
                         ER_ACCESS_DENIED_ERROR,
                         f"Access denied for user '{response.username}'",
@@ -353,18 +351,18 @@ class ProxyConnection:
                     )
                     await upstream.close()
                     return False
-                self._ctx.bi_binding = binding
-                if bi_session.delegated:
+                self._ctx.token_binding = binding
+                if token_session.delegated:
                     # A background run has no password: the engine session is
                     # opened below through the worker account's impersonation.
-                    delegated = bi_session
+                    delegated = token_session
                 else:
-                    # The token proved the client is Superset acting for this
+                    # The token proved the client is a sandbox acting for this
                     # Nova session. The engine login is then completed with the
                     # session's own credential against StarRocks' scramble, so
                     # the engine authenticates the principal as for a relay.
                     auth_response = scramble_native_password(
-                        decrypt_password(bi_session.encrypted_password), upstream.scramble
+                        decrypt_password(token_session.encrypted_password), upstream.scramble
                     )
 
             try:
@@ -400,8 +398,8 @@ class ProxyConnection:
             self._ctx.upstream = upstream
 
         requested_role = response.connect_attrs.get("nova_role") or None
-        if self._ctx.bi_binding is not None:
-            requested_role = self._ctx.bi_binding.active_role
+        if self._ctx.token_binding is not None:
+            requested_role = self._ctx.token_binding.active_role
         try:
             active_role, assignments = await role_activation_service.activate(
                 self._ctx.connection,
@@ -419,7 +417,8 @@ class ProxyConnection:
             await upstream.close()
             return False
 
-        if self._ctx.bi_binding is not None and active_role != self._ctx.bi_binding.active_role:
+        binding = self._ctx.token_binding
+        if binding is not None and active_role != binding.active_role:
             await self._write_error(
                 ER_ACCESS_DENIED_ERROR, "The Nova session's active role is unavailable", sequence=2
             )
@@ -432,9 +431,9 @@ class ProxyConnection:
             default_role=assignments.default_role or "",
             active_role=active_role,
         )
-        self._ctx.session.role_locked = self._ctx.bi_binding is not None
+        self._ctx.session.role_locked = self._ctx.token_binding is not None
         self._ctx.session.notebook_connection = bool(
-            self._ctx.bi_binding is not None and self._ctx.bi_binding.notebook
+            self._ctx.token_binding is not None and self._ctx.token_binding.notebook
         )
 
         database = connect_database(response.database)
@@ -464,22 +463,18 @@ class ProxyConnection:
         )
         return True
 
-    async def _match_bi_token(
+    async def _match_data_token(
         self, username: str, scramble: bytes, auth_response: bytes
-    ) -> bi_tokens.TokenBinding | None:
+    ) -> data_tokens.TokenBinding | None:
         """Return the data token this response was computed from, if any.
 
-        A Superset token is considered only from a Superset service network and
-        a notebook token only from a notebook sandbox network. Anything else, or
-        any lookup failure, falls through to the ordinary relay, where StarRocks
-        refuses a token it has never seen.
+        A notebook or task token is considered only from a sandbox network.
+        Anything else, or any lookup failure, falls through to the ordinary
+        relay, where StarRocks refuses a token it has never seen.
         """
-        purposes = []
-        if peer_allowed(self._peer_host):
-            purposes.append(data_tokens.BI)
-        if notebook_peer_allowed(self._peer_host):
-            purposes.extend((data_tokens.NOTEBOOK, data_tokens.TASK))
-        for purpose in purposes:
+        if not data_tokens.sandbox_peer_allowed(self._peer_host):
+            return None
+        for purpose in (data_tokens.NOTEBOOK, data_tokens.TASK):
             try:
                 binding = await data_tokens.match(
                     username, scramble, auth_response, purpose=purpose
@@ -492,43 +487,43 @@ class ProxyConnection:
         return None
 
     async def _open_delegated_session(
-        self, bi_session: bi_tokens.BiSession, *, sequence: int
+        self, token_session: data_tokens.TokenSession, *, sequence: int
     ) -> bool:
         """Open the owner's engine session for a delegated (background) login."""
-        from app.modules.superset.delegation import DelegationError, owner_session
+        from app.modules.task_orchestration.delegation import DelegationError, owner_session
 
         try:
             self._ctx.connection = await self._sessions.enter_async_context(
-                owner_session(bi_session.username, bi_session.active_role)
+                owner_session(token_session.username, token_session.active_role)
             )
         except DelegationError as exc:
-            assert self._ctx.bi_binding is not None
-            await self._audit_bi_refusal(bi_session.username, self._ctx.bi_binding, str(exc))
+            assert self._ctx.token_binding is not None
+            await self._audit_token_refusal(
+                token_session.username, self._ctx.token_binding, str(exc)
+            )
             await self._write_error(
                 ER_ACCESS_DENIED_ERROR,
-                f"Access denied for user '{bi_session.username}'",
+                f"Access denied for user '{token_session.username}'",
                 sequence=sequence,
             )
             return False
         return True
 
-    async def _audit_bi_refusal(
-        self, username: str, binding: bi_tokens.TokenBinding, reason: str
+    async def _audit_token_refusal(
+        self, username: str, binding: data_tokens.TokenBinding, reason: str
     ) -> None:
-        notebook = binding.notebook
         logger.info(
-            "[%s] %s login refused for %r: %s",
+            "[%s] Notebook login refused for %r: %s",
             self._ctx.connection_id,
-            "Notebook" if notebook else "BI",
             username,
             reason,
         )
         with contextlib.suppress(Exception):
             await write_audit_log(
-                event_type="notebook_proxy_login" if notebook else "bi_proxy_login",
+                event_type="notebook_proxy_login",
                 user_name=username,
-                action="NOTEBOOK_PROXY_LOGIN" if notebook else "BI_PROXY_LOGIN",
-                object_type="NOTEBOOK" if notebook else "SUPERSET",
+                action="NOTEBOOK_PROXY_LOGIN",
+                object_type="NOTEBOOK",
                 object_name=binding.active_role or "-",
                 status="DENIED",
                 error_message=reason,
@@ -537,20 +532,20 @@ class ProxyConnection:
                 security_context_version=binding.security_context_version,
             )
 
-    async def _bi_binding_holds(self) -> bool:
-        """For a Superset connection, re-check its Nova session before a command.
+    async def _token_binding_holds(self) -> bool:
+        """For a data-token connection, re-check its Nova session before a command.
 
-        A role switch, logout or expired session ends the connection: Superset
-        reconnects with a fresh token for the session's current state.
+        A role switch, logout, expired session or stopped runtime ends the
+        connection: the sandbox reconnects with a fresh token if it may.
         """
-        binding = self._ctx.bi_binding
+        binding = self._ctx.token_binding
         if binding is None:
             return True
         try:
-            await bi_tokens.verify_binding(binding)
-        except bi_tokens.BiCredentialError as exc:
+            await data_tokens.verify_binding(binding)
+        except data_tokens.DataTokenError as exc:
             assert self._ctx.user is not None
-            await self._audit_bi_refusal(self._ctx.user.username, binding, str(exc))
+            await self._audit_token_refusal(self._ctx.user.username, binding, str(exc))
             await self._write_error(ER_ACCESS_DENIED_ERROR, str(exc))
             return False
         return True
@@ -568,7 +563,7 @@ class ProxyConnection:
             command = payload[0]
             body = payload[1:]
 
-            if command in _BI_CHECKED_COMMANDS and not await self._bi_binding_holds():
+            if command in _TOKEN_CHECKED_COMMANDS and not await self._token_binding_holds():
                 return
 
             if command == COM_QUIT:

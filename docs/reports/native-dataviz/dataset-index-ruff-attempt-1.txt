@@ -1,0 +1,31 @@
+E501 Line too long (105 > 100)
+    --> tests/integration/test_metadata_viz.py:1255:101
+     |
+1253 |     editor = session("editor", active="EDITOR", roles=["EDITOR"])
+1254 |     async with viz.transaction(editor) as (repository, _):
+1255 |         assert (await repository.read(source.dataset_id, draft=True, revision=1))["definition"] == source
+     |                                                                                                     ^^^^^
+1256 |     await grant(viz, source.dataset_id, {
+1257 |         "subject_type": "role", "subject_id": "EDITOR", "permissions": ["view"],
+     |
+
+E501 Line too long (101 > 100)
+  --> tests/unit/test_native_viz_router.py:58:101
+   |
+58 | @pytest.mark.parametrize("revision", ["0", "-1", "1.2", "true", "9007199254740992", "private-input"])
+   |                                                                                                     ^
+59 | async def test_historical_read_validates_revision_before_service(api, document, revision):
+60 |     client, service, _ = api
+   |
+
+E501 Line too long (102 > 100)
+  --> tests/unit/test_native_viz_service.py:55:101
+   |
+54 |     monkeypatch.setattr(module, "document_transaction", transaction)
+55 |     result = await module.NativeDocumentService().read(user, identity, draft=draft, revision=revision)
+   |                                                                                                     ^^
+56 |     serialized = DocumentSnapshot.model_validate(result).model_dump_json()
+57 |     assert ("private-source-marker" in serialized) is draft
+   |
+
+Found 3 errors.

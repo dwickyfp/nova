@@ -1,0 +1,159 @@
+
+> shadcn-admin@2.2.1 test:coverage /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+> vitest run --coverage --browser.headless
+
+
+ RUN  v4.1.11 /Users/dwickyferiansyahputra/Public/Research/nova/frontend
+      Coverage enabled with v8
+
+12:16:17 AM [vite] (client) Re-optimizing dependencies because vite config has changed
+12:16:19 AM [vite] (client) [optimizer] bundling dependencies...
+ ❯ |browser (chromium)| src/features/native-dataviz/dashboard/qa-editor-a11y.test.tsx (3 tests | 2 failed) 34457ms
+     × NDV-A11Y-007: at 768px tablet the inspector is a closable drawer and the actions stay reachable by keyboard 31456ms
+     × NDV-A11Y-009: every control reached by Tab is named and visibly focused, also in forced colours 1991ms
+ ❯ |browser (chromium)| src/features/native-dataviz/dataset-create.test.tsx (14 tests | 2 failed) 113297ms
+     × inspects authoritative columns and atomically saves the source without fetching rows 15712ms
+     × declares SQL parameters, saves the analyzer-accepted declarations and offers them in preview 18564ms
+ ❯ |browser (chromium)| src/features/native-dataviz/charts/theme-switch.test.tsx (1 test | 1 failed) 3805ms
+     × re-reads colours from the theme and keeps axis text at AA contrast in light and dark 3804ms
+12:20:39 AM [vite] (client) [console.error] You seem to have overlapping act() calls, this is not supported. Be sure to await previous act() calls before making a new one. 
+12:20:39 AM [vite] (client) [console.error] You seem to have overlapping act() calls, this is not supported. Be sure to await previous act() calls before making a new one. 
+Failed to parse file:///Users/dwickyferiansyahputra/Public/Research/nova/frontend/src/features/native-dataviz/charts/__fixtures__/neva-parity.json?import. Excluding it from coverage.
+ Error [RolldownError]: Parse failed with 1 error:
+Expected a semicolon or an implicit semicolon after a statement, but found none
+1: {
+2:   "_comment": "NDV-AGENT-001: the chart builder (manual) and Neva (neva_specs) must save the same chart. charts/neva-...
+               ^
+3:   "dataset_fields": [
+4:     {
+    at error (file:///Users/dwickyferiansyahputra/Public/Research/nova/frontend/node_modules/.pnpm/rolldown@1.2.19/node_modules/rolldown/dist/shared/logs-DyTyzzWG.mjs:164:24)
+    at normalizeParseError (file:///Users/dwickyferiansyahputra/Public/Research/nova/frontend/node_modules/.pnpm/rolldown@1.2.19/node_modules/rolldown/dist/parse-ast-index.mjs:25:9)
+    at wrap (file:///Users/dwickyferiansyahputra/Public/Research/nova/frontend/node_modules/.pnpm/rolldown@1.2.19/node_modules/rolldown/dist/parse-ast-index.mjs:5:39)
+    at parseAstAsync (file:///Users/dwickyferiansyahputra/Public/Research/nova/frontend/node_modules/.pnpm/rolldown@1.2.19/node_modules/rolldown/dist/parse-ast-index.mjs:54:9)
+    at async V8CoverageProvider.remapCoverage (file:///Users/dwickyferiansyahputra/Public/Research/nova/frontend/node_modules/.pnpm/@vitest+coverage-v8@4.1.11_@vitest+browser@4.1.11_vitest@4.1.11/node_modules/@vitest/coverage-v8/dist/provider.js:133:10)
+    at async file:///Users/dwickyferiansyahputra/Public/Research/nova/frontend/node_modules/.pnpm/@vitest+coverage-v8@4.1.11_@vitest+browser@4.1.11_vitest@4.1.11/node_modules/@vitest/coverage-v8/dist/provider.js:269:23
+    at async Promise.all (index 1)
+    at async V8CoverageProvider.convertCoverage (file:///Users/dwickyferiansyahputra/Public/Research/nova/frontend/node_modules/.pnpm/@vitest+coverage-v8@4.1.11_@vitest+browser@4.1.11_vitest@4.1.11/node_modules/@vitest/coverage-v8/dist/provider.js:261:4)
+    at async onFinished (file:///Users/dwickyferiansyahputra/Public/Research/nova/frontend/node_modules/.pnpm/@vitest+coverage-v8@4.1.11_@vitest+browser@4.1.11_vitest@4.1.11/node_modules/@vitest/coverage-v8/dist/provider.js:46:23)
+    at async V8CoverageProvider.readCoverageFiles (file:///Users/dwickyferiansyahputra/Public/Research/nova/frontend/node_modules/.pnpm/vitest@4.1.11_@types+node@25.9.7_@vitest+browser-playwright@4.1.11_@vitest+coverage-v8@_d20be361a4c957f7b98bddb6908caa46/node_modules/vitest/dist/chunks/coverage.DM_a_rWm.js:769:4) {
+  code: 'PARSE_ERROR',
+  id: undefined,
+  pos: 14
+}
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |browser (chromium)| src/features/native-dataviz/dataset-create.test.tsx > dashboard dataset authoring > inspects authoritative columns and atomically saves the source without fetching rows
+Error: Test timed out in 15000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+
+Failure screenshot:
+  - src/features/native-dataviz/__screenshots__/dataset-create.test.tsx/dashboard-dataset-authoring-inspects-authoritative-columns-and-atomically-saves-the-source-without-fetching-rows-1.png
+
+ ❯ src/features/native-dataviz/dataset-create.test.tsx:103:2
+    101|
+    102| describe('dashboard dataset authoring', () => {
+    103|   it('inspects authoritative columns and atomically saves the source w…
+       |  ^
+    104|     const screen = await mount()
+    105|     await expect.element(screen.getByRole('button', { name: 'Save data…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  |browser (chromium)| src/features/native-dataviz/dataset-create.test.tsx > dashboard dataset authoring > declares SQL parameters, saves the analyzer-accepted declarations and offers them in preview
+Error: Test timed out in 15000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+
+Failure screenshot:
+  - src/features/native-dataviz/__screenshots__/dataset-create.test.tsx/dashboard-dataset-authoring-declares-SQL-parameters--saves-the-analyzer-accepted-declarations-and-offers-them-in-preview-1.png
+
+ ❯ src/features/native-dataviz/dataset-create.test.tsx:238:2
+    236|   })
+    237|
+    238|   it('declares SQL parameters, saves the analyzer-accepted declaration…
+       |  ^
+    239|     const screen = await mount()
+    240|     await screen.getByRole('textbox', { name: 'Dataset name' }).fill('…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  |browser (chromium)| src/features/native-dataviz/charts/theme-switch.test.tsx > NDV-A11Y-004 theme switch with a chart on screen > re-reads colours from the theme and keeps axis text at AA contrast in light and dark
+Error: not drawn
+
+Failure screenshot:
+  - src/features/native-dataviz/charts/__screenshots__/theme-switch.test.tsx/NDV-A11Y-004-theme-switch-with-a-chart-on-screen-re-reads-colours-from-the-theme-and-keeps-axis-text-at-AA-contrast-in-light-and-dark-1.png
+
+ ❯ src/features/native-dataviz/charts/theme-switch.test.tsx:62:87
+     60|       const host = screen.container.querySelector<HTMLElement>('[role=…
+     61|       const chart = host && getInstanceByDom(host)
+     62|       if (!chart || !(chart.getOption() as { xAxis?: unknown[] }).xAxi…
+       |                                                                                       ^
+     63|       return chart
+     64|     })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  |browser (chromium)| src/features/native-dataviz/dashboard/qa-editor-a11y.test.tsx > QA accessibility > NDV-A11Y-007: at 768px tablet the inspector is a closable drawer and the actions stay reachable by keyboard
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+
+Failure screenshot:
+  - src/features/native-dataviz/dashboard/__screenshots__/qa-editor-a11y.test.tsx/QA-accessibility-NDV-A11Y-007--at-768px-tablet-the-inspector-is-a-closable-drawer-and-the-actions-stay-reachable-by-keyboard-1.png
+
+ ❯ src/features/native-dataviz/dashboard/qa-editor-a11y.test.tsx:149:2
+    147|   })
+    148|
+    149|   it('NDV-A11Y-007: at 768px tablet the inspector is a closable drawer…
+       |  ^
+    150|     await page.viewport(768, 1024)
+    151|     const screen = await mount(768, 1024)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  |browser (chromium)| src/features/native-dataviz/dashboard/qa-editor-a11y.test.tsx > QA accessibility > NDV-A11Y-009: every control reached by Tab is named and visibly focused, also in forced colours
+AssertionError: expected [ 'Back to dashboards', …(14) ] to deeply equal ArrayContaining{…}
+
+Failure screenshot:
+  - src/features/native-dataviz/dashboard/__screenshots__/qa-editor-a11y.test.tsx/QA-accessibility-NDV-A11Y-009--every-control-reached-by-Tab-is-named-and-visibly-focused--also-in-forced-colours-1.png
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- ArrayContaining [[39m
+[31m+ [[39m
+[2m    "Back to dashboards",[22m
+[32m-   "Refresh data",[39m
+[31m+   "Overview",[39m
+[31m+   "Overview",[39m
+[31m+   "Canvas",[39m
+[31m+   "Canvas",[39m
+[31m+   "Canvas",[39m
+[31m+   "Canvas",[39m
+[31m+   "Canvas",[39m
+[31m+   "Canvas",[39m
+[31m+   "Publish",[39m
+[31m+   "Share",[39m
+[2m    "Edit",[22m
+[32m-   "Overview",[39m
+[31m+   "Version history",[39m
+[31m+   "Version history",[39m
+[31m+   "Comments",[39m
+[2m  ][22m
+
+ ❯ src/features/native-dataviz/dashboard/qa-editor-a11y.test.tsx:226:43
+    224|     // Viewing: the header and page controls.
+    225|     const viewing = await walk()
+    226|     expect(viewing.map(item => item.name)).toEqual(expect.arrayContain…
+       |                                           ^
+    227|     check(viewing, false)
+    228|     // Editing: every widget is a stop, with its own actions.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  3 failed | 225 passed (228)
+      Tests  5 failed | 1989 passed (1994)
+   Start at  00:16:17
+   Duration  283.54s (transform 1.09s, setup 0ms, import 281.34s, tests 1267.99s, environment 1ms)
+
+ ELIFECYCLE  Command failed with exit code 1.

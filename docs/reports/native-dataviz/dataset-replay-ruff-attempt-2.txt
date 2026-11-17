@@ -1,0 +1,21 @@
+E501 Line too long (101 > 100)
+   --> tests/integration/test_metadata_viz.py:239:101
+    |
+238 | @pytest.mark.parametrize("edit", [False, True])
+239 | async def test_dataset_intent_replay_survives_source_loss_and_later_edits(dataset_author, viz, edit):
+    |                                                                                                     ^
+240 |     author, service, records, source, create, inspect = dataset_author
+241 |     user = records["login-owner"]
+    |
+
+E501 Line too long (101 > 100)
+   --> tests/integration/test_metadata_viz.py:260:101
+    |
+259 | @pytest.mark.parametrize("change", ["title", "source", "fingerprint", "revision", "command"])
+260 | async def test_dataset_intent_reuse_refuses_changed_command_before_source_io(dataset_author, change):
+    |                                                                                                     ^
+261 |     author, _, records, _, create, inspect = dataset_author
+262 |     user = records["login-owner"]
+    |
+
+Found 2 errors.

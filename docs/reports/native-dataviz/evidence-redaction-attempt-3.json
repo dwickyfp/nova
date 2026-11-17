@@ -1,0 +1,17 @@
+{
+  "reason": "Configured fixture values in credential-regression parameter IDs; results unchanged. Restricted originals retained outside Git.",
+  "changes": [
+    {
+      "file": "backend-unit-attempt-7.xml.gz",
+      "redactions": 7,
+      "original_sha256": "154a3108a28b82c6908985b96db9b3f512d5bb1b9674d2fd212184aa991cf89e",
+      "sanitized_sha256": "00b954cd788c1fbd784c8233875107994d8b610228f059799d850c57b3f2546f"
+    },
+    {
+      "file": "backend-coverage-attempt-7.xml.gz",
+      "redactions": 0,
+      "original_sha256": "e7586f8447736c3fb99fd7e5a6070c48e212697e2e14bf8870ab00f799cf00a3",
+      "sanitized_sha256": "e7586f8447736c3fb99fd7e5a6070c48e212697e2e14bf8870ab00f799cf00a3"
+    }
+  ]
+}

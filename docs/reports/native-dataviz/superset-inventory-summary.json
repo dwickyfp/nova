@@ -1,0 +1,103 @@
+{
+  "metadata_only": true,
+  "snapshot_isolation": "repeatable read, read only",
+  "tables": {
+    "dashboards": {
+      "count": 7,
+      "sha256": "aefc49e964eebded04515703d9592570ac5028228a8e5b9c22351f719cb2a959"
+    },
+    "slices": {
+      "count": 52,
+      "sha256": "6c684a275e5b532f5a9a7e02525d03fa12328571da8901e77d3d6090d2596ed1"
+    },
+    "tables": {
+      "count": 22,
+      "sha256": "205b50ac654caba595d66b444b7cc7ca18c7e8837e45797d557bfac5df74f144"
+    },
+    "sql_metrics": {
+      "count": 44,
+      "sha256": "daec2ed286c057275a7b76ba46b3a44ed8b9abb96c441ff8c4a09ca746ab2d5b"
+    },
+    "table_columns": {
+      "count": 227,
+      "sha256": "b5b7b7db0f9c0578c72621a91208fb421eacdb55a0c0485b75e437503b15d994"
+    },
+    "dashboard_slices": {
+      "count": 52,
+      "sha256": "57c28ab28c9eec4a720a848579be80dad28451a4f4fea632fce40d31bd2bdbdf"
+    },
+    "dashboard_roles": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "dashboard_user": {
+      "count": 7,
+      "sha256": "97177625c90f442596ee153fc6e02492f2dbf372ac048f3836f6faef689d5405"
+    },
+    "slice_user": {
+      "count": 52,
+      "sha256": "276475a983cab8ec3fef7e5ff8789632347854883e49e1b66aa5737b3d1cc333"
+    },
+    "sqlatable_user": {
+      "count": 22,
+      "sha256": "158e537d8aeba2e0f52452613e400243716843c4795fff42856d320f5de7d7aa"
+    },
+    "report_schedule": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "report_recipient": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "report_schedule_user": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "row_level_security_filters": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "rls_filter_roles": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "rls_filter_tables": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "embedded_dashboards": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "favstar": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "annotation": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "annotation_layer": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "css_templates": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "dynamic_plugin": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    }
+  },
+  "chart_types": {
+    "echarts_timeseries_line": 10,
+    "big_number_total": 8,
+    "pie": 7,
+    "table": 7,
+    "echarts_timeseries_bar": 12,
+    "heatmap_v2": 4,
+    "echarts_area": 4
+  }
+}

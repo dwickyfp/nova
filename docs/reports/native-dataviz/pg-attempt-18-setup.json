@@ -1,0 +1,5 @@
+{
+  "result": "REFUSED_BEFORE_EXECUTION",
+  "reason": "URI-only fixture-port validation could not parse libpq connection-info syntax. No test or database operation started.",
+  "correction": "Use psycopg conninfo parser and retain exact isolated-host/port assertions."
+}

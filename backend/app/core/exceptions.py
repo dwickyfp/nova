@@ -63,9 +63,28 @@ class StarRocksError(NovaException):
     the failure came from the engine rather than from the connection itself.
     """
 
-    def __init__(self, message: str, status_code: int = 400, *, engine_code: int | None = None):
+    #: Engine codes that refuse the connection for capacity, not the request:
+    #: too many connections in total (1040) or for this user (1203).
+    CAPACITY_CODES = frozenset({1040, 1203})
+
+    def __init__(self, message: str, status_code: int = 400, *, engine_code: int | None = None,
+                 overloaded: bool = False):
         super().__init__(message, status_code=status_code)
         self.engine_code = engine_code
+        #: The engine answered, but only that it could not plan or run the
+        #: statement in time or memory. Set from the engine's own message,
+        #: before a caller replaces that message with a private one.
+        self.overloaded = overloaded
+
+    @property
+    def engine_unavailable(self) -> bool:
+        """The engine could not be reached, had no capacity or was overloaded:
+        not a refusal of the request."""
+        if self.overloaded:
+            return True
+        if self.engine_code is None:
+            return self.message.startswith("Connection error")
+        return self.engine_code in self.CAPACITY_CODES
 
 
 class StorageError(NovaException):

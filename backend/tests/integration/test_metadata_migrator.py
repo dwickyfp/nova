@@ -239,7 +239,13 @@ async def test_changed_applied_bytes_refuse_migrator_and_application(migration_e
 
 async def test_two_migrators_publish_one_schema_revision(migration_environment):
     env = migration_environment
-    results = await asyncio.gather(install(env), install(env))
+    # Both connections must finish before fixture teardown, including when one
+    # times out. Otherwise the surviving migrator can recreate the dropped schema.
+    outcomes = await asyncio.gather(install(env), install(env), return_exceptions=True)
+    for outcome in outcomes:
+        if isinstance(outcome, BaseException):
+            raise outcome
+    results = outcomes
     assert sorted(result.applied_versions for result in results) == [(), APPLIED_VERSIONS]
     assert len(await ledger(env)) == SCHEMA_VERSION
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { splitSqlStatements, statementAtOffset } from './sql-statements'
+import { hasTransactionControl, splitSqlStatements, statementAtOffset } from './sql-statements'
 
 const SCRIPT = `USE pg_shop.public;
 
@@ -77,5 +77,23 @@ describe('statementAtOffset', () => {
 
   it('has nothing to run in an empty file', () => {
     expect(statementAtOffset([], 0)).toBeNull()
+  })
+})
+
+describe('hasTransactionControl', () => {
+  it('finds a transaction that a script opens or ends', () => {
+    expect(hasTransactionControl(splitSqlStatements('BEGIN; INSERT INTO t VALUES (1); ROLLBACK'))).toBe(true)
+    expect(hasTransactionControl(splitSqlStatements('start transaction;\nINSERT INTO t VALUES (1)'))).toBe(true)
+    expect(hasTransactionControl(splitSqlStatements('INSERT INTO t VALUES (1);\n-- note\nCOMMIT'))).toBe(true)
+  })
+
+  it('ignores scripts without one and a task body that says BEGIN', () => {
+    expect(hasTransactionControl(splitSqlStatements('SET time_zone = \'UTC\'; SELECT now()'))).toBe(false)
+    expect(hasTransactionControl(splitSqlStatements("SELECT 'BEGIN'; SELECT 1 AS commit_count"))).toBe(false)
+    expect(
+      hasTransactionControl(
+        splitSqlStatements('CREATE TASK t AS BEGIN INSERT INTO a SELECT 1; END; SELECT 1'),
+      ),
+    ).toBe(false)
   })
 })

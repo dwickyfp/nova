@@ -1,0 +1,69 @@
+{
+  "result": "FAIL",
+  "principal": "alice",
+  "steps": [
+    {
+      "check": "governed parameter execution succeeded",
+      "passed": true
+    },
+    {
+      "check": "execution identity and engine correlation retained",
+      "passed": true
+    },
+    {
+      "check": "Ranger row filter applies to the active principal",
+      "passed": true
+    },
+    {
+      "check": "governed parameter execution succeeded",
+      "passed": true
+    },
+    {
+      "check": "execution identity and engine correlation retained",
+      "passed": true
+    },
+    {
+      "check": "list binding cannot broaden Ranger visibility",
+      "passed": true
+    },
+    {
+      "check": "governed parameter execution succeeded",
+      "passed": true
+    },
+    {
+      "check": "execution identity and engine correlation retained",
+      "passed": true
+    },
+    {
+      "check": "streamed list binding retains Ranger visibility and does not buffer result rows",
+      "passed": true
+    },
+    {
+      "check": "governed parameter execution succeeded",
+      "passed": true
+    },
+    {
+      "check": "execution identity and engine correlation retained",
+      "passed": false
+    }
+  ],
+  "error_type": "AssertionError",
+  "error_location": [
+    {
+      "file": "verify_native_parameters_live.py",
+      "line": 99,
+      "function": "run"
+    },
+    {
+      "file": "verify_native_parameters_live.py",
+      "line": 51,
+      "function": "execute"
+    },
+    {
+      "file": "verify_native_parameters_live.py",
+      "line": 41,
+      "function": "check"
+    }
+  ],
+  "scope": "Direct QueryService with existing caller credentials and active roles; read-only. Includes Nova history checks. Engine audit/profile redaction is not tested."
+}

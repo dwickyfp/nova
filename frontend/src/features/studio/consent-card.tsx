@@ -55,9 +55,9 @@ export function ConsentCard({
         />
         <div className="min-w-0 flex-1">
           <p className="text-sm">
-            The agent wants to run{" "}
-            <span className="font-mono text-xs">{call.tool_name}</span>
-            {destructive ? " which changes data." : "."}
+            {destructive
+              ? "Approve this step? It changes data."
+              : "Approve this step before the agent continues?"}
           </p>
           {call.sql_preview && isSqlPreview(call.sql_preview) ? (
             <pre className="mt-2 max-h-40 overflow-auto rounded-md bg-muted/40 p-2 text-xs leading-relaxed">

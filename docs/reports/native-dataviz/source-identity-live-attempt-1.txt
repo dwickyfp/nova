@@ -1,0 +1,41 @@
+Traceback (most recent call last):
+  File "asyncmy/connection.pyx", line 571, in asyncmy.connection.Connection.connect
+  File "asyncmy/connection.pyx", line 562, in asyncmy.connection.Connection.connect
+  File "/Users/dwickyferiansyahputra/.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/asyncio/tasks.py", line 489, in wait_for
+    return fut.result()
+           ^^^^^^^^^^^^
+  File "/Users/dwickyferiansyahputra/.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/asyncio/streams.py", line 48, in open_connection
+    transport, _ = await loop.create_connection(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dwickyferiansyahputra/.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/asyncio/base_events.py", line 1094, in create_connection
+    raise OSError('Multiple exceptions: {}'.format(
+OSError: Multiple exceptions: [Errno 61] Connect call failed ('::1', 9030, 0, 0), [Errno 61] Connect call failed ('127.0.0.1', 9030)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/dwickyferiansyahputra/Public/Research/nova/backend/scripts/verify_native_source_identity_live.py", line 227, in <module>
+    result = asyncio.run(run(args.principal, args.output))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dwickyferiansyahputra/.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/asyncio/runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/Users/dwickyferiansyahputra/.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dwickyferiansyahputra/.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/Users/dwickyferiansyahputra/Public/Research/nova/backend/scripts/verify_native_source_identity_live.py", line 84, in run
+    await db.init_system_pool()
+  File "/Users/dwickyferiansyahputra/Public/Research/nova/backend/app/core/database.py", line 78, in init_system_pool
+    self._system_pool = await asyncmy.create_pool(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "asyncmy/pool.pyx", line 216, in _create_pool
+  File "asyncmy/pool.pyx", line 217, in asyncmy.pool._create_pool
+  File "asyncmy/pool.pyx", line 145, in fill_free_pool
+  File "asyncmy/connection.pyx", line 1349, in _connect
+  File "asyncmy/connection.pyx", line 594, in connect
+asyncmy.errors.OperationalError: (2003, "Can't connect to MySQL server on 'localhost' (Multiple exceptions: [Errno 61] Connect call failed ('::1', 9030, 0, 0), [Errno 61] Connect call failed ('127.0.0.1', 9030))")

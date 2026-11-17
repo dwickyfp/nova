@@ -1,5 +1,9 @@
 # Assistant, access-control, Superset, migration and AI usage metadata port
 
+> Historical note: Apache Superset was removed on 2026-11-16
+> ([Architecture 17](../../arch-17-superset.md)). The Superset rows below record
+> the port as it was made; they are not a current runtime owner.
+
 Revision 0024 prepares the 14 remaining small control tables in `nova_meta`:
 
 | Domain | Tables | Repository |

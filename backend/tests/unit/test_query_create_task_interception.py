@@ -377,8 +377,12 @@ class TestValidationFailureIsReported:
 
 
 class TestNonTaskStatementsAreUnaffected:
-    async def test_native_submit_task_is_refused_before_the_engine(self, wired):
-        """The engine's background task would not run as the caller and role."""
+    async def test_native_submit_task_never_reaches_the_engine(self, wired):
+        """SUBMIT TASK is a Nova task run under the caller's sign-in and role.
+
+        Without a Nova session (a MySQL client) its run could never start, so
+        nothing is saved and the engine never receives the statement.
+        """
         service, engine, tasks, _ = wired
         result = await service.execute(
             sql="SUBMIT TASK x AS INSERT INTO t SELECT 1",
@@ -389,10 +393,9 @@ class TestNonTaskStatementsAreUnaffected:
             schema="default",
         )
         assert not result.success
-        assert result.error_code == "capability_unsupported"
-        assert "Use CREATE TASK" in (result.error or "")
+        assert "Nova sign-in" in (result.error or "")
         assert not engine.calls, "the engine must not receive SUBMIT TASK"
-        assert tasks.tasks == {}, "SUBMIT TASK must not create Nova metadata"
+        assert tasks.tasks == {}, "SUBMIT TASK without a session must not save a task"
 
     async def test_plain_select_still_goes_to_the_engine(self, wired):
         service, engine, tasks, _ = wired

@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.sql_frontend.ast.statements import Statement
+from app.sql_frontend.parameters import BoundParameters, ParameterSpec
 
 
 @dataclass(slots=True)
@@ -16,6 +17,7 @@ class PlanningContext:
     semantics: Any = None
     confirm_destructive: bool = False
     validated: dict[int, Any] = field(default_factory=dict, repr=False)
+    parameter_specs: tuple[ParameterSpec, ...] = ()
 
 
 @dataclass(slots=True)
@@ -41,3 +43,4 @@ class ExecutionContext:
     binder: Any = field(default=None, repr=False)
     statements: dict[int, Statement] = field(default_factory=dict, repr=False)
     validated: dict[int, Any] = field(default_factory=dict, repr=False)
+    parameters: BoundParameters | None = field(default=None, repr=False)

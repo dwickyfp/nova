@@ -1,0 +1,46 @@
+{
+  "result": "FAIL",
+  "owned_database": "ndv_src_2c7019c03e99",
+  "owned_roles": [
+    "ndv_read_2c7019c03e99",
+    "ndv_none_2c7019c03e99"
+  ],
+  "steps": [],
+  "cleanup_errors": [
+    {
+      "action": "remove owned role",
+      "error_type": "RangerError"
+    },
+    {
+      "action": "remove owned role",
+      "error_type": "RangerError"
+    },
+    {
+      "action": "verify original QA identity",
+      "error_type": "UnboundLocalError"
+    }
+  ],
+  "error_type": "RangerError",
+  "error_location": [
+    {
+      "file": "client.py",
+      "line": 311,
+      "function": "_user_attributes"
+    },
+    {
+      "file": "client.py",
+      "line": 321,
+      "function": "_get_user"
+    },
+    {
+      "file": "client.py",
+      "line": 132,
+      "function": "_request"
+    }
+  ],
+  "engine_version": "4.1.4",
+  "limits": [
+    "ALTER VIEW RENAME is absent from the pinned grammar; table rename and view drop/recreate are verified separately"
+  ],
+  "ranger_service": "nova_starrocks"
+}

@@ -1,0 +1,8 @@
+{
+  "started_at": "2026-11-13T19:48:34.971126+00:00",
+  "result": "FAIL",
+  "scope": "EXPLAIN SCHEMA through authenticated HTTP and governed pinned FE",
+  "cleanup": "NOT_RUN",
+  "error_type": "ReadTimeout",
+  "steps": []
+}

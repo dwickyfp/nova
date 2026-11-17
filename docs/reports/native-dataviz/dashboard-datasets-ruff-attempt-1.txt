@@ -1,0 +1,10 @@
+E501 Line too long (105 > 100)
+  --> tests/unit/test_native_viz_contracts.py:76:101
+   |
+74 |               "filters": [], "actions": []}
+75 |     assert canonical(DashboardDefinition.model_validate(legacy)) == canonical(legacy)
+76 |     assert canonical(DashboardDefinition.model_validate({**legacy, "datasets": []})) == canonical(legacy)
+   |                                                                                                     ^^^^^
+   |
+
+Found 2 errors (1 fixed, 1 remaining).

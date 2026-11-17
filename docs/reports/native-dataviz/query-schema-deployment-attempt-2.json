@@ -1,0 +1,74 @@
+{
+  "before": {
+    "id": "998fbee11fd6f06cf834c230d6266f29d0313768e89c946568f7d0a267c2c061",
+    "image": "sha256:d66e88b035c35d7aef0fc4327773b619be6e2d9c48335848a64da32e4be0445a",
+    "mounts": [
+      [
+        "docker_ranger_fe_log",
+        "/opt/starrocks/fe/log"
+      ],
+      [
+        "docker_ranger_fe_meta",
+        "/opt/starrocks/fe/meta"
+      ],
+      [
+        null,
+        "/opt/starrocks/fe/conf/fe.conf"
+      ],
+      [
+        null,
+        "/opt/starrocks/fe/conf/ranger-starrocks-audit.xml"
+      ],
+      [
+        null,
+        "/opt/starrocks/fe/conf/ranger-starrocks-security.xml"
+      ]
+    ],
+    "health": "healthy"
+  },
+  "steps": [
+    {
+      "command": [
+        "docker",
+        "exec",
+        "nova-starrocks-fe",
+        "bash",
+        "/opt/starrocks/fe/bin/stop_fe.sh",
+        "--graceful",
+        "--timeout",
+        "60"
+      ],
+      "returncode": 137,
+      "seconds": 0.53
+    }
+  ],
+  "after": {
+    "id": "998fbee11fd6f06cf834c230d6266f29d0313768e89c946568f7d0a267c2c061",
+    "image": "sha256:d66e88b035c35d7aef0fc4327773b619be6e2d9c48335848a64da32e4be0445a",
+    "mounts": [
+      [
+        "docker_ranger_fe_log",
+        "/opt/starrocks/fe/log"
+      ],
+      [
+        "docker_ranger_fe_meta",
+        "/opt/starrocks/fe/meta"
+      ],
+      [
+        null,
+        "/opt/starrocks/fe/conf/fe.conf"
+      ],
+      [
+        null,
+        "/opt/starrocks/fe/conf/ranger-starrocks-audit.xml"
+      ],
+      [
+        null,
+        "/opt/starrocks/fe/conf/ranger-starrocks-security.xml"
+      ]
+    ],
+    "health": "unhealthy"
+  },
+  "volumes_preserved": true,
+  "result": "FAIL"
+}

@@ -40,6 +40,8 @@ class StarRocksSource(CatalogSource):
     ) -> ObjectKinds:
         import asyncmy
 
+        from app import mysql_driver_guard  # noqa: F401 - refuse mapping parameters
+
         if not databases:
             return {}
         placeholders = ", ".join(["%s"] * len(databases))

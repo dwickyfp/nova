@@ -1,0 +1,5 @@
+app/core/database.py:74: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app/core/redis.py:48: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app/modules/assistant/plain_language.py:340: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app/sql_frontend/analysis/lineage.py:37: error: Need type annotation for "stack"  [var-annotated]
+Found 1 error in 1 file (checked 752 source files)

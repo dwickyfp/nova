@@ -1,0 +1,4 @@
+app/core/database.py:74: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app/core/redis.py:48: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app/modules/assistant/plain_language.py:340: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app/modules/viz/compatibility.py:108: error: Argument "visual" to "ChartDefinition" has incompatible type "Literal['bar', 'line', 'area', 'circle', 'square', 'tick', 'pie', 'text']"; expected "Literal['kpi', 'bar', 'line', 'area', 'combo', 'pie', 'scatter', 'heatmap', 'calendar_heatmap', 'histogram', 'funnel', 'gauge', 'table', 'pivot', 'treemap', 'sankey', 'waterfall', 'boxplot', 'map']"  [arg-type]

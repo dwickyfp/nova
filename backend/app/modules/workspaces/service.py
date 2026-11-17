@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable, Iterator
 
 import boto3
 from botocore.client import Config as BotoConfig
@@ -251,6 +251,16 @@ class WorkspaceService:
         except ClientError as exc:
             raise classify_storage_error(exc, action="read") from exc
         except BotoCoreError as exc:
+            raise classify_storage_error(exc, action="read") from exc
+
+    def list_internal_objects(self, prefix: str) -> Iterator[dict]:
+        """Every object under ``prefix`` with its key and last-modified time."""
+        try:
+            pages = self._client().get_paginator("list_objects_v2").paginate(
+                Bucket=self._bucket(), Prefix=prefix)
+            for page in pages:
+                yield from page.get("Contents", [])
+        except (ClientError, BotoCoreError) as exc:
             raise classify_storage_error(exc, action="read") from exc
 
     def _delete_object(self, key: str) -> None:

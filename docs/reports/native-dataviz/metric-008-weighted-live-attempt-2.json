@@ -1,0 +1,217 @@
+{
+  "started_at": "2026-11-17T12:17:48.384184+00:00",
+  "run": "a37cb7",
+  "scope": "semantic ratio metric through native chart queries vs engine oracle",
+  "result": "PASS",
+  "cleanup": "REMOVED",
+  "oracle": {
+    "by_region": [
+      [
+        "East",
+        "0.32000000",
+        "0.375000000000",
+        "500.00"
+      ],
+      [
+        "West",
+        "0.07272727",
+        "0.266666666667",
+        "550.00"
+      ]
+    ],
+    "total": [
+      "0.19047619"
+    ],
+    "sum_of_daily": [
+      [
+        "East",
+        "0.85000000"
+      ],
+      [
+        "West",
+        "0.34000000"
+      ]
+    ],
+    "monthly_revenue": [
+      [
+        "2024-02-01",
+        "750.00"
+      ],
+      [
+        "2024-03-01",
+        "300.00"
+      ]
+    ],
+    "weighted_by_region": [
+      [
+        "East",
+        "10.00000000",
+        "42.66666667"
+      ],
+      [
+        "West",
+        "20.00000000",
+        "30.00000000"
+      ]
+    ],
+    "weighted_total": [
+      "15.38461538",
+      "36.33333333"
+    ]
+  },
+  "steps": [
+    {
+      "step": "fixture: CREATE DATABASE ndv_metric_a37cb7",
+      "passed": true
+    },
+    {
+      "step": "fixture: CREATE TABLE ndv_metric_a37cb7.sales (id",
+      "passed": true
+    },
+    {
+      "step": "fixture: INSERT INTO ndv_metric_a37cb7.sales VALU",
+      "passed": true
+    },
+    {
+      "step": "fixture: the weighted price differs from the plain average price",
+      "passed": true
+    },
+    {
+      "step": "fixture: ratio of sums differs from averaged and daily-summed margins",
+      "passed": true
+    },
+    {
+      "step": "alice uses marketing",
+      "passed": true
+    },
+    {
+      "step": "semantic view created",
+      "passed": true,
+      "status": 201
+    },
+    {
+      "step": "semantic view valid",
+      "passed": true
+    },
+    {
+      "step": "semantic view published",
+      "passed": true
+    },
+    {
+      "step": "inspect at region and day",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "step": "dataset created",
+      "passed": true,
+      "status": 201
+    },
+    {
+      "step": "per region: margin equals SUM(profit)/SUM(revenue)",
+      "passed": true,
+      "rows": [
+        [
+          "East",
+          "0.32000000"
+        ],
+        [
+          "West",
+          "0.07272727"
+        ]
+      ]
+    },
+    {
+      "step": "per region: not the average of row margins nor the sum of daily margins",
+      "passed": true
+    },
+    {
+      "step": "total: one ratio of sums over every row, nulls and refund included",
+      "passed": true,
+      "rows": [
+        [
+          "0.19047619",
+          "1050.00"
+        ]
+      ]
+    },
+    {
+      "step": "month grain: the ratio is refused rather than added up",
+      "passed": true,
+      "status": 422
+    },
+    {
+      "step": "month grain: a plain sum still totals per month (leap day in February)",
+      "passed": true,
+      "rows": [
+        [
+          "2024-02-01",
+          "750.00"
+        ],
+        [
+          "2024-03-01",
+          "300.00"
+        ]
+      ]
+    },
+    {
+      "step": "per region: weighted price equals SUM(price*units)/SUM(units)",
+      "passed": true,
+      "rows": [
+        [
+          "East",
+          "10.00000000"
+        ],
+        [
+          "West",
+          "20.00000000"
+        ]
+      ]
+    },
+    {
+      "step": "per region: the weighted price is not the plain average price",
+      "passed": true
+    },
+    {
+      "step": "total: one weighted price over every row with units",
+      "passed": true,
+      "rows": [
+        [
+          "15.38461538"
+        ]
+      ]
+    },
+    {
+      "step": "dataset grain: one row per region and day",
+      "passed": true,
+      "rows": [
+        [
+          "East",
+          "2024-02-29",
+          "0.25000000"
+        ],
+        [
+          "East",
+          "2024-03-01",
+          "0.60000000"
+        ],
+        [
+          "West",
+          "2024-02-28",
+          "0.30000000"
+        ],
+        [
+          "West",
+          "2024-02-29",
+          "0.04000000"
+        ],
+        [
+          "West",
+          "2024-03-01",
+          null
+        ]
+      ]
+    }
+  ],
+  "finished_at": "2026-11-17T12:18:29.535530+00:00"
+}

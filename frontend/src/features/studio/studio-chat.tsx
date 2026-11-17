@@ -59,7 +59,18 @@ import { useTranscriptStream } from "./use-transcript-stream";
 import { rememberLastAgent } from "./default-agent";
 import { mergeMissionProjection, type Mission } from "./workflow-api";
 import { useAuthStore } from "@/stores/auth-store";
+import {
+  NATIVE_DASHBOARD_ACTIVITY,
+  NATIVE_DASHBOARD_CHANGED,
+  type NativeDashboardActivity,
+  type NevaState,
+} from "@/features/native-dataviz/dashboard/events";
 import { patchTurn, replayThread, type PendingCall, type TranscriptTurn } from "./studio-transcript";
+
+function activity(detail: NativeDashboardActivity) {
+  window.dispatchEvent(new CustomEvent(NATIVE_DASHBOARD_ACTIVITY, { detail }));
+}
+
 export type { OrderedContent, TranscriptTurn } from "./studio-transcript";
 
 /** A News story handed to Studio: its thread, investigating Mission and prompt. */
@@ -168,6 +179,7 @@ export function StudioChat({
   const [extended, setExtended] = useState(false);
   const [deepenTarget, setDeepenTarget] = useState<string | null>(null);
   const { abortRef, queueEvent, flushEvents, discardQueuedEvents } = useTranscriptStream(setTurns);
+  const toolStatus = useRef(new Map<string, string>());
   const onTurnEvent = useCallback((turnId: string, event: AssistantEvent) => {
     const workflow = event as unknown as { type: string; mission?: Mission };
     if (workflow.type === "mission_updated" && workflow.mission) {
@@ -176,6 +188,29 @@ export function StudioChat({
         ["studio", "workflow", useAuthStore.getState().securityEpoch, mission.thread_id],
         (current) => mergeMissionProjection(current, mission, mission.thread_id),
       );
+    }
+    if (event.type === "dashboard_changed") {
+      // Native dashboards reload the committed revision Neva just wrote.
+      window.dispatchEvent(new CustomEvent(NATIVE_DASHBOARD_CHANGED, {
+        detail: { dashboard_id: event.dashboard_id, revision: event.revision },
+      }));
+      activity({ kind: "status", tool_call_id: event.tool_call_id, state: "saved" });
+    }
+    // Neva's pointer on the dashboard follows the change it proposes, and
+    // whether that change was approved and saved.
+    if (event.type === "tool_call") toolStatus.current.set(event.payload.tool_call_id, event.payload.status);
+    if (event.type === "dashboard_activity") {
+      activity({
+        kind: "proposed", tool_call_id: event.tool_call_id, dashboard_id: event.dashboard_id,
+        action: event.action, widget_ids: event.widget_ids, page_id: event.page_id,
+        state: toolStatus.current.get(event.tool_call_id) === "pending" ? "waiting" : "saving",
+      });
+    }
+    if (event.type === "tool_status") {
+      const state: NevaState | null = event.status === "running" || event.status === "approved" ? "saving"
+        : event.status === "failed" ? "failed"
+        : event.status === "denied" || event.status === "cancelled" ? "stopped" : null;
+      if (state) activity({ kind: "status", tool_call_id: event.tool_call_id, state });
     }
     queueEvent(turnId, event);
   }, [queryClient, queueEvent]);
@@ -1119,44 +1154,34 @@ function NoAgentState() {
 }
 
 /**
- * The Dataviz assistant's empty state, in the Agent greeting's voice and ink,
- * sized for the side panel: the question names what it answers about.
+ * Neva's empty state beside a dashboard: what it can do here, then three
+ * starting points. Quiet on purpose; the dashboard is the subject.
  */
 function DatavizGreeting({
-  displayName,
   onPick,
 }: {
   displayName?: string | null;
   onPick?: (text: string) => void;
 }) {
-  const daypart = useClientDaypart();
-  const name = displayName?.trim();
   const questions = [
-    "Dashboard ini tentang apa?",
-    "Data di dashboard ini dari mana?",
-    "Kenapa angkanya berubah bulan ini?",
+    "What does this dashboard show?",
+    "Which region changed the most this month?",
+    "Add a chart of revenue by month",
   ];
   return (
     <section aria-label="Dataviz assistant" className="py-2">
-      <h1 className="text-left text-2xl leading-[1.2] font-normal tracking-[-0.01em] text-balance">
-        <span className="nova-welcome-line block">
-          <span className="nova-greeting-ink" data-daypart={daypart}>
-            {GREETING[daypart]}
-            {name ? `, ${name}` : ""}
-          </span>
-        </span>
-        <span className="nova-welcome-line block text-muted-foreground">
-          What would you like to know?
-        </span>
-      </h1>
+      <h1 className="text-base font-medium text-foreground">Work on this dashboard with Neva</h1>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Ask about its numbers, or ask for a chart, filter or layout change. Neva shows each change before saving it.
+      </p>
       {onPick ? (
-        <div className="nova-welcome-follow mt-6 grid gap-2">
+        <div className="mt-4 grid gap-2">
           {questions.map((question) => (
             <button
               key={question}
               type="button"
               onClick={() => onPick(question)}
-              className="flex min-h-12 items-center rounded-xl border bg-card px-4 py-3 text-left text-sm leading-snug text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex min-h-10 items-center rounded-lg border bg-card px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             >
               {question}
             </button>

@@ -12,7 +12,6 @@ from app.modules.pipes.router import router
 from app.modules.pipes.service import PipeError, PipeService
 from app.sql_frontend.ast.builder import ast_builders
 from app.sql_frontend.context import PlanningContext
-from app.sql_frontend.errors import CapabilityUnsupportedError
 from app.sql_frontend.parser import parse_statement
 from app.sql_frontend.planning.planner import SQLPlanner
 
@@ -130,28 +129,29 @@ async def test_poll_interval_above_engine_limit_rejected_before_execution(calls)
 @pytest.mark.parametrize(
     "sql",
     [
-        "CREATE PIPE db.p AS " + SOURCE,
         "CREATE PIPE db.p AS INSERT INTO db.t SELECT * FROM @incoming/*.parquet",
         "ALTER PIPE db.p RESUME",
         "ALTER PIPE db.p RETRY ALL",
         "ALTER PIPE db.p RETRY FILE 'x'",
         "ALTER PIPE db.p SET ('AUTO_INGEST'='true')",
+        "SHOW PIPES FROM db",
+        "DESCRIBE PIPE db.p",
+        "ALTER PIPE db.p SUSPEND",
+        "DROP PIPE db.p",
     ],
 )
-async def test_background_pipe_execution_rejected_by_ranger_frontend(sql):
-    statement = ast_builders.build(parse_statement(sql))
-    with pytest.raises(
-        CapabilityUnsupportedError, match="Pipes run in the background without your sign-in"
-    ):
-        await SQLPlanner().plan(statement, PlanningContext())
-
-
-@pytest.mark.parametrize(
-    "sql", ["SHOW PIPES FROM db", "DESCRIBE PIPE db.p", "ALTER PIPE db.p SUSPEND", "DROP PIPE db.p"]
-)
-async def test_inspection_and_shutdown_remain_available_with_ranger(sql):
+async def test_pipe_statements_run_as_nova_pipes_never_as_engine_sql(sql):
+    """Pipes run as their owner role in Nova; the engine never stores or runs one."""
     plan = await SQLPlanner().plan(ast_builders.build(parse_statement(sql)), PlanningContext())
-    assert plan.engine_sql == sql
+    assert plan.action == "pipe" and not hasattr(plan, "engine_sql")
+
+
+async def test_a_pipe_over_a_storage_url_with_keys_is_refused():
+    statement = ast_builders.build(parse_statement("CREATE PIPE db.p AS " + SOURCE))
+    from app.modules.pipes.definition import PipeDefinitionError
+
+    with pytest.raises(PipeDefinitionError, match="A pipe reads files from a stage"):
+        await SQLPlanner().plan(statement, PlanningContext())
 
 
 @pytest.fixture

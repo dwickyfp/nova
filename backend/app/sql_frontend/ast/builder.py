@@ -14,6 +14,8 @@ from app.sql_frontend.ast.statements import (
     MLMaterializeStatement,
     MLPredictStatement,
     NativeStatement,
+    ParameterizedQueryStatement,
+    QuerySchemaStatement,
     SecurityStatement,
     StageAwareStatement,
     Statement,
@@ -41,6 +43,28 @@ class AstBuilderRegistry:
         self._builders[context_name] = builder
 
     def build(self, parsed: ParsedStatement) -> Statement:
+        schema_explains = [
+            node
+            for node in _walk_nodes(parsed.statement_context)
+            if type(node).__name__ == "ExplainDescContext" and node.SCHEMA() is not None
+        ]
+        if schema_explains:
+            root = parsed.statement_context
+            if (
+                len(schema_explains) != 1
+                or type(root).__name__ != "QueryStatementContext"
+                or schema_explains[0] is not root.explainDesc()
+                or root.outfile() is not None
+            ):
+                raise SemanticError("EXPLAIN SCHEMA requires a top-level query without OUTFILE")
+            return QuerySchemaStatement(parsed)
+        if any(
+            type(node).__name__ == "NamedParameterContext"
+            for node in _walk_nodes(parsed.statement_context)
+        ):
+            if type(parsed.statement_context).__name__ != "QueryStatementContext":
+                raise SemanticError("Named parameters are supported only in read queries")
+            return ParameterizedQueryStatement(parsed)
         builder = self._builders.get(type(parsed.statement_context).__name__)
         if builder:
             return builder(parsed)
@@ -50,9 +74,22 @@ class AstBuilderRegistry:
 
 
 def _native_or_stage(parsed: ParsedStatement) -> Statement:
-    if any(
-        type(node).__name__ == "StageReferenceContext"
-        for node in _walk_nodes(parsed.statement_context)
+    from app.sql_frontend.backup_restore import repository_targets
+    from app.sql_frontend.broker_load import broker_load_targets
+    from app.sql_frontend.unload import unload_targets
+
+    # An unload (INSERT INTO FILES, INTO OUTFILE, EXPORT) writes only to a
+    # stage, a Broker Load reads only from stages and a backup repository
+    # lives only in a stage; a storage URL, credential or unknown option is
+    # refused here.
+    if (
+        unload_targets(parsed)
+        or broker_load_targets(parsed)
+        or repository_targets(parsed)
+        or any(
+            type(node).__name__ == "StageReferenceContext"
+            for node in _walk_nodes(parsed.statement_context)
+        )
     ):
         return StageAwareStatement(parsed)
     return NativeStatement(parsed)
@@ -79,7 +116,10 @@ def _task(parsed: ParsedStatement) -> Statement:
         raise SemanticError(
             "SUBMIT TASK takes one engine statement; use CREATE TASK for a script or Python task"
         )
-    return _native_or_stage(parsed)
+    # SUBMIT TASK becomes a Nova task owned by the caller's active role: run
+    # once now when it has no schedule, like CREATE TASK + EXECUTE TASK. The
+    # engine never stores it, so it never runs without the caller's role.
+    return CreateTaskStatement(parsed)
 
 
 def _query(parsed: ParsedStatement) -> Statement:
@@ -98,6 +138,9 @@ def _query(parsed: ParsedStatement) -> Statement:
 def default_builders() -> AstBuilderRegistry:
     from app.sql_frontend.catalog_ddl import build_catalog_statement
     from app.sql_frontend.merge import build_merge_statement
+    from app.sql_frontend.pipes import build_pipe_statement
+    from app.sql_frontend.routine_load import CONTEXTS as ROUTINE_LOAD_CONTEXTS
+    from app.sql_frontend.routine_load import build_routine_load_statement
     from app.sql_frontend.streams import build_stream_statement
 
     registry = AstBuilderRegistry()
@@ -126,6 +169,12 @@ def default_builders() -> AstBuilderRegistry:
         "NovaCreateForeignCatalogContext": build_catalog_statement,
         "NovaRefreshCatalogContext": build_catalog_statement,
         "NovaMergeStatementContext": build_merge_statement,
+        # Engine pipe grammar, run as Nova pipes (never forwarded to the engine).
+        "CreatePipeStatementContext": build_pipe_statement,
+        "DropPipeStatementContext": build_pipe_statement,
+        "AlterPipeStatementContext": build_pipe_statement,
+        "ShowPipeStatementContext": build_pipe_statement,
+        "DescPipeStatementContext": build_pipe_statement,
         "CreateRoleStatementContext": SecurityStatement,
         "CreateUserStatementContext": SecurityStatement,
         "AlterUserStatementContext": SecurityStatement,
@@ -134,6 +183,10 @@ def default_builders() -> AstBuilderRegistry:
         "DropRoleStatementContext": SecurityStatement,
         "ShowRolesStatementContext": SecurityStatement,
         "ShowGrantsStatementContext": SecurityStatement,
+        # Labelled alternatives of showAuthenticationStatement: account listings
+        # the engine authorizes (another user's entry needs user admin rights).
+        "ShowAllAuthenticationContext": NativeStatement,
+        "ShowAuthenticationForUserContext": NativeStatement,
         "GrantRoleToUserContext": SecurityStatement,
         "GrantRoleToRoleContext": SecurityStatement,
         "GrantRoleToGroupContext": SecurityStatement,
@@ -152,6 +205,8 @@ def default_builders() -> AstBuilderRegistry:
         "RevokeOnFuncContext": SecurityStatement,
         "RevokeOnPrimaryObjContext": SecurityStatement,
         "RevokeOnAllContext": SecurityStatement,
+        # Routine loads run through Nova's Kafka connections and owner checks.
+        **dict.fromkeys(ROUTINE_LOAD_CONTEXTS, build_routine_load_statement),
     }.items():
         registry.register(name, builder)
     return registry

@@ -1,0 +1,5 @@
+{
+  "result": "FAIL",
+  "scope": "synthetic SELECT; no writes",
+  "reason": "Explicit PUBLIC role does not exist; role admission failed before numeric query. Repeated with the actual login default role."
+}

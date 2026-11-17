@@ -3334,6 +3334,9 @@ literalExpression
     | interval                                                                            #intervalLiteral
     | binary                                                                              #binaryLiteral
     | PARAMETER                                                                           #Parameter
+    // NOVA-BEGIN (typed query parameters): values only; never identifiers.
+    | ':' identifier                                                                     #namedParameter
+    // NOVA-END
     ;
 
 // can represents negative number along with other literal expression
@@ -3488,9 +3491,11 @@ backupRestoreTableDesc
     : qualifiedName partitionNames? (AS identifier)?
     ;
 
+// NOVA-BEGIN (query output schema): the pinned FE exposes authorized analyzed fields.
 explainDesc
-    : (DESC | DESCRIBE | EXPLAIN) (LOGICAL | ANALYZE | VERBOSE | COSTS | SCHEDULER)?
+    : (DESC | DESCRIBE | EXPLAIN) (LOGICAL | ANALYZE | VERBOSE | COSTS | SCHEDULER | SCHEMA)?
     ;
+// NOVA-END
 
 optimizerTrace
     : TRACE (ALL | LOGS | TIMES | VALUES | REASON) identifier?

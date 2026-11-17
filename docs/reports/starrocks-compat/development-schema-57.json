@@ -1,0 +1,22 @@
+{
+  "baseline_commit": "18ae8035e9dfa9ba6b790c0a390017fa943c2157",
+  "schema_before": 56,
+  "schema_after": 57,
+  "migration": "0057_routine_loads.sql",
+  "migration_sha256": "526983f3d75a9b9e76ce0a702bbe5666eac2b0c386fab2e0606f1d01560211e0",
+  "metadata_epoch_preserved": true,
+  "tables_count_checked": 196,
+  "all_counts_preserved": true,
+  "new_empty_tables": [
+    "catalog_connection_roles",
+    "routine_load_jobs"
+  ],
+  "backup": {
+    "bytes": 124849115,
+    "sha256": "1489f44bd7f7dba77293596e2009ead4ab08895840a19ffaace7cc8b16ba8387",
+    "toc_verified": true
+  },
+  "fixture_evidence": "tests/integration/test_metadata_routine_loads.py and tests/integration/test_metadata_catalog.py on the PG17 fixture",
+  "launcher": "not stopped; processes refused metadata work while frozen and reloaded at 57",
+  "recorded_at": "2026-11-16T16:05:26.321755+00:00"
+}

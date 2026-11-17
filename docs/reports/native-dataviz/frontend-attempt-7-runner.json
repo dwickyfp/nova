@@ -1,0 +1,19 @@
+{
+  "result": "INTERRUPTED_WITH_FAILURES",
+  "exit_code": 130,
+  "reason": "Browser files remained parallel despite maxWorkers=1. Stopped this task's Vitest process after additional 15-second timeouts and development readiness timeouts under host load.",
+  "observed_load_averages": [
+    47.08,
+    38.66,
+    25.4
+  ],
+  "observed_swap_used_mib": 13886.06,
+  "next_command_option": "--browser.fileParallelism=false",
+  "assertions_and_timeouts_changed": false,
+  "failure_screenshots": [
+    "Nova-Intelligence-queries-a-Semantic-View-with-selected-metrics--dimensions--and-named-filters-1.png",
+    "renders-verified-geometry-and-links-table-selection-to-declarative-state-1.png",
+    "AgentConfigurationTab-saves-the-selected-provider-and-model-and-restores-the-default-1.png",
+    "MigrationPage-discovers-databases-only-after-source-details-are-saved-and-supports-multi-selection-1.png"
+  ]
+}

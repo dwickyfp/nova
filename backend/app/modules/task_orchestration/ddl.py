@@ -145,6 +145,10 @@ class LoweredTask:
     packages: tuple[str, ...] = ()
     #: A ``WHEN`` over streams, compiled (``stream_when.py``); ``None`` otherwise.
     when_tree: dict | None = None
+    #: ``SUBMIT TASK`` without a schedule: the task runs once, now, as the caller.
+    run_once: bool = False
+    #: ``SUBMIT TASK``: the statement form the task came from.
+    submitted: bool = False
 
     @property
     def stream_names(self) -> tuple[str, ...]:
@@ -271,13 +275,19 @@ def parse_create_task(
             parsed = parse_statement(sql)
         except ValueError as exc:
             raise TaskDDLError("invalid CREATE TASK syntax: " + str(exc)) from None
-    if [token.text.upper() for token in parsed.visible_tokens[:2]] != ["CREATE", "TASK"]:
+    lead = [token.text.upper() for token in parsed.visible_tokens[:2]]
+    submitted = lead == ["SUBMIT", "TASK"]
+    if lead != ["CREATE", "TASK"] and not submitted:
         raise TaskDDLError("not a CREATE TASK statement")
     statement = parsed.statement_context
     if type(statement).__name__ != "SubmitTaskStatementContext":
         raise TaskDDLError("invalid CREATE TASK syntax: no task statement found")
 
-    task_name = _slice(sql, statement.novaQualifiedTaskName())
+    if submitted:
+        name_node = statement.qualifiedName()
+        task_name = _slice(sql, name_node) if name_node is not None else _submit_task_name()
+    else:
+        task_name = _slice(sql, statement.novaQualifiedTaskName())
     if not task_name:
         raise TaskDDLError("CREATE TASK requires a task name")
 
@@ -286,6 +296,9 @@ def parse_create_task(
     bare_name, scoped_database, scoped_schema = _split_qualified_task_name(task_name)
     if not bare_name:
         raise TaskDDLError("CREATE TASK requires a task name")
+    if submitted and scoped_schema and not scoped_database:
+        # The engine's SUBMIT TASK names a task `db.task`.
+        scoped_database, scoped_schema = scoped_schema, None
     task_database = scoped_database or database
     task_schema = scoped_schema or schema or "default"
 
@@ -295,6 +308,23 @@ def parse_create_task(
         if kind in clauses:
             raise TaskDDLError(f"duplicate {kind} clause")
         clauses[kind] = clause_ctx
+    session_settings: list[tuple[str, str]] = []
+    if submitted:
+        extra = sorted(set(clauses) - {"SCHEDULE", "PROPERTIES"})
+        if extra:
+            raise TaskDDLError(
+                "SUBMIT TASK takes SCHEDULE and PROPERTIES only; use CREATE TASK for "
+                + ", ".join(extra)
+            )
+        session_settings = [
+            *_submit_hint_settings(parsed),
+            *_session_properties(sql, clauses.pop("PROPERTIES", None)),
+        ]
+    elif "PROPERTIES" in clauses:
+        raise TaskDDLError(
+            "CREATE TASK takes no PROPERTIES; set session variables with a "
+            "/*+ SET_VAR(...) */ hint in the task's statement"
+        )
     _reject_out_of_order(clauses)
 
     after = _clause_after(sql, clauses.get("AFTER"))
@@ -352,6 +382,8 @@ def parse_create_task(
         handler = "sql_script"
     else:
         body = _native_body(sql, statement)
+        if session_settings:
+            body = _with_session_hint(sql, statement, session_settings)
 
     _validate_own_edges(bare_name, after, finalize)
 
@@ -372,7 +404,113 @@ def parse_create_task(
         runtime_version=runtime_version,
         packages=packages,
         when_tree=when_tree,
+        run_once=submitted and schedule_kind == "manual",
+        submitted=submitted,
     )
+
+
+def _submit_task_name() -> str:
+    """A name for ``SUBMIT TASK AS ...``, which the engine also names itself."""
+    import secrets
+    from datetime import UTC, datetime
+
+    return f"submit_task_{datetime.now(UTC):%Y%m%d%H%M%S}_{secrets.token_hex(3)}"
+
+
+_SESSION_VARIABLE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_HINT = re.compile(r"/\*\+\s*set_var\s*\((?P<body>.*)\)\s*\*/", re.IGNORECASE | re.DOTALL)
+
+
+def _session_setting(name: str, value: str) -> tuple[str, str]:
+    if not _SESSION_VARIABLE.fullmatch(name):
+        raise TaskDDLError("SUBMIT TASK session properties are written 'session.<variable>'")
+    return name, value
+
+
+def _session_properties(sql: str, clause) -> list[tuple[str, str]]:
+    """``PROPERTIES("session.<variable>" = "<value>")`` of ``SUBMIT TASK``."""
+    if clause is None:
+        return []
+    settings = []
+    for prop in _find_all(clause, "PropertyContext"):
+        key = _string_value(sql, prop.key)
+        value = _string_value(sql, prop.value)
+        if not key.lower().startswith("session."):
+            # The key is not echoed: a refused key may name a credential.
+            raise TaskDDLError(
+                "SUBMIT TASK takes session properties only, written 'session.<variable>'"
+            )
+        settings.append(_session_setting(key[len("session."):], value))
+    return settings
+
+
+def _submit_hint_settings(parsed) -> list[tuple[str, str]]:
+    """``SUBMIT /*+ SET_VAR(k = v, ...) */ TASK``: the hint between the keywords."""
+    first, second = parsed.visible_tokens[0], parsed.visible_tokens[1]
+    settings: list[tuple[str, str]] = []
+    for token in parsed.tokens.tokens[first.tokenIndex + 1 : second.tokenIndex]:
+        match = _HINT.fullmatch(token.text.strip())
+        if match is None:
+            continue
+        for item in match.group("body").split(","):
+            name, sep, value = item.partition("=")
+            if not sep:
+                raise TaskDDLError("A SET_VAR hint is written SET_VAR(<variable> = <value>, ...)")
+            settings.append(_session_setting(name.strip(), value.strip().strip("'\"")))
+    return settings
+
+
+def _with_session_hint(sql: str, statement, settings: list[tuple[str, str]]) -> str:
+    """The body with ``/*+ SET_VAR(...) */`` after its first keyword.
+
+    ``INSERT /*+ SET_VAR(...) */ INTO`` for an INSERT, and after the query's
+    ``SELECT`` for CREATE TABLE AS and CACHE SELECT: the engine applies a hint
+    there to the statement the task runs.
+    """
+    body_node = (
+        _find_first(statement, "CreateTableAsSelectStatementContext")
+        or _find_first(statement, "InsertStatementContext")
+        or _find_first(statement, "DataCacheSelectStatementContext")
+    )
+    body = _slice(sql, body_node)
+    if "/*+" in body:
+        raise TaskDDLError(
+            "Write SUBMIT TASK session settings either as PROPERTIES or as a hint in the "
+            "statement, not both"
+        )
+    if type(body_node).__name__ == "InsertStatementContext":
+        anchor = body_node.start
+    else:
+        anchor = next(
+            (
+                token
+                for token in _terminals(body_node)
+                if token.text.upper() == "SELECT"
+            ),
+            None,
+        )
+        if anchor is None:
+            raise TaskDDLError("SUBMIT TASK session properties need a SELECT in the statement")
+
+    def literal(value: str) -> str:
+        if re.fullmatch(r"-?\d+(\.\d+)?|true|false", value, re.IGNORECASE):
+            return value
+        return "'" + value.replace("\\", "\\\\").replace("'", "''") + "'"
+
+    hint = "/*+ SET_VAR(" + ", ".join(f"{k} = {literal(v)}" for k, v in settings) + ") */"
+    offset = anchor.stop + 1 - body_node.start.start
+    return body[:offset] + " " + hint + body[offset:]
+
+
+def _terminals(node) -> list:
+    """Every token under ``node``, in source order."""
+    found: list = []
+    for child in _children(node):
+        if type(child).__name__ == "TerminalNodeImpl":
+            found.append(child.getSymbol())
+        else:
+            found.extend(_terminals(child))
+    return found
 
 
 def _stream_when(clause, database: str | None) -> dict | None:
@@ -414,10 +552,10 @@ def _native_body(sql: str, statement) -> str:
     from app.common.sql_guard import redact_sql_credentials
 
     if redact_sql_credentials(body) != body:
-        raise TaskDDLError("CREATE TASK bodies must not persist credentials")
+        raise TaskDDLError("Task bodies (CREATE TASK, SUBMIT TASK) must not persist credentials")
     if _find_all(body_node, "StageReferenceContext"):
         raise TaskDDLError(
-            "CREATE TASK with @stage is unavailable for a single-statement task: native "
+            "A single-statement task (CREATE TASK, SUBMIT TASK) cannot read @stage: native "
             "task definitions would persist injected storage credentials. Wrap the "
             "statement in BEGIN ... END to run it through Nova instead"
         )
@@ -810,7 +948,10 @@ def _clause_schedule(sql: str, clause) -> tuple[str, str | None, str | None]:
         raise TaskDDLError("SCHEDULE requires a cron string or an EVERY(INTERVAL …) form")
     schedule_ctx = _find_first(clause, "TaskScheduleDescContext")
     if schedule_ctx is not None and schedule_ctx.START() is not None:
-        raise TaskDDLError("CREATE TASK SCHEDULE START is not supported by the Nova scheduler")
+        raise TaskDDLError(
+            "SCHEDULE START is not supported by the Nova scheduler; "
+            "use SCHEDULE EVERY(...) or a cron SCHEDULE"
+        )
     expression = _slice(sql, interval_ctx)
     try:
         parse_interval(expression)
@@ -871,6 +1012,8 @@ def _clause_kind(ctx) -> str:
             return "RUNTIME_VERSION"
         if name == "TaskPackagesClauseContext":
             return "PACKAGES"
+        if name == "PropertiesContext":
+            return "PROPERTIES"
     return "UNKNOWN"
 
 

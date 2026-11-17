@@ -23,6 +23,7 @@ HANDLERS = frozenset(
         "intelligence.outcome",
         "intelligence.newsroom",
         "agents.quality",
+        "viz.dashboard_export",
     }
 )
 
@@ -39,17 +40,18 @@ class InternalTaskConfiguration(Contract):
 
 
 async def run_once(
-    handler: str, config: InternalTaskConfiguration, user: dict, *, now=None
+    handler: str, config: InternalTaskConfiguration, user: dict, *, now=None, occurrence=None
 ) -> dict:
+    """``occurrence`` names the durable run a dashboard export saves its file for."""
     from app.core.metadata_actor import acting_as
     from app.modules.access_control.security_context import SecurityContext
 
     with acting_as(SecurityContext.from_session(user)):
-        return await _run_once(handler, config, user, now=now)
+        return await _run_once(handler, config, user, now=now, occurrence=occurrence)
 
 
 async def _run_once(
-    handler: str, config: InternalTaskConfiguration, user: dict, *, now=None
+    handler: str, config: InternalTaskConfiguration, user: dict, *, now=None, occurrence=None
 ) -> dict:
     if handler not in HANDLERS:
         raise ValueError("Unknown internal task handler")
@@ -62,6 +64,10 @@ async def _run_once(
         record_id = config.record_id or ""
         if handler != "intelligence.consolidate" and not record_id:
             raise ValueError("Internal work has no target record")
+        if handler == "viz.dashboard_export":
+            from app.modules.viz.scheduled_export import run as export_page
+
+            return await export_page(record_id, user, occurrence=occurrence)
         if handler == "agents.quality":
             from app.modules.agents.quality_monitoring import score_production
 
@@ -159,7 +165,28 @@ async def _run_once(
         return {"status": "complete", "extracted": extracted}
 
 
-async def run_internal_task(task, job, run_id, executor, repository) -> None:
+async def export_occurrence(job, repository):
+    """The durable occurrence a scheduled export run belongs to.
+
+    The graph run id is the occurrence's identity: the scheduler derives it from
+    the root task and due time and persists it before any node runs, and every
+    retry of the node (redelivery, an abandoned attempt taken again) keeps it.
+    The file is named from the due time the scheduler recorded, not the clock
+    at run time; a run that was not scheduled (Run now) uses its start time.
+    """
+    from app.modules.viz.scheduled_export import Occurrence
+
+    due = await repository.scheduled_occurrence_time(job.graph_run_id)
+    if due is None:
+        run = await repository.get_graph_run(job.graph_run_id)
+        due = (run or {}).get("started_at")
+    if not isinstance(due, datetime) or due.utcoffset() is None:
+        raise ValueError("The export run has no recorded time")
+    return Occurrence(key=str(job.graph_run_id), due=due)
+
+
+async def run_internal_task(task, job, run_id, executor, repository, renew=None) -> None:
+    """Run one allowlisted handler; ``renew`` renews the worker's node and graph leases."""
     handler = task.get("handler")
     if handler not in HANDLERS:
         raise ValueError("Unknown internal task handler")
@@ -184,14 +211,19 @@ async def run_internal_task(task, job, run_id, executor, repository) -> None:
                 or graph_run["state"] != "running"
             ):
                 raise CredentialUnavailable("Internal work no longer owns a running task")
-            await repository.mark_task_run_heartbeat(run_id)
-            await repository.mark_graph_run_heartbeat(job.graph_run_id)
+            if renew is not None:
+                await renew()
             await asyncio.sleep(10)
 
     async def execute():
         current = await repository.get_task(task["id"])
         if current is None or current["version"] != task["version"]:
             raise CredentialUnavailable("Task configuration changed before execution")
+        occurrence = (
+            await export_occurrence(job, repository)
+            if handler == "viz.dashboard_export"
+            else None
+        )
         if job.trigger_type == "manual":
             user = await session_store.get(job.execution_session_id)
             if not user:
@@ -200,7 +232,7 @@ async def run_internal_task(task, job, run_id, executor, repository) -> None:
             from app.modules.task_orchestration.access import verify_active_role
 
             await verify_active_role(user)
-            await run_once(handler, config, user)
+            await run_once(handler, config, user, occurrence=occurrence)
             return
         if handler == "intelligence.consolidate":
             raise CredentialUnavailable("Private learning cannot run through a service principal")
@@ -225,16 +257,20 @@ async def run_internal_task(task, job, run_id, executor, repository) -> None:
                 "session_id": f"task:{job.graph_run_id}",
             }
             with delegated_connection(bound, connection):
-                await run_once(handler, config, user)
+                await run_once(handler, config, user, occurrence=occurrence)
 
     async with asyncio.timeout(120):
-        async with asyncio.TaskGroup() as group:
-            keeper = group.create_task(heartbeat())
+        try:
+            async with asyncio.TaskGroup() as group:
+                keeper = group.create_task(heartbeat())
 
-            async def finish():
-                try:
-                    await execute()
-                finally:
-                    keeper.cancel()
+                async def finish():
+                    try:
+                        await execute()
+                    finally:
+                        keeper.cancel()
 
-            group.create_task(finish())
+                group.create_task(finish())
+        except BaseExceptionGroup as failed:
+            # Record the handler's own error, not the task group around it.
+            raise failed.exceptions[0] from None

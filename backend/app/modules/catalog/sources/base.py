@@ -146,6 +146,15 @@ class CatalogSource(ABC):
     system_schemas: ClassVar[frozenset[str]] = frozenset()
     #: Seconds a metadata read may wait to connect.
     connect_timeout: ClassVar[int] = 15
+    #: Whether a connection of this type backs a catalog. A stream source
+    #: (Kafka) is used by loads instead and never becomes a catalog.
+    provides_catalog: ClassVar[bool] = True
+    #: What the connection credential is called, for messages.
+    credential_label: ClassVar[str] = "username and password"
+
+    def requires_credentials(self, endpoint: Endpoint) -> bool:
+        """Whether a connection to ``endpoint`` needs a stored credential."""
+        return True
 
     # ── Endpoint ─────────────────────────────────────────────────
 
@@ -219,6 +228,10 @@ class CatalogSource(ABC):
             "driver_class": self.driver.driver_class,
         }
 
+    def check_properties(self, properties: dict[str, str]) -> dict[str, str]:
+        """Engine catalog properties a caller may add or alter on this source."""
+        return check_jdbc_properties(properties)
+
     def build_catalog_sql(
         self,
         name: str,
@@ -229,8 +242,10 @@ class CatalogSource(ABC):
         properties: dict[str, str] | None = None,
     ) -> str:
         """``CREATE EXTERNAL CATALOG`` for the engine. Carries the password."""
+        if not self.provides_catalog:
+            raise CatalogError(f"A {self.label} connection does not back a catalog")
         params = self.engine_properties(endpoint, credentials)
-        params.update(check_jdbc_properties(properties or {}))
+        params.update(self.check_properties(properties or {}))
         clause = f"COMMENT {engine_literal(comment)} " if comment else ""
         values = ", ".join(
             f"{engine_literal(key)} = {engine_literal(value)}" for key, value in params.items()

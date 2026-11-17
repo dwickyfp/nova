@@ -185,7 +185,10 @@ class AssistantTool(Protocol):
     statement is not read-only); a stub tool may satisfy it with a plain
     attribute, which mypy accepts as a property implementation.
     ``preview`` produces the redacted SQL shown in the approval card — Stage C
-    owns making that redaction real.
+    owns making that redaction real. A tool may also define an async
+    ``consent_preview(invocation, context) -> str`` that describes the change
+    from current state, read as the caller; the loop shows it instead, bounded,
+    and keeps ``preview`` when it fails.
     """
 
     name: str

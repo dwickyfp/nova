@@ -1,0 +1,25 @@
+UP017 [*] Use `datetime.UTC` alias
+  --> tests/unit/test_sql_frontend_parameters.py:40:59
+   |
+38 |         ("decimal", Decimal("0.00000000000000000000000000000000000001")),
+39 |         ("date", date(2024, 2, 29)),
+40 |         ("timestamp", datetime(2024, 11, 3, 6, 30, tzinfo=timezone.utc)),
+   |                                                           ^^^^^^^^^^^^
+41 |     ],
+42 | )
+   |
+help: Convert to `datetime.UTC` alias
+
+UP017 [*] Use `datetime.UTC` alias
+   --> tests/unit/test_sql_frontend_parameters.py:174:57
+    |
+173 | def test_timezone_conversion_preserves_instant_at_dst_fold():
+174 |     binding = bound(datetime(2024, 11, 3, 6, 30, tzinfo=timezone.utc), "timestamp")
+    |                                                         ^^^^^^^^^^^^
+175 |     sql = "SELECT :value AS moment"
+176 |     assert driver_parameters(sql, binding, "America/New_York")[1] == (datetime(2024, 11, 3, 1, 30),)
+    |
+help: Convert to `datetime.UTC` alias
+
+Found 2 errors.
+[*] 2 fixable with the `--fix` option.

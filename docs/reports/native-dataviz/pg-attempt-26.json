@@ -1,0 +1,27 @@
+{
+  "command": [
+    "uv",
+    "run",
+    "pytest",
+    "tests/integration/test_metadata_viz.py::test_dashboard_dataset_registry_protects_unpublished_draft",
+    "--junitxml=/Users/dwickyferiansyahputra/.local/share/nova/native-dataviz-evidence-originals-20261114/pg-attempt-26.xml"
+  ],
+  "returncode": 1,
+  "seconds": 7.4,
+  "topology": "Existing user-authorized isolated PG17 TLS fixture on 55433; no StarRocks fixture",
+  "suites": [
+    {
+      "tests": "1",
+      "failures": "1",
+      "errors": "0",
+      "skipped": "0",
+      "time": "3.951"
+    }
+  ],
+  "failures": [
+    {
+      "test": "test_dashboard_dataset_registry_protects_unpublished_draft",
+      "message": "Failed: DID NOT RAISE MetadataIntegrityViolation"
+    }
+  ]
+}

@@ -25,7 +25,7 @@ from app.sql_frontend.stages import stage_view
         ("COPY INTO @stage1.output.parquet FROM target", "StageAwareStatement"),
         ("INSERT INTO @stage1.output.parquet SELECT * FROM target", "StageAwareStatement"),
         ("CREATE TASK db.default.t AS INSERT INTO sink SELECT 1", "CreateTaskStatement"),
-        ("SUBMIT TASK t AS INSERT INTO sink SELECT 1", "NativeStatement"),
+        ("SUBMIT TASK t AS INSERT INTO sink SELECT 1", "CreateTaskStatement"),
         (
             "CREATE ML_MODEL m TYPE = REGRESSION TARGET = 'y' INPUT = (SELECT x,y FROM t)",
             "CreateMLModelStatement",

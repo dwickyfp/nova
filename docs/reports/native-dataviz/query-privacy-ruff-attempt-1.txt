@@ -1,0 +1,45 @@
+E501 Line too long (106 > 100)
+   --> app/modules/query/repository.py:519:101
+    |
+517 |             if parameters is not None or private_query:
+518 |                 raise StarRocksError(
+519 |                     "Dataset query execution failed" if private_query else "Bound query execution failed",
+    |                                                                                                     ^^^^^^
+520 |                     engine_code=_starrocks_error(e).engine_code,
+521 |                 ) from None
+    |
+
+E501 Line too long (101 > 100)
+  --> tests/unit/test_query_provenance.py:43:101
+   |
+42 | @pytest.mark.parametrize("failed", [False, True])
+43 | async def test_private_execution_is_correlated_without_autopilot_source_capture(monkeypatch, failed):
+   |                                                                                                     ^
+44 |     request_profile, observe = Mock(), Mock()
+45 |     monkeypatch.setattr(collector, "request_profile", request_profile)
+   |
+
+SIM117 Use a single `with` statement with multiple contexts instead of nested `with` statements
+  --> tests/unit/test_query_provenance.py:74:5
+   |
+72 |       from app.core.exceptions import StarRocksError
+73 |
+74 | /     with dataset_query(DatasetQuery(uuid4(), "inspect")):
+75 | |         with pytest.raises(StarRocksError, match="managed session"):
+   | |____________________________________________________________________^
+76 |               await QueryRepository().execute_as_user(
+77 |                   "SELECT 1", "alice", "unused", role="ANALYST", connected=Mock(),
+   |
+help: Combine `with` statements
+
+E501 Line too long (105 > 100)
+   --> tests/unit/test_query_provenance.py:109:101
+    |
+107 |     finally:
+108 |         EXECUTION.reset(token)
+109 |     assert statements[:3] == ["SET ROLE ANALYST", "SET enable_profile = false", "SELECT private_formula"]
+    |                                                                                                     ^^^^^
+110 |     assert identity.profile_enabled is False
+    |
+
+Found 8 errors (4 fixed, 4 remaining).

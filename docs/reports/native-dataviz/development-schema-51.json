@@ -1,0 +1,21 @@
+{
+  "baseline_commit": "1ee12694e0ecb6ecfd8135965943be08f5195967",
+  "schema_before": 50,
+  "schema_after": 51,
+  "migration_sha256": "f51ba0af44fcb944163d90cb63e74527a746f298078c45823cf212bcb9367505",
+  "migration_immutable": true,
+  "metadata_epoch_preserved": true,
+  "existing_tables_count_checked": 192,
+  "existing_counts_preserved": true,
+  "backup": {
+    "bytes": 189202333,
+    "sha256": "2b26971038f24e6a4b67291a2d9b265038765ce0266244754122770360625895",
+    "toc_verified": true
+  },
+  "fixture_evidence": "pg-attempt-17.xml",
+  "fixture_result": "118 passed",
+  "recorded_at": "2026-11-13T21:37:19.811717+00:00",
+  "runtime_started_pid": 47189,
+  "readiness": "passed",
+  "readiness_evidence": "development-readiness-schema-51-attempt-1.txt"
+}

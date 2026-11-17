@@ -67,7 +67,7 @@ describe("process rail", () => {
 
     await view.rerender(<ProcessRail steps={[plan, { ...query, status: "done" }]} running={false} />);
     await expect.element(toggle).toHaveAttribute("data-state", "closed");
-    await expect.element(toggle).toHaveTextContent(/Planned the run, Ran query_execute/);
+    await expect.element(toggle).toHaveTextContent(/Planned the run, Ran a SQL query/);
     expect(document.querySelectorAll(".animate-spin")).toHaveLength(0);
   });
 

@@ -12,6 +12,7 @@ from app.common.audit import write_audit_log
 from app.common.identifiers import check_identifier
 from app.common.nova_system import init_task_orchestration
 from app.core.database import db
+from app.core.metadata_process import close_process_metadata, open_process_metadata
 from app.integrations.ranger.client import ranger_client
 from app.integrations.ranger.schemas import RangerRole, RangerRoleMember
 from app.modules.task_orchestration.repository import task_orchestration_repository as repo
@@ -61,9 +62,12 @@ async def main() -> None:
     parser.add_argument("--actor", required=True)
     args = parser.parse_args()
     await db.init_system_pool()
+    # Bindings live in the metadata store; only its web workload may write them.
+    metadata = await open_process_metadata("web")
     try:
         await bind(args.role, args.account, args.actor)
     finally:
+        await close_process_metadata(metadata, "web")
         await db.close_system_pool()
 
 

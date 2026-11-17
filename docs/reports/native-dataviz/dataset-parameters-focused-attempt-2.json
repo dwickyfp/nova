@@ -1,0 +1,54 @@
+[
+  {
+    "file": "dataset-parameters-ruff-attempt-3.txt",
+    "command": [
+      "uv",
+      "run",
+      "ruff",
+      "check",
+      "app/modules/viz/contracts/parameters.py",
+      "app/modules/viz/contracts/datasets.py",
+      "app/modules/viz/contracts/authoring.py",
+      "app/modules/viz/parameters.py",
+      "app/modules/viz/dataset_service.py",
+      "app/sql_frontend/parameters.py",
+      "app/sql_frontend/read_queries.py",
+      "tests/unit/test_native_viz_parameters.py",
+      "tests/unit/test_native_viz_datasets.py",
+      "tests/unit/test_sql_frontend_parameters.py",
+      "tests/unit/test_sql_frontend_query_schema.py"
+    ],
+    "exit_code": 0,
+    "seconds": 1.84
+  },
+  {
+    "file": "dataset-parameters-mypy-attempt-1.txt",
+    "command": [
+      "uv",
+      "run",
+      "mypy",
+      "app",
+      "--no-error-summary"
+    ],
+    "exit_code": 1,
+    "seconds": 10.95
+  },
+  {
+    "file": "dataset-parameters-unit-attempt-2.txt",
+    "command": [
+      "uv",
+      "run",
+      "pytest",
+      "tests/unit/test_native_viz_parameters.py",
+      "tests/unit/test_native_viz_datasets.py",
+      "tests/unit/test_native_viz_contracts.py",
+      "tests/unit/test_native_viz_bindings.py",
+      "tests/unit/test_native_viz_router.py",
+      "tests/unit/test_sql_frontend_parameters.py",
+      "tests/unit/test_sql_frontend_query_schema.py",
+      "-q"
+    ],
+    "exit_code": 0,
+    "seconds": 9.2
+  }
+]

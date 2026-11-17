@@ -1,0 +1,28 @@
+{
+  "attempt": 3,
+  "date": "2026-11-16",
+  "scope": "Live Neva, Add to Dataviz reuse and titles, export, drill-down, pivot, conditional formatting, governed viewers",
+  "environment": {
+    "frontend": "Vite dev server on the original checkout",
+    "backend": "host dev processes on the original checkout; development Compose stack (StarRocks 4.1.4 patched FE, Ranger, PG17)",
+    "identities": ["nova_admin (browser session, ACCOUNTADMIN)", "alice (marketing, regional_manager, finance)", "bob (marketing)"],
+    "model": "the workspace's default LLM provider (live, metered)"
+  },
+  "checks": [
+    {"id": "UI3-01", "area": "Neva", "check": "Which region has the highest revenue, and by how much does it lead the second?", "attempts": 5, "result": "PASS on attempt 5", "evidence": "Jakarta 979,755,000; Surabaya 803,480,000; lead 176,275,000 from a verified calculation step"},
+    {"id": "UI3-02", "area": "Neva", "check": "Add a bar chart of units sold by channel, after approval", "result": "PASS", "evidence": "Online 6,329, Retail 4,987, Distributor 3,941; dashboard reloaded at the new version"},
+    {"id": "UI3-03", "area": "Neva", "check": "Remove that chart again, after approval", "result": "PASS"},
+    {"id": "UI3-04", "area": "Neva", "check": "Add a shaded pivot of units by region and channel with totals", "result": "PASS", "evidence": "Bandung 750+1,071+867 = 2,688; channel totals 3,941 / 6,329 / 4,987"},
+    {"id": "UI3-05", "area": "Add to Dataviz", "check": "Same answer added twice to one dashboard", "result": "PASS", "evidence": "Second add answered 'This chart is already on that dashboard'; no new dataset or chart"},
+    {"id": "UI3-06", "area": "Add to Dataviz", "check": "Short chart title from fields", "result": "PASS", "evidence": "'Sell out units by stock date' instead of the question text"},
+    {"id": "UI3-07", "area": "Export", "check": "Chart CSV", "result": "PASS", "evidence": "UTF-8 BOM; 'Stock date,Sum of sell out units' then 311587 / 287618 / 310371"},
+    {"id": "UI3-08", "area": "Export", "check": "Chart PNG", "result": "PASS", "evidence": "Titled image with padding on the card colour"},
+    {"id": "UI3-09", "area": "Export", "check": "Page Excel workbook", "result": "PASS", "evidence": "One sheet per chart, numbers stored as numbers, valid unique sheet names"},
+    {"id": "UI3-10", "area": "Export", "check": "Print or save as PDF", "result": "PASS after redesign", "evidence": "On-screen print CSS collapsed GridStack/ECharts (two failed attempts retained); replaced by a printable report with charts redrawn in the light theme at 2x"},
+    {"id": "UI3-11", "area": "Drill-down", "check": "Revenue by region > Jakarta by channel", "result": "PASS", "evidence": "257,205,000 + 407,690,000 + 314,860,000 = 979,755,000; back arrow returns"},
+    {"id": "UI3-12", "area": "Pivot", "check": "Pivot with colour scale from the inspector", "result": "PASS", "evidence": "Jan 2026 row 192+525+151+237+329 = 1,434 total"},
+    {"id": "UI3-13", "area": "Layout", "check": "Close Neva after the narrow one-column view", "result": "FAIL then fixed", "evidence": "Widgets stayed one column wide; the canvas now drives the column count and restores the saved layout"},
+    {"id": "UI3-14", "area": "Governed viewers", "check": "Steward-published dataset read by alice, bob and alice with another role", "result": "FAIL x7 then PASS", "evidence": "row-filters-live-attempt-8.json"}
+  ],
+  "test_data": "Test charts and the pivot were removed from 'Demo sales overview'; the shared workspace and dataset used for governed viewers were deleted; 'Sell-out by month' keeps three test charts"
+}

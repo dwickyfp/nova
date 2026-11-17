@@ -1,0 +1,18 @@
+[
+  {
+    "file": "backend-unit-attempt-7.txt",
+    "command": [
+      "uv",
+      "run",
+      "pytest",
+      "tests/unit",
+      "--cov=app",
+      "--cov-branch",
+      "--cov-report=term-missing",
+      "--cov-report=xml:/Users/dwickyferiansyahputra/Public/Research/nova/docs/reports/native-dataviz/backend-coverage-attempt-7.xml",
+      "--junitxml=/Users/dwickyferiansyahputra/Public/Research/nova/docs/reports/native-dataviz/backend-unit-attempt-7.xml"
+    ],
+    "returncode": 1,
+    "seconds": 695.54
+  }
+]

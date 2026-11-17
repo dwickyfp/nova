@@ -1,0 +1,51 @@
+{
+  "started_at": "2026-11-17T14:02:31.288674+00:00",
+  "run": "d2d668",
+  "dashboard_rows": 100000,
+  "hardware": {
+    "os": "macOS-27.0.1-arm64-arm-64bit",
+    "cpu": "Apple M3",
+    "cores": 8,
+    "memory_bytes": "17179869184",
+    "engine": "StarRocks in Docker on this host",
+    "servers": "dev.sh (uvicorn --reload)"
+  },
+  "result": "FAIL",
+  "cleanup": "REMOVED",
+  "fixture_seconds": 15.5,
+  "error_type": "AssertionError",
+  "error": "POST datasets returned 403",
+  "steps": [
+    {
+      "step": "fixture: CREATE DATABASE ndv_perf_d2d668",
+      "passed": true
+    },
+    {
+      "step": "fixture: CREATE TABLE ndv_perf_d2d668.orders (id BIGINT, region S",
+      "passed": true
+    },
+    {
+      "step": "fixture: INSERT INTO ndv_perf_d2d668.orders SELECT generate_serie",
+      "passed": true
+    },
+    {
+      "step": "fixture: CREATE TABLE ndv_perf_d2d668.orders_1m (id BIGINT, regio",
+      "passed": true
+    },
+    {
+      "step": "fixture: INSERT INTO ndv_perf_d2d668.orders_1m SELECT generate_se",
+      "passed": true
+    },
+    {
+      "step": "fixture: orders holds 100000 orders",
+      "passed": true,
+      "rows": 100000
+    },
+    {
+      "step": "fixture: orders_1m holds 1000000 orders",
+      "passed": true,
+      "rows": 1000000
+    }
+  ],
+  "finished_at": "2026-11-17T14:04:02.094260+00:00"
+}

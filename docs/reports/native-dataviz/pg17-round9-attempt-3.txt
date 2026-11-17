@@ -1,0 +1,6 @@
+## tests/integration/test_metadata_viz_export.py
+......                                                                   [100%]
+6 passed in 26.01s
+## tests/integration/test_metadata_workspace_files.py
+........................................                                 [100%]
+40 passed in 80.81s (0:01:20)

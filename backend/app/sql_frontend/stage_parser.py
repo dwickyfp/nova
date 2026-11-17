@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 _FILE_EXTENSIONS = frozenset(
     {
@@ -41,6 +42,9 @@ class StageReference:
     end: int  # Exclusive offset in original_text
     access: str | None = None
     has_alias: bool = False
+    #: An unload target (``INSERT INTO FILES``, ``INTO OUTFILE``, ``EXPORT``):
+    #: the span covers the whole clause, rendered again at execution.
+    unload: Any = None
 
 
 def _decimal_atom_parts(atom) -> list[str]:

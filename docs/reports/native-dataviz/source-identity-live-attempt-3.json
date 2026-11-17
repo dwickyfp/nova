@@ -1,0 +1,47 @@
+{
+  "result": "FAIL",
+  "owned_database": "ndv_src_3f559cca2393",
+  "owned_roles": [
+    "ndv_read_3f559cca2393",
+    "ndv_none_3f559cca2393"
+  ],
+  "steps": [
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "QA attributes unchanged",
+      "passed": true
+    },
+    {
+      "check": "QA grants unchanged",
+      "passed": true
+    }
+  ],
+  "cleanup_errors": [],
+  "error_type": "SemanticError",
+  "error_location": [
+    {
+      "file": "starrocks.py",
+      "line": 122,
+      "function": "get_source_schema"
+    },
+    {
+      "file": "starrocks.py",
+      "line": 101,
+      "function": "get_source_identity"
+    },
+    {
+      "file": "starrocks.py",
+      "line": 46,
+      "function": "_query"
+    }
+  ],
+  "engine_version": "4.1.4",
+  "ranger_service": "nova_starrocks"
+}

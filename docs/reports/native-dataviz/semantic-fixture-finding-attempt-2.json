@@ -1,0 +1,6 @@
+{
+  "result": "FIXTURE_CORRECTED",
+  "evidence": "semantic-dataset-live-attempt-2.json",
+  "finding": "The fixture omitted the declared dimension kind for its numeric ID. Shared SemanticCompiler correctly rejected Unknown dimension. Fixture now declares kind=dimension; compiler validation is unchanged.",
+  "cleanup": "Owned view, dataset and analytical fixture cleanup verified in the retained attempt."
+}

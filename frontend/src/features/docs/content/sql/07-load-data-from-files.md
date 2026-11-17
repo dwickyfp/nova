@@ -70,6 +70,24 @@ and `status` became long text columns. When types matter, create the table
 first with the types you want and load it with `COPY INTO` or
 `INSERT ... SELECT`.
 
+## Load many files as one job
+
+For many files or tables loaded all or nothing, column mapping and filters,
+JSON files, or a tolerance for bad rows, start a Broker Load job:
+
+```sql
+LOAD LABEL label_8
+(
+    DATA INFILE("@compat_w4_stage/w4/all/*")
+    INTO TABLE table1
+    COLUMNS TERMINATED BY ","
+    FORMAT AS "CSV"
+);
+```
+
+Every clause and property is described in
+[Load files with Broker Load](/docs/sql/load-files-with-broker-load).
+
 ## Check what was loaded
 
 ```sql
@@ -83,18 +101,38 @@ query.
 
 - In the worksheet, click **Export** above a result to download it as an
   Excel file.
+- Write results to files in a stage with `INSERT INTO FILES`,
+  `SELECT ... INTO OUTFILE`, `EXPORT TABLE`, or `COPY INTO @stage`. Your active
+  role needs write access to the stage, and the worksheet asks you to confirm.
+  For example:
+
+```sql
+INSERT INTO FILES(
+    "path" = "@compat_unload_w2/daily/",
+    "format" = "parquet",
+    "compression" = "zstd"
+)
+SELECT * FROM sales_records;
+```
+
+  Every form and option is described in
+  [Unload data to a stage](/docs/sql/unload-data-to-stages).
 - From a MySQL-compatible tool, run the query and save the output there. See
   [Connect with a MySQL client](/docs/sql/mysql-clients).
 
 ## Limits and errors
 
-- **Writing to a stage is blocked in the worksheet.** `COPY INTO @stage ...`,
-  `INSERT INTO @stage ...`, `INTO OUTFILE`, and `INSERT INTO FILES(...)` are
-  refused with messages such as
-  `INTO @stage exports query results and is not read-only.`
 - `COPY INTO` matches columns by position, not by name. If the file has extra
   columns or a different order, use `INSERT ... SELECT` with column names.
-- JSON files cannot be read. See
-  [Query files in a stage](/docs/sql/query-files-in-stages#limits-and-errors).
+- JSON files cannot be read with `SELECT`, `COPY INTO` or `INSERT ... SELECT`.
+  See [Query files in a stage](/docs/sql/query-files-in-stages#limits-and-errors).
+  Load them with [Broker Load](/docs/sql/load-files-with-broker-load#json).
 - `No files were found matching the pattern(s) or path(s)` means the path is
   wrong or the folder is empty. Check it with `LIST @stage`.
+- Writing to a stage (`COPY INTO @stage`, `INSERT INTO @stage`,
+  `INSERT INTO FILES`, `INTO OUTFILE`, `EXPORT TABLE`) works only into a
+  stage, never a storage address, and only from the worksheet after you
+  confirm. `Stage access denied` means your active role may not write to that
+  stage. MySQL clients get messages such as
+  `INTO @stage exports query results and is not read-only.` See
+  [Unload data to a stage](/docs/sql/unload-data-to-stages#limits-and-errors).

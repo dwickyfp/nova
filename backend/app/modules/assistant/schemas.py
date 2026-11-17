@@ -11,7 +11,8 @@ must never place a credential-bearing statement here.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Annotated, Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
 
@@ -205,19 +206,66 @@ class UiMapMetricInput(BaseModel):
 
 
 
-class DatavizTurnInput(BaseModel):
-    """The Dataviz page a Studio turn is asked from (docs/arch-19-studio-dataviz.md).
+class NativeViewFilterInput(BaseModel):
+    """One filter or chart selection applied on screen: a hint for Neva's answers."""
 
-    Untrusted hints: the server reads the dashboard and its filter state again
-    through the caller's own BI session before any tool uses them.
+    model_config = ConfigDict(extra="forbid")
+
+    source: Literal["filter", "selection"]
+    label: str = Field(min_length=1, max_length=128)
+    text: str = Field(default="", max_length=256)
+    dataset_id: UUID | None = None
+    field_id: str | None = Field(default=None, min_length=1, max_length=256)
+    values: list[
+        Annotated[str, Field(max_length=256)] | int | float | bool | None
+    ] = Field(default_factory=list, max_length=20)
+
+
+class NativeDashboardTurnInput(BaseModel):
+    """The native Dataviz dashboard on screen: an untrusted hint.
+
+    Native tools read the dashboard again as the caller before using it; the
+    revision is what the page shows, so a change made meanwhile is detected.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    dashboard_id: int | None = Field(default=None, ge=1)
-    native_filters_key: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_\-]{1,128}$")
+    dashboard_id: UUID
+    revision: int = Field(ge=1, le=9_007_199_254_740_991, strict=True)
+    page_id: UUID | None = None
+    selected_widget_id: UUID | None = None
+    #: Filters and chart selections applied on the page, so answers match the screen.
+    view_filters: list[NativeViewFilterInput] = Field(default_factory=list, max_length=32)
+
+
+class DatavizTurnInput(BaseModel):
+    """The Dataviz page a Studio turn is asked from (docs/arch-19-studio-dataviz.md).
+
+    Untrusted hints: native tools read the dashboard again as the caller before
+    using it. ``dashboard_id``, ``native_filters_key``, ``edit_state`` and
+    ``path`` described the retired BI dashboards; they are accepted from older
+    clients and ignored.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    dashboard_id: int | str | None = Field(default=None, union_mode="left_to_right")
+    native_filters_key: str | None = Field(default=None, max_length=128)
     edit_state: Literal["clean", "dirty", "unknown"] = "unknown"
     path: str | None = Field(default=None, max_length=512)
+    native_dashboard: NativeDashboardTurnInput | None = None
+
+    @field_validator("dashboard_id")
+    @classmethod
+    def bounded(cls, value: int | str | None) -> int | str | None:
+        if isinstance(value, str) and len(value) > 128:
+            raise ValueError("dashboard_id is too long")
+        return value
+
+    def turn_hints(self) -> dict[str, Any]:
+        """What a turn keeps: only the native dashboard on screen."""
+        return {"native_dashboard": self.native_dashboard.model_dump(mode="json")
+                if self.native_dashboard is not None else None}
 
 
 class AgentMessageRequest(MessageRequest):

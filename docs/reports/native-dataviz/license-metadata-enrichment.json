@@ -1,0 +1,53 @@
+{
+  "basis": "Installed distribution notices or exact upstream release license; resolves missing registry metadata only",
+  "components": [
+    {
+      "ecosystem": "pypi",
+      "name": "lupa",
+      "version": "2.8",
+      "license": "MIT",
+      "evidence": "backend/.venv/lib/python3.11/site-packages/lupa-2.8.dist-info/licenses/LICENSE.txt",
+      "sha256": "957afe4913dfc469fd60541d847a581c5bddd6ba0ccb72390ed78c75837768a1"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "tiktoken",
+      "version": "0.14.0",
+      "license": "MIT",
+      "evidence": "backend/.venv/lib/python3.11/site-packages/tiktoken-0.14.0.dist-info/licenses/LICENSE",
+      "sha256": "418cb499b436128d653d79941333a5437b7be2ea9213dcc2f04d15d5d2c51d86"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "antlr4-python3-runtime",
+      "version": "4.13.2",
+      "license": "BSD-3-Clause",
+      "evidence": "https://github.com/antlr/antlr4/blob/4.13.2/LICENSE.txt",
+      "sha256": "3db1fb3ee79a4b4f9918fc4d0f6133bf18a3cf787f126cd22f8aa9b862281c0c"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript-eslint/eslint-plugin",
+      "version": "8.70.0",
+      "license": "MIT",
+      "evidence": "frontend/node_modules/.pnpm/@typescript-eslint+eslint-plugin@8.70.0_@typescript-eslint+parser@8.70.0_eslint@10.10.0_bf101dcbef6cc7d685a531ee7a6ea06f/node_modules/@typescript-eslint/eslint-plugin/package.json",
+      "sha256": "3d3c0a43de87bc027362b4036f220f9c157eb865ff9ffde64a01e8e4d97a90d0"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript-eslint/parser",
+      "version": "8.70.0",
+      "license": "MIT",
+      "evidence": "frontend/node_modules/.pnpm/@typescript-eslint+parser@8.70.0_eslint@10.10.0_jiti@2.7.0_supports-color@7.2.0__supports-color@7.2.0_typescript@6.0.3/node_modules/@typescript-eslint/parser/package.json",
+      "sha256": "9014359bd3559258a208da9861d3b40881b5e2632681c4c4656c16e0d6048322"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript-eslint/typescript-estree",
+      "version": "8.70.0",
+      "license": "MIT",
+      "evidence": "frontend/node_modules/.pnpm/@typescript-eslint+typescript-estree@8.70.0_typescript@6.0.3/node_modules/@typescript-eslint/typescript-estree/package.json",
+      "sha256": "f0c73a40722c78e2df3bb27e91bb8cfa8549c67112fab6585c244a47a576b028"
+    }
+  ]
+}

@@ -58,6 +58,7 @@ import {
   type ProposedRewrite,
 } from "@/features/assistant/query-attach";
 import { ChartVisualization } from "./chart-visualization";
+import { VerticalResult } from "./vertical-result";
 import { NewItemButton } from "./explorer/new-item-button";
 import { PERSONAL, type WorkspaceSpace } from "./explorer/api";
 import { useExplorerController, type Place } from "./explorer/controller";
@@ -109,7 +110,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { QueryHistory } from "./query-history";
-import { splitSqlStatements, statementAtOffset } from "./sql-statements";
+import {
+  hasTransactionControl,
+  splitSqlStatements,
+  statementAtOffset,
+} from "./sql-statements";
 import {
   editorTextForNeva,
   replaceAttachedSql,
@@ -1841,6 +1846,11 @@ export function WorkspacesPage() {
       editorContentRef.current || activeTab.content,
     );
     if (!statements.length) return;
+    if (hasTransactionControl(statements)) {
+      // A transaction lasts one run: send the whole script together.
+      await runQuery(false, editorContentRef.current || activeTab.content);
+      return;
+    }
     const tabId = activeTab.id;
     let context = {
       database: activeTab.database || null,
@@ -3501,76 +3511,85 @@ const QueryResults = memo(function QueryResults({
       {warningsBanner}
       {truncatedBanner}
       <div className="min-h-0 flex-1 overflow-auto">
-        <table className="w-full border-separate border-spacing-0 text-sm">
-          <thead className="sticky top-0 z-10 bg-background">
-            <tr>
-              <th className="w-10 border-b border-r border-border px-1 py-1.5 text-center text-xs text-muted-foreground font-normal">
-                #
-              </th>
-              {queryResult.columns.map((column, colIndex) => {
-                const sample = queryResult.rows[0]?.[colIndex];
-                const typeIcon =
-                  typeof sample === "number"
-                    ? "#"
-                    : typeof sample === "boolean"
-                      ? "⊙"
-                      : typeof sample === "string"
-                        ? String(sample).match(/^\d{4}-\d{2}-\d{2}/)
-                          ? "◷"
-                          : String(sample).match(/^[\d.,]+$/)
-                            ? "#"
-                            : "A"
-                        : sample === null
-                          ? "∅"
-                          : "?";
-                const isSorted = sortCol === colIndex;
-                return (
-                  <th
-                    key={column}
-                    className="cursor-pointer select-none border-b border-r border-border px-2 py-1.5 text-left font-normal whitespace-nowrap hover:bg-muted/50"
-                    onClick={() => handleSort(colIndex)}
-                  >
-                    <span className="mr-1 text-muted-foreground">
-                      {typeIcon}
-                    </span>
-                    {column}
-                    {isSorted && (
-                      <span className="ml-1 text-primary">
-                        {sortDir === "asc" ? "↑" : "↓"}
+        {queryResult.vertical ? (
+          <VerticalResult
+            columns={queryResult.columns}
+            rows={pageRows}
+            firstRowNumber={startIdx + 1}
+            onCellContextMenu={handleCellContext}
+          />
+        ) : (
+          <table className="w-full border-separate border-spacing-0 text-sm">
+            <thead className="sticky top-0 z-10 bg-background">
+              <tr>
+                <th className="w-10 border-b border-r border-border px-1 py-1.5 text-center text-xs text-muted-foreground font-normal">
+                  #
+                </th>
+                {queryResult.columns.map((column, colIndex) => {
+                  const sample = queryResult.rows[0]?.[colIndex];
+                  const typeIcon =
+                    typeof sample === "number"
+                      ? "#"
+                      : typeof sample === "boolean"
+                        ? "⊙"
+                        : typeof sample === "string"
+                          ? String(sample).match(/^\d{4}-\d{2}-\d{2}/)
+                            ? "◷"
+                            : String(sample).match(/^[\d.,]+$/)
+                              ? "#"
+                              : "A"
+                          : sample === null
+                            ? "∅"
+                            : "?";
+                  const isSorted = sortCol === colIndex;
+                  return (
+                    <th
+                      key={column}
+                      className="cursor-pointer select-none border-b border-r border-border px-2 py-1.5 text-left font-normal whitespace-nowrap hover:bg-muted/50"
+                      onClick={() => handleSort(colIndex)}
+                    >
+                      <span className="mr-1 text-muted-foreground">
+                        {typeIcon}
                       </span>
-                    )}
-                  </th>
-                );
-              })}
-            </tr>
-          </thead>
-          <tbody>
-            {pageRows.map((row, rowIndex) => (
-              <tr key={rowIndex} className="hover:bg-muted/30">
-                <td className="border-b border-r border-border px-1 py-1 text-center text-xs text-muted-foreground">
-                  {startIdx + rowIndex + 1}
-                </td>
-                {row.map((cell, cellIndex) => (
-                  <td
-                    key={`${rowIndex}-${cellIndex}`}
-                    className="border-b border-r border-border px-2 py-1 whitespace-nowrap"
-                    onContextMenu={(e) =>
-                      handleCellContext(e, startIdx + rowIndex, cellIndex)
-                    }
-                  >
-                    {cell === null ? (
-                      <span className="font-mono text-xs text-muted-foreground">
-                        NULL
-                      </span>
-                    ) : (
-                      String(cell)
-                    )}
-                  </td>
-                ))}
+                      {column}
+                      {isSorted && (
+                        <span className="ml-1 text-primary">
+                          {sortDir === "asc" ? "↑" : "↓"}
+                        </span>
+                      )}
+                    </th>
+                  );
+                })}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {pageRows.map((row, rowIndex) => (
+                <tr key={rowIndex} className="hover:bg-muted/30">
+                  <td className="border-b border-r border-border px-1 py-1 text-center text-xs text-muted-foreground">
+                    {startIdx + rowIndex + 1}
+                  </td>
+                  {row.map((cell, cellIndex) => (
+                    <td
+                      key={`${rowIndex}-${cellIndex}`}
+                      className="border-b border-r border-border px-2 py-1 whitespace-nowrap"
+                      onContextMenu={(e) =>
+                        handleCellContext(e, startIdx + rowIndex, cellIndex)
+                      }
+                    >
+                      {cell === null ? (
+                        <span className="font-mono text-xs text-muted-foreground">
+                          NULL
+                        </span>
+                      ) : (
+                        String(cell)
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
       {/* Pagination footer */}
       <div className="flex items-center justify-between border-t border-border px-3 py-1.5 text-xs text-muted-foreground">

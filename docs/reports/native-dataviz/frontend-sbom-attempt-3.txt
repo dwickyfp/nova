@@ -1,0 +1,8 @@
+NOTE: Secure mode only restricts cdxgen from performing certain activities such as package installation. It does not provide security guarantees in the presence of malicious code.
+Secure mode requires permission-related arguments. These can be passed as CLI arguments directly to the node runtime or set the NODE_OPTIONS environment variable as shown below.
+export NODE_OPTIONS='--permission --allow-fs-read="/tmp/*" --allow-fs-read="/Users/dwickyferiansyahputra/Public/Research/nova/frontend/*" --allow-fs-write="/tmp/*" --allow-fs-write="../docs/reports/native-dataviz/frontend-sbom.cdx.json" --allow-child-process'
+TIP: Run cdxgen using the secure container image 'ghcr.io/cdxgen/cdxgen-secure' for best experience.
+✔ Preparing environment  0.0s
+✔ Generating BOM  739 components  16.9s
+✔ Post-processing BOM  0.2s
+✔ Validating BOM  valid (js)  0.1s

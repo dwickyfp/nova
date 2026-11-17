@@ -331,8 +331,8 @@ class TestFrontend:
             )
         with pytest.raises(SemanticError, match="CREATE TASK"):
             ast_builders.build(parse_statement("SUBMIT TASK x AS $$ INSERT INTO b SELECT 1 $$"))
-        native = ast_builders.build(parse_statement("SUBMIT TASK x AS INSERT INTO b SELECT 1"))
-        assert isinstance(native, ast.NativeStatement)
+        submitted = ast_builders.build(parse_statement("SUBMIT TASK x AS INSERT INTO b SELECT 1"))
+        assert isinstance(submitted, ast.CreateTaskStatement)
 
 
 # ── EXECUTE TASK resolution and enqueue ────────────────────────────────
@@ -922,7 +922,7 @@ class TestPythonRunner:
         )
         assert seen["session"].active_role == "analyst"
         assert seen["binding"].notebook  # the proxy treats it as a sandbox connection
-        with pytest.raises(data_tokens.BiCredentialError):
+        with pytest.raises(data_tokens.DataTokenError):
             await data_tokens.verify_binding(seen["binding"])
 
     async def test_python_error_fails_with_traceback_and_output(self, py_env):
@@ -1184,19 +1184,8 @@ class TestTokensAndSandboxes:
         )
         assert 0 < await redis.ttl(data_tokens.DELEGATED_PREFIX + session_id.split(":")[1]) <= 60
         await data_tokens.end_delegated_session(session_id)
-        with pytest.raises(data_tokens.BiCredentialError):
+        with pytest.raises(data_tokens.DataTokenError):
             await data_tokens.resolve_session(session_id)
-        await redis.aclose()
-
-    async def test_superset_delegation_still_uses_its_ttl(self, monkeypatch):
-        from app.modules.superset import tokens as superset_tokens
-
-        redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
-        monkeypatch.setattr(session_store, "_redis", redis)
-        monkeypatch.setattr(settings, "SUPERSET_DELEGATION_TTL_SECONDS", 120)
-        session_id = await superset_tokens.create_delegated_session("ana", "bi_role")
-        key = data_tokens.DELEGATED_PREFIX + session_id.split(":")[1]
-        assert 60 < await redis.ttl(key) <= 120
         await redis.aclose()
 
     def test_task_purpose_is_a_sandbox_purpose(self):

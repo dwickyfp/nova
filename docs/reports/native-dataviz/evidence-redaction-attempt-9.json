@@ -1,0 +1,22 @@
+{
+  "recorded_at": "2026-11-14T17:45:16.438300+00:00",
+  "scope": "Previously retained failed PG regression logs; original diagnostic outcomes preserved, exact configured secrets removed from repository copies",
+  "result": "REDACTED",
+  "artifacts": [
+    {
+      "file": "docs/reports/native-dataviz/pg-regression-attempt-1.txt.gz",
+      "replacements": 301,
+      "original_sha256": "fe7e3bc788d36f341d5aeb0f68a1ed03f046d65899f3cf81d117fbcd713c66f7",
+      "sanitized_sha256": "e6940da283e021fffb4348ab19619e23147dd8291f4b1a7c9f7cc22f2995d904",
+      "private_original": "/Users/dwickyferiansyahputra/.local/share/nova/native-dataviz-evidence-originals-20261114/redaction-9/pg-regression-attempt-1.txt.gz"
+    },
+    {
+      "file": "docs/reports/native-dataviz/pg-regression-attempt-1.xml.gz",
+      "replacements": 301,
+      "original_sha256": "217d98b3c0c0bea14ef2b1936f0e546cead1f628ba8721e1e2ad221e5d63f643",
+      "sanitized_sha256": "11fdf3faffb97954ae0123b400b0035ceb3ade0f732ae5305cf86f1320fa3cf5",
+      "private_original": "/Users/dwickyferiansyahputra/.local/share/nova/native-dataviz-evidence-originals-20261114/redaction-9/pg-regression-attempt-1.xml.gz"
+    }
+  ],
+  "git_delivery": "No task commit or push has occurred"
+}

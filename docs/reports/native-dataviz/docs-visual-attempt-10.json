@@ -1,0 +1,18 @@
+{
+  "recorded_at": "2026-11-13T22:07:17.409065+00:00",
+  "result": "PASS",
+  "path": "/docs/dataviz/native-documents#drafts-and-publications",
+  "surface": "Existing authenticated Chrome Nova QA tab via native app UI",
+  "viewport": [
+    1920,
+    1080
+  ],
+  "theme": "dark",
+  "observed": [
+    "Dataset query history explanation visible",
+    "Dataset ID, operation and preview revision described",
+    "Source query omitted from new history entries",
+    "No clipping in updated paragraphs"
+  ],
+  "image_evidence": "Screenshot observed in conversation; no local image artifact claimed"
+}

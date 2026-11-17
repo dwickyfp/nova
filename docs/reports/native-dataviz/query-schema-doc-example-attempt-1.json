@@ -1,0 +1,26 @@
+{
+  "result": "PASS",
+  "sql": "EXPLAIN SCHEMA\nSELECT CAST(NULL AS BIGINT) AS optional_id,\n       CAST('12.50' AS DECIMAL(10,2)) AS amount;",
+  "columns": [
+    "ordinal",
+    "name",
+    "physical_type",
+    "nullable"
+  ],
+  "rows": [
+    [
+      "1",
+      "optional_id",
+      "bigint(20)",
+      "YES"
+    ],
+    [
+      "2",
+      "amount",
+      "decimal(10, 2)",
+      "YES"
+    ]
+  ],
+  "nova_execution_id": "3fb0271d-f106-4b96-83dc-a6cd3115a60b",
+  "logout_status": 200
+}

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Download,
   FileCode,
   FileCode2,
   FileSpreadsheet,
@@ -51,7 +52,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { isEditableName, isNotebookName } from "../notebook/names";
 import type { WorkspaceEntry } from "../types";
-import { canEditSpace, workspaceApi, type WorkspaceSpace } from "./api";
+import { canEditSpace, downloadEntry, workspaceApi, type WorkspaceSpace } from "./api";
 import type { ExplorerController, Place } from "./controller";
 import { ShareDialog } from "./share-dialog";
 import { childrenOf, filterEntries, moveTargets, subtree } from "./tree-data";
@@ -280,7 +281,12 @@ export function WorkspaceExplorer({
     if (entry.entry_type === "folder") {
       return [...createItems({ space, parentPath: entry.path }), { kind: "separator" }, ...changes];
     }
-    return changes;
+    return [
+      { kind: "item", label: "Download", icon: Download,
+        onSelect: () => void downloadEntry(entry).catch((error: Error) => toast.error(error.message)) },
+      { kind: "separator" },
+      ...changes,
+    ];
   };
 
   const renderEntries = (space: WorkspaceSpace, parentPath: string): ReactNode =>

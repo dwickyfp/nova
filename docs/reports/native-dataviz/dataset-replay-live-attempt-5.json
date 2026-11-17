@@ -1,0 +1,654 @@
+{
+  "started_at": "2026-11-14T17:46:16.609855+00:00",
+  "resource_id": "fd280157-e093-4758-9627-78b5e628c5a2",
+  "scope": "view dataset API, real StarRocks/Ranger and PG17 metadata",
+  "result": "PASS",
+  "cleanup": "SOFT_DELETED",
+  "steps": [
+    {
+      "check": "QA login",
+      "passed": true
+    },
+    {
+      "check": "QA admitted",
+      "passed": true
+    },
+    {
+      "check": "non-admin role",
+      "passed": true
+    },
+    {
+      "check": "QA login",
+      "passed": true
+    },
+    {
+      "check": "QA admitted",
+      "passed": true
+    },
+    {
+      "check": "non-admin role",
+      "passed": true
+    },
+    {
+      "request": "inactive fixture role cannot inspect source",
+      "status": 403,
+      "expected_status": 403
+    },
+    {
+      "check": "inactive fixture role cannot inspect source",
+      "passed": true
+    },
+    {
+      "check": "source refusal has no private name",
+      "passed": true
+    },
+    {
+      "request": "inactive role cannot create source dataset",
+      "status": 403,
+      "expected_status": 403
+    },
+    {
+      "check": "inactive role cannot create source dataset",
+      "passed": true
+    },
+    {
+      "check": "create refusal has no private name",
+      "passed": true
+    },
+    {
+      "request": "activate fixture role",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "activate fixture role",
+      "passed": true
+    },
+    {
+      "check": "exact active role",
+      "passed": true
+    },
+    {
+      "request": "denied create left no dataset",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "denied create left no dataset",
+      "passed": true
+    },
+    {
+      "request": "inspect",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "inspect",
+      "passed": true
+    },
+    {
+      "check": "schema without data",
+      "passed": true
+    },
+    {
+      "check": "physical identity",
+      "passed": true
+    },
+    {
+      "check": "authoritative fields",
+      "passed": true
+    },
+    {
+      "check": "no browser cache",
+      "passed": true
+    },
+    {
+      "request": "stale binding refused",
+      "status": 409,
+      "expected_status": 409
+    },
+    {
+      "check": "stale binding refused",
+      "passed": true
+    },
+    {
+      "request": "spoofed schema refused",
+      "status": 422,
+      "expected_status": 422
+    },
+    {
+      "check": "spoofed schema refused",
+      "passed": true
+    },
+    {
+      "request": "create",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "create",
+      "passed": true
+    },
+    {
+      "request": "replay",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "replay",
+      "passed": true
+    },
+    {
+      "check": "same receipt",
+      "passed": true
+    },
+    {
+      "request": "create owned dataset dashboard",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "create owned dataset dashboard",
+      "passed": true
+    },
+    {
+      "request": "attach dashboard dataset",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "attach dashboard dataset",
+      "passed": true
+    },
+    {
+      "request": "replay dataset attachment",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "replay dataset attachment",
+      "passed": true
+    },
+    {
+      "check": "dataset attachment receipt stable",
+      "passed": true
+    },
+    {
+      "request": "read attached dataset",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "read attached dataset",
+      "passed": true
+    },
+    {
+      "check": "dashboard pins dataset without creating widgets",
+      "passed": true
+    },
+    {
+      "request": "dashboard protects registered dataset",
+      "status": 409,
+      "expected_status": 409
+    },
+    {
+      "check": "dashboard protects registered dataset",
+      "passed": true
+    },
+    {
+      "request": "inspect new dashboard dataset",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "inspect new dashboard dataset",
+      "passed": true
+    },
+    {
+      "request": "create dataset in dashboard atomically",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "create dataset in dashboard atomically",
+      "passed": true
+    },
+    {
+      "request": "replay atomic dataset creation",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "replay atomic dataset creation",
+      "passed": true
+    },
+    {
+      "check": "atomic dataset creation receipt stable",
+      "passed": true
+    },
+    {
+      "request": "read newly attached dataset",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "read newly attached dataset",
+      "passed": true
+    },
+    {
+      "check": "atomic dataset creation retains server fields",
+      "passed": true
+    },
+    {
+      "request": "read dashboard after dataset creation",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "read dashboard after dataset creation",
+      "passed": true
+    },
+    {
+      "check": "atomic dataset creation appends one reference",
+      "passed": true
+    },
+    {
+      "request": "read pinned dashboard dataset index",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "read pinned dashboard dataset index",
+      "passed": true
+    },
+    {
+      "check": "dataset index retains old dashboard references and titles",
+      "passed": true
+    },
+    {
+      "request": "edit attached dataset independently",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "edit attached dataset independently",
+      "passed": true
+    },
+    {
+      "request": "read current dashboard dataset index",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "read current dashboard dataset index",
+      "passed": true
+    },
+    {
+      "check": "dataset index appends only confirmed creation",
+      "passed": true
+    },
+    {
+      "request": "preview pinned dataset after later draft edit",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "preview pinned dataset after later draft edit",
+      "passed": true
+    },
+    {
+      "check": "preview retains pinned fields and revision",
+      "passed": true
+    },
+    {
+      "request": "read immutable dashboard revision",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "read immutable dashboard revision",
+      "passed": true
+    },
+    {
+      "check": "historical read does not substitute latest draft",
+      "passed": true
+    },
+    {
+      "request": "historical read requires draft editing scope",
+      "status": 422,
+      "expected_status": 422
+    },
+    {
+      "check": "historical read requires draft editing scope",
+      "passed": true
+    },
+    {
+      "request": "delete owned dataset dashboard",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "delete owned dataset dashboard",
+      "passed": true
+    },
+    {
+      "request": "delete owned dashboard dataset",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "delete owned dashboard dataset",
+      "passed": true
+    },
+    {
+      "request": "draft",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "draft",
+      "passed": true
+    },
+    {
+      "check": "stored server schema",
+      "passed": true
+    },
+    {
+      "request": "personal isolation",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "personal isolation",
+      "passed": true
+    },
+    {
+      "request": "preview draft",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "preview draft",
+      "passed": true
+    },
+    {
+      "check": "bounded typed preview without fabricated total",
+      "passed": true
+    },
+    {
+      "check": "preview cache disabled",
+      "passed": true
+    },
+    {
+      "request": "preview isolation",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "preview isolation",
+      "passed": true
+    },
+    {
+      "request": "preview missing revision",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "preview missing revision",
+      "passed": true
+    },
+    {
+      "request": "preview bounded input",
+      "status": 422,
+      "expected_status": 422
+    },
+    {
+      "check": "preview bounded input",
+      "passed": true
+    },
+    {
+      "request": "publish",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "publish",
+      "passed": true
+    },
+    {
+      "request": "read publication",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "read publication",
+      "passed": true
+    },
+    {
+      "check": "publication retains public schema without source definitions",
+      "passed": true
+    },
+    {
+      "request": "publication isolation",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "publication isolation",
+      "passed": true
+    },
+    {
+      "request": "preview publication",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "preview publication",
+      "passed": true
+    },
+    {
+      "request": "create replay after source replacement",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "create replay after source replacement",
+      "passed": true
+    },
+    {
+      "check": "source replacement preserves create receipt",
+      "passed": true
+    },
+    {
+      "request": "changed create intent refused after replacement",
+      "status": 409,
+      "expected_status": 409
+    },
+    {
+      "check": "changed create intent refused after replacement",
+      "passed": true
+    },
+    {
+      "request": "replaced source refuses published preview",
+      "status": 409,
+      "expected_status": 409
+    },
+    {
+      "check": "replaced source refuses published preview",
+      "passed": true
+    },
+    {
+      "request": "inspect edited source",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "inspect edited source",
+      "passed": true
+    },
+    {
+      "check": "replacement has a distinct physical identity",
+      "passed": true
+    },
+    {
+      "check": "replacement does not silently reuse old field bindings",
+      "passed": true
+    },
+    {
+      "request": "source edit isolation",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "source edit isolation",
+      "passed": true
+    },
+    {
+      "request": "explicit source edit",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "explicit source edit",
+      "passed": true
+    },
+    {
+      "request": "source edit replay",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "source edit replay",
+      "passed": true
+    },
+    {
+      "check": "source edit receipt is stable",
+      "passed": true
+    },
+    {
+      "request": "source edit stale revision",
+      "status": 409,
+      "expected_status": 409
+    },
+    {
+      "check": "source edit stale revision",
+      "passed": true
+    },
+    {
+      "request": "source edit changed idempotent intent",
+      "status": 409,
+      "expected_status": 409
+    },
+    {
+      "check": "source edit changed idempotent intent",
+      "passed": true
+    },
+    {
+      "request": "edited draft",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "edited draft",
+      "passed": true
+    },
+    {
+      "check": "source edit creates a second server-derived revision",
+      "passed": true
+    },
+    {
+      "request": "publication after edit",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "publication after edit",
+      "passed": true
+    },
+    {
+      "check": "source edit preserves original publication",
+      "passed": true
+    },
+    {
+      "request": "edited source preview",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "edited source preview",
+      "passed": true
+    },
+    {
+      "request": "edit replay after source replacement",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "edit replay after source replacement",
+      "passed": true
+    },
+    {
+      "check": "source replacement preserves edit receipt",
+      "passed": true
+    },
+    {
+      "request": "new edit refuses stale source",
+      "status": 409,
+      "expected_status": 409
+    },
+    {
+      "check": "new edit refuses stale source",
+      "passed": true
+    },
+    {
+      "request": "replay keeps revision",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "replay keeps revision",
+      "passed": true
+    },
+    {
+      "check": "replay adds no revision",
+      "passed": true
+    },
+    {
+      "request": "delete owned dataset",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "delete owned dataset",
+      "passed": true
+    },
+    {
+      "request": "deleted dataset hidden",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "deleted dataset hidden",
+      "passed": true
+    },
+    {
+      "request": "logout",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "logout",
+      "passed": true
+    },
+    {
+      "request": "logout",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "logout",
+      "passed": true
+    }
+  ],
+  "finished_at": "2026-11-14T17:46:36.380983+00:00"
+}

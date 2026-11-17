@@ -1,0 +1,84 @@
+{
+  "result": "FAIL",
+  "principal": "alice",
+  "steps": [
+    {
+      "check": "governed parameter execution succeeded",
+      "passed": true
+    },
+    {
+      "check": "execution identity and engine correlation retained",
+      "passed": true
+    },
+    {
+      "check": "Ranger row filter applies to the active principal",
+      "passed": true
+    },
+    {
+      "check": "governed parameter execution succeeded",
+      "passed": true
+    },
+    {
+      "check": "execution identity and engine correlation retained",
+      "passed": true
+    },
+    {
+      "check": "list binding cannot broaden Ranger visibility",
+      "passed": true
+    },
+    {
+      "check": "governed parameter execution succeeded",
+      "passed": true
+    },
+    {
+      "check": "execution identity and engine correlation retained",
+      "passed": true
+    },
+    {
+      "check": "injection-shaped text remains a value",
+      "passed": true
+    },
+    {
+      "check": "result metadata contains parameter names only",
+      "passed": true
+    },
+    {
+      "check": "governed parameter execution succeeded",
+      "passed": true
+    },
+    {
+      "check": "execution identity and engine correlation retained",
+      "passed": true
+    },
+    {
+      "check": "int64 decimal date timestamp and boolean retain their values",
+      "passed": true
+    },
+    {
+      "check": "governed parameter execution succeeded",
+      "passed": true
+    },
+    {
+      "check": "execution identity and engine correlation retained",
+      "passed": true
+    },
+    {
+      "check": "column mask remains applied",
+      "passed": false
+    }
+  ],
+  "error_type": "AssertionError",
+  "error_location": [
+    {
+      "file": "verify_native_parameters_live.py",
+      "line": 102,
+      "function": "run"
+    },
+    {
+      "file": "verify_native_parameters_live.py",
+      "line": 40,
+      "function": "check"
+    }
+  ],
+  "scope": "Direct QueryService with existing caller credentials and active roles; read-only data. Includes Nova history checks. Engine audit/profile redaction is not tested."
+}

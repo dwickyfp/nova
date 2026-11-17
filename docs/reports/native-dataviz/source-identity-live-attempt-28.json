@@ -1,0 +1,81 @@
+{
+  "result": "FAIL",
+  "owned_database": "ndv_src_3695c12f07c6",
+  "owned_roles": [
+    "ndv_read_3695c12f07c6",
+    "ndv_none_3695c12f07c6"
+  ],
+  "steps": [
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "table and view have distinct physical IDs",
+      "passed": true
+    },
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "empty source has authoritative decimal schema",
+      "passed": true
+    },
+    {
+      "check": "stable source schema",
+      "passed": true
+    },
+    {
+      "check": "governed fixture SQL succeeded",
+      "passed": true
+    },
+    {
+      "check": "semantic dataset uses published governed model",
+      "passed": false
+    },
+    {
+      "check": "QA attributes unchanged",
+      "passed": true
+    },
+    {
+      "check": "QA grants unchanged",
+      "passed": true
+    }
+  ],
+  "cleanup_errors": [],
+  "synthetic_view_schema": [
+    {
+      "name": "id",
+      "physical_type": "bigint(20)",
+      "nullable": false
+    },
+    {
+      "name": "amount",
+      "physical_type": "decimal(38, 12)",
+      "nullable": true
+    }
+  ],
+  "error_type": "AssertionError",
+  "error_location": [
+    {
+      "file": "verify_native_source_identity_live.py",
+      "line": 381,
+      "function": "run"
+    },
+    {
+      "file": "verify_native_source_identity_live.py",
+      "line": 75,
+      "function": "check"
+    }
+  ],
+  "engine_version": "4.1.4",
+  "limits": [
+    "ALTER VIEW RENAME is absent from the pinned grammar; table rename and view drop/recreate are verified separately"
+  ],
+  "ranger_service": "nova_starrocks"
+}
