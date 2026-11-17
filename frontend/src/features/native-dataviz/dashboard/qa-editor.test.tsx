@@ -611,6 +611,8 @@ describe('QA filters and interactions', { timeout: 30_000 }, () => {
     const published = clone(definition)
     const screen = await mount()
     await expect.element(screen.getByTestId('kpi-value')).toHaveTextContent('15,257')
+    // NDV-ACL-020: interact without edit offers no way into the draft.
+    await expect.element(screen.getByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
     const { chart } = await echartsIn(BAR_WIDGET)
     const barQueries = () => queries().filter(call => (call.body?.dimensions as unknown[] | undefined)?.length)
     await expect.poll(() => barQueries().length).toBe(1)

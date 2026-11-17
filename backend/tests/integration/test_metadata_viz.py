@@ -1433,6 +1433,46 @@ async def test_expired_grant_and_inactive_role_do_not_count_as_document_access(v
         assert (await cursor.fetchone())["n"] == 0
 
 
+async def test_a_grant_stops_counting_the_moment_it_expires(viz):
+    """NDV-ACL-018: the same viewer, the same open session, before and after expiry."""
+    document, _, _ = await create(viz)
+    await grant(viz, document.dashboard_id, {
+        "subject_type": "role", "subject_id": "VIEWER", "permissions": ["view"],
+        "expires_at": (datetime.now(UTC) + timedelta(seconds=2)).isoformat(),
+    })
+    viewer = session("viewer", active="VIEWER")
+    count = "SELECT count(*) AS n FROM nova_meta.viz_resources"
+    async with viz.transaction(viewer) as (_, connection):
+        assert (await (await connection.execute(count)).fetchone())["n"] == 1
+    await asyncio.sleep(2.5)
+    # No sharing change happened: the database compares the expiry with each statement's time.
+    async with viz.transaction(viewer) as (_, connection):
+        assert (await (await connection.execute(count)).fetchone())["n"] == 0
+
+
+async def test_interact_permission_reads_but_never_changes_the_draft(viz):
+    """NDV-ACL-020: filters and drill are viewer state; any draft change is refused."""
+    document, _, _ = await create(viz)
+    identity = document.dashboard_id
+    await grant(viz, identity, {"subject_type": "role", "subject_id": "VIEWER",
+                                "permissions": ["view", "interact"]})
+    async with viz.transaction() as (repo, _):
+        await repo.publish(identity, PublicationRequest(operation_id=uuid4(), expected_revision=1))
+    viewer = session("viewer", active="VIEWER")
+    async with viz.transaction(viewer) as (repo, _):
+        assert await repo.permissions(identity) == ["view", "interact"]
+        assert (await repo.read(identity))["definition"].title == document.title
+    with pytest.raises((MetadataPermissionDenied, NovaException)):
+        async with viz.transaction(viewer) as (repo, _):
+            await repo.replace(document.model_copy(update={"title": "Viewer edit"}),
+                               operation_id=uuid4(), expected_revision=1)
+    assert await viz.inspect(
+        "SELECT draft_revision FROM nova_meta.viz_resources WHERE resource_id=%s", (identity,),
+    ) == [{"draft_revision": 1}]
+    async with viz.transaction() as (repo, _):
+        assert (await repo.read(identity, draft=True))["definition"].title == document.title
+
+
 async def test_direct_revision_update_and_owner_spoof_are_denied(viz):
     document, _, _ = await create(viz)
     with pytest.raises(MetadataPermissionDenied):
