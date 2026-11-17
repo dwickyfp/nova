@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils'
 import type { ChartDefinition, ConditionalFormat, DatasetField, DatasetReferenceSummary } from '../contracts'
 import { useDatasetDefinition } from './chart-data'
 import {
-  AGGREGATION_LABELS, canCalculate, defaultAggregation, fromChart, initialState, isNumeric, isTemporal, kindOf, missing,
+  AGGREGATION_LABELS, canCalculate, canCombineOther, defaultAggregation, fromChart, initialState, isNumeric, isTemporal, kindOf, missing,
   switchVisual, toChart, VISUALS, type BuilderDimension, type BuilderMeasure, type BuilderState, type Visual,
 } from './builder-model'
 import { CALCULATION_LABELS, type CalculationKind } from './calculations'
@@ -385,6 +385,8 @@ function Builder({ datasets, chart, initialVisual, saving, error, onSave, fields
             <Input type='number' aria-label='Maximum categories' min={2} max={100} value={state.maxCategories} className='h-9 w-20'
               onChange={event => set({ maxCategories: Math.max(2, Math.min(100, Number(event.target.value) || 12)) })} />
           </div>
+          {state.visual === 'pie' && canCombineOther(state.measures[0]?.aggregation)
+            && <Toggle label='Combine the rest into Other' checked={state.otherSlice} onChange={otherSlice => set({ otherSlice })} />}
         </Section>}
         {kind === 'table' && <Section title='Totals'>
           <Toggle label={state.visual === 'pivot' ? 'Show totals' : 'Show a total row'} checked={state.grandTotal} onChange={grandTotal => set({ grandTotal })} />

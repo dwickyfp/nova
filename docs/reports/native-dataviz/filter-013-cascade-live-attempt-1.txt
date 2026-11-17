@@ -1,0 +1,19 @@
+NDV-FILTER-013 live check, attempt 1 (2026-11-17, local dev stack, Vite 5173, StarRocks 29030)
+Principal: nova_admin (ACCOUNTADMIN), dashboard "Demo sales overview" draft, dataset Orders (DEMO_SALES.orders).
+
+Steps (Playwright, system Chrome, script kept in the session scratchpad):
+1. Edit > Edit filters > Add "product" as Multiple values, Values follow = Region, Apply filters.
+2. Opened the new filter with no Region value: Coffee Beans 1kg, Cold Brew Pack, Espresso Machine, Grinder, Paper Filters.
+3. Chose Region = Bandung, opened the product filter again.
+   Option request sent to the governed query path carried the parent predicate:
+   {"type":"predicate","op":"eq","field":{"dataset_revision":1,"field_id":"f6627f4b-..."},"values":[{"type":"string","value":"Bandung"}],"stage":"row"}
+   Returned list: the same five products.
+4. Ground truth from StarRocks as the same principal:
+   SELECT region, COUNT(DISTINCT product) FROM DEMO_SALES.orders GROUP BY region
+   -> Bandung 5, Jakarta 5, Makassar 5, Medan 5, Surabaya 5 (every region sells every product,
+   so the narrowed list is correctly unchanged).
+5. Restored the draft: removed the added filter and applied; filter bar back to "Region All / Order date Any time".
+
+Builder screenshots (light/dark 1440, light 390) were reviewed for layout; not committed.
+Narrowing that changes the list is covered by the browser test with a fixed response
+(qa-filter-bar.test.tsx, NDV-FILTER-013) and the model tests (qa-filters.test.ts).

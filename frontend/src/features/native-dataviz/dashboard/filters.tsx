@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 import type {
-  DashboardDefinition, DatasetField, DatasetReferenceSummary,
+  DashboardDefinition, DatasetField, DatasetReferenceSummary, FilterTree,
 } from '../contracts'
 import { nativeDocuments } from '../documents'
 import { cellLabel, type Cell } from '../charts/chart-query'
@@ -20,30 +20,36 @@ import { useDatasetDefinition } from '../charts/chart-data'
 import { capacityDelay, capacityRetry, queuedQuery } from '../charts/query-queue'
 import { isNumeric, isTemporal } from '../charts/builder-model'
 
-import { predicate, type CrossFilter, type FilterDefinition, type FilterValue } from './filter-model'
+import { optionContext, predicate, targetBinding, type CrossFilter, type FilterDefinition, type FilterValue } from './filter-model'
 
 export type { CrossFilter, FilterDefinition, FilterValue }
 type Scalar = NonNullable<Cell>
+type Expression = FilterTree['expression']
 
-function useFilterOptions(filter: FilterDefinition, search: string, enabled: boolean, draft: boolean) {
+function useFilterOptions(filter: FilterDefinition, search: string, enabled: boolean, draft: boolean, narrowing?: Expression) {
   const epoch = useAuthStore(state => state.securityEpoch)
   const field = filter.field
+  const parts = [
+    ...(narrowing ? [narrowing] : []),
+    ...(field && search.trim() ? [predicate(field, 'like_literal', [{ type: 'string', value: search.trim() }])] : []),
+  ]
+  const expression = parts.length > 1 ? { type: 'and', children: parts } as Expression : parts[0]
   return useQuery({
-    queryKey: ['native-dataviz', 'filter-options', epoch, field?.dataset_id, field?.dataset_revision, field?.field_id, search, draft],
+    queryKey: ['native-dataviz', 'filter-options', epoch, field?.dataset_id, field?.dataset_revision, field?.field_id, search, draft, JSON.stringify(narrowing ?? null)],
     queryFn: ({ signal }) => queuedQuery(() => nativeDocuments(epoch).queryDataset(field!.dataset_id, {
       revision: field!.dataset_revision, draft, dimensions: [{ field_id: field!.field_id }], limit: 200,
-      ...(search.trim() ? { filters: { expression: predicate(field!, 'like_literal', [{ type: 'string', value: search.trim() }]) } } : {}),
+      ...(expression ? { filters: { expression } } : {}),
     }), signal),
     enabled: enabled && Boolean(field),
     staleTime: 60_000, retry: capacityRetry, retryDelay: capacityDelay,
   })
 }
 
-function MembersControl({ filter, value, onChange, field, draft }: ControlProps) {
+function MembersControl({ filter, value, onChange, field, draft, narrowing }: ControlProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const text = field?.logical_type === 'string'
-  const options = useFilterOptions(filter, text ? search : '', open, draft)
+  const options = useFilterOptions(filter, text ? search : '', open, draft, narrowing)
   const selected = value?.kind === 'members' ? value.values : []
   const key = (cell: Scalar | null) => cell === null ? 'null' : `${cell.type}:${String(cell.value)}`
   const single = filter.kind === 'single_value'
@@ -87,7 +93,7 @@ function MembersControl({ filter, value, onChange, field, draft }: ControlProps)
           : options.isError ? <p role='alert' className='p-3 text-sm text-muted-foreground'>Values are unavailable with your current role.</p>
             : !options.data.rows.length && !missing.length ? <p className='p-3 text-sm text-muted-foreground'>No values found.</p>
               : <>
-                {missing.map(cell => option(cell, 'Not in the data now'))}
+                {missing.map(cell => option(cell, narrowing ? 'Not in the current selection' : 'Not in the data now'))}
                 {options.data.rows.map(row => option(row[0]))}
               </>}
         {options.data?.truncated && <p className='px-2 py-1 text-xs text-muted-foreground'>Showing the first 200 values. Search to narrow the list.</p>}
@@ -183,11 +189,14 @@ function BooleanControl({ filter, value, onChange }: ControlProps) {
   </Select>
 }
 
+const NO_PARENT = 'none'
 const CHIP = 'h-8 max-w-72 justify-between gap-2 px-3 font-normal'
 
 type ControlProps = {
   filter: FilterDefinition; value: FilterValue | undefined; onChange: (value: FilterValue | undefined) => void
   field?: DatasetField; draft: boolean
+  /** Parent filter values a cascading filter's options must match. */
+  narrowing?: Expression
 }
 
 function FilterControl(props: Omit<ControlProps, 'field'>) {
@@ -225,7 +234,7 @@ export function FilterBar({ definition, values, onChange, crossFilters, onClearC
       <span className='text-muted-foreground'>{filter.title}</span> {describeFilterValue(values[filter.filter_id])}
     </span>)
       : filters.map(filter => <FilterControl key={filter.filter_id} filter={filter} value={values[filter.filter_id]} draft={draft}
-        onChange={value => onChange(filter.filter_id, value)} />)}
+        narrowing={optionContext(definition, filter, values)} onChange={value => onChange(filter.filter_id, value)} />)}
     {crossFilters.map((cross, index) => <Badge key={`${cross.source_widget_id}:${index}`} variant='secondary' className='h-8 gap-1 rounded-md pr-1 pl-3 font-normal'>
       <span className='text-muted-foreground'>Selected</span> {cross.label}
       <Button variant='ghost' size='icon' className='size-6' aria-label={`Clear selection ${cross.label}`} onClick={() => onClearCross(index)}><X /></Button>
@@ -266,18 +275,28 @@ export function FilterBuilder({ open, onOpenChange, definition, datasets, saving
   const field = fields.find(item => item.field_id === fieldId)
   const [kind, setKind] = useState<FilterDefinition['kind']>('multi_value')
   const [title, setTitle] = useState('')
+  const [parentId, setParentId] = useState(NO_PARENT)
   const usable = useMemo(() => KINDS.filter(item => item.fits(field)), [field])
+  // A list filter can follow another filter that reaches the same dataset.
+  const listKind = kind === 'multi_value' || kind === 'single_value'
+  const parents = dataset_id ? items.filter(item => item.field
+    && targetBinding(item, { dataset_id, dataset_revision: Number(revision) }) !== null) : []
+  const titleOf = (identity: string) => items.find(item => item.filter_id === identity)?.title
   const add = () => {
     if (!field || !dataset_id) return
     const binding = { dataset_id, dataset_revision: Number(revision), field_id: field.field_id }
     const next: FilterDefinition = {
       filter_id: crypto.randomUUID(), title: title.trim() || field.name, kind, field: binding,
-      scope: { kind: 'global' }, mappings: [], defaults: [], allow_all: true, include_null: false, searchable: true, depends_on: [],
+      scope: { kind: 'global' }, mappings: [], defaults: [], allow_all: true, include_null: false, searchable: true,
+      depends_on: listKind && parentId !== NO_PARENT ? [parentId] : [],
       ...(kind === 'relative_date' ? { relative: { unit: 'month', count: 1, mode: 'to_date', timezone: 'UTC', week_start: 'iso', fiscal_start_month: 1 } } : {}),
     } as FilterDefinition
     setItems([...items, next])
-    setFieldId(''); setTitle('')
+    setFieldId(''); setTitle(''); setParentId(NO_PARENT)
   }
+  // Removing a parent leaves its children as ordinary filters.
+  const remove = (identity: string) => setItems(items.filter(item => item.filter_id !== identity).map(item =>
+    item.depends_on?.includes(identity) ? { ...item, depends_on: item.depends_on.filter(other => other !== identity) } : item))
   return <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className='max-h-[90vh] overflow-y-auto sm:max-w-lg'>
       <DialogHeader>
@@ -286,8 +305,9 @@ export function FilterBuilder({ open, onOpenChange, definition, datasets, saving
       </DialogHeader>
       <ul aria-label='Current filters' className='space-y-1'>
         {items.map(item => <li key={item.filter_id} className='flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm'>
-          <span className='min-w-0 truncate'>{item.title} <span className='text-muted-foreground'>· {KINDS.find(k => k.value === item.kind)?.label ?? item.kind}</span></span>
-          <Button variant='ghost' size='icon' className='size-8' aria-label={`Remove ${item.title}`} onClick={() => setItems(items.filter(other => other.filter_id !== item.filter_id))}><X /></Button>
+          <span className='min-w-0 truncate'>{item.title} <span className='text-muted-foreground'>· {KINDS.find(k => k.value === item.kind)?.label ?? item.kind}
+            {(item.depends_on ?? []).map(titleOf).filter(Boolean).map(name => ` · follows ${name}`)}</span></span>
+          <Button variant='ghost' size='icon' className='size-8' aria-label={`Remove ${item.title}`} onClick={() => remove(item.filter_id)}><X /></Button>
         </li>)}
         {!items.length && <li className='text-sm text-muted-foreground'>No filters yet.</li>}
       </ul>
@@ -328,6 +348,17 @@ export function FilterBuilder({ open, onOpenChange, definition, datasets, saving
             <Label className='text-xs text-muted-foreground'>Label</Label>
             <Input value={title} maxLength={256} placeholder={field.name} onChange={event => setTitle(event.target.value)} className='h-9' aria-label='Filter label' />
           </div>
+          {listKind && parents.length > 0 && <div className='space-y-1'>
+            <Label className='text-xs text-muted-foreground'>Values follow</Label>
+            <Select value={parentId} onValueChange={setParentId}>
+              <SelectTrigger aria-label='Values follow' className='h-9 w-full'><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_PARENT}>No other filter</SelectItem>
+                {parents.map(item => <SelectItem key={item.filter_id} value={item.filter_id}>{item.title}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <p className='text-xs text-muted-foreground'>The list shows only values that match what is chosen in that filter.</p>
+          </div>}
           <Button variant='outline' onClick={add} disabled={items.length >= 64}><Plus />Add {KINDS.find(k => k.value === kind)?.label.toLowerCase()} filter</Button>
         </>}
       </div>

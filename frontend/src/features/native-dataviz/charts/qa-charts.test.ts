@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ChartDefinition, DatasetQueryResult } from '../contracts'
-import { buildChartOption } from './chart-options'
+import { buildChartOption, OTHER } from './chart-options'
+import { combinesOther, remainderOf } from './chart-data'
 import { chartQueryShape } from './chart-query'
 import type { VizTokens } from './echart-host'
 
@@ -185,5 +186,48 @@ describe('NDV-CHART-007 series colours', () => {
     expect(new Set(Object.values(all)).size).toBe(3)
     expect(colorOf(['East', 'West'])).toEqual({ East: all.East, West: all.West })
     expect(colorOf(['West'])).toEqual({ West: all.West })
+  })
+})
+
+describe('NDV-CHART-009 pie with more values than slices', () => {
+  type Pie = { series: { type: string; data: { name: string; value: number | null; itemStyle?: { color?: string } }[]; label: { formatter: string } }[] }
+  const pie = (aggregation: string, overflow: 'other' | 'error' = 'other') => chart('pie', {
+    kind: 'category', category: { field_id: 'city' }, measure: { field_id: 'revenue', aggregation }, max_categories: 3, overflow,
+  })
+  const top3 = { ...result([dim('d0', 'city'), meas('m0', 'revenue')],
+    [[s('Jakarta'), d('500')], [s('Bandung'), d('300')], [s('Medan'), d('100')]]), truncated: true }
+  const whole = result([meas('m0', 'revenue')], [[d('1000')]])
+
+  it('adds the rest as one Other slice worth exactly the total less the shown slices', () => {
+    expect(combinesOther(pie('sum'))).toBe(true)
+    expect(remainderOf(top3, whole)).toBe(100)
+    const option = buildChartOption(pie('sum'), top3, tokens, null, 400, remainderOf(top3, whole)) as Pie
+    const data = option.series[0].data
+    expect(data.map(item => [item.name, item.value])).toEqual([['Jakarta', 500], ['Bandung', 300], ['Medan', 100], [OTHER, 100]])
+    expect(data.reduce((sum, item) => sum + (item.value ?? 0), 0)).toBe(1000)
+    expect(data[3].itemStyle?.color).toBe('mark')
+    // Shares are of the real whole, so they can be shown.
+    expect(option.series[0].label.formatter).toBe('{b}: {d}%')
+  })
+
+  it('shows names without shares while the whole is unknown or cannot be split', () => {
+    const waiting = buildChartOption(pie('sum'), top3, tokens, null, 400, null) as Pie
+    expect(waiting.series[0].data).toHaveLength(3)
+    expect(waiting.series[0].label.formatter).toBe('{b}')
+    // An average of the rest is not the rest of an average; a min or count of distinct values neither.
+    for (const aggregation of ['avg', 'min', 'max', 'count_distinct']) expect(combinesOther(pie(aggregation))).toBe(false)
+    expect(combinesOther(pie('sum', 'error'))).toBe(false)
+  })
+
+  it('keeps shares when nothing was left out, and adds no Other', () => {
+    const complete = { ...top3, truncated: false }
+    const option = buildChartOption(pie('sum'), complete, tokens, null, 400, 50) as Pie
+    expect(option.series[0].data.map(item => item.name)).toEqual(['Jakarta', 'Bandung', 'Medan'])
+    expect(option.series[0].label.formatter).toBe('{b}: {d}%')
+  })
+
+  it('has no Other when the shown slices already make up the whole', () => {
+    expect(remainderOf(top3, result([meas('m0', 'revenue')], [[d('900')]]))).toBeNull()
+    expect(remainderOf(top3, undefined)).toBeNull()
   })
 })

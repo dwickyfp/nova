@@ -30,7 +30,7 @@ import {
   type ChartFileFormat, type ReportItem, type ResultTable,
 } from './export'
 import { chartDocumentQuery } from './hooks'
-import { chartRequest, freshChartData } from '../charts/chart-data'
+import { chartRequest, combinesOther, freshChartData, remainderOf, totalsRequest } from '../charts/chart-data'
 import { printImage } from '../charts/print-image'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { readToken } from '@/lib/read-token'
@@ -597,7 +597,10 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
           const box = document.querySelector<HTMLElement>(`[gs-id="${CSS.escape(widget.widget_id)}"] [role="img"]`)?.getBoundingClientRect()
           const width = Math.round(Math.min(720, Math.max(360, box?.width ?? 640)))
           const height = Math.round(Math.max(220, Math.min(420, box?.height ?? 320)))
-          items.push({ kind: 'image', title, src: await printImage(chart, result, width, height), width })
+          // A capped pie prints its Other slice from a fresh governed total, as on screen.
+          const totals = combinesOther(chart) && result.truncated ? totalsRequest(request) : null
+          const remainder = totals ? remainderOf(result, await freshChartData(client, epoch, chart, totals)) : null
+          items.push({ kind: 'image', title, src: await printImage(chart, result, width, height, remainder), width })
           continue
         }
         const table = resultTable(result)

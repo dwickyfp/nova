@@ -769,8 +769,12 @@ def build_chart(
     elif visual == "pie":
         if len(dims) != 1 or len(measures) != 1:
             raise Refusal("A pie chart needs exactly one dimension and one measure.")
+        # As in the chart builder: a capped pie combines the rest into Other
+        # when the rest is exact (sum and count).
+        additive = measures[0].aggregation in ("sum", "count")
         encoding = CategoryEncoding(category=dims[0], measure=measures[0],
-                                    donut=bool(spec.donut))
+                                    donut=bool(spec.donut),
+                                    overflow="other" if additive else "error")
     elif visual == "kpi":
         if len(measures) != 1 or dims:
             raise Refusal("A KPI shows exactly one measure and no dimension.")

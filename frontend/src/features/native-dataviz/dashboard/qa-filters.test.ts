@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ChartDefinition, DashboardDefinition } from '../contracts'
-import { chartContext, type FilterDefinition, type FilterValue } from './filter-model'
+import { chartContext, optionContext, type FilterDefinition, type FilterValue } from './filter-model'
 
 // Release QA for dashboard filters (docs/reports/native-dataviz/QA_MATRIX.csv).
 
@@ -82,5 +82,42 @@ describe('NDV-FILTER-008 true/false filter over a column with missing values', (
     const withNull = filter({ title: 'Paid', kind: 'boolean_switch', field: field('paid'), include_null: true })
     expect(context([withNull], { f1: { kind: 'boolean', value: false } })?.expression)
       .toEqual({ type: 'or', children: [eq(false), isNull] })
+  })
+})
+
+describe('NDV-FILTER-013 cascading filter options', () => {
+  const STORES = 'aaaaaaaa-0000-4000-8000-0000000000b9'
+  const jakarta = { kind: 'members' as const, values: [{ type: 'string' as const, value: 'Jakarta' }] }
+  const city = filter({ filter_id: 'city', title: 'City', field: field('city') })
+  const customer = filter({ filter_id: 'customer', depends_on: ['city'] })
+
+  it('narrows the child option list by the parent value, on the child dataset', () => {
+    expect(optionContext(dashboard([city, customer]), customer, { city: jakarta })).toEqual({
+      type: 'predicate', field: field('city'), op: 'eq', values: [{ type: 'string', value: 'Jakarta' }], source: 'global', stage: 'row',
+    })
+  })
+
+  it('leaves the list whole without a parent value, without a parent dependency, or for the parent itself', () => {
+    expect(optionContext(dashboard([city, customer]), customer, {})).toBeUndefined()
+    expect(optionContext(dashboard([city, customer]), filter({ filter_id: 'customer' }), { city: jakarta })).toBeUndefined()
+    expect(optionContext(dashboard([city, customer]), city, { city: jakarta })).toBeUndefined()
+  })
+
+  it('binds a parent on another dataset only through its explicit mapping', () => {
+    const storeCity = filter({ filter_id: 'city', title: 'City', field: { dataset_id: STORES, dataset_revision: 1, field_id: 'store_city' } })
+    expect(optionContext(dashboard([storeCity, customer]), customer, { city: jakarta })).toBeUndefined()
+    const mapped = { ...storeCity, mappings: [{ source: storeCity.field!, target: field('ship_city') }] } as FilterDefinition
+    expect(optionContext(dashboard([mapped, customer]), customer, { city: jakarta })).toMatchObject({
+      type: 'predicate', field: field('ship_city'), op: 'eq',
+    })
+  })
+
+  it('requires every parent value together', () => {
+    const segment = filter({ filter_id: 'segment', field: field('segment') })
+    const child = filter({ filter_id: 'customer', depends_on: ['city', 'segment'] })
+    const values = { city: jakarta, segment: { kind: 'members' as const, values: [{ type: 'string' as const, value: 'Retail' }] } }
+    const result = optionContext(dashboard([city, segment, child]), child, values)
+    expect(result).toMatchObject({ type: 'and' })
+    expect((result as { children: unknown[] }).children).toHaveLength(2)
   })
 })

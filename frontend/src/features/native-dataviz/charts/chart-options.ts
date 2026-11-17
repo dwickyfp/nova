@@ -18,6 +18,9 @@ const MAX_FILLED_PERIODS = 1000
 
 type Row = Result['rows'][number]
 
+/** The slice that combines what a capped pie leaves out. */
+export const OTHER = 'Other'
+
 /**
  * Every period from the first to the last returned one, so a missing month is a
  * gap on the axis rather than vanishing. Only for one ascending date dimension.
@@ -90,11 +93,15 @@ function common(tokens: VizTokens, style: Style | undefined, legend: boolean) {
 }
 
 /** Build one ECharts option from a governed query result. Values are never invented. */
+/**
+ * `remainder` is the exact value of the slices a capped pie leaves out, drawn
+ * as Other; without it a capped pie shows no shares of a whole it does not have.
+ */
 export function buildChartOption(chart: ChartDefinition, result: Result, tokens: VizTokens,
-  selected: string | readonly string[] | null = null, width?: number): EChartsCoreOption {
+  selected: string | readonly string[] | null = null, width?: number, remainder: number | null = null): EChartsCoreOption {
   // One or more selected labels: the rest are dimmed.
   const chosen = selected === null ? null : new Set(typeof selected === 'string' ? [selected] : selected)
-  if (chosen && !chosen.size) return buildChartOption(chart, result, tokens, null, width)
+  if (chosen && !chosen.size) return buildChartOption(chart, result, tokens, null, width, remainder)
   const columns = result.columns
   const rows = result.rows
   const style = chart.style
@@ -211,11 +218,15 @@ export function buildChartOption(chart: ChartDefinition, result: Result, tokens:
   }
 
   if (encoding.kind === 'category') {
-    const data = rows.map(row => {
+    const data: { name: string; value: number | null; itemStyle?: { color?: string; opacity?: number } }[] = rows.map(row => {
       const name = cellLabel(row[0], columns[0])
       return { name, value: cellNumber(row[1]), ...(chosen !== null ? { itemStyle: { opacity: chosen.has(name) ? 1 : 0.3 } } : {}) }
     })
     const funnel = chart.visual === 'funnel'
+    const other = !funnel && result.truncated && remainder !== null
+    if (other) data.push({ name: OTHER, value: remainder, itemStyle: { color: tokens.mark, ...(chosen !== null ? { opacity: 0.3 } : {}) } })
+    // Shares are only true of the whole: a capped pie without Other shows names alone.
+    const shares = !result.truncated || other
     return {
       ...common(tokens, style, true),
       color: tokens.series,
@@ -224,7 +235,7 @@ export function buildChartOption(chart: ChartDefinition, result: Result, tokens:
           label: { show: true, color: tokens.text, formatter: '{b}' } }
         : { type: 'pie', data, radius: encoding.donut ? ['48%', '72%'] : ['0%', '72%'], center: ['50%', '45%'],
           itemStyle: { borderColor: tokens.surface, borderWidth: 2 },
-          label: { show: labels, color: tokens.text, formatter: '{b}: {d}%' }, avoidLabelOverlap: true }],
+          label: { show: labels, color: tokens.text, formatter: shares ? '{b}: {d}%' : '{b}' }, avoidLabelOverlap: true }],
     }
   }
 

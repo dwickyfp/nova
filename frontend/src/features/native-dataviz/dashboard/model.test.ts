@@ -45,6 +45,21 @@ describe('chart query shape', () => {
     expect(chartQueryShape(toChart(state))).toMatchObject({ sort: [{ column: 'm0', direction: 'desc' }], limit: 7 })
   })
 
+  it('NDV-CHART-009: a new pie of a sum combines the rest into Other, and a reopened chart keeps its choice', () => {
+    const base = { ...initialState({ chart_id: 'c1', dataset_id: DATASET, dataset_revision: 3, fields: FIELDS }), title: 'P' }
+    const sum = switchVisual(base, 'pie', FIELDS)
+    const overflowOf = (state: typeof sum) => (toChart(state).encoding as { overflow?: string }).overflow
+    expect(overflowOf(sum)).toBe('other')
+    expect(overflowOf({ ...sum, otherSlice: false })).toBe('error')
+    // An average cannot be split into the shown part and the rest.
+    expect(overflowOf({ ...sum, measures: [{ ...sum.measures[0], aggregation: 'avg' }] })).toBe('error')
+    // A funnel never gets Other.
+    expect(overflowOf(switchVisual(base, 'funnel', FIELDS))).toBe('error')
+    // Reopening keeps what was saved, including charts saved before Other existed.
+    expect(overflowOf(fromChart(toChart({ ...sum, otherSlice: false }), FIELDS))).toBe('error')
+    expect(overflowOf(fromChart(toChart(sum), FIELDS))).toBe('other')
+  })
+
   it('refuses aggregations native charts cannot run', () => {
     const definition = chart()
     const encoding = definition.encoding as CartesianEncoding
@@ -402,6 +417,30 @@ describe('governed downloads', () => {
       await freshChartData(client, 0, chart, request)
       expect(fetcher).toHaveBeenCalledTimes(3)
     } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('NDV-CACHE-008: reuses rows on screen for 30 seconds, as /docs says, and reads again after', async () => {
+    const chart = { chart_id: 'c', dataset_id: 'aaaaaaaa-0000-4000-8000-000000000011', dataset_revision: 1 } as ChartDefinition
+    const body = JSON.stringify({ dataset_id: chart.dataset_id, revision: 1, truncated: false, offset: 0, next_offset: null, rows: [],
+      columns: [{ key: 'm0', name: 'f', logical_type: 'decimal', role: 'measure', field_id: 'f', aggregation: 'sum' }] })
+    const fetcher = vi.fn(async () => new Response(body, { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetcher)
+    const start = Date.now()
+    const now = vi.spyOn(Date, 'now').mockReturnValue(start)
+    try {
+      const client = new QueryClient()
+      const request = { revision: 1, draft: false, measures: [{ field_id: 'f', aggregation: 'sum' }] } as never
+      await client.fetchQuery(chartDataQuery(0, chart, request))
+      now.mockReturnValue(start + 29_000)
+      await client.fetchQuery(chartDataQuery(0, chart, request))
+      expect(fetcher).toHaveBeenCalledTimes(1)
+      now.mockReturnValue(start + 31_000)
+      await client.fetchQuery(chartDataQuery(0, chart, request))
+      expect(fetcher).toHaveBeenCalledTimes(2)
+    } finally {
+      now.mockRestore()
       vi.unstubAllGlobals()
     }
   })

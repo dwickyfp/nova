@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { cleanup, render } from 'vitest-browser-react'
 import type { DashboardDefinition } from '../contracts'
-import { FilterBar } from './filters'
+import { FilterBar, FilterBuilder } from './filters'
 import type { FilterValue } from './filter-model'
 import '@/styles/index.css'
 
@@ -101,5 +101,52 @@ describe('Multi-value filter list', () => {
     await expect.poll(() => asked.length).toBeGreaterThan(1)
     expect(asked[asked.length - 1]).toMatchObject({ limit: 200,
       filters: { expression: { type: 'predicate', op: 'like_literal', values: [{ type: 'string', value: 'City 19' }] } } })
+  })
+
+  it('NDV-FILTER-013: a filter that follows another lists only values matching the other choice', async () => {
+    const CITY = 'aaaaaaaa-0000-4000-8000-0000000000c5'
+    const cascading = { ...regions, filters: [
+      { ...regions.filters![0], filter_id: CITY, title: 'City', field: { dataset_id: DATASET, dataset_revision: 1, field_id: 'city' } },
+      { ...regions.filters![0], depends_on: [CITY] },
+    ] } as unknown as DashboardDefinition
+    serve(['East'])
+    const jakarta = { kind: 'members', values: [{ type: 'string', value: 'Jakarta' }] } as FilterValue
+    const screen = await render(<QueryClientProvider client={new QueryClient()}>
+      <FilterBar definition={cascading} values={{ [CITY]: jakarta }} onChange={() => undefined} crossFilters={[]}
+        onClearCross={() => undefined} editing={false} onEdit={() => undefined} draft={false} />
+    </QueryClientProvider>)
+    await screen.getByRole('button', { name: 'Region filter' }).click()
+    await expect.element(page.getByRole('option', { name: 'East' })).toBeVisible()
+    const parent = { type: 'predicate', field: { dataset_id: DATASET, dataset_revision: 1, field_id: 'city' }, op: 'eq',
+      values: [{ type: 'string', value: 'Jakarta' }] }
+    expect(asked[0]).toMatchObject({ dimensions: [{ field_id: 'region' }], filters: { expression: parent } })
+    // Searching keeps the parent choice and adds the search.
+    await page.getByRole('textbox', { name: 'Search Region' }).fill('Ea')
+    await expect.poll(() => asked.length).toBeGreaterThan(1)
+    expect(asked[asked.length - 1]).toMatchObject({ filters: { expression: { type: 'and', children: [
+      parent, { type: 'predicate', op: 'like_literal', values: [{ type: 'string', value: 'Ea' }] }] } } })
+  })
+
+  it('NDV-FILTER-013: an author makes a filter follow another, and removing the parent frees the child', async () => {
+    serve([])
+    const applied: unknown[][] = []
+    const datasets = [{ dataset_id: DATASET, revision: 1, title: 'Orders' }] as never
+    const screen = await render(<QueryClientProvider client={new QueryClient()}>
+      <FilterBuilder open onOpenChange={() => undefined} definition={regions} datasets={datasets} saving={false}
+        onApply={filters => applied.push(filters)} />
+    </QueryClientProvider>)
+    await screen.getByRole('combobox', { name: 'Filter field' }).click()
+    await page.getByRole('option', { name: 'Region' }).click()
+    await screen.getByRole('textbox', { name: 'Filter label' }).fill('Region again')
+    await screen.getByRole('combobox', { name: 'Values follow' }).click()
+    await page.getByRole('option', { name: 'Region' }).click()
+    await screen.getByRole('button', { name: /^Add multiple values filter/ }).click()
+    await expect.element(screen.getByText('· follows Region', { exact: false })).toBeVisible()
+    await screen.getByRole('button', { name: 'Apply filters' }).click()
+    expect((applied[0][1] as { depends_on: string[] }).depends_on).toEqual(['aaaaaaaa-0000-4000-8000-0000000000c4'])
+    await screen.getByRole('button', { name: 'Remove Region', exact: true }).click()
+    await screen.getByRole('button', { name: 'Apply filters' }).click()
+    expect(applied[1]).toHaveLength(1)
+    expect((applied[1][0] as { depends_on: string[] }).depends_on).toEqual([])
   })
 })

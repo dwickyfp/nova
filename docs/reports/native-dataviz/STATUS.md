@@ -1,6 +1,6 @@
 # Native Dataviz delivery record
 
-Status: **in progress; not production ready; no cutover**. Release QA round 5 (2026-11-17): 181 of 254 pass, 17 out of scope, 56 HIGH open.
+Status: **in progress; not production ready; no cutover**. Release QA round 6 (2026-11-17): 189 of 254 pass, 17 out of scope, 48 HIGH open.
 Branch: `feat/dataviz-native`.
 Baseline: `1ee12694e0ecb6ecfd8135965943be08f5195967`.
 
@@ -773,3 +773,62 @@ AGENT-001, OSS-001 and OSS-002.
   - **Checks:** visual checks in light and dark. `/docs` dataviz 08 updated.
     Frontend: 224 files and 1,952 tests, plus lint, build and bundle checks,
     all passed.
+
+## Release QA round 6 (2026-11-17)
+
+Eight more scenarios pass: 189 PASS, 48 NOT_RUN (all HIGH) and 17
+OUT_OF_SCOPE.
+
+- **Built:** cascading dashboard filters (FILTER-013). The contract already
+  carried `depends_on`, validated and cycle-free, but nothing used it. A list
+  filter can now follow other filters (**Values follow** in the filter
+  builder). Its option list then asks only for values matching the parents'
+  current choices, bound directly or through a mapping, together with any
+  search. Removing a parent turns its children back into ordinary filters.
+  Live: the option request carried the parent value through the governed
+  query path, and the result matched StarRocks.
+- **Defects fixed:**
+  - A capped pie (CHART-009) drew its N largest values and labelled each one
+    with its share of the drawn slices, not of the total. The builder saved
+    `overflow: 'error'`, which nothing honoured. Now:
+    - A pie of a Sum or Count combines the rest into one **Other** slice. Its
+      value is the governed total under the same filters, less the shown
+      slices, so the shares are real.
+    - Otherwise the pie shows the top N, says so and shows no shares.
+    - Clicking **Other** selects nothing.
+    - The builder toggle is on for new pies and kept when a chart is
+      reopened. Neva pies match, and printed reports draw the same slice.
+    - Live: 15,257 total, top 3 summing to 5,121, Other 10,136. Other uses the
+      neutral mark colour (3.39:1 light, 3.85:1 dark). The first colour
+      choice failed non-text contrast and was replaced.
+  - When a chart's source changed, viewers were told to open the **Data**
+    tab, which only editors have. The message now says who can review it
+    (INTER-014).
+- **New passes:**
+  - **ACL-018:** a grant stops counting the moment it expires (PG17).
+  - **ACL-020:** view plus interact reads but never changes the draft (PG17),
+    and shows no **Edit** control.
+  - **CACHE-008:** the 30-second reuse window is documented and pinned by a
+    test; downloads read fresh data.
+  - **INTER-006:** a real legend click selects its series.
+  - **INTER-008:** a linked dashboard opens with the mapped value; a refused
+    target runs nothing.
+  - **INTER-014:** see the defect above.
+- **Gates (round 6, local):**
+  - **Backend:**
+    - changed-file Ruff and full-application mypy pass;
+    - unit 12,574 passed;
+    - agent scorecard 54/54 scenarios and 189/189 checks;
+    - trajectory suite 366 passed.
+  - **Frontend:** lint, build, bundle, notices and licenses pass. Coverage
+    runs:
+    - attempt 1 passed 224 files and 1,962 tests, before the pie work;
+    - attempt 2 had 2 timeouts in `dataset-create.test.tsx` at load average
+      28, and that file passed 14/14 on its own;
+    - attempt 3 had 1 timeout in the same file (real Monaco typing ran out
+      of its 15 s budget);
+    - attempt 4 passed 224 files and 1,969 tests.
+
+    The file is unchanged this round.
+- **CI run 44026373467 (`20d3ccaa`, ACL-018/020):** all seven jobs passed,
+  PG17 and the real engine included.

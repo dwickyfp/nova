@@ -31,6 +31,8 @@ export type BuilderState = {
   smooth: boolean
   donut: boolean
   maxCategories: number
+  /** A capped pie combines the rest into Other (sum and count only, where the rest is exact). */
+  otherSlice: boolean
   bins: number
   grandTotal: boolean
   /** Pivot: fields across the top, and a total row per first row group. */
@@ -83,6 +85,11 @@ export function defaultAggregation(field?: DatasetField): SupportedAggregation {
   return isNumeric(field) ? 'sum' : 'count_distinct'
 }
 
+/** Other is exact only when the total is the sum of its parts. */
+export function canCombineOther(aggregation: string | undefined): boolean {
+  return aggregation === 'sum' || aggregation === 'count'
+}
+
 export function initialState(input: {
   chart_id: string; dataset_id: string; dataset_revision: number; fields: DatasetField[]; visual?: Visual
 }): BuilderState {
@@ -94,7 +101,7 @@ export function initialState(input: {
     dimensions: dimension ? [{ field_id: dimension.field_id, date_grain: isTemporal(dimension) ? 'month' : null }] : [],
     measures: measure ? [{ field_id: measure.field_id, aggregation: 'sum', series: 'bar', axis: 'left' }]
       : [], color: null, x: measure?.field_id ?? '', y: input.fields.filter(isNumeric)[1]?.field_id ?? measure?.field_id ?? '', size: '',
-    orientation: 'vertical', stack: 'none', smooth: false, donut: false, maxCategories: 12, bins: 20,
+    orientation: 'vertical', stack: 'none', smooth: false, donut: false, maxCategories: 12, otherSlice: true, bins: 20,
     grandTotal: true, pivotColumns: [], subtotals: false, formats: [], sort: 'none', rowLimit: 1000, showTitle: true, showLegend: true, showLabels: false,
     showAxisTitles: true, palette: 'neutral', number: { kind: 'number', decimals: 2, currency: 'USD' }, filters: null,
   }
@@ -144,7 +151,8 @@ export function toChart(state: BuilderState): ChartDefinition {
       break
     case 'category':
       encoding = { kind, category: dim(state.dimensions[0]), measure: meas(state.measures[0], number),
-        donut: state.donut, max_categories: state.maxCategories, overflow: 'error' }
+        donut: state.donut, max_categories: state.maxCategories,
+        overflow: state.otherSlice && state.visual === 'pie' && canCombineOther(state.measures[0]?.aggregation) ? 'other' : 'error' }
       break
     case 'scatter':
       encoding = { kind, x: state.x, y: state.y, ...(state.size ? { size: state.size } : {}),
@@ -275,6 +283,7 @@ export function fromChart(chart: ChartDefinition, fields: DatasetField[]): Build
       state.measures = [fromMeasure(encoding.measure)]
       state.donut = encoding.donut ?? false
       state.maxCategories = encoding.max_categories ?? 12
+      state.otherSlice = encoding.overflow === 'other'
       break
     case 'scatter':
       state.x = encoding.x; state.y = encoding.y; state.size = encoding.size ?? ''

@@ -115,6 +115,30 @@ export function chartContext(input: {
   return { expression: parts.length === 1 ? parts[0] : { type: 'and', children: parts } }
 }
 
+/**
+ * The narrowing a cascading filter's option list gets from its parents
+ * (`depends_on`): each parent's current value, bound to this filter's dataset
+ * directly or through the parent's mapping. A parent with no value, or with no
+ * field in this dataset, leaves the list as it is.
+ */
+export function optionContext(
+  definition: DashboardDefinition, filter: FilterDefinition, values: Record<string, FilterValue>,
+): Expression | undefined {
+  const field = filter.field
+  if (!field) return undefined
+  const parts: Expression[] = []
+  for (const parentId of filter.depends_on ?? []) {
+    const parent = (definition.filters ?? []).find(item => item.filter_id === parentId)
+    const value = values[parentId]
+    if (!parent || !value) continue
+    const binding = targetBinding(parent, field)
+    const expression = binding && expressionFor(binding, value, parent.include_null === true)
+    if (expression) parts.push(expression)
+  }
+  if (!parts.length) return undefined
+  return parts.length === 1 ? parts[0] : { type: 'and', children: parts }
+}
+
 export function defaultValue(filter: FilterDefinition): FilterValue | undefined {
   const defaults = (filter.defaults ?? []) as Scalar[]
   if (filter.kind === 'relative_date' && filter.relative) {

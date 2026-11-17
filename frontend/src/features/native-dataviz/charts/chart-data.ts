@@ -2,17 +2,17 @@ import { useMemo } from 'react'
 import { keepPreviousData, type QueryClient, useQuery } from '@tanstack/react-query'
 import { ApiError } from '@/lib/api-client'
 import { useAuthStore } from '@/stores/auth-store'
-import type { ChartDefinition, DatasetDefinition, FilterTree, ParameterInput, QuerySort } from '../contracts'
+import type { ChartDefinition, DatasetDefinition, DatasetQueryResult, FilterTree, ParameterInput, QuerySort } from '../contracts'
 import { nativeDocuments } from '../documents'
 import { applyCalculations } from './calculations'
-import { chartQueryShape, ChartQueryError, combineFilters } from './chart-query'
+import { cellNumber, chartQueryShape, ChartQueryError, combineFilters } from './chart-query'
 import { capacityDelay, capacityRetry, queuedQuery } from './query-queue'
 
 export function queryError(error: unknown): string {
   if (error instanceof ChartQueryError) return error.message
   if (error instanceof ApiError) {
     if ([401, 403, 404].includes(error.status)) return 'This data is unavailable with your current role.'
-    if (error.status === 409) return 'The data source changed. Open the Data tab to review it.'
+    if (error.status === 409) return 'The data source changed since this chart was saved. Someone who can edit the dashboard can review it in the Data tab.'
     if (error.status === 413) return 'The result is too large. Reduce the row limit or add a filter.'
     if (error.status === 429) return 'Query capacity is still busy. Retry in a moment.'
     if (error.status === 504) return 'The query timed out. Add a filter or reduce the row limit.'
@@ -113,6 +113,24 @@ export function useChartData({ chart, draft, context, parameters, page }: ChartR
 }
 
 /** Grand totals for a paged table: one measures-only query, shared by every page. */
+/** Aggregations whose total is the sum of its parts, so the rest is total minus the shown parts. */
+const ADDITIVE = new Set(['sum', 'count'])
+
+/** A capped pie set to combine the rest into Other, with a measure that allows it. */
+export function combinesOther(chart: ChartDefinition): boolean {
+  const encoding = chart.encoding
+  return encoding.kind === 'category' && encoding.overflow === 'other' && ADDITIVE.has(encoding.measure.aggregation ?? '')
+}
+
+/** The exact value of Other: the governed total less the slices shown. */
+export function remainderOf(result: DatasetQueryResult, totals: DatasetQueryResult | undefined): number | null {
+  const total = totals ? cellNumber(totals.rows[0]?.[0] ?? null) : null
+  if (total === null) return null
+  const shown = result.rows.reduce((sum, row) => sum + (cellNumber(row[1]) ?? 0), 0)
+  const rest = total - shown
+  return rest > 0 ? rest : null
+}
+
 export function useTableTotals({ chart, draft, context, parameters, enabled }: ChartRequestInput & { enabled: boolean }) {
   const epoch = useAuthStore(state => state.securityEpoch)
   const request = useMemo(() => {

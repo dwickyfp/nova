@@ -85,6 +85,13 @@ A few rules apply to every chart:
   out **North** does not repaint **West**.
 - A KPI with nothing to show for the current filters says **No data for the
   current filters** under its dash.
+- A pie or funnel shows the values with the largest totals, up to the number
+  in **Show the top** under **Slices** (12 unless you change it). On a pie of
+  a Sum or Count, **Combine the rest into Other** (on for new pies) adds one
+  **Other** slice worth exactly what was left out, so the percentages are
+  shares of the real total. Otherwise the chart says **Showing the top 12
+  only.** and shows no percentages, because it does not have the whole.
+  Clicking **Other** filters nothing.
 
 Downloads, printed reports and scheduled files show the same calculated values.
 
@@ -187,6 +194,13 @@ A list shows up to 200 values. When there are more, it says so; type in
 **Search values** to find the rest. A value you chose that is no longer in the
 data stays chosen and is marked **Not in the data now**. Untick it to remove
 it.
+
+A list filter can follow another filter. When you add it, choose that filter
+in **Values follow**; its list then shows only the values that match what is
+chosen there, for example only the customers in the chosen city. The other
+filter needs the same dataset or a field mapped to it. A value chosen earlier
+that no longer matches is marked **Not in the current selection**. Removing
+the filter it follows makes it an ordinary filter again.
 
 A **True / false** filter offers **All**, **True**, **False** and **No value**.
 **True** and **False** never include rows where the field is empty; choose
@@ -388,7 +402,10 @@ an administrator, can remove a schedule.
 - "Query capacity is busy" means many charts are loading at once; Nova retries
   on its own. Click **Retry** if it stays.
 - "The data source changed" means the table or query behind a dataset changed.
-  Open the **Data** tab to review the dataset.
+  The chart shows no data rather than reading the wrong column, including
+  when a selection or filter uses a field that changed. If you can edit
+  the dashboard, open the **Data** tab to review the dataset; otherwise ask
+  someone who can.
 - "Someone else changed this dashboard" means another person or Neva saved
   first. The latest version is loaded; make your change again.
 - If the connection drops while a change is saving, Nova checks whether the

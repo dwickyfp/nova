@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import type { ChartDefinition, DatasetField } from '../contracts'
 import { initialState, toChart } from '../charts/builder-model'
 import { DashboardEditor } from './editor'
+import { NATIVE_DASHBOARD_OPEN, type LinkedSelection, type NativeDashboardOpen } from './events'
 import '@/styles/index.css'
 
 /*
@@ -173,12 +174,13 @@ async function route(url: string, options: RequestInit = {}) {
   return json({ detail: 'Not found' }, 404)
 }
 
-async function mount(width = 1200, height = 720) {
+async function mount(width = 1200, height = 720, open: { dashboardId?: string; initialSelections?: LinkedSelection[] } = {}) {
   const client = new QueryClient()
   clients.push(client)
   const screen = await render(<QueryClientProvider client={client}><TooltipProvider>
     <div data-testid='frame' style={{ height, width, display: 'flex' }}>
-      <DashboardEditor dashboardId={DASHBOARD} workspaceId='personal' onBack={() => undefined} />
+      <DashboardEditor dashboardId={open.dashboardId ?? DASHBOARD} workspaceId='personal' onBack={() => undefined}
+        initialSelections={open.initialSelections} />
     </div>
   </TooltipProvider></QueryClientProvider>)
   return Object.assign(screen, { client })
@@ -643,6 +645,74 @@ describe('QA filters and interactions', { timeout: 30_000 }, () => {
     expect(calls.filter(call => call.method !== 'GET' && !call.url.endsWith('/query') && !call.url.includes('/presence'))).toEqual([])
     expect(operations).toHaveLength(0)
     expect(definition).toEqual(published)
+  })
+
+  it('NDV-INTER-008: a linked dashboard opens with the mapped value, under the viewer\'s own access', async () => {
+    permissionList = ['view', 'interact']
+    publicationId = '99999999-0000-4000-8000-000000000001'
+    const OTHER = '99999999-0000-4000-8000-0000000000d1'
+    const target = { dataset_id: DATASET, dataset_revision: 1, field_id: 'region' }
+    setWidgets([
+      chartWidget(BAR_WIDGET, BAR_CHART, { x: 0, y: 0, w: 6, h: 4 }),
+      chartWidget(KPI_WIDGET, KPI_CHART, { x: 6, y: 0, w: 3, h: 2 }),
+    ])
+    definition.actions = [{ action_id: '99999999-0000-4000-8000-0000000000d2', kind: 'navigate', source_widget_id: BAR_WIDGET,
+      target_widget_ids: [], target_dashboard_id: OTHER, target_workspace_id: 'personal', label: 'Open regional detail',
+      mappings: [{ source: { dataset_id: DATASET, dataset_revision: 1, field_id: 'region' }, target }], run_on: 'menu' }]
+    const opened: NativeDashboardOpen[] = []
+    const listener = (event: Event) => opened.push((event as CustomEvent<NativeDashboardOpen>).detail)
+    window.addEventListener(NATIVE_DASHBOARD_OPEN, listener)
+    try {
+      const screen = await mount()
+      await expect.element(screen.getByTestId('kpi-value')).toHaveTextContent('15,257')
+      await clickBar(BAR_WIDGET, 0, 10)
+      await page.getByRole('menuitem', { name: 'Open regional detail' }).click()
+      expect(opened).toEqual([{ dashboardId: OTHER, workspaceId: 'personal',
+        selections: [{ field: target, value: { type: 'string', value: 'East' }, label: 'East' }] }])
+    } finally {
+      window.removeEventListener(NATIVE_DASHBOARD_OPEN, listener)
+    }
+    await cleanup()
+
+    // The target applies the carried value to its own charts, as a selection the viewer can clear.
+    definition.actions = []
+    const target_view = await mount(1200, 720, { initialSelections: opened[0].selections })
+    await expect.element(target_view.getByTestId('kpi-value')).toHaveTextContent('4,000')
+    await expect.element(target_view.getByRole('button', { name: 'Clear selection East' })).toBeVisible()
+    expect(operations).toHaveLength(0)
+    await cleanup()
+
+    // A dashboard the viewer cannot open stays closed: the server refuses it and nothing is queried.
+    const sent = queries().length
+    const refused = await mount(1200, 720, { dashboardId: OTHER, initialSelections: opened[0].selections })
+    await expect.element(refused.getByText('This dashboard is unavailable')).toBeVisible()
+    expect(queries()).toHaveLength(sent)
+  })
+
+  it('NDV-INTER-014: a selection on a field whose source changed shows the change, never other rows', async () => {
+    permissionList = ['view', 'interact']
+    publicationId = '99999999-0000-4000-8000-000000000001'
+    // The region column changed under the saved dataset: the server refuses every query that uses it.
+    let changed = false
+    answer = body => changed && JSON.stringify(body.filters ?? null).includes('region')
+      ? json({ detail: 'SCHEMA_STALE: inspect the source again' }, 409)
+      : defaultAnswer(body)
+    setWidgets([
+      chartWidget(BAR_WIDGET, BAR_CHART, { x: 0, y: 0, w: 6, h: 4 }),
+      chartWidget(KPI_WIDGET, KPI_CHART, { x: 6, y: 0, w: 3, h: 2 }),
+    ])
+    const screen = await mount()
+    await expect.element(screen.getByTestId('kpi-value')).toHaveTextContent('15,257')
+    await echartsIn(BAR_WIDGET)
+    changed = true
+    await clickBar(BAR_WIDGET, 0, 10)
+    const kpi = item(KPI_WIDGET)
+    await expect.poll(() => kpi.querySelector('[role="alert"]')?.textContent ?? '').toContain(
+      'The data source changed since this chart was saved. Someone who can edit the dashboard can review it in the Data tab.')
+    // Neither the unfiltered total nor any other value stands in for the refused answer.
+    expect(kpi.querySelector('[data-testid="kpi-value"]')).toBeNull()
+    expect(item(BAR_WIDGET).querySelector('[role="alert"]')).toBeNull()
+    expect(operations).toHaveLength(0)
   })
 
   it('NDV-FILTER-022: of two rapid filter values only the newest generation is rendered', async () => {

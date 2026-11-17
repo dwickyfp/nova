@@ -282,6 +282,19 @@ def test_each_visual_maps_to_its_encoding(spec, kind):
     if spec["visual"] in {"bar", "pie"}:
         assert chart.sort[0].field_id == "revenue" and chart.sort[0].direction == "desc"
         assert chart.sort[0].aggregation == "sum"
+    if spec["visual"] == "pie":
+        # NDV-CHART-009: as in the builder, a capped pie of a sum shows the rest as Other.
+        assert chart.encoding.overflow == "other"
+
+
+def test_a_pie_of_an_average_keeps_only_its_top_slices():
+    """An average of the rest is not the rest of the average: no Other slice."""
+    chart = native.build_chart(
+        native.ChartSpec.model_validate({"title": "T", "visual": "pie", "dimensions": ["city"],
+                                         "measures": [{"field": "revenue", "aggregation": "avg"}]}),
+        chart_id=uuid4(), dataset_id=DATASET, revision=1, dataset=DATASET_DEF,
+    )
+    assert chart.encoding.overflow == "error"
 
 
 @pytest.mark.parametrize(("spec", "reason"), [

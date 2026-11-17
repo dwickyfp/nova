@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 import type { ChartDefinition, DatasetQueryResult, FilterTree, ParameterInput, QueryColumn, QuerySort } from '../contracts'
 import { buildChartOption } from './chart-options'
 import { cellLabel, cellNumber, chartQueryShape, columnLabel, hasSplit, periodEnd, type Cell } from './chart-query'
-import { chartRequest, MAX_PAGE_OFFSET, queryError, useChartData, useTableTotals, type TablePage } from './chart-data'
+import { chartRequest, combinesOther, MAX_PAGE_OFFSET, queryError, remainderOf, useChartData, useTableTotals, type TablePage } from './chart-data'
 import { EChartHost, type MarkSelection, type VizTokens } from './echart-host'
 import { cellStyle, MAX_PIVOT_COLUMNS, pivotModel, ranges } from './pivot'
 import { NativeMap } from './native-map'
@@ -280,7 +280,12 @@ export function NativeChart({ chart, draft, context, parameters, onSelectValue, 
   const multiPage = table.paged && (pageOffset > 0 || Boolean(result?.truncated))
   const showTotal = chart.encoding.kind === 'table' && Boolean(chart.encoding.grand_total)
   const totals = useTableTotals({ chart, draft, context, parameters, enabled: showTotal && multiPage })
-  const build = useCallback((tokens: VizTokens, width: number) => buildChartOption(chart, result!, tokens, selectedLabel ?? null, width || undefined), [chart, result, selectedLabel])
+  // A capped pie that combines the rest asks the engine for the whole, under the same filters.
+  const combine = combinesOther(chart) && Boolean(result?.truncated)
+  const whole = useTableTotals({ chart, draft, context, parameters, enabled: combine })
+  const remainder = combine && result ? remainderOf(result, whole.data) : null
+  const build = useCallback((tokens: VizTokens, width: number) => buildChartOption(chart, result!, tokens, selectedLabel ?? null, width || undefined, remainder),
+    [chart, result, selectedLabel, remainder])
   const select = useCallback((mark: MarkSelection) => {
     if (!result || !onSelectValue) return
     const encoding = chart.encoding
@@ -345,9 +350,13 @@ export function NativeChart({ chart, draft, context, parameters, onSelectValue, 
               <DataAlternative title={chart.title} result={result} />
             </>}
     </div>
-    {result.truncated && !hasNextPage && <p className='shrink-0 pt-1 text-xs text-warning-strong'>
-      Showing the first {(table.paged ? pageEnd : result.rows.length).toLocaleString()} rows. Add a filter to see everything.
-    </p>}
+    {result.truncated && !hasNextPage && (chart.encoding.kind === 'category'
+      ? <p className='shrink-0 pt-1 text-xs text-muted-foreground'>
+        {remainder !== null ? `Showing the top ${result.rows.length} and the rest as Other.` : `Showing the top ${result.rows.length} only.`}
+      </p>
+      : <p className='shrink-0 pt-1 text-xs text-warning-strong'>
+        Showing the first {(table.paged ? pageEnd : result.rows.length).toLocaleString()} rows. Add a filter to see everything.
+      </p>)}
   </div>
 }
 

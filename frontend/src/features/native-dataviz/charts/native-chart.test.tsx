@@ -1,6 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { page, userEvent } from 'vitest/browser'
 import { cleanup, render } from 'vitest-browser-react'
+import { getInstanceByDom } from 'echarts/core'
 import type { ChartDefinition } from '../contracts'
 import { NativeChart } from './native-chart'
 import '@/styles/index.css'
@@ -152,5 +154,118 @@ describe('NDV-CACHE-004: a filter changed ten times in a row', () => {
     // Three queries run at once; filters superseded while waiting are never sent.
     expect(asked[asked.length - 1]).toBe('R10')
     expect(asked.length).toBeLessThan(10)
+  })
+})
+
+describe('NDV-INTER-006: a legend entry as the selection source', () => {
+  const split = { ...bar, chart_id: 'cccccccc-0000-4000-8000-000000000006', title: 'Revenue by region and channel',
+    encoding: { kind: 'cartesian', dimensions: [{ field_id: 'region' }], color: { field_id: 'channel' },
+      measures: [{ field_id: 'revenue', aggregation: 'sum' }] } } as unknown as ChartDefinition
+  const columns = [
+    { key: 'd0', name: 'region', logical_type: 'string', role: 'dimension', field_id: 'region' },
+    { key: 'd1', name: 'channel', logical_type: 'string', role: 'dimension', field_id: 'channel' },
+    { key: 'm0', name: 'revenue', logical_type: 'decimal', role: 'measure', field_id: 'revenue', aggregation: 'sum' }]
+  const cell = (value: string) => ({ type: 'string', value })
+  const rows = [[cell('East'), cell('Online'), { type: 'decimal', value: '10' }], [cell('East'), cell('Store'), { type: 'decimal', value: '5' }],
+    [cell('West'), cell('Online'), { type: 'decimal', value: '7' }]]
+
+  it('selects the series field and value, from the legend, and keeps every series drawn', async () => {
+    respond(200, { dataset_id: DATASET, revision: 1, truncated: false, columns, rows })
+    const chosen: unknown[] = []
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const screen = await render(<QueryClientProvider client={client}>
+      <div style={{ width: 480, height: 320, display: 'flex' }}>
+        <NativeChart chart={split} draft={false} onSelectValue={value => chosen.push(value)} />
+      </div>
+    </QueryClientProvider>)
+    await expect.poll(() => screen.container.querySelector('canvas')).not.toBeNull()
+    const host = screen.container.querySelector<HTMLElement>('[role="img"]')!
+    const chart = getInstanceByDom(host)!
+    // Find the drawn legend label "Store" and click it where it is on the canvas.
+    type Box = { x: number; y: number; width: number; height: number; clone: () => Box; applyTransform: (matrix: unknown) => void }
+    type Drawn = { style?: { text?: string }; transform?: unknown; getBoundingRect: () => Box }
+    const find = () => (chart.getZr() as unknown as { storage: { getDisplayList: (update: boolean) => Drawn[] } })
+      .storage.getDisplayList(true).find(item => item.style?.text === 'Store')
+    await expect.poll(find).toBeDefined()
+    const label = find()!
+    const box = label.getBoundingRect().clone()
+    if (label.transform) box.applyTransform(label.transform)
+    await userEvent.click(page.elementLocator(host), { position: { x: box.x + box.width / 2, y: box.y + box.height / 2 } })
+    await expect.poll(() => chosen.length).toBe(1)
+    expect(chosen[0]).toMatchObject({ field_id: 'channel', value: cell('Store'), label: 'Store', fromLegend: true })
+    // A legend click filters; it never hides the series it names.
+    const selected = (chart.getOption() as { legend: { selected?: Record<string, boolean> }[] }).legend[0].selected ?? {}
+    expect(selected.Store).not.toBe(false)
+  })
+})
+
+describe('NDV-CHART-009: a pie with more values than slices', () => {
+  const pie = (overflow: 'other' | 'error') => ({ ...bar, chart_id: 'cccccccc-0000-4000-8000-000000000009', title: 'Revenue by city', visual: 'pie',
+    encoding: { kind: 'category', category: { field_id: 'city' }, measure: { field_id: 'revenue', aggregation: 'sum' }, max_categories: 3, overflow } }) as unknown as ChartDefinition
+  const city = { key: 'd0', name: 'city', logical_type: 'string', role: 'dimension', field_id: 'city' }
+  const revenue = { key: 'm0', name: 'revenue', logical_type: 'decimal', role: 'measure', field_id: 'revenue', aggregation: 'sum' }
+  const sent: { dimensions?: unknown[] }[] = []
+  function serve() {
+    sent.length = 0
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, options: RequestInit = {}) => {
+      const body = JSON.parse(String(options.body ?? '{}')) as { dimensions?: unknown[] }
+      sent.push(body)
+      const rows = body.dimensions?.length
+        ? [['Jakarta', '500'], ['Bandung', '300'], ['Medan', '100']].map(([name, value]) => [{ type: 'string', value: name }, { type: 'decimal', value }])
+        : [[{ type: 'decimal', value: '1000' }]]
+      return new Response(JSON.stringify({ dataset_id: DATASET, revision: 1, truncated: Boolean(body.dimensions?.length),
+        columns: body.dimensions?.length ? [city, revenue] : [revenue], rows }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+  }
+  const slices = (host: HTMLElement) => ((getInstanceByDom(host)!.getOption() as { series: { data: { name: string; value: number }[] }[] }).series[0].data)
+    .map(item => [item.name, item.value])
+
+  it('asks for the whole under the same filters and draws the rest as Other', async () => {
+    serve()
+    const chosen: unknown[] = []
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const screen = await render(<QueryClientProvider client={client}>
+      <div style={{ width: 480, height: 320, display: 'flex' }}>
+        <NativeChart chart={pie('other')} draft={false} onSelectValue={value => chosen.push(value)} />
+      </div>
+    </QueryClientProvider>)
+    await expect.element(screen.getByText('Showing the top 3 and the rest as Other.')).toBeVisible()
+    const host = screen.container.querySelector<HTMLElement>('[role="img"]')!
+    await expect.poll(() => slices(host)).toEqual([['Jakarta', 500], ['Bandung', 300], ['Medan', 100], ['Other', 100]])
+    expect(sent.filter(body => !body.dimensions?.length)).toHaveLength(1)
+    // Other stands for many values: clicking it selects nothing, while a named slice still does.
+    type Sector = { shape: { cx: number; cy: number; r: number; r0: number; startAngle: number; endAngle: number } }
+    type Model = { getModel: () => { getSeriesByIndex: (index: number) => { getData: () => { getItemGraphicEl: (index: number) => Sector } } } }
+    // A point inside the slice: halfway along its arc, halfway out from the centre.
+    const centre = (index: number) => {
+      const { cx, cy, r, r0, startAngle, endAngle } = (getInstanceByDom(host) as unknown as Model).getModel()
+        .getSeriesByIndex(0).getData().getItemGraphicEl(index).shape
+      const angle = (startAngle + endAngle) / 2
+      const radius = (r + r0) / 2
+      return { x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) }
+    }
+    await new Promise(resolve => setTimeout(resolve, 700))
+    const hit = (index: number) => {
+      const { x, y } = centre(index)
+      const zr = getInstanceByDom(host)!.getZr() as unknown as { findHover: (x: number, y: number) => { target?: unknown } }
+      return zr.findHover(x, y).target
+    }
+    const el = (index: number) => (getInstanceByDom(host) as unknown as Model).getModel().getSeriesByIndex(0).getData().getItemGraphicEl(index)
+    expect(hit(3)).toBe(el(3))
+    await userEvent.click(page.elementLocator(host), { position: centre(3) })
+    await new Promise(resolve => setTimeout(resolve, 200))
+    expect(chosen).toEqual([])
+    await userEvent.click(page.elementLocator(host), { position: centre(0) })
+    await expect.poll(() => chosen.length).toBe(1)
+    expect(chosen[0]).toMatchObject({ field_id: 'city', label: 'Jakarta' })
+  })
+
+  it('without Other shows the top slices only, says so, and asks for no total', async () => {
+    serve()
+    const screen = await show(pie('error'))
+    await expect.element(screen.getByText('Showing the top 3 only.')).toBeVisible()
+    const host = screen.container.querySelector<HTMLElement>('[role="img"]')!
+    await expect.poll(() => slices(host)).toHaveLength(3)
+    expect(sent.every(body => body.dimensions?.length)).toBe(true)
   })
 })
