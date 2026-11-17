@@ -49,6 +49,8 @@ const ROWS: Record<DateGrain, [string, number][]> = {
 }
 const requests: DatasetQueryRequest[] = []
 let categoryLabels: string[] = []
+/** A date grain the engine refuses for this role, as Ranger does for a denied detail. */
+let deniedGrain: DateGrain | null = null
 
 async function route(input: RequestInfo | URL, options: RequestInit = {}) {
   const url = String(input)
@@ -58,6 +60,7 @@ async function route(input: RequestInfo | URL, options: RequestInit = {}) {
     const request = JSON.parse(String(options.body)) as DatasetQueryRequest
     requests.push(request)
     const grain = (request.dimensions?.[0]?.date_grain ?? 'year') as DateGrain
+    if (grain === deniedGrain) return json({ detail: 'Access denied for this data' }, 403)
     const column = categoryLabels.length
       ? { key: 'd0', name: 'order_date', logical_type: 'string', role: 'dimension', field_id: 'order_date' }
       : { key: 'd0', name: 'order_date', logical_type: 'date', role: 'dimension', field_id: 'order_date', date_grain: grain }
@@ -146,6 +149,7 @@ beforeEach(() => {
   useAuthStore.getState().auth.setUser({ username: 'alice', roles: ['ANALYST'], activeRole: 'ANALYST' })
   requests.length = 0
   categoryLabels = []
+  deniedGrain = null
   chartTitle = 'Revenue by order date'
   datasetTitle = 'Orders'
   onSelectValue.mockReset()
@@ -157,6 +161,31 @@ afterEach(async () => {
   for (const client of clients.splice(0)) client.clear()
   useAuthStore.getState().auth.reset()
   vi.unstubAllGlobals()
+})
+
+describe('NDV-INTER-009 drilling into detail the role cannot read', () => {
+  it('shows the refusal and no rows, not even the level above, and Back returns to what the role can read', async () => {
+    deniedGrain = 'quarter'
+    const { screen } = await mountCanvas()
+    const container = screen.container
+    await chartOn(container, labels('year'))
+    await drill(container, 'year', 0, 'Order date by quarter')
+    await expect.element(screen.getByText('This data is unavailable with your current role.')).toBeVisible()
+    expect(requests.some(request => request.dimensions?.[0]?.date_grain === 'quarter')).toBe(true)
+    // Nothing from the refused query or the previous level stays drawn under the drilled title.
+    expect(heading(container).textContent).toContain('›')
+    const host = container.querySelector<HTMLElement>('[role="img"]')
+    const drawn = host ? getInstanceByDom(host) : undefined
+    expect(drawn).toBeUndefined()
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(0)
+    // Only the title names the clicked year; no value of the previous level is shown.
+    const body = (container.textContent ?? '').replace(heading(container).textContent ?? '', '')
+    for (const year of labels('year')) expect(body).not.toContain(year)
+
+    await screen.getByRole('button', { name: 'Back up one level' }).click()
+    await chartOn(container, labels('year'))
+    expect(heading(container).textContent).toBe('Revenue by order date')
+  })
 })
 
 describe('NDV-INTER-007 / NDV-INTER-012 date drill-down and back', () => {

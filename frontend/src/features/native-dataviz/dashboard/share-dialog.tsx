@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { workspaceApi } from '@/features/workspaces/explorer/api'
 import { ApiError } from '@/lib/api-client'
 import { useAuthStore } from '@/stores/auth-store'
 import type { DashboardDefinition, GrantSummary } from '../contracts'
@@ -53,6 +54,15 @@ export function ShareDialog({ open, onOpenChange, dashboardId, workspaceId, defi
     queryFn: ({ signal }) => documents.grants('dashboards', dashboardId, { signal }),
     enabled: open && !personal, retry: false,
   })
+  // A dashboard grant never gives workspace access: a role the workspace is
+  // not shared with cannot open the dashboard until the workspace owner adds it.
+  const members = useQuery({
+    queryKey: ['native-dataviz', 'workspace-shares', epoch, workspaceId],
+    queryFn: () => workspaceApi.shares(workspaceId),
+    enabled: open && !personal, retry: false,
+  })
+  const sharedRoles = members.data ? new Set(members.data.shares.map(share => share.role)) : null
+  const outside = (subject: Subject) => subject.subject_type === 'role' && sharedRoles !== null && !sharedRoles.has(subject.subject_id)
   const [subjects, setSubjects] = useState<Subject[] | null>(null)
   const current = subjects ?? (state.data ? group(state.data.grants) : [])
   const [kind, setKind] = useState<'role' | 'user'>('role')
@@ -104,7 +114,7 @@ export function ShareDialog({ open, onOpenChange, dashboardId, workspaceId, defi
     <DialogContent className='sm:max-w-lg'>
       <DialogHeader>
         <DialogTitle>Share dashboard</DialogTitle>
-        <DialogDescription>Sharing lets people open this dashboard. It does not give access to data: every viewer sees only the rows and columns their own role can read.</DialogDescription>
+        <DialogDescription>Sharing lets people open this dashboard. They also need access to its workspace. It does not give access to data: every viewer sees only the rows and columns their own role can read.</DialogDescription>
       </DialogHeader>
       {personal ? <p className='rounded-md border border-dashed p-3 text-sm text-muted-foreground'>
         Dashboards in your personal workspace stay private. Create the dashboard in a shared workspace to share it with people or roles.
@@ -134,6 +144,9 @@ export function ShareDialog({ open, onOpenChange, dashboardId, workspaceId, defi
                 </label>
                 <Button variant='ghost' size='icon' className='size-8' aria-label={`Remove ${subject.subject_id}`}
                   onClick={() => setSubjects(current.filter((_, i) => i !== index))}><Trash2 /></Button>
+                {outside(subject) && <p className='w-full text-xs text-muted-foreground'>
+                  {subject.subject_id} can’t open this dashboard yet: the workspace isn’t shared with it. The workspace owner can add it with <span className='font-medium text-foreground'>Share with roles…</span>
+                </p>}
               </li>)}
         </ul>
       </>}

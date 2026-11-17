@@ -261,3 +261,39 @@ async def test_a_renamed_saved_column_is_stale_not_a_bad_request(
     with pytest.raises(NovaException, match="SCHEMA_STALE") as error:
         await setup.service._verify_preview_source(setup.user, document, selection)
     assert error.value.status_code == 409
+
+
+# ── NDV-INTER-009: a drill into detail the role cannot read ──
+
+
+@pytest.mark.parametrize("partial", [False, True])
+async def test_a_denied_drill_detail_is_refused_without_rows(query_setup, partial):
+    """Ranger denies the drilled column: the caller gets a refusal and no rows.
+
+    ``partial`` covers an engine that streams some rows before refusing.
+    """
+    case = query_setup
+    fields = {f.source_column: f.field_id for f in case.document.fields}
+    drilled = DatasetQueryRequest(
+        revision=1, dimensions=[{"field_id": fields["id"]}],
+        measures=[{"field_id": fields["amount"], "aggregation": "sum"}],
+        filters={"expression": {"type": "predicate", "op": "eq",
+                                "field": {"dataset_id": str(case.document.dataset_id),
+                                          "dataset_revision": 1, "field_id": fields["id"]},
+                                "values": [{"type": "integer", "value": "1"}]}})
+    schema = case.execute.side_effect
+
+    async def execute(**kwargs):
+        if "row_sink" not in kwargs:
+            return await schema(**kwargs)
+        if partial:
+            sink = kwargs["row_sink"]
+            await sink.begin(["d0", "m0"], ())
+            await sink.rows([[1, Decimal("10.50")]])
+        raise StarRocksError("Access denied; SELECT on column orders.amount is not granted")
+
+    case.execute.side_effect = execute
+    with pytest.raises(NovaException) as error:
+        await case.service.query(case.user, case.document.dataset_id, drilled)
+    assert error.value.status_code == 403
+    assert "amount" not in repr(error.value) and "orders" not in str(error.value)

@@ -132,13 +132,32 @@ export function ranges(values: { field_id: string | null; value: number | null }
   return out
 }
 
+/** The last rule for this field that the value passes; it decides the cell's highlight. */
+export function matchedRule(formats: readonly ConditionalFormat[] | undefined, fieldId: string | null,
+  value: number | null): ConditionalFormat | undefined {
+  if (!formats?.length || fieldId === null || value === null) return undefined
+  return [...formats].reverse().find(format => format.field_id === fieldId && format.kind === 'rule' && matches(format, value))
+}
+
+const RULE_WORDS: Record<NonNullable<ConditionalFormat['operator']>, string> = {
+  gt: 'above', gte: 'at least', lt: 'below', lte: 'at most', eq: 'equal to',
+}
+
+/** What a highlight means in words, for people who cannot tell it by colour. */
+export function ruleMeaning(rule: ConditionalFormat, format: (value: number) => string): string {
+  const target = Number(rule.value?.value)
+  const words = rule.operator ? RULE_WORDS[rule.operator] : null
+  return words && Number.isFinite(target) ? `Highlighted: ${words} ${format(target)}` : 'Highlighted'
+}
+
 /** The cell's shading from the chart's formats: a matching rule wins over a scale. */
 export function cellStyle(formats: readonly ConditionalFormat[] | undefined, fieldId: string | null, value: number | null,
   range?: { min: number; max: number }): { backgroundColor?: string; fontWeight?: number } | undefined {
   if (!formats?.length || fieldId === null || value === null) return undefined
   const own = formats.filter(format => format.field_id === fieldId)
-  const rule = [...own].reverse().find(format => format.kind === 'rule' && matches(format, value))
-  if (rule) return { backgroundColor: `color-mix(in oklab, ${TONES[rule.tone ?? 'accent']} 22%, transparent)`, fontWeight: 500 }
+  const rule = matchedRule(own, fieldId, value)
+  // Weight and the cell's marker carry the meaning without colour.
+  if (rule) return { backgroundColor: `color-mix(in oklab, ${TONES[rule.tone ?? 'accent']} 22%, transparent)`, fontWeight: 600 }
   const scale = own.find(format => format.kind === 'scale')
   if (!scale || !range) return undefined
   const share = range.max > range.min ? (value - range.min) / (range.max - range.min) : 1

@@ -434,3 +434,18 @@ def test_explicit_actions_naming_a_missing_widget_are_still_refused():
     with pytest.raises(ValidationError) as refused:
         DashboardDefinition.model_validate(linked)
     assert "Interaction source must be a chart widget" in str(refused.value)
+
+
+def test_a_page_holds_at_most_one_hundred_widgets():
+    """NDV-GRID-019: the page cap; more widgets go on another page."""
+    from app.modules.viz.contracts.dashboards import Page, TextWidget
+
+    def widgets(count):
+        return tuple(TextWidget(widget_id=uuid4(), text=f"Note {index}",
+                                layout=Layout(x=(index % 4) * 3, y=(index // 4) * 2, w=3, h=2))
+                     for index in range(count))
+
+    page = Page(page_id=uuid4(), title="Wall", widgets=widgets(100))
+    assert len(page.widgets) == 100
+    with pytest.raises(ValidationError):
+        Page(page_id=uuid4(), title="Wall", widgets=widgets(101))

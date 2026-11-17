@@ -26,7 +26,7 @@ import type { ValueSelection } from '../charts/native-chart'
 import { DashboardCanvas } from './canvas'
 import { LinkDialog } from './link-dialog'
 import {
-  authorizeExport, chartImage, fileName, hasImage, printHtml, reportHtml, resultTable, saveFile, toCsv, toXlsx,
+  authorizeExport, chartImage, chartSettled, fileName, hasImage, printHtml, reportHtml, resultTable, saveFile, toCsv, toXlsx,
   type ChartFileFormat, type ReportItem, type ResultTable,
 } from './export'
 import { chartDocumentQuery } from './hooks'
@@ -86,6 +86,10 @@ function dragged(item: DropItem) {
 }
 
 /** A new chart may carry the canvas cell it was dropped on. */
+/** The contract's page cap; more widgets go on another page. */
+export const MAX_WIDGETS = 100
+const PAGE_FULL = `This page has ${MAX_WIDGETS} widgets, the most a page can hold. Add a page for more.`
+
 type Inspector = { mode: 'new'; visual: Visual; at?: { x: number; y: number } } | { mode: 'edit'; widget: Widget; chart: ChartDefinition }
 
 function message(error: unknown): string {
@@ -396,8 +400,15 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
   const pageIdRef = useRef(pageId)
   useEffect(() => { pageIdRef.current = page?.page_id ?? null }, [page])
 
+  const pageFull = (page?.widgets?.length ?? 0) >= MAX_WIDGETS
+
   async function saveChart(chart: ChartDefinition) {
     if (!page) return
+    // Refuse before creating the chart, so a full page leaves no chart behind.
+    if (inspector?.mode !== 'edit' && pageFull) {
+      setInspectorError(PAGE_FULL)
+      return
+    }
     setSavingChart(true)
     setInspectorError(undefined)
     try {
@@ -426,6 +437,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
 
   function addText(text: string, style: 'title' | 'body') {
     if (!page) return
+    if (pageFull) { toast.info(PAGE_FULL); return }
     const widget = { kind: 'text', widget_id: crypto.randomUUID(), title: '', locked: false, text, style,
       layout: slotAt(page.widgets ?? [], 12, 2, textAt) } as Widget
     setTextAt(null)
@@ -434,6 +446,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
 
   function duplicate(widget: Widget) {
     if (!page) return
+    if (pageFull) { toast.info(PAGE_FULL); return }
     const copy = { ...widget, widget_id: crypto.randomUUID(), layout: firstFreeSlot(page.widgets ?? [], widget.layout.w, widget.layout.h) } as Widget
     void apply([{ op: 'widget.add', page_id: page.page_id, widget: copy }])
   }
@@ -507,6 +520,12 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
   const downloadChart = useCallback(async (chart: ChartDefinition, context: FilterTree | undefined,
     format: ChartFileFormat, root: HTMLElement) => {
     try {
+      // An image is a picture of the screen: wait for the current result to finish
+      // drawing before the audited export check, so a refused wait records nothing.
+      if (format === 'png' && !await chartSettled(root)) {
+        toast.error('The chart is still updating. Download it again once it has finished.')
+        return
+      }
       await authorizeExport(dashboardId, format, chart.chart_id)
       if (format === 'png') {
         const image = await chartImage(root, {
@@ -710,14 +729,15 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
         </nav>
       </>}
       {tab === 'canvas' && editing && <div role='toolbar' aria-label='Add to dashboard' className='flex flex-wrap items-center gap-1'>
-        <Button variant='ghost' size='sm' {...dragged({ kind: 'chart', visual: 'bar' })} onClick={() => setInspector({ mode: 'new', visual: 'bar' })}><BarChart3 />Chart</Button>
-        <Button variant='ghost' size='sm' {...dragged({ kind: 'chart', visual: 'kpi' })} onClick={() => setInspector({ mode: 'new', visual: 'kpi' })}><Hash />KPI</Button>
-        <Button variant='ghost' size='sm' {...dragged({ kind: 'chart', visual: 'table' })} onClick={() => setInspector({ mode: 'new', visual: 'table' })}><Table2 />Table</Button>
-        <Button variant='ghost' size='sm' {...dragged({ kind: 'text' })} onClick={() => { setTextAt(null); setTextOpen(true) }}><Type />Text</Button>
+        <Button variant='ghost' size='sm' disabled={pageFull} {...dragged({ kind: 'chart', visual: 'bar' })} onClick={() => setInspector({ mode: 'new', visual: 'bar' })}><BarChart3 />Chart</Button>
+        <Button variant='ghost' size='sm' disabled={pageFull} {...dragged({ kind: 'chart', visual: 'kpi' })} onClick={() => setInspector({ mode: 'new', visual: 'kpi' })}><Hash />KPI</Button>
+        <Button variant='ghost' size='sm' disabled={pageFull} {...dragged({ kind: 'chart', visual: 'table' })} onClick={() => setInspector({ mode: 'new', visual: 'table' })}><Table2 />Table</Button>
+        <Button variant='ghost' size='sm' disabled={pageFull} {...dragged({ kind: 'text' })} onClick={() => { setTextAt(null); setTextOpen(true) }}><Type />Text</Button>
         <Button variant='ghost' size='sm' onClick={openFilters}><Filter />Filters</Button>
         <span className='mx-1 h-5 w-px bg-border' aria-hidden />
         <Tooltip><TooltipTrigger asChild><Button variant='ghost' size='icon' className='size-8' aria-label='Undo' disabled={!undo.length || status === 'saving'} onClick={undoLast}><Undo2 /></Button></TooltipTrigger><TooltipContent>Undo</TooltipContent></Tooltip>
         <Tooltip><TooltipTrigger asChild><Button variant='ghost' size='icon' className='size-8' aria-label='Redo' disabled={!redo.length || status === 'saving'} onClick={redoLast}><Redo2 /></Button></TooltipTrigger><TooltipContent>Redo</TooltipContent></Tooltip>
+        {pageFull && <p role='status' className='text-xs text-muted-foreground'>{PAGE_FULL}</p>}
       </div>}
     </div>
 
@@ -738,7 +758,8 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
             selectedId={selected} onSelect={setSelected} onLayout={onLayout}
             onEditChart={(widget, chart) => setInspector({ mode: 'edit', widget, chart })}
             onDropWidget={(item, cell) => {
-              if (item.kind === 'text') { setTextAt(cell); setTextOpen(true) }
+              if (pageFull) toast.info(PAGE_FULL)
+              else if (item.kind === 'text') { setTextAt(cell); setTextOpen(true) }
               else setInspector({ mode: 'new', visual: item.visual as Visual, at: cell })
             }}
             onDuplicate={duplicate} onRemove={widget => void apply(removal(widget))}

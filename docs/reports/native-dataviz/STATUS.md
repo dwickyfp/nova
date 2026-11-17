@@ -1,6 +1,6 @@
 # Native Dataviz delivery record
 
-Status: **in progress; not production ready; no cutover**. Release QA round 7 (2026-11-17): 192 of 254 pass, 17 out of scope, 45 HIGH open.
+Status: **in progress; not production ready; no cutover**. Release QA round 8 (2026-11-17): 199 of 254 pass, 17 out of scope, 38 HIGH open.
 Branch: `feat/dataviz-native`.
 Baseline: `1ee12694e0ecb6ecfd8135965943be08f5195967`.
 
@@ -890,4 +890,57 @@ OUT_OF_SCOPE.
       A11Y-007, REVIS-010). The three files then passed 35/35 on their own,
       and the accessibility file passed in shuffled order;
     - attempt 3: coverage passed 224 files and 1,972 tests.
+
+## Release QA round 8 (2026-11-17)
+
+Seven more scenarios pass: 199 PASS, 38 NOT_RUN (all HIGH) and 17
+OUT_OF_SCOPE.
+
+- **Defects fixed:**
+  - **CHART-018:** a value matched by a highlight rule was marked only by
+    colour and slightly heavier text. It now also has a dot marker, bold
+    text, a tooltip and screen-reader words naming the rule, in tables and
+    pivots.
+  - **CHART-020:** a chart image asked for while the chart was still loading
+    its filtered result was taken from the old drawing. The image now waits
+    until the current result has finished drawing (up to 10 s, then a clear
+    message), and the audited Export check runs only then. The test fails
+    without the fix.
+  - **ACL-017 (sharing):** sharing a dashboard with a role outside its
+    workspace silently gave that role nothing. The share dialog now says so
+    and points to **Share with roles…**. A PG17 test shows the grant
+    confers nothing, not even with edit, until the workspace is shared with
+    the role. Grants are not refused outright, because workspace access is
+    resolved per person across all their roles.
+- **Built (GRID-019):**
+  - Chart widgets load only when they come within 600 px of the visible
+    canvas, then stay mounted.
+  - With 100 widgets, fewer than 60 draw at first, at most 3 queries run at
+    once, and scrolling draws the rest, each asked once.
+  - The 100-widget page cap is now tested. At the cap the add buttons are
+    off and a note explains why.
+- **New passes:**
+  - **INTER-013:** a second viewer of the same shared dashboard is
+    unaffected by another viewer's cross-filter, and nothing is written.
+  - **ACL-016 (live, attempt 2):** a grant to bob by name opens a dataset,
+    and his unchanged marketing role's Ranger filter still limits him to
+    Bandung. alice holds the same role without the grant and is refused;
+    removing the grant refuses bob again. Attempt 1 hit a 504 source
+    deadline at load average 24; it is kept as evidence.
+  - **ACL-024:**
+    - Metadata or service login names, forged task sessions, borrowed
+      sessions and another account's task connection are all refused before
+      the engine.
+    - Live: all 12 PG metadata logins are refused by the StarRocks FE (1045).
+- **Progress, still open:** INTER-009. A denied drill returns 403 with no rows
+  or names, and the widget shows the refusal and nothing from the level
+  above. A live run under a Ranger column-deny policy remains.
+- **Gates (round 8, local; CI still waived):**
+  - **Backend:** full-application mypy and changed-file Ruff pass. Changed
+    unit files pass (179 tests), and the PG17 `test_metadata_viz.py` file
+    passes 88 tests. No application code changed.
+  - **Frontend:** lint, build, bundle, notices and licenses pass. Coverage
+    passed 226 files and 1,981 tests on the first run.
+  - Existing browser tests that mount two tabs, or a 2,400 px page, now size
+    the test viewport to fit them, since charts draw only near the screen.
 

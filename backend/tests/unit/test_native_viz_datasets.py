@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
+from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.core.exceptions import NovaException, StarRocksError
@@ -960,3 +961,56 @@ async def test_parameter_preview_keeps_values_private_and_uses_existing_stream_a
         )
     assert error.value.status_code == 422
     setup.execute.assert_not_awaited()
+
+
+# A refusal before admission (no valid context) or at session revalidation.
+REFUSED = (NovaException, HTTPException)
+
+
+@pytest.mark.parametrize("claim", [
+    # A service or metadata login name with no Nova sign-in session.
+    {"username": "nova_meta_web", "session_id": "nova_meta_web", "active_role": "NOVA_SERVICE"},
+    {"username": "root", "session_id": "root-login", "active_role": "ACCOUNTADMIN"},
+    # A forged scheduled-task session with no impersonated engine connection.
+    {"username": "nova_task", "session_id": "task:forged", "active_role": "PUBLIC"},
+    # No session at all.
+    {"username": "alice", "session_id": "", "active_role": "ANALYST"},
+])
+async def test_service_or_metadata_identity_cannot_query_dataset_rows(
+    preview_setup, monkeypatch, claim,
+):
+    """NDV-ACL-024: only a live caller session reaches the data engine."""
+    case = preview_setup
+    monkeypatch.setattr(document_service.session_store, "get", AsyncMock(return_value=None))
+    user = {**case.user, **claim, "assigned_roles": [claim["active_role"]]}
+    with pytest.raises(REFUSED):
+        await case.service.preview(user, case.document.dataset_id, case.request)
+    case.execute.assert_not_awaited()
+
+
+@pytest.mark.parametrize("claim", [
+    {"username": "root", "active_role": "ACCOUNTADMIN", "assigned_roles": ["ACCOUNTADMIN"]},
+    {"username": "nova_meta_web", "active_role": "ANALYST", "assigned_roles": ["ANALYST"]},
+    {"username": "alice", "active_role": "ANALYST", "assigned_roles": ["ANALYST"],
+     "security_context_version": 4},
+])
+async def test_live_session_cannot_be_borrowed_by_another_principal(preview_setup, claim):
+    """NDV-ACL-024: a live session id with another account or context is refused."""
+    case = preview_setup
+    user = {**case.user, **claim}
+    with pytest.raises(REFUSED):
+        await case.service.preview(user, case.document.dataset_id, case.request)
+    case.execute.assert_not_awaited()
+
+
+async def test_task_connection_for_one_account_does_not_serve_another(preview_setup, monkeypatch):
+    """NDV-ACL-024: an impersonated task connection only counts for its own account."""
+    from app.modules.query.service import delegated_connection
+
+    case = preview_setup
+    monkeypatch.setattr(document_service.session_store, "get", AsyncMock(return_value=None))
+    user = {**case.user, "username": "alice", "session_id": "task:run-1",
+            "active_role": "ANALYST", "assigned_roles": ["ANALYST"]}
+    with delegated_connection("nova_task_reporting", object()), pytest.raises(REFUSED):
+        await case.service.preview(user, case.document.dataset_id, case.request)
+    case.execute.assert_not_awaited()

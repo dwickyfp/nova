@@ -1,3 +1,4 @@
+import { getInstanceByDom } from 'echarts/core'
 import { api } from '@/lib/api-client'
 import { readLightToken } from '@/lib/read-token'
 import type { ChartDefinition, DatasetQueryResult } from '../contracts'
@@ -84,6 +85,22 @@ export async function toXlsx(sheets: { title: string; table: ResultTable }[]): P
   })
   const bytes = XLSX.write(book, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
   return new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+}
+
+/**
+ * Wait until the chart in `root` shows its current result, fully drawn: no query
+ * in flight and no animation running. False if that does not happen in time.
+ */
+export async function chartSettled(root: HTMLElement, timeout = 10_000): Promise<boolean> {
+  const deadline = Date.now() + timeout
+  for (;;) {
+    const host = root.querySelector<HTMLElement>('[role="img"]')
+    const chart = host ? getInstanceByDom(host) : undefined
+    const drawing = chart ? !chart.getZr().animation.isFinished() : false
+    if (!root.querySelector('[data-updating]') && !drawing) return true
+    if (Date.now() >= deadline) return false
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
 }
 
 /** The chart as drawn, titled, on its card colour, at the screen's pixel density. */

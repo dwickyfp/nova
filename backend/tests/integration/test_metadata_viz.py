@@ -1476,6 +1476,53 @@ async def test_role_grant_is_active_only_and_workspace_membership_is_separate(vi
             await repo.read(identity)
 
 
+async def test_grant_to_a_role_outside_the_workspace_confers_nothing_until_shared(viz):
+    """NDV-ACL-017: a dashboard grant never adds workspace membership."""
+    document, _, _ = await create(viz)
+    identity = document.dashboard_id
+    await grant(viz, identity, {"subject_type": "role", "subject_id": "OUTSIDERS",
+                                "permissions": ["view", "interact", "comment", "edit"]})
+    async with viz.transaction() as (repo, _):
+        await repo.publish(identity, PublicationRequest(operation_id=uuid4(), expected_revision=1))
+    outsider = session("outsider", active="OUTSIDERS")
+    shares = "SELECT role_name,permission FROM nova_meta.config_workspace_shares " \
+             "WHERE workspace_id=%s AND NOT is_deleted ORDER BY role_name"
+    before = await viz.inspect(shares, (viz.workspace_id,))
+    assert [row["role_name"] for row in before] == ["EDITOR", "VIEWER"]
+    for draft in (False, True):
+        with pytest.raises(NovaException) as error:
+            async with viz.transaction(outsider) as (repo, _):
+                await repo.read(identity, draft=draft)
+        assert error.value.status_code == 404
+    async with viz.transaction(outsider) as (_, connection):
+        cursor = await connection.execute(
+            "SELECT nova_meta.viz_can(%s,'view') AS view, nova_meta.viz_can(%s,'edit') AS edit,"
+            " (SELECT count(*) FROM nova_meta.viz_resources) AS visible,"
+            " (SELECT count(*) FROM nova_meta.config_workspaces WHERE id=%s) AS workspaces",
+            (identity, identity, viz.workspace_id))
+        assert await cursor.fetchone() == {"view": False, "edit": False, "visible": 0,
+                                           "workspaces": 0}
+    with pytest.raises((MetadataPermissionDenied, NovaException)):
+        async with viz.transaction(outsider) as (repo, _):
+            await repo.replace(document.model_copy(update={"title": "Taken"}),
+                               operation_id=uuid4(), expected_revision=1)
+    assert await viz.inspect(shares, (viz.workspace_id,)) == before
+    # Sharing the workspace with the role is the explicit membership rule;
+    # only then does the dashboard grant count, and only as granted.
+    async with viz.transaction(repository_type=WorkspaceSharingRepository) as (spaces, _):
+        await spaces.replace_shares(viz.workspace_id,
+                                    {"VIEWER": "view", "EDITOR": "edit", "OUTSIDERS": "view"},
+                                    expected_revision=2)
+    async with viz.transaction(outsider) as (repo, _):
+        assert (await repo.read(identity))["definition"].title == "Sales"
+        assert (await repo.read(identity, draft=True))["revision"] == 1
+    other = session("stranger", active="STRANGERS")
+    with pytest.raises(NovaException) as error:
+        async with viz.transaction(other) as (repo, _):
+            await repo.read(identity)
+    assert error.value.status_code == 404
+
+
 async def test_publication_stays_immutable_then_restore_creates_new_draft(viz):
     document, _, _ = await create(viz)
     identity = document.dashboard_id

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ChartDefinition, DatasetField, DatasetQueryResult } from '../contracts'
 import { drillContext, drilledChart, drillOptions } from './drill'
-import { cellStyle, MAX_PIVOT_COLUMNS, pivotModel, ranges } from './pivot'
+import { cellStyle, matchedRule, MAX_PIVOT_COLUMNS, pivotModel, ranges, ruleMeaning } from './pivot'
 
 const pivot = (extra: Record<string, unknown> = {}) => ({
   schema_version: 2, chart_id: 'c', title: 'Units', dataset_id: 'd', dataset_revision: 3, visual: 'pivot',
@@ -73,7 +73,20 @@ describe('conditional formatting', () => {
     expect(range).toEqual({ min: 2, max: 12 })
     expect(cellStyle(formats, 'units', 12, range)?.backgroundColor).toBe('color-mix(in oklab, var(--chart-4) 40%, transparent)')
     expect(cellStyle(formats, 'units', 7, range)?.backgroundColor).toBe('color-mix(in oklab, var(--chart-4) 23%, transparent)')
-    expect(cellStyle(formats, 'units', 2, range)).toEqual({ backgroundColor: 'color-mix(in oklab, var(--destructive) 22%, transparent)', fontWeight: 500 })
+    expect(cellStyle(formats, 'units', 2, range)).toEqual({ backgroundColor: 'color-mix(in oklab, var(--destructive) 22%, transparent)', fontWeight: 600 })
+  })
+
+  it('NDV-CHART-018: names the rule a highlighted value passed, in words', () => {
+    const format = new Intl.NumberFormat('en-US').format
+    const rule = matchedRule(formats, 'units', 2)
+    expect(rule?.operator).toBe('lt')
+    expect(ruleMeaning(rule!, format)).toBe('Highlighted: below 3')
+    expect(matchedRule(formats, 'units', 7)).toBeUndefined()
+    expect(matchedRule(formats, 'revenue', 2)).toBeUndefined()
+    const words = (['gt', 'gte', 'lt', 'lte', 'eq'] as const).map(operator =>
+      ruleMeaning({ field_id: 'units', kind: 'rule', operator, value: { type: 'decimal', value: '1200.5' } }, format))
+    expect(words).toEqual(['Highlighted: above 1,200.5', 'Highlighted: at least 1,200.5', 'Highlighted: below 1,200.5',
+      'Highlighted: at most 1,200.5', 'Highlighted: equal to 1,200.5'])
   })
 
   it('leaves other measures, empty cells and charts without formats alone', () => {

@@ -1,0 +1,228 @@
+{
+  "started_at": "2026-11-17T11:26:37.619986+00:00",
+  "resource_id": "dfc11bf3-7000-4eee-ae71-f7279a013923",
+  "scope": "direct user grant on a shared native dataset under Ranger row filters",
+  "result": "PASS",
+  "cleanup": "REMOVED",
+  "steps": [
+    {
+      "check": "nova_admin login",
+      "passed": true
+    },
+    {
+      "check": "nova_admin admitted",
+      "passed": true
+    },
+    {
+      "check": "alice login",
+      "passed": true
+    },
+    {
+      "check": "alice admitted",
+      "passed": true
+    },
+    {
+      "check": "bob login",
+      "passed": true
+    },
+    {
+      "check": "bob admitted",
+      "passed": true
+    },
+    {
+      "request": "alice uses marketing",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "alice uses marketing",
+      "passed": true
+    },
+    {
+      "check": "alice active role is marketing",
+      "passed": true
+    },
+    {
+      "request": "bob uses marketing",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "bob uses marketing",
+      "passed": true
+    },
+    {
+      "check": "bob active role is marketing",
+      "passed": true
+    },
+    {
+      "request": "shared workspace",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "shared workspace",
+      "passed": true
+    },
+    {
+      "request": "share with marketing",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "share with marketing",
+      "passed": true
+    },
+    {
+      "request": "inspect",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "inspect",
+      "passed": true
+    },
+    {
+      "request": "create in shared workspace",
+      "status": 201,
+      "expected_status": 201
+    },
+    {
+      "check": "create in shared workspace",
+      "passed": true
+    },
+    {
+      "request": "publish",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "publish",
+      "passed": true
+    },
+    {
+      "request": "steward query",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "steward query",
+      "passed": true
+    },
+    {
+      "check": "the steward sees both cities",
+      "passed": true,
+      "rows": [
+        [
+          "Bandung",
+          "600.00"
+        ],
+        [
+          "Jakarta",
+          "400.00"
+        ]
+      ]
+    },
+    {
+      "request": "bob without a grant is refused",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "bob without a grant is refused",
+      "passed": true
+    },
+    {
+      "request": "grant bob by name: read grants",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "grant bob by name: read grants",
+      "passed": true
+    },
+    {
+      "request": "grant bob by name",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "grant bob by name",
+      "passed": true
+    },
+    {
+      "request": "bob query through his user grant",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "bob query through his user grant",
+      "passed": true
+    },
+    {
+      "check": "bob's grant opens it; his role's filter decides: only Bandung",
+      "passed": true,
+      "rows": [
+        [
+          "Bandung",
+          "600.00"
+        ]
+      ]
+    },
+    {
+      "request": "alice holds the role, not the grant, and is refused",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "alice holds the role, not the grant, and is refused",
+      "passed": true
+    },
+    {
+      "request": "remove bob's grant: read grants",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "remove bob's grant: read grants",
+      "passed": true
+    },
+    {
+      "request": "remove bob's grant",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "remove bob's grant",
+      "passed": true
+    },
+    {
+      "request": "bob is refused once the grant is removed",
+      "status": 404,
+      "expected_status": 404
+    },
+    {
+      "check": "bob is refused once the grant is removed",
+      "passed": true
+    },
+    {
+      "request": "delete dataset",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "delete dataset",
+      "passed": true
+    },
+    {
+      "request": "delete workspace",
+      "status": 200,
+      "expected_status": 200
+    },
+    {
+      "check": "delete workspace",
+      "passed": true
+    }
+  ],
+  "finished_at": "2026-11-17T11:26:52.140922+00:00"
+}

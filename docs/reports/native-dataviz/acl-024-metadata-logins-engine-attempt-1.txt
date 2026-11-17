@@ -1,0 +1,19 @@
+NDV-ACL-024 live probe, attempt 1
+Each PG metadata login (password from the deployment's metadata passwords file, never printed) tries to sign in to the development StarRocks FE and run SELECT CURRENT_USER().
+Expected: every login refused (1045 access denied); none reaches user data.
+
+probe 2026-11-17T11:03:33.839981+00:00 engine 127.0.0.1:29030 (dev StarRocks FE)
+nova_meta_agent refused OperationalError 1045
+nova_meta_automation refused OperationalError 1045
+nova_meta_ingestion refused OperationalError 1045
+nova_meta_maintenance refused OperationalError 1045
+nova_meta_ml refused OperationalError 1045
+nova_meta_notebook refused OperationalError 1045
+nova_meta_outbox refused OperationalError 1045
+nova_meta_proxy refused OperationalError 1045
+nova_meta_query refused OperationalError 1045
+nova_meta_scheduler refused OperationalError 1045
+nova_meta_task refused OperationalError 1045
+nova_meta_web refused OperationalError 1045
+
+Result: 12 of 12 refused.

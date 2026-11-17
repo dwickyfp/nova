@@ -237,6 +237,127 @@ async def view(args: argparse.Namespace) -> dict[str, Any]:
     return report
 
 
+async def user_grant(args: argparse.Namespace) -> dict[str, Any]:
+    """NDV-ACL-016: a direct user grant opens a dataset; the unchanged role's rows decide.
+
+    An administrator stewards the source (QA roles cannot inspect ``analytics``),
+    shares a workspace with ``marketing`` and publishes a dataset there without
+    any grant. ``bob`` (marketing) is refused, then reads it through a grant to
+    him by name, still only Bandung. ``alice`` holds the same role but not the
+    grant and stays refused. Removing the grant refuses ``bob`` again.
+    Credentials: NOVA_ADMIN_TEST_PASSWORD, NOVA_QA_OWNER_PASSWORD (alice),
+    NOVA_QA_OUTSIDER_PASSWORD (bob). Everything created is removed afterwards.
+    """
+    dataset = str(uuid4())
+    path = f"/api/v1/viz/datasets/{dataset}"
+    report: dict[str, Any] = {
+        "started_at": datetime.now(UTC).isoformat(), "resource_id": dataset,
+        "scope": "direct user grant on a shared native dataset under Ranger row filters",
+        "result": "FAIL", "cleanup": "NOT_RUN",
+    }
+    tokens: dict[str, str] = {}
+    space_id: str | None = None
+    async with httpx.AsyncClient(base_url=args.base_url, timeout=60) as client:
+        probe = LiveCheck(client)
+        try:
+            tokens["admin"] = await login(probe, "nova_admin", "NOVA_ADMIN_TEST_PASSWORD")
+            tokens["alice"] = await login(probe, "alice", "NOVA_QA_OWNER_PASSWORD")
+            tokens["bob"] = await login(probe, "bob", "NOVA_QA_OUTSIDER_PASSWORD")
+            admin = tokens["admin"]
+            for viewer in ("alice", "bob"):
+                switched = await probe.request(f"{viewer} uses marketing", "POST",
+                                               "/api/v1/auth/switch-role", tokens[viewer],
+                                               body={"role": "marketing"})
+                probe.check(f"{viewer} active role is marketing",
+                            switched.json()["active_role"] == "marketing")
+            created = await probe.request(
+                "shared workspace", "POST", "/api/v1/workspaces/spaces", admin, status=201,
+                body={"name": f"User grant acceptance {dataset[:8]}"})
+            space_id = str(created.json()["space"]["id"])
+            await probe.request("share with marketing", "PUT",
+                                f"/api/v1/workspaces/spaces/{space_id}/shares", admin,
+                                body={"shares": [{"role": "marketing", "permission": "view"}]})
+            source = {"kind": "sql", "database": "analytics", "sql": SQL}
+            inspected = await probe.request("inspect", "POST", "/api/v1/viz/datasets/inspect",
+                                            admin, body={"dataset_id": dataset, "source": source})
+            schema = inspected.json()
+            fields = {f["source_column"]: f["field_id"] for f in schema["fields"]}
+            await probe.request("create in shared workspace", "POST", "/api/v1/viz/datasets",
+                                admin, status=201, operation=str(uuid4()), body={
+                                    "dataset_id": dataset, "source": source,
+                                    "workspace_id": space_id, "title": "Sales by city",
+                                    "expected_schema_fingerprint": schema["schema_fingerprint"]})
+            key = str(uuid4())
+            await probe.request("publish", "POST", path + "/publish", admin, operation=key,
+                                revision=1, body={"operation_id": key, "expected_revision": 1})
+            query = {"revision": 1, "draft": False,
+                     "dimensions": [{"field_id": fields["city"]}],
+                     "measures": [{"field_id": fields["amount"], "aggregation": "sum"}],
+                     "sort": [{"column": "d0", "direction": "asc"}]}
+
+            async def rows(name: str, token: str) -> list[list[str]]:
+                response = await probe.request(name, "POST", path + "/query", token, body=query)
+                return [[cell["value"] for cell in row] for row in response.json()["rows"]]
+
+            async def replace(name: str, grants: list[dict[str, Any]]) -> None:
+                state = await probe.request(f"{name}: read grants", "GET", path + "/grants", admin)
+                revision = state.json()["revision"]
+                key = str(uuid4())
+                await probe.request(name, "PUT", path + "/grants", admin, operation=key,
+                                    revision=revision, body={"operation_id": key,
+                                                             "expected_revision": revision,
+                                                             "grants": grants})
+
+            everyone = await rows("steward query", admin)
+            probe.check("the steward sees both cities",
+                        everyone == [["Bandung", "600.00"], ["Jakarta", "400.00"]], rows=everyone)
+            await probe.request("bob without a grant is refused", "POST", path + "/query",
+                                tokens["bob"], body=query, status=404)
+            await replace("grant bob by name", [
+                {"subject_type": "user", "subject_id": "bob", "permissions": ["view"]}])
+            bob = await rows("bob query through his user grant", tokens["bob"])
+            probe.check("bob's grant opens it; his role's filter decides: only Bandung",
+                        bob == [["Bandung", "600.00"]], rows=bob)
+            await probe.request("alice holds the role, not the grant, and is refused", "POST",
+                                path + "/query", tokens["alice"], body=query, status=404)
+            await replace("remove bob's grant", [])
+            await probe.request("bob is refused once the grant is removed", "POST",
+                                path + "/query", tokens["bob"], body=query, status=404)
+            report["result"] = "PASS"
+        except Exception as error:
+            report["error_type"] = type(error).__name__
+            report["error"] = str(error)[:200]
+        finally:
+            admin_token = tokens.get("admin")
+            if admin_token:
+                try:
+                    draft = await client.get(path + "?draft=true",
+                                             headers={"Authorization": f"Bearer {admin_token}"})
+                    if draft.status_code == 200:
+                        key = str(uuid4())
+                        revision = draft.json()["revision"]
+                        await probe.request("delete dataset", "DELETE", path, admin_token,
+                                            operation=key, revision=revision,
+                                            body={"operation_id": key,
+                                                  "expected_revision": revision})
+                    if space_id:
+                        await probe.request("delete workspace", "DELETE",
+                                            f"/api/v1/workspaces/spaces/{space_id}", admin_token)
+                    report["cleanup"] = "REMOVED"
+                except Exception as error:
+                    report.update(cleanup="UNVERIFIED", result="FAIL",
+                                  cleanup_error_type=type(error).__name__)
+            for name, token in tokens.items():
+                try:
+                    await client.post("/api/v1/auth/logout",
+                                      headers={"Authorization": f"Bearer {token}"})
+                except Exception:
+                    report.setdefault("logout_errors", []).append(name)
+            report["steps"] = probe.steps
+            report["finished_at"] = datetime.now(UTC).isoformat()
+    return report
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default="http://127.0.0.1:5173")
@@ -244,10 +365,13 @@ def main() -> None:
     parser.add_argument("--dataset", help="View a dataset a steward already shared and published")
     parser.add_argument("--city-field")
     parser.add_argument("--amount-field")
+    parser.add_argument("--user-grant", action="store_true",
+                        help="A direct user grant under Ranger row filters (NDV-ACL-016)")
     args = parser.parse_args()
     if args.dataset and not (args.city_field and args.amount_field):
         parser.error("--dataset needs --city-field and --amount-field")
-    report = asyncio.run(view(args) if args.dataset else run(args))
+    report = asyncio.run(user_grant(args) if args.user_grant
+                         else view(args) if args.dataset else run(args))
     args.output.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps({"result": report["result"], "cleanup": report["cleanup"],
                       "error": report.get("error")}))

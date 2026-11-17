@@ -78,6 +78,7 @@ const receipts: Record<string, Json> = {}
 let definition: Json & { pages: PageJson[]; title: string }
 /** Answers a dataset query; the default derives the value from the request. */
 let answer: (body: Json) => Promise<Response> | Response
+const exported: Json[] = []
 
 const queries = () => calls.filter(call => call.url.endsWith(`/viz/datasets/${DATASET}/query`))
 const measureOf = (body: Json | null) => ((body?.measures as { field_id: string }[] | undefined) ?? [])[0]?.field_id
@@ -170,6 +171,10 @@ async function route(url: string, options: RequestInit = {}) {
   const chart = /\/viz\/charts\/([0-9a-f-]+)\?/.exec(url)
   if (chart && charts[chart[1]]) return json({ resource_id: chart[1], revision: 1, metadata_revision: 1, grants_revision: 1, publication_id: null, definition: charts[chart[1]] })
   if (url.endsWith(`/viz/datasets/${DATASET}/query`)) return answer(body!)
+  if (url.endsWith(`/viz/dashboards/${DASHBOARD}/exports`)) {
+    exported.push(body!)
+    return permissionList.includes('export') ? json({ allowed: true }) : json({ detail: 'Not allowed' }, 403)
+  }
   // Dataset definitions, presence and comments are not part of these scenarios.
   return json({ detail: 'Not found' }, 404)
 }
@@ -253,6 +258,7 @@ beforeEach(() => {
   receiptsAvailable = true
   for (const key of Object.keys(receipts)) delete receipts[key]
   answer = defaultAnswer
+  exported.length = 0
   charts = {
     [KPI_CHART]: kpiChart(KPI_CHART, 'Units sold', 'units'),
     [REVENUE_CHART]: kpiChart(REVENUE_CHART, 'Revenue', 'revenue'),
@@ -647,6 +653,98 @@ describe('QA filters and interactions', { timeout: 30_000 }, () => {
     expect(definition).toEqual(published)
   })
 
+  it('NDV-CHART-020: a chart image is taken only once the filtered result has finished drawing', async () => {
+    permissionList = ['view', 'interact', 'export']
+    const UNITS_CHART = 'cccccccc-0000-4000-8000-000000000009'
+    const UNITS_WIDGET = 'ffffffff-0000-4000-8000-000000000009'
+    charts[UNITS_CHART] = barChart(UNITS_CHART, 'Units by region', 'units')
+    setWidgets([
+      chartWidget(BAR_WIDGET, BAR_CHART, { x: 0, y: 0, w: 6, h: 4 }),
+      chartWidget(UNITS_WIDGET, UNITS_CHART, { x: 6, y: 0, w: 6, h: 4 }),
+    ])
+    // The filtered units query is held until the test lets it answer.
+    let release = () => undefined as void
+    const held = new Promise<void>(resolve => { release = resolve })
+    answer = async body => {
+      const filtered = JSON.stringify(body.filters ?? null).includes('East')
+      if (measureOf(body) === 'units' && filtered) {
+        await held
+        return json({ dataset_id: DATASET, revision: 1, columns: [
+          { key: 'd0', name: 'region', logical_type: 'string', role: 'dimension', field_id: 'region' },
+          { key: 'm0', name: 'units', logical_type: 'decimal', role: 'measure', field_id: 'units', aggregation: 'sum' },
+        ], rows: [[{ type: 'string', value: 'East' }, { type: 'decimal', value: '4000' }]], truncated: false })
+      }
+      return defaultAnswer(body)
+    }
+    const saved: { name: string; blob: Blob; categories: unknown }[] = []
+    const blobs: Blob[] = []
+    vi.spyOn(URL, 'createObjectURL').mockImplementation(blob => { blobs.push(blob as Blob); return 'blob:test' })
+    await page.viewport(1280, 900)
+    const screen = await mount(1200, 720)
+    const { chart: units } = await echartsIn(UNITS_WIDGET)
+    const categories = () => ((units.getOption() as { xAxis: { data: unknown[] }[] }).xAxis[0].data)
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      // What the chart showed at the moment the file was made.
+      saved.push({ name: this.download, blob: blobs[blobs.length - 1], categories: categories() })
+    })
+    await expect.poll(categories).toEqual(['East', 'West'])
+
+    await clickBar(BAR_WIDGET, 0, 10) // filter the dashboard to East
+    await expect.element(screen.getByRole('button', { name: 'Clear selection East' })).toBeVisible()
+    await expect.poll(() => item(UNITS_WIDGET).querySelector('[data-updating]')).not.toBeNull()
+    await screen.getByRole('button', { name: 'Download Units by region' }).click()
+    await page.getByRole('menuitem', { name: 'Image (PNG)' }).click()
+    // While the filtered result is still on its way, nothing is checked or saved.
+    await wait(600)
+    expect(saved).toHaveLength(0)
+    expect(exported).toHaveLength(0)
+
+    release()
+    await expect.poll(() => saved.length, { timeout: 15_000 }).toBe(1)
+    expect(saved[0].name).toBe('Units by region.png')
+    expect(saved[0].categories).toEqual(['East'])
+    expect(exported).toEqual([{ format: 'png', chart_id: UNITS_CHART }])
+    // A complete image: the drawn chart plus its title band and margins.
+    const image = await createImageBitmap(saved[0].blob)
+    const canvas = item(UNITS_WIDGET).querySelector('canvas')!
+    expect(image.width).toBeGreaterThan(canvas.width)
+    expect(image.height).toBeGreaterThan(canvas.height)
+    expect(saved[0].blob.type).toBe('image/png')
+  })
+
+  it('NDV-INTER-013: one viewer\'s cross-filter stays theirs; another viewer of the same shared dashboard is unaffected', async () => {
+    permissionList = ['view', 'interact']
+    publicationId = '99999999-0000-4000-8000-000000000001'
+    setWidgets([
+      chartWidget(BAR_WIDGET, BAR_CHART, { x: 0, y: 0, w: 6, h: 4 }),
+      chartWidget(KPI_WIDGET, KPI_CHART, { x: 6, y: 0, w: 3, h: 2 }),
+    ])
+    const published = clone(definition)
+    // Two people with the same dashboard open, each with their own session state.
+    const viewerA = await mount(1200, 420)
+    const viewerB = await mount(1200, 420)
+    // Each viewer's own part of the page.
+    const inA = page.elementLocator(viewerA.container)
+    const inB = page.elementLocator(viewerB.container)
+    await expect.element(inA.getByTestId('kpi-value')).toHaveTextContent('15,257')
+    await expect.element(inB.getByTestId('kpi-value')).toHaveTextContent('15,257')
+    const before = calls.length
+
+    await clickBar(BAR_WIDGET, 0, 10) // the first bar chart in the page is viewer A's
+    await expect.element(inA.getByRole('button', { name: 'Clear selection East' })).toBeVisible()
+    await expect.element(inA.getByTestId('kpi-value')).toHaveTextContent('4,000')
+    await wait(600)
+    // Viewer B keeps the full dashboard: no selection chip, the unfiltered total.
+    await expect.element(inB.getByRole('button', { name: 'Clear selection East' })).not.toBeInTheDocument()
+    await expect.element(inB.getByTestId('kpi-value')).toHaveTextContent('15,257')
+    const sent = calls.slice(before)
+    // The selection travels only in viewer A's own read queries, never in a write.
+    expect(sent.filter(call => call.method !== 'GET' && !call.url.endsWith('/query') && !call.url.includes('/presence'))).toEqual([])
+    expect(sent.filter(call => call.url.includes('/presence')).every(call => !JSON.stringify(call.body).includes('East'))).toBe(true)
+    expect(operations).toHaveLength(0)
+    expect(definition).toEqual(published)
+  })
+
   it('NDV-INTER-008: a linked dashboard opens with the mapped value, under the viewer\'s own access', async () => {
     permissionList = ['view', 'interact']
     publicationId = '99999999-0000-4000-8000-000000000001'
@@ -832,6 +930,8 @@ describe('QA dependency failure', () => {
 
 describe('QA multiple tabs', { timeout: 40_000 }, () => {
   it('NDV-REVIS-010: two editor tabs of one person converge without a stale local override', async () => {
+    // Each tab has its own screen; here both fit on one so both charts draw.
+    await page.viewport(1280, 1600)
     const tabA = await mount()
     const tabB = await mount()
     await expect.poll(() => document.querySelectorAll('[data-testid="kpi-value"]').length).toBe(2)
@@ -870,6 +970,7 @@ describe('QA multiple tabs', { timeout: 40_000 }, () => {
   })
 
   it('NDV-REVIS-010: a tab that edits before seeing the other tab’s change is refused, reloads and does not resubmit', async () => {
+    await page.viewport(1280, 1600)
     const tabA = await mount()
     const tabB = await mount()
     const A = page.elementLocator(tabA.container)
@@ -899,6 +1000,59 @@ describe('QA multiple tabs', { timeout: 40_000 }, () => {
 // ---- scale --------------------------------------------------------------------------
 
 describe('QA scale', { timeout: 90_000 }, () => {
+  it('NDV-GRID-019: a full page of 100 widgets draws only what is near the screen, queries at most 3 at a time, and accepts no 101st widget', async () => {
+    const widgets: WidgetJson[] = []
+    for (let index = 1; index <= 100; index += 1) {
+      const id = `cccccccc-0000-4000-8000-${String(index).padStart(12, '0')}`
+      charts[id] = kpiChart(id, `Chart ${index}`, `units_${index}`)
+      widgets.push(chartWidget(`ffffffff-0000-4000-8000-${String(index).padStart(12, '0')}`, id,
+        { x: ((index - 1) % 4) * 3, y: Math.floor((index - 1) / 4) * 2, w: 3, h: 2 }))
+    }
+    setWidgets(widgets)
+    // Each answer takes a moment, so overlapping queries would show.
+    let open = 0
+    let most = 0
+    answer = async body => {
+      open += 1
+      most = Math.max(most, open)
+      await wait(40)
+      open -= 1
+      return defaultAnswer(body)
+    }
+    await page.viewport(1280, 900)
+    const screen = await mount(1200, 720)
+    const drawn = () => screen.container.querySelectorAll('[data-testid="kpi-value"]').length
+    const waiting = () => screen.container.querySelectorAll('[data-waiting-chart]').length
+    await expect.poll(drawn, { timeout: 15_000 }).toBeGreaterThan(0)
+    await wait(800)
+    // Every widget is laid out; only the rows near the screen draw and query.
+    expect(screen.container.querySelectorAll('.grid-stack > .grid-stack-item')).toHaveLength(100)
+    const first = drawn()
+    expect(first).toBeLessThan(60)
+    expect(drawn() + waiting()).toBe(100)
+    expect(queries()).toHaveLength(first)
+    expect(most).toBeLessThanOrEqual(3)
+
+    // Scrolling to the end draws the last widgets; each chart is still asked once.
+    const scroller = screen.container.querySelector<HTMLElement>('[data-canvas-scroll]')!
+    for (let step = 0; step < 40 && waiting(); step += 1) {
+      scroller.scrollTop += 600
+      await wait(150)
+    }
+    await expect.poll(drawn, { timeout: 30_000 }).toBe(100)
+    await expect.poll(() => queries().length, { timeout: 15_000 }).toBe(100)
+    expect(new Set(queries().map(call => measureOf(call.body))).size).toBe(100)
+    expect(most).toBeLessThanOrEqual(3)
+    expect(document.querySelectorAll('[data-testid="kpi-value"]')).toHaveLength(100)
+
+    // The page is full: nothing more can be added to it.
+    await screen.getByRole('button', { name: 'Edit' }).click()
+    const toolbar = screen.getByRole('toolbar', { name: 'Add to dashboard' })
+    for (const name of ['Chart', 'KPI', 'Table', 'Text']) await expect.element(toolbar.getByRole('button', { name, exact: true })).toBeDisabled()
+    await expect.element(toolbar.getByText('This page has 100 widgets, the most a page can hold. Add a page for more.')).toBeVisible()
+    expect(operations).toHaveLength(0)
+  })
+
   it('NDV-PERF-003: fifty widgets over three pages render and query lazily, page by page, with stable DOM and chart instances', async () => {
     const pages: PageJson[] = []
     let index = 0
@@ -917,6 +1071,8 @@ describe('QA scale', { timeout: 90_000 }, () => {
     definition.pages = pages
     const measuresOf = (sheet: PageJson) => sheet.widgets.map(widget => `units_${Number(widget.widget_id.slice(-12))}`)
     const sentMeasures = () => queries().map(call => measureOf(call.body))
+    // The whole 2,400px page is on screen, so every widget of the page draws.
+    await page.viewport(1280, 2500)
     const screen = await mount(1200, 2400)
     const settled = async (sheet: PageJson) => {
       const kpis = sheet.widgets.filter(widget => Number(widget.widget_id.slice(-12)) % 5 !== 0).length

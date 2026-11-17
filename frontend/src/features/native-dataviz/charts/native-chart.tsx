@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useMemo, useState } from 'react'
+import { Fragment, useCallback, useMemo, useState, type ReactNode } from 'react'
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -7,7 +7,7 @@ import { buildChartOption } from './chart-options'
 import { cellLabel, cellNumber, chartQueryShape, columnLabel, hasSplit, periodEnd, type Cell } from './chart-query'
 import { chartRequest, combinesOther, MAX_PAGE_OFFSET, queryError, remainderOf, useChartData, useTableTotals, type TablePage } from './chart-data'
 import { EChartHost, type MarkSelection, type VizTokens } from './echart-host'
-import { cellStyle, MAX_PIVOT_COLUMNS, pivotModel, ranges } from './pivot'
+import { cellStyle, matchedRule, MAX_PIVOT_COLUMNS, pivotModel, ranges, ruleMeaning } from './pivot'
 import { NativeMap } from './native-map'
 
 export type ValueSelection = {
@@ -74,6 +74,15 @@ function Kpi({ chart, result }: { chart: ChartDefinition; result: DatasetQueryRe
   </div>
 }
 
+/** A value a highlight rule matched: a marker and words, so the meaning does not rely on colour. */
+function Flagged({ meaning, children }: { meaning: string | undefined; children: ReactNode }) {
+  if (!meaning) return children
+  return <span className='inline-flex items-center gap-1.5' title={meaning} data-highlighted=''>
+    <span aria-hidden className='size-1.5 shrink-0 rounded-full bg-current' />
+    {children}<span className='sr-only'>, {meaning.charAt(0).toLowerCase() + meaning.slice(1)}</span>
+  </span>
+}
+
 function PivotTable({ chart, result }: { chart: ChartDefinition; result: DatasetQueryResult }) {
   const model = pivotModel(chart, result)
   const formatters = model.measures.map((_, index) => measureFormatter(chart, index))
@@ -81,9 +90,14 @@ function PivotTable({ chart, result }: { chart: ChartDefinition; result: Dataset
   const span = formats?.length ? ranges(model.rows.filter(row => !row.subtotal).flatMap(row =>
     row.values.flatMap(cells => cells.map((value, m) => ({ field_id: model.measures[m].field_id, value }))))) : undefined
   const many = model.measures.length > 1
-  const cell = (value: number | null, m: number, shaded: boolean) => <td key={m} style={shaded ? cellStyle(formats, model.measures[m].field_id, value,
-    span?.get(model.measures[m].field_id ?? '')) : undefined}
-    className='px-2 py-1.5 text-right whitespace-nowrap viz-numerals'>{value === null ? '' : formatters[m].format(value)}</td>
+  const cell = (value: number | null, m: number, shaded: boolean) => {
+    const rule = shaded ? matchedRule(formats, model.measures[m].field_id, value) : undefined
+    return <td key={m} style={shaded ? cellStyle(formats, model.measures[m].field_id, value,
+      span?.get(model.measures[m].field_id ?? '')) : undefined}
+      className='px-2 py-1.5 text-right whitespace-nowrap viz-numerals'>
+      <Flagged meaning={rule && ruleMeaning(rule, formatters[m].format)}>{value === null ? '' : formatters[m].format(value)}</Flagged>
+    </td>
+  }
   const head = 'border-b px-2 py-1.5 font-medium text-muted-foreground whitespace-nowrap'
   return <div className='flex min-h-0 flex-1 flex-col'>
     <div className='min-h-0 flex-1 overflow-auto'>
@@ -177,6 +191,13 @@ function ResultTable({ chart, result, paging, sort, onSort, totalsResult }: Tabl
     if (column.role !== 'measure' || !column.field_id) return undefined
     return cellStyle(formats, column.field_id, cellNumber(cell), span?.get(column.field_id))
   }
+  const meaning = (cell: Cell, c: number) => {
+    const column = result.columns[c]
+    const formatter = formatters[c]
+    if (column.role !== 'measure' || !column.field_id || !formatter) return undefined
+    const rule = matchedRule(formats, column.field_id, cellNumber(cell))
+    return rule && ruleMeaning(rule, formatter.format)
+  }
   const hasPrevious = paging ? paging.offset > 0 : page > 0
   const hasNext = paging ? paging.hasNext : page < localPages - 1
   const range = `Rows ${(first + 1).toLocaleString()}–${(first + visible.length).toLocaleString()}`
@@ -202,7 +223,7 @@ function ResultTable({ chart, result, paging, sort, onSort, totalsResult }: Tabl
         <tbody>
           {visible.map((row, r) => <tr key={r} className='border-b last:border-b-0 hover:bg-muted/40'>
             {row.map((cell, c) => <td key={c} style={shade(cell, c)} className={cn('px-2 py-1.5 whitespace-nowrap',
-              result.columns[c].role === 'measure' && 'text-right viz-numerals')}>{text(cell, c)}</td>)}
+              result.columns[c].role === 'measure' && 'text-right viz-numerals')}><Flagged meaning={meaning(cell, c)}>{text(cell, c)}</Flagged></td>)}
           </tr>)}
           {showTotal && <tr className='font-medium'>
             {result.columns.map((column, c) => <td key={column.key} className={cn('border-t px-2 py-1.5',
@@ -334,7 +355,10 @@ export function NativeChart({ chart, draft, context, parameters, onSelectValue, 
   // Clicking filters other charts by a category; a chart of totals alone has none to give.
   const unfilterable = onSelectValue && !result.columns.some(column => column.role === 'dimension' && column.field_id)
     ? NO_CATEGORY : undefined
-  return <div className={cn('relative flex min-h-0 flex-1 flex-col', className)} title={unfilterable}>
+  // Downloads wait while this is set, so an image never shows an older result.
+  const updating = query.isFetching || whole.isFetching
+  return <div className={cn('relative flex min-h-0 flex-1 flex-col', className)} title={unfilterable}
+    data-updating={updating ? '' : undefined}>
     {query.isFetching && <span role='status' className='sr-only'>Updating {chart.title}</span>}
     <div className={cn('flex min-h-0 flex-1 flex-col transition-opacity', query.isFetching && 'opacity-60')}>
       {empty && chart.visual !== 'kpi' ? <State tone='muted' text='No rows match the current filters.' />

@@ -51,7 +51,31 @@ type CanvasProps = {
   onDownload?: (chart: ChartDefinition, context: FilterTree | undefined, format: ChartFileFormat, root: HTMLElement) => void
 }
 
+/** How far outside the screen a chart starts loading, so it is ready when scrolled to. */
+const NEAR_SCREEN = '600px 0px'
+
+/**
+ * True once the element has come near the screen, and from then on. A page can
+ * hold up to 100 widgets; only those near the screen query and draw, so a long
+ * page does not open every chart at once.
+ */
+function useNearScreen<T extends Element>(): [(node: T | null) => void, boolean] {
+  const [node, setNode] = useState<T | null>(null)
+  const [near, setNear] = useState(() => typeof IntersectionObserver === 'undefined')
+  useEffect(() => {
+    if (near || !node) return
+    // The canvas scrolls inside its own box; measure against it so the margin counts there.
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) setNear(true)
+    }, { root: node.closest('[data-canvas-scroll]'), rootMargin: NEAR_SCREEN })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [near, node])
+  return [setNode, near]
+}
+
 function ChartBody({ widget, props }: { widget: ChartWidget; props: CanvasProps }) {
+  const [place, near] = useNearScreen<HTMLDivElement>()
   const chart = useChartDocument(widget.chart_ref.chart_id, widget.chart_ref.revision, props.draft)
   const definition = chart.data
   const dataset = useDatasetDefinition(definition?.dataset_id, definition?.dataset_revision)
@@ -94,10 +118,11 @@ function ChartBody({ widget, props }: { widget: ChartWidget; props: CanvasProps 
     drill={active.length ? { back: () => setSteps(active.slice(0, -1)), reset: () => setSteps([]), depth: active.length } : undefined}>
     {chart.isPending ? <div aria-busy='true' className='min-h-0 flex-1 animate-pulse rounded bg-muted/60' />
       : chart.isError || !shown ? <p role='alert' className='m-auto text-sm text-muted-foreground'>This chart is unavailable with your current role.</p>
-        : <div className='relative flex min-h-0 flex-1 flex-col'>
-          <NativeChart chart={shown} draft={props.draft} context={context}
+        : <div ref={place} className='relative flex min-h-0 flex-1 flex-col'>
+          {near ? <NativeChart chart={shown} draft={props.draft} context={context}
             selectedLabel={active.length ? null : props.selectedValueFor?.(widget) ?? null}
             onSelectValue={props.editing || props.interactive === false ? undefined : select} />
+            : <div data-waiting-chart='' className='min-h-0 flex-1 rounded bg-muted/40' />}
           {pending && <DropdownMenu open onOpenChange={open => { if (!open) setPending(null) }}>
             <DropdownMenuTrigger asChild>
               <span aria-hidden className='pointer-events-none absolute size-px'
@@ -366,7 +391,7 @@ export function DashboardCanvas(props: CanvasProps) {
     if (cell && item && (item.kind === 'text' || (item.kind === 'chart' && typeof item.visual === 'string'))) props.onDropWidget?.(item, cell)
   }
 
-  return <div ref={scroller} className='min-h-0 flex-1 overflow-y-auto p-2.5' onClick={() => props.editing && props.onSelect(null)}>
+  return <div ref={scroller} data-canvas-scroll='' className='min-h-0 flex-1 overflow-y-auto p-2.5' onClick={() => props.editing && props.onSelect(null)}>
     {props.editing && narrow && <p role='status' className='m-1.5 rounded-md border border-dashed p-2 text-xs text-muted-foreground'>
       {columns === 1 ? 'Widen the window to move or resize widgets.' : 'Widen the window to move or resize widgets; this narrower view is scaled from the full layout.'} Your layout is kept for larger screens.
     </p>}

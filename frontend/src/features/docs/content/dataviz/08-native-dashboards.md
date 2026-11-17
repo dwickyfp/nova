@@ -154,6 +154,9 @@ click **Add formatting**:
 - **Highlight when** colours a value that is **Above**, **At least**, **Below**,
   **At most** or **Equal to** the limit you type, in **Blue**, **Green**,
   **Red** or **Amber**. A matching highlight wins over a colour scale.
+  A highlighted value also gets a small dot and bold text. Point at it to see
+  the rule it passed, for example **Highlighted: above 1,000**; screen readers
+  read the same words. The meaning doesn't depend on telling the colours apart.
 
 Click **Text** to add a heading or paragraph. Text is shown exactly as typed.
 
@@ -171,7 +174,9 @@ Click **Text** to add a heading or paragraph. Text is shown exactly as typed.
 - Empty rows you leave between widgets stay where you put them; widgets never
   slide up on their own.
 - Open a widget's **…** menu for **Edit chart**, **Duplicate** or **Remove**.
-- Click **+** next to the page name to add a page.
+- Click **+** next to the page name to add a page. A page holds up to 100
+  widgets; when it is full, the add buttons are turned off and a note says
+  so. Add another page for more.
 - Click **Done** to return to the view.
 
 On a medium-width window, such as a tablet, the canvas shows six columns
@@ -263,6 +268,10 @@ chart also removes its link.
    given as view only, without that, shows the published dashboard with its
    default filters: the filters appear as fixed labels and clicking a chart does
    nothing.
+   People also need access to the dashboard's workspace. If you share with a
+   role the workspace isn't shared with, the dialog says so, and that role
+   can't open the dashboard until the workspace owner adds it with
+   **Share with roles…** on the workspace in **Workspaces**.
 3. Click **Version history** (the clock icon) to see every saved version, who
    saved it and when. **Current** marks the version you are editing and
    **Published** the one viewers see.
@@ -332,7 +341,9 @@ read, exactly as the charts show them with the filters you chose.
 - **One chart:** point at the chart and click the download icon at its top right.
   Choose **Image (PNG)**, **Data (CSV)** or **Data (Excel)**. KPIs, tables and
   pivots have no image; download their data instead. A map's image is the map
-  as it is drawn on your screen, at its current position and zoom.
+  as it is drawn on your screen, at its current position and zoom. If the
+  chart is still updating after a filter change, the image waits until it
+  shows the new result.
 - **The whole page:** click **Download** (the arrow icon) in the dashboard
   header.
   - **Data of this page (Excel)** makes one workbook with a sheet per chart.
@@ -419,3 +430,8 @@ an administrator, can remove a schedule.
   make the change again.
 - Charts show up to the row limit you choose. A note under the chart says when
   more rows exist.
+- On a long page, a chart loads once you scroll near it, so a page with many
+  charts opens quickly.
+- "The chart is still updating" means a download was asked for while a chart
+  was loading new results for more than 10 seconds. Download it again once it
+  has finished.
