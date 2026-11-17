@@ -43,12 +43,20 @@ from app.modules.stages.access import check_stage_access
 from app.modules.task_orchestration.repository import task_orchestration_repository
 from app.observability.metrics import SQL_QUERIES, SQL_QUERY_DURATION, SQL_SOURCE
 from app.sql_frontend.analysis.analyzer import Analysis
+from app.sql_frontend.analysis.validation import (
+    SESSION_SETTINGS_UNAVAILABLE,
+    TRANSACTIONS_UNAVAILABLE,
+)
 from app.sql_frontend.ast.builder import AstBuilderRegistry, ast_builders
 from app.sql_frontend.binding.catalog import Binder, CatalogProvider
 from app.sql_frontend.binding.starrocks import StarRocksCatalogProvider
 from app.sql_frontend.capabilities.starrocks import EngineCapabilities, resolve_engine_capabilities
 from app.sql_frontend.context import ExecutionContext, PlanningContext
-from app.sql_frontend.errors import ConfirmationRequiredError, SemanticError
+from app.sql_frontend.errors import (
+    CapabilityUnsupportedError,
+    ConfirmationRequiredError,
+    SemanticError,
+)
 from app.sql_frontend.execution.adapters import FeatureAdapters
 from app.sql_frontend.parameters import BoundParameters
 from app.sql_frontend.parser import (
@@ -59,6 +67,12 @@ from app.sql_frontend.parser import (
     run_without_awaiting,
 )
 from app.sql_frontend.planning.planner import SQLPlanner
+from app.sql_frontend.session import (
+    SessionStatement,
+    redact_user_variable_text,
+    session_statement,
+)
+from app.sql_frontend.vertical import split_vertical_script
 from app.storage.secrets import (
     drain_secret_resolution_facts,
 )
@@ -352,6 +366,13 @@ def delegated_username() -> str | None:
     return current[0] if current else None
 
 
+def _mark_vertical(results: list[QueryResult], vertical: list[bool]) -> list[QueryResult]:
+    """Mark the results of statements that ended with ``\\G``."""
+    for result, is_vertical in zip(results, vertical, strict=False):
+        result.vertical = is_vertical
+    return results
+
+
 def _refusal_status(exc: BaseException) -> str:
     """Audit status of a statement stopped before the engine.
 
@@ -509,6 +530,14 @@ class QueryService:
                 parsed = await self._frontend(normalized_sql, original_sql=sql)
                 statement = await run_sql_cpu(size, self._builders.build, parsed)
                 context.statements[0] = statement
+                if type(parsed.statement_context).__name__ == "SetStatementContext":
+                    # Profile capture toggles enable_profile around a statement;
+                    # around a SET it would undo the caller's own setting.
+                    from app.modules.query_autopilot.telemetry import EXECUTION
+
+                    current = EXECUTION.get()
+                    if current is not None:
+                        current.capture_profile = False
                 if parameters is not None:
                     from app.sql_frontend.parameters import parameter_slots
 
@@ -691,7 +720,7 @@ class QueryService:
                 object_type="sql",
                 object_name=(database or "") if database else "workspace",
                 status=status,
-                sql_text=_redact_error_message(sql),
+                sql_text=_redact_error_message(redact_user_variable_text(sql)),
                 rewritten_sql=None,
                 error_message=_redact_error_message(error_message),
                 session_id=session_id,
@@ -819,6 +848,9 @@ class QueryService:
         Stops on first error — returns results collected so far plus an error result.
         """
         statements = await run_sql_cpu(len(sql), split_sql_statements, sql)
+        # A ``\G`` (the MySQL client's vertical terminator) ends a statement;
+        # the engine never sees it and the worksheet shows that result vertically.
+        statements, vertical = split_vertical_script(statements)
         if not statements:
             return [
                 QueryResult(
@@ -829,15 +861,16 @@ class QueryService:
                 )
             ]
 
-        # Without a held connection each statement gets its own pooled one, so a
-        # transaction or session setting cannot reach the statements after it.
+        # Without a held connection each statement gets its own connection, so a
+        # transaction or session setting would not reach the statements after it.
+        # A worksheet script that needs one holds a connection for the whole run.
         per_statement_session = connection is None and delegated_connection_for(username) is None
         with parsing_scope():
             analyses: list[Analysis] = []
+            sessions: list[SessionStatement] = []
             analysis = None
             try:
                 from app.sql_frontend.analysis.effects import PlanEffects
-                from app.sql_frontend.analysis.validation import refuse_per_statement_session
 
                 script_effects = PlanEffects()
                 confirmation_statement = None
@@ -870,7 +903,7 @@ class QueryService:
                         stmt_sql, context_database, context_schema
                     )
                     if per_statement_session:
-                        refuse_per_statement_session(statement)
+                        sessions.append(session_statement(statement))
                     script_effects |= analysis.effects
                     if analysis.requires_confirmation and confirmation_statement is None:
                         confirmation_statement = (stmt_sql, analysis.statement_kind)
@@ -894,6 +927,27 @@ class QueryService:
                 return [self._error_result(stmt_sql, exc, analysis)]
 
             metric_source = source if source in {"web", "mysql_proxy", "internal"} else "internal"
+            notices: list[str] = []
+            if per_statement_session:
+                held, notices = await self._held_run(
+                    statements,
+                    sessions,
+                    username=username,
+                    encrypted_password=encrypted_password,
+                    database=database,
+                    schema=schema,
+                    role=role,
+                    max_rows=max_rows,
+                    session_id=session_id,
+                    confirm_destructive=confirm_destructive,
+                    file_id=file_id,
+                    tenant=tenant,
+                    security_context_version=security_context_version,
+                    allow_stage_export=allow_stage_export,
+                    metric_source=metric_source,
+                )
+                if held is not None:
+                    return _mark_vertical(held, vertical)
             results: list[QueryResult] = []
             for stmt_sql, analysis in zip(statements, analyses, strict=True):
                 metric_token = SQL_SOURCE.set(metric_source)
@@ -937,7 +991,76 @@ class QueryService:
                     break
                 finally:
                     SQL_SOURCE.reset(metric_token)
-            return results
+            if results and notices:
+                results[0].warnings[:0] = notices
+            return _mark_vertical(results, vertical)
+
+    async def _held_run(
+        self,
+        statements: list[str],
+        sessions: list[SessionStatement],
+        *,
+        username: str,
+        encrypted_password: str,
+        session_id: str | None,
+        file_id: str | None,
+        role: str | None,
+        security_context_version: int,
+        **request: Any,
+    ) -> tuple[list[QueryResult] | None, list[str]]:
+        """Run a worksheet script on one held connection when it needs a session.
+
+        Returns ``None`` results when the script runs statement by statement as
+        before: it has no session statement and the worksheet remembers no
+        settings. The notices are for the first result of that run.
+        """
+        from app.modules.query.worksheet_session import HeldRun, load_state
+
+        state, notices = await load_state(
+            session_id=session_id,
+            file_id=file_id,
+            principal=username,
+            role=role,
+            security_context_version=security_context_version,
+        )
+        if state is None and not any(session.needs_session for session in sessions):
+            return None, notices
+        if not encrypted_password:
+            # No credentials to open a connection as the caller: refuse rather
+            # than report a setting or transaction that would not hold.
+            for stmt_sql, session in zip(statements, sessions, strict=True):
+                if session.needs_session:
+                    message = (
+                        SESSION_SETTINGS_UNAVAILABLE
+                        if session.kind == "set"
+                        else TRANSACTIONS_UNAVAILABLE
+                    )
+                    error = CapabilityUnsupportedError(message)
+                    await self._audit_engine_result(
+                        status="ERROR", sql=stmt_sql, username=username, role=role,
+                        database=request.get("database"), schema=request.get("schema"),
+                        session_id=session_id, file_id=file_id, error_message=message,
+                    )
+                    return [self._error_result(stmt_sql, error)], []
+            return None, notices
+        results = await HeldRun(
+            service=self,
+            statements=statements,
+            sessions=sessions,
+            username=username,
+            encrypted_password=encrypted_password,
+            session_id=session_id,
+            file_id=file_id,
+            role=role,
+            security_context_version=security_context_version,
+            context_after=_context_after,
+            error_result=self._error_result,
+            audit=write_audit_log,
+            state=state,
+            notices=notices,
+            **request,
+        ).run()
+        return results, []
 
     @staticmethod
     def _error_result(sql: str, exc: Exception, analysis: Analysis | None = None) -> QueryResult:

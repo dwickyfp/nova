@@ -10,6 +10,9 @@
 #   - starrocks-fe:   StarRocks Frontend (8030 HTTP; 9030 stays internal)
 #   - starrocks-be:   StarRocks Backend (port 8040 HTTP)
 #   - starrocks-init: Auto-creates NOVA_SYSTEM + admin + ACCOUNTADMIN
+#   - kafka, iceberg-rest, iceberg-minio-init: StarRocks compat test
+#     fixtures, profile `starrocks-compat` only
+#     (docs/architecture/starrocks-compat/INFRA.md)
 #
 # Quick Start:
 #   cp .env.example .env
@@ -580,6 +583,129 @@ services:
     networks:
       - nova
 
+  # ── StarRocks compat test services (profile `starrocks-compat`) ──
+  # Kafka for Routine Load and an Iceberg REST catalog with table data in
+  # MinIO, for the StarRocks feature compatibility work
+  # (docs/architecture/starrocks-compat/INFRA.md). Test fixtures only: not
+  # part of the governed runtime, started only with the profile.
+  kafka:
+    logging: *default-logging
+    image: apache/kafka:3.9.1@sha256:4ceccc577f03f51f6af8dbfda55194d0d892f4fa7913ffbded567ce3895622ed
+    container_name: nova-kafka
+    hostname: kafka
+    profiles: ["starrocks-compat"]
+    environment:
+      TZ: ${TZ:-Asia/Jakarta}
+      # Single KRaft node acting as broker and controller.
+      CLUSTER_ID: nova-compat-kafka-0001
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      # INTERNAL is for containers on the nova network (StarRocks reads
+      # kafka:9092); HOST is published on loopback for local producers.
+      KAFKA_LISTENERS: INTERNAL://:9092,CONTROLLER://:9093,HOST://:29092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,HOST://localhost:${KAFKA_HOST_PORT:-29092}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT,HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 1
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      # Bounded retention: 3 days or 512 MB per partition.
+      KAFKA_LOG_RETENTION_HOURS: 72
+      KAFKA_LOG_RETENTION_BYTES: 536870912
+      KAFKA_LOG_SEGMENT_BYTES: 67108864
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+    ports:
+      - "127.0.0.1:${KAFKA_HOST_PORT:-29092}:29092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 512
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "KAFKA_HEAP_OPTS=-Xmx64m /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:9092 >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - nova
+
+  # Creates the nova-iceberg bucket and a MinIO user limited to it. Leaves
+  # every other bucket and user as it is.
+  iceberg-minio-init:
+    logging: *default-logging
+    image: ghcr.io/teableio/minio-mc:RELEASE.2025-04-16T18-13-26Z
+    container_name: nova-iceberg-minio-init
+    profiles: ["starrocks-compat"]
+    entrypoint: >
+      /bin/sh -c "
+      set -e;
+      test -n \"$${ICEBERG_S3_SECRET_KEY}\" || { echo 'Set ICEBERG_S3_SECRET_KEY in docker/.env' >&2; exit 1; };
+      mc alias set nova http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} >/dev/null;
+      mc mb --ignore-existing nova/nova-iceberg;
+      printf '%s' '{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"s3:GetBucketLocation\",\"s3:ListBucket\",\"s3:ListBucketMultipartUploads\"],\"Resource\":[\"arn:aws:s3:::nova-iceberg\"]},{\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\",\"s3:PutObject\",\"s3:DeleteObject\",\"s3:AbortMultipartUpload\",\"s3:ListMultipartUploadParts\"],\"Resource\":[\"arn:aws:s3:::nova-iceberg/*\"]}]}' > /tmp/nova-iceberg-policy.json;
+      mc admin policy create nova nova-iceberg-rw /tmp/nova-iceberg-policy.json >/dev/null;
+      mc admin user add nova $${ICEBERG_S3_ACCESS_KEY} $${ICEBERG_S3_SECRET_KEY} >/dev/null;
+      mc admin policy attach nova nova-iceberg-rw --user $${ICEBERG_S3_ACCESS_KEY} >/dev/null 2>&1
+      || mc admin user info nova $${ICEBERG_S3_ACCESS_KEY} | grep -q nova-iceberg-rw;
+      echo 'nova-iceberg bucket and user ready';
+      "
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-miniopassword}
+      ICEBERG_S3_ACCESS_KEY: ${ICEBERG_S3_ACCESS_KEY:-nova-iceberg}
+      ICEBERG_S3_SECRET_KEY: ${ICEBERG_S3_SECRET_KEY:-}
+    restart: "no"
+    networks:
+      - nova
+
+  # Iceberg REST catalog. Catalog metadata in a SQLite file on its own
+  # volume; table data and Iceberg metadata files in s3://nova-iceberg.
+  iceberg-rest:
+    logging: *default-logging
+    image: apache/iceberg-rest-fixture:1.10.0@sha256:df2e9dd421928b7aab01557678ce8e2bb73064d0e253baebd72adad3439ffc2e
+    container_name: nova-iceberg-rest
+    hostname: iceberg-rest
+    profiles: ["starrocks-compat"]
+    depends_on:
+      iceberg-minio-init:
+        condition: service_completed_successfully
+    environment:
+      TZ: ${TZ:-Asia/Jakarta}
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx384m
+      # CATALOG_* become catalog properties: `__` is `-`, `_` is `.`.
+      CATALOG_URI: jdbc:sqlite:/home/iceberg/iceberg_catalog.db
+      CATALOG_WAREHOUSE: s3://nova-iceberg/warehouse
+      CATALOG_IO__IMPL: org.apache.iceberg.aws.s3.S3FileIO
+      CATALOG_S3_ENDPOINT: http://minio:9000
+      CATALOG_S3_PATH__STYLE__ACCESS: "true"
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: ${ICEBERG_S3_ACCESS_KEY:-nova-iceberg}
+      AWS_SECRET_ACCESS_KEY: ${ICEBERG_S3_SECRET_KEY:-}
+    ports:
+      - "127.0.0.1:${ICEBERG_REST_HOST_PORT:-28181}:8181"
+    volumes:
+      - iceberg_catalog_data:/home/iceberg
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8181/v1/config >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - nova
+
   # ── StarRocks Init (auto-create NOVA_SYSTEM + admin) ─────────────
   starrocks-init:
     logging: *default-logging
@@ -623,3 +749,7 @@ volumes:
     name: docker_redis_data
   opensandbox_data:
     name: docker_opensandbox_data
+  kafka_data:
+    name: docker_kafka_data
+  iceberg_catalog_data:
+    name: docker_iceberg_catalog_data

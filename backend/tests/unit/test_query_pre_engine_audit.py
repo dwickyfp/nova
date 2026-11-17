@@ -348,18 +348,18 @@ class TestPreEngineRowShape:
 class TestResolvedCredentialsNeverReachTheAuditRow:
     """NOVA-94 security finding #1: the *resolved* statement must be redacted.
 
-    Unlike the pre-engine paths above, a caller that resolves storage
-    credentials (``backup``'s ``CREATE REPOSITORY``, ``external_catalogs``)
-    hands the pipeline a statement that already contains the access/secret
-    key. ``redacted_sql`` is computed before the audit pair runs, so both
+    Unlike the pre-engine paths above, a statement can reach the pipeline
+    already carrying an access/secret key (a native ``FILES()`` read with
+    inline keys). ``redacted_sql`` is computed before the audit pair runs, so both
     writes must use it — writing the raw argument puts a live storage key in
     ``NOVA_SYSTEM.AUDIT_LOG``, which any AUDIT_LOG reader can then read.
     """
 
+    # A native ``FILES()`` read with inline keys is still accepted and
+    # reaches the engine verbatim (repositories now take only a stage).
     STATEMENT = (
-        "CREATE REPOSITORY `backup_repo` WITH BROKER "
-        'ON LOCATION "s3://backup-bucket/snapshots" '
-        'PROPERTIES("aws.s3.access_key" = "ACCESSKEY_SENTINEL", '
+        'SELECT * FROM FILES("path" = "s3://backup-bucket/snapshots/a.csv", '
+        '"format" = "csv", "aws.s3.access_key" = "ACCESSKEY_SENTINEL", '
         '"aws.s3.secret_key" = "SECRETKEY_SENTINEL")'
     )
 
@@ -384,7 +384,7 @@ class TestResolvedCredentialsNeverReachTheAuditRow:
 
         async def failing(sql, **kwargs):
             repo.calls.append(sql)
-            raise RuntimeError(f"StarRocks rejected: {sql} — REPOSITORY already exists")
+            raise RuntimeError(f"StarRocks rejected: {sql} — file not found")
 
         monkeypatch.setattr(repo, "execute_as_user", failing)
 

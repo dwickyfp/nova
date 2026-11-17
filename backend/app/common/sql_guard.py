@@ -156,6 +156,10 @@ _EGRESS_PATTERNS: list[tuple[str, str]] = [
         _STAGE_EXPORT_EGRESS_PATTERN,
         "INTO @stage exports query results and is not read-only.",
     ),
+    (
+        rf"^EXPORT{_GAP}TABLE\b",
+        "EXPORT TABLE writes table data to files and is not read-only.",
+    ),
 ]
 
 #: Flags every ``BLOCKED_PATTERNS`` entry is matched with. ``re.DOTALL`` is
@@ -376,9 +380,12 @@ def _guard_single_statement(sql: str, *, allow_stage_export: bool = False) -> No
         if re.search(pattern, normalized, BLOCKED_PATTERN_FLAGS):
             raise ForbiddenSQLError(message)
     blanked = _blank_string_literals(normalized)
+    if allow_stage_export:
+        # A context that may unload: the SQL frontend accepts only stage
+        # targets (never a storage URL or inline credentials), checks the
+        # active role's write access to the stage, and asks for confirmation.
+        return
     for pattern, message in _EGRESS_PATTERNS:
-        if allow_stage_export and pattern == _STAGE_EXPORT_EGRESS_PATTERN:
-            continue
         if re.search(pattern, blanked, BLOCKED_PATTERN_FLAGS):
             raise ForbiddenSQLError(message)
 

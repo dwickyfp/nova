@@ -1,0 +1,2355 @@
+{
+ "date": "2026-11-16",
+ "baseline_commit": "18ae8035e9dfa9ba6b790c0a390017fa943c2157",
+ "branch": "feat/dataviz-native (uncommitted working tree)",
+ "stack": "shared development stack (docker project): StarRocks 4.1.4 patched FE, Ranger, Kafka 3.9.1, Iceberg REST fixture 1.10.0, MinIO; Nova backend from the working tree via dev.sh hot reload; metadata schema 57",
+ "through": "Nova HTTP API http://127.0.0.1:5173/api/v1 (query/execute, catalog/connections, catalog/foreign-catalogs, access-control/data-access) as nova_admin (ACCOUNTADMIN) and alice (marketing, finance); passwords and storage keys read inside the scripts, never printed",
+ "workstream": "W9 Iceberg REST catalog through Nova connections",
+ "connection_and_catalog": {
+  "create_connection": "POST /catalog/connections type iceberg, endpoint http://iceberg-rest:8181?s3_endpoint=http://minio:9000&s3_region=us-east-1, storage key pair as credentials -> 201, credential_source managed; response holds no endpoint or key",
+  "create_catalog": "POST /catalog/foreign-catalogs -> 201 catalog_type iceberg, sync status ok; SHOW CREATE CATALOG masks both keys as ***",
+  "sync_and_browse": {
+   "refresh": [
+    200,
+    "{'runs': [{'id': 'c57c8d9a-5d38-4f50-b1a9-1efe9885a86f', 'catalog_name': 'w9_ice', 'trigger': 'manual', 'status': 'ok', 'started_at': '2026-11-16T16:18:42.229248Z', 'finished_at': '2026-11-16T16:18:45.644744Z', 'counts': {'columns_rewritten': 15, 'databases': 5, 'dropped': 0, 'relations': 20, 'securables_dropped': 0, 'securables_written': 56}, 'error': None}]}"
+   ],
+   "detail": {
+    "catalog_type": "iceberg",
+    "status": "ok",
+    "databases": [
+     "compat_w9_gov",
+     "compat_w9_probe",
+     "compat_w9_probe_db2",
+     "s3table_db",
+     "testdb"
+    ],
+    "last_sync_error": null
+   },
+   "objects": [
+    200,
+    [
+     [
+      null,
+      "table",
+      "Iceberg table"
+     ],
+     [
+      null,
+      "table",
+      "Iceberg table"
+     ],
+     [
+      null,
+      "table",
+      "Iceberg table"
+     ],
+     [
+      null,
+      "table",
+      "Iceberg table"
+     ],
+     [
+      null,
+      "table",
+      "Iceberg table"
+     ],
+     [
+      null,
+      "table",
+      "Iceberg table"
+     ],
+     [
+      null,
+      "table",
+      "Iceberg table"
+     ],
+     [
+      null,
+      "table",
+      "Iceberg table"
+     ],
+     [
+      null,
+      "table",
+      "Iceberg table"
+     ],
+     [
+      null,
+      "view",
+      "Iceberg view"
+     ],
+     [
+      null,
+      "view",
+      "Iceberg view"
+     ],
+     [
+      null,
+      "table",
+      "Iceberg table"
+     ],
+     [
+      null,
+      "view",
+      "Iceberg view"
+     ],
+     [
+      null,
+      "table",
+      "Iceberg table"
+     ],
+     [
+      null,
+      "table",
+      "Iceberg table"
+     ],
+     [
+      null,
+      "table",
+      "Iceberg table"
+     ],
+     [
+      null,
+      "table",
+      "Iceberg table"
+     ],
+     [
+      null,
+      "table",
+      "Iceberg table"
+     ],
+     [
+      null,
+      "table",
+      "Iceberg table"
+     ]
+    ]
+   ],
+   "alice_connections": 403,
+   "alice_objects": [
+    200,
+    "[{'catalog_name': 'w9_ice', 'database_name': 'compat_w9_gov', 'object_name': 'items', 'object_type': 'table', 'engine': 'Iceberg table', 'comment': None, 'row_count': None, 'data_size': None, 'last_se"
+   ],
+   "alice_objects_ungranted": [
+    404,
+    "{'detail': \"Database 'compat_w9_probe' not found\"}"
+   ]
+  },
+  "sql_connection_flow": "CREATE CONNECTION ... TYPE = iceberg ... SECRET = nova://lake_rest, credentials entered via PUT /credentials, CREATE FOREIGN CATALOG -> ok (docs run)"
+ },
+ "scenario": {
+  "summary": "basic DDL/DML/metadata through Nova, all ok",
+  "statements": 19
+ },
+ "documented_operations": {
+  "results": [
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "CREATE TABLE user_info (\n    id INT, name STRING, age INT DEFAULT \"18\", score DOUBLE DEFAULT \"100.0\",\n    status STRING DEFAULT 'active', is_active BOOLEAN DEFAULT \"true\"\n) PROPERTIES (\"format-version\" = \"3\")",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "ALTER TABLE user_info ADD COLUMN bonus DOUBLE DEFAULT \"50.5\"",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "ALTER TABLE user_info MODIFY COLUMN status STRING DEFAULT \"inactive\"",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "CREATE TABLE unpartition_tbl (id int, score double)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "CREATE TABLE partition_tbl (action varchar(20), id int, dt date) PARTITION BY (id, dt)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "CREATE TABLE hidden_partition_tbl (action VARCHAR(20), id INT, dt DATE) PARTITION BY bucket(id, 10), year(dt)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "SELECT id, name, age, score, status, is_active, bonus FROM user_info",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "INSERT INTO user_info (id, name) VALUES (1, 'ani')",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "SELECT id, name, age, score, status, is_active, bonus FROM user_info",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      1,
+      "ani",
+      18,
+      100.0,
+      "inactive",
+      1,
+      50.5
+     ]
+    ],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "INSERT INTO partition_tbl VALUES ('view', 1, '2026-11-16'), ('buy', 2, '2026-11-17')",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "CREATE TABLE existing_tbl (action varchar(20), id int, dt date)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "INSERT INTO existing_tbl SELECT * FROM partition_tbl",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "CREATE TABLE new_tbl PARTITION BY (id, dt) AS SELECT * FROM existing_tbl",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "SELECT COUNT(*) FROM new_tbl",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      2
+     ]
+    ],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "CREATE TABLE sales_data (sale_id INT, customer_id INT, sale_date DATE, amount DOUBLE) PARTITION BY day(sale_date)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "ALTER TABLE sales_data ADD PARTITION COLUMN month(sale_date), bucket(customer_id, 10)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "ALTER TABLE sales_data DROP PARTITION COLUMN day(sale_date)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "SHOW CREATE TABLE sales_data",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      "sales_data",
+      "CREATE TABLE `sales_data` (\n  `sale_id` int(11) DEFAULT NULL,\n  `customer_id` int(11) DEFAULT NULL,\n  `sale_date` date DEFAULT NULL,\n  `amount` double DEFAULT NULL\n)\nPARTITION BY month(`sale_date`), bucket(`customer_id`, 10)\nPROPERTIES (\"format-version\" = \"2\", \"location\" = \"s3://nova-iceberg/warehouse/compat_w9_probe/sales_data\", \"write.format.default\" = \"parquet\", \"write.parquet.compression-codec\" = \"zstd\");"
+     ]
+    ],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "CREATE TABLE sales (region STRING, amount DOUBLE)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "INSERT INTO sales VALUES ('west', 10.0), ('east', 5.0), ('west', 2.5)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "CREATE VIEW IF NOT EXISTS compat_w9_probe.sales_summary AS SELECT region, SUM(amount) as total_sales FROM compat_w9_probe.sales GROUP BY region",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "SELECT * FROM sales_summary ORDER BY region",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      "east",
+      5.0
+     ],
+     [
+      "west",
+      12.5
+     ]
+    ],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "CREATE VIEW IF NOT EXISTS compat_w9_probe.sales_summary2 PROPERTIES (\"key1\" = \"value1\") AS SELECT region, SUM(amount) as total_sales FROM compat_w9_probe.sales GROUP BY region",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "CREATE TABLE source_table (k1 INT, k2 INT, k3 INT)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "CREATE VIEW spark_view AS SELECT k1, k2 FROM compat_w9_probe.source_table",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "ALTER VIEW compat_w9_probe.spark_view ADD DIALECT SELECT k1, k2 FROM compat_w9_probe.source_table",
+    "ok": false,
+    "expected_ok": false,
+    "error": "SQL error: (1064) Invalid view version: Cannot add multiple queries for dialect starrocks",
+    "rows": [],
+    "note": "The view already has a StarRocks dialect; ADD DIALECT is for a view another engine created. Engine refusal, same on the engine."
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "ALTER VIEW compat_w9_probe.spark_view MODIFY DIALECT SELECT k1, k2, k3 FROM compat_w9_probe.source_table",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "CREATE TABLE temp_data (id INT)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "DROP TABLE compat_w9_probe.temp_data FORCE",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "CREATE TABLE table1 (id INT, name STRING, age INT, salary INT, status STRING, last_login DATE, email STRING, phone STRING, created_date DATE)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "INSERT INTO table1 VALUES (3,'Ari',35,60000,'active','2024-01-01','ari@example.com',NULL,'2023-05-01'),(18,'Bayu',25,50000,'inactive','2022-01-01',NULL,NULL,'2022-05-01'),(40,'Cici',45,90000,'active','2024-06-01','c@x.id','1','2023-06-01'),(41,NULL,28,40000,'active','2024-06-01','n@x.id','2','2024-02-01')",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM table1 WHERE id = 3",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM table1 WHERE id IN (18, 20, 22)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM table1 WHERE id NOT IN (100, 101, 102) AND age > 99",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM table1 WHERE age > 30 AND salary < 70000",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM table1 WHERE status = 'inactive' OR last_login < '2023-01-01'",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM table1 WHERE name LIKE 'A%'",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM table1 WHERE email LIKE '%@example.com'",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM table1 WHERE age BETWEEN 30 AND 40",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM table1 WHERE created_date BETWEEN '2023-01-01' AND '2023-12-31'",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM table1 WHERE name IS NULL",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM table1 WHERE email IS NULL AND phone IS NULL",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "SELECT id FROM table1 ORDER BY id",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "INSERT INTO table1 (id, age) VALUES (50, 20), (51, 21)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "CREATE TABLE temp_table (id INT, expired BOOLEAN)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "INSERT INTO temp_table VALUES (50, true)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM table1 WHERE id IN (SELECT id FROM temp_table WHERE expired = true)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "CREATE TABLE inactive_users (user_id INT)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "INSERT INTO inactive_users VALUES (51)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM table1 t1 WHERE EXISTS (SELECT user_id FROM inactive_users t2 WHERE t2.user_id = t1.id)",
+    "ok": false,
+    "expected_ok": false,
+    "error": "Invalid SQL: 1:19 Unexpected or missing SQL token",
+    "rows": [],
+    "note": "Docs error: StarRocks 4.1.4 has no table alias in DELETE (the engine gives the same syntax error)"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM table1 WHERE EXISTS (SELECT user_id FROM inactive_users t2 WHERE t2.user_id = table1.id)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": "Same delete without the alias"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM table1 WHERE age IS NOT NULL",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "SELECT COUNT(*) FROM table1",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      0
+     ]
+    ],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "CREATE TABLE my_table (id INT)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "INSERT INTO my_table VALUES (1), (2)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "TRUNCATE TABLE w9_ice.compat_w9_probe.my_table",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "SELECT COUNT(*) FROM my_table",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      0
+     ]
+    ],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "INSERT OVERWRITE partition_tbl PARTITION (id=1, dt='2026-11-16') SELECT 'click'",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "SELECT * FROM partition_tbl ORDER BY id",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      "click",
+      1,
+      "2026-11-16"
+     ],
+     [
+      "buy",
+      2,
+      "2026-11-17"
+     ]
+    ],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "CREATE TABLE `order` (c1 STRING, k1 INT)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "INSERT INTO `order` VALUES ('a', 1)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "SELECT snapshot_id, committed_at FROM `order$snapshots` ORDER BY committed_at",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      8135386679561445604,
+      "2026-11-16T23:17:08.355000"
+     ]
+    ],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "INSERT INTO `order` VALUES ('b', 2)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.`order` CREATE BRANCH `test-branch` AS OF VERSION 8135386679561445604 RETAIN 7 DAYS WITH SNAPSHOT RETENTION 2 SNAPSHOTS",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.`order` CREATE BRANCH `test-branch2` AS OF VERSION 8135386679561445604 RETAIN 7 DAYS WITH SNAPSHOT RETENTION 2 DAYS",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.`order` CREATE BRANCH `test-branch3` AS OF VERSION 8135386679561445604 RETAIN 7 DAYS WITH SNAPSHOT RETENTION 2 SNAPSHOTS 2 DAYS",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "CREATE TABLE tbl (c1 STRING, k1 INT)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "INSERT INTO tbl VALUES ('x', 9)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "INSERT INTO w9_ice.compat_w9_probe.`order` FOR VERSION AS OF `test-branch` SELECT c1, k1 FROM tbl",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.`order` CREATE TAG `test-tag` AS OF VERSION 8135386679561445604 RETAIN 7 DAYS",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "SELECT * FROM w9_ice.compat_w9_probe.`order` VERSION AS OF 'test-branch' ORDER BY k1",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      "a",
+      1
+     ],
+     [
+      "x",
+      9
+     ]
+    ],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "SELECT * FROM w9_ice.compat_w9_probe.`order` VERSION AS OF 'test-tag' ORDER BY k1",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      "a",
+      1
+     ]
+    ],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "SELECT * FROM w9_ice.compat_w9_probe.`order` VERSION AS OF 8135386679561445604 ORDER BY k1",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      "a",
+      1
+     ]
+    ],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "SELECT * FROM w9_ice.compat_w9_probe.`order` FOR VERSION AS OF 8135386679561445604 ORDER BY k1",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      "a",
+      1
+     ]
+    ],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "SELECT * FROM w9_ice.compat_w9_probe.`order` TIMESTAMP AS OF '2026-11-16 23:17:09' ORDER BY k1",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      "a",
+      1
+     ]
+    ],
+    "note": "One second after the first commit (session time zone)"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "SELECT * FROM w9_ice.compat_w9_probe.`order` TIMESTAMP AS OF '1986-10-26'",
+    "ok": false,
+    "expected_ok": false,
+    "error": "SQL error: (1064) Invalid temporal version [1986-10-26]",
+    "rows": [],
+    "note": "Before the first snapshot: the engine reports no snapshot"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "SELECT * FROM w9_ice.compat_w9_probe.`order` FOR TIMESTAMP AS OF now() ORDER BY k1",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      "a",
+      1
+     ],
+     [
+      "b",
+      2
+     ]
+    ],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "SELECT name, type FROM `order$refs` ORDER BY name",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      "main",
+      "BRANCH"
+     ],
+     [
+      "test-branch",
+      "BRANCH"
+     ],
+     [
+      "test-branch2",
+      "BRANCH"
+     ],
+     [
+      "test-branch3",
+      "BRANCH"
+     ],
+     [
+      "test-tag",
+      "TAG"
+     ]
+    ],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.`order` DROP BRANCH `test-branch`",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.`order` DROP TAG `test-tag`",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_meta_table.md",
+    "sql": "SELECT COUNT(*) FROM `order$history`",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      3
+     ]
+    ],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_meta_table.md",
+    "sql": "SELECT COUNT(*) FROM `order$metadata_log_entries`",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      10
+     ]
+    ],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_meta_table.md",
+    "sql": "SELECT COUNT(*) FROM `order$snapshots`",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      3
+     ]
+    ],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_meta_table.md",
+    "sql": "SELECT COUNT(*) FROM `order$manifests`",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      2
+     ]
+    ],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_meta_table.md",
+    "sql": "SELECT COUNT(*) FROM `order$partitions`",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      1
+     ]
+    ],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_meta_table.md",
+    "sql": "SELECT COUNT(*) FROM `order$files`",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      2
+     ]
+    ],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_meta_table.md",
+    "sql": "SELECT COUNT(*) FROM `order$refs`",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      3
+     ]
+    ],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_meta_table.md",
+    "sql": "SELECT _row_id, _last_updated_sequence_number, * FROM user_info",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      0,
+      1,
+      1,
+      "ani",
+      18,
+      100.0,
+      "inactive",
+      1,
+      50.5
+     ]
+    ],
+    "note": "Row lineage needs format-version 3 (user_info)"
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "SELECT snapshot_id FROM `order$snapshots` ORDER BY committed_at",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      8135386679561445604
+     ],
+     [
+      9138611359867801371
+     ],
+     [
+      8833346304384869143
+     ]
+    ],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.`order` EXECUTE rollback_to_snapshot(8135386679561445604)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "SELECT * FROM `order` ORDER BY k1",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      "a",
+      1
+     ]
+    ],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.`order` EXECUTE cherrypick_snapshot(9138611359867801371)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.`order` CREATE BRANCH `ff-branch` AS OF VERSION 8135386679561445604",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.`order` EXECUTE fast_forward('ff-branch', 'main')",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.`order` EXECUTE expire_snapshots(older_than = '2023-12-17 00:14:38')",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.`order` EXECUTE expire_snapshots('2023-12-17 00:14:38', 2)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": "positional form as documented"
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.`order` EXECUTE remove_orphan_files(older_than = '2024-01-01 00:00:00')",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.`order` EXECUTE rewrite_manifests()",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "CREATE TABLE t1 (id INT, part_col INT) PARTITION BY (part_col)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "INSERT INTO t1 VALUES (1, 1), (2, 1)",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "ALTER TABLE t1 EXECUTE rewrite_data_files(\"min_file_size_bytes\"= 134217728) WHERE part_col = 1",
+    "ok": false,
+    "expected_ok": false,
+    "error": "SQL error: (1064) Getting analyzing error. Detail message: Failed to resolve table procedure args: BinaryPredicate{type=BOOLEAN}. msg: Getting analyzing error. Detail message: Argument 'rewrite_all' must be a constant, got cast(min_file_size_bytes as DECIMAL128(38,9)) = 134217728.000000000., expected const argument.",
+    "rows": [],
+    "note": "Docs error: the quoted key is read as a comparison; the engine gives the same error"
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "ALTER TABLE t1 EXECUTE rewrite_data_files(min_file_size_bytes = 134217728) WHERE part_col = 1",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      "compat_w9_probe",
+      "t1",
+      1,
+      1,
+      0,
+      1653,
+      "success"
+     ]
+    ],
+    "note": "Named argument without quotes"
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "SELECT COUNT(*) FROM t1",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      2
+     ]
+    ],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_catalog.md",
+    "sql": "REFRESH EXTERNAL TABLE w9_ice.compat_w9_probe.`order`",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_catalog.md",
+    "sql": "SHOW CREATE CATALOG w9_ice",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      "w9_ice",
+      "CREATE EXTERNAL CATALOG `w9_ice`\ncomment \"W9\"\nPROPERTIES (\"aws.s3.access_key\"  =  '***',\n\"aws.s3.secret_key\"  =  '***',\n\"aws.s3.endpoint\"  =  \"http://minio:9000\",\n\"aws.s3.enable_path_style_access\"  =  \"true\",\n\"aws.s3.region\"  =  \"us-east-1\",\n\"aws.s3.use_instance_profile\"  =  \"false\",\n\"iceberg.catalog.uri\"  =  \"http://iceberg-rest:8181\",\n\"type\"  =  \"iceberg\",\n\"iceberg.catalog.type\"  =  \"rest\"\n)"
+     ]
+    ],
+    "note": "Keys are masked"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_catalog.md",
+    "sql": "SHOW DATABASES FROM w9_ice",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [
+     [
+      "compat_w9_probe"
+     ],
+     [
+      "compat_w9_probe_db2"
+     ],
+     [
+      "information_schema"
+     ],
+     [
+      "s3table_db"
+     ],
+     [
+      "testdb"
+     ]
+    ],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_catalog.md",
+    "sql": "USE w9_ice.compat_w9_probe",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": null
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_catalog.md",
+    "sql": "SET CATALOG w9_ice",
+    "ok": true,
+    "expected_ok": true,
+    "error": null,
+    "rows": [],
+    "note": "Worksheet session setting (W1)"
+   }
+  ],
+  "counts": {
+   "statements": 108,
+   "ok": 104,
+   "expected_failures_engine_or_docs": [
+    "ALTER VIEW compat_w9_probe.spark_view ADD DIALECT SELECT k1, k2 FROM compat_w9_probe.source_table",
+    "DELETE FROM table1 t1 WHERE EXISTS (SELECT user_id FROM inactive_users t2 WHERE t2.user_id = t1.id)",
+    "SELECT * FROM w9_ice.compat_w9_probe.`order` TIMESTAMP AS OF '1986-10-26'",
+    "ALTER TABLE t1 EXECUTE rewrite_data_files(\"min_file_size_bytes\"= 134217728) WHERE part_col = 1"
+   ]
+  }
+ },
+ "probe_corpus_pages": {
+  "command": "probe.py --pages data_source/catalog/iceberg/* --rewrite w9_rewrite.json --database w9_ice.compat_w9_probe",
+  "rewrite": [
+   [
+    "\\b(?:iceberg_catalog|iceberg_catalog_hms|iceberg_catalog_glue)\\.(?:db|my_db|iceberg_db|sales)\\.",
+    "w9_ice.compat_w9_probe."
+   ],
+   [
+    "\\biceberg\\.(?:sales|iceberg_db|db)\\.",
+    "w9_ice.compat_w9_probe."
+   ],
+   [
+    "\\biceberg_db\\.",
+    "w9_ice.compat_w9_probe."
+   ],
+   [
+    "(?i)\\bSET CATALOG iceberg_catalog\\b",
+    "SET CATALOG w9_ice"
+   ],
+   [
+    "(?i)\\bUSE my_db\\b",
+    "USE compat_w9_probe"
+   ],
+   [
+    "(?i)\\b(DATABASE(?: IF NOT EXISTS| IF EXISTS)?) iceberg_db\\b",
+    "\\1 w9_ice.compat_w9_probe_db2"
+   ],
+   [
+    "s3://my_bucket/iceberg_db/",
+    "s3://nova-iceberg/warehouse/compat_w9_probe_db2/"
+   ],
+   [
+    "\\bmy_db\\.",
+    "compat_w9_probe."
+   ]
+  ],
+  "counts": {
+   "template": 36,
+   "ok": 12,
+   "skipped:cluster_or_account": 6,
+   "signature": 12,
+   "both_fail": 70
+  },
+  "nova_gap": [],
+  "note": "Raw corpus statements need fixture tables, snapshot IDs or other catalogs (Glue, Polaris, Tabular, S3 Tables); both_fail rows failed on the engine too. The fixture-aware run above covers every documented operation.",
+  "both_fail": [
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "CREATE TABLE new_tbl\nPARTITION BY (id, dt)\nAS SELECT * FROM existing_tbl",
+    "engine_error": "OperationalError:(5502, \"Getting analyzing error. Detail message: Unknown table 'compat_w9_probe.existing_tbl'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "ALTER TABLE [catalog.][database.]table_name\nADD PARTITION COLUMN partition_expr [, partition_expr ...]",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 12. Detail message: No viable statement for input 'ALTER TABLE ['.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "ALTER TABLE [catalog.][database.]table_name\nDROP PARTITION COLUMN partition_expr [, partition_expr ...]",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 12. Detail message: No viable statement for input 'ALTER TABLE ['.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "ALTER TABLE sales_data\nADD PARTITION COLUMN month(sale_date), bucket(customer_id, 10)",
+    "engine_error": "ProgrammingError:(1064, 'Getting analyzing error. Detail message: Table sales_data is not found.')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "ALTER TABLE sales_data\nDROP PARTITION COLUMN day(sale_date)",
+    "engine_error": "ProgrammingError:(1064, 'Getting analyzing error. Detail message: Table sales_data is not found.')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "DROP TABLE w9_ice.compat_w9_probe.sales_data",
+    "engine_error": "OperationalError:(5502, \"Getting analyzing error. Detail message: Unknown table 'sales_data'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "DROP TABLE w9_ice.compat_w9_probe.temp_data FORCE",
+    "engine_error": "OperationalError:(5502, \"Getting analyzing error. Detail message: Unknown table 'temp_data'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "CREATE VIEW IF NOT EXISTS w9_ice.compat_w9_probe.sales_summary AS\nSELECT region, SUM(amount) as total_sales\nFROM w9_ice.compat_w9_probe.sales\nGROUP BY region",
+    "engine_error": "OperationalError:(5502, \"Getting analyzing error. Detail message: Unknown table 'compat_w9_probe.sales'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "CREATE VIEW IF NOT EXISTS w9_ice.compat_w9_probe.sales_summary\nPROPERTIES (\n  \"key1\" = \"value1\"\n)\nAS\nSELECT region, SUM(amount) as total_sales\nFROM w9_ice.compat_w9_probe.sales\nGROUP BY region",
+    "engine_error": "OperationalError:(5502, \"Getting analyzing error. Detail message: Unknown table 'compat_w9_probe.sales'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "ALTER VIEW w9_ice.compat_w9_probe.spark_view ADD DIALECT\nSELECT k1, k2 FROM w9_ice.compat_w9_probe.source_table",
+    "engine_error": "ProgrammingError:(1064, 'Getting analyzing error. Detail message: Table spark_view is not found.')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DDL.md",
+    "sql": "ALTER VIEW w9_ice.compat_w9_probe.spark_view MODIFY DIALECT\nSELECT k1, k2, k3 FROM w9_ice.compat_w9_probe.source_table",
+    "engine_error": "ProgrammingError:(1064, 'Getting analyzing error. Detail message: Table spark_view is not found.')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM w9_ice.compat_w9_probe.table1 WHERE id = 3",
+    "engine_error": "ProgrammingError:(1064, 'Getting analyzing error. Detail message: Table table1 is not found.')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM w9_ice.compat_w9_probe.table1 WHERE id IN (18, 20, 22)",
+    "engine_error": "ProgrammingError:(1064, 'Getting analyzing error. Detail message: Table table1 is not found.')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM w9_ice.compat_w9_probe.table1 WHERE id NOT IN (100, 101, 102)",
+    "engine_error": "ProgrammingError:(1064, 'Getting analyzing error. Detail message: Table table1 is not found.')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM w9_ice.compat_w9_probe.table1 WHERE age > 30 AND salary < 70000",
+    "engine_error": "ProgrammingError:(1064, 'Getting analyzing error. Detail message: Table table1 is not found.')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM w9_ice.compat_w9_probe.table1 WHERE status = 'inactive' OR last_login < '2023-01-01'",
+    "engine_error": "ProgrammingError:(1064, 'Getting analyzing error. Detail message: Table table1 is not found.')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM w9_ice.compat_w9_probe.table1 WHERE name LIKE 'A%'",
+    "engine_error": "ProgrammingError:(1064, 'Getting analyzing error. Detail message: Table table1 is not found.')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM w9_ice.compat_w9_probe.table1 WHERE email LIKE '%@example.com'",
+    "engine_error": "ProgrammingError:(1064, 'Getting analyzing error. Detail message: Table table1 is not found.')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM w9_ice.compat_w9_probe.table1 WHERE age BETWEEN 30 AND 40",
+    "engine_error": "ProgrammingError:(1064, 'Getting analyzing error. Detail message: Table table1 is not found.')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM w9_ice.compat_w9_probe.table1 WHERE created_date BETWEEN '2023-01-01' AND '2023-12-31'",
+    "engine_error": "ProgrammingError:(1064, 'Getting analyzing error. Detail message: Table table1 is not found.')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM w9_ice.compat_w9_probe.table1 WHERE name IS NULL",
+    "engine_error": "ProgrammingError:(1064, 'Getting analyzing error. Detail message: Table table1 is not found.')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM w9_ice.compat_w9_probe.table1 WHERE email IS NULL AND phone IS NULL",
+    "engine_error": "ProgrammingError:(1064, 'Getting analyzing error. Detail message: Table table1 is not found.')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM w9_ice.compat_w9_probe.table1 WHERE age IS NOT NULL",
+    "engine_error": "ProgrammingError:(1064, 'Getting analyzing error. Detail message: Table table1 is not found.')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM w9_ice.compat_w9_probe.table1 WHERE id IN (SELECT id FROM temp_table WHERE expired = true)",
+    "engine_error": "ProgrammingError:(1064, 'Getting analyzing error. Detail message: Table table1 is not found.')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "DELETE FROM w9_ice.compat_w9_probe.table1 t1 WHERE EXISTS (SELECT user_id FROM inactive_users t2 WHERE t2.user_id = t1.user_id)",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 42. Detail message: Unexpected input 't1', the most similar input is {<EOF>, ';'}.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "TRUNCATE TABLE w9_ice.compat_w9_probe.my_table",
+    "engine_error": "ProgrammingError:(1064, 'Table does not exist: compat_w9_probe.my_table')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "TRUNCATE TABLE compat_w9_probe.my_table",
+    "engine_error": "ProgrammingError:(1064, 'Table does not exist: compat_w9_probe.my_table')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/DML.md",
+    "sql": "TRUNCATE TABLE my_table",
+    "engine_error": "ProgrammingError:(1064, 'Table does not exist: compat_w9_probe.my_table')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_catalog.md",
+    "sql": "CREATE EXTERNAL CATALOG tabular\nPROPERTIES\n(\n    \"type\" = \"iceberg\",\n    \"iceberg.catalog.type\" = \"rest\",\n    \"iceberg.catalog.uri\" = \"https://api.tabular.io/ws\",\n    \"iceberg.catalog.oauth2.credentia",
+    "engine_error": "ProgrammingError:(1064, 'connector create failed {Failed to init connector [type: iceberg, name: tabular]. msg: Failed to load rest catalog}')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_catalog.md",
+    "sql": "CREATE EXTERNAL CATALOG smith_polaris \nPROPERTIES (   \n    \"iceberg.catalog.uri\"  = \"http://xxx.xx.xx.xxx:8181/api/catalog\", \n    \"type\"  =  \"iceberg\",   \n    \"iceberg.catalog.type\"  =  \"rest\",   \n   ",
+    "engine_error": "ProgrammingError:(1064, 'connector create failed {Failed to init connector [type: iceberg, name: smith_polaris]. msg: Failed to load rest catalog}')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_catalog.md",
+    "sql": "create table smith_polaris.`ns1.ns2.tpch_namespace`.tbl (c1 string)",
+    "engine_error": "OperationalError:(5078, \"Getting analyzing error. Detail message: Unknown catalog 'smith_polaris'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_catalog.md",
+    "sql": "select * from smith_polaris.`ns1.ns2.tpch_namespace`.tbl",
+    "engine_error": "OperationalError:(5078, \"Getting analyzing error. Detail message: Unknown catalog 'smith_polaris'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_catalog.md",
+    "sql": "SHOW DATABASES FROM r2",
+    "engine_error": "OperationalError:(5078, \"Getting analyzing error. Detail message: Unknown catalog 'r2'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_catalog.md",
+    "sql": "CREATE EXTERNAL CATALOG polaris_s3\nPROPERTIES\n(\n    \"type\" = \"iceberg\",\n    \"iceberg.catalog.uri\" = \"http://xxx:xxx/api/catalog\",\n    \"iceberg.catalog.type\" = \"rest\",\n    \"iceberg.catalog.rest.nested-",
+    "engine_error": "ProgrammingError:(1064, 'connector create failed {Failed to init connector [type: iceberg, name: polaris_s3]. msg: Failed to load rest catalog}')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_catalog.md",
+    "sql": "CREATE EXTERNAL CATALOG iceberg_catalog_hms\nPROPERTIES\n(\n    \"type\" = \"iceberg\",\n    \"iceberg.catalog.type\" = \"hive\",\n    \"hive.metastore.uris\" = \"thrift://xx.xx.xx.xx:9083\"\n)",
+    "engine_error": "OperationalError:(5514, \"Catalog 'iceberg_catalog_hms' already exists\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_catalog.md",
+    "sql": "CREATE EXTERNAL CATALOG iceberg_catalog_ha\nPROPERTIES\n(\n    \"type\" = \"iceberg\",\n    \"iceberg.catalog.type\" = \"hive\",\n    \"hive.metastore.uris\" = \"thrift://xx.xx.xx.xx:9083\",\n\n    \"hadoop.security.auth",
+    "engine_error": "OperationalError:(5514, \"Catalog 'iceberg_catalog_ha' already exists\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_catalog.md",
+    "sql": "CREATE EXTERNAL CATALOG iceberg_catalog_a\nPROPERTIES\n(\n    \"type\" = \"iceberg\",\n    \"iceberg.catalog.type\" = \"hive\",\n    \"hive.metastore.uris\" = \"thrift://hms-a.example.com:9083\",\n\n    \"hadoop.security",
+    "engine_error": "OperationalError:(5514, \"Catalog 'iceberg_catalog_a' already exists\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_catalog.md",
+    "sql": "CREATE EXTERNAL CATALOG iceberg_catalog_b\nPROPERTIES\n(\n    \"type\" = \"iceberg\",\n    \"iceberg.catalog.type\" = \"hive\",\n    \"hive.metastore.uris\" = \"thrift://hms-b.example.com:9083\",\n\n    \"hadoop.security",
+    "engine_error": "OperationalError:(5514, \"Catalog 'iceberg_catalog_b' already exists\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_catalog.md",
+    "sql": "SHOW CREATE CATALOG iceberg_catalog_glue",
+    "engine_error": "OperationalError:(5078, \"Getting analyzing error. Detail message: Unknown catalog 'iceberg_catalog_glue'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_rest_s3.md",
+    "sql": "INSERT INTO taxis \nVALUES (1000371, 1.8, 15.32, 'N', 1), \n       (1000372, 2.5, 22.15, 'N', 2),\n       (1000373, 0.9, 9.01, 'N', 2),\n       (1000374, 8.4, 42.13, 'Y', 1)",
+    "engine_error": "ProgrammingError:(1064, 'Getting analyzing error. Detail message: Table taxis is not found.')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_rest_s3.md",
+    "sql": "SELECT * FROM taxis",
+    "engine_error": "OperationalError:(5502, \"Getting analyzing error. Detail message: Unknown table 's3table_db.taxis'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_rest_security.md",
+    "sql": "ALTER CATALOG iceberg_rest_catalog\nSET PROPERTIES (\n  \"catalog.access.control\" = \"allowall\"\n)",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 2, column 4. Detail message: Unexpected input 'PROPERTIES', the most similar input is {'('}.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.order CREATE BRANCH `test-branch` \nAS OF VERSION 12345\nRETAIN 7 DAYS\nWITH SNAPSHOT RETENTION 2 SNAPSHOTS",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 35. Detail message: No viable statement for input 'ALTER TABLE w9_ice.compat_w9_probe.order'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.order CREATE BRANCH `test-branch2` \nAS OF VERSION 12345\nRETAIN 7 DAYS\nWITH SNAPSHOT RETENTION 2 DAYS",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 35. Detail message: No viable statement for input 'ALTER TABLE w9_ice.compat_w9_probe.order'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.order CREATE BRANCH `test-branch3` \nAS OF VERSION 12345\nRETAIN 7 DAYS\nWITH SNAPSHOT RETENTION 2 SNAPSHOTS 2 DAYS",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 35. Detail message: No viable statement for input 'ALTER TABLE w9_ice.compat_w9_probe.order'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "INSERT INTO w9_ice.compat_w9_probe.order\nFOR VERSION AS OF `test-branch`\nSELECT c1, k1 FROM tbl",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 34. Detail message: Unexpected input '.', the most similar input is {'BY', 'DESC', 'DESCRIBE', 'EXPLAIN', 'FOR', '('}.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.order CREATE TAG `test-tag` \nAS OF VERSION 12345\nRETAIN 7 DAYS",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 35. Detail message: No viable statement for input 'ALTER TABLE w9_ice.compat_w9_probe.order'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.order\nDROP BRANCH `test-branch`",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 35. Detail message: No viable statement for input 'ALTER TABLE w9_ice.compat_w9_probe.order'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.order\nDROP TAG `test-tag`",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 35. Detail message: No viable statement for input 'ALTER TABLE w9_ice.compat_w9_probe.order'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "SELECT * FROM w9_ice.compat_w9_probe.order VERSION AS OF 'test-branch'",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 37. Detail message: No viable statement for input 'w9_ice.compat_w9_probe.order'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "SELECT * FROM w9_ice.compat_w9_probe.order VERSION AS OF 'test-tag'",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 37. Detail message: No viable statement for input 'w9_ice.compat_w9_probe.order'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "SELECT * FROM w9_ice.compat_w9_probe.order VERSION AS OF 12345",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 37. Detail message: No viable statement for input 'w9_ice.compat_w9_probe.order'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "SELECT * FROM w9_ice.compat_w9_probe.order TIMESTAMP AS OF '1986-10-26 01:21:00'",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 37. Detail message: No viable statement for input 'w9_ice.compat_w9_probe.order'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "SELECT * FROM w9_ice.compat_w9_probe.order TIMESTAMP AS OF '1986-10-26'",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 37. Detail message: No viable statement for input 'w9_ice.compat_w9_probe.order'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/iceberg_timetravel.md",
+    "sql": "SELECT * FROM w9_ice.compat_w9_probe.order TIMESTAMP AS OF now()",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 37. Detail message: No viable statement for input 'w9_ice.compat_w9_probe.order'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.order\nEXECUTE rollback_to_snapshot(98765)",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 35. Detail message: No viable statement for input 'ALTER TABLE w9_ice.compat_w9_probe.order'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.order\nEXECUTE cherrypick_snapshot(54321)",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 35. Detail message: No viable statement for input 'ALTER TABLE w9_ice.compat_w9_probe.order'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.order\nEXECUTE fast_forward('main', 'test-branch')",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 35. Detail message: No viable statement for input 'ALTER TABLE w9_ice.compat_w9_probe.order'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "ALTER TABLE t1 EXECUTE rewrite_data_files(\"min_file_size_bytes\"= 134217728) WHERE part_col = 'p1'",
+    "engine_error": "ProgrammingError:(1064, 'Getting analyzing error. Detail message: Table t1 is not found.')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.order\nEXECUTE expire_snapshots(older_than = '2023-12-17 00:14:38', retain_last = 2)",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 35. Detail message: No viable statement for input 'ALTER TABLE w9_ice.compat_w9_probe.order'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.order\nEXECUTE expire_snapshots('2023-12-17 00:14:38', 2)",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 35. Detail message: No viable statement for input 'ALTER TABLE w9_ice.compat_w9_probe.order'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.order\nEXECUTE remove_orphan_files(older_than = '2024-01-01 00:00:00', location = 's3://iceberg-bucket/iceberg_db/iceberg_table/sub_dir')",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 35. Detail message: No viable statement for input 'ALTER TABLE w9_ice.compat_w9_probe.order'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.order\nEXECUTE remove_orphan_files('2024-01-01 00:00:00', 's3://bucket-test/iceberg_db/iceberg_table/sub_dir')",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 35. Detail message: No viable statement for input 'ALTER TABLE w9_ice.compat_w9_probe.order'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "ALTER TABLE [catalog.][database.]table_name\nEXECUTE rewrite_manifests()",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 12. Detail message: No viable statement for input 'ALTER TABLE ['.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.order\nEXECUTE rewrite_manifests()",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 35. Detail message: No viable statement for input 'ALTER TABLE w9_ice.compat_w9_probe.order'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.order\nEXECUTE add_files(source_table = 'hive_catalog.sales.source_order')",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 35. Detail message: No viable statement for input 'ALTER TABLE w9_ice.compat_w9_probe.order'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.order\nEXECUTE add_files(location = 's3://bucket/data/order/', file_format = 'parquet', recursive = true)",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 35. Detail message: No viable statement for input 'ALTER TABLE w9_ice.compat_w9_probe.order'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "ALTER TABLE w9_ice.compat_w9_probe.order\nEXECUTE add_files(location = 's3://bucket/data/order/data.parquet', file_format = 'parquet')",
+    "engine_error": "ProgrammingError:(1064, \"Getting syntax error at line 1, column 35. Detail message: No viable statement for input 'ALTER TABLE w9_ice.compat_w9_probe.order'.\")"
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "CALL iceberg_catalog.system.register_table(\n    database_name = 'sales',\n    table_name = 'order',\n    metadata_file = 's3://bucket/metadata/sales/order/metadata/00001-xxxxx-xxxxx-xxxxx.metadata.json'",
+    "engine_error": "ProgrammingError:(1064, 'Getting analyzing error. Detail message: Procedure not found: iceberg_catalog.system.register_table.')"
+   },
+   {
+    "page": "data_source/catalog/iceberg/procedures.md",
+    "sql": "CALL system.register_table(\n    database_name = 'sales',\n    table_name = 'order',\n    metadata_file = 's3://bucket/metadata/sales/order/metadata/00001-xxxxx-xxxxx-xxxxx.metadata.json'\n)",
+    "engine_error": "ProgrammingError:(1064, \"Database 'sales' does not exist in catalog 'w9_ice'\")"
+   }
+  ]
+ },
+ "governance": {
+  "alice_before_policy": {
+   "as": "alice",
+   "sql": "SELECT * FROM w9_ice.compat_w9_gov.items ORDER BY id",
+   "ok": false,
+   "error": "SQL error: (5204) Access denied; you need (at least one of) the SELECT privilege(s) on COLUMN name for this operation.",
+   "rows": []
+  },
+  "grant": "POST /access-control/data-access role marketing, catalog w9_ice, database compat_w9_gov, table *, SELECT -> 201; effective after ~5 s",
+  "alice_after_policy": [
+   {
+    "grant": 201
+   },
+   {
+    "as": "alice",
+    "sql": "SELECT * FROM w9_ice.compat_w9_gov.items ORDER BY id",
+    "ok": true,
+    "error": null,
+    "rows": [
+     [
+      1,
+      "pen"
+     ],
+     [
+      2,
+      "ink"
+     ]
+    ]
+   },
+   {
+    "as": "alice",
+    "sql": "INSERT INTO w9_ice.compat_w9_gov.items VALUES (3,'cap')",
+    "ok": false,
+    "error": "SQL error: (5204) Access denied; you need (at least one of) the INSERT privilege(s) on TABLE items for this operation.",
+    "rows": []
+   }
+  ],
+  "alice_connections_page": "GET /catalog/connections -> 403 (security admin only)",
+  "alice_explorer": "granted database listed with Iceberg table; ungranted database 404",
+  "after_revoke": {
+   "after_revoke": {
+    "success": false,
+    "error": "SQL error: (5204) Access denied; you need (at least one of) the SELECT privilege(s) on COLUMN name for this operation.",
+    "columns": [],
+    "rows": [],
+    "executed_sql": ""
+   },
+   "seconds": 0
+  }
+ },
+ "docs_examples_run": [
+  {
+   "section": "With SQL",
+   "as": "nova_admin",
+   "sql": "CREATE CONNECTION lake_rest\n  TYPE = iceberg\n  ENDPOINT = 'http://iceberg-rest:8181?s3_endpoint=http://minio:9000&s3_region=us-east-1'\n  SECRET = 'nova://lake_rest'",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "Connection lake_rest created"
+    ]
+   ]
+  },
+  {
+   "section": "With SQL",
+   "step": "Enter credentials (API)",
+   "status": 200
+  },
+  {
+   "section": "With SQL",
+   "as": "nova_admin",
+   "sql": "CREATE FOREIGN CATALOG lake USING CONNECTION lake_rest COMMENT 'Iceberg lake'",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "Catalog lake created"
+    ]
+   ]
+  },
+  {
+   "section": "With SQL",
+   "as": "nova_admin",
+   "sql": "SHOW CATALOGS LIKE 'lake'",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "lake",
+     "Iceberg",
+     "Iceberg lake"
+    ]
+   ]
+  },
+  {
+   "section": "Create databases and tables",
+   "as": "nova_admin",
+   "sql": "CREATE DATABASE lake.sales",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Create databases and tables",
+   "as": "nova_admin",
+   "sql": "CREATE TABLE lake.sales.orders (\n  id INT,\n  customer STRING,\n  amount DECIMAL(10, 2),\n  dt DATE\n) PARTITION BY (dt)",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Create databases and tables",
+   "as": "nova_admin",
+   "sql": "SHOW CREATE TABLE lake.sales.orders",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "orders",
+     "CREATE TABLE `orders` (\n  `id` int(11) DEFAULT NULL,\n  `customer` varchar(1073741824) DEFAULT NULL,\n  `amount` decimal(10, 2) DEFAULT NULL,\n  `dt` date DEFAULT NULL\n)\nPARTITION BY `dt`\nPROPERTIES (\"format-version\" = \"2\", \"location\" = \"s3://nova-iceberg/warehouse/sales/orders\", \"write.format.default\" = \"parquet\", \"write.parquet.compression-codec\" = \"zstd\");"
+    ]
+   ]
+  },
+  {
+   "section": "Create databases and tables",
+   "as": "nova_admin",
+   "sql": "CREATE TABLE lake.sales.events (\n  action VARCHAR(20),\n  id INT,\n  dt DATE\n) PARTITION BY bucket(id, 10), year(dt)",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Create databases and tables",
+   "as": "nova_admin",
+   "sql": "CREATE TABLE lake.sales.customers (\n  id INT,\n  name STRING,\n  status STRING DEFAULT 'active'\n) PROPERTIES (\"format-version\" = \"3\")",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Create databases and tables",
+   "as": "nova_admin",
+   "sql": "ALTER TABLE lake.sales.customers ADD COLUMN score DOUBLE DEFAULT \"50.5\"",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Create databases and tables",
+   "as": "nova_admin",
+   "sql": "CREATE TABLE lake.sales.orders_copy PARTITION BY (dt) AS SELECT * FROM lake.sales.orders",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Create databases and tables",
+   "as": "nova_admin",
+   "sql": "ALTER TABLE lake.sales.events ADD PARTITION COLUMN month(dt)",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Create databases and tables",
+   "as": "nova_admin",
+   "sql": "ALTER TABLE lake.sales.events DROP PARTITION COLUMN year(dt)",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Write data",
+   "as": "nova_admin",
+   "sql": "INSERT INTO lake.sales.orders VALUES\n  (1, 'ani', 10.50, '2026-11-16'),\n  (2, 'budi', 20.00, '2026-11-16'),\n  (3, 'citra', 7.25, '2026-11-17')",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Write data",
+   "as": "nova_admin",
+   "sql": "SELECT dt, COUNT(*) AS orders, SUM(amount) AS total\nFROM lake.sales.orders GROUP BY dt ORDER BY dt",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "2026-11-16",
+     2,
+     "30.50"
+    ],
+    [
+     "2026-11-17",
+     1,
+     "7.25"
+    ]
+   ]
+  },
+  {
+   "section": "Write data",
+   "as": "nova_admin",
+   "sql": "INSERT OVERWRITE lake.sales.orders PARTITION (dt = '2026-11-16') SELECT 4, 'dewi', 5.00",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Write data",
+   "as": "nova_admin",
+   "sql": "SELECT id, customer, dt FROM lake.sales.orders ORDER BY id",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     3,
+     "citra",
+     "2026-11-17"
+    ],
+    [
+     4,
+     "dewi",
+     "2026-11-16"
+    ]
+   ]
+  },
+  {
+   "section": "Write data",
+   "as": "nova_admin",
+   "sql": "DELETE FROM lake.sales.orders WHERE id = 3",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Write data",
+   "as": "nova_admin",
+   "sql": "TRUNCATE TABLE lake.sales.orders_copy",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Views",
+   "as": "nova_admin",
+   "sql": "CREATE VIEW lake.sales.daily_totals AS\nSELECT dt, SUM(amount) AS total FROM lake.sales.orders GROUP BY dt",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Views",
+   "as": "nova_admin",
+   "sql": "SELECT * FROM lake.sales.daily_totals ORDER BY dt",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "2026-11-16",
+     "5.00"
+    ]
+   ]
+  },
+  {
+   "section": "Time travel",
+   "as": "nova_admin",
+   "sql": "SELECT snapshot_id, committed_at, operation FROM lake.sales.`orders$snapshots`",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     3357411106766131386,
+     "2026-11-16T23:33:31.818000",
+     "append"
+    ],
+    [
+     7950459029351800849,
+     "2026-11-16T23:33:32.880000",
+     "overwrite"
+    ],
+    [
+     7575447950049969541,
+     "2026-11-16T23:33:33.977000",
+     "delete"
+    ]
+   ]
+  },
+  {
+   "substitutions": {
+    "http://object-store:9000": "http://minio:9000",
+    "8135386679561445604": "3357411106766131386",
+    "'2026-11-16 23:17:09'": "'2026-11-16 23:33:32'"
+   }
+  },
+  {
+   "section": "Time travel",
+   "as": "nova_admin",
+   "sql": "SELECT * FROM lake.sales.orders FOR VERSION AS OF 3357411106766131386",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     1,
+     "ani",
+     "10.50",
+     "2026-11-16"
+    ],
+    [
+     2,
+     "budi",
+     "20.00",
+     "2026-11-16"
+    ],
+    [
+     3,
+     "citra",
+     "7.25",
+     "2026-11-17"
+    ]
+   ]
+  },
+  {
+   "section": "Time travel",
+   "as": "nova_admin",
+   "sql": "SELECT * FROM lake.sales.orders FOR TIMESTAMP AS OF '2026-11-16 23:33:32'",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     1,
+     "ani",
+     "10.50",
+     "2026-11-16"
+    ],
+    [
+     2,
+     "budi",
+     "20.00",
+     "2026-11-16"
+    ],
+    [
+     3,
+     "citra",
+     "7.25",
+     "2026-11-17"
+    ]
+   ]
+  },
+  {
+   "section": "Time travel",
+   "as": "nova_admin",
+   "sql": "SELECT * FROM lake.sales.orders FOR TIMESTAMP AS OF now()",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     4,
+     "dewi",
+     "5.00",
+     "2026-11-16"
+    ]
+   ]
+  },
+  {
+   "section": "Branches and tags",
+   "as": "nova_admin",
+   "sql": "ALTER TABLE lake.sales.orders CREATE TAG `before-cleanup`\n  AS OF VERSION 3357411106766131386 RETAIN 7 DAYS",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Branches and tags",
+   "as": "nova_admin",
+   "sql": "ALTER TABLE lake.sales.orders CREATE BRANCH `test-branch`\n  AS OF VERSION 3357411106766131386 RETAIN 7 DAYS\n  WITH SNAPSHOT RETENTION 2 SNAPSHOTS",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Branches and tags",
+   "as": "nova_admin",
+   "sql": "INSERT INTO lake.sales.orders FOR VERSION AS OF `test-branch`\n  SELECT 9, 'eko', 1.00, '2026-11-18'",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Branches and tags",
+   "as": "nova_admin",
+   "sql": "SELECT * FROM lake.sales.orders VERSION AS OF 'test-branch'",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     3,
+     "citra",
+     "7.25",
+     "2026-11-17"
+    ],
+    [
+     1,
+     "ani",
+     "10.50",
+     "2026-11-16"
+    ],
+    [
+     2,
+     "budi",
+     "20.00",
+     "2026-11-16"
+    ],
+    [
+     9,
+     "eko",
+     "1.00",
+     "2026-11-18"
+    ]
+   ]
+  },
+  {
+   "section": "Branches and tags",
+   "as": "nova_admin",
+   "sql": "SELECT * FROM lake.sales.orders VERSION AS OF 'before-cleanup'",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     3,
+     "citra",
+     "7.25",
+     "2026-11-17"
+    ],
+    [
+     1,
+     "ani",
+     "10.50",
+     "2026-11-16"
+    ],
+    [
+     2,
+     "budi",
+     "20.00",
+     "2026-11-16"
+    ]
+   ]
+  },
+  {
+   "section": "Branches and tags",
+   "as": "nova_admin",
+   "sql": "SELECT name, type, snapshot_id FROM lake.sales.`orders$refs`",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "before-cleanup",
+     "TAG",
+     3357411106766131386
+    ],
+    [
+     "test-branch",
+     "BRANCH",
+     7025155069918562310
+    ],
+    [
+     "main",
+     "BRANCH",
+     7575447950049969541
+    ]
+   ]
+  },
+  {
+   "section": "Branches and tags",
+   "as": "nova_admin",
+   "sql": "ALTER TABLE lake.sales.orders DROP BRANCH `test-branch`",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Branches and tags",
+   "as": "nova_admin",
+   "sql": "ALTER TABLE lake.sales.orders DROP TAG `before-cleanup`",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Metadata tables",
+   "as": "nova_admin",
+   "sql": "SELECT partition_value, record_count FROM lake.sales.`orders$partitions`",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "{\"dt\":\"2026-11-16\"}",
+     1
+    ]
+   ]
+  },
+  {
+   "section": "Metadata tables",
+   "as": "nova_admin",
+   "sql": "SELECT COUNT(*) FROM lake.sales.`orders$history`",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     4
+    ]
+   ]
+  },
+  {
+   "section": "Metadata tables",
+   "as": "nova_admin",
+   "sql": "SELECT _row_id, _last_updated_sequence_number, * FROM lake.sales.customers",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Maintenance procedures",
+   "as": "nova_admin",
+   "sql": "ALTER TABLE lake.sales.orders EXECUTE rollback_to_snapshot(3357411106766131386)",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Maintenance procedures",
+   "as": "nova_admin",
+   "sql": "ALTER TABLE lake.sales.orders EXECUTE expire_snapshots(older_than = '2023-12-17 00:14:38')",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Maintenance procedures",
+   "as": "nova_admin",
+   "sql": "ALTER TABLE lake.sales.orders EXECUTE rewrite_manifests()",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Maintenance procedures",
+   "as": "nova_admin",
+   "sql": "ALTER TABLE lake.sales.orders EXECUTE rewrite_data_files(min_file_size_bytes = 134217728) WHERE dt = '2026-11-16'",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "sales",
+     "orders",
+     1,
+     1,
+     0,
+     583,
+     "success"
+    ]
+   ]
+  },
+  {
+   "section": "Keep it up to date",
+   "as": "nova_admin",
+   "sql": "REFRESH EXTERNAL TABLE lake.sales.orders",
+   "ok": true,
+   "error": null,
+   "rows": []
+  },
+  {
+   "section": "Keep it up to date",
+   "as": "nova_admin",
+   "sql": "REFRESH CATALOG lake",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     "lake",
+     "ok",
+     6,
+     25,
+     null
+    ]
+   ]
+  },
+  {
+   "grant marketing SELECT on lake.sales.*": 201
+  },
+  {
+   "section": "Permissions",
+   "as": "alice/marketing",
+   "sql": "SELECT id, customer FROM lake.sales.orders ORDER BY id",
+   "ok": true,
+   "error": null,
+   "rows": [
+    [
+     1,
+     "ani"
+    ],
+    [
+     2,
+     "budi"
+    ],
+    [
+     3,
+     "citra"
+    ]
+   ]
+  },
+  {
+   "section": "Permissions",
+   "as": "alice/marketing",
+   "sql": "INSERT INTO lake.sales.orders VALUES (9, 'eko', 1.00, '2026-11-18')",
+   "ok": false,
+   "error": "SQL error: (5204) Access denied; you need (at least one of) the INSERT privilege(s) on TABLE orders for this operation.",
+   "rows": []
+  }
+ ],
+ "engine_or_docs_differences": [
+  "DELETE with a table alias (DML.md) is a syntax error on 4.1.4 (engine and Nova)",
+  "rewrite_data_files(\"min_file_size_bytes\"= ...) (procedures.md) is read as a comparison; the unquoted named form works",
+  "ALTER VIEW ... ADD DIALECT on a view created by StarRocks fails: the view already has a starrocks dialect",
+  "Metadata tables are written `t$snapshots` inside backticks; `t`$snapshots fails",
+  "TIMESTAMP AS OF before the first snapshot: Invalid temporal version"
+ ],
+ "cleanup": "All namespaces and tables dropped; catalogs w9_ice and lake dropped through the API; connections w9_ice_conn and lake_rest dropped; test Ranger policies deleted; MinIO nova-iceberg/warehouse/{compat_w9_db,compat_w9_gov,compat_w9_probe,sales} removed; REST namespace list empty"
+}

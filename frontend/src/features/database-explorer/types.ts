@@ -93,7 +93,7 @@ export type PipeSummary = {
 export type PipeDetailResponse = {
   name: string
   database: string
-  pipe_id: number | null
+  pipe_id: string | null
   state: string | null
   target_table: string | null
   properties: Record<string, string>

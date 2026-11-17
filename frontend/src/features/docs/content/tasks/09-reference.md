@@ -56,6 +56,48 @@ standalone task can be executed.
 EXECUTE TASK log_orders;
 ```
 
+## SUBMIT TASK
+
+```text
+SUBMIT [/*+ SET_VAR(variable = value, ...) */] TASK [name]
+  [ SCHEDULE EVERY (INTERVAL n SECOND | MINUTE | HOUR | DAY) ]
+  [ PROPERTIES ("session.variable" = "value", ...) ]
+AS CREATE TABLE ... AS SELECT ... | INSERT ... | CACHE SELECT ...
+```
+
+The StarRocks way to run one statement in the background. In Nova it creates
+a Nova task owned by your active role, exactly like `CREATE TASK`:
+
+- **Without `SCHEDULE`** the task runs **once, now**, as you: Nova saves it and
+  queues one run, as `EXECUTE TASK` does. The result has one row:
+  `TaskName` (`database.default.name`), `Status` (`SUBMITTED`), `task_id`,
+  `run_id`, `run_state` and `owner_role`.
+- **With `SCHEDULE EVERY`** the task is saved suspended with that schedule,
+  like `CREATE TASK`. Start it with `ALTER TASK name RESUME`.
+- Without a name, Nova names the task `submit_task_<date and time>_<code>`.
+  `database.name` puts it in that database.
+- `PROPERTIES` take only session variables, written `"session.<variable>"`,
+  for example `"session.insert_timeout" = "10000"`. Nova adds them, and a
+  `SET_VAR` hint written between `SUBMIT` and `TASK`, to the statement as a
+  `/*+ SET_VAR(...) */` hint. Write them one way or the other, not both.
+
+```sql
+SUBMIT TASK etl1
+PROPERTIES ("session.insert_timeout" = "10000")
+AS INSERT INTO tbl2 SELECT * FROM src_tbl;
+```
+
+Follow the run with `DESCRIBE TASK etl1` (`last_run_state` becomes `success`
+or `failed`), `SHOW TASKS`, or on the **Tasks** page. The engine's
+`information_schema.tasks` and `task_runs` do not list Nova tasks by their
+names. The task stays after its run; remove it with `DROP TASK etl1`.
+
+Because the run uses your Nova sign-in, `SUBMIT TASK` works in the SQL
+worksheet and not from MySQL clients
+(`SUBMIT TASK runs under your Nova sign-in; run it from a Workspace`). Like
+`CREATE TASK`, the statement may not read a stage or hold credentials, and
+`SCHEDULE START(...)` is not supported.
+
 ## ALTER TASK
 
 ```text

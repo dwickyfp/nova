@@ -50,9 +50,15 @@ class NativePlanner:
                     f"`__nova_stage_{nonce}_{index}`",
                     ref.file_name,
                     ref.is_directory,
-                    "write" if command == "stage_export" and index == 0 else "read",
+                    ref.access
+                    or (
+                        "write"
+                        if (command == "stage_export" and index == 0) or ref.unload is not None
+                        else "read"
+                    ),
                     (context.database, context.schema),
                     ref.has_alias,
+                    ref.unload,
                 )
                 for index, ref in enumerate(stages.stage_refs)
             )
@@ -117,6 +123,12 @@ def default_registry() -> PlannerRegistry:
     from app.sql_frontend.merge import MergePlanner
 
     registry.register(ast.MergeStatement, MergePlanner())
+    from app.sql_frontend.routine_load import RoutineLoadPlanner, RoutineLoadStatement
+
+    registry.register(RoutineLoadStatement, RoutineLoadPlanner())
+    from app.sql_frontend.pipes import PipePlanner
+
+    registry.register(ast.PipeStatement, PipePlanner())
     for node, action in {
         ast.StreamStatement: ActionKind.STREAM,
         ast.CatalogStatement: ActionKind.CATALOG,

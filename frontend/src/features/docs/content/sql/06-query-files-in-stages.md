@@ -134,6 +134,5 @@ SELECT * FROM @docs_qa_sql_files/stock.tsv;
   stage path`. Put a space before the comment.
 - `No files were found matching the pattern(s) or path(s): '@stage/...'` means
   the file or folder does not exist. Check the name with `LIST`.
-- Writing query results into a stage (`COPY INTO @stage`, `INSERT INTO @stage`)
-  is not allowed from the worksheet. See
-  [Load data from files](/docs/sql/load-data-from-files#limits-and-errors).
+- To write query results into a stage instead of reading from it, see
+  [Unload data to a stage](/docs/sql/unload-data-to-stages).

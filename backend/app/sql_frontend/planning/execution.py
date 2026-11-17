@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 if TYPE_CHECKING:
     from app.common.ml_intercept import MLForecastCall, MLPredictRewrite
@@ -27,6 +27,7 @@ class ActionKind(Enum):
     SECURITY = "security"
     FORCE_PASSWORD_CHANGE = "force_password_change"
     CATALOG = "catalog"
+    ROUTINE_LOAD = "routine_load"
 
 
 class Atomicity(Enum):
@@ -196,6 +197,8 @@ class StageBinding:
     access: str = "read"
     scope: tuple[str | None, str | None] = (None, None)
     has_alias: bool = False
+    #: ``UnloadClause`` for an unload target: the stage path and allowed options.
+    unload: Any = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -59,15 +59,18 @@ class SnapshotRestore(BaseModel):
 
 
 class RepositoryCreate(BaseModel):
-    """``CREATE REPOSITORY <name> WITH BROKER ON LOCATION <path>``.
+    """``CREATE [READ ONLY] REPOSITORY <name> WITH BROKER ON LOCATION "@stage/folder/"``.
 
-    ``location`` is the storage path from the named connection; credentials are
-    resolved server-side from ``storage_connection`` and never accepted here.
+    ``location`` is a stage folder. The stage supplies the storage location and
+    credentials at execution, after the active role's stage access is checked;
+    no credential or storage URL is accepted here. ``storage_connection`` is
+    kept for older clients and ignored: the stage names its own connection.
     """
 
     name: str = Field(..., min_length=1, max_length=256, pattern=NAME_PATTERN)
-    storage_connection: str = Field(..., min_length=1, max_length=256)
     location: str = Field(..., min_length=1, max_length=2048)
+    read_only: bool = False
+    storage_connection: str | None = Field(None, max_length=256)
 
 
 class RecoverRequest(BaseModel):

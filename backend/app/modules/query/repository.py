@@ -217,6 +217,8 @@ class QueryResult:
     engine_ms: float | None = None
     nova_ms: float | None = None
     total_ms: float | None = None
+    #: The statement ended with ``\G``: the worksheet shows one record per block.
+    vertical: bool = False
 
     def __post_init__(self) -> None:
         self.original_sql = redact_sql_credentials(self.original_sql)
@@ -246,6 +248,12 @@ class QueryResult:
         result. See the class docstring for why that inference was wrong.
         """
         return self.error is None
+
+
+def _worksheet_connection(connected: Any) -> bool:
+    from app.modules.query.worksheet_session import is_worksheet_connection
+
+    return is_worksheet_connection(connected)
 
 
 def _worker_session(connected: Any, username: str) -> bool:
@@ -351,7 +359,9 @@ class QueryRepository:
                 max_rows=max_rows,
                 start=start,
                 session_prepared=session_prepared,
-                binary_results=True,
+                # A MySQL client gets wire values; a worksheet run that holds
+                # its connection gets the same JSON values as a pooled run.
+                binary_results=not _worksheet_connection(connected),
                 row_sink=row_sink,
                 parameters=parameters,
             )

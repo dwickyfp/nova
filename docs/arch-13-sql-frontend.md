@@ -82,7 +82,11 @@ statement types fail closed. An engine statement whose grammar context has no
 explicit effect mapping is treated as writing metadata, so an unclassified
 administrative form is never reported as read-only. Classification checks task creation before native
 task submission, and prediction/forecast forms before ordinary queries.
-`EXPLAIN` remains an engine request.
+`EXPLAIN` remains an engine request. Engine statements whose grammar rule
+uses labelled alternatives produce the alternative's context
+(`ShowAllAuthenticationContext`, `ShowAuthenticationForUserContext`), not a
+`...StatementContext`; such forms are registered explicitly as native
+statements with read-only effects.
 
 Nova accepts the standard `TIMESTAMP '...'` literal alongside the engine's
 `DATE '...'` and `DATETIME '...'` (a marked region of `dateLiteral`).
@@ -148,6 +152,51 @@ Statements inside a transaction are audited as EXECUTED, with a separate committ
 rolled_back or unknown transaction event. Proxy sessions are never borrowed for a
 composite transaction; missing credentials for a dedicated connection cause refusal.
 
+### Worksheet session
+
+The worksheet (`QueryService.execute_statements` without a held or delegated
+connection) normally runs each statement on its own connection. A script that
+contains a session statement, classified from grammar contexts by
+`app/sql_frontend/session.py` (session-scope `SET`, `SET @var`, `SET NAMES`,
+`SET TRANSACTION`, `BEGIN`/`START TRANSACTION`, `COMMIT`, `ROLLBACK`), or a run
+of a worksheet with remembered state, runs on one held connection instead
+(`app/modules/query/worksheet_session.py`, `HeldRun`):
+
+- The whole script is checked first (guard, syntax, semantics, confirmation),
+  as before. The connection is then opened as the caller with the session's
+  encrypted password; every statement still goes through `QueryService.execute`
+  with `connection=` set, so `SET ROLE <active role>`, the security-context
+  check, Ranger authorization and audit are those of the normal path. Without
+  caller credentials the old refusals remain.
+- After `BEGIN` succeeds, statements run with `client_transaction` (no
+  re-selection of role and database, audited as EXECUTED), as on the proxy.
+  A run that ends, or fails, with the transaction open is rolled back on the
+  same connection (5 s bound; otherwise the connection is closed), an
+  `transaction_rolled_back`/`transaction_unknown` audit event is written and
+  the run reports it.
+- Successful `SET` items are remembered per worksheet: session system variables
+  as their `name = value` source slice (re-checked as one session assignment,
+  including the `sql_dialect` rule, before reuse; `= DEFAULT` removes one), and
+  user variables as literals of the value read back with `SELECT @v, typeof(@v)`
+  at the end of the run (never the assignment expression). ARRAY, MAP and
+  STRUCT values, `SET NAMES` and `SET TRANSACTION` last for the run only.
+- State is stored in Redis (`nova:worksheet_session:<session id>`, one field per
+  worksheet file id), Fernet-encrypted, with the sign-in session TTL, and carries
+  principal, active role and security-context version. A mismatch deletes it;
+  a role switch and sign-out delete the whole hash. It is applied, after
+  `SET ROLE`, at the start of the next held run of that worksheet only.
+- Audit and history record user-variable values as `?` (`SET @v = ?`). Profile
+  capture does not toggle `enable_profile` around a `SET`, so a user's own
+  setting is not undone. The held connection returns JSON values, not wire
+  values (`is_worksheet_connection`).
+- One `SET` that mixes `GLOBAL` and session items is refused. Pure `SET GLOBAL`,
+  `SET sql_dialect` and role statements keep their existing handling.
+
+A trailing `\G` (the MySQL client's vertical terminator) is removed after
+script splitting by `app/sql_frontend/vertical.py`, outside literals, quoted
+identifiers, comments and `$$` bodies; the result carries `vertical=true` and
+the worksheet shows one record per block.
+
 A MySQL client's own `BEGIN`/`COMMIT`/`ROLLBACK` is a different path: the proxy
 forwards them to that client's engine session and, while the transaction is
 open, runs each statement on that session without re-selecting role and database
@@ -182,12 +231,82 @@ so repeated stage names, joins and different scoped connections stay independent
 The existing translator and injector handle FILES(), LIST, COPY and stage
 exports. Secret resolution occurs at execution, immediately before preparation
 and engine submission. Responses and audit SQL use the redacted form.
-Native FILES() behavior is preserved.
+Native FILES() reads are preserved.
+
+Unload (`app/sql_frontend/unload.py`): `INSERT INTO FILES(...)`,
+`SELECT ... INTO OUTFILE` and `EXPORT TABLE` write only to a stage path written
+as a string (`'@stage/folder/'` or `'@stage/folder/prefix_'`). AST building
+refuses any other target (storage URLs, local paths, `@stage` without a
+folder, `..`), any option outside the form's documented allowlist (so
+credentials, endpoints and broker settings never pass), duplicates, and
+`WITH BROKER` with a name or properties. The planner replaces the whole target
+clause with one stage slot whose access is `write` and whose `UnloadClause`
+holds only the stage path and the user's allowed option literals. The stage
+runtime authorizes `write` (Ranger `INSERT`/`ALL` on the stage's
+database.schema) for the active role before any secret is resolved; the
+translator renders the clause with the physical path (`s3a://` for EXPORT) and
+credentials at execution. Every unload form, and `COPY INTO @stage` /
+`INSERT INTO @stage`, has the `exports_data` effect, which requires
+confirmation. The lexical guard still refuses all of them (and `EXPORT TABLE`)
+unless the caller passes `allow_stage_export`: the worksheet API and the agent
+custom SQL tool do; assistant read-only tools, the MySQL proxy, task bodies and
+DDL routers do not, and the executor refuses a write slot in a context without
+it. Responses, errors and audit rows map stage roots back to `@stage`;
+`SHOW EXPORT` paths map to stages the caller may read and other storage URLs
+show as `<external location>`.
+
+Broker Load (`app/sql_frontend/broker_load.py`): every `DATA INFILE` path of
+`LOAD LABEL` must be a stage path (`"@stage/folder/file.csv"`, globs allowed;
+no `..`, empty or `.` folders). AST building refuses storage URLs, `WITH
+BROKER <name>` and broker properties, job properties outside the documented
+allowlist (credential-like keys are refused without echoing them),
+`WITH RESOURCE` (Spark Load) and `DATA FROM TABLE`. The planner makes each path
+a `read` slot and adds one more `read` slot on the first path's stage for the
+`WITH BROKER` clause (or an empty-span slot where the clause belongs). The
+stage runtime authorizes `read` on every stage before any secret is resolved;
+the translator renders `s3://` paths and `WITH BROKER (<credentials>)` and
+refuses a statement whose stages need different credentials. A load is a
+one-off engine job submitted on the caller's connection (principal and active
+role), so it is allowed like `INSERT`; it needs no confirmation, except
+`NEGATIVE`, which changes existing rows (`updates_rows`). `SHOW LOAD`,
+`SHOW LOAD WARNINGS` and queries of `information_schema.loads` /
+`load_tracking_logs` map physical paths to `@stage` paths the caller may read
+(also for streamed proxy rows); `CANCEL LOAD` and `ALTER LOAD` stay native.
+
+Backup repositories (`app/sql_frontend/backup_restore.py`): `CREATE [READ ONLY]
+REPOSITORY <name> WITH BROKER ON LOCATION "@stage/folder/"` is the only
+repository form; a storage URL, broker name or any `PROPERTIES` is refused. The
+location becomes one slot (`write`, `read` for READ ONLY) rendered at execution
+as `'s3a://bucket/<stage root>/<folder>' PROPERTIES(<credentials>)`. Unlike a
+load or export, the engine keeps a repository's location and credential in its
+own metadata until `DROP REPOSITORY`. Decision (W5, 2026-11-16): every
+repository, backup and restore statement (`CREATE/DROP/SHOW REPOSITORIES`,
+`BACKUP`, `RESTORE`, `SHOW/CANCEL BACKUP|RESTORE`, `SHOW SNAPSHOT`) requires
+`ACCOUNTADMIN` as the active role, checked in the executor before any stage
+resolution, and the user docs state that the engine stores the stage's storage
+connection credential. This matches the existing engine-side retention of
+load and export job credentials, which are also kept in FE metadata for the
+job's lifetime. A dedicated stage-scoped storage identity per repository would
+limit the stored credential to the repository folder; it needs a storage
+administration integration Nova does not have and is recorded as open. `BACKUP`
+has the `exports_data` effect (confirmation), `DROP REPOSITORY` drops objects
+(confirmation), and `RESTORE` replaces data like `INSERT OVERWRITE`.
+`SHOW REPOSITORIES` locations are shown as `@stage` paths.
 
 Task creation and password-policy actions never become raw engine statements.
 Task bodies containing stage references or explicit populated credentials are
 rejected before metadata persistence. Task timezone lookup, owner role,
 dependency checks and audit actions remain in the existing services/adapters.
+`SUBMIT TASK [name] [SCHEDULE EVERY(...)] [PROPERTIES("session.<var>" = ...)]
+AS <CTAS|INSERT|CACHE SELECT>` builds the same `CreateTaskStatement` as
+`CREATE TASK`: owner role = the caller's active role, a generated name
+(`submit_task_<time>_<hex>`) when none is given, `db.task` read as database and
+task, session properties (and a `SUBMIT /*+ SET_VAR(...) */ TASK` hint) written
+as a `SET_VAR` hint into the body. Without a schedule it runs once
+(`run_once`): the executor checks the caller's Nova session first, persists the
+task, then queues one manual run as `EXECUTE TASK` does, and returns the task
+and run identity; follow-up is `DESCRIBE TASK`/`SHOW TASKS`. The engine never
+stores the task, so it never runs without the caller's role.
 
 ### Binding and capabilities
 
@@ -339,5 +458,15 @@ key, columns and defaults and lowers to a partial-update Primary Key
 [MERGE INTO](02-sql-worksheet.md#merge-into). ALL BY NAME and schema evolution
 have no syntax or implementation here; their future planners can use the same
 registration, binding, capability and composite interfaces. Physical optimization remains StarRocks's responsibility.
+
+Pipe statements (`CREATE`/`ALTER`/`DROP PIPE`, `SHOW PIPES`, `DESC PIPE`) use
+the pinned engine grammar with no Nova region: typed `PipeStatement` builders, a
+metadata-free validator and a `PipePlanner` lower them to a Nova action executed
+by `app/modules/pipes`; queries over `information_schema.pipes`/`pipe_files`
+are answered from Nova rows. A pipe statement never reaches the engine. Pipes
+are the one background path that reads `@stage` without the caller: each run of
+the task worker checks the owner role's table and stage access first and
+resolves the stage secret only for that run. See
+[Pipes over stages](architecture/starrocks-compat/PIPES.md).
 
 Query Autopilot uses the central frontend for canonical fingerprints, typed snapshot mappings, and governed maintenance. See [Query Autopilot architecture](arch-14-query-autopilot.md).

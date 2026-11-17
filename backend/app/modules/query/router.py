@@ -165,6 +165,8 @@ class QueryResponse(BaseModel):
     context_database: str | None = None
     context_schema: str | None = None
     nova_ms: float | None = None
+    #: The statement ended with ``\G``: show one record per block.
+    vertical: bool = False
 
 
 class CompletionItem(BaseModel):
@@ -248,6 +250,9 @@ async def execute_query(
         session_id=user["session_id"],
         confirm_destructive=req.confirm_destructive,
         file_id=req.file_id,
+        # The worksheet may unload to a stage the active role can write to,
+        # after confirmation; storage URLs and inline credentials stay refused.
+        allow_stage_export=True,
     )
 
     responses = []
@@ -290,6 +295,7 @@ async def execute_query(
                 total_ms=result.total_ms,
                 engine_ms=result.engine_ms,
                 nova_ms=result.nova_ms,
+                vertical=result.vertical,
                 context_database=context_database,
                 context_schema=context_schema,
             )

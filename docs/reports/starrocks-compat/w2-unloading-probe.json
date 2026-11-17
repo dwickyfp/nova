@@ -1,0 +1,166 @@
+{
+  "workstream": "W2",
+  "command": "scripts/starrocks_compat/probe.py --pages 'unloading/*' --out w2-unloading.jsonl",
+  "date": "2026-11-16",
+  "note": "The docs examples write to s3://, hdfs:// or file:// paths. Nova now refuses every non-stage unload target by design, so those statements are 'both_fail' (engine has no such storage) or 'nova_gap' (the engine wrote to a local path in the BE container: file:///home/ubuntu/...). Stage-adapted versions of every example are in w2-unload-live.json.",
+  "outcomes": {
+    "both_fail": 9,
+    "ok": 5,
+    "skipped:cluster_or_account": 2,
+    "nova_gap": 3
+  },
+  "statements": [
+    {
+      "page": "unloading/Export.md",
+      "section": "Submit an export job",
+      "outcome": "both_fail",
+      "sql": "EXPORT TABLE db1.tbl1 \nPARTITION (p1,p2)\n(col1, col3)\nTO \"hdfs://HDFS_IP:HDFS_Port/export/lineorder_\" \nPROPERTIES\n(\n    \"column_separator\"=\",\",\n    \"load_mem_limit\"=\"2147483648\",\n    \"timeout\" = \"3600\"\n)\nWITH BROKER\n(\n    \"username\" = \"user\",\n    \"password\" = \"passwd\"\n)",
+      "nova_error": "error:EXPORT TABLE writes only to a stage. Write the target as '@<stage>/<folder>/', for example '@sales_exports/daily/'; storage URLs and local paths are refused",
+      "engine_error": "ProgrammingError:(1064, 'Getting analyzing error. Detail message: Database default_catalog.db1 is not found.')"
+    },
+    {
+      "page": "unloading/Export.md",
+      "section": "View the status of an export job",
+      "outcome": "ok",
+      "sql": "SHOW EXPORT WHERE queryid = \"edee47f0-abe1-11ec-b9d1-00163e1e238f\"",
+      "nova_error": null,
+      "engine_error": null
+    },
+    {
+      "page": "unloading/Export.md",
+      "section": "Cancel an export job",
+      "outcome": "both_fail",
+      "sql": "CANCEL EXPORT WHERE queryid = \"921d8f80-7c9d-11eb-9342-acde48001122\"",
+      "nova_error": "error:SQL error: (5090) Getting analyzing error. Detail message: Export job [921d8f80-7c9d-11eb-9342-acde48001122] not found when checking privilege.",
+      "engine_error": "OperationalError:(5090, 'Getting analyzing error. Detail message: Export job [921d8f80-7c9d-11eb-9342-acde48001122] not found when checking privilege.')"
+    },
+    {
+      "page": "unloading/arrow_flight.md",
+      "section": "Configure Arrow Flight Proxy (Optional)",
+      "outcome": "skipped:cluster_or_account",
+      "sql": "SET GLOBAL arrow_flight_proxy_enabled = true",
+      "nova_error": null,
+      "engine_error": null
+    },
+    {
+      "page": "unloading/arrow_flight.md",
+      "section": "Configure Arrow Flight Proxy (Optional)",
+      "outcome": "skipped:cluster_or_account",
+      "sql": "SET GLOBAL arrow_flight_proxy = 'your-proxy-hostname:Port'",
+      "nova_error": null,
+      "engine_error": null
+    },
+    {
+      "page": "unloading/unload_using_insert_into_files.md",
+      "section": "Preparation",
+      "outcome": "ok",
+      "sql": "CREATE DATABASE unload",
+      "nova_error": null,
+      "engine_error": null
+    },
+    {
+      "page": "unloading/unload_using_insert_into_files.md",
+      "section": "Preparation",
+      "outcome": "ok",
+      "sql": "USE unload",
+      "nova_error": null,
+      "engine_error": null
+    },
+    {
+      "page": "unloading/unload_using_insert_into_files.md",
+      "section": "Preparation",
+      "outcome": "ok",
+      "sql": "CREATE TABLE sales_records(\n    record_id     BIGINT,\n    seller        STRING,\n    store_id      INT,\n    sales_time    DATETIME,\n    sales_amt     DOUBLE\n)\nDUPLICATE KEY(record_id)\nPARTITION BY date_trunc('day', sales_time)\nDISTRIBUTED BY HASH(record_id)",
+      "nova_error": null,
+      "engine_error": null
+    },
+    {
+      "page": "unloading/unload_using_insert_into_files.md",
+      "section": "Preparation",
+      "outcome": "ok",
+      "sql": "INSERT INTO sales_records\nVALUES\n    (220313001,\"Amy\",1,\"2022-03-13 12:00:00\",8573.25),\n    (220314002,\"Bob\",2,\"2022-03-14 12:00:00\",6948.99),\n    (220314003,\"Amy\",1,\"2022-03-14 12:00:00\",4319.01),\n    (220315004,\"Carl\",3,\"2022-03-15 12:00:00\",8734.26),\n    (220316005,\"Carl\",3,\"2022-03-16 12:00:00\",",
+      "nova_error": null,
+      "engine_error": null
+    },
+    {
+      "page": "unloading/unload_using_insert_into_files.md",
+      "section": "Unload data into multiple files",
+      "outcome": "both_fail",
+      "sql": "INSERT INTO \nFILES(\n    \"path\" = \"s3://mybucket/unload/data1\",\n    \"format\" = \"parquet\",\n    \"compression\" = \"uncompressed\",\n    \"target_max_file_size\" = \"1024\", \n    \"aws.s3.access_key\" = \"xxxxxxxxxx\",\n    \"aws.s3.secret_key\" = \"yyyyyyyyyy\",\n    \"aws.s3.region\" = \"us-west-2\"\n)\nSELECT * FROM sales_r",
+      "nova_error": "error:INSERT INTO FILES writes only to a stage. Write the target as '@<stage>/<folder>/', for example '@sales_exports/daily/'; storage URLs and local paths are refused",
+      "engine_error": "OperationalError:(5609, 'S3: Fail to create multipart upload for object mybucket/unload/data1/01a1e512-fb00-74e6-b4bf-6d494c041ac6_0_0_0.parquet: The AWS Access Key Id you provided does not exist in our records.')"
+    },
+    {
+      "page": "unloading/unload_using_insert_into_files.md",
+      "section": "Unload data into multiple files",
+      "outcome": "both_fail",
+      "sql": "INSERT INTO \nFILES(\n    \"path\" = \"hdfs://xxx.xx.xxx.xx:9000/unload/data1\",\n    \"format\" = \"parquet\",\n    \"compression\" = \"uncompressed\",\n    \"target_max_file_size\" = \"1024\", \n    \"hadoop.security.authentication\" = \"simple\",\n    \"username\" = \"xxxxx\",\n    \"password\" = \"xxxxx\"\n)\nSELECT * FROM sales_rec",
+      "nova_error": "error:INSERT INTO FILES writes only to a stage. Write the target as '@<stage>/<folder>/', for example '@sales_exports/daily/'; storage URLs and local paths are refused",
+      "engine_error": "OperationalError:(5609, 'fail to connect hdfs namenode, namenode=hdfs://xxx.xx.xxx.xx:9000/, err=error=Invalid argument, root_cause=UnknownHostException: xxx.xx.xxx.xx: BE:10001')"
+    },
+    {
+      "page": "unloading/unload_using_insert_into_files.md",
+      "section": "Unload data into multiple files under different paths",
+      "outcome": "both_fail",
+      "sql": "INSERT INTO \nFILES(\n    \"path\" = \"s3://mybucket/unload/partitioned/\",\n    \"format\" = \"parquet\",\n    \"compression\" = \"lz4\",\n    \"partition_by\" = \"sales_time\",\n    \"aws.s3.access_key\" = \"xxxxxxxxxx\",\n    \"aws.s3.secret_key\" = \"yyyyyyyyyy\",\n    \"aws.s3.region\" = \"us-west-2\"\n)\nSELECT * FROM sales_record",
+      "nova_error": "error:INSERT INTO FILES writes only to a stage. Write the target as '@<stage>/<folder>/', for example '@sales_exports/daily/'; storage URLs and local paths are refused",
+      "engine_error": "OperationalError:(5609, 'S3: Fail to create multipart upload for object mybucket/unload/partitioned/sales_time=2022-03-14%2012%3A00%3A00/01a1e513-1418-7006-bf50-a3c217ed43fb_0_4_0.parquet: The AWS Access Key Id you provided does not exist in our records.')"
+    },
+    {
+      "page": "unloading/unload_using_insert_into_files.md",
+      "section": "Unload data into multiple files under different paths",
+      "outcome": "both_fail",
+      "sql": "INSERT INTO \nFILES(\n    \"path\" = \"hdfs://xxx.xx.xxx.xx:9000/unload/partitioned/\",\n    \"format\" = \"parquet\",\n    \"compression\" = \"lz4\",\n    \"partition_by\" = \"sales_time\",\n    \"hadoop.security.authentication\" = \"simple\",\n    \"username\" = \"xxxxx\",\n    \"password\" = \"xxxxx\"\n)\nSELECT * FROM sales_records",
+      "nova_error": "error:INSERT INTO FILES writes only to a stage. Write the target as '@<stage>/<folder>/', for example '@sales_exports/daily/'; storage URLs and local paths are refused",
+      "engine_error": "OperationalError:(5609, 'fail to connect hdfs namenode, namenode=hdfs://xxx.xx.xxx.xx:9000/, err=error=Invalid argument, root_cause=UnknownHostException: xxx.xx.xxx.xx: BE:10001')"
+    },
+    {
+      "page": "unloading/unload_using_insert_into_files.md",
+      "section": "Unload data into a single file",
+      "outcome": "both_fail",
+      "sql": "INSERT INTO \nFILES(\n    \"path\" = \"s3://mybucket/unload/data2\",\n    \"format\" = \"parquet\",\n    \"compression\" = \"lz4\",\n    \"single\" = \"true\",\n    \"aws.s3.access_key\" = \"xxxxxxxxxx\",\n    \"aws.s3.secret_key\" = \"yyyyyyyyyy\",\n    \"aws.s3.region\" = \"us-west-2\"\n)\nSELECT * FROM sales_records",
+      "nova_error": "error:INSERT INTO FILES writes only to a stage. Write the target as '@<stage>/<folder>/', for example '@sales_exports/daily/'; storage URLs and local paths are refused",
+      "engine_error": "OperationalError:(5609, 'S3: Fail to create multipart upload for object mybucket/unload/data2/01a1e513-1fd1-7c54-a364-6732852fe5f3_0_0_0.parquet: The AWS Access Key Id you provided does not exist in our records.')"
+    },
+    {
+      "page": "unloading/unload_using_insert_into_files.md",
+      "section": "Unload data into a single file",
+      "outcome": "both_fail",
+      "sql": "INSERT INTO \nFILES(\n    \"path\" = \"hdfs://xxx.xx.xxx.xx:9000/unload/data2\",\n    \"format\" = \"parquet\",\n    \"compression\" = \"lz4\",\n    \"single\" = \"true\",\n    \"hadoop.security.authentication\" = \"simple\",\n    \"username\" = \"xxxxx\",\n    \"password\" = \"xxxxx\"\n)\nSELECT * FROM sales_records",
+      "nova_error": "error:INSERT INTO FILES writes only to a stage. Write the target as '@<stage>/<folder>/', for example '@sales_exports/daily/'; storage URLs and local paths are refused",
+      "engine_error": "OperationalError:(5609, 'fail to connect hdfs namenode, namenode=hdfs://xxx.xx.xxx.xx:9000/, err=error=Invalid argument, root_cause=UnknownHostException: xxx.xx.xxx.xx: BE:10001')"
+    },
+    {
+      "page": "unloading/unload_using_insert_into_files.md",
+      "section": "Unload to MinIO",
+      "outcome": "both_fail",
+      "sql": "INSERT INTO \nFILES(\n    \"path\" = \"s3://huditest/unload/data3\",\n    \"format\" = \"parquet\",\n    \"compression\" = \"zstd\",\n    \"single\" = \"true\",\n    \"aws.s3.access_key\" = \"xxxxxxxxxx\",\n    \"aws.s3.secret_key\" = \"yyyyyyyyyy\",\n    \"aws.s3.region\" = \"us-west-2\",\n    \"aws.s3.use_instance_profile\" = \"false\",\n",
+      "nova_error": "error:INSERT INTO FILES writes only to a stage. Write the target as '@<stage>/<folder>/', for example '@sales_exports/daily/'; storage URLs and local paths are refused",
+      "engine_error": "OperationalError:(5609, 'S3: Fail to create multipart upload for object huditest/unload/data3/01a1e513-236a-7e73-accf-2def82186261_0_0_0.parquet: The Access Key Id you provided does not exist in our records.')"
+    },
+    {
+      "page": "unloading/unload_using_insert_into_files.md",
+      "section": "Unload to local files using NFS",
+      "outcome": "nova_gap",
+      "sql": "INSERT INTO FILES(\n  'path' = 'file:///home/ubuntu/csvfile/',\n  'format' = 'csv',\n  'csv.column_separator' = ',',\n  'csv.row_delimitor' = '\\n'\n)\nSELECT * FROM sales_records",
+      "nova_error": "error:INSERT INTO FILES writes only to a stage. Write the target as '@<stage>/<folder>/', for example '@sales_exports/daily/'; storage URLs and local paths are refused",
+      "engine_error": null
+    },
+    {
+      "page": "unloading/unload_using_insert_into_files.md",
+      "section": "Unload to local files using NFS",
+      "outcome": "nova_gap",
+      "sql": "INSERT INTO FILES(\n  'path' = 'file:///home/ubuntu/csvfile_enclosed/',\n  'format' = 'csv',\n  'csv.column_separator' = ',',\n  'csv.row_delimiter' = '\\n',\n  'csv.enclose' = '\"',\n  'csv.escape' = '\"',\n  'csv.include_header' = 'true'\n)\nSELECT * FROM sales_records",
+      "nova_error": "error:INSERT INTO FILES writes only to a stage. Write the target as '@<stage>/<folder>/', for example '@sales_exports/daily/'; storage URLs and local paths are refused",
+      "engine_error": null
+    },
+    {
+      "page": "unloading/unload_using_insert_into_files.md",
+      "section": "Unload to local files using NFS",
+      "outcome": "nova_gap",
+      "sql": "INSERT INTO FILES(\n  'path' = 'file:///home/ubuntu/parquetfile/',\n  'format' = 'parquet',\n  'parquet.version' = '1.0'\n)\nSELECT * FROM sales_records",
+      "nova_error": "error:INSERT INTO FILES writes only to a stage. Write the target as '@<stage>/<folder>/', for example '@sales_exports/daily/'; storage URLs and local paths are refused",
+      "engine_error": null
+    }
+  ]
+}

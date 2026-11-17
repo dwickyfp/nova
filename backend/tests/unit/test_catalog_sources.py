@@ -1,4 +1,4 @@
-"""Nova Catalog sources: StarRocks, PostgreSQL, Snowflake.
+"""Nova Catalog sources: StarRocks, PostgreSQL, Snowflake, Iceberg REST, Kafka.
 
 Every source is one ``CatalogSource`` subclass. These tests check what each one
 decides on its own: how its endpoint is written, the engine catalog it builds,
@@ -40,13 +40,18 @@ CREDENTIALS = Credentials("reader", PASSWORD)
 # ── Registry ──────────────────────────────────────────────────────────────
 
 
-def test_the_three_supported_sources_are_registered():
-    assert sorted(SOURCES) == ["postgres", "snowflake", "starrocks"]
+def test_the_supported_sources_are_registered():
+    # Iceberg REST and Kafka were added on 2026-11-16 (StarRocks compatibility).
+    assert sorted(SOURCES) == ["iceberg", "kafka", "postgres", "snowflake", "starrocks"]
     for connector_type, source in SOURCES.items():
         assert isinstance(source, CatalogSource)
         assert source.connector_type == connector_type
-        assert source.label and source.driver.jar and source.driver.driver_class
-        assert source.object_groups == OBJECT_GROUPS
+        assert source.label
+        if connector_type in {"postgres", "snowflake", "starrocks"}:
+            assert source.driver.jar and source.driver.driver_class
+        # Catalogs are data providers; a Kafka connection backs no catalog.
+        assert source.object_groups == (OBJECT_GROUPS if source.provides_catalog else ())
+    assert [key for key, source in SOURCES.items() if not source.provides_catalog] == ["kafka"]
 
 
 @pytest.mark.parametrize(
@@ -58,9 +63,11 @@ def test_connection_types_are_the_registered_sources(value, expected):
     assert validate_connector_type(value) == expected
 
 
-@pytest.mark.parametrize("value", ["mysql", "iceberg", "hive", "jdbc", ""])
+@pytest.mark.parametrize("value", ["mysql", "hive", "jdbc", "pulsar", ""])
 def test_other_connection_types_are_refused(value):
-    with pytest.raises(CatalogError, match="expected one of postgres, snowflake, starrocks"):
+    with pytest.raises(
+        CatalogError, match="expected one of iceberg, kafka, postgres, snowflake, starrocks"
+    ):
         validate_connector_type(value)
 
 

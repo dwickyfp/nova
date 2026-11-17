@@ -6,6 +6,7 @@
   PUT    /connections/{name}/credentials    → enter credentials (write-only)
   PUT    /connections/{name}/write-credentials → enter the notebook write-back credential
   DELETE /connections/{name}/write-credentials → remove it
+  PUT    /connections/{name}/roles          → roles that may load from a Kafka connection
   DELETE /connections/{name}                → drop an unused connection
   POST   /foreign-catalogs                  → create a catalog from a connection
 
@@ -29,6 +30,7 @@ from .schemas import (
     ConnectionCreate,
     ConnectionCredentials,
     ConnectionListResponse,
+    ConnectionRoles,
     ConnectionSummary,
     ForeignCatalogCreate,
 )
@@ -121,6 +123,18 @@ async def _write_credentials(
 ) -> ConnectionSummary:
     try:
         updated = await connection_service.set_write_credentials(name, username, password, user)
+    except CatalogError as exc:
+        raise _http(exc) from exc
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"Connection '{name}' not found")
+    return updated
+
+
+@router.put("/connections/{name}/roles", response_model=ConnectionSummary,
+            response_class=SanitizingJSONResponse)
+async def set_connection_roles(name: str, body: ConnectionRoles, user: CurrentUser):
+    try:
+        updated = await connection_service.set_roles(name, body.roles, user)
     except CatalogError as exc:
         raise _http(exc) from exc
     if updated is None:

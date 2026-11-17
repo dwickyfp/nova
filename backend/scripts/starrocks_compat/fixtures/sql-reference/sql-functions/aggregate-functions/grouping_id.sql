@@ -1,0 +1,4 @@
+-- tbl (COL1, COL2), rows that give the printed ROLLUP result.
+CREATE TABLE tbl (COL1 DECIMAL(10,2), COL2 INT)
+DUPLICATE KEY(COL1) DISTRIBUTED BY RANDOM BUCKETS 1 PROPERTIES ("replication_num" = "1");
+INSERT INTO tbl VALUES (1.10, 1), (2.20, 2);

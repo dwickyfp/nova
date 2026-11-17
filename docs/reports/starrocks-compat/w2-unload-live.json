@@ -1,0 +1,828 @@
+{
+  "workstream": "W2 unload to stage",
+  "date": "2026-11-16 23:02:34",
+  "base_commit": "18ae8035",
+  "working_tree": "uncommitted W2 changes on top of the base commit",
+  "nova": "http://127.0.0.1:5173",
+  "engine": "StarRocks 4.1.4 (patched FE), dev stack, MinIO-backed stage",
+  "stage": "compat_unload_w2",
+  "database": "compat_unload_w2",
+  "run_folder": "@compat_unload_w2/w2_225557/",
+  "summary": {
+    "cases": 74,
+    "passed": 73,
+    "failed": [],
+    "read_side_limits": [
+      "FILES CSV enclosed, commas, quotes and NULL (SQL read, detection limit) / read back"
+    ],
+    "leaks": []
+  },
+  "records": [
+    {
+      "case": "fixture",
+      "sql": "DROP TABLE IF EXISTS sales_records",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "DROP TABLE IF EXISTS sales_records",
+      "leaks": []
+    },
+    {
+      "case": "fixture",
+      "sql": "CREATE TABLE sales_records(record_id BIGINT, seller STRING, store_id INT, sales_time DATETIME, sales_amt DOUBLE) DUPLICATE KEY(record_id) PARTITION BY date_trunc('day', sales_time) DISTRIBUTED BY HASH(record_id)",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "CREATE TABLE sales_records(record_id BIGINT, seller STRING, store_id INT, sales_time DATETIME, sales_amt DOUBLE) DUPLICATE KEY(record_id) PARTITION BY date_trunc('day', sales_time) DISTRIBUTED BY HASH(record_id)",
+      "leaks": []
+    },
+    {
+      "case": "fixture",
+      "sql": "INSERT INTO sales_records VALUES (220313001,'Amy',1,'2022-03-13 12:00:00',8573.25),(220314002,'Bob',2,'2022-03-14 12:00:00',6948.99),(220314003,'Amy',1,'2022-03-14 12:00:00',4319.01),(220315004,'Carl',3,'2022-03-15 12:00:00',8734.26),(220316005,'Carl',3,'2022-03-16 12:00:00',4212.69),(220317006,'Bob',2,'2022-03-17 12:00:00',9515.88)",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "INSERT INTO sales_records VALUES (220313001,'Amy',1,'2022-03-13 12:00:00',8573.25),(220314002,'Bob',2,'2022-03-14 12:00:00',6948.99),(220314003,'Amy',1,'2022-03-14 12:00:00',4319.01),(220315004,'Carl',3,'2022-03-15 12:00:00',8734.26),(220316005,'Carl',3,'2022-03-16 12:00:00',4212.69),(220317006,'Bob',2,'2022-03-17 12:00:00',9515.88)",
+      "leaks": []
+    },
+    {
+      "case": "fixture",
+      "sql": "DROP TABLE IF EXISTS testTbl",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "DROP TABLE IF EXISTS testTbl",
+      "leaks": []
+    },
+    {
+      "case": "fixture",
+      "sql": "CREATE TABLE testTbl (k1 DATE, col1 INT, col2 STRING, col3 DOUBLE) DUPLICATE KEY(k1) PARTITION BY RANGE(k1) (PARTITION p1 VALUES LESS THAN ('2022-01-01'), PARTITION p2 VALUES LESS THAN ('2023-01-01'), PARTITION p3 VALUES LESS THAN ('2024-01-01')) DISTRIBUTED BY HASH(k1) BUCKETS 1",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "CREATE TABLE testTbl (k1 DATE, col1 INT, col2 STRING, col3 DOUBLE) DUPLICATE KEY(k1) PARTITION BY RANGE(k1) (PARTITION p1 VALUES LESS THAN ('2022-01-01'), PARTITION p2 VALUES LESS THAN ('2023-01-01'), PARTITION p3 VALUES LESS THAN ('2024-01-01')) DISTRIBUTED BY HASH(k1) BUCKETS 1",
+      "leaks": []
+    },
+    {
+      "case": "fixture",
+      "sql": "INSERT INTO testTbl VALUES ('2021-05-01',1,'a',1.5),('2021-06-01',2,'b',2.5),('2022-05-01',3,'c',3.5),('2023-05-01',4,'d',4.5)",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "INSERT INTO testTbl VALUES ('2021-05-01',1,'a',1.5),('2021-06-01',2,'b',2.5),('2022-05-01',3,'c',3.5),('2023-05-01',4,'d',4.5)",
+      "leaks": []
+    },
+    {
+      "case": "fixture",
+      "sql": "DROP TABLE IF EXISTS unload_text",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "DROP TABLE IF EXISTS unload_text",
+      "leaks": []
+    },
+    {
+      "case": "fixture",
+      "sql": "CREATE TABLE unload_text (id INT, note STRING) DUPLICATE KEY(id) DISTRIBUTED BY HASH(id) BUCKETS 1",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "CREATE TABLE unload_text (id INT, note STRING) DUPLICATE KEY(id) DISTRIBUTED BY HASH(id) BUCKETS 1",
+      "leaks": []
+    },
+    {
+      "case": "fixture",
+      "sql": "INSERT INTO unload_text VALUES (1,'plain'),(2,'has, comma'),(3,'say \"hi\"'),(4,NULL)",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "INSERT INTO unload_text VALUES (1,'plain'),(2,'has, comma'),(3,'say \"hi\"'),(4,NULL)",
+      "leaks": []
+    },
+    {
+      "case": "FILES multiple files (docs: unload into multiple files)",
+      "sql": "INSERT INTO FILES(\"path\" = \"@compat_unload_w2/w2_225557/multi/data1\", \"format\" = \"parquet\", \"compression\" = \"uncompressed\", \"target_max_file_size\" = \"1024\") SELECT * FROM sales_records",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "INSERT INTO FILES('path'='@compat_unload_w2/w2_225557/multi/data1', \"format\"=\"parquet\", \"compression\"=\"uncompressed\", \"target_max_file_size\"=\"1024\", 'aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') SELECT * FROM sales_records",
+      "leaks": []
+    },
+    {
+      "case": "FILES multiple files / list",
+      "sql": "LIST @compat_unload_w2/w2_225557/multi",
+      "success": true,
+      "files": [
+        "@compat_unload_w2/w2_225557/multi/data1/01a1e513-1cd3-7097-a644-4c49e425aaa5_0_0_0.parquet"
+      ],
+      "leaks": []
+    },
+    {
+      "case": "FILES multiple files / read back",
+      "sql": "SELECT * FROM @compat_unload_w2.w2_225557.multi.data1.*.parquet",
+      "success": true,
+      "rows": 6,
+      "source_rows": 6,
+      "error": null,
+      "leaks": []
+    },
+    {
+      "case": "FILES partition_by (docs: different paths)",
+      "sql": "INSERT INTO FILES(\"path\" = \"@compat_unload_w2/w2_225557/partitioned/\", \"format\" = \"parquet\", \"compression\" = \"lz4\", \"partition_by\" = \"store_id\") SELECT * FROM sales_records",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "INSERT INTO FILES('path'='@compat_unload_w2/w2_225557/partitioned/', \"format\"=\"parquet\", \"compression\"=\"lz4\", \"partition_by\"=\"store_id\", 'aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') SELECT * FROM sales_records",
+      "leaks": []
+    },
+    {
+      "case": "FILES partition_by / list",
+      "sql": "LIST @compat_unload_w2/w2_225557/partitioned",
+      "success": true,
+      "files": [
+        "@compat_unload_w2/w2_225557/partitioned/store_id=1/01a1e513-2312-7405-a5f8-24a6c5c7fda5_0_6_0.parquet",
+        "@compat_unload_w2/w2_225557/partitioned/store_id=2/01a1e513-2312-7405-a5f8-24a6c5c7fda5_0_0_0.parquet",
+        "@compat_unload_w2/w2_225557/partitioned/store_id=3/01a1e513-2312-7405-a5f8-24a6c5c7fda5_0_7_0.parquet"
+      ],
+      "leaks": []
+    },
+    {
+      "case": "FILES partition_by / read back",
+      "sql": "SELECT * FROM @compat_unload_w2.w2_225557.partitioned.*.*.parquet",
+      "success": true,
+      "rows": 6,
+      "source_rows": 6,
+      "error": null,
+      "leaks": []
+    },
+    {
+      "case": "FILES single file (docs: unload into a single file)",
+      "sql": "INSERT INTO FILES(\"path\" = \"@compat_unload_w2/w2_225557/single/data2\", \"format\" = \"parquet\", \"compression\" = \"lz4\", \"single\" = \"true\") SELECT * FROM sales_records",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "INSERT INTO FILES('path'='@compat_unload_w2/w2_225557/single/data2', \"format\"=\"parquet\", \"compression\"=\"lz4\", \"single\"=\"true\", 'aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') SELECT * FROM sales_records",
+      "leaks": []
+    },
+    {
+      "case": "FILES single file / list",
+      "sql": "LIST @compat_unload_w2/w2_225557/single",
+      "success": true,
+      "files": [
+        "@compat_unload_w2/w2_225557/single/data2/01a1e513-2ae7-78bb-8e5f-cb14a6de0ca7_0_0_0.parquet"
+      ],
+      "leaks": []
+    },
+    {
+      "case": "FILES single file / read back",
+      "sql": "SELECT * FROM @compat_unload_w2.w2_225557.single.data2.*.parquet",
+      "success": true,
+      "rows": 6,
+      "source_rows": 6,
+      "error": null,
+      "leaks": []
+    },
+    {
+      "case": "FILES zstd single (docs: unload to MinIO)",
+      "sql": "INSERT INTO FILES(\"path\" = \"@compat_unload_w2/w2_225557/zstd/data3\", \"format\" = \"parquet\", \"compression\" = \"zstd\", \"single\" = \"true\") SELECT * FROM sales_records",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "INSERT INTO FILES('path'='@compat_unload_w2/w2_225557/zstd/data3', \"format\"=\"parquet\", \"compression\"=\"zstd\", \"single\"=\"true\", 'aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') SELECT * FROM sales_records",
+      "leaks": []
+    },
+    {
+      "case": "FILES zstd single / read back",
+      "sql": "SELECT * FROM @compat_unload_w2.w2_225557.zstd.data3.*.parquet",
+      "success": true,
+      "rows": 6,
+      "source_rows": 6,
+      "error": null,
+      "leaks": []
+    },
+    {
+      "case": "FILES CSV (docs: NFS CSV, corrected csv.row_delimiter)",
+      "sql": "INSERT INTO FILES('path' = '@compat_unload_w2/w2_225557/csv/', 'format' = 'csv', 'compression' = 'uncompressed', 'csv.column_separator' = ',', 'csv.row_delimiter' = '\\n') SELECT * FROM sales_records",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "INSERT INTO FILES('path'='@compat_unload_w2/w2_225557/csv/', 'format'='csv', 'compression'='uncompressed', 'csv.column_separator'=',', 'csv.row_delimiter'='\\n', 'aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') SELECT * FROM sales_records",
+      "leaks": []
+    },
+    {
+      "case": "FILES CSV / read back",
+      "sql": "SELECT * FROM @compat_unload_w2.w2_225557.csv.*.csv",
+      "success": true,
+      "rows": 6,
+      "source_rows": 6,
+      "error": null,
+      "leaks": []
+    },
+    {
+      "case": "FILES CSV docs typo csv.row_delimitor is refused",
+      "sql": "INSERT INTO FILES('path' = '@compat_unload_w2/w2_225557/typo/', 'format' = 'csv', 'csv.column_separator' = ',', 'csv.row_delimitor' = '\\n') SELECT * FROM sales_records",
+      "success": true,
+      "error": "INSERT INTO FILES does not support the option 'csv.row_delimitor'. Supported options: compression, csv.column_separator, csv.enclose, csv.escape, csv.include_header, csv.row_delimiter, format, parquet.use_legacy_encoding, parquet.version, partition_by, single, target_max_file_size",
+      "needs_confirmation": false,
+      "executed_sql": "",
+      "leaks": [],
+      "expected_refusal": true
+    },
+    {
+      "case": "FILES CSV enclosed with header (docs: RFC 4180)",
+      "sql": "INSERT INTO FILES('path' = '@compat_unload_w2/w2_225557/csv_enclosed/', 'format' = 'csv', 'compression' = 'uncompressed', 'csv.column_separator' = ',', 'csv.row_delimiter' = '\\n', 'csv.enclose' = '\"', 'csv.escape' = '\"', 'csv.include_header' = 'true') SELECT * FROM sales_records",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "INSERT INTO FILES('path'='@compat_unload_w2/w2_225557/csv_enclosed/', 'format'='csv', 'compression'='uncompressed', 'csv.column_separator'=',', 'csv.row_delimiter'='\\n', 'csv.enclose'='\"', 'csv.escape'='\"', 'csv.include_header'='true', 'aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') SELECT * FROM sales_records",
+      "leaks": []
+    },
+    {
+      "case": "FILES CSV enclosed with header / read back",
+      "sql": "SELECT * FROM @compat_unload_w2.w2_225557.csv_enclosed.*.csv",
+      "success": true,
+      "rows": 6,
+      "source_rows": 6,
+      "error": null,
+      "leaks": []
+    },
+    {
+      "case": "FILES CSV enclosed, commas, quotes and NULL",
+      "sql": "INSERT INTO FILES('path' = '@compat_unload_w2/w2_225557/text_enclosed/', 'format' = 'csv', 'compression' = 'uncompressed', 'csv.column_separator' = '|', 'csv.enclose' = '\"', 'csv.escape' = '\"') SELECT * FROM unload_text",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "INSERT INTO FILES('path'='@compat_unload_w2/w2_225557/text_enclosed/', 'format'='csv', 'compression'='uncompressed', 'csv.column_separator'='|', 'csv.enclose'='\"', 'csv.escape'='\"', 'aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') SELECT * FROM unload_text",
+      "leaks": []
+    },
+    {
+      "case": "FILES CSV enclosed, commas, quotes and NULL / downloaded files parsed",
+      "sql": "LIST @compat_unload_w2/w2_225557/text_enclosed + download",
+      "success": true,
+      "files": [
+        "@compat_unload_w2/w2_225557/text_enclosed/01a1e513-3add-7cf0-92d8-be4baf708948_0_0_0.csv"
+      ],
+      "rows": 4,
+      "error": null
+    },
+    {
+      "case": "FILES CSV enclosed, commas, quotes and NULL (SQL read, detection limit) / read back",
+      "sql": "SELECT * FROM @compat_unload_w2.w2_225557.text_enclosed.*.csv",
+      "success": false,
+      "rows": 3,
+      "source_rows": 4,
+      "error": "rows differ from the source",
+      "leaks": [],
+      "read_side_limit": true
+    },
+    {
+      "case": "FILES Parquet version 1.0 (docs: NFS Parquet)",
+      "sql": "INSERT INTO FILES('path' = '@compat_unload_w2/w2_225557/parquet_v1/', 'format' = 'parquet', 'compression' = 'snappy', 'parquet.version' = '1.0', 'parquet.use_legacy_encoding' = 'true') SELECT * FROM sales_records",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "INSERT INTO FILES('path'='@compat_unload_w2/w2_225557/parquet_v1/', 'format'='parquet', 'compression'='snappy', 'parquet.version'='1.0', 'parquet.use_legacy_encoding'='true', 'aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') SELECT * FROM sales_records",
+      "leaks": []
+    },
+    {
+      "case": "FILES Parquet 1.0 / read back",
+      "sql": "SELECT * FROM @compat_unload_w2.w2_225557.parquet_v1.*.parquet",
+      "success": true,
+      "rows": 6,
+      "source_rows": 6,
+      "error": null,
+      "leaks": []
+    },
+    {
+      "case": "FILES Parquet without compression option (docs Example 7)",
+      "sql": "INSERT INTO FILES('path' = '@compat_unload_w2/w2_225557/parquet_default/', 'format' = 'parquet') SELECT * FROM sales_records",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "INSERT INTO FILES('path'='@compat_unload_w2/w2_225557/parquet_default/', 'format'='parquet', 'aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') SELECT * FROM sales_records",
+      "leaks": []
+    },
+    {
+      "case": "FILES Parquet default / read back",
+      "sql": "SELECT * FROM @compat_unload_w2.w2_225557.parquet_default.*.parquet",
+      "success": true,
+      "rows": 6,
+      "source_rows": 6,
+      "error": null,
+      "leaks": []
+    },
+    {
+      "case": "FILES ORC",
+      "sql": "INSERT INTO FILES('path' = '@compat_unload_w2/w2_225557/orc/', 'format' = 'orc', 'compression' = 'zstd') SELECT * FROM sales_records",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "INSERT INTO FILES('path'='@compat_unload_w2/w2_225557/orc/', 'format'='orc', 'compression'='zstd', 'aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') SELECT * FROM sales_records",
+      "leaks": []
+    },
+    {
+      "case": "FILES ORC / read back",
+      "sql": "SELECT * FROM @compat_unload_w2.w2_225557.orc.*.orc",
+      "success": true,
+      "rows": 6,
+      "source_rows": 6,
+      "error": null,
+      "leaks": []
+    },
+    {
+      "case": "OUTFILE CSV",
+      "sql": "SELECT * FROM sales_records INTO OUTFILE '@compat_unload_w2/w2_225557/outfile_csv/sales_' FORMAT AS CSV PROPERTIES('column_separator' = ',', 'line_delimiter' = '\\n')",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "SELECT * FROM sales_records INTO OUTFILE '@compat_unload_w2/w2_225557/outfile_csv/sales_' FORMAT AS CSV PROPERTIES('column_separator'=',', 'line_delimiter'='\\n', 'aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "OUTFILE CSV / list",
+      "sql": "LIST @compat_unload_w2/w2_225557/outfile_csv",
+      "success": true,
+      "files": [
+        "@compat_unload_w2/w2_225557/outfile_csv/sales_0.csv"
+      ],
+      "leaks": []
+    },
+    {
+      "case": "OUTFILE CSV / read back",
+      "sql": "SELECT * FROM @compat_unload_w2.w2_225557.outfile_csv.*.csv",
+      "success": true,
+      "rows": 6,
+      "source_rows": 6,
+      "error": null,
+      "leaks": []
+    },
+    {
+      "case": "OUTFILE Parquet",
+      "sql": "SELECT * FROM sales_records INTO OUTFILE '@compat_unload_w2/w2_225557/outfile_parquet/sales_' FORMAT AS PARQUET PROPERTIES('compression_type' = 'zstd', 'use_dictionary' = 'false', 'max_file_size' = '104857600', 'max_row_group_bytes' = '134217728')",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "SELECT * FROM sales_records INTO OUTFILE '@compat_unload_w2/w2_225557/outfile_parquet/sales_' FORMAT AS PARQUET PROPERTIES('compression_type'='zstd', 'use_dictionary'='false', 'max_file_size'='104857600', 'max_row_group_bytes'='134217728', 'aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "OUTFILE Parquet / read back",
+      "sql": "SELECT * FROM @compat_unload_w2.w2_225557.outfile_parquet.*.parquet",
+      "success": true,
+      "rows": 6,
+      "source_rows": 6,
+      "error": null,
+      "leaks": []
+    },
+    {
+      "case": "OUTFILE ORC is refused by the engine",
+      "sql": "SELECT * FROM sales_records INTO OUTFILE '@compat_unload_w2/w2_225557/outfile_orc/x_' FORMAT AS ORC",
+      "success": true,
+      "error": "SQL error: (1064) Getting analyzing error. Detail message: Only support CSV and PARQUET format.",
+      "needs_confirmation": false,
+      "executed_sql": "",
+      "leaks": [],
+      "expected_refusal": true
+    },
+    {
+      "case": "EXPORT all data (docs: to HDFS)",
+      "sql": "EXPORT TABLE testTbl TO \"@compat_unload_w2/w2_225557/export_all/\" WITH BROKER",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "EXPORT TABLE testTbl TO '@compat_unload_w2/w2_225557/export_all/' WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "EXPORT all data / SHOW EXPORT",
+      "sql": "SHOW EXPORT ORDER BY CreateTime DESC LIMIT 20",
+      "success": true,
+      "state": "FINISHED",
+      "path_shown": "@compat_unload_w2/w2_225557/export_all/",
+      "query_id": "01a1e513-7266-7e4e-9129-ba8eab6d9e35",
+      "error": null
+    },
+    {
+      "case": "EXPORT all data / read back",
+      "sql": "SELECT * FROM @compat_unload_w2.w2_225557.export_all.*.csv",
+      "success": true,
+      "rows": 4,
+      "source_rows": 4,
+      "error": null,
+      "leaks": []
+    },
+    {
+      "case": "EXPORT partitions p1,p2 (docs)",
+      "sql": "EXPORT TABLE testTbl PARTITION (p1,p2) TO \"@compat_unload_w2/w2_225557/export_parts/\" WITH BROKER",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "EXPORT TABLE testTbl PARTITION (p1,p2) TO '@compat_unload_w2/w2_225557/export_parts/' WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "EXPORT partitions / SHOW EXPORT",
+      "sql": "SHOW EXPORT ORDER BY CreateTime DESC LIMIT 20",
+      "success": true,
+      "state": "FINISHED",
+      "path_shown": "@compat_unload_w2/w2_225557/export_parts/",
+      "query_id": "01a1e513-c71d-7f94-8096-b722955009c4",
+      "error": null
+    },
+    {
+      "case": "EXPORT partitions / read back",
+      "sql": "SELECT * FROM @compat_unload_w2.w2_225557.export_parts.*.csv",
+      "success": true,
+      "rows": 3,
+      "source_rows": 3,
+      "error": null,
+      "leaks": []
+    },
+    {
+      "case": "EXPORT column_separator ',' (docs)",
+      "sql": "EXPORT TABLE testTbl TO \"@compat_unload_w2/w2_225557/export_comma/\" PROPERTIES (\"column_separator\"=\",\") WITH BROKER",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "EXPORT TABLE testTbl TO '@compat_unload_w2/w2_225557/export_comma/' PROPERTIES(\"column_separator\"=\",\") WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "EXPORT comma / SHOW EXPORT",
+      "sql": "SHOW EXPORT ORDER BY CreateTime DESC LIMIT 20",
+      "success": true,
+      "state": "FINISHED",
+      "path_shown": "@compat_unload_w2/w2_225557/export_comma/",
+      "query_id": "01a1e514-055c-7239-8814-d8268ee048d7",
+      "error": null
+    },
+    {
+      "case": "EXPORT comma / read back",
+      "sql": "SELECT * FROM @compat_unload_w2.w2_225557.export_comma.*.csv",
+      "success": true,
+      "rows": 4,
+      "source_rows": 4,
+      "error": null,
+      "leaks": []
+    },
+    {
+      "case": "EXPORT column_separator \\x01 (docs)",
+      "sql": "EXPORT TABLE testTbl TO \"@compat_unload_w2/w2_225557/export_x01/\" PROPERTIES (\"column_separator\"=\"\\\\x01\") WITH BROKER",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "EXPORT TABLE testTbl TO '@compat_unload_w2/w2_225557/export_x01/' PROPERTIES(\"column_separator\"=\"\\\\x01\") WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "EXPORT \\x01 / SHOW EXPORT",
+      "sql": "SHOW EXPORT ORDER BY CreateTime DESC LIMIT 20",
+      "success": true,
+      "state": "FINISHED",
+      "path_shown": "@compat_unload_w2/w2_225557/export_x01/",
+      "query_id": "01a1e514-301f-7441-9000-db95269708c8",
+      "error": null
+    },
+    {
+      "case": "EXPORT \\x01 / downloaded files parsed",
+      "sql": "LIST @compat_unload_w2/w2_225557/export_x01 + download",
+      "success": true,
+      "files": [
+        "@compat_unload_w2/w2_225557/export_x01/data_01a1e514-301f-7441-9000-db95269708c8_0_0.csv"
+      ],
+      "rows": 4,
+      "error": null
+    },
+    {
+      "case": "EXPORT file name prefix (docs)",
+      "sql": "EXPORT TABLE testTbl TO \"@compat_unload_w2/w2_225557/export_prefix/testTbl_\" WITH BROKER",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "EXPORT TABLE testTbl TO '@compat_unload_w2/w2_225557/export_prefix/testTbl_' WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "EXPORT prefix / SHOW EXPORT",
+      "sql": "SHOW EXPORT ORDER BY CreateTime DESC LIMIT 20",
+      "success": true,
+      "state": "FINISHED",
+      "path_shown": "@compat_unload_w2/w2_225557/export_prefix/",
+      "query_id": "01a1e514-682c-7a9d-a9aa-80afb6a9c9ee",
+      "error": null
+    },
+    {
+      "case": "EXPORT prefix / list",
+      "sql": "LIST @compat_unload_w2/w2_225557/export_prefix",
+      "success": true,
+      "files": [
+        "@compat_unload_w2/w2_225557/export_prefix/testTbl_01a1e514-682c-7a9d-a9aa-80afb6a9c9ee_0_0.csv"
+      ],
+      "leaks": []
+    },
+    {
+      "case": "EXPORT (docs: to AWS S3; WITH BROKER and no properties)",
+      "sql": "EXPORT TABLE testTbl TO \"@compat_unload_w2/w2_225557/export_s3/\" WITH BROKER",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "EXPORT TABLE testTbl TO '@compat_unload_w2/w2_225557/export_s3/' WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "EXPORT S3 form / SHOW EXPORT",
+      "sql": "SHOW EXPORT ORDER BY CreateTime DESC LIMIT 20",
+      "success": true,
+      "state": "FINISHED",
+      "path_shown": "@compat_unload_w2/w2_225557/export_s3/",
+      "query_id": "01a1e514-9584-735b-9379-bc5108efaf92",
+      "error": null
+    },
+    {
+      "case": "EXPORT WITH SYNC MODE returns the job row",
+      "sql": "EXPORT TABLE testTbl TO '@compat_unload_w2/w2_225557/export_sync/' WITH SYNC MODE",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "EXPORT TABLE testTbl TO '@compat_unload_w2/w2_225557/export_sync/' WITH SYNC MODE WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": [],
+      "rows": [
+        [
+          "3112508",
+          "01a1e515-6383-784f-b09f-5d1c4be8d1ef",
+          "FINISHED",
+          "100%",
+          "{\"partitions\":[\"*\"],\"column separator\":\"\\t\",\"columns\":[\"*\"],\"tablet num\":3,\"broker\":\"\",\"coord num\":1,\"db\":\"compat_unload_w2\",\"tbl\":\"testTbl\",\"row delimiter\":\"\\n\",\"mem limit\":2147483648}",
+          "@compat_unload_w2/w2_225557/export_sync/",
+          "2026-11-16 22:59:06",
+          "2026-11-16 22:59:11",
+          "2026-11-16 22:59:21",
+          "7200",
+          null
+        ]
+      ]
+    },
+    {
+      "case": "EXPORT WITH SYNC MODE / read back",
+      "sql": "SELECT * FROM @compat_unload_w2.w2_225557.export_sync.*.csv",
+      "success": true,
+      "rows": 4,
+      "source_rows": 4,
+      "error": null,
+      "leaks": []
+    },
+    {
+      "case": "EXPORT include_query_id false",
+      "sql": "EXPORT TABLE testTbl TO '@compat_unload_w2/w2_225557/export_noqid/' PROPERTIES('include_query_id' = 'false')",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "EXPORT TABLE testTbl TO '@compat_unload_w2/w2_225557/export_noqid/' PROPERTIES('include_query_id'='false') WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "EXPORT include_query_id false / SHOW EXPORT",
+      "sql": "SHOW EXPORT ORDER BY CreateTime DESC LIMIT 20",
+      "success": true,
+      "state": "FINISHED",
+      "path_shown": "@compat_unload_w2/w2_225557/export_noqid/",
+      "query_id": "01a1e515-ba75-7e06-83aa-41ac07372825",
+      "error": null
+    },
+    {
+      "case": "EXPORT include_query_id false / list",
+      "sql": "LIST @compat_unload_w2/w2_225557/export_noqid",
+      "success": true,
+      "files": [
+        "@compat_unload_w2/w2_225557/export_noqid/data_0_0.csv"
+      ],
+      "leaks": []
+    },
+    {
+      "case": "EXPORT partitions, columns, properties (docs: Export.md)",
+      "sql": "EXPORT TABLE compat_unload_w2.testTbl PARTITION (p1,p2) (col1, col3) TO \"@compat_unload_w2/w2_225557/export_cols/lineorder_\" PROPERTIES (\"column_separator\"=\",\", \"load_mem_limit\"=\"2147483648\", \"timeout\" = \"3600\") WITH BROKER",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "EXPORT TABLE compat_unload_w2.testTbl PARTITION (p1,p2) (col1, col3) TO '@compat_unload_w2/w2_225557/export_cols/lineorder_' PROPERTIES(\"column_separator\"=\",\", \"load_mem_limit\"=\"2147483648\", \"timeout\"=\"3600\") WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "EXPORT columns / SHOW EXPORT",
+      "sql": "SHOW EXPORT ORDER BY CreateTime DESC LIMIT 20",
+      "success": true,
+      "state": "FINISHED",
+      "path_shown": "@compat_unload_w2/w2_225557/export_cols/",
+      "query_id": "01a1e516-58cb-708e-8753-28d1b76aa6f8",
+      "error": null
+    },
+    {
+      "case": "EXPORT columns / read back",
+      "sql": "SELECT * FROM @compat_unload_w2.w2_225557.export_cols.*.csv",
+      "success": true,
+      "rows": 3,
+      "source_rows": 3,
+      "error": null,
+      "leaks": []
+    },
+    {
+      "case": "fixture",
+      "sql": "DROP TABLE IF EXISTS unload_big",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "DROP TABLE IF EXISTS unload_big",
+      "leaks": []
+    },
+    {
+      "case": "fixture",
+      "sql": "CREATE TABLE unload_big (id BIGINT, label STRING) DUPLICATE KEY(id) DISTRIBUTED BY HASH(id) BUCKETS 8",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "CREATE TABLE unload_big (id BIGINT, label STRING) DUPLICATE KEY(id) DISTRIBUTED BY HASH(id) BUCKETS 8",
+      "leaks": []
+    },
+    {
+      "case": "fixture",
+      "sql": "INSERT INTO unload_big SELECT generate_series, repeat('x', 100) FROM TABLE(generate_series(1, 1000000))",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "INSERT INTO unload_big SELECT generate_series, repeat('x', 100) FROM TABLE(generate_series(1, 1000000))",
+      "leaks": []
+    },
+    {
+      "case": "EXPORT then CANCEL EXPORT",
+      "sql": "EXPORT TABLE unload_big TO '@compat_unload_w2/w2_225557/export_cancel/' WITH BROKER",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "EXPORT TABLE unload_big TO '@compat_unload_w2/w2_225557/export_cancel/' WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "CANCEL EXPORT WHERE queryid",
+      "sql": "CANCEL EXPORT WHERE queryid = \"01a1e517-ef61-7860-9102-f80b1dafef35\"",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "CANCEL EXPORT WHERE queryid = \"01a1e517-ef61-7860-9102-f80b1dafef35\"",
+      "leaks": []
+    },
+    {
+      "case": "SHOW EXPORT WHERE QUERYID",
+      "sql": "SHOW EXPORT WHERE QUERYID = \"01a1e517-ef61-7860-9102-f80b1dafef35\"",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "SHOW EXPORT WHERE QUERYID = \"01a1e517-ef61-7860-9102-f80b1dafef35\"",
+      "leaks": []
+    },
+    {
+      "case": "SHOW EXPORT FROM db WHERE STATE ORDER BY",
+      "sql": "SHOW EXPORT FROM compat_unload_w2 WHERE STATE = \"FINISHED\" ORDER BY StartTime ASC",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "SHOW EXPORT FROM compat_unload_w2 WHERE STATE = \"FINISHED\" ORDER BY StartTime ASC",
+      "leaks": []
+    },
+    {
+      "case": "COPY INTO @stage FROM (query)",
+      "sql": "COPY INTO @compat_unload_w2/w2_225557/copy_into/ FROM (SELECT * FROM sales_records)",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "INSERT INTO FILES('path'='@compat_unload_w2/w2_225557/copy_into', 'format'='csv', 'aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') (SELECT * FROM sales_records)",
+      "leaks": []
+    },
+    {
+      "case": "COPY INTO @stage / read back",
+      "sql": "SELECT * FROM @compat_unload_w2.w2_225557.copy_into.*.csv",
+      "success": true,
+      "rows": 6,
+      "source_rows": 6,
+      "error": null,
+      "leaks": []
+    },
+    {
+      "case": "INSERT INTO @stage SELECT",
+      "sql": "INSERT INTO @compat_unload_w2/w2_225557/insert_stage/ SELECT * FROM sales_records",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "INSERT INTO FILES('path'='@compat_unload_w2/w2_225557/insert_stage', 'format'='csv', 'aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') SELECT * FROM sales_records",
+      "leaks": []
+    },
+    {
+      "case": "INSERT INTO @stage / read back",
+      "sql": "SELECT * FROM @compat_unload_w2.w2_225557.insert_stage.*.csv",
+      "success": true,
+      "rows": 6,
+      "source_rows": 6,
+      "error": null,
+      "leaks": []
+    },
+    {
+      "case": "raw s3 path refused",
+      "sql": "INSERT INTO FILES('path'='s3://stages/x/', 'format'='csv') SELECT 1",
+      "success": true,
+      "error": "INSERT INTO FILES writes only to a stage. Write the target as '@<stage>/<folder>/', for example '@sales_exports/daily/'; storage URLs and local paths are refused",
+      "needs_confirmation": false,
+      "executed_sql": "",
+      "leaks": [],
+      "expected_refusal": true
+    },
+    {
+      "case": "raw hdfs path refused",
+      "sql": "EXPORT TABLE testTbl TO 'hdfs://10.0.0.1:9000/a/' WITH BROKER",
+      "success": true,
+      "error": "EXPORT TABLE writes only to a stage. Write the target as '@<stage>/<folder>/', for example '@sales_exports/daily/'; storage URLs and local paths are refused",
+      "needs_confirmation": false,
+      "executed_sql": "",
+      "leaks": [],
+      "expected_refusal": true
+    },
+    {
+      "case": "raw file path refused",
+      "sql": "SELECT 1 INTO OUTFILE 'file:///tmp/x_' FORMAT AS CSV",
+      "success": true,
+      "error": "SELECT ... INTO OUTFILE writes only to a stage. Write the target as '@<stage>/<folder>/', for example '@sales_exports/daily/'; storage URLs and local paths are refused",
+      "needs_confirmation": false,
+      "executed_sql": "",
+      "leaks": [],
+      "expected_refusal": true
+    },
+    {
+      "case": "inline credentials refused",
+      "sql": "INSERT INTO FILES('path'='@compat_unload_w2/w2_225557/x/', 'format'='csv', 'aws.s3.access_key'='AKIAEXAMPLE', 'aws.s3.secret_key'='example') SELECT 1",
+      "success": true,
+      "error": "INSERT INTO FILES to a stage takes no storage location, credential or broker options: the stage supplies them",
+      "needs_confirmation": false,
+      "executed_sql": "",
+      "leaks": [],
+      "expected_refusal": true
+    },
+    {
+      "case": "broker properties refused",
+      "sql": "EXPORT TABLE testTbl TO '@compat_unload_w2/w2_225557/x/' WITH BROKER ('username'='u', 'password'='p')",
+      "success": true,
+      "error": "EXPORT TABLE to a stage takes no broker name or broker properties: the stage supplies the storage location and credentials. Write WITH BROKER alone, or leave it out",
+      "needs_confirmation": false,
+      "executed_sql": "",
+      "leaks": [],
+      "expected_refusal": true
+    },
+    {
+      "case": "stage root without folder refused",
+      "sql": "INSERT INTO FILES('path'='@compat_unload_w2', 'format'='csv') SELECT 1",
+      "success": true,
+      "error": "INSERT INTO FILES needs a folder or file name prefix after the stage name, for example '@sales_exports/daily/' or '@sales_exports/daily/orders_'",
+      "needs_confirmation": false,
+      "executed_sql": "",
+      "leaks": [],
+      "expected_refusal": true
+    },
+    {
+      "case": "unload without confirmation asks for it",
+      "sql": "INSERT INTO FILES('path'='@compat_unload_w2/w2_225557/noconfirm/', 'format'='csv') SELECT 1",
+      "success": true,
+      "error": "Destructive SQL requires confirmation before execution.",
+      "needs_confirmation": true,
+      "executed_sql": "",
+      "leaks": [],
+      "expected_refusal": true
+    },
+    {
+      "case": "alice (marketing) INSERT INTO FILES refused",
+      "sql": "INSERT INTO FILES('path'='@compat_unload_w2.compat_unload_w2.compat_unload_w2/alice/', 'format'='parquet') SELECT * FROM customers",
+      "user": "alice",
+      "role": "marketing",
+      "success": true,
+      "error": "Stage access denied",
+      "expected_refusal": true,
+      "leaks": []
+    },
+    {
+      "case": "alice (marketing) INTO OUTFILE refused",
+      "sql": "SELECT * FROM customers INTO OUTFILE '@compat_unload_w2.compat_unload_w2.compat_unload_w2/alice/c_' FORMAT AS PARQUET",
+      "user": "alice",
+      "role": "marketing",
+      "success": true,
+      "error": "Stage access denied",
+      "expected_refusal": true,
+      "leaks": []
+    },
+    {
+      "case": "alice (marketing) EXPORT refused",
+      "sql": "EXPORT TABLE customers TO '@compat_unload_w2.compat_unload_w2.compat_unload_w2/alice/' WITH BROKER",
+      "user": "alice",
+      "role": "marketing",
+      "success": true,
+      "error": "Stage access denied",
+      "expected_refusal": true,
+      "leaks": []
+    }
+  ]
+}

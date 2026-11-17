@@ -1,7 +1,9 @@
-"""Nova Catalog sources: the external systems a foreign catalog can read.
+"""Nova Catalog sources: the external systems a Nova connection can reach.
 
 :data:`SOURCES` is the registry. To add a source type, subclass
-:class:`~.base.CatalogSource` and list an instance here.
+:class:`~.base.CatalogSource` and list an instance here. Every source but Kafka
+backs a foreign catalog; a Kafka connection feeds Routine Load jobs instead
+(``provides_catalog``).
 """
 
 from __future__ import annotations
@@ -19,6 +21,8 @@ from .base import (
     ObjectKinds,
     check_jdbc_properties,
 )
+from .iceberg import IcebergSource
+from .kafka import KafkaSource
 from .postgres import PostgresSource
 from .snowflake import SnowflakeSource
 from .starrocks import StarRocksSource
@@ -43,7 +47,9 @@ __all__ = [
 
 SOURCES: dict[str, CatalogSource] = {
     source.connector_type: source
-    for source in (StarRocksSource(), PostgresSource(), SnowflakeSource())
+    for source in (
+        StarRocksSource(), PostgresSource(), SnowflakeSource(), IcebergSource(), KafkaSource()
+    )
 }
 
 #: Other spellings people write for a source type.
@@ -78,7 +84,7 @@ NATIVE_GROUPS: tuple[str, ...] = (
 
 #: Names of catalog types no source creates: made before sources, or in raw SQL.
 _OTHER_LABELS = {
-    "internal": "Nova", "iceberg": "Iceberg", "hive": "Hive", "mysql": "MySQL", "jdbc": "JDBC",
+    "internal": "Nova", "hive": "Hive", "mysql": "MySQL", "jdbc": "JDBC",
 }
 
 

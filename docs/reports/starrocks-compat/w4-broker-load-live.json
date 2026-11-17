@@ -1,0 +1,1269 @@
+{
+  "workstream": "W4 Broker Load from stages, SUBMIT TASK",
+  "date": "2026-11-17 00:20:34",
+  "nova": "http://127.0.0.1:5173",
+  "engine": "StarRocks 4.1.4 (patched FE), dev stack, MinIO-backed stage",
+  "stage": "compat_w4_stage",
+  "database": "compat_w4_load",
+  "run_folder": "@compat_w4_stage/w4/",
+  "summary": {
+    "cases": 34,
+    "passed": 34,
+    "failed": [],
+    "leaks": []
+  },
+  "results": [
+    {
+      "case": "BrokerLoad.md: two files into two tables, timeout",
+      "label": "label1_001730",
+      "passed": true,
+      "state": "FINISHED",
+      "error": null,
+      "rows": [
+        [
+          4,
+          "Julia",
+          25
+        ],
+        [
+          2,
+          "Rose",
+          23
+        ],
+        [
+          3,
+          "Alice",
+          24
+        ],
+        [
+          1,
+          "Lily",
+          23
+        ],
+        [
+          200,
+          "'Beijing'",
+          null
+        ]
+      ],
+      "expected": [
+        [
+          1,
+          "Lily",
+          23
+        ],
+        [
+          2,
+          "Rose",
+          23
+        ],
+        [
+          3,
+          "Alice",
+          24
+        ],
+        [
+          4,
+          "Julia",
+          25
+        ],
+        [
+          200,
+          "'Beijing'",
+          null
+        ]
+      ],
+      "executed_sql": "LOAD LABEL compat_w4_load.label1_001730 (DATA INFILE('@compat_w4_stage/w4/input/file1.csv') INTO TABLE table1 COLUMNS TERMINATED BY \",\" (id, name, score), DATA INFILE('@compat_w4_stage/w4/input/file2.csv') INTO TABLE table2 COLUMNS TERMINATED BY \",\" (id, city)) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') PROPERTIES (\"timeout\" = \"3600\")",
+      "leaks": []
+    },
+    {
+      "case": "BrokerLoad.md: one file, FORMAT AS CSV",
+      "label": "label_7_001730",
+      "passed": true,
+      "state": "FINISHED",
+      "error": null,
+      "rows": [
+        [
+          2,
+          "Rose",
+          23
+        ],
+        [
+          3,
+          "Alice",
+          24
+        ],
+        [
+          1,
+          "Lily",
+          23
+        ],
+        [
+          4,
+          "Julia",
+          25
+        ]
+      ],
+      "expected": [
+        [
+          1,
+          "Lily",
+          23
+        ],
+        [
+          2,
+          "Rose",
+          23
+        ],
+        [
+          3,
+          "Alice",
+          24
+        ],
+        [
+          4,
+          "Julia",
+          25
+        ]
+      ],
+      "executed_sql": "LOAD LABEL label_7_001730 (DATA INFILE('@compat_w4_stage/w4/one/file1.csv') INTO TABLE table1 COLUMNS TERMINATED BY \",\" FORMAT AS \"CSV\") WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BrokerLoad.md: every file under a folder (*)",
+      "label": "label_8_001730",
+      "passed": true,
+      "state": "FINISHED",
+      "error": null,
+      "rows": [
+        [
+          2,
+          "Rose",
+          23
+        ],
+        [
+          1,
+          "Lily",
+          23
+        ]
+      ],
+      "expected": [
+        [
+          1,
+          "Lily",
+          23
+        ],
+        [
+          2,
+          "Rose",
+          23
+        ]
+      ],
+      "executed_sql": "LOAD LABEL label_8_001730 (DATA INFILE('@compat_w4_stage/w4/all/*') INTO TABLE table1 COLUMNS TERMINATED BY \",\" FORMAT AS \"CSV\") WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: timeout",
+      "label": "label1t_001730",
+      "passed": true,
+      "state": "FINISHED",
+      "error": null,
+      "rows": [
+        [
+          2,
+          "Rose",
+          23
+        ],
+        [
+          1,
+          "Lily",
+          23
+        ]
+      ],
+      "expected": [
+        [
+          1,
+          "Lily",
+          23
+        ],
+        [
+          2,
+          "Rose",
+          23
+        ]
+      ],
+      "executed_sql": "LOAD LABEL label1t_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example1.csv') INTO TABLE table1) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') PROPERTIES (\"timeout\" = \"3600\")",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: max_filter_ratio",
+      "label": "label2_001730",
+      "passed": true,
+      "state": "FINISHED",
+      "error": null,
+      "rows": [
+        [
+          10
+        ]
+      ],
+      "expected": [
+        [
+          10
+        ]
+      ],
+      "executed_sql": "LOAD LABEL label2_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example2.csv') INTO TABLE table2) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') PROPERTIES (\"max_filter_ratio\" = \"0.1\")",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: all files from a path, \\x01 separator",
+      "label": "label3_001730",
+      "passed": true,
+      "state": "FINISHED",
+      "error": null,
+      "rows": [
+        [
+          2,
+          "b",
+          2
+        ],
+        [
+          1,
+          "a",
+          1
+        ]
+      ],
+      "expected": [
+        [
+          1,
+          "a",
+          1
+        ],
+        [
+          2,
+          "b",
+          2
+        ]
+      ],
+      "executed_sql": "LOAD LABEL label3_001730 (DATA INFILE('@compat_w4_stage/w4/data/input3/*') INTO TABLE table3 COLUMNS TERMINATED BY \"\\\\x01\") WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: Kerberos example adapted (tab separator, stage credentials)",
+      "label": "label5_001730",
+      "passed": true,
+      "state": "FINISHED",
+      "error": null,
+      "rows": [
+        [
+          1,
+          "Lily",
+          23
+        ],
+        [
+          2,
+          "Rose",
+          23
+        ]
+      ],
+      "expected": [
+        [
+          1,
+          "Lily",
+          23
+        ],
+        [
+          2,
+          "Rose",
+          23
+        ]
+      ],
+      "executed_sql": "LOAD LABEL label5_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example5.csv') INTO TABLE table5 COLUMNS TERMINATED BY \"\\t\") WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: revoke data loading (NEGATIVE)",
+      "label": "label6_001730",
+      "passed": true,
+      "state": "FINISHED",
+      "error": null,
+      "rows": [
+        [
+          2,
+          "b",
+          0
+        ],
+        [
+          1,
+          "a",
+          0
+        ]
+      ],
+      "expected": [
+        [
+          1,
+          "a",
+          0
+        ],
+        [
+          2,
+          "b",
+          0
+        ]
+      ],
+      "executed_sql": "LOAD LABEL label6_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example6.csv') NEGATIVE INTO TABLE table6 COLUMNS TERMINATED BY \"\\t\") WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: destination partitions",
+      "label": "label7_001730",
+      "passed": true,
+      "state": "FINISHED",
+      "error": null,
+      "rows": [
+        [
+          1,
+          "a",
+          1
+        ],
+        [
+          15,
+          "b",
+          2
+        ]
+      ],
+      "expected": [
+        [
+          1,
+          "a",
+          1
+        ],
+        [
+          15,
+          "b",
+          2
+        ]
+      ],
+      "executed_sql": "LOAD LABEL label7_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example7.csv') INTO TABLE table7 PARTITION (p1, p2) COLUMNS TERMINATED BY \",\") WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: temporary partition",
+      "label": "label7t_001730",
+      "passed": true,
+      "state": "FINISHED",
+      "error": null,
+      "rows": [
+        [
+          3,
+          "c",
+          3
+        ]
+      ],
+      "expected": [
+        [
+          3,
+          "c",
+          3
+        ]
+      ],
+      "executed_sql": "LOAD LABEL label7t_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example7t.csv') INTO TABLE table7t TEMPORARY PARTITION (tp1) COLUMNS TERMINATED BY \",\") WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: column mapping",
+      "label": "label8_001730",
+      "passed": true,
+      "state": "FINISHED",
+      "error": null,
+      "rows": [
+        [
+          "a",
+          1,
+          9
+        ],
+        [
+          "b",
+          2,
+          8
+        ]
+      ],
+      "expected": [
+        [
+          "a",
+          1,
+          9
+        ],
+        [
+          "b",
+          2,
+          8
+        ]
+      ],
+      "executed_sql": "LOAD LABEL label8_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example8.csv') INTO TABLE table8 COLUMNS TERMINATED BY \",\" (col2, col1, col3)) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: filter conditions (WHERE)",
+      "label": "label9_001730",
+      "passed": true,
+      "state": "FINISHED",
+      "error": null,
+      "rows": [
+        [
+          20180701,
+          "b",
+          2
+        ]
+      ],
+      "expected": [
+        [
+          20180701,
+          "b",
+          2
+        ]
+      ],
+      "executed_sql": "LOAD LABEL label9_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example9.csv') INTO TABLE table9 (col1, col2, col3) where col1 > 20180601) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: HLL columns (SET; the docs' empty_hll() is hll_empty())",
+      "label": "label10_001730",
+      "passed": true,
+      "state": "FINISHED",
+      "error": null,
+      "rows": [
+        [
+          2,
+          1,
+          1,
+          0
+        ],
+        [
+          1,
+          2,
+          2,
+          0
+        ]
+      ],
+      "expected": [
+        [
+          1,
+          2,
+          2,
+          0
+        ],
+        [
+          2,
+          1,
+          1,
+          0
+        ]
+      ],
+      "executed_sql": "LOAD LABEL label10_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example10.csv') INTO TABLE table10 COLUMNS TERMINATED BY \",\" (id, temp1, temp2) SET (col1 = hll_hash(temp1), col2 = hll_hash(temp2), col3 = hll_empty())) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: partition fields from the file path (COLUMNS FROM PATH)",
+      "label": "label11_001730",
+      "passed": true,
+      "state": "FINISHED",
+      "error": null,
+      "rows": [
+        [
+          2,
+          "b",
+          2,
+          "beijing",
+          "2019-06-26",
+          1
+        ],
+        [
+          1,
+          "a",
+          1,
+          "beijing",
+          "2019-06-26",
+          1
+        ]
+      ],
+      "expected": [
+        [
+          1,
+          "a",
+          1,
+          "beijing",
+          "2019-06-26",
+          1
+        ],
+        [
+          2,
+          "b",
+          2,
+          "beijing",
+          "2019-06-26",
+          1
+        ]
+      ],
+      "executed_sql": "LOAD LABEL label11_001730 (DATA INFILE('@compat_w4_stage/w4/dir/city=beijing/*/*') INTO TABLE table11 COLUMNS TERMINATED BY \",\" FORMAT AS \"csv\" (col1, col2, col3) COLUMNS FROM PATH AS (city, utc_date) SET (uniq_id = md5sum(col1, city))) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: %3A in the file path",
+      "label": "label12_001730",
+      "passed": true,
+      "state": "FINISHED",
+      "error": null,
+      "rows": [
+        [
+          "2020-02-18T00:00:00",
+          3,
+          4
+        ],
+        [
+          "2020-02-17T00:00:00",
+          1,
+          2
+        ]
+      ],
+      "expected": [
+        [
+          "2020-02-17 00:00:00",
+          1,
+          2
+        ],
+        [
+          "2020-02-18 00:00:00",
+          3,
+          4
+        ]
+      ],
+      "executed_sql": "LOAD LABEL label12_001730 (DATA INFILE('@compat_w4_stage/w4/data12/*/example12.csv') INTO TABLE table12 COLUMNS TERMINATED BY \",\" FORMAT AS \"csv\" (col1, col2) COLUMNS FROM PATH AS (data_time) SET (data_time = str_to_date(data_time, '%Y-%m-%d %H%%3A%i%%3A%s'))) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: format_type_options (skip_header, trim_space, enclose, escape)",
+      "label": "label13_001730",
+      "passed": true,
+      "state": "FINISHED",
+      "error": null,
+      "rows": [
+        [
+          1,
+          "a, b",
+          "say \"hi\""
+        ]
+      ],
+      "expected": [
+        [
+          1,
+          "a, b",
+          "say \"hi\""
+        ]
+      ],
+      "executed_sql": "LOAD LABEL label13_001730 (DATA INFILE('@compat_w4_stage/w4/d13/*/example13.csv') INTO TABLE table13 COLUMNS TERMINATED BY \",\" FORMAT AS \"CSV\" (skip_header = 2 trim_space = TRUE enclose = \"\\\"\" escape = \"\\\\\") (col2, col1, col3)) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') PROPERTIES (\"timeout\" = \"3600\")",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: Parquet",
+      "label": "label13p_001730",
+      "passed": true,
+      "state": "FINISHED",
+      "error": null,
+      "rows": [
+        [
+          2,
+          "b",
+          2
+        ],
+        [
+          1,
+          "a",
+          1
+        ]
+      ],
+      "expected": [
+        [
+          1,
+          "a",
+          1
+        ],
+        [
+          2,
+          "b",
+          2
+        ]
+      ],
+      "executed_sql": "LOAD LABEL label13p_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example13.parquet') INTO TABLE table13p FORMAT AS \"parquet\" (col1, col2, col3)) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: ORC",
+      "label": "label14_001730",
+      "passed": true,
+      "state": "FINISHED",
+      "error": null,
+      "rows": [
+        [
+          1,
+          "a",
+          1
+        ],
+        [
+          2,
+          "b",
+          2
+        ]
+      ],
+      "expected": [
+        [
+          1,
+          "a",
+          1
+        ],
+        [
+          2,
+          "b",
+          2
+        ]
+      ],
+      "executed_sql": "LOAD LABEL label14_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example14.orc') INTO TABLE table14 FORMAT AS \"orc\" (col1, col2, col3)) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: JSON simple mode",
+      "label": "label15_001730",
+      "passed": true,
+      "state": "FINISHED",
+      "error": null,
+      "rows": [
+        [
+          "C++",
+          "avc",
+          "C++ primer",
+          895.0
+        ]
+      ],
+      "expected": [
+        [
+          "C++",
+          "avc",
+          "C++ primer",
+          895
+        ]
+      ],
+      "executed_sql": "LOAD LABEL label15_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example1.json') INTO TABLE tbl1 FORMAT AS \"json\") WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: JSON matched mode (jsonpaths, strip_outer_array)",
+      "label": "label16_001730",
+      "passed": true,
+      "state": "FINISHED",
+      "error": null,
+      "rows": [
+        [
+          "xuxb111",
+          "111avc",
+          null,
+          895.0
+        ],
+        [
+          "xuxb222",
+          "222avc",
+          null,
+          895.0
+        ],
+        [
+          "xuxb333",
+          "333avc",
+          null,
+          895.0
+        ]
+      ],
+      "expected": [
+        [
+          "xuxb111",
+          "111avc",
+          null,
+          895
+        ],
+        [
+          "xuxb222",
+          "222avc",
+          null,
+          895
+        ],
+        [
+          "xuxb333",
+          "333avc",
+          null,
+          895
+        ]
+      ],
+      "executed_sql": "LOAD LABEL label16_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example2.json') INTO TABLE tbl1 FORMAT AS \"json\" (category, price, author)) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') PROPERTIES (\"strip_outer_array\" = \"true\", \"jsonpaths\" = \"[\\\"$.category\\\",\\\"$.price\\\",\\\"$.author\\\"]\")",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: JSON matched mode with json_root",
+      "label": "label17_001730",
+      "passed": true,
+      "state": "FINISHED",
+      "error": null,
+      "rows": [
+        [
+          "33",
+          "3avc",
+          null,
+          null
+        ],
+        [
+          "22",
+          "2avc",
+          null,
+          895.0
+        ],
+        [
+          "11",
+          null,
+          null,
+          895.0
+        ]
+      ],
+      "expected": [
+        [
+          "11",
+          null,
+          null,
+          895
+        ],
+        [
+          "22",
+          "2avc",
+          null,
+          895
+        ],
+        [
+          "33",
+          "3avc",
+          null,
+          null
+        ]
+      ],
+      "executed_sql": "LOAD LABEL label17_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example3.json') INTO TABLE tbl1 FORMAT AS \"json\" (category, price, author)) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') PROPERTIES (\"json_root\" = \"$.RECORDS\", \"strip_outer_array\" = \"true\", \"jsonpaths\" = \"[\\\"$.category\\\",\\\"$.price\\\",\\\"$.author\\\"]\")",
+      "leaks": []
+    },
+    {
+      "case": "s3.md / minio.md: Parquet into user_behavior, timeout",
+      "label": "UserBehavior_001730",
+      "passed": true,
+      "state": "FINISHED",
+      "error": null,
+      "rows": [
+        [
+          142,
+          2869980,
+          2939262,
+          "pv",
+          "2017-11-25T03:43:22"
+        ],
+        [
+          142,
+          2522236,
+          1669167,
+          "pv",
+          "2017-11-25T15:14:12"
+        ]
+      ],
+      "expected": [
+        [
+          142,
+          2869980,
+          2939262,
+          "pv",
+          "2017-11-25 03:43:22"
+        ],
+        [
+          142,
+          2522236,
+          1669167,
+          "pv",
+          "2017-11-25 15:14:12"
+        ]
+      ],
+      "executed_sql": "LOAD LABEL UserBehavior_001730 (DATA INFILE('@compat_w4_stage/w4/user_behavior_sample.parquet') INTO TABLE user_behavior) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') PROPERTIES (\"timeout\" = \"72000\")",
+      "leaks": []
+    },
+    {
+      "case": "Job properties: strict_mode, timezone, priority, load_mem_limit, log_rejected_record_num, partial_update, merge_condition",
+      "label": "props_001730",
+      "passed": true,
+      "state": "FINISHED",
+      "error": null,
+      "rows": [
+        [
+          2,
+          20,
+          5
+        ],
+        [
+          1,
+          11,
+          6
+        ]
+      ],
+      "expected": [
+        [
+          1,
+          11,
+          6
+        ],
+        [
+          2,
+          20,
+          5
+        ]
+      ],
+      "executed_sql": "LOAD LABEL props_001730 (DATA INFILE('@compat_w4_stage/w4/props/pk.csv') INTO TABLE pk COLUMNS TERMINATED BY \",\" (id, v, ts)) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') PROPERTIES (\"strict_mode\" = \"true\", \"timezone\" = \"UTC\", \"priority\" = \"HIGH\", \"load_mem_limit\" = \"1073741824\", \"log_rejected_record_num\" = \"10\", \"merge_condition\" = \"ts\")",
+      "leaks": []
+    },
+    {
+      "case": "Job properties: partial_update, partial_update_mode",
+      "label": "partial_001730",
+      "passed": true,
+      "state": "FINISHED",
+      "error": null,
+      "rows": [
+        [
+          1,
+          11,
+          100
+        ]
+      ],
+      "expected": [
+        [
+          1,
+          11,
+          100
+        ]
+      ],
+      "executed_sql": "LOAD LABEL partial_001730 (DATA INFILE('@compat_w4_stage/w4/props/pk2.csv') INTO TABLE pk2 COLUMNS TERMINATED BY \",\" (id, a)) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') PROPERTIES (\"partial_update\" = \"true\", \"partial_update_mode\" = \"row\")",
+      "leaks": []
+    },
+    {
+      "case": "SHOW LOAD and information_schema.loads name the stage, not the bucket",
+      "passed": true,
+      "state": "CANCELLED",
+      "error": "type:ETL_RUN_FAIL; msg:No files were found matching the pattern(s) or path(s): '@compat_w4_stage/w4/nope/*.csv'. You should check whether there are files under the path, and make sure the process has the permission to access the path",
+      "rows": [
+        [
+          "missing_001730",
+          "CANCELLED",
+          "type:ETL_RUN_FAIL; msg:No files were found matching the pattern(s) or path(s): '@compat_w4_stage/w4/nope/*.csv'. You should check whether there are files under the path, and make sure the process has the permission to access the path"
+        ]
+      ],
+      "leaks": []
+    },
+    {
+      "case": "ALTER LOAD and CANCEL LOAD reach the engine as the caller",
+      "passed": true,
+      "state": "CANCELLED",
+      "alter": "ok",
+      "cancel": "ok",
+      "leaks": []
+    },
+    {
+      "case": "refused: raw S3 path",
+      "passed": true,
+      "error": "LOAD LABEL reads files only from a stage. Write each path as \"@<stage>/<folder>/<file>\", for example \"@raw_files/sales/2026-*.csv\"; storage URLs and local paths are refused",
+      "leaks": []
+    },
+    {
+      "case": "refused: inline credentials",
+      "passed": true,
+      "error": "LOAD LABEL from a stage takes no broker name or broker properties: the stage supplies the storage location and credentials. Write WITH BROKER alone, or leave it out",
+      "leaks": []
+    },
+    {
+      "case": "refused: broker name",
+      "passed": true,
+      "error": "LOAD LABEL from a stage takes no broker name or broker properties: the stage supplies the storage location and credentials. Write WITH BROKER alone, or leave it out",
+      "leaks": []
+    },
+    {
+      "case": "refused: credential property",
+      "passed": true,
+      "error": "LOAD LABEL from a stage takes no storage location, credential or broker properties: the stage supplies them",
+      "leaks": []
+    },
+    {
+      "case": "refused: Spark Load",
+      "passed": true,
+      "error": "LOAD ... WITH RESOURCE (Spark Load) is not available in Nova. Use WITH BROKER and stage paths: the engine reads the files itself",
+      "leaks": []
+    },
+    {
+      "case": "refused: path outside the stage",
+      "passed": true,
+      "error": "LOAD LABEL: a stage path may use letters, digits, '_', '-', '.', '=', '%', spaces and the wildcards * ? [ ] { } ^ between slashes, with no empty, '.' or '..' folders",
+      "leaks": []
+    },
+    {
+      "case": "alice cannot load from a stage she cannot read",
+      "passed": true,
+      "error": "Stage access denied",
+      "leaks": []
+    },
+    {
+      "case": "SUBMIT TASK runs once as a Nova task of the caller's role",
+      "passed": true,
+      "result": [
+        [
+          "compat_w4_load.default.etl1_001730",
+          "SUBMITTED",
+          "f8f98718-0bd5-42de-a482-a020edfca481",
+          "70c50fce-5b5b-493d-be80-400edf575af0",
+          "pending",
+          "ACCOUNTADMIN"
+        ]
+      ],
+      "last_run_state": "success",
+      "rows": [
+        [
+          1,
+          "a"
+        ],
+        [
+          2,
+          "b"
+        ]
+      ],
+      "leaks": []
+    }
+  ],
+  "statements": [
+    {
+      "case": "BrokerLoad.md: two files into two tables, timeout",
+      "sql": "LOAD LABEL compat_w4_load.label1_001730 (DATA INFILE(\"@compat_w4_stage/w4/input/file1.csv\") INTO TABLE table1 COLUMNS TERMINATED BY \",\" (id, name, score), DATA INFILE(\"@compat_w4_stage/w4/input/file2.csv\") INTO TABLE table2 COLUMNS TERMINATED BY \",\" (id, city)) WITH BROKER PROPERTIES (\"timeout\" = \"3600\")",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL compat_w4_load.label1_001730 (DATA INFILE('@compat_w4_stage/w4/input/file1.csv') INTO TABLE table1 COLUMNS TERMINATED BY \",\" (id, name, score), DATA INFILE('@compat_w4_stage/w4/input/file2.csv') INTO TABLE table2 COLUMNS TERMINATED BY \",\" (id, city)) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') PROPERTIES (\"timeout\" = \"3600\")",
+      "leaks": []
+    },
+    {
+      "case": "BrokerLoad.md: one file, FORMAT AS CSV",
+      "sql": "LOAD LABEL label_7_001730 (DATA INFILE(\"@compat_w4_stage/w4/one/file1.csv\") INTO TABLE table1 COLUMNS TERMINATED BY \",\" FORMAT AS \"CSV\") WITH BROKER",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL label_7_001730 (DATA INFILE('@compat_w4_stage/w4/one/file1.csv') INTO TABLE table1 COLUMNS TERMINATED BY \",\" FORMAT AS \"CSV\") WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BrokerLoad.md: every file under a folder (*)",
+      "sql": "LOAD LABEL label_8_001730 (DATA INFILE(\"@compat_w4_stage/w4/all/*\") INTO TABLE table1 COLUMNS TERMINATED BY \",\" FORMAT AS \"CSV\")",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL label_8_001730 (DATA INFILE('@compat_w4_stage/w4/all/*') INTO TABLE table1 COLUMNS TERMINATED BY \",\" FORMAT AS \"CSV\") WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: timeout",
+      "sql": "LOAD LABEL label1t_001730 (DATA INFILE(\"@compat_w4_stage/w4/data/input/example1.csv\") INTO TABLE table1) WITH BROKER PROPERTIES (\"timeout\" = \"3600\")",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL label1t_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example1.csv') INTO TABLE table1) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') PROPERTIES (\"timeout\" = \"3600\")",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: max_filter_ratio",
+      "sql": "LOAD LABEL label2_001730 (DATA INFILE(\"@compat_w4_stage/w4/data/input/example2.csv\") INTO TABLE table2) PROPERTIES (\"max_filter_ratio\" = \"0.1\")",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL label2_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example2.csv') INTO TABLE table2) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') PROPERTIES (\"max_filter_ratio\" = \"0.1\")",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: all files from a path, \\x01 separator",
+      "sql": "LOAD LABEL label3_001730 (DATA INFILE(\"@compat_w4_stage/w4/data/input3/*\") INTO TABLE table3 COLUMNS TERMINATED BY \"\\\\x01\") WITH BROKER",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL label3_001730 (DATA INFILE('@compat_w4_stage/w4/data/input3/*') INTO TABLE table3 COLUMNS TERMINATED BY \"\\\\x01\") WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: Kerberos example adapted (tab separator, stage credentials)",
+      "sql": "LOAD LABEL label5_001730 (DATA INFILE(\"@compat_w4_stage/w4/data/input/example5.csv\") INTO TABLE table5 COLUMNS TERMINATED BY \"\\t\") WITH BROKER",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL label5_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example5.csv') INTO TABLE table5 COLUMNS TERMINATED BY \"\\t\") WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: revoke data loading (NEGATIVE)",
+      "sql": "LOAD LABEL label6_001730 (DATA INFILE(\"@compat_w4_stage/w4/data/input/example6.csv\") NEGATIVE INTO TABLE table6 COLUMNS TERMINATED BY \"\\t\") WITH BROKER",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL label6_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example6.csv') NEGATIVE INTO TABLE table6 COLUMNS TERMINATED BY \"\\t\") WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: destination partitions",
+      "sql": "LOAD LABEL label7_001730 (DATA INFILE(\"@compat_w4_stage/w4/data/input/example7.csv\") INTO TABLE table7 PARTITION (p1, p2) COLUMNS TERMINATED BY \",\") WITH BROKER",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL label7_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example7.csv') INTO TABLE table7 PARTITION (p1, p2) COLUMNS TERMINATED BY \",\") WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: temporary partition",
+      "sql": "LOAD LABEL label7t_001730 (DATA INFILE(\"@compat_w4_stage/w4/data/input/example7t.csv\") INTO TABLE table7t TEMPORARY PARTITION (tp1) COLUMNS TERMINATED BY \",\")",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL label7t_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example7t.csv') INTO TABLE table7t TEMPORARY PARTITION (tp1) COLUMNS TERMINATED BY \",\") WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: column mapping",
+      "sql": "LOAD LABEL label8_001730 (DATA INFILE(\"@compat_w4_stage/w4/data/input/example8.csv\") INTO TABLE table8 COLUMNS TERMINATED BY \",\" (col2, col1, col3)) WITH BROKER",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL label8_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example8.csv') INTO TABLE table8 COLUMNS TERMINATED BY \",\" (col2, col1, col3)) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: filter conditions (WHERE)",
+      "sql": "LOAD LABEL label9_001730 (DATA INFILE(\"@compat_w4_stage/w4/data/input/example9.csv\") INTO TABLE table9 (col1, col2, col3) where col1 > 20180601) WITH BROKER",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL label9_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example9.csv') INTO TABLE table9 (col1, col2, col3) where col1 > 20180601) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: HLL columns (SET; the docs' empty_hll() is hll_empty())",
+      "sql": "LOAD LABEL label10_001730 (DATA INFILE(\"@compat_w4_stage/w4/data/input/example10.csv\") INTO TABLE table10 COLUMNS TERMINATED BY \",\" (id, temp1, temp2) SET (col1 = hll_hash(temp1), col2 = hll_hash(temp2), col3 = hll_empty())) WITH BROKER",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL label10_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example10.csv') INTO TABLE table10 COLUMNS TERMINATED BY \",\" (id, temp1, temp2) SET (col1 = hll_hash(temp1), col2 = hll_hash(temp2), col3 = hll_empty())) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: partition fields from the file path (COLUMNS FROM PATH)",
+      "sql": "LOAD LABEL label11_001730 (DATA INFILE(\"@compat_w4_stage/w4/dir/city=beijing/*/*\") INTO TABLE table11 COLUMNS TERMINATED BY \",\" FORMAT AS \"csv\" (col1, col2, col3) COLUMNS FROM PATH AS (city, utc_date) SET (uniq_id = md5sum(col1, city))) WITH BROKER",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL label11_001730 (DATA INFILE('@compat_w4_stage/w4/dir/city=beijing/*/*') INTO TABLE table11 COLUMNS TERMINATED BY \",\" FORMAT AS \"csv\" (col1, col2, col3) COLUMNS FROM PATH AS (city, utc_date) SET (uniq_id = md5sum(col1, city))) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: %3A in the file path",
+      "sql": "LOAD LABEL label12_001730 (DATA INFILE(\"@compat_w4_stage/w4/data12/*/example12.csv\") INTO TABLE table12 COLUMNS TERMINATED BY \",\" FORMAT AS \"csv\" (col1, col2) COLUMNS FROM PATH AS (data_time) SET (data_time = str_to_date(data_time, '%Y-%m-%d %H%%3A%i%%3A%s'))) WITH BROKER",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL label12_001730 (DATA INFILE('@compat_w4_stage/w4/data12/*/example12.csv') INTO TABLE table12 COLUMNS TERMINATED BY \",\" FORMAT AS \"csv\" (col1, col2) COLUMNS FROM PATH AS (data_time) SET (data_time = str_to_date(data_time, '%Y-%m-%d %H%%3A%i%%3A%s'))) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: format_type_options (skip_header, trim_space, enclose, escape)",
+      "sql": "LOAD LABEL label13_001730 (DATA INFILE(\"@compat_w4_stage/w4/d13/*/example13.csv\") INTO TABLE table13 COLUMNS TERMINATED BY \",\" FORMAT AS \"CSV\" (skip_header = 2 trim_space = TRUE enclose = \"\\\"\" escape = \"\\\\\") (col2, col1, col3)) WITH BROKER PROPERTIES (\"timeout\" = \"3600\")",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL label13_001730 (DATA INFILE('@compat_w4_stage/w4/d13/*/example13.csv') INTO TABLE table13 COLUMNS TERMINATED BY \",\" FORMAT AS \"CSV\" (skip_header = 2 trim_space = TRUE enclose = \"\\\"\" escape = \"\\\\\") (col2, col1, col3)) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') PROPERTIES (\"timeout\" = \"3600\")",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: Parquet",
+      "sql": "LOAD LABEL label13p_001730 (DATA INFILE(\"@compat_w4_stage/w4/data/input/example13.parquet\") INTO TABLE table13p FORMAT AS \"parquet\" (col1, col2, col3)) WITH BROKER",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL label13p_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example13.parquet') INTO TABLE table13p FORMAT AS \"parquet\" (col1, col2, col3)) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: ORC",
+      "sql": "LOAD LABEL label14_001730 (DATA INFILE(\"@compat_w4_stage/w4/data/input/example14.orc\") INTO TABLE table14 FORMAT AS \"orc\" (col1, col2, col3)) WITH BROKER",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL label14_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example14.orc') INTO TABLE table14 FORMAT AS \"orc\" (col1, col2, col3)) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: JSON simple mode",
+      "sql": "LOAD LABEL label15_001730 (DATA INFILE(\"@compat_w4_stage/w4/data/input/example1.json\") INTO TABLE tbl1 FORMAT AS \"json\") WITH BROKER",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL label15_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example1.json') INTO TABLE tbl1 FORMAT AS \"json\") WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: JSON matched mode (jsonpaths, strip_outer_array)",
+      "sql": "LOAD LABEL label16_001730 (DATA INFILE(\"@compat_w4_stage/w4/data/input/example2.json\") INTO TABLE tbl1 FORMAT AS \"json\" (category, price, author)) WITH BROKER PROPERTIES (\"strip_outer_array\" = \"true\", \"jsonpaths\" = \"[\\\"$.category\\\",\\\"$.price\\\",\\\"$.author\\\"]\")",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL label16_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example2.json') INTO TABLE tbl1 FORMAT AS \"json\" (category, price, author)) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') PROPERTIES (\"strip_outer_array\" = \"true\", \"jsonpaths\" = \"[\\\"$.category\\\",\\\"$.price\\\",\\\"$.author\\\"]\")",
+      "leaks": []
+    },
+    {
+      "case": "BROKER_LOAD.md: JSON matched mode with json_root",
+      "sql": "LOAD LABEL label17_001730 (DATA INFILE(\"@compat_w4_stage/w4/data/input/example3.json\") INTO TABLE tbl1 FORMAT AS \"json\" (category, price, author)) WITH BROKER PROPERTIES (\"json_root\" = \"$.RECORDS\", \"strip_outer_array\" = \"true\", \"jsonpaths\" = \"[\\\"$.category\\\",\\\"$.price\\\",\\\"$.author\\\"]\")",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL label17_001730 (DATA INFILE('@compat_w4_stage/w4/data/input/example3.json') INTO TABLE tbl1 FORMAT AS \"json\" (category, price, author)) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') PROPERTIES (\"json_root\" = \"$.RECORDS\", \"strip_outer_array\" = \"true\", \"jsonpaths\" = \"[\\\"$.category\\\",\\\"$.price\\\",\\\"$.author\\\"]\")",
+      "leaks": []
+    },
+    {
+      "case": "s3.md / minio.md: Parquet into user_behavior, timeout",
+      "sql": "LOAD LABEL UserBehavior_001730 (DATA INFILE(\"@compat_w4_stage/w4/user_behavior_sample.parquet\") INTO TABLE user_behavior) WITH BROKER PROPERTIES (\"timeout\" = \"72000\")",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL UserBehavior_001730 (DATA INFILE('@compat_w4_stage/w4/user_behavior_sample.parquet') INTO TABLE user_behavior) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') PROPERTIES (\"timeout\" = \"72000\")",
+      "leaks": []
+    },
+    {
+      "case": "Job properties: strict_mode, timezone, priority, load_mem_limit, log_rejected_record_num, partial_update, merge_condition",
+      "sql": "LOAD LABEL props_001730 (DATA INFILE(\"@compat_w4_stage/w4/props/pk.csv\") INTO TABLE pk COLUMNS TERMINATED BY \",\" (id, v, ts)) PROPERTIES (\"strict_mode\" = \"true\", \"timezone\" = \"UTC\", \"priority\" = \"HIGH\", \"load_mem_limit\" = \"1073741824\", \"log_rejected_record_num\" = \"10\", \"merge_condition\" = \"ts\")",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL props_001730 (DATA INFILE('@compat_w4_stage/w4/props/pk.csv') INTO TABLE pk COLUMNS TERMINATED BY \",\" (id, v, ts)) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') PROPERTIES (\"strict_mode\" = \"true\", \"timezone\" = \"UTC\", \"priority\" = \"HIGH\", \"load_mem_limit\" = \"1073741824\", \"log_rejected_record_num\" = \"10\", \"merge_condition\" = \"ts\")",
+      "leaks": []
+    },
+    {
+      "case": "Job properties: partial_update, partial_update_mode",
+      "sql": "LOAD LABEL partial_001730 (DATA INFILE(\"@compat_w4_stage/w4/props/pk2.csv\") INTO TABLE pk2 COLUMNS TERMINATED BY \",\" (id, a)) PROPERTIES (\"partial_update\" = \"true\", \"partial_update_mode\" = \"row\")",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL partial_001730 (DATA INFILE('@compat_w4_stage/w4/props/pk2.csv') INTO TABLE pk2 COLUMNS TERMINATED BY \",\" (id, a)) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') PROPERTIES (\"partial_update\" = \"true\", \"partial_update_mode\" = \"row\")",
+      "leaks": []
+    },
+    {
+      "case": "error path redaction: submit",
+      "sql": "LOAD LABEL missing_001730 (DATA INFILE(\"@compat_w4_stage/w4/nope/*.csv\") INTO TABLE table1)",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL missing_001730 (DATA INFILE('@compat_w4_stage/w4/nope/*.csv') INTO TABLE table1) WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "CANCEL/ALTER LOAD: submit",
+      "sql": "LOAD LABEL managed_001730 (DATA INFILE(\"@compat_w4_stage/w4/slow/a.csv\") INTO TABLE slow_t COLUMNS TERMINATED BY \",\") PROPERTIES (\"priority\" = \"LOWEST\")",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL managed_001730 (DATA INFILE('@compat_w4_stage/w4/slow/a.csv') INTO TABLE slow_t COLUMNS TERMINATED BY \",\") WITH BROKER ('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false') PROPERTIES (\"priority\" = \"LOWEST\")",
+      "leaks": []
+    },
+    {
+      "case": "ALTER LOAD priority",
+      "sql": "ALTER LOAD FOR compat_w4_load.managed_001730 PROPERTIES (\"priority\" = \"HIGHEST\")",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "ALTER LOAD FOR compat_w4_load.managed_001730 PROPERTIES (\"priority\" = \"HIGHEST\")",
+      "leaks": []
+    },
+    {
+      "case": "CANCEL LOAD",
+      "sql": "CANCEL LOAD FROM compat_w4_load WHERE LABEL = \"managed_001730\"",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "CANCEL LOAD FROM compat_w4_load WHERE LABEL = \"managed_001730\"",
+      "leaks": []
+    },
+    {
+      "case": "refused: raw S3 path",
+      "sql": "LOAD LABEL r1 (DATA INFILE(\"s3://bucket/input/file1.csv\") INTO TABLE table1)",
+      "success": false,
+      "error": "LOAD LABEL reads files only from a stage. Write each path as \"@<stage>/<folder>/<file>\", for example \"@raw_files/sales/2026-*.csv\"; storage URLs and local paths are refused",
+      "needs_confirmation": false,
+      "executed_sql": "",
+      "leaks": []
+    },
+    {
+      "case": "refused: inline credentials",
+      "sql": "LOAD LABEL r2 (DATA INFILE(\"@compat_w4_stage/x.csv\") INTO TABLE table1) WITH BROKER (\"aws.s3.access_key\" = \"AKIAREFUSED00000000\", \"aws.s3.secret_key\" = \"refused-secret\")",
+      "success": false,
+      "error": "LOAD LABEL from a stage takes no broker name or broker properties: the stage supplies the storage location and credentials. Write WITH BROKER alone, or leave it out",
+      "needs_confirmation": false,
+      "executed_sql": "",
+      "leaks": []
+    },
+    {
+      "case": "refused: broker name",
+      "sql": "LOAD LABEL r3 (DATA INFILE(\"@compat_w4_stage/x.csv\") INTO TABLE table1) WITH BROKER \"hdfs_broker\"",
+      "success": false,
+      "error": "LOAD LABEL from a stage takes no broker name or broker properties: the stage supplies the storage location and credentials. Write WITH BROKER alone, or leave it out",
+      "needs_confirmation": false,
+      "executed_sql": "",
+      "leaks": []
+    },
+    {
+      "case": "refused: credential property",
+      "sql": "LOAD LABEL r4 (DATA INFILE(\"@compat_w4_stage/x.csv\") INTO TABLE table1) PROPERTIES (\"aws.s3.secret_key\" = \"refused-secret\")",
+      "success": false,
+      "error": "LOAD LABEL from a stage takes no storage location, credential or broker properties: the stage supplies them",
+      "needs_confirmation": false,
+      "executed_sql": "",
+      "leaks": []
+    },
+    {
+      "case": "refused: Spark Load",
+      "sql": "LOAD LABEL r5 (DATA INFILE(\"@compat_w4_stage/x.csv\") INTO TABLE table1) WITH RESOURCE \"spark0\"",
+      "success": false,
+      "error": "LOAD ... WITH RESOURCE (Spark Load) is not available in Nova. Use WITH BROKER and stage paths: the engine reads the files itself",
+      "needs_confirmation": false,
+      "executed_sql": "",
+      "leaks": []
+    },
+    {
+      "case": "refused: path outside the stage",
+      "sql": "LOAD LABEL r6 (DATA INFILE(\"@compat_w4_stage/../x.csv\") INTO TABLE table1)",
+      "success": false,
+      "error": "LOAD LABEL: a stage path may use letters, digits, '_', '-', '.', '=', '%', spaces and the wildcards * ? [ ] { } ^ between slashes, with no empty, '.' or '..' folders",
+      "needs_confirmation": false,
+      "executed_sql": "",
+      "leaks": []
+    },
+    {
+      "case": "alice without stage read access",
+      "sql": "LOAD LABEL a1_001730 (DATA INFILE(\"@compat_w4_stage/w4/input/file1.csv\") INTO TABLE table1)",
+      "success": false,
+      "error": "Stage access denied",
+      "needs_confirmation": false,
+      "executed_sql": "LOAD LABEL a1_001730 (DATA INFILE(\"@compat_w4_stage/w4/input/file1.csv\") INTO TABLE table1)",
+      "leaks": []
+    },
+    {
+      "case": "SUBMIT TASK",
+      "sql": "SUBMIT TASK etl1_001730 PROPERTIES (\"session.insert_timeout\" = \"10000\") AS CREATE TABLE tbl2 AS SELECT * FROM src_tbl",
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "executed_sql": "SUBMIT TASK etl1_001730 PROPERTIES (\"session.insert_timeout\" = \"10000\") AS CREATE TABLE tbl2 AS SELECT * FROM src_tbl",
+      "leaks": []
+    }
+  ]
+}

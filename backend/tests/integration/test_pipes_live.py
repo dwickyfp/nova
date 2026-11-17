@@ -1,4 +1,3 @@
-from contextlib import suppress
 from uuid import uuid4
 
 import asyncmy
@@ -13,9 +12,10 @@ from tests.conftest import engine_host_ports, root_password, s3_credentials
 pytestmark = pytest.mark.engine
 
 
-async def test_legacy_pipe_metadata_and_governed_execution_refusal(
-    client, admin_token, analyst_token, sr_root, minio_client, metadata_inspect
+async def test_pipe_api_refuses_storage_urls_and_credentials_and_creates_no_engine_pipe(
+    client, admin_token, sr_root, minio_client, metadata_inspect
 ):
+    """A pipe reads a registered stage: a raw URL with keys is refused before any I/O."""
     database = "pipe_api_" + uuid4().hex[:12]
     key = database + ".parquet"
     sink = pa.BufferOutputStream()
@@ -34,8 +34,6 @@ async def test_legacy_pipe_metadata_and_governed_execution_refusal(
             "DUPLICATE KEY(id) DISTRIBUTED BY HASH(id) BUCKETS 1 "
             "PROPERTIES('replication_num'='1')"
         )
-        await cur.execute(f"GRANT ALL ON DATABASE `{database}` TO USER nova_admin")
-        await cur.execute(f"GRANT ALL ON ALL TABLES IN DATABASE `{database}` TO USER nova_admin")
     port = engine_host_ports()["minio"]
     access_key, secret_key = s3_credentials()
     body = {
@@ -54,72 +52,43 @@ async def test_legacy_pipe_metadata_and_governed_execution_refusal(
         client.headers["Authorization"] = "Bearer " + admin_token
         created = await client.post("/api/v1/pipes", json=body)
         assert created.status_code == 400, created.text
-        assert "Pipes run in the background without your sign-in" in created.json()["detail"]
-        assert s3_credentials()[1] not in created.text
+        assert "A pipe reads files from a stage" in created.json()["detail"]
+        assert secret_key not in created.text
         absent = await client.get("/api/v1/pipes", params={"database": database})
         assert absent.status_code == 200 and absent.json()["pipes"] == []
-        # Provision a legacy native pipe over this fixture's synthetic file so
-        # metadata, suspension and deletion remain covered after execution is denied.
         async with sr_root.cursor() as cur:
             await cur.execute(
-                f"CREATE PIPE `{database}`.synthetic_pipe "
-                "PROPERTIES ('AUTO_INGEST'='false', 'POLL_INTERVAL'='3600') AS " + body["sql"]
+                "SELECT COUNT(*) FROM information_schema.pipes WHERE DATABASE_NAME = %s",
+                (database,),
             )
-        listed = await client.get("/api/v1/pipes", params={"database": database})
-        assert listed.status_code == 200, listed.text
-        assert listed.json()["pipes"][0]["name"] == body["name"]
-        url = "/api/v1/pipes/synthetic_pipe"
-        detail = await client.get(url, params={"database": database})
-        assert detail.status_code == 200, detail.text
-        assert "INSERT INTO" in detail.json()["sql"]
-        assert detail.json()["properties"]
-        properties = {key.casefold(): value for key, value in detail.json()["properties"].items()}
-        assert properties["poll_interval"] == "3600"
-        assert s3_credentials()[1] not in detail.text
-        files = await client.get(url + "/files", params={"database": database})
-        assert files.status_code == 200, files.text
-        suspended = await client.patch(url + "/suspend", params={"database": database})
-        assert suspended.status_code == 200, suspended.text
-        resumed = await client.patch(url + "/resume", params={"database": database})
-        assert resumed.status_code == 400, resumed.text
-        assert "Pipes run in the background without your sign-in" in resumed.json()["detail"]
-
-        client.headers["Authorization"] = "Bearer " + analyst_token
-        refused = await client.post("/api/v1/pipes", json={**body, "name": "forbidden_pipe"})
-        assert refused.status_code in {400, 403}, refused.text
-        refused = await client.delete(url, params={"database": database})
-        assert refused.status_code in {400, 403}, refused.text
-        assert s3_credentials()[1] not in refused.text
-        client.headers["Authorization"] = "Bearer " + admin_token
-        assert (await client.get(url, params={"database": database})).status_code == 200
-        deleted = await client.delete(url, params={"database": database})
-        assert deleted.status_code == 200, deleted.text
-        assert (await client.get(url, params={"database": database})).status_code == 404
+            assert (await cur.fetchone())[0] == 0
+        missing = await client.patch("/api/v1/pipes/synthetic_pipe/resume",
+                                     params={"database": database})
+        assert missing.status_code == 400 and "does not exist" in missing.json()["detail"]
         audits = await metadata_inspect(
             "SELECT sql_text, rewritten_sql FROM nova_meta.audit_log "
             "WHERE user_name='nova_admin' AND sql_text LIKE %s",
             (f"%{database}%",),
         )
-        assert audits and s3_credentials()[1] not in str(audits)
+        assert secret_key not in str(audits)
     finally:
         async with sr_root.cursor() as cur:
-            with suppress(Exception):
-                await cur.execute(f"DROP PIPE IF EXISTS `{database}`.synthetic_pipe")
             await cur.execute(f"DROP DATABASE IF EXISTS `{database}` FORCE")
         minio_client.delete_object(Bucket="test-stage", Key=key)
         sr_root.close()
 
 
 @pytest.mark.parametrize(
-    "sql",
+    ("sql", "message"),
     [
-        "CREATE PIPE nonexistent.p AS INSERT INTO nonexistent.t SELECT * FROM "
-        "FILES('path'='s3://test/x.parquet','format'='parquet')",
-        "ALTER PIPE nonexistent.p RESUME",
-        "ALTER PIPE nonexistent.p RETRY ALL",
+        ("CREATE PIPE nonexistent.p AS INSERT INTO nonexistent.t SELECT * FROM "
+         "FILES('path'='s3://test/x.parquet','format'='parquet')",
+         "A pipe reads files from a stage"),
+        ("ALTER PIPE nonexistent.p RESUME", "does not exist"),
+        ("ALTER PIPE nonexistent.p RETRY ALL", "does not exist"),
     ],
 )
-async def test_ranger_pipe_gate_precedes_engine_execution(app, monkeypatch, sql):
+async def test_pipe_statements_never_reach_the_engine(app, monkeypatch, sql, message):
     result = await query_service.execute(
         sql=sql,
         username="testanalyst",
@@ -127,5 +96,5 @@ async def test_ranger_pipe_gate_precedes_engine_execution(app, monkeypatch, sql)
         role="test_analyst",
         security_context_version=3,
     )
-    assert "Pipes run in the background without your sign-in" in result.error
+    assert message in result.error
     assert result.engine_query_ids == []

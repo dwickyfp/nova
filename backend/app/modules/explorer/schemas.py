@@ -262,7 +262,7 @@ class FunctionDetailResponse(BaseModel):
 class PipeDetailResponse(BaseModel):
     name: str
     database: str
-    pipe_id: int | None = None
+    pipe_id: str | None = None
     state: str | None = None
     target_table: str | None = None
     properties: dict[str, Any] = Field(default_factory=dict)

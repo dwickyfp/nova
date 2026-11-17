@@ -26,14 +26,17 @@ import {
   createConnection,
   createForeignCatalog,
   deleteConnection,
+  setConnectionRoles,
   setConnectionCredentials,
   setConnectionWriteCredentials,
   clearConnectionWriteCredentials,
   type ConnectionSummary,
 } from './api'
 import {
+  CATALOG_SOURCES,
   SOURCES,
   addressComplete,
+  needsCredentials,
   sourceFor,
   type SourceDescriptor,
   type SourceType,
@@ -52,10 +55,12 @@ function SourcePicker({
   value,
   onChange,
   idPrefix,
+  sources = SOURCES,
 }: {
   value: SourceType
   onChange: (value: SourceType) => void
   idPrefix: string
+  sources?: SourceDescriptor[]
 }) {
   return (
     <RadioGroup
@@ -64,7 +69,7 @@ function SourcePicker({
       aria-label='Source'
       className='grid gap-2 sm:grid-cols-3'
     >
-      {SOURCES.map((source) => {
+      {sources.map((source) => {
         const id = `${idPrefix}-${source.type}`
         return (
           <Label
@@ -102,6 +107,29 @@ function AddressFields({
     <div className='grid gap-3 sm:grid-cols-2'>
       {source.fields.map((field) => {
         const id = `${idPrefix}-${field.key}`
+        if (field.visible && !field.visible(values)) return null
+        if (field.choices) {
+          return (
+            <div key={field.key} className='space-y-1.5'>
+              <Label htmlFor={id}>{field.label}</Label>
+              <Select
+                value={values[field.key] || field.choices[0]}
+                onValueChange={(value) => onChange({ ...values, [field.key]: value })}
+              >
+                <SelectTrigger id={id}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {field.choices.map((choice) => (
+                    <SelectItem key={choice} value={choice}>
+                      {choice}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )
+        }
         return (
           <div key={field.key} className='space-y-1.5'>
             <Label htmlFor={id}>
@@ -215,8 +243,10 @@ export function AddConnectionDialog({
 
   const source = sourceFor(type) ?? SOURCES[0]
   const nameValid = NAME_PATTERN.test(name.trim())
+  const withCredentials = needsCredentials(source, address)
   const credentialsReady =
-    mode === 'enter' ? username.trim() !== '' && password !== '' : secretRef.trim() !== ''
+    !withCredentials ||
+    (mode === 'enter' ? username.trim() !== '' && password !== '' : secretRef.trim() !== '')
   const ready = nameValid && addressComplete(source, address) && credentialsReady
 
   const handleCreate = async () => {
@@ -230,9 +260,11 @@ export function AddConnectionDialog({
         comment: comment.trim() || undefined,
       }
       const created = await createConnection(
-        mode === 'enter'
-          ? { ...base, credentials: { username: username.trim(), password } }
-          : { ...base, secret_ref: secretRef.trim() }
+        !withCredentials
+          ? base
+          : mode === 'enter'
+            ? { ...base, credentials: { username: username.trim(), password } }
+            : { ...base, secret_ref: secretRef.trim() }
       )
       toast.success(`Connection "${created.name}" added`)
       onOpenChange(false)
@@ -282,6 +314,8 @@ export function AddConnectionDialog({
             onChange={setAddress}
             idPrefix='connection'
           />
+          {withCredentials ? (
+          <>
           <div className='space-y-1.5'>
             <Label htmlFor='connection-credential-mode'>Credentials</Label>
             <Select value={mode} onValueChange={(value) => setMode(value as CredentialMode)}>
@@ -319,9 +353,12 @@ export function AddConnectionDialog({
               </p>
             </div>
           )}
+          </>
+          ) : null}
           <p className='text-xs text-muted-foreground'>
-            Use an account that can only read. Access to each table is still
-            decided by the access policies of the person querying it.
+            {source.catalog
+              ? 'Use an account that can only read. Access to each table is still decided by the access policies of the person querying it.'
+              : 'After adding it, choose the roles that may load from it. Loads still need write access to their table.'}
           </p>
           <div className='space-y-1.5'>
             <Label htmlFor='connection-comment'>
@@ -490,7 +527,8 @@ export function AddCatalogDialog({
   const [submitting, setSubmitting] = useState(false)
 
   const usable = useMemo(
-    () => connections.filter((c) => c.has_credentials && sourceFor(c.connector_type)),
+    () =>
+      connections.filter((c) => c.has_credentials && sourceFor(c.connector_type)?.catalog),
     [connections],
   )
   const ofType = usable.filter((c) => sourceFor(c.connector_type)?.type === type)
@@ -594,14 +632,19 @@ export function AddCatalogDialog({
           </DialogDescription>
         </DialogHeader>
         <div className='space-y-4 py-2'>
-          <SourcePicker value={type} onChange={chooseType} idPrefix='catalog-source' />
+          <SourcePicker
+            value={type}
+            onChange={chooseType}
+            idPrefix='catalog-source'
+            sources={CATALOG_SOURCES()}
+          />
           <div className='space-y-1.5'>
             <Label htmlFor='catalog-name'>Catalog name</Label>
             <Input
               id='catalog-name'
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder={`sales_${type === 'postgres' ? 'pg' : type === 'snowflake' ? 'sf' : 'sr'}`}
+              placeholder={`sales_${{ postgres: 'pg', snowflake: 'sf', iceberg: 'ice' }[type as string] ?? 'sr'}`}
               aria-invalid={name !== '' && !nameValid}
             />
             {name !== '' && !nameValid ? (
@@ -734,5 +777,82 @@ export function DropConnectionDialog({
       isLoading={submitting}
       handleConfirm={handleDrop}
     />
+  )
+}
+
+// ── Roles that may load from a Kafka connection ──────────────────────────
+
+/** Replace the roles allowed to create routine loads from a Kafka connection. */
+export function ConnectionRolesDialog({
+  connection,
+  onOpenChange,
+  onSaved,
+}: {
+  connection: ConnectionSummary | null
+  onOpenChange: (open: boolean) => void
+  onSaved?: () => void
+}) {
+  const [roles, setRoles] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    setRoles((connection?.roles ?? []).join(', '))
+  }, [connection])
+
+  const handleSave = async () => {
+    if (!connection) return
+    setSubmitting(true)
+    try {
+      const list = roles
+        .split(',')
+        .map((role) => role.trim())
+        .filter(Boolean)
+      await setConnectionRoles(connection.name, list)
+      toast.success(`Roles for "${connection.name}" saved`)
+      onOpenChange(false)
+      onSaved?.()
+    } catch (err) {
+      toast.error(errorMessage(err, 'Could not save the roles'))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Dialog open={!!connection} onOpenChange={onOpenChange}>
+      <DialogContent className='sm:max-w-lg'>
+        <DialogHeader>
+          <DialogTitle>Roles that can load</DialogTitle>
+          <DialogDescription>
+            People acting in these roles can create routine loads from{' '}
+            {connection?.name ?? 'this connection'}. Removing a role pauses its running
+            loads within about a minute.
+          </DialogDescription>
+        </DialogHeader>
+        <div className='space-y-1.5 py-2'>
+          <Label htmlFor='connection-roles'>Roles</Label>
+          <Input
+            id='connection-roles'
+            value={roles}
+            onChange={(e) => setRoles(e.target.value)}
+            placeholder='marketing, finance'
+            autoComplete='off'
+            spellCheck={false}
+          />
+          <p className='text-xs text-muted-foreground'>
+            Separate roles with commas. Security admins can always load.
+          </p>
+        </div>
+        <DialogFooter>
+          <Button variant='outline' onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button onClick={handleSave} disabled={submitting}>
+            {submitting ? <Loader2 className='mr-2 h-4 w-4 animate-spin' /> : null}
+            Save roles
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

@@ -104,10 +104,20 @@ async def test_insert_values_query_service_keeps_caller_and_dispatches_once(monk
     assert dispatched["database"] == "db"
 
 
+def test_insert_into_files_with_a_storage_url_is_refused():
+    # An unload writes only to a stage; a storage URL never reaches planning.
+    with pytest.raises(SemanticError, match="writes only to a stage"):
+        ast_builders.build(
+            parse_statement(
+                "INSERT INTO FILES('path'='s3://exports/results/', 'format'='parquet') SELECT 1"
+            )
+        )
+
+
 @pytest.mark.parametrize(
     "sql",
     [
-        "INSERT INTO FILES('path'='s3://exports/results/', 'format'='parquet') SELECT 1",
+        "INSERT INTO FILES('path'='@exports/results/', 'format'='parquet') SELECT 1",
         "INSERT INTO BLACKHOLE() SELECT 1",
     ],
 )
@@ -116,7 +126,13 @@ async def test_non_table_insert_preserves_native_sql_without_transaction_intent(
         ast_builders.build(parse_statement(sql)), PlanningContext(database="db")
     )
     assert isinstance(plan, EngineSqlPlan)
-    assert plan.engine_sql == sql
+    if "FILES" in sql:
+        # The stage target becomes one private write slot; the rest is unchanged.
+        (binding,) = plan.stage_bindings
+        assert binding.access == "write" and binding.unload.path == "@exports/results/"
+        assert plan.engine_sql == f"INSERT INTO {binding.slot} SELECT 1"
+    else:
+        assert plan.engine_sql == sql
     assert plan.transaction_intent is None
     capabilities = StarRocksCapabilityProvider().resolve(
         normalize_identity("4.1.4", deployment_mode="shared_data")

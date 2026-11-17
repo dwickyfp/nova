@@ -10,6 +10,10 @@ from redis.typing import EncodableT, FieldT
 from app.core.config import settings
 
 SESSION_PREFIX = "nova:session:"
+#: Worksheet session state (settings and user variables) per sign-in session:
+#: one hash per session, one field per worksheet file. Values are encrypted by
+#: their owner (``app.modules.query.worksheet_session``).
+WORKSHEET_SESSION_PREFIX = "nova:worksheet_session:"
 
 # Session existence, membership, revision and TTL change in one Redis operation.
 # A concurrent logout must never leave a new partial session behind.
@@ -126,12 +130,36 @@ class SessionStore:
             raise ValueError("Role is not assigned to this session")
         if version < 1:
             raise ValueError("Session security revision is invalid")
+        # Worksheet settings and variables belong to the previous role.
+        await self._redis.delete(f"{WORKSHEET_SESSION_PREFIX}{session_id}")
         return version
 
     async def delete(self, session_id: str) -> None:
-        """Delete a session (logout)."""
+        """Delete a session (logout) and the worksheet state it owns."""
         if self._redis:
-            await self._redis.delete(f"{SESSION_PREFIX}{session_id}")
+            await self._redis.delete(
+                f"{SESSION_PREFIX}{session_id}", f"{WORKSHEET_SESSION_PREFIX}{session_id}"
+            )
+
+    async def get_worksheet_state(self, session_id: str, file_id: str) -> str | None:
+        """The stored (encrypted) session state of one worksheet, or ``None``."""
+        if not self._redis:
+            return None
+        value = await self._redis.hget(f"{WORKSHEET_SESSION_PREFIX}{session_id}", file_id)
+        return value.decode() if isinstance(value, bytes) else value
+
+    async def set_worksheet_state(self, session_id: str, file_id: str, value: str) -> bool:
+        """Store one worksheet's state for as long as the sign-in session lives."""
+        if not self._redis:
+            return False
+        key = f"{WORKSHEET_SESSION_PREFIX}{session_id}"
+        await self._redis.hset(key, file_id, value)
+        await self._redis.expire(key, settings.SESSION_TTL_SECONDS)
+        return True
+
+    async def clear_worksheet_state(self, session_id: str, file_id: str) -> None:
+        if self._redis:
+            await self._redis.hdel(f"{WORKSHEET_SESSION_PREFIX}{session_id}", file_id)
 
     async def refresh(self, session_id: str) -> None:
         """Refresh session TTL on activity."""

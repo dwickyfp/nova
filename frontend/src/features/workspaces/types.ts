@@ -58,6 +58,8 @@ export type QueryResponse = {
   needs_confirmation?: boolean;
   /** More rows exist than the worksheet's row limit returned. */
   truncated?: boolean;
+  /** The statement ended with `\G`: show one record per block. */
+  vertical?: boolean;
   /** Engine or pipeline error text when `success` is false. */
   error?: string | null;
   error_code?: string | null;

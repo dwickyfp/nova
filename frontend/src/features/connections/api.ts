@@ -12,14 +12,16 @@ export type ConnectorType = SourceType
 export type ConnectionSummary = {
   name: string
   connector_type: string
-  /** `managed`: entered through Nova. `external`: a secret store reference. */
-  credential_source: 'managed' | 'external' | string
+  /** `managed`: entered through Nova. `external`: a secret store reference. `none`: not needed. */
+  credential_source: 'managed' | 'external' | 'none' | string
   has_credentials: boolean
   /** A write credential is set: notebooks may write to its catalogs where Ranger allows. */
   writable?: boolean
   owner: string | null
   comment: string | null
   catalogs: string[]
+  /** Kafka connections: the roles that may create routine loads from it. */
+  roles?: string[]
   created_at: string | null
   updated_at: string | null
 }
@@ -43,6 +45,8 @@ export type CreateConnectionInput = {
 } & (
   | { credentials: ConnectionCredentials; secret_ref?: undefined }
   | { secret_ref: string; credentials?: undefined }
+  /** A source that needs no credential, such as a PLAINTEXT Kafka cluster. */
+  | { credentials?: undefined; secret_ref?: undefined }
 )
 
 export type CreateForeignCatalogInput = {
@@ -82,6 +86,11 @@ export function clearConnectionWriteCredentials(name: string) {
 
 /** Source types Nova can write to from notebooks. */
 export const WRITABLE_TYPES = new Set(['postgres', 'snowflake'])
+
+/** The roles that may create routine loads from a Kafka connection (replaces the list). */
+export function setConnectionRoles(name: string, roles: string[]) {
+  return api.put<ConnectionSummary>(`${BASE}/${encodeURIComponent(name)}/roles`, { roles })
+}
 
 export function deleteConnection(name: string) {
   return api.delete<{ success: boolean; message: string }>(

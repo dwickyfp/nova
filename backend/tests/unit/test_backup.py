@@ -192,33 +192,38 @@ class TestSnapshots:
 
 
 class TestRepositories:
-    async def test_create_reads_credentials_from_connection(self, pipeline, monkeypatch):
-        class _Conn:
-            endpoint = "http://storage.internal:9000"
-            region = "us-east-1"
-
-        monkeypatch.setattr(service_module, "get_storage_connection", lambda name: _Conn())
-        monkeypatch.setattr(
-            service_module,
-            "resolve_storage_credentials",
-            lambda name: ("ACCESSKEY", "SECRETKEY"),
-        )
+    async def test_create_names_a_stage_folder_and_carries_no_credential(self, pipeline):
         result = await backup_service.create_repository(
-            RepositoryCreate(
-                name="backup_repo",
-                storage_connection="prod-storage",
-                location="s3://backup-bucket/snapshots",
-            ),
+            RepositoryCreate(name="backup_repo", location="@backups/snapshots/"),
             username="alice",
             encrypted_password="enc",
             session_id="s1",
         )
         sql = pipeline.statements()[0]
-        assert sql.startswith("CREATE REPOSITORY `backup_repo` WITH BROKER")
-        assert '"aws.s3.endpoint" = "http://storage.internal:9000"' in sql
-        # The response never echoes a credential value.
-        assert SECRET_SENTINEL not in str(result)
-        assert result["storage_connection"] == "prod-storage"
+        assert sql == (
+            'CREATE REPOSITORY `backup_repo` WITH BROKER ON LOCATION "@backups/snapshots/"'
+        )
+        assert "PROPERTIES" not in sql and "aws.s3" not in sql
+        assert result == {
+            "success": True, "name": "backup_repo",
+            "location": "@backups/snapshots/", "read_only": False,
+        }
+
+    async def test_read_only_repository(self, pipeline):
+        await backup_service.create_repository(
+            RepositoryCreate(name="r", location="@backups/old/", read_only=True,
+                             storage_connection="ignored"),
+            username="alice", encrypted_password="enc", session_id="s1",
+        )
+        assert pipeline.statements()[0].startswith("CREATE READ ONLY REPOSITORY `r`")
+
+    async def test_storage_url_is_refused_before_the_engine(self, pipeline):
+        with pytest.raises(BackupError, match="stage folder"):
+            await backup_service.create_repository(
+                RepositoryCreate(name="r", location="s3://backup-bucket/snapshots"),
+                username="alice", encrypted_password="enc", session_id="s1",
+            )
+        assert pipeline.calls == []
 
     async def test_list_repositories(self, pipeline):
         pipeline.default = _Result(columns=["Name"], rows=[["backup_repo"]])
@@ -233,8 +238,7 @@ class TestRepositories:
             "/api/v1/backup/repositories",
             json={
                 "name": "r",
-                "storage_connection": "s",
-                "location": "s3://b/p",
+                "location": "@b/p/",
             },
         )
         assert resp.status_code == 403
@@ -313,7 +317,7 @@ class TestAuthorization:
             "/api/v1/backup/snapshots/restore",
             {"database": "d", "label": "l", "repository": "r"},
         ),
-        ("/api/v1/backup/repositories", {"name": "r", "storage_connection": "s", "location": "s3://b/p"}),
+        ("/api/v1/backup/repositories", {"name": "r", "location": "@b/p/"}),
         ("/api/v1/backup/recover", {"object_type": "table", "database": "d", "name": "t"}),
     )
 
@@ -404,22 +408,10 @@ class TestValidation:
             )
         assert pipeline.calls == []
 
-    async def test_location_with_quote_is_refused(self, pipeline, monkeypatch):
-        class _Conn:
-            endpoint = None
-            region = None
-
-        monkeypatch.setattr(service_module, "get_storage_connection", lambda name: _Conn())
-        monkeypatch.setattr(
-            service_module, "resolve_storage_credentials", lambda name: ("a", "b")
-        )
+    async def test_location_with_quote_is_refused(self, pipeline):
         with pytest.raises(BackupError):
             await backup_service.create_repository(
-                RepositoryCreate(
-                    name="r",
-                    storage_connection="s",
-                    location='s3://b/p"; DROP TABLE x; --',
-                ),
+                RepositoryCreate(name="r", location='@b/p"; DROP TABLE x; --'),
                 username="alice",
                 encrypted_password="enc",
                 session_id="s1",

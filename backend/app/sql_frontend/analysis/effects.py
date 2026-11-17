@@ -13,6 +13,8 @@ class PlanEffects:
     updates_rows: bool = False
     replaces_data: bool = False
     drops_objects: bool = False
+    #: Writes rows out of the engine into files (a stage unload or export).
+    exports_data: bool = False
 
     @property
     def mutates(self) -> bool:
@@ -27,6 +29,7 @@ class PlanEffects:
                 "updates_rows",
                 "replaces_data",
                 "drops_objects",
+                "exports_data",
             )
         )
 

@@ -1,0 +1,23 @@
+{
+  "baseline_commit": "18ae8035e9dfa9ba6b790c0a390017fa943c2157",
+  "schema_before": 55,
+  "schema_after": 56,
+  "migration": "0056_pipes.sql",
+  "migration_sha256": "582d2d18d928dfe426d974c6e290294a2c9eee3707c8670dbaed3bb08a5f3ebf",
+  "metadata_epoch_preserved": true,
+  "tables_count_checked": 193,
+  "all_counts_preserved": true,
+  "new_empty_tables": [
+    "config_pipes",
+    "pipe_batches",
+    "pipe_files"
+  ],
+  "backup": {
+    "bytes": 128774176,
+    "sha256": "f19faf4cb492f0056398e752ee839f6bf685faae953b05f71c215fdb4d7505e8",
+    "toc_verified": true
+  },
+  "fixture_evidence": "tests/integration/test_metadata_pipes.py and tests/integration/test_metadata_tasks.py on the PG17 fixture",
+  "launcher": "not stopped; processes refused metadata work while frozen and reloaded at 55",
+  "recorded_at": "2026-11-16T14:29:47.392307+00:00"
+}

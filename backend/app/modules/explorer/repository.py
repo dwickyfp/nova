@@ -236,26 +236,11 @@ class ExplorerRepository:
         except Exception:
             return []
 
-    async def list_pipes(self, database: str) -> list[dict]:
-        """Pipes via information_schema.pipes."""
-        sql = (
-            "SELECT PIPE_NAME, STATE, TABLE_NAME, LOAD_STATUS, "
-            "LAST_ERROR, CREATED_TIME "
-            "FROM information_schema.pipes "
-            "WHERE DATABASE_NAME = %s"
-        )
-        result = await db.execute_system(sql, [database])
-        return [
-            {
-                "name": row[0],
-                "state": row[1],
-                "target_table": row[2],
-                "load_status": row[3],
-                "last_error": row[4],
-                "created_time": row[5],
-            }
-            for row in result["rows"]
-        ]
+    async def list_pipes(self, database: str, *, user: dict) -> list[dict]:
+        """Nova pipes of the caller's active role in ``database`` (Nova metadata)."""
+        from app.modules.pipes.views import explorer_pipes
+
+        return await explorer_pipes(user, database)
 
     async def list_tasks(self, database: str) -> list[dict]:
         """Nova ``CREATE TASK`` definitions from CONFIG_TASKS for a database.
@@ -509,59 +494,13 @@ class ExplorerRepository:
             pass
         return None
 
-    async def get_pipe_detail(self, database: str, pipe: str) -> dict | None:
-        """Pipe detail from information_schema.pipes."""
-        sql = (
-            "SELECT PIPE_ID, PIPE_NAME, STATE, TABLE_NAME, "
-            "PROPERTIES, LOAD_STATUS, LAST_ERROR, CREATED_TIME "
-            "FROM information_schema.pipes "
-            "WHERE DATABASE_NAME = %s AND PIPE_NAME = %s"
-        )
-        result = await db.execute_system(sql, [database, pipe])
-        if not result["rows"]:
-            return None
-        r = result["rows"][0]
-        props_raw = r[4]
-        props = {}
-        if props_raw:
-            try:
-                if isinstance(props_raw, str) and props_raw.startswith("{"):
-                    props = json.loads(props_raw)
-                elif isinstance(props_raw, str) and "=" in props_raw:
-                    # Parse StarRocks format: 'key'='value','key2'='value2'
-                    import re
-                    for m in re.finditer(r"'(\w+)'\s*=\s*'([^']*)'", props_raw):
-                        props[m.group(1)] = m.group(2)
-                elif isinstance(props_raw, dict):
-                    props = props_raw
-            except (json.JSONDecodeError, TypeError):
-                pass
-        detail = {
-            "name": r[1],
-            "database": database,
-            "pipe_id": r[0],
-            "state": r[2],
-            "target_table": r[3],
-            "properties": props,
-            "load_status": r[5],
-            "last_error": r[6],
-            "created_time": r[7],
-        }
+    async def get_pipe_detail(self, database: str, pipe: str, *, user: dict) -> dict | None:
+        """One Nova pipe of the caller's active role, with its definition."""
+        from app.modules.pipes.views import explorer_pipes
 
-        # Reconstruct DDL from available info
-        props_str = ", ".join(f'"{k}" = "{v}"' for k, v in props.items()) if props else ""
-        detail["create_ddl"] = (
-            f"CREATE PIPE {database}.{r[1]}\n"
-            f"PROPERTIES (\n"
-            f"    {props_str}\n"
-            f")\n"
-            f"AS\n"
-            f"INSERT INTO {r[3]}\n"
-            f"SELECT ...\n"
-            f"FROM FILES(...)"
+        return next(
+            (item for item in await explorer_pipes(user, database) if item["name"] == pipe), None
         )
-
-        return detail
 
 
 explorer_repo = ExplorerRepository()

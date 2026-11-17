@@ -94,6 +94,18 @@ export function statementAtOffset(
   return before ?? statements[0] ?? null
 }
 
+const TRANSACTION_CONTROL = /^\s*(?:BEGIN|START\s+TRANSACTION|COMMIT|ROLLBACK)\b/i
+
+/**
+ * True when a script opens or ends a transaction. The server keeps a
+ * transaction only within one run, so such a script is sent as one run.
+ */
+export function hasTransactionControl(statements: SqlStatement[]): boolean {
+  return statements.some((statement) =>
+    TRANSACTION_CONTROL.test(stripComments(statement.text)),
+  )
+}
+
 function skipQuoted(source: string, from: number, quote: string): number {
   let index = from + 1
   while (index < source.length) {

@@ -331,8 +331,8 @@ class TestFrontend:
             )
         with pytest.raises(SemanticError, match="CREATE TASK"):
             ast_builders.build(parse_statement("SUBMIT TASK x AS $$ INSERT INTO b SELECT 1 $$"))
-        native = ast_builders.build(parse_statement("SUBMIT TASK x AS INSERT INTO b SELECT 1"))
-        assert isinstance(native, ast.NativeStatement)
+        submitted = ast_builders.build(parse_statement("SUBMIT TASK x AS INSERT INTO b SELECT 1"))
+        assert isinstance(submitted, ast.CreateTaskStatement)
 
 
 # ── EXECUTE TASK resolution and enqueue ────────────────────────────────

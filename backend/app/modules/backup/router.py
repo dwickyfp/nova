@@ -5,7 +5,7 @@ Endpoints under ``/api/v1/backup``:
   POST   /snapshots              → BACKUP SNAPSHOT … (privileged)
   POST   /snapshots/restore      → RESTORE SNAPSHOT … (privileged)
   GET    /repositories           → SHOW REPOSITORIES
-  POST   /repositories           → CREATE REPOSITORY … (privileged)
+  POST   /repositories           → CREATE REPOSITORY … ON LOCATION "@stage/…" (privileged)
   GET    /recycle-bin            → SHOW CATALOG RECYCLE BIN
   POST   /recover                → RECOVER TABLE|DATABASE … (privileged)
 
@@ -145,7 +145,7 @@ async def list_repositories(user: CurrentUser):
 
 @router.post("/repositories", status_code=201, response_class=SanitizingJSONResponse)
 async def create_repository(body: RepositoryCreate, user: BackupAdmin):
-    """``CREATE REPOSITORY`` from a named storage connection. Privileged."""
+    """``CREATE REPOSITORY`` on a stage folder (``@stage/folder/``). ACCOUNTADMIN."""
     try:
         result = await backup_service.create_repository(body, **_caller(user))
     except BackupError as exc:

@@ -68,8 +68,8 @@ stages:
 | `INSERT INTO FILES(...)`, `SELECT ... INTO OUTFILE`, `EXPORT` | Unload to `@stage` paths with the same format options |
 | Broker Load (`LOAD LABEL ... WITH BROKER`) | Load from `@stage` paths; credentials stay in the stage |
 | `SUBMIT TASK` | Point to `CREATE TASK`, which runs as the user, with the same body |
-| Routine Load (Kafka, Pulsar) | Needs a stream connection type; decide after pipes |
-| `CREATE EXTERNAL CATALOG` (Hive, Iceberg, Hudi, Delta, JDBC) | Nova connections and catalogs; supported types today: StarRocks, PostgreSQL, Snowflake |
+| Routine Load (Kafka, Pulsar) | Done for Kafka (W8): Kafka connection type, owner-role jobs, reconciler pause. Design: [ROUTINE_LOAD.md](ROUTINE_LOAD.md). Pulsar refused. |
+| `CREATE EXTERNAL CATALOG` (Hive, Iceberg, Hudi, Delta, JDBC) | Nova connections and catalogs; supported types: StarRocks, PostgreSQL, Snowflake, Iceberg REST (W9) |
 | Backup and restore repositories | Repository on a stage location; administrator only |
 
 Security boundary for the pipe: today a task body may not contain `@stage`,
@@ -118,17 +118,78 @@ Workstreams that touch the same files run one after another.
 
 Decision (user, 2026-11-16): add Kafka and an Iceberg REST catalog (data in the
 existing MinIO) as new services in the existing `docker` Compose project,
-leaving existing data untouched. This adds:
+leaving existing data untouched. The services, verified engine properties and
+start/stop commands are in [INFRA.md](INFRA.md). This adds:
 
 | # | Workstream | Done when |
 | --- | --- | --- |
 | W8 | Routine Load from Kafka, adapted: a Kafka connection kept as a Nova connection (secret encrypted); `CREATE ROUTINE LOAD` runs only while its owner's role still has access, which Nova checks and pauses on revocation; `SHOW/PAUSE/RESUME/STOP ROUTINE LOAD`. | Documented CSV and JSON routine loads consume a Kafka topic into a table |
 | W9 | Iceberg catalog through Nova connections: create an Iceberg REST connection, query, insert, create table, time travel and snapshots as documented. | Documented Iceberg examples run against the REST catalog |
 
+## W1 design (2026-11-16)
+
+Recorded in [arch-13 Worksheet session](../../arch-13-sql-frontend.md#worksheet-session).
+
+- A worksheet run that contains a session statement (`SET`, `SET @var`,
+  `BEGIN`/`COMMIT`/`ROLLBACK`), or a run of a worksheet with remembered state,
+  runs the whole script on one connection opened as the caller. Each statement
+  still passes through `QueryService.execute` (guard, frontend, `SET ROLE` of the
+  active role, security-context check, Ranger, audit).
+- Settings (`name = value` as written) and user variables (literals of the
+  values read back with `typeof`) are kept per sign-in session and worksheet
+  file in Redis, Fernet-encrypted, with principal, role and security-context
+  version, and applied at the start of the next run of that worksheet only.
+  `SET x = DEFAULT` and `SET @v = NULL` clear one; a role switch and sign-out
+  clear all. ARRAY/MAP/STRUCT variables, `SET NAMES` and `SET TRANSACTION`
+  last for one run.
+- A transaction lives in one run; one left open is rolled back, audited and
+  reported. **Run all** sends a script with transaction control as one run.
+- Audit and history show `SET @v = ?`. One `SET` mixing `GLOBAL` and session
+  items is refused; pure `SET GLOBAL`, `SET sql_dialect` and role statements
+  keep their existing handling (pure `SET GLOBAL` still reaches the engine,
+  which requires its own privilege, as before W1).
+- A `\G` terminator is removed outside literals and comments; the result is
+  marked `vertical` and the worksheet shows one record per block.
+- `SHOW [ALL] AUTHENTICATION [FOR user]`: builders registered for the grammar's
+  labelled alternatives; read-only effects; engine authorization and audit.
+
+W1 evidence: the 39 confirmed gaps all run through the HTTP API; probe on the
+four W1 pages went from 12 `nova_gap` to 0 (`w1-before-*.jsonl`,
+`w1-after-*.jsonl`); the remaining `both_fail` rows are syntax templates and a
+missing fixture table.
+
 ## Status
 
 - [x] Corpus and probe tools; probe 1 run and recorded.
-- [ ] Phase 1
+- [x] Phase 1 (W1: worksheet session, `\G`, `SHOW AUTHENTICATION`), not committed
 - [ ] Phase 2
 - [ ] Phase 3
+  - [x] W2 unload to a stage (`INSERT INTO FILES`, `INTO OUTFILE`, `EXPORT`,
+    `SHOW/CANCEL EXPORT`, `COPY INTO @stage`), not committed. Live evidence:
+    `docs/reports/starrocks-compat/w2-unload-live.json` (73/74 pass, the other
+    a recorded CSV read-detection limit); probe: `w2-unloading-probe.json`.
+    Open: MySQL proxy still refuses unloads (no confirmation step there).
+  - [x] W9 Iceberg REST catalog through Nova connections (`IcebergSource`),
+    not committed. Live: `docs/reports/starrocks-compat/w9-iceberg-live.json`
+    (104/108 documented operations ok; the 4 others fail on the engine too:
+    docs errors or engine rules). Docs: `/docs/data/iceberg-catalogs`.
+  - [x] W8 Routine Load from Kafka ([ROUTINE_LOAD.md](ROUTINE_LOAD.md)),
+    metadata migration 0057, not committed. Live:
+    `docs/reports/starrocks-compat/w8-routine-load-live.json`. Docs:
+    `/docs/sql/routine-load-from-kafka`. The MySQL proxy runs at the current
+    schema since the 2026-11-17 restart.
+  - [x] W3 pipes over a stage (`w3-pipe-live.json`), W4 broker load from a
+    stage (`w4-broker-load-live.json`, 34/34) and W5 backup/restore on a stage
+    (`w5-backup-restore-live.json`, 36/36).
+  - Re-check 2026-11-17 (`recheck-live-attempt-1.json`,
+    `backend/scripts/starrocks_compat/recheck_live.py`): pipes, Kafka routine
+    load, Iceberg and the backup API on the final source. It found and fixed:
+    - `SHOW [CREATE] ROUTINE LOAD` showed the Kafka broker addresses to every
+      role that may see the job; rows now name the connection instead.
+    - Task graph ids were limited to 64 octets, so a task in a database with
+      a longer name could not be queued and a pipe there could not be created
+      (500). Revision 0058 widens them to the full qualified name.
+    - `POST /api/v1/backup/repositories` still built a storage-URL repository
+      with inline keys, which W5 refuses; it now takes a stage folder.
+  - [ ] W6 fixtures and W7 docs remain open (`SUBMIT TASK` runs as a Nova task, W4).
 - [ ] Phase 4

@@ -88,8 +88,9 @@ def _stage_location_map(parsed, configs_by_ref) -> list[tuple[str, str]]:
         config = configs_by_ref.get(ref.start)
         if config is None:
             continue
-        root = f"s3://{config.bucket}/{config.base_prefix.strip('/')}".rstrip("/")
-        mapping[root] = "@" + ref.stage_name
+        for scheme in ("s3", "s3a"):
+            root = f"{scheme}://{config.bucket}/{config.base_prefix.strip('/')}".rstrip("/")
+            mapping[root] = "@" + ref.stage_name
         if config.endpoint:
             from app.core.config import to_docker_endpoint
 
@@ -131,6 +132,107 @@ def _prints_terminal_profile(statement: Any) -> bool:
     return bool(names & {"ExplainDescContext", "AnalyzeProfileStatementContext"})
 
 
+#: Statements whose rows name job or repository storage paths (``SHOW EXPORT``,
+#: ``SHOW LOAD``, backup repositories and jobs).
+_SHOWS_STORAGE_PATHS = frozenset(
+    {
+        "ShowExportStatementContext",
+        "ShowLoadStatementContext",
+        "ShowLoadWarningsStatementContext",
+        "ShowRepositoriesStatementContext",
+        "ShowBackupStatementContext",
+        "ShowRestoreStatementContext",
+        "ShowSnapshotStatementContext",
+    }
+)
+
+
+def _shows_exports(statement: Any, database: str | None = None) -> bool:
+    """Rows that name storage paths: shown as ``@stage`` paths the caller may read.
+
+    The ``SHOW`` statements above, and queries of ``information_schema.loads``
+    and ``load_tracking_logs`` (load jobs and their rejected rows, whose text
+    can name file paths).
+    """
+    parsed = getattr(statement, "parsed", None)
+    tree = getattr(parsed, "statement_context", None)
+    if type(tree).__name__ in _SHOWS_STORAGE_PATHS:
+        return True
+    if (
+        parsed is None
+        or type(tree).__name__ != "QueryStatementContext"
+        or "load" not in parsed.normalized_sql.lower()
+    ):
+        return False
+    from app.sql_frontend.antlr_utils import walk_nodes
+
+    for node in walk_nodes(tree):
+        if type(node).__name__ == "QualifiedNameContext":
+            parts = node.getText().replace("`", "").lower().split(".")
+            if parts[-1] not in {"loads", "load_tracking_logs"}:
+                continue
+            if parts[-2:-1] == ["information_schema"] or (
+                len(parts) == 1 and (database or "").lower() == "information_schema"
+            ):
+                return True
+    return False
+
+
+def _shows_routine_loads(statement: Any, database: str | None = None) -> bool:
+    """Rows that describe routine-load jobs, whose text names brokers.
+
+    ``SHOW [CREATE] ROUTINE LOAD [TASK]`` and queries of
+    ``information_schema.routine_load_jobs``.
+    """
+    from app.sql_frontend.routine_load import SHOW_CONTEXTS
+
+    parsed = getattr(statement, "parsed", None)
+    tree = getattr(parsed, "statement_context", None)
+    if type(tree).__name__ in SHOW_CONTEXTS:
+        return True
+    if (
+        parsed is None
+        or type(tree).__name__ != "QueryStatementContext"
+        or "routine_load" not in parsed.normalized_sql.lower()
+    ):
+        return False
+    from app.sql_frontend.antlr_utils import walk_nodes
+
+    for node in walk_nodes(tree):
+        if type(node).__name__ == "QualifiedNameContext":
+            parts = node.getText().replace("`", "").lower().split(".")
+            if parts[-1] != "routine_load_jobs":
+                continue
+            if parts[-2:-1] == ["information_schema"] or (
+                len(parts) == 1 and (database or "").lower() == "information_schema"
+            ):
+                return True
+    return False
+
+
+class _RoutineLoadSink:
+    """Shows routine-load rows with connection names instead of brokers."""
+
+    def __init__(self, sink, brokers: list[tuple[str, str]]) -> None:
+        self._sink = sink
+        self._brokers = brokers
+
+    async def begin(self, columns: list[str], column_types: tuple[str, ...]) -> None:
+        await self._sink.begin(columns, column_types)
+
+    async def rows(self, rows: list[list]) -> None:
+        await self._sink.rows([_routine_load_row(row, self._brokers) for row in rows])
+
+
+def _routine_load_row(row: list, brokers: list[tuple[str, str]]) -> list:
+    from app.sql_frontend.routine_load import logical_routine_load_text
+
+    return [
+        logical_routine_load_text(value, brokers) if isinstance(value, str) else value
+        for value in row
+    ]
+
+
 def _without_terminal_codes(row: list) -> list:
     return [_ANSI_ESCAPE.sub("", value) if isinstance(value, str) else value for value in row]
 
@@ -167,6 +269,25 @@ class _LogicalLocationSink:
 
     async def rows(self, rows: list[list]) -> None:
         await self._sink.rows([_listing_row(row, self._map, self._columns) for row in rows])
+
+
+class _StoragePathSink:
+    """Shows job and repository storage paths as ``@stage`` paths as rows stream."""
+
+    def __init__(self, sink, export_map: list[tuple[str, str]]) -> None:
+        self._sink = sink
+        self._map = export_map
+
+    async def begin(self, columns: list[str], column_types: tuple[str, ...]) -> None:
+        await self._sink.begin(columns, column_types)
+
+    async def rows(self, rows: list[list]) -> None:
+        from app.sql_frontend.unload import logical_export_text
+
+        await self._sink.rows([
+            [logical_export_text(v, self._map) if isinstance(v, str) else v for v in row]
+            for row in rows
+        ])
 
 
 class FeatureAdapters:
@@ -222,7 +343,16 @@ class FeatureAdapters:
         executor.register(CatalogPayload, self.catalog)
         executor.register(DropTaskPayload, self.drop_task)
         executor.register(TaskStatementPayload, self.task_statement)
+        from app.sql_frontend.pipes import PipePayload
+
+        executor.register(PipePayload, self.pipe_statement)
         return executor
+
+    async def pipe_statement(self, plan: NovaActionPlan, context: ExecutionContext):
+        """CREATE/ALTER/DROP PIPE, SHOW PIPES and DESC PIPE through the pipes service."""
+        from app.modules.pipes.sql import handle
+
+        return await handle(self, plan, context)
 
     async def catalog(self, plan: NovaActionPlan, context: ExecutionContext) -> QueryResult:
         """Run a Nova Catalog DDL statement through the catalog services.
@@ -562,6 +692,12 @@ class FeatureAdapters:
         handled = await stream_sql.intercept(self, plan, context)
         if handled is not None:
             return handled
+        from app.modules.pipes.sql import intercept as pipe_views
+
+        # information_schema.pipes / pipe_files are Nova's pipes, not the engine's.
+        handled = await pipe_views(self, plan, context)
+        if handled is not None:
+            return handled
         return await self.execute_engine_sql(plan, context)
 
     async def execute_engine_sql(
@@ -589,6 +725,17 @@ class FeatureAdapters:
         parsed = planned_stages(plan)
         if parsed.stage_refs and not plan.stage_aware:
             raise ValueError("Stage references require a stage lowering rule")
+        if not context.allow_stage_export and any(
+            binding.access == "write" for binding in plan.stage_bindings
+        ):
+            # The guard refuses these first; this keeps a read-only caller
+            # from writing files even if a statement reached the planner.
+            raise ForbiddenSQLError("Writing to a stage is not allowed here.")
+        from app.sql_frontend.backup_restore import require_backup_admin
+
+        # Repositories keep a stage credential in the engine: administrators
+        # only, checked before any stage is resolved.
+        require_backup_admin(statement, context.role)
         if sql_override is not None:
             if context.parameters is not None:
                 raise SemanticError("Bound queries do not support stream relation expansion")
@@ -631,7 +778,9 @@ class FeatureAdapters:
                 csv_params_by_ref = {}
                 csv_columns_by_ref = {}
                 for index, ref in enumerate(parsed.stage_refs):
-                    if parsed.command_type == CommandType.STAGE_EXPORT and index == 0:
+                    if ref.access == "write" or ref.unload is not None or (
+                        parsed.command_type == CommandType.STAGE_EXPORT and index == 0
+                    ):
                         continue
                     if parsed.command_type == CommandType.STAGE_BROWSE:
                         continue
@@ -683,7 +832,8 @@ class FeatureAdapters:
                 )
                 return QueryResult(
                     original_sql=sql,
-                    executed_sql=normalized_sql,
+                    # The statement as written: the template holds private slots.
+                    executed_sql=redact_for_output(source.normalized_sql),
                     warnings=[f"❌ {e}"],
                     error=str(e),
                     error_code=getattr(e, "code", None),
@@ -741,11 +891,32 @@ class FeatureAdapters:
         # branch below needs it too, and the engine call may never return.
         # ``QueryResult`` redacts ``executed_sql`` as well, so the value the
         # repository hands back is independently safe.
-        redacted_sql = audit_sql
+        # Audit rows, like responses, name stages rather than buckets.
+        redacted_sql = _logical_location(audit_sql, location_map) if location_map else audit_sql
+        statement = context.statements.get(plan.source_key)
+        if statement is not None:
+            # A user variable's value is session data: audit records ``SET @v = ?``.
+            from app.sql_frontend.session import redact_user_variable_values
+
+            hidden = redact_user_variable_values(statement)
+            if hidden is not None:
+                redacted_sql = redact_for_output(hidden)
         browse = bool(location_map) and parsed.command_type == CommandType.STAGE_BROWSE
         row_sink = context.row_sink
         if browse and row_sink is not None:
             row_sink = _LogicalLocationSink(row_sink, location_map)
+        shows_paths = _shows_exports(context.statements.get(plan.source_key), database)
+        if shows_paths and row_sink is not None:
+            from app.sql_frontend.unload import export_location_map
+
+            row_sink = _StoragePathSink(row_sink, await export_location_map(username, role))
+        brokers: list[tuple[str, str]] | None = None
+        if _shows_routine_loads(context.statements.get(plan.source_key), database):
+            from app.sql_frontend.routine_load import broker_connection_map
+
+            brokers = await broker_connection_map(username, role)
+            if row_sink is not None:
+                row_sink = _RoutineLoadSink(row_sink, brokers)
         try:
             result = await self._repo.execute_as_user(
                 sql=executed_sql,
@@ -764,8 +935,26 @@ class FeatureAdapters:
                 result.rows = [
                     _listing_row(row, location_map, result.columns) for row in result.rows
                 ]
+            if location_map and result.rows and parsed.command_type == CommandType.STAGE_UNLOAD:
+                # ``EXPORT ... WITH SYNC MODE`` answers with the job row, whose
+                # path is the physical location: the client sees the stage.
+                result.rows = [_logical_row(row, location_map) for row in result.rows]
             if result.rows and _prints_terminal_profile(context.statements.get(plan.source_key)):
                 result.rows = [_without_terminal_codes(row) for row in result.rows]
+            if result.rows and shows_paths:
+                from app.sql_frontend.unload import export_location_map, logical_export_text
+
+                export_map = await export_location_map(username, role)
+                result.rows = [
+                    [
+                        logical_export_text(value, export_map)
+                        if isinstance(value, str) else value
+                        for value in row
+                    ]
+                    for row in result.rows
+                ]
+            if result.rows and brokers is not None:
+                result.rows = [_routine_load_row(row, brokers) for row in result.rows]
             if location_map and result.error:
                 result.error = _logical_location(result.error, location_map)
             result.original_sql = redact_for_output(sql)
@@ -1359,10 +1548,17 @@ class FeatureAdapters:
         session_id: str | None,
         file_id: str | None,
         schema: str | None,
+        encrypted_password: str = "",
+        security_context_version: int = 1,
         parsed_frontend=None,
         validated_frontend=None,
     ) -> QueryResult:
-        """Lower Nova ``CREATE TASK`` to ``CONFIG_TASK*`` metadata.
+        """Lower Nova ``CREATE TASK`` (and ``SUBMIT TASK``) to ``CONFIG_TASK*`` metadata.
+
+        ``SUBMIT TASK`` without a schedule is ``CREATE TASK`` followed by one
+        ``EXECUTE TASK`` as the caller: the run is queued under the caller's
+        Nova session and active role (the task's owner role), and the result
+        names the task and the run.
 
         The raw statement is **never** executed: it is parsed, validated, and
         written to Nova's own metadata tables. The engine statement for a node
@@ -1399,10 +1595,27 @@ class FeatureAdapters:
                 # A task is scoped to database.schema; without a database the
                 # graph cannot resolve its node and the run fails empty.
                 raise TaskLoweringError(
-                    "CREATE TASK needs a database: select one, or name the task "
-                    "database.schema.task"
+                    ("SUBMIT TASK" if task.submitted else "CREATE TASK")
+                    + " needs a database: select one, or name the task database.task"
                 )
+            if task.run_once:
+                # The run is queued under the caller's Nova session; a MySQL
+                # client connection has none, so refuse before saving anything.
+                from app.core.redis import session_store
+
+                session = await session_store.get(session_id) if session_id else None
+                if not session or session.get("username") != username:
+                    raise TaskLoweringError(
+                        "SUBMIT TASK runs under your Nova sign-in; run it from a Workspace"
+                    )
             persisted = await persist_lowered_task(task, created_by=username, owner_role=role)
+            if task.run_once:
+                return await self._run_submitted_task(
+                    task, persisted.task, sql=sql, normalized_sql=normalized_sql,
+                    username=username, encrypted_password=encrypted_password, role=role,
+                    session_id=session_id, file_id=file_id,
+                    security_context_version=security_context_version, start=start,
+                )
             elapsed_ms = round((time.monotonic() - start) * 1000, 2)
             task_row = persisted.task
             edge_count = len(persisted.edges)
@@ -1484,6 +1697,79 @@ class FeatureAdapters:
                 original_sql=sql,
                 executed_sql=normalized_sql,
             )
+
+    async def _run_submitted_task(
+        self,
+        task: Any,
+        task_row: dict[str, Any],
+        *,
+        sql: str,
+        normalized_sql: str,
+        username: str,
+        encrypted_password: str,
+        role: str | None,
+        session_id: str | None,
+        file_id: str | None,
+        security_context_version: int,
+        start: float,
+    ) -> QueryResult:
+        """Queue the one run of a ``SUBMIT TASK`` as the caller (``EXECUTE TASK``)."""
+        from fastapi import HTTPException
+
+        from app.modules.task_orchestration.router import (
+            enqueue_manual_run,
+            resolve_execute_target,
+        )
+
+        user = {
+            "username": username,
+            "encrypted_password": encrypted_password,
+            "active_role": role,
+            "assigned_roles": [role] if role else [],
+            "session_id": session_id,
+            "security_context_version": security_context_version,
+        }
+        qualified = task.qualified_name
+        audit = dict(
+            event_type="query", user_name=username, action="execute", object_type="task",
+            object_name=qualified, sql_text=sql, rewritten_sql=normalized_sql,
+            session_id=session_id, file_id=file_id, database_name=task.database_name,
+            schema_name=task.schema_name, active_role=role,
+        )
+        try:
+            graph_id = await resolve_execute_target(
+                task.name, task.database_name, task.schema_name or "default", user
+            )
+            run = await enqueue_manual_run(graph_id, user)
+        except HTTPException as exc:
+            elapsed_ms = round((time.monotonic() - start) * 1000, 2)
+            message = (
+                f"Task {qualified} was saved but its run did not start: {exc.detail}. "
+                f"Start it with EXECUTE TASK {qualified}, or remove it with DROP TASK {qualified}"
+            )
+            await self._audit(**audit, status="ERROR", error_message=message,
+                              duration_ms=int(elapsed_ms))
+            return QueryResult(error=message, elapsed_ms=elapsed_ms, original_sql=sql,
+                               executed_sql=normalized_sql)
+        elapsed_ms = round((time.monotonic() - start) * 1000, 2)
+        await self._audit(**audit, status="SUCCESS", rows_affected=1, duration_ms=int(elapsed_ms))
+        return QueryResult(
+            columns=["TaskName", "Status", "task_id", "run_id", "run_state", "owner_role"],
+            rows=[[
+                qualified, "SUBMITTED", task_row["id"], str(run["id"]),
+                str(run.get("state") or "pending"), role,
+            ]],
+            row_count=1,
+            affected_rows=1,
+            elapsed_ms=elapsed_ms,
+            original_sql=sql,
+            executed_sql=normalized_sql,
+            warnings=[
+                f"SUBMIT TASK saved the Nova task {qualified} and queued one run as {role}. "
+                f"Follow it with DESCRIBE TASK {qualified} or on the Tasks page; remove it "
+                f"with DROP TASK {qualified}."
+            ],
+        )
 
     async def _execute_force_password_change(
         self,

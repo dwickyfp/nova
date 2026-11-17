@@ -25,7 +25,12 @@ def semantic_scope():
 
 
 def confirmation_policy(effects: PlanEffects) -> bool:
-    return effects.deletes_rows or effects.updates_rows or effects.drops_objects
+    return (
+        effects.deletes_rows
+        or effects.updates_rows
+        or effects.drops_objects
+        or effects.exports_data
+    )
 
 
 def _constant_effects(effects: PlanEffects, statement: ast.Statement) -> PlanEffects:
@@ -60,6 +65,13 @@ def _create_task_effects(statement: ast.Statement) -> PlanEffects:
     except TaskDDLError:
         return effects
     if task.handler == "sql":
+        if task.run_once:
+            # SUBMIT TASK without a schedule runs its statement now.
+            try:
+                inner = ast_builders.build(parse_statement(task.body))
+                effects |= semantics_registry.analyze(inner).effects
+            except ValueError:
+                effects |= PlanEffects(reads_data=True, writes_data=True)
         return effects
     if task.handler == "python":
         return effects | PlanEffects(reads_data=True, writes_data=True)
@@ -163,7 +175,32 @@ def _native_effects(statement: ast.Statement) -> PlanEffects:
             effects |= PlanEffects(writes_data=True, deletes_rows=True, replaces_data=True)
     if root == "NovaCopyStatementContext":
         effects |= PlanEffects(writes_data=True)
+    if _exports_to_stage(statement):
+        effects |= PlanEffects(reads_data=True, external_io=True, exports_data=True)
+    if root == "LoadStatementContext" and any(
+        type(node).__name__ == "DataDescContext" and node.NEGATIVE() is not None
+        for node in walk_nodes(statement.parsed.statement_context)
+    ):
+        # NEGATIVE subtracts a batch loaded earlier: it changes existing rows.
+        effects |= PlanEffects(updates_rows=True)
     return effects
+
+
+def _exports_to_stage(statement: ast.Statement) -> bool:
+    """Rows leave the engine for files: confirmed like a delete.
+
+    ``INSERT INTO @stage``, ``COPY INTO @stage``, and the unload forms
+    ``INSERT INTO FILES``, ``SELECT ... INTO OUTFILE`` and ``EXPORT TABLE``.
+    """
+    from app.sql_frontend.unload import has_unload_clause
+
+    root = statement.parsed.statement_context
+    kind = type(root).__name__
+    if kind == "NovaStageInsertStatementContext":
+        return True
+    if kind == "NovaCopyStatementContext":
+        return type(root.getChild(2)).__name__ == "StageReferenceContext"
+    return has_unload_clause(statement.parsed)
 
 
 #: Statements that change only this session, or nothing: transaction control,
@@ -203,8 +240,15 @@ _ENGINE_STATEMENT_EFFECTS: dict[str, PlanEffects] = {
     "AdminShowReplicaStatusStatementContext": PlanEffects(reads_data=True),
     "AdminShowTabletStatusStatementContext": PlanEffects(reads_data=True),
     "AnalyzeProfileStatementContext": PlanEffects(reads_data=True),
+    "ShowAllAuthenticationContext": PlanEffects(reads_data=True),
+    "ShowAuthenticationForUserContext": PlanEffects(reads_data=True),
     "DataCacheSelectStatementContext": PlanEffects(reads_data=True, writes_metadata=True),
-    "BackupStatementContext": PlanEffects(reads_data=True, external_io=True, writes_metadata=True),
+    # A backup copies table data out of the engine into a stage: confirmed
+    # like any other export.
+    "BackupStatementContext": PlanEffects(
+        reads_data=True, external_io=True, writes_metadata=True, exports_data=True
+    ),
+    "CreateRepositoryStatementContext": PlanEffects(changes_schema=True, external_io=True),
     "RestoreStatementContext": PlanEffects(
         writes_data=True,
         replaces_data=True,
@@ -301,6 +345,24 @@ def default_semantics() -> StatementSemanticsRegistry:
     registry.register(
         ast.CatalogStatement,
         StatementSemantics(catalog_effects, validator=validate_catalog, preflight_safe=True),
+    )
+    from app.sql_frontend.pipes import pipe_effects, validate_pipe
+
+    registry.register(
+        ast.PipeStatement,
+        StatementSemantics(pipe_effects, validator=validate_pipe, preflight_safe=True),
+    )
+    from app.sql_frontend.routine_load import (
+        RoutineLoadStatement,
+        routine_load_effects,
+        validate_routine_load,
+    )
+
+    registry.register(
+        RoutineLoadStatement,
+        StatementSemantics(
+            routine_load_effects, validator=validate_routine_load, preflight_safe=True
+        ),
     )
     from app.sql_frontend.merge import merge_effects, validate_merge
 

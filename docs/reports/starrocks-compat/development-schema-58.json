@@ -1,0 +1,19 @@
+{
+  "baseline_commit": "18ae8035e9dfa9ba6b790c0a390017fa943c2157",
+  "schema_before": 57,
+  "schema_after": 58,
+  "migration": "0058_task_graph_id_width.sql",
+  "migration_sha256": "8a050ab8086aac5be68cb9d6107635dbc3d2ba4bb2d626229f846da8cd8bd28c",
+  "metadata_epoch_preserved": true,
+  "tables_count_checked": 198,
+  "all_counts_preserved": true,
+  "new_tables": [],
+  "backup": {
+    "bytes": 128695937,
+    "sha256": "371f15df1638b9a22ae91e4127c5741f35faebfc859e8ddcebcec5b1a0cd6ad2",
+    "toc_verified": true
+  },
+  "fixture_evidence": "tests/integration/test_metadata_tasks.py and tests/integration/test_metadata_migrator.py on the PG17 fixture",
+  "launcher": "not stopped; processes refused metadata work while frozen and reloaded at 58",
+  "recorded_at": "2026-11-17T02:23:16.068278+00:00"
+}

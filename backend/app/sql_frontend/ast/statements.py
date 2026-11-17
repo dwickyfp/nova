@@ -144,3 +144,13 @@ class MergeStatement(Statement):
     on_sql: str = ""
     keys: tuple[tuple[str, str], ...] | None = None
     clauses: tuple[MergeClause, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class PipeStatement(Statement):
+    """``CREATE``/``ALTER``/``DROP PIPE``, ``SHOW PIPES`` or ``DESC PIPE``: a Nova pipe.
+
+    ``operation`` is ``create``, ``drop``, ``alter``, ``show`` or ``describe``.
+    """
+
+    operation: str = ""

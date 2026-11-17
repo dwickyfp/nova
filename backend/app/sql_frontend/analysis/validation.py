@@ -138,18 +138,27 @@ def _copy_names_a_stage(statement: ast.Statement) -> None:
     )
 
 
+#: Pipe statements Nova runs itself (``app/sql_frontend/pipes.py``).
+_PIPE_STATEMENTS = frozenset({
+    "CreatePipeStatementContext", "AlterPipeStatementContext", "DropPipeStatementContext",
+    "ShowPipeStatementContext", "DescPipeStatementContext",
+})
+
+
 def _native_pipe_execution(statement: ast.Statement) -> None:
-    root = statement.parsed.statement_context
-    kind = type(root).__name__
-    starts_execution = kind == "CreatePipeStatementContext"
-    if kind == "AlterPipeStatementContext":
-        starts_execution = root.alterPipeClause().SUSPEND() is None
-    if starts_execution:
+    """Never forward a pipe statement: the engine must not create or run a pipe.
+
+    Nova runs pipes as their owner role and supplies stage credentials per
+    run; an engine pipe would run without that role and keep credentials. Pipe
+    statements build a Nova ``PipeStatement``, so one reaching the native path
+    means that registration is missing, and it is refused rather than sent on.
+    """
+    if type(statement.parsed.statement_context).__name__ in _PIPE_STATEMENTS:
         from app.sql_frontend.errors import CapabilityUnsupportedError
 
         raise CapabilityUnsupportedError(
-            "Pipes run in the background without your sign-in and active role. "
-            "Load files with COPY INTO, or schedule a load with CREATE TASK."
+            "Pipes are Nova pipes and are not created in the engine. "
+            "Run CREATE PIPE ... AS INSERT INTO <table> SELECT ... FROM @stage/... in Nova."
         )
 
 
@@ -157,19 +166,12 @@ def _native_pipe_execution(statement: ast.Statement) -> None:
 #: as a stored job rather than as the caller's session. Like pipes, that work
 #: does not carry the caller's sign-in and active role, so access policies are
 #: not applied to it as they are to the caller.
-_BACKGROUND_JOB_REFUSALS = {
-    "SubmitTaskStatementContext": (
-        "SUBMIT TASK runs in the background without your sign-in and active role. "
-        "Use CREATE TASK, which runs as you."
-    ),
-    "CreateRoutineLoadStatementContext": (
-        "Routine loads run in the background without your sign-in and active role. "
-        "Load files with COPY INTO, or schedule a load with CREATE TASK."
-    ),
-    "ResumeRoutineLoadStatementContext": (
-        "Routine loads run in the background without your sign-in and active role. "
-        "Load files with COPY INTO, or schedule a load with CREATE TASK."
-    ),
+_BACKGROUND_JOB_REFUSALS: dict[str, str] = {
+    # SUBMIT TASK is not refused here: the AST builder makes it a Nova task
+    # owned by the caller's active role (app.modules.task_orchestration.ddl).
+    # CREATE and RESUME ROUTINE LOAD are not refused here: they are planned by
+    # app.sql_frontend.routine_load, which names a Nova Kafka connection, records
+    # the owner role and lets Nova pause the job when that role loses access.
 }
 
 

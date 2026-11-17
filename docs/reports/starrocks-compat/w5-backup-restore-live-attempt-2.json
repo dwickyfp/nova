@@ -1,0 +1,660 @@
+{
+  "workstream": "W5 backup and restore with a repository on a stage",
+  "date": "2026-11-17 09:41:44",
+  "nova": "http://127.0.0.1:5173",
+  "engine": "StarRocks 4.1.4 (patched FE), dev stack, MinIO-backed stage",
+  "stage": "compat_w5_stage",
+  "database": "compat_w5_db",
+  "repository_folder": "@compat_w5_stage/backups_094014/",
+  "show_repositories": [
+    [
+      "3128739",
+      "compat_w5_repo_094014",
+      "2026-11-17 09:40:16",
+      "false",
+      "@compat_w5_stage/backups_094014",
+      "",
+      null
+    ]
+  ],
+  "summary": {
+    "cases": 36,
+    "passed": 36,
+    "failed": [],
+    "leaks": []
+  },
+  "results": [
+    {
+      "case": "refused: storage URL location",
+      "sql": "CREATE REPOSITORY r_094014 WITH BROKER ON LOCATION \"s3a://bucket_s3/backup\"",
+      "passed": true,
+      "success": false,
+      "error": "CREATE REPOSITORY keeps backups only in a stage. Write the location as \"@<stage>/<folder>/\", for example \"@backups/sales/\"; storage URLs are refused",
+      "needs_confirmation": false,
+      "columns": [],
+      "rows": [],
+      "executed_sql": "",
+      "leaks": []
+    },
+    {
+      "case": "refused: inline credentials",
+      "sql": "CREATE REPOSITORY r_094014 WITH BROKER ON LOCATION \"@compat_w5_stage/backups/\" PROPERTIES (\"aws.s3.access_key\" = \"AKIAREFUSED0000000\", \"aws.s3.secret_key\" = \"refused-secret\")",
+      "passed": true,
+      "success": false,
+      "error": "CREATE REPOSITORY on a stage takes no broker name or properties: the stage supplies the storage location and credentials. Write CREATE REPOSITORY <name> WITH BROKER ON LOCATION \"@<stage>/<folder>/\"",
+      "needs_confirmation": false,
+      "columns": [],
+      "rows": [],
+      "executed_sql": "",
+      "leaks": []
+    },
+    {
+      "case": "alice refused: CREATE REPOSITORY",
+      "sql": "CREATE REPOSITORY a_094014 WITH BROKER ON LOCATION \"@compat_w5_stage/alice/\"",
+      "passed": true,
+      "success": false,
+      "error": "Backup repositories, backups and restores need the ACCOUNTADMIN role: a repository keeps the stage's storage credential in the engine. Switch to ACCOUNTADMIN to run this statement.",
+      "needs_confirmation": false,
+      "columns": [],
+      "rows": [],
+      "executed_sql": "",
+      "leaks": []
+    },
+    {
+      "case": "alice refused: SHOW REPOSITORIES",
+      "sql": "SHOW REPOSITORIES",
+      "passed": true,
+      "success": false,
+      "error": "Backup repositories, backups and restores need the ACCOUNTADMIN role: a repository keeps the stage's storage credential in the engine. Switch to ACCOUNTADMIN to run this statement.",
+      "needs_confirmation": false,
+      "columns": [],
+      "rows": [],
+      "executed_sql": "",
+      "leaks": []
+    },
+    {
+      "case": "alice refused: BACKUP DATABASE",
+      "sql": "BACKUP DATABASE compat_w5_db SNAPSHOT a_094014 TO compat_w5_repo_094014",
+      "passed": true,
+      "success": false,
+      "error": "Backup repositories, backups and restores need the ACCOUNTADMIN role: a repository keeps the stage's storage credential in the engine. Switch to ACCOUNTADMIN to run this statement.",
+      "needs_confirmation": false,
+      "columns": [],
+      "rows": [],
+      "executed_sql": "",
+      "leaks": []
+    },
+    {
+      "case": "alice refused: SHOW BACKUP",
+      "sql": "SHOW BACKUP FROM compat_w5_db",
+      "passed": true,
+      "success": false,
+      "error": "Backup repositories, backups and restores need the ACCOUNTADMIN role: a repository keeps the stage's storage credential in the engine. Switch to ACCOUNTADMIN to run this statement.",
+      "needs_confirmation": false,
+      "columns": [],
+      "rows": [],
+      "executed_sql": "",
+      "leaks": []
+    },
+    {
+      "case": "alice refused: SHOW SNAPSHOT",
+      "sql": "SHOW SNAPSHOT ON compat_w5_repo_094014",
+      "passed": true,
+      "success": false,
+      "error": "Backup repositories, backups and restores need the ACCOUNTADMIN role: a repository keeps the stage's storage credential in the engine. Switch to ACCOUNTADMIN to run this statement.",
+      "needs_confirmation": false,
+      "columns": [],
+      "rows": [],
+      "executed_sql": "",
+      "leaks": []
+    },
+    {
+      "case": "alice refused: RESTORE SNAPSHOT",
+      "sql": "RESTORE SNAPSHOT compat_w5_db.a_094014 FROM compat_w5_repo_094014 PROPERTIES ('backup_timestamp' = 'x')",
+      "passed": true,
+      "success": false,
+      "error": "Backup repositories, backups and restores need the ACCOUNTADMIN role: a repository keeps the stage's storage credential in the engine. Switch to ACCOUNTADMIN to run this statement.",
+      "needs_confirmation": false,
+      "columns": [],
+      "rows": [],
+      "executed_sql": "",
+      "leaks": []
+    },
+    {
+      "case": "alice refused: CANCEL BACKUP",
+      "sql": "CANCEL BACKUP FROM compat_w5_db",
+      "passed": true,
+      "success": false,
+      "error": "Backup repositories, backups and restores need the ACCOUNTADMIN role: a repository keeps the stage's storage credential in the engine. Switch to ACCOUNTADMIN to run this statement.",
+      "needs_confirmation": false,
+      "columns": [],
+      "rows": [],
+      "executed_sql": "",
+      "leaks": []
+    },
+    {
+      "case": "alice refused: DROP REPOSITORY",
+      "sql": "DROP REPOSITORY compat_w5_repo_094014",
+      "passed": true,
+      "success": false,
+      "error": "Backup repositories, backups and restores need the ACCOUNTADMIN role: a repository keeps the stage's storage credential in the engine. Switch to ACCOUNTADMIN to run this statement.",
+      "needs_confirmation": false,
+      "columns": [],
+      "rows": [],
+      "executed_sql": "",
+      "leaks": []
+    },
+    {
+      "case": "CREATE REPOSITORY on a stage folder",
+      "sql": "CREATE REPOSITORY compat_w5_repo_094014 WITH BROKER ON LOCATION \"@compat_w5_stage/backups_094014/\"",
+      "passed": true,
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "columns": [],
+      "rows": [],
+      "executed_sql": "CREATE REPOSITORY compat_w5_repo_094014 WITH BROKER ON LOCATION '@compat_w5_stage/backups_094014' PROPERTIES('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "SHOW REPOSITORIES names the stage",
+      "sql": "SHOW REPOSITORIES",
+      "passed": true,
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "columns": [
+        "RepoId",
+        "RepoName",
+        "CreateTime",
+        "IsReadOnly",
+        "Location",
+        "Broker",
+        "ErrMsg"
+      ],
+      "rows": [
+        [
+          "3128739",
+          "compat_w5_repo_094014",
+          "2026-11-17 09:40:16",
+          "false",
+          "@compat_w5_stage/backups_094014",
+          "",
+          null
+        ]
+      ],
+      "executed_sql": "SHOW REPOSITORIES",
+      "leaks": []
+    },
+    {
+      "case": "BACKUP asks for confirmation",
+      "sql": "BACKUP DATABASE compat_w5_db SNAPSHOT snap_094014 TO compat_w5_repo_094014 ON (TABLE sales, TABLE regions)",
+      "passed": true,
+      "success": false,
+      "error": "Destructive SQL requires confirmation before execution.",
+      "needs_confirmation": true,
+      "columns": [],
+      "rows": [],
+      "executed_sql": "",
+      "leaks": []
+    },
+    {
+      "case": "BACKUP DATABASE ... ON (TABLE ...)",
+      "sql": "BACKUP DATABASE compat_w5_db SNAPSHOT snap_094014 TO compat_w5_repo_094014 ON (TABLE sales, TABLE regions) PROPERTIES ('type' = 'full', 'timeout' = '3600')",
+      "passed": true,
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "columns": [],
+      "rows": [],
+      "executed_sql": "BACKUP DATABASE compat_w5_db SNAPSHOT snap_094014 TO compat_w5_repo_094014 ON (TABLE sales, TABLE regions) PROPERTIES ('type' = 'full', 'timeout' = '3600')",
+      "leaks": []
+    },
+    {
+      "case": "backup finished",
+      "passed": true,
+      "job": {
+        "JobId": "3128740",
+        "SnapshotName": "snap_094014",
+        "DbName": "compat_w5_db",
+        "State": "FINISHED",
+        "BackupObjs": "[compat_w5_db.regions AS regions], [compat_w5_db.sales AS sales]",
+        "CreateTime": "2026-11-17 09:40:18",
+        "SnapshotFinishedTime": "2026-11-17 09:40:22",
+        "UploadFinishedTime": "2026-11-17 09:40:28",
+        "FinishedTime": "2026-11-17 09:40:35",
+        "UnfinishedTasks": "",
+        "Progress": "",
+        "TaskErrMsg": "",
+        "Status": "[OK]",
+        "Timeout": "3600"
+      },
+      "leaks": []
+    },
+    {
+      "case": "SHOW SNAPSHOT ON repository",
+      "sql": "SHOW SNAPSHOT ON compat_w5_repo_094014 WHERE SNAPSHOT = 'snap_094014'",
+      "passed": true,
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "columns": [
+        "Snapshot",
+        "Timestamp",
+        "Status"
+      ],
+      "rows": [
+        [
+          "snap_094014",
+          "2026-11-17-09-40-18-195",
+          "OK"
+        ]
+      ],
+      "executed_sql": "SHOW SNAPSHOT ON compat_w5_repo_094014 WHERE SNAPSHOT = 'snap_094014'",
+      "leaks": []
+    },
+    {
+      "case": "SHOW SNAPSHOT details",
+      "sql": "SHOW SNAPSHOT ON compat_w5_repo_094014 WHERE SNAPSHOT = 'snap_094014' AND TIMESTAMP = '2026-11-17-09-40-18-195'",
+      "passed": true,
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "columns": [
+        "Snapshot",
+        "Timestamp",
+        "Database",
+        "Details",
+        "Status"
+      ],
+      "rows": [
+        [
+          "snap_094014",
+          "2026-11-17-09-40-18-195",
+          "compat_w5_db",
+          "{\n \"database\": \"compat_w5_db\",\n \"meta_version\": 92,\n \"backup_time\": 1794883218195,\n \"name\": \"snap_094014\",\n \"starrocks_meta_version\": 4,\n \"backup_result\": \"succeed\",\n \"backup_objects\": {\n  \"regions\": {\"partitions\": {\"regions\": {}}},\n  \"sales\": {\"partitions\": {\"sales\": {}}}\n }\n}",
+          "OK"
+        ]
+      ],
+      "executed_sql": "SHOW SNAPSHOT ON compat_w5_repo_094014 WHERE SNAPSHOT = 'snap_094014' AND TIMESTAMP = '2026-11-17-09-40-18-195'",
+      "leaks": []
+    },
+    {
+      "case": "drop a table to restore",
+      "sql": "DROP TABLE sales FORCE",
+      "passed": true,
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "columns": [],
+      "rows": [],
+      "executed_sql": "DROP TABLE sales FORCE",
+      "leaks": []
+    },
+    {
+      "case": "RESTORE a table",
+      "sql": "RESTORE SNAPSHOT compat_w5_db.snap_094014 FROM compat_w5_repo_094014 ON (TABLE sales) PROPERTIES ('backup_timestamp' = '2026-11-17-09-40-18-195', 'replication_num' = '1')",
+      "passed": true,
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "columns": [],
+      "rows": [],
+      "executed_sql": "RESTORE SNAPSHOT compat_w5_db.snap_094014 FROM compat_w5_repo_094014 ON (TABLE sales) PROPERTIES ('backup_timestamp' = '2026-11-17-09-40-18-195', 'replication_num' = '1')",
+      "leaks": []
+    },
+    {
+      "case": "restored table has the backed-up rows",
+      "passed": true,
+      "job": {
+        "JobId": "3128777",
+        "Label": "snap_094014",
+        "Timestamp": "2026-11-17-09-40-18-195",
+        "DbName": "compat_w5_db",
+        "State": "FINISHED",
+        "AllowLoad": "false",
+        "ReplicationNum": "1",
+        "RestoreObjs": "sales",
+        "CreateTime": "2026-11-17 09:40:43",
+        "MetaPreparedTime": "2026-11-17 09:40:44",
+        "SnapshotFinishedTime": "2026-11-17 09:40:47",
+        "DownloadFinishedTime": "2026-11-17 09:40:53",
+        "FinishedTime": "2026-11-17 09:40:59",
+        "UnfinishedTasks": "",
+        "Progress": "",
+        "TaskErrMsg": "",
+        "Status": "[OK]",
+        "Timeout": "86400"
+      },
+      "rows": [
+        [
+          2,
+          "south",
+          20.0
+        ],
+        [
+          1,
+          "north",
+          10.5
+        ],
+        [
+          3,
+          "east",
+          7.25
+        ]
+      ],
+      "leaks": []
+    },
+    {
+      "case": "RESTORE under a new name (AS)",
+      "sql": "RESTORE SNAPSHOT compat_w5_db.snap_094014 FROM compat_w5_repo_094014 ON (TABLE regions AS regions_copy) PROPERTIES ('backup_timestamp' = '2026-11-17-09-40-18-195', 'replication_num' = '1')",
+      "passed": true,
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "columns": [],
+      "rows": [],
+      "executed_sql": "RESTORE SNAPSHOT compat_w5_db.snap_094014 FROM compat_w5_repo_094014 ON (TABLE regions AS regions_copy) PROPERTIES ('backup_timestamp' = '2026-11-17-09-40-18-195', 'replication_num' = '1')",
+      "leaks": []
+    },
+    {
+      "case": "restored copy has the backed-up rows",
+      "passed": true,
+      "job": {
+        "JobId": "3128863",
+        "Label": "snap_094014",
+        "Timestamp": "2026-11-17-09-40-18-195",
+        "DbName": "compat_w5_db",
+        "State": "FINISHED",
+        "AllowLoad": "false",
+        "ReplicationNum": "1",
+        "RestoreObjs": "regions",
+        "CreateTime": "2026-11-17 09:41:03",
+        "MetaPreparedTime": "2026-11-17 09:41:05",
+        "SnapshotFinishedTime": "2026-11-17 09:41:08",
+        "DownloadFinishedTime": "2026-11-17 09:41:14",
+        "FinishedTime": "2026-11-17 09:41:20",
+        "UnfinishedTasks": "",
+        "Progress": "",
+        "TaskErrMsg": "",
+        "Status": "[OK]",
+        "Timeout": "86400"
+      },
+      "rows": [
+        [
+          "south",
+          "Budi"
+        ],
+        [
+          "north",
+          "Ana"
+        ]
+      ],
+      "leaks": []
+    },
+    {
+      "case": "SHOW RESTORE",
+      "sql": "SHOW RESTORE FROM compat_w5_db",
+      "passed": true,
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "columns": [
+        "JobId",
+        "Label",
+        "Timestamp",
+        "DbName",
+        "State",
+        "AllowLoad",
+        "ReplicationNum",
+        "RestoreObjs",
+        "CreateTime",
+        "MetaPreparedTime",
+        "SnapshotFinishedTime",
+        "DownloadFinishedTime",
+        "FinishedTime",
+        "UnfinishedTasks",
+        "Progress",
+        "TaskErrMsg",
+        "Status",
+        "Timeout"
+      ],
+      "rows": [
+        [
+          "3128863",
+          "snap_094014",
+          "2026-11-17-09-40-18-195",
+          "compat_w5_db",
+          "FINISHED",
+          "false",
+          "1",
+          "regions",
+          "2026-11-17 09:41:03",
+          "2026-11-17 09:41:05",
+          "2026-11-17 09:41:08",
+          "2026-11-17 09:41:14",
+          "2026-11-17 09:41:20",
+          "",
+          "",
+          "",
+          "[OK]",
+          "86400"
+        ]
+      ],
+      "executed_sql": "SHOW RESTORE FROM compat_w5_db",
+      "leaks": []
+    },
+    {
+      "case": "BACKUP to cancel",
+      "sql": "BACKUP DATABASE compat_w5_db SNAPSHOT c_snap_094014 TO compat_w5_repo_094014 ON (TABLE regions)",
+      "passed": true,
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "columns": [],
+      "rows": [],
+      "executed_sql": "BACKUP DATABASE compat_w5_db SNAPSHOT c_snap_094014 TO compat_w5_repo_094014 ON (TABLE regions)",
+      "leaks": []
+    },
+    {
+      "case": "CANCEL BACKUP",
+      "sql": "CANCEL BACKUP FROM compat_w5_db",
+      "passed": true,
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "columns": [],
+      "rows": [],
+      "executed_sql": "CANCEL BACKUP FROM compat_w5_db",
+      "leaks": []
+    },
+    {
+      "case": "backup cancelled or already finished",
+      "passed": true,
+      "job": {
+        "JobId": "-1",
+        "SnapshotName": "c_snap_094014",
+        "DbName": "compat_w5_db",
+        "State": "CANCELLED",
+        "BackupObjs": "[compat_w5_db.regions AS regions]",
+        "CreateTime": "2026-11-17 09:41:22",
+        "SnapshotFinishedTime": null,
+        "UploadFinishedTime": null,
+        "FinishedTime": "2026-11-17 09:41:22",
+        "UnfinishedTasks": "",
+        "Progress": "",
+        "TaskErrMsg": "",
+        "Status": "[COMMON_ERROR, msg: user cancelled]",
+        "Timeout": "86400"
+      },
+      "leaks": []
+    },
+    {
+      "case": "RESTORE to cancel",
+      "sql": "RESTORE SNAPSHOT compat_w5_db.snap_094014 FROM compat_w5_repo_094014 ON (TABLE regions AS regions_cancel) PROPERTIES ('backup_timestamp' = '2026-11-17-09-40-18-195', 'replication_num' = '1')",
+      "passed": true,
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "columns": [],
+      "rows": [],
+      "executed_sql": "RESTORE SNAPSHOT compat_w5_db.snap_094014 FROM compat_w5_repo_094014 ON (TABLE regions AS regions_cancel) PROPERTIES ('backup_timestamp' = '2026-11-17-09-40-18-195', 'replication_num' = '1')",
+      "leaks": []
+    },
+    {
+      "case": "CANCEL RESTORE stops a running restore (or reports it already finished)",
+      "passed": true,
+      "cancel": "ok",
+      "job": {
+        "JobId": "-1",
+        "Label": "snap_094014",
+        "Timestamp": "2026-11-17-09-40-18-195",
+        "DbName": "compat_w5_db",
+        "State": "CANCELLED",
+        "AllowLoad": "false",
+        "ReplicationNum": "1",
+        "RestoreObjs": "regions",
+        "CreateTime": "2026-11-17 09:41:22",
+        "MetaPreparedTime": null,
+        "SnapshotFinishedTime": null,
+        "DownloadFinishedTime": null,
+        "FinishedTime": "2026-11-17 09:41:22",
+        "UnfinishedTasks": "",
+        "Progress": "",
+        "TaskErrMsg": "",
+        "Status": "[COMMON_ERROR, msg: user cancelled, current state: PENDING]",
+        "Timeout": "86400"
+      },
+      "leaks": []
+    },
+    {
+      "case": "DROP REPOSITORY asks for confirmation",
+      "sql": "DROP REPOSITORY compat_w5_repo_094014",
+      "passed": true,
+      "success": false,
+      "error": "Destructive SQL requires confirmation before execution.",
+      "needs_confirmation": true,
+      "columns": [],
+      "rows": [],
+      "executed_sql": "",
+      "leaks": []
+    },
+    {
+      "case": "DROP REPOSITORY",
+      "sql": "DROP REPOSITORY compat_w5_repo_094014",
+      "passed": true,
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "columns": [],
+      "rows": [],
+      "executed_sql": "DROP REPOSITORY compat_w5_repo_094014",
+      "leaks": []
+    },
+    {
+      "case": "CREATE READ ONLY REPOSITORY on the same folder",
+      "sql": "CREATE READ ONLY REPOSITORY compat_w5_repo_094014 WITH BROKER ON LOCATION \"@compat_w5_stage/backups_094014/\"",
+      "passed": true,
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "columns": [],
+      "rows": [],
+      "executed_sql": "CREATE READ ONLY REPOSITORY compat_w5_repo_094014 WITH BROKER ON LOCATION '@compat_w5_stage/backups_094014' PROPERTIES('aws.s3.access_key'='***', 'aws.s3.secret_key'='***', 'aws.s3.endpoint'='<storage endpoint>', 'aws.s3.region'='us-east-1', 'aws.s3.enable_ssl'='false', 'aws.s3.enable_path_style_access'='true', 'aws.s3.use_aws_sdk_default_behavior'='false', 'aws.s3.use_instance_profile'='false')",
+      "leaks": []
+    },
+    {
+      "case": "read-only repository lists the snapshot",
+      "sql": "SHOW SNAPSHOT ON compat_w5_repo_094014",
+      "passed": true,
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "columns": [
+        "Snapshot",
+        "Timestamp",
+        "Status"
+      ],
+      "rows": [
+        [
+          "snap_094014",
+          "2026-11-17-09-40-18-195",
+          "OK"
+        ]
+      ],
+      "executed_sql": "SHOW SNAPSHOT ON compat_w5_repo_094014",
+      "leaks": []
+    },
+    {
+      "case": "RESTORE from the read-only repository",
+      "sql": "RESTORE SNAPSHOT compat_w5_db.snap_094014 FROM compat_w5_repo_094014 ON (TABLE regions) PROPERTIES ('backup_timestamp' = '2026-11-17-09-40-18-195', 'replication_num' = '1')",
+      "passed": true,
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "columns": [],
+      "rows": [],
+      "executed_sql": "RESTORE SNAPSHOT compat_w5_db.snap_094014 FROM compat_w5_repo_094014 ON (TABLE regions) PROPERTIES ('backup_timestamp' = '2026-11-17-09-40-18-195', 'replication_num' = '1')",
+      "leaks": []
+    },
+    {
+      "case": "restore from a read-only repository",
+      "passed": true,
+      "job": {
+        "JobId": "3128950",
+        "Label": "snap_094014",
+        "Timestamp": "2026-11-17-09-40-18-195",
+        "DbName": "compat_w5_db",
+        "State": "FINISHED",
+        "AllowLoad": "false",
+        "ReplicationNum": "1",
+        "RestoreObjs": "regions",
+        "CreateTime": "2026-11-17 09:41:24",
+        "MetaPreparedTime": "2026-11-17 09:41:26",
+        "SnapshotFinishedTime": "2026-11-17 09:41:29",
+        "DownloadFinishedTime": "2026-11-17 09:41:35",
+        "FinishedTime": "2026-11-17 09:41:41",
+        "UnfinishedTasks": "",
+        "Progress": "",
+        "TaskErrMsg": "",
+        "Status": "[OK]",
+        "Timeout": "86400"
+      },
+      "rows": [
+        [
+          "south",
+          "Budi"
+        ],
+        [
+          "north",
+          "Ana"
+        ]
+      ],
+      "leaks": []
+    },
+    {
+      "case": "BACKUP to a read-only repository is refused by the engine",
+      "sql": "BACKUP DATABASE compat_w5_db SNAPSHOT r_snap_094014 TO compat_w5_repo_094014 ON (TABLE regions)",
+      "passed": true,
+      "success": false,
+      "error": "SQL error: (5064) Repository compat_w5_repo_094014 is read only",
+      "needs_confirmation": false,
+      "columns": [],
+      "rows": [],
+      "executed_sql": "",
+      "leaks": []
+    },
+    {
+      "case": "DROP READ ONLY REPOSITORY",
+      "sql": "DROP REPOSITORY compat_w5_repo_094014",
+      "passed": true,
+      "success": true,
+      "error": null,
+      "needs_confirmation": false,
+      "columns": [],
+      "rows": [],
+      "executed_sql": "DROP REPOSITORY compat_w5_repo_094014",
+      "leaks": []
+    }
+  ]
+}

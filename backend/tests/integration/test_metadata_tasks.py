@@ -15,6 +15,7 @@ from app.core.metadata_db import (
     MetadataConflict,
     MetadataDatabase,
     MetadataIntegrityViolation,
+    MetadataOperationFailed,
     MetadataPermissionDenied,
     MetadataReadOnlyMaintenance,
 )
@@ -209,6 +210,24 @@ async def test_graph_runs_are_created_once_and_never_reset(tasks):
     with pytest.raises(MetadataConflict):
         async with tasks.transaction("scheduler") as (repo, _):
             await repo.create_graph_run_once({"id": "run-1", "graph_id": "other"})
+
+
+async def test_graph_ids_hold_the_longest_qualified_task_name(tasks):
+    """database (128) . schema (128) . name (256): revision 0058 widened the id."""
+    graph_id = ".".join(("d" * 128, "s" * 128, "t" * 256))
+    assert len(graph_id) == 514
+    async with tasks.transaction() as (repo, _):
+        edge = await repo.create_edge(graph_id, {"parent_task": "a", "child_task": "b"})
+        assert [row["graph_id"] for row in await repo.list_edges(graph_id)] == [graph_id]
+        await repo.delete_edge(edge["id"])
+    async with tasks.transaction("scheduler") as (repo, _):
+        run, created = await repo.create_graph_run_once(
+            {"id": "run-long", "graph_id": graph_id, "trigger_type": "schedule"})
+    assert created is True and run["graph_id"] == graph_id
+    # One octet more is refused by the column (SQLSTATE 22001), never truncated.
+    with pytest.raises(MetadataOperationFailed):
+        async with tasks.transaction("scheduler") as (repo, _):
+            await repo.create_graph_run_once({"id": "run-longer", "graph_id": graph_id + "x"})
 
 
 async def test_the_query_workload_records_a_manual_run_but_cannot_move_it(tasks):

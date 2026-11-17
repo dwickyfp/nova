@@ -10,6 +10,7 @@ import {
   Plus,
   RefreshCw,
   Trash2,
+  Users,
 } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
@@ -25,10 +26,11 @@ import { StatusBadge } from '@/components/ui/status-badge'
 import { ApiError } from '@/lib/api-client'
 import { useAuthStore } from '@/stores/auth-store'
 import { fetchConnections, WRITABLE_TYPES, type ConnectionSummary } from './api'
-import { sourceLabel } from './sources'
+import { sourceFor, sourceLabel } from './sources'
 import {
   AddCatalogDialog,
   AddConnectionDialog,
+  ConnectionRolesDialog,
   CredentialsDialog,
   DropConnectionDialog,
 } from './connection-dialogs'
@@ -42,7 +44,11 @@ function CredentialStatus({ connection }: { connection: ConnectionSummary }) {
   return (
     <span className='flex flex-wrap items-center gap-1'>
       <StatusBadge tone='neutral'>
-        {connection.credential_source === 'managed' ? 'Stored in Nova' : 'Secret store'}
+        {connection.credential_source === 'none'
+          ? 'Not needed'
+          : connection.credential_source === 'managed'
+            ? 'Stored in Nova'
+            : 'Secret store'}
       </StatusBadge>
       {connection.writable ? <StatusBadge tone='neutral'>Writes allowed</StatusBadge> : null}
     </span>
@@ -61,6 +67,7 @@ export function ConnectionsPage() {
   const [credentialsFor, setCredentialsFor] = useState<ConnectionSummary | null>(null)
   const [writeFor, setWriteFor] = useState<ConnectionSummary | null>(null)
   const [dropTarget, setDropTarget] = useState<ConnectionSummary | null>(null)
+  const [rolesFor, setRolesFor] = useState<ConnectionSummary | null>(null)
 
   const { data, isLoading, isFetching, error, refetch } = useQuery({
     queryKey: ['catalog-connections', securityEpoch],
@@ -82,11 +89,11 @@ export function ConnectionsPage() {
           <div className='min-w-0'>
             <h1 className='truncate text-lg font-heading'>Connections</h1>
             <p className='truncate text-sm text-muted-foreground'>
-              Databases that catalogs in{' '}
+              Sources for catalogs in{' '}
               <Link to='/database-explorer' className='underline underline-offset-2'>
                 Database Explorer
               </Link>{' '}
-              are built from
+              and for Kafka loads
             </p>
           </div>
         </div>
@@ -176,7 +183,13 @@ export function ConnectionsPage() {
                       <CredentialStatus connection={connection} />
                     </td>
                     <td className='px-4 py-2'>
-                      {connection.catalogs.length > 0 ? (
+                      {sourceFor(connection.connector_type)?.catalog === false ? (
+                        <span className='text-muted-foreground'>
+                          {connection.roles && connection.roles.length > 0
+                            ? `Loads: ${connection.roles.join(', ')}`
+                            : 'Loads: security admins'}
+                        </span>
+                      ) : connection.catalogs.length > 0 ? (
                         <span className='flex flex-wrap gap-1'>
                           {connection.catalogs.map((catalog) => (
                             <span key={catalog} className='inline-flex items-center gap-1'>
@@ -203,13 +216,20 @@ export function ConnectionsPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align='end'>
-                          <DropdownMenuItem
-                            disabled={!connection.has_credentials}
-                            onClick={() => setCatalogFrom(connection.name)}
-                          >
-                            <Database className='mr-2 h-3.5 w-3.5' />
-                            Create catalog
-                          </DropdownMenuItem>
+                          {sourceFor(connection.connector_type)?.catalog === false ? (
+                            <DropdownMenuItem onClick={() => setRolesFor(connection)}>
+                              <Users className='mr-2 h-3.5 w-3.5' />
+                              Roles that can load
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem
+                              disabled={!connection.has_credentials}
+                              onClick={() => setCatalogFrom(connection.name)}
+                            >
+                              <Database className='mr-2 h-3.5 w-3.5' />
+                              Create catalog
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem onClick={() => setCredentialsFor(connection)}>
                             <KeyRound className='mr-2 h-3.5 w-3.5' />
                             Enter credentials
@@ -258,6 +278,13 @@ export function ConnectionsPage() {
         connection={writeFor}
         onOpenChange={(open) => {
           if (!open) setWriteFor(null)
+        }}
+        onSaved={changed}
+      />
+      <ConnectionRolesDialog
+        connection={rolesFor}
+        onOpenChange={(open) => {
+          if (!open) setRolesFor(null)
         }}
         onSaved={changed}
       />
