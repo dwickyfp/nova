@@ -156,7 +156,11 @@ Recorded in [arch-13 Worksheet session](../../arch-13-sql-frontend.md#worksheet-
 W1 evidence: the 39 confirmed gaps all run through the HTTP API; probe on the
 four W1 pages went from 12 `nova_gap` to 0 (`w1-before-*.jsonl`,
 `w1-after-*.jsonl`); the remaining `both_fail` rows are syntax templates and a
-missing fixture table.
+missing fixture table. Live `\G` check 2026-11-18
+(`docs/reports/starrocks-compat/w1-vertical-live-attempt-1.json`): a trailing `\G`
+returns `vertical: true` with the terminator removed; a plain query and a `\G`
+inside a string literal stay `vertical: false`. The worksheet's one-record-per-block
+layout is covered by `frontend/src/features/workspaces/vertical-result.test.tsx`.
 
 ## Status
 
@@ -168,7 +172,10 @@ missing fixture table.
     `SHOW/CANCEL EXPORT`, `COPY INTO @stage`), not committed. Live evidence:
     `docs/reports/starrocks-compat/w2-unload-live.json` (73/74 pass, the other
     a recorded CSV read-detection limit); probe: `w2-unloading-probe.json`.
-    Open: MySQL proxy still refuses unloads (no confirmation step there).
+    Decision 2026-11-18: MySQL clients stay refused for unloads. An unload
+    writes data out of Nova and needs the worksheet's confirmation, which the
+    MySQL protocol has no step for. The refusal and its message are documented
+    in `/docs/sql/mysql-clients`.
   - [x] W9 Iceberg REST catalog through Nova connections (`IcebergSource`),
     not committed. Live: `docs/reports/starrocks-compat/w9-iceberg-live.json`
     (104/108 documented operations ok; the 4 others fail on the engine too:

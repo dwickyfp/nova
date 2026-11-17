@@ -1,0 +1,45 @@
+{
+ "SELECT 1 AS a, 'x' AS b\\G": {
+  "success": true,
+  "vertical": true,
+  "columns": [
+   "a",
+   "b"
+  ],
+  "rows": [
+   [
+    1,
+    "x"
+   ]
+  ],
+  "executed_sql": "SELECT 1 AS a, 'x' AS b"
+ },
+ "SELECT 1 AS a, 'x' AS b": {
+  "success": true,
+  "vertical": false,
+  "columns": [
+   "a",
+   "b"
+  ],
+  "rows": [
+   [
+    1,
+    "x"
+   ]
+  ],
+  "executed_sql": "SELECT 1 AS a, 'x' AS b"
+ },
+ "SELECT '\\G' AS literal_g": {
+  "success": true,
+  "vertical": false,
+  "columns": [
+   "literal_g"
+  ],
+  "rows": [
+   [
+    "G"
+   ]
+  ],
+  "executed_sql": "SELECT '\\G' AS literal_g"
+ }
+}
