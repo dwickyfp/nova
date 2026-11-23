@@ -1,10 +1,13 @@
-import { useRef } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { ArrowUp, ChevronDown, FileText, ImageIcon, Plus, Square, Telescope, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverAnchor } from "@/components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import type { Agent } from "@/features/agents/api";
-import { CREATE_SKILL_COMMAND, SKILL_AUTHOR_ID } from "./skill-document";
+import { SKILL_AUTHOR_ID } from "./skill-document";
+import { StudioCommandMenu } from "./studio-command-menu";
+import { commandOptionId, commandQuery, matchCommands, type StudioCommand } from "./studio-commands";
 import { ACCEPTED_EXTENSIONS, MAX_FILES, type PendingAttachment } from "./studio-attachments";
 
 function AgentPicker({
@@ -93,24 +96,50 @@ export const Composer = ({
   onSelectAgent: (id: string) => void;
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const listId = useId();
+  const [focused, setFocused] = useState(false);
+  const [dismissedAt, setDismissedAt] = useState<string | null>(null);
+  const [activeState, setActiveState] = useState({ query: "", index: 0 });
+  const query = commandQuery(value);
+  const matches = useMemo(() => (query === null ? [] : matchCommands(query)), [query]);
+  const menuOpen = focused && !disabled && matches.length > 0 && dismissedAt !== value;
+  const active =
+    activeState.query === query ? Math.min(activeState.index, matches.length - 1) : 0;
+  const setActive = (index: number) => setActiveState({ query: query ?? "", index });
+
+  const choose = (command: StudioCommand) => {
+    onChange(`${command.name} `);
+    ref.current?.focus();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (menuOpen && !e.nativeEvent.isComposing) {
+      const count = matches.length;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setActive((active + (e.key === "ArrowDown" ? 1 : count - 1)) % count);
+        return;
+      }
+      if ((e.key === "Enter" && !e.shiftKey) || (e.key === "Tab" && !e.shiftKey)) {
+        e.preventDefault();
+        choose(matches[active]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setDismissedAt(value);
+        return;
+      }
+    }
+    onKeyDown(e);
+  };
+
   return (
     <div className="mx-auto w-full max-w-3xl">
-      {value.startsWith("/") &&
-      !value.includes(" ") &&
-      CREATE_SKILL_COMMAND.startsWith(value) &&
-      value !== CREATE_SKILL_COMMAND ? (
-        <Button
-          variant="outline"
-          className="mb-2 min-h-11 max-w-full whitespace-normal text-left"
-          onClick={() => {
-            onChange(`${CREATE_SKILL_COMMAND} `);
-            ref.current?.focus();
-          }}
-        >
-          {CREATE_SKILL_COMMAND}
-        </Button>
-      ) : null}
-      <div className="flex w-full flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm transition-colors focus-within:border-ring">
+      <Popover open={menuOpen} onOpenChange={(open) => !open && setDismissedAt(value)}>
+      <PopoverAnchor asChild>
+      <div ref={boxRef} className="flex w-full flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm transition-colors focus-within:border-ring">
         <input
           ref={fileInputRef}
           type="file"
@@ -145,8 +174,13 @@ export const Composer = ({
           ref={ref}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          onKeyDown={onKeyDown}
+          onKeyDown={handleKeyDown}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
           aria-label="Message Nova"
+          aria-autocomplete="list"
+          aria-controls={menuOpen ? listId : undefined}
+          aria-activedescendant={menuOpen ? commandOptionId(listId, active) : undefined}
           placeholder="Ask a question about your data"
           rows={1}
           disabled={disabled}
@@ -205,6 +239,23 @@ export const Composer = ({
           </button>
         </div>
       </div>
+      </PopoverAnchor>
+      {menuOpen ? (
+        <StudioCommandMenu
+          listId={listId}
+          commands={matches}
+          active={active}
+          onActiveChange={setActive}
+          onChoose={choose}
+          anchorRef={boxRef}
+        />
+      ) : null}
+      </Popover>
+      <p className="sr-only" aria-live="polite">
+        {menuOpen
+          ? `${matches.length} ${matches.length === 1 ? "command" : "commands"} available. Use the up and down arrows to choose, Enter to insert.`
+          : ""}
+      </p>
       <p className="mt-2 text-center text-xs text-muted-foreground">
         Enter to send, Shift+Enter for a new line. Type / for commands.
       </p>

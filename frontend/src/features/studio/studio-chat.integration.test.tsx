@@ -788,10 +788,7 @@ describe("studio transcript click-through", () => {
       "/",
     );
     await userEvent.click(
-      page.getByRole("button", {
-        name: "/create-skill-with-chat",
-        exact: true,
-      }),
+      page.getByRole("option", { name: /^\/create-skill-with-chat/ }),
     );
     await expect
       .element(page.getByRole("textbox", { name: "Message Nova" }))

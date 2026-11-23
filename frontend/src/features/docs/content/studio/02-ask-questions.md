@@ -32,6 +32,17 @@ SQL or table names.
    Stop also cancels a **Reconsider this answer** pass. A stopped answer shows
    "Stopped before the answer finished."
 
+## Use a command
+
+Type **/** at the start of the message box to see the **Commands** list above
+the box. Keep typing to narrow it. Use the up and down arrows to pick a
+command and press **Enter** or **Tab** to insert it, or click it. Press
+**Esc** to close the list.
+
+**/create-skill-with-chat** starts writing a skill with Nova. Type the task
+you repeat after the command and press **Enter**. See
+[Capabilities](/docs/studio/capabilities) for where your saved skills live.
+
 ## Read the answer
 
 When the agent finishes you see:
