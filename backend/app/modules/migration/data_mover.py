@@ -6,7 +6,9 @@ The move is storage-agnostic and uses the **stage** abstraction Nova already has
 1. **Export** runs on the *source* cluster: ``INSERT INTO FILES(...)`` writes the
    table as Parquet to a shared stage path.
 2. **Import** runs on the *target*: ``INSERT INTO target.t SELECT ... FROM
-   FILES(...)`` reads that path back.
+   FILES(...)`` reads that path back. User SQL may not read ``FILES()``; the
+   service runs this import inside
+   :func:`app.sql_frontend.file_reads.internal_file_read` for the run's folder.
 3. **Verify** compares a row count and an order-independent digest on both sides.
 
 Both clusters must reach the same object storage. That is the one operator

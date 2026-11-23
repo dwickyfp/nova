@@ -14,8 +14,13 @@ workload observations.
 
 A Nova execution UUID links one bounded workload observation to its existing
 Nova audit UUIDs and optional StarRocks query UUIDs. QueryRepository consumes or
-drains the result before reading LAST_QUERY_ID on the same connection. Missing
-correlation stays unavailable. The same session read uses the pinned engine's
+drains the result before reading LAST_QUERY_ID on the same connection. It makes
+that extra round trip only when something reads the id: a diagnostic, experiment
+or maintenance run, a captured profile, or a workload observation this process
+persists (collection enabled, the collector's flush loop running, and not a
+private dataset query). Otherwise the engine id is not read, the audit row
+carries none, and the session's own LAST_QUERY_ID() is left to the engine.
+Missing correlation stays unavailable. The same session read uses the pinned engine's
 CATALOG() and DATABASE() functions to capture the execution context. Unknown
 engine catalog context cannot reuse a default-catalog enrollment. The proxy preserves the caller's LAST_QUERY_ID
 semantics across instrumentation. Cancellation closes an interrupted connection;

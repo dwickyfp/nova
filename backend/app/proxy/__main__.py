@@ -53,6 +53,10 @@ async def _run_admitted(metadata: MetadataDatabase, readiness_interval: float) -
     await db.init_system_pool()
     # Notebook and task sandboxes log in with data tokens bound to Nova sessions in Redis.
     await session_store.init()
+    # Train the SQL parser's prediction caches before the first connection.
+    from app.sql_frontend.warmup import warm_parser
+
+    warm_parser()
     PROXY_EXPECTED.set(1)
     start_metrics_server("proxy")
     server = MySQLProxyServer()

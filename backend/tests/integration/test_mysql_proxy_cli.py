@@ -364,7 +364,7 @@ class TestAcceptanceCriteria:
         reads what was sent without ever handling a credential value — the
         engine form carries real ones, the stored form does not.
 
-        This is the L1 bug's L3 counterpart: ``_inject_files_params`` once
+        This is the L1 bug's L3 counterpart: the FILES() property injection once
         suppressed the CSV pass because the translator had already written
         credentials into ``FILES()``, and the query then returned the file's
         raw line text as one column. That failure is invisible in the row count

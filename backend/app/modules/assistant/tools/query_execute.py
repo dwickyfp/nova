@@ -85,6 +85,22 @@ _TOOL_PARAMETERS = {
 }
 
 
+def _is_show_views(statements: list[str]) -> bool:
+    """One ``SHOW VIEWS`` statement, which the tool answers with a repair hint.
+
+    A form the policy's lexical deny layer refuses (a leading comment, a second
+    statement) is not this case and is refused as before.
+    """
+    return (
+        len(statements) == 1
+        and policy.lexically_allowed(statements[0])
+        and re.match(
+            r"SHOW\s+VIEWS\b", strip_sql_comments(statements[0]).strip(), re.IGNORECASE
+        )
+        is not None
+    )
+
+
 class QueryExecuteTool:
     """The ``query_execute`` assistant tool.
 
@@ -149,7 +165,14 @@ class QueryExecuteTool:
                 return "session_change"
         except ValueError:
             return "denied"
-        return policy.tool_classification(sql) if sql else "denied"
+        if not sql:
+            return "denied"
+        from app.common.sql_guard import split_sql_statements
+
+        if _is_show_views(split_sql_statements(sql)):
+            # Answered with a repair hint; nothing reaches the engine.
+            return "read_only"
+        return policy.tool_classification(sql)
 
     async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
         """Execute the payload on the requesting user's connection."""
@@ -195,6 +218,23 @@ class QueryExecuteTool:
         if requested_role is not None:
             return await self._switch_role(requested_role, sql, context)
 
+        # The engine has no SHOW VIEWS, so the grammar refuses it; answer with
+        # the supported spelling instead of a bare refusal. Nothing executes.
+        if _is_show_views(statements):
+            detail = (
+                "StarRocks does not support SHOW VIEWS. Query TABLE_NAME from "
+                "information_schema.views, filtering TABLE_SCHEMA to the requested database. "
+                "For one view's definition, use SHOW CREATE VIEW db.view_name."
+            )
+            await self._audit(
+                context=context, username=username, sql=_safe_redact(sql), status="ERROR",
+                decision="approved", error_message=detail, rows_affected=0,
+            )
+            return ToolOutcome(
+                ok=False, summary="", error=detail,
+                error_class="UNSUPPORTED_SQL", recoverable=True,
+            )
+
         classification, decisions = policy.classify_statements(statements)
         self._classification = classification
 
@@ -221,22 +261,6 @@ class QueryExecuteTool:
             )
             return ToolOutcome(ok=False, summary="", error=reason)
 
-        if len(statements) == 1 and re.match(
-            r"SHOW\s+VIEWS\b", strip_sql_comments(statements[0]).strip(), re.IGNORECASE
-        ):
-            detail = (
-                "StarRocks does not support SHOW VIEWS. Query TABLE_NAME from "
-                "information_schema.views, filtering TABLE_SCHEMA to the requested database. "
-                "For one view's definition, use SHOW CREATE VIEW db.view_name."
-            )
-            await self._audit(
-                context=context, username=username, sql=safe_sql, status="ERROR",
-                decision="approved", error_message=detail, rows_affected=0,
-            )
-            return ToolOutcome(
-                ok=False, summary="", error=detail,
-                error_class="UNSUPPORTED_SQL", recoverable=True,
-            )
 
         from app.modules.query.service import query_service
 

@@ -19,7 +19,6 @@ from app.common.crypto import decrypt
 from app.core.deps import get_current_user
 from app.core.metadata_schema import load_migrations
 from app.modules.access_control.security_context import SecurityContext
-from app.modules.access_control.statement_router import SecurityStatementRouter
 from app.modules.catalog import connections, service
 from app.modules.catalog.connections import ConnectionService, validate_secret_ref
 from app.modules.catalog.connections_router import router
@@ -522,20 +521,6 @@ async def test_sql_grant_compiles_a_policy_for_the_named_catalog(monkeypatch):
     )
     assert grant.await_args.kwargs["catalog"] == "pg_x"
     assert grant.await_args.kwargs["database"] == "public"
-
-
-async def test_legacy_router_also_accepts_the_catalog(monkeypatch):
-    from app.modules.access_control.security_context import require_security_context
-
-    service_mock = AsyncMock()
-    router_ = SecurityStatementRouter(service_mock)
-    security = require_security_context(principal="admin", active_role="ACCOUNTADMIN")
-    await router_.route(
-        "GRANT SELECT ON TABLE pg_x.public.orders TO ROLE analyst", security=security
-    )
-    assert service_mock.grant_access.await_args.kwargs["catalog"] == "pg_x"
-    await router_.route("REVOKE SELECT ON analytics.sales FROM ROLE analyst", security=security)
-    assert service_mock.revoke_access.await_args.kwargs["catalog"] == "default_catalog"
 
 
 def test_ranger_policy_for_a_foreign_table_targets_that_catalog_only():

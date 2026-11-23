@@ -17,7 +17,6 @@ from app.integrations.ranger.compiler import (
 from app.integrations.ranger.schemas import RangerRole
 from app.modules.access_control.security_context import SecurityContext, SecurityContextError
 from app.modules.access_control.service import AccessControlService
-from app.modules.access_control.statement_router import SecurityStatementRouter
 from app.modules.ml_engine.spec import MLSecurityContext
 from app.proxy.session import SessionState, parse_role_statement
 
@@ -408,67 +407,6 @@ async def test_ranger_usersync_serializes_role_scoped_attributes() -> None:
     attrs = json.loads(bodies[0]["vXUsers"][0]["otherAttributes"])
     assert attrs["nova_scope.marketing.city"] == "Bandung,Jakarta"
     assert bodies[0]["vXUsers"][0]["syncSource"] == "NOVA"
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "statement",
-    [
-        "GRANT SELECT ON TABLE analytics.sales TO ROLE marketing",
-        "GRANT SELECT ON analytics.sales TO ROLE marketing",
-    ],
-)
-async def test_security_statement_router_never_forwards_native_grant(
-    monkeypatch, statement: str
-) -> None:
-    calls: list[tuple[str, dict]] = []
-
-    class Service:
-        async def grant_access(self, security, **kwargs):
-            calls.append((security.active_role, kwargs))
-            return {"id": 3}
-
-    router = SecurityStatementRouter(Service())
-    routed = await router.route(
-        statement,
-        security=SecurityContext(principal="admin", active_role="ACCOUNTADMIN"),
-    )
-    assert routed.handled is True
-    assert calls == [
-        (
-            "ACCOUNTADMIN",
-            {
-                "role": "marketing",
-                "catalog": "default_catalog",
-                "database": "analytics",
-                "table": "sales",
-                "accesses": ["SELECT"],
-            },
-        )
-    ]
-
-
-@pytest.mark.asyncio
-async def test_security_statement_router_routes_role_hierarchy(monkeypatch) -> None:
-    calls: list[dict] = []
-
-    class Service:
-        async def grant_role_to_role(self, security, **kwargs):
-            calls.append({"active_role": security.active_role, **kwargs})
-
-    routed = await SecurityStatementRouter(Service()).route(
-        "GRANT base_reader TO ROLE marketing",
-        security=SecurityContext(principal="admin", active_role="ACCOUNTADMIN"),
-    )
-
-    assert routed.handled is True
-    assert calls == [
-        {
-            "active_role": "ACCOUNTADMIN",
-            "parent_role": "marketing",
-            "member_role": "base_reader",
-        }
-    ]
 
 
 @pytest.mark.asyncio

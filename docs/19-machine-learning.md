@@ -158,8 +158,10 @@ shows provider-specific storage URLs or credential values.
 - Every feature query executes as the requesting StarRocks user and active
   role. `@stage` translation follows the same guarded SQL pipeline as worksheet
   queries.
-- Arrow Flight SQL on port `9408` is the primary feature transport. The MySQL
-  fallback uses bounded `fetchmany()` batches.
+- Features stream over the caller's MySQL session, where Ranger enforcement
+  applies, in bounded `fetchmany()` batches. Arrow Flight is not qualified for
+  Ranger enforcement, is never used for governed data, and its FE port is not
+  published.
 - CPU-heavy fitting runs outside the async request loop in bounded, terminable
   worker processes.
 - New model versions live in configured Nova object storage and are verified by

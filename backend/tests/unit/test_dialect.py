@@ -1,12 +1,7 @@
-"""Unit tests for @stage SQL dialect — parser, translator, injector, detector."""
+"""Unit tests for @stage SQL dialect — parser, translator, injector."""
 
 import pytest
 
-from app.modules.query.dialect.detector import (
-    detect_format_from_content,
-    detect_format_from_key,
-    detect_format_from_listing,
-)
 from app.modules.query.dialect.injector import get_credential_params
 from app.modules.query.dialect.parser import (
     CommandType,
@@ -625,33 +620,6 @@ class TestBareAndDirectoryStagesReachTranslation:
         translated, _ = translate_stage_query(parsed, {"stage1": self._config()})
 
         assert translated.startswith("SELECT @x FROM FILES(")
-
-
-# --- Detector Tests ---
-
-
-class TestDetector:
-    def test_detect_from_key_csv(self):
-        assert detect_format_from_key("datalake/data/file.csv") == "csv"
-
-    def test_detect_from_key_parquet(self):
-        assert detect_format_from_key("datalake/data/events.parquet") == "parquet"
-
-    def test_detect_from_content_parquet(self):
-        assert detect_format_from_content(b'PAR1') == "parquet"
-
-    def test_detect_from_content_json(self):
-        assert detect_format_from_content(b'{"key": "value"}') == "json"
-
-    def test_detect_from_content_csv(self):
-        assert detect_format_from_content(b'id,name,value\n1,test,100') == "csv"
-
-    def test_detect_from_listing(self):
-        keys = ["a.csv", "b.csv", "c.csv", "d.parquet"]
-        assert detect_format_from_listing(keys) == "csv"
-
-    def test_detect_from_empty_listing(self):
-        assert detect_format_from_listing([]) == "csv"
 
 
 # --- Injector Tests ---

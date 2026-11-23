@@ -77,7 +77,7 @@ SELECT COUNT(*) FROM orders WHERE order_id = 301;   -- 0
 | --- | --- |
 | Confirmation | There is no **Run destructive query?** dialog. `UPDATE`, `DELETE`, `DROP`, and similar statements run as soon as you send them. |
 | Row limit | The worksheet's 500-row limit does not apply. |
-| Transactions | `BEGIN`, `COMMIT`, and `ROLLBACK` work, and a transaction can stay open across the statements you send. Run `SET ROLE` outside a transaction. In the worksheet a transaction must end in the same run. |
+| Transactions | `BEGIN`, `COMMIT`, and `ROLLBACK` work, and a transaction can stay open across the statements you send. Run `SET ROLE` outside a transaction. In the worksheet a transaction must end in the same run. Inside `START TRANSACTION READ ONLY`, a statement that changes data, including `WITH ... DELETE`, fails with `Cannot execute statement in a READ ONLY transaction.` |
 | Session settings and variables | `SET <setting>` and `SET @variable` last for the connection. They are separate from the settings a worksheet keeps for its SQL file. |
 | Refused statements | The same statements are refused, for example `DROP USER root` returns `root user cannot be dropped`. |
 | Unloading to a stage | Refused, because it needs the worksheet's confirmation. `INSERT INTO FILES`, `INTO OUTFILE`, `EXPORT TABLE`, `COPY INTO @stage` and `INSERT INTO @stage` return messages such as `EXPORT TABLE writes table data to files and is not read-only.` Run them in the worksheet; see [Unload data to a stage](/docs/sql/unload-data-to-stages). |

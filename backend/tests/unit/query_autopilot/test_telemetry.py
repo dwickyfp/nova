@@ -43,8 +43,18 @@ def test_session_function_rewrite_is_structural_and_preserves_labels():
     assert preserve_last_query_id("select last_query_id()", None) == ("select last_query_id()", {})
 
 
+@pytest.fixture
+def running_collector(monkeypatch):
+    """The process's collector with its flush loop running, as in web and proxy."""
+    from app.modules.query_autopilot.telemetry import collector
+
+    monkeypatch.setattr(collector, "running", True)
+    monkeypatch.setattr(collector, "enabled", True)
+    return collector
+
+
 @pytest.mark.asyncio
-async def test_correlation_is_after_unbuffered_drain_and_is_not_invented():
+async def test_correlation_is_after_unbuffered_drain_and_is_not_invented(running_collector):
     events = []
     qid = str(uuid4())
 
@@ -258,3 +268,143 @@ async def test_process_collector_binds_service_identity_and_preserves_user_scope
     assert observed[0].scope.principal == "caller"
     assert observed[0].scope.active_role == "ANALYST"
     assert observed[0].scope.security_context_version == 8
+
+
+_CORRELATION_SQL = (
+    "SELECT LAST_QUERY_ID() AS nova_engine_query_id, "
+    "CATALOG() AS nova_catalog, DATABASE() AS nova_database"
+)
+
+
+def _recording_connection(events: list[str], qid: str):
+    class Cursor:
+        description = [("id", 3, None, None, None, None, True)]
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return None
+
+        async def execute(self, sql):
+            events.append(sql)
+
+        async def fetchall(self):
+            return [(1,)]
+
+        async def fetchone(self):
+            return {"nova_engine_query_id": qid, "nova_catalog": "default_catalog",
+                    "nova_database": "db"}
+
+    class Connection:
+        def cursor(self, *_):
+            return Cursor()
+
+    return Connection()
+
+
+async def _run_once(events, qid, *, identity=None, session=None):
+    from app.sql_frontend.session_functions import CORRELATION_SESSION
+
+    token = EXECUTION.set(identity or ExecutionIdentity())
+    session_token = CORRELATION_SESSION.set(session)
+    try:
+        return await QueryRepository._execute_on(
+            _recording_connection(events, qid), "select id from t",
+            role=None, max_rows=None, start=0,
+        )
+    finally:
+        CORRELATION_SESSION.reset(session_token)
+        EXECUTION.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_no_correlation_round_trip_when_nothing_collects(monkeypatch):
+    """A process without a running collector never persists the observation."""
+    from app.modules.query_autopilot.telemetry import collector
+
+    monkeypatch.setattr(collector, "running", False)
+    events: list[str] = []
+    session = QueryCorrelationSession(last_query_id="earlier", instrumented=True)
+    result = await _run_once(events, str(uuid4()), session=session)
+    assert events == ["select id from t"]
+    assert result.engine_query_ids == []
+    assert result.correlation_status == "unavailable"
+    # The engine's own LAST_QUERY_ID() is untouched, so it is not rewritten.
+    assert session.instrumented is False
+
+
+@pytest.mark.asyncio
+async def test_no_correlation_round_trip_when_collection_is_disabled(running_collector):
+    running_collector.enabled = False
+    events: list[str] = []
+    await _run_once(events, str(uuid4()))
+    assert _CORRELATION_SQL not in events
+
+
+@pytest.mark.asyncio
+async def test_no_correlation_round_trip_for_a_private_dataset_query(running_collector):
+    from app.modules.query.provenance import DatasetQuery, dataset_query
+
+    events: list[str] = []
+    with dataset_query(DatasetQuery(uuid4(), "query")):
+        await _run_once(events, str(uuid4()))
+    assert _CORRELATION_SQL not in events
+    assert "SET enable_profile = false" in events
+
+
+@pytest.mark.asyncio
+async def test_experiment_purpose_correlates_without_a_running_collector(monkeypatch):
+    """Autopilot experiments read the engine id from the result."""
+    from app.modules.query_autopilot.telemetry import collector
+
+    monkeypatch.setattr(collector, "running", False)
+    qid = str(uuid4())
+    events: list[str] = []
+    with purpose("experiment"):
+        result = await _run_once(events, qid)
+    assert events[-1] == _CORRELATION_SQL
+    assert result.engine_query_ids == [qid]
+
+
+@pytest.mark.asyncio
+async def test_a_captured_profile_is_correlated(monkeypatch):
+    from app.modules.query_autopilot.telemetry import collector
+
+    monkeypatch.setattr(collector, "running", False)
+    qid = str(uuid4())
+    events: list[str] = []
+    identity = ExecutionIdentity(profile_enabled=True)
+    result = await _run_once(events, qid, identity=identity)
+    assert events[-1] == _CORRELATION_SQL
+    assert identity.query_ids == [qid]
+    assert result.correlation_status == "available"
+
+
+@pytest.mark.asyncio
+async def test_a_running_workload_collector_correlates_and_keeps_last_query_id(running_collector):
+    qid = str(uuid4())
+    events: list[str] = []
+    session = QueryCorrelationSession()
+    await _run_once(events, qid, session=session)
+    assert events == ["select id from t", _CORRELATION_SQL]
+    assert session.instrumented is True and session.last_query_id == qid
+
+
+@pytest.mark.asyncio
+async def test_collector_reports_running_only_while_its_loop_runs():
+    import asyncio
+
+    c = Collector()
+    repo = AsyncMock()
+    repo.get.return_value = None
+    repo.page.return_value = []
+    stop = asyncio.Event()
+    task = asyncio.create_task(c.run(stop, repo))
+    await asyncio.sleep(0)
+    assert c.running and c.collects_workload()
+    with purpose("diagnostic"):
+        assert not c.collects_workload()
+    stop.set()
+    await task
+    assert not c.running and not c.collects_workload()

@@ -192,11 +192,10 @@ async def test_sensitive_runtime_slots_preserve_rewrites_and_private_material(st
 
     monkeypatch.setattr(service, "_resolve_stage_refs", stages)
     monkeypatch.setattr(service, "_detect_csv_params", AsyncMock(return_value=({}, None)))
-    sql = (
-        "SELECT * FROM FILES('path'='s3://bucket/a.csv','aws.s3.secret_key'='private-native-key') p"
-    )
+    sql = "SELECT * FROM t p"
     if stage:
         sql += " JOIN @s.a.csv s ON p.id=s.id"
+    sql += " WHERE 'aws.s3.secret_key'='private-native-key'"
     plan = await service._planner.plan(ast_builders.build(parse_statement(sql)), PlanningContext())
     assert "private-native-key" not in str(plan)
     assert plan.private_bindings
@@ -213,7 +212,7 @@ async def test_stream_preparation_restores_private_material_and_redacts_public_s
     from app.modules.ml_engine.spec import MLSecurityContext
     from app.sql_frontend.preparation import prepare_stream_sql
 
-    sql = "SELECT * FROM FILES('path'='s3://bucket/a.csv','aws.s3.secret_key'='private-key')"
+    sql = "SELECT * FROM t WHERE 'aws.s3.secret_key'='private-key'"
     prepared = await prepare_stream_sql(sql, MLSecurityContext("alice", "pw", role="analyst"))
     assert prepared.engine_sql == sql
     assert "private-key" not in prepared.redacted_sql

@@ -474,7 +474,8 @@ async def test_multi_statement_outfile_payload_cannot_smuggle_the_export(fakes):
 def test_plain_read_only_statements_still_pass_the_write_clause_scan():
     assert tool_classification("SELECT * FROM t") == "read_only"
     assert tool_classification("SELECT 'INTO OUTFILE' AS note") == "read_only"
-    assert tool_classification("SELECT * FROM files") == "read_only"
+    # FILES is a keyword: a table of that name is quoted, as the engine requires.
+    assert tool_classification("SELECT * FROM `files`") == "read_only"
 
 
 def test_outfile_guard_is_enforced_at_the_shared_pipeline():
@@ -534,12 +535,16 @@ def test_explain_over_a_destructive_statement_is_denied(sql):
         "EXPLAIN SELECT 1",
         "EXPLAIN ANALYZE SELECT * FROM t",
         "EXPLAIN WITH x AS (SELECT 1) SELECT * FROM x",
-        "EXPLAIN SHOW TABLES",
-        "EXPLAIN DESCRIBE t",
     ],
 )
 def test_explain_over_a_read_only_statement_stays_read_only(sql):
     assert tool_classification(sql) == "read_only"
+
+
+@pytest.mark.parametrize("sql", ["EXPLAIN SHOW TABLES", "EXPLAIN DESCRIBE t"])
+def test_explain_over_a_statement_the_grammar_rejects_is_denied(sql):
+    """The pinned grammar only explains queries and DML; anything else fails closed."""
+    assert tool_classification(sql) == "denied"
 
 
 async def test_explain_over_a_destructive_statement_is_refused_before_the_engine(fakes):

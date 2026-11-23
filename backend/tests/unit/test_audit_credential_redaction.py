@@ -12,6 +12,8 @@ persist, and whatever the response carries. Values are placeholders
 (``AKIA_TESTVALUE_123``) — never a real credential.
 """
 
+from unittest.mock import AsyncMock
+
 import pytest
 
 from app.modules.query.repository import QueryResult
@@ -104,14 +106,27 @@ def redact():
 
 
 async def _execute_stage_query(svc, **kwargs):
-    """Run a hand-built FILES()-with-credentials statement through the service.
+    """Run a real ``@stage`` read through the service.
 
-    The SQL already contains the FILES() call, so no stage config or engine is
-    needed: the pipeline's injection step is a no-op (credentials are already
-    present) and the statement goes straight to the recording repo.
+    Stage resolution is stubbed with a connection-backed stage that has no keys
+    of its own, so the pipeline's credential fallback writes the credentials
+    into the translator's ``FILES()`` call, exactly as at execution. Writing
+    ``FILES()`` in user SQL is refused, so the stage is the only way in.
     """
+    from app.modules.query.dialect.translator import StorageConfig
+
+    async def stages(parsed, **_kwargs):
+        return parsed, {
+            ref.start: StorageConfig(
+                "s3", "http://minio:9000", "stages", "stage1", storage_connection="default"
+            )
+            for ref in parsed.stage_refs
+        }
+
+    svc._resolve_stage_refs = stages
+    svc._detect_csv_params = AsyncMock(return_value=({}, None))
     return await svc.execute(role="analyst",
-        sql=_credential_sql(),
+        sql="SELECT * FROM @stage1/x.csv",
         username="analyst",
         encrypted_password="enc",
         **kwargs,
@@ -157,7 +172,9 @@ class TestAuditRowIsRedacted:
         await _execute_stage_query(svc)
 
         stored = sink.persisted_sql[-1]
-        assert "s3://stages/x.csv" in stored
+        # The physical root maps back to the stage the user named.
+        assert "@stage1/x.csv" in stored
+        assert "s3://stages/" not in stored
         assert "'format'='csv'" in stored
         assert stored.startswith("SELECT * FROM FILES(")
 
@@ -202,10 +219,15 @@ class TestResponseIsRedacted:
     async def test_original_sql_redacts_explicit_credentials(self, wired):
         """Direct SQL can contain secrets too; both response fields must redact."""
         svc, _repo, _sink = wired()
-        result = await _execute_stage_query(svc)
+        sql = " AND ".join(f"'{key}'='{value}'" for key, value in CREDENTIAL_PARAMS.items())
+        result = await svc.execute(
+            role="analyst", sql=f"SELECT 1 AS v FROM t WHERE {sql}",
+            username="analyst", encrypted_password="enc",
+        )
 
         for secret in CREDENTIAL_PARAMS.values():
             assert secret not in result.original_sql
+            assert secret not in result.executed_sql
         assert "'aws.s3.access_key'='***'" in result.original_sql
 
 

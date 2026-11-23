@@ -319,7 +319,9 @@ async def test_identifier_parameter_cannot_downgrade_stage_export_consent(monkey
             },
         }
     )
-    assert tool.classification == "read_only"
+    # An identifier in clause position is not a read the grammar can see, so
+    # the definition itself is not read-only; the call stays destructive too.
+    assert tool.classification == "destructive"
     registry = ToolRegistry()
     registry.register(tool)
     provider = ScriptedProvider(

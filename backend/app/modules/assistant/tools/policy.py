@@ -5,12 +5,18 @@ remains the enforcement for the ACCOUNTADMIN/root class; this policy decides
 which statements the assistant may run **at all**, statement by statement, so a
 multi-statement payload cannot smuggle a denied statement behind an allowed one.
 
-Deny wins: any statement whose leading keyword is not on the allow list is
-refused before the engine is reached, and a payload containing one denied
-statement is refused as a whole — the tool never executes the allowed prefix of
-a mixed payload. The two Nova DDL interceptions (``CREATE ML_MODEL``,
-``CREATE TASK``) are denied explicitly, because they would otherwise be caught
-by the generic ``CREATE`` denial anyway but must stay denied if that changes.
+The read-only decision comes from the grammar frontend: a statement is allowed
+only when :func:`app.sql_frontend.read_only.is_read_only_statement` finds that
+it reads data and changes nothing. The lexical rules below are an extra *deny*
+layer on top of that decision. They can refuse a statement the frontend calls
+read-only (``EXPLAIN DELETE …``, a parenthesised query, an engine command the
+assistant has no use for), but they never allow one: a ``WITH`` header that a
+keyword scan misreads cannot turn a ``DELETE`` into a ``SELECT``.
+
+Deny wins: a payload containing one denied statement is refused as a whole —
+the tool never executes the allowed prefix of a mixed payload. The two Nova
+DDL interceptions (``CREATE ML_MODEL``, ``CREATE TASK``) are denied explicitly
+as well.
 """
 
 from __future__ import annotations
@@ -20,6 +26,7 @@ from dataclasses import dataclass
 
 from app.common.sql_guard import strip_sql_comments
 from app.modules.assistant.schemas import ToolClassification
+from app.sql_frontend.read_only import is_read_only_statement, statement_effects
 
 #: Row prefix a read-only statement may start with. ``WITH`` and ``EXPLAIN``
 #: are handled separately: ``WITH`` because only a CTE resolving to ``SELECT``
@@ -257,11 +264,24 @@ def explain_body(sql: str) -> str:
 
 
 def is_allowed_statement(sql: str) -> bool:
-    """True when one statement is on the read-only allow list.
+    """True when one statement is read-only.
 
-    The statement is expected to be a single statement (already produced by
+    The grammar frontend decides (:func:`is_read_only_statement`); the lexical
+    rules of :func:`lexically_allowed` can only refuse on top of it. The
+    statement is expected to be a single statement (already produced by
     :func:`app.common.sql_guard.split_sql_statements`); callers that have a raw
     blob must split first.
+    """
+    return lexically_allowed(sql) and is_read_only_statement(sql)
+
+
+def lexically_allowed(sql: str) -> bool:
+    """The lexical deny layer: False when a keyword rule refuses ``sql``.
+
+    This is not a read-only decision on its own. A keyword scan cannot see
+    through quoted identifiers or comments inside a ``WITH`` header, so a True
+    here never allows a statement; :func:`is_allowed_statement` also requires
+    the grammar frontend to agree.
     """
     stripped = sql.strip()
     if not stripped:
@@ -293,7 +313,7 @@ def is_allowed_statement(sql: str) -> bool:
         # Classify the inner statement: ``EXPLAIN DROP TABLE x`` is not
         # read-only (NOVA-82). An unparseable body is denied (fail closed).
         body = explain_body(stripped)
-        return bool(body) and is_allowed_statement(body)
+        return bool(body) and lexically_allowed(body)
     return keyword in _ALLOWED_LEADING
 
 
@@ -338,14 +358,16 @@ def classify_statements(
       contained destructive intent so consent cannot auto-approve it and the
       tool card surfaces why.
     """
-    decisions = [
-        StatementDecision(
-            statement=stmt,
-            allowed=is_allowed_statement(stmt),
-            reason=None if is_allowed_statement(stmt) else denial_reason(stmt),
+    decisions: list[StatementDecision] = []
+    for stmt in statements:
+        ok = is_allowed_statement(stmt)
+        decisions.append(
+            StatementDecision(
+                statement=stmt,
+                allowed=ok,
+                reason=None if ok else denial_reason(stmt),
+            )
         )
-        for stmt in statements
-    ]
     allowed = [d for d in decisions if d.allowed]
     denied = [d for d in decisions if not d.allowed]
     if not denied:
@@ -378,6 +400,9 @@ def denial_reason(sql: str) -> str:
         return "INTO @stage exports query results and is not a read-only statement."
     if _INSERT_INTO_FILES_RE.search(scan):
         return "INSERT INTO FILES writes to a file path and is not a read-only statement."
+    if lexically_allowed(stripped):
+        # Only the grammar frontend refused it: name what the statement does.
+        return _effects_reason(stripped)
     keyword = _leading_keyword(stripped)
     if keyword == "WITH":
         body_keyword = _leading_keyword(cte_body(stripped))
@@ -391,6 +416,29 @@ def denial_reason(sql: str) -> str:
         return "EXPLAIN does not wrap a recognisable read-only statement."
     if keyword:
         return f"{keyword} is not a read-only statement."
+    return "The statement could not be classified as read-only."
+
+
+#: What a refused statement does, in the order a reason names it.
+_EFFECT_REASONS = (
+    ("deletes_rows", "deletes rows"),
+    ("updates_rows", "updates rows"),
+    ("replaces_data", "replaces data"),
+    ("exports_data", "exports query results"),
+    ("writes_data", "writes data"),
+    ("drops_objects", "drops objects"),
+    ("changes_security", "changes access control"),
+    ("changes_schema", "changes objects"),
+    ("writes_metadata", "changes engine metadata"),
+)
+
+
+def _effects_reason(sql: str) -> str:
+    effects = statement_effects(sql)
+    if effects is not None:
+        for name, verb in _EFFECT_REASONS:
+            if getattr(effects, name):
+                return f"The statement {verb} and is not read-only."
     return "The statement could not be classified as read-only."
 
 
@@ -419,5 +467,6 @@ __all__ = [
     "is_allowed_statement",
     "is_denied_statement",
     "is_nova_ddl",
+    "lexically_allowed",
     "tool_classification",
 ]

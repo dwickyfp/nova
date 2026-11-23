@@ -81,6 +81,7 @@ from app.modules.migration.source import (
 )
 from app.modules.query.dialect.injector import get_credential_params
 from app.modules.query.service import query_service
+from app.sql_frontend.file_reads import internal_file_read
 
 logger = logging.getLogger(__name__)
 
@@ -860,9 +861,6 @@ class MigrationService:
         credential_params["aws.s3.enable_path_style_access"] = "true"
         credential_params["aws.s3.use_aws_sdk_default_behavior"] = "false"
         credential_params["aws.s3.use_instance_profile"] = "false"
-        files_credential_sql = ", ".join(
-            f"'{key}'='{value}'" for key, value in credential_params.items()
-        )
 
         source = await self.resolve_source(source_name)
         results: list[TableCopyResult] = []
@@ -876,7 +874,7 @@ class MigrationService:
                         table=table,
                         migration_id=migration_id,
                         stage_root=stage_root,
-                        files_credential_sql=files_credential_sql,
+                        credential_params=credential_params,
                         actor=actor,
                         encrypted_password=encrypted_password,
                         session_id=session_id,
@@ -894,7 +892,7 @@ class MigrationService:
         table: str,
         migration_id: str,
         stage_root: str,
-        files_credential_sql: str,
+        credential_params: dict[str, str],
         actor: str,
         encrypted_password: str,
         session_id: str | None,
@@ -905,6 +903,9 @@ class MigrationService:
             raw_columns = await migration_repo.list_columns(conn, source_database, table)
             columns = tuple(CopyColumn(name=name, data_type=dtype) for name, dtype in raw_columns)
             stage_path = stage_path_for(stage_root, migration_id, source_database, table)
+            files_credential_sql = ", ".join(
+                f"'{key}'='{value}'" for key, value in credential_params.items()
+            )
             plan = build_table_copy(
                 source_database=source_database,
                 target_database=target_database,
@@ -937,14 +938,21 @@ class MigrationService:
 
         rows_imported = 0
         if not export_error:
-            # 2. Import on the target, as the caller.
-            import_error, import_result = await self._run_on_target(
-                plan.import_sql,
-                actor=actor,
-                encrypted_password=encrypted_password,
-                session_id=session_id,
-                role=role,
-            )
+            # 2. Import on the target, as the caller. Nova refuses FILES() reads
+            # in SQL; this run's own transfer folder, read with exactly the
+            # properties Nova injected, is the one exception.
+            with internal_file_read(
+                plan.stage_path,
+                root=stage_root,
+                properties={"format": "parquet", **credential_params},
+            ):
+                import_error, import_result = await self._run_on_target(
+                    plan.import_sql,
+                    actor=actor,
+                    encrypted_password=encrypted_password,
+                    session_id=session_id,
+                    role=role,
+                )
             if import_error:
                 errors.append(f"import: {import_error}")
             else:

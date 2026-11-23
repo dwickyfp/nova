@@ -349,35 +349,58 @@ class TestResolvedCredentialsNeverReachTheAuditRow:
     """NOVA-94 security finding #1: the *resolved* statement must be redacted.
 
     Unlike the pre-engine paths above, a statement can reach the pipeline
-    already carrying an access/secret key (a native ``FILES()`` read with
-    inline keys). ``redacted_sql`` is computed before the audit pair runs, so both
+    already carrying an access/secret key (a credential-shaped literal, or a
+    refused native ``FILES()`` read with inline keys). ``redacted_sql`` is
+    computed before the audit pair runs, so both
     writes must use it — writing the raw argument puts a live storage key in
     ``NOVA_SYSTEM.AUDIT_LOG``, which any AUDIT_LOG reader can then read.
     """
 
-    # A native ``FILES()`` read with inline keys is still accepted and
-    # reaches the engine verbatim (repositories now take only a stage).
+    # A native ``FILES()`` read with inline keys is refused before the engine
+    # (files are read through a stage); its refusal is still audited.
     STATEMENT = (
         'SELECT * FROM FILES("path" = "s3://backup-bucket/snapshots/a.csv", '
         '"format" = "csv", "aws.s3.access_key" = "ACCESSKEY_SENTINEL", '
         '"aws.s3.secret_key" = "SECRETKEY_SENTINEL")'
     )
+    # A statement that reaches the engine with credential-shaped literals.
+    ENGINE_STATEMENT = (
+        'SELECT 1 AS v FROM snapshots WHERE "aws.s3.access_key" = "ACCESSKEY_SENTINEL" '
+        'AND "aws.s3.secret_key" = "SECRETKEY_SENTINEL"'
+    )
 
-    async def test_success_row_carries_no_credential(self, wired):
+    @staticmethod
+    def _assert_no_credential(entry):
+        for field in ("sql_text", "rewritten_sql", "error_message"):
+            assert "ACCESSKEY_SENTINEL" not in (entry.get(field) or ""), field
+            assert "SECRETKEY_SENTINEL" not in (entry.get(field) or ""), field
+
+    async def test_refused_files_read_row_carries_no_credential(self, wired):
         service, repo, sink = wired
 
-        await service.execute(role="analyst",
+        result = await service.execute(role="analyst",
             sql=self.STATEMENT,
             username="admin",
             encrypted_password="enc",
         )
 
-        assert repo.calls == [self.STATEMENT], "the engine still gets the real keys"
-        entry = sink.entries[0]
-        assert "ACCESSKEY_SENTINEL" not in (entry["sql_text"] or "")
-        assert "SECRETKEY_SENTINEL" not in (entry["sql_text"] or "")
-        assert "ACCESSKEY_SENTINEL" not in (entry["rewritten_sql"] or "")
-        assert "SECRETKEY_SENTINEL" not in (entry["rewritten_sql"] or "")
+        assert not result.success
+        assert result.error.startswith("Reading with FILES() is not available")
+        assert repo.calls == [], "a refused statement must not reach the engine"
+        assert sink.statuses == ["ERROR"]
+        self._assert_no_credential(sink.entries[0])
+
+    async def test_success_row_carries_no_credential(self, wired):
+        service, repo, sink = wired
+
+        await service.execute(role="analyst",
+            sql=self.ENGINE_STATEMENT,
+            username="admin",
+            encrypted_password="enc",
+        )
+
+        assert repo.calls == [self.ENGINE_STATEMENT], "the engine still gets the real values"
+        self._assert_no_credential(sink.entries[0])
 
     async def test_error_row_carries_no_credential(self, wired, monkeypatch):
         service, repo, sink = wired
@@ -390,19 +413,14 @@ class TestResolvedCredentialsNeverReachTheAuditRow:
 
         with pytest.raises(RuntimeError):
             await service.execute(role="analyst",
-                sql=self.STATEMENT,
+                sql=self.ENGINE_STATEMENT,
                 username="admin",
                 encrypted_password="enc",
             )
 
         entry = sink.entries[0]
         assert entry["status"] == "ERROR"
-        assert "ACCESSKEY_SENTINEL" not in (entry["sql_text"] or "")
-        assert "SECRETKEY_SENTINEL" not in (entry["sql_text"] or "")
-        assert "ACCESSKEY_SENTINEL" not in (entry["rewritten_sql"] or "")
-        assert "SECRETKEY_SENTINEL" not in (entry["rewritten_sql"] or "")
-        assert "ACCESSKEY_SENTINEL" not in (entry["error_message"] or "")
-        assert "SECRETKEY_SENTINEL" not in (entry["error_message"] or "")
+        self._assert_no_credential(entry)
 
     async def test_unredactable_error_message_does_not_mask_the_original(self, wired, monkeypatch):
         """A redactor refusal must not replace the client's real error.

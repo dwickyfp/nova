@@ -163,3 +163,35 @@ async def test_read_only_transaction_cannot_open_inside_an_engine_transaction(se
         "START TRANSACTION READ ONLY", username="alice", connection=object()
     )
     assert result.error_code == 1568 and not session.read_only_transaction
+
+
+#: ``WITH … DELETE`` spellings whose CTE header hid a ``)SELECT`` from the old
+#: keyword-based read-only check (architecture audit, section 3.1).
+_CTE_DELETES = (
+    'WITH x AS (SELECT ")SELECT" AS a) DELETE FROM db.t WHERE 1=1',
+    "WITH x AS (SELECT `)SELECT` FROM db.u) DELETE FROM db.t WHERE 1=1",
+    "WITH x AS (SELECT 1 /* )SELECT */) DELETE FROM db.t WHERE 1=1",
+)
+
+
+@pytest.mark.parametrize("sql", ["DELETE FROM db.t WHERE 1=1", *_CTE_DELETES])
+async def test_delete_inside_a_read_only_transaction_is_refused(service, sql):
+    """The READ ONLY emulation uses the grammar effects, not a keyword scan."""
+    session = SessionState(active_role="reader")
+    executor = ProxyQueryExecutor(session)
+    await executor.execute("START TRANSACTION READ ONLY", username="alice", connection=object())
+    refused = await executor.execute(sql, username="alice", connection=object())
+    assert refused.error_code == 1792
+    assert refused.error == "Cannot execute statement in a READ ONLY transaction."
+    assert session.read_only_transaction
+    assert service.calls == []
+
+
+@pytest.mark.parametrize("sql", _CTE_DELETES)
+async def test_a_cte_delete_is_not_described_by_running_it(service, sql):
+    executor = ProxyQueryExecutor(SessionState())
+    described = await executor.describe_columns(
+        sql, username="a", connection=object(), session_id=None
+    )
+    assert described == []
+    assert service.calls == []

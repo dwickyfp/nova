@@ -61,6 +61,17 @@ reparses with full LL prediction only when SLL cannot decide. SLL accepts a
 subset of what LL accepts and builds the same tree when it succeeds, so the
 fallback changes speed, not results; diagnostics always come from the LL pass.
 
+The generated parser learns its prediction DFA lazily, and each parse worker
+thread keeps private caches, so the first statement of a new shape on each
+thread is slow. The API and MySQL proxy processes call
+`app/sql_frontend/warmup.py` before serving: it parses a small fixed corpus of
+common shapes on the serving thread and once on every `SQL_PARSE_THREADS`
+worker (a barrier puts one pass on each thread). It is bounded at 2 seconds,
+never fails startup and logs what it parsed and how long it took. Measured
+locally (Apple M-series, Python 3.11, default two workers): about 0.8 s at
+startup, and the first parse of an unseen CTE/join/window query falls from
+about 136 ms to about 26 ms on both the serving thread and a worker.
+
 Both lexer and parser default error listeners are removed. Errors report a
 position and a generic message; rejected tokens and literals are omitted.
 Direct execution accepts exactly one complete statement. Script execution keeps
@@ -117,6 +128,20 @@ uses the server response and resubmits the immutable SQL/tab/namespace snapshot.
 MySQL clients have no confirmation exchange, so the proxy submits the statement as
 confirmed: the statement the client sent is the explicit request, as with any MySQL
 server. The guard, engine authorization and audit still apply.
+
+Read-only callers ask `app/sql_frontend/read_only.py`: a statement is read-only
+when it parses, builds and analyzes, and its preflight effects read data and
+change nothing (`external_io` from a stage read is still a read; any mutating
+effect, including `exports_data`, is not). Assistant tools, semantic views,
+agent artifacts and custom SQL tools use it through
+`app/modules/assistant/tools/policy.py`, and so do the MySQL proxy's emulated
+`START TRANSACTION READ ONLY` and prepare-time column description. The policy's
+keyword rules are an extra deny layer only: they still refuse `EXPLAIN` over a
+mutation, Nova DDL and statements the assistant has no use for, but a keyword
+scan never makes a statement read-only. `WITH ... DELETE` is a delete however
+its CTE bodies quote or comment their text, and a statement that does not
+parse is not read-only. `tests/unit/test_read_only_differential.py` compares
+both classifiers over the grammar corpus and the functional SQL scenarios.
 
 `LogicalPlan` carries the statement and analysis. Lowering produces one of:
 
@@ -231,7 +256,38 @@ so repeated stage names, joins and different scoped connections stay independent
 The existing translator and injector handle FILES(), LIST, COPY and stage
 exports. Secret resolution occurs at execution, immediately before preparation
 and engine submission. Responses and audit SQL use the redacted form.
-Native FILES() reads are preserved.
+
+Native file reads (`app/sql_frontend/file_reads.py`): a `FILES(...)` relation or
+`DESC FILES(...)` written in user SQL is refused while building the AST, for
+every statement, consumer and nesting (joins, CTEs, subqueries, INSERT/CTAS,
+views, EXPLAIN, task bodies). `FILES()` makes the engine connect to whatever
+its properties name, such as an internal `aws.s3.endpoint`, an `hdfs://` host
+or the backend's instance credentials, so it would bypass stage governance and
+allow server-side requests to internal hosts. There is no registry of approved
+endpoints to match against outside stages, so the narrowest rule is that
+files are read through `@stage`, whose runtime authorizes the active role
+before any secret is resolved. Pipes keep their validated
+`FILES("path" = "@stage/...")` source (the pipe validator and planner, not
+this check), and `INSERT INTO FILES` remains an unload validated as below.
+The `FILES()` calls the translator generates at execution are not re-parsed.
+One Nova-generated statement is parsed with a `FILES()` read: a database
+migration with data imports the rows it exported to its own per-run transfer
+folder (`app/modules/migration/data_mover.py`). The migration service runs that
+import inside `internal_file_read(folder, root=..., properties=...)`, a grant
+held in a server-side context variable. Only that service code path sets it;
+nothing in an HTTP request, SQL text, session variable or proxy connection can
+create or widen it. The folder must lie inside the configured transfer location
+(same scheme and bucket), with no `.`/`..`/empty segments or globs. Inside the
+grant, a `FILES()` relation is accepted only when its single `path` is a file
+name or one `*` pattern directly inside that folder and its other properties
+are exactly the format and storage settings Nova injected, so a user-supplied
+endpoint, region or instance-profile property is refused. A second `FILES()`
+relation, `DESC FILES(...)` and every statement outside the context are still
+refused. The grant is reset in `finally` and, as a context variable, is copied
+into parse worker threads per call without reaching concurrent requests
+(`tests/unit/test_sql_frontend_file_reads.py` runs two concurrent migrations
+and a user query on one worker). The import still runs as the caller, so
+Ranger governs the target write.
 
 Unload (`app/sql_frontend/unload.py`): `INSERT INTO FILES(...)`,
 `SELECT ... INTO OUTFILE` and `EXPORT TABLE` write only to a stage path written
@@ -390,8 +446,8 @@ client without holding the whole result. Stage listings and storage errors are
 rewritten so physical bucket roots appear as `@stage` and endpoints as
 `<storage endpoint>`.
 
-Compatibility APIs remain in `modules/query/dialect/parser.py`, the compact ML
-and task parsers, and the old security statement router for existing callers.
+Compatibility APIs remain in `modules/query/dialect/parser.py` and the compact ML
+and task parsers for existing callers.
 They are not production feature detectors. The stage parser's legacy short
 circuits do not apply to central SQL parsing. The semantic-expression parser
 retains its separate expression entrypoint and compatibility listener.

@@ -30,8 +30,9 @@ commands run from the repository root unless stated otherwise. Read
   configuration before startup, then waits for role readiness and worker
   heartbeats. It never publishes a metadata epoch. Compose/environment files
   own deployment port bindings.
-  The engine's native MySQL port stays internal in governed deployment;
-  `docker/docker-compose.dev.yml` is an explicit development override.
+  The engine's FE ports (HTTP and its SQL API, RPC, MySQL, Arrow Flight)
+  stay internal in governed deployment; `docker/docker-compose.dev.yml` is an
+  explicit development override that binds only MySQL to loopback.
 - Use the current image/build pins and
   [StarRocks patch guide](../patches/starrocks/AGENTS.md). Replacing the patched
   FE with a stock image can remove role/filter/mask enforcement even when it
