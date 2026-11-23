@@ -446,8 +446,11 @@ def test_hidden_part_types_leave_the_journal_with_all_their_events() -> None:
     assert without_part_types({"kind": "tool"}, {"ui"}) == {"kind": "tool"}
 
 
+REASONING_CASE = next(case for case in CASES if case["name"].startswith("live model reasoning"))
+
+
 def test_model_reasoning_streams_as_its_own_part_between_tools_and_answer() -> None:
-    records = encode_case(CASES[3])
+    records = encode_case(REASONING_CASE)
     parts = {
         r["data"]["part_id"]: r["data"] for r in records if r["event"] == "part.start"
     }
