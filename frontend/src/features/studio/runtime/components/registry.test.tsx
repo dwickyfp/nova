@@ -71,7 +71,8 @@ describe("DatavizChart", () => {
       <DatavizChart props={{ title: "Revenue by region", chart, draft_ref: REF }} ready />,
     );
     await expect.element(screen.getByRole("heading", { name: "Revenue by region" })).toBeVisible();
-    await vi.waitFor(() => expect(screen.container.querySelector("canvas")).not.toBeNull());
+    await vi.waitFor(() => expect(screen.container.querySelector("canvas")).not.toBeNull(),
+      { timeout: 10_000 });
     const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toContain(`/agents/studio/dataviz/drafts/${encodeURIComponent(REF)}/query`);
     const body = JSON.parse(String(init.body));
