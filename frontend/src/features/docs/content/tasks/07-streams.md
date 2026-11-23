@@ -24,7 +24,9 @@ them.
   destination tables used below.
 - The source must be a **Primary Key** table that is not partitioned, with
   simple column types: numbers, decimals, true/false, text, dates and
-  date-times. It cannot have a row filter or masking policy.
+  date-times. It cannot have a row filter or masking policy, including one
+  written for a name pattern that matches it (such as `ord*`) or a
+  tag-based mask.
 - Your active role needs `SELECT` on the source.
 - Select the database in your worksheet. In the examples the source is
   `orders`, a Primary Key table with `order_id`, `customer`, `amount` and
@@ -166,6 +168,7 @@ One write can change at most 50,000 rows of a table that has streams.
 | `ALTER TABLE orders ADD COLUMN ...` | `ALTER TABLE on a table with streams is not supported; drop its streams first` |
 | `INSERT INTO orders (order_id, amount) VALUES ...` | `An INSERT that does not list every column on a table with streams is not supported; drop its streams first` |
 | `INSERT OVERWRITE orders ...` | `INSERT OVERWRITE on a table with streams is not supported; drop its streams first` |
+| Any write, after a row filter or masking policy was added for the table | `Writes to <database>.orders are refused while it has streams: The source has a row filter or masking policy; ...` |
 
 > **Warning:** A write that reaches the table **without** going through Nova
 > (for example a load job run directly against the database engine) cannot be
@@ -228,7 +231,8 @@ DROP STREAM IF EXISTS orders_changes;
 
 `DROP STREAM` asks you to confirm. Only the stream's owner role can drop or
 replace it. When the last stream on a table is dropped, Nova stops capturing
-that table and the refused writes above work again.
+that table, deletes the change history it kept for it, and the refused writes
+above work again.
 
 ## Limits and errors
 
@@ -238,6 +242,12 @@ that table and the refused writes above work again.
 | `A table or view occupies this name` | A stream cannot have the same name as a table or view. |
 | `Stream already exists with a different source or mode` | `CREATE STREAM IF NOT EXISTS` found a stream with that name on another table or in another mode. |
 | `Use either OR REPLACE or IF NOT EXISTS, not both` | Pick one. |
+| `The source has a row filter or masking policy; a stream would expose historical values those policies cannot govern` | A row filter or masking policy could apply to the table. Ask an administrator, or use another table. |
 | `Streams can be read by SELECT and INSERT` | Another kind of statement, such as `CREATE TABLE ... AS SELECT`, tried to read a stream. |
 
 Streams on views, external catalogs or partitioned tables are not supported.
+
+Nova keeps each table's change history in tables whose names start with
+`__nova_stream_`. Only Nova uses them: SQL that names one fails with
+`Tables named __nova_stream_… are managed by Nova Streams and cannot be used
+in SQL`. Read the changes through the stream instead.

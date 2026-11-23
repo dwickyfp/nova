@@ -142,7 +142,10 @@ the shared workspaces they own or that are shared with one of their roles.
   **write-back** (`catalog/writeback.py`):
   1. Ranger first: `role_allows` for the exact `catalog.schema.table` and
      action (INSERT to append; INSERT and UPDATE to merge; DELETE to overwrite
-     or delete matches); deny items win.
+     or delete matches); deny items win, and a policy that could cover the
+     table but uses Ranger semantics the check does not evaluate
+     (`allowExceptions`, `isDenyAllElse`, a non-zero `policyPriority`,
+     patterns other than `*`, exclusions) refuses the write.
   2. A separate **write credential** on the connection (security admin,
      Catalog → Connections → Notebook writes, stored encrypted in
      `CATALOG_CONNECTION_WRITE_CREDENTIALS`). The engine's catalog keeps its

@@ -767,7 +767,12 @@ class AccessControlService:
         Every Ranger policy counts, including bootstrap policies, because they
         authorize roles such as ACCOUNTADMIN. Anything this preview cannot
         evaluate (conditions, schedules, column-scoped items) never becomes an
-        allow, and any matching deny item refuses the request.
+        allow, and any matching deny item refuses the request. A policy that
+        could cover the request and uses Ranger semantics this preview does not
+        evaluate (``allowExceptions``, ``isDenyAllElse``, a non-zero
+        ``policyPriority``, wildcard patterns other than ``*``, exclusions)
+        refuses it: callers such as Stream capture act on this answer with a
+        service account, so it must never allow what Ranger would refuse.
         """
         if not principal or not active_role:
             return [False for _ in requests]
@@ -790,6 +795,8 @@ class AccessControlService:
         wanted = request.access.lower()
         allowed = False
         for policy in policies:
+            if cls._uses_unevaluated_semantics(policy) and cls._may_match(policy, request):
+                return False
             if not cls._request_matches(policy, request):
                 continue
             for item in policy.get("denyPolicyItems", []):
@@ -818,6 +825,40 @@ class AccessControlService:
             str(access.get("type", "")).lower() in {wanted, "all"}
             and access.get("isAllowed", True)
             for access in item.get("accesses", [])
+        )
+
+    @staticmethod
+    def _uses_unevaluated_semantics(policy: dict) -> bool:
+        """Ranger features ``_policies_allow`` does not evaluate exactly."""
+        if (
+            policy.get("allowExceptions")
+            or policy.get("isDenyAllElse")
+            or int(policy.get("policyPriority") or 0) != 0
+        ):
+            return True
+        return any(
+            resource.get("isExcludes")
+            or any(
+                str(value) != "*" and any(character in str(value) for character in "*?[]")
+                for value in resource.get("values", [])
+            )
+            for resource in (policy.get("resources") or {}).values()
+        )
+
+    @classmethod
+    def _may_match(cls, policy: dict, request: AccessRequest) -> bool:
+        """Whether a policy of the request's level could cover it (conservatively)."""
+        keys = set(policy.get("resources") or {})
+        if request.table is not None:
+            if "table" not in keys or keys - {"catalog", "database", "table", "column"}:
+                return False
+        elif request.database is not None:
+            if keys - {"column"} != {"catalog", "database"}:
+                return False
+        elif keys != {"catalog"}:
+            return False
+        return cls.resource_may_cover(
+            policy, request.catalog, request.database, request.table
         )
 
     @staticmethod
@@ -901,6 +942,49 @@ class AccessControlService:
                 return False
         return True
 
+    @staticmethod
+    def resource_may_cover(
+        policy: dict, catalog: str, database: str | None, table: str | None
+    ) -> bool:
+        """Whether a policy's resources could cover ``catalog.database.table``.
+
+        ``None`` for the database or table checks a catalog- or database-level
+        object; that level of the policy is then not compared.
+
+        Conservative: anything this check cannot evaluate exactly counts as
+        covering the table (unknown resource kinds, empty or recursive
+        resources, character classes, glob exclusions). Names compare without
+        regard to case and Ranger wildcards (``*``, ``?``) are expanded, so a
+        caller refusing on "covered" fails closed. Conditions and validity
+        schedules only narrow a policy, so they never make it miss.
+        """
+        resources = policy.get("resources") or {}
+        if not resources or set(resources) - {"catalog", "database", "table", "column"}:
+            return True
+        for key, expected in (("catalog", catalog), ("database", database), ("table", table)):
+            resource = resources.get(key)
+            if resource is None or expected is None:
+                continue
+            values = [str(value) for value in resource.get("values") or []]
+            if not values or resource.get("isRecursive"):
+                continue
+            name = expected.casefold()
+            if resource.get("isExcludes"):
+                if any(any(c in value for c in "*?[]") for value in values):
+                    continue
+                if name in {value.casefold() for value in values}:
+                    return False
+                continue
+            if not any(
+                value == "*"
+                or "[" in value
+                or "]" in value
+                or fnmatch.fnmatchcase(name, value.casefold())
+                for value in values
+            ):
+                return False
+        return True
+
     @classmethod
     def _object_access_comparison_supported(
         cls,
@@ -918,6 +1002,15 @@ class AccessControlService:
                 continue
             resources = policy.get("resources", {})
             if not resources or set(resources) - {"catalog", "database", "table", "column"}:
+                continue
+            # A policy that cannot cover the table (compared conservatively:
+            # case-insensitive, wildcards expanded, unknown shapes cover) has
+            # no effect on it. Without this, one pattern elsewhere, such as the
+            # Stream journal guard on ``__nova_stream_*``, would make every
+            # table unsupported. ``_resource_matches`` ignores exclusions, so a
+            # policy it matches is never skipped: the checks below refuse it.
+            if not (cls.resource_may_cover(policy, catalog, database, table)
+                    or cls._resource_matches(policy, catalog, database, table)):
                 continue
             # The preview cannot evaluate Ranger exclusions, conditions, or
             # deny precedence. Consumers must not turn those into an allow.

@@ -18,7 +18,11 @@ staying in StarRocks:
 
 - the per-source journal (`__nova_stream_changes_*`) and lineage
   (`__nova_stream_lineage_*`) tables, which must commit with the source/target
-  data in the engine transaction and are written only through `writer_conn`;
+  data in the engine transaction and are written only through `writer_conn`.
+  Ranger's `nova-managed/stream-journals` deny policy keeps them from every
+  other principal except `ACCOUNTADMIN`, the SQL frontend refuses user SQL
+  naming `__nova_stream_*`, and a `DROPPED` source's journal tables and writer
+  policy are removed (see `docs/sql_docs/13-nova-streams.md`);
 - engine observations: `SourceRegistry.engine_identity`, `partition_versions`,
   `columns`, `StreamService._table_exists` and `TargetCommitVerifier`
   (`information_schema.loads`, `SHOW TRANSACTION`).

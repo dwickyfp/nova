@@ -108,6 +108,11 @@ Nova captures every write to a source that goes through Nova (worksheets,
 Neva, the MySQL proxy, tasks, notebooks over the proxy): the change and its
 before/after images are committed in one engine transaction by the stream
 writer account, after your role's permission for that write is checked.
+Because the writer account, not your session, commits the change, that check
+fails closed: if a Ranger policy that could cover the table uses
+`allowExceptions`, `isDenyAllElse`, a non-zero `policyPriority`, a name
+pattern other than `*` or an exclusion, the write is refused with
+`STREAM_ACCESS_DENIED` even when Ranger itself might allow it.
 
 * Supported: `INSERT INTO t VALUES …` / `SELECT …` (all columns, in order or
   listed), `UPDATE t SET … [WHERE …]`, `DELETE FROM t [WHERE …]`,
@@ -127,6 +132,13 @@ writer account, after your role's permission for that write is checked.
   partial column lists, `UPDATE … FROM`, `DELETE … USING`, labels, partitions
   (including `TRUNCATE … PARTITION`), `DEFAULT`, and writes inside an explicit
   transaction.
+* A write is refused (`STREAM_GOVERNANCE_UNSUPPORTED`) while a Ranger row
+  filter or masking policy could cover the table, with the same fail-closed
+  check as `CREATE STREAM` (see below), before any row is read. The rows a
+  write changes are read as you and written back whole by the writer, so
+  under a mask an `UPDATE` would store the masked values. A policy added
+  after the Stream was created is caught here; drop the table's Streams or
+  remove the policy to write again.
 * A write that reaches the table **without** Nova (a direct engine client,
   Stream Load, an external job) is detected from the engine's own version: the
   Stream becomes `BLOCKED` and every read or `HAS_DATA` call fails until the
@@ -139,7 +151,13 @@ An internal, **unpartitioned Primary Key** table whose columns are integer,
 `LARGEINT`, `DECIMAL`, `FLOAT`/`DOUBLE`, `BOOLEAN`, `CHAR`/`VARCHAR`/`STRING`,
 `DATE` or `DATETIME`, with **no Ranger row filter or masking policy**. A Stream
 shows historical (deleted, overwritten) values, which such policies cannot be
-shown to govern, so Nova refuses rather than guess. Creating a Stream needs
+shown to govern, so Nova refuses rather than guess. The check fails closed: a
+filter or mask counts when its resources *could* cover the table, including
+wildcards (`ord*`, `sal?s`), exclusions, a name differing only in case, and
+recursive or unknown resource kinds. Any enabled mask in a linked Ranger tag
+service also counts, because Nova cannot resolve tags to tables. Without
+Ranger, or when its policies cannot be read, `CREATE STREAM` and stream reads
+fail with `STREAM_GOVERNANCE_UNSUPPORTED`. Creating a Stream needs
 `SELECT` on the source for your active role; reading it is checked again each
 time, and the engine checks your `SELECT` in the same statement that reads it.
 
@@ -194,5 +212,26 @@ It sets `STREAM_WRITER_USER`, `STREAM_WRITER_PASSWORD` and
 journal through a Ranger policy (`nova-managed/stream-writer/<source>`) when
 a Stream is created. Without the account, `CREATE STREAM` fails with
 `STREAM_CHANGE_TRACKING_UNAVAILABLE`.
+
+### Journal tables
+
+Each source keeps its change journal and lineage in two tables beside it,
+`__nova_stream_changes_<id>` and `__nova_stream_lineage_<id>`. They hold every
+historical row image of the source, so only the writer may use them:
+
+* Before the first journal is created, Nova creates the Ranger policy
+  `nova-managed/stream-journals`. It denies `SELECT`, `INSERT`, `UPDATE` and
+  `DELETE` on `__nova_stream_*` in every database to the `public` group, with
+  exceptions for the writer role and `ACCOUNTADMIN`. A wildcard grant such as
+  `sales.*` therefore does not reach the journals. The scheduler's maintenance
+  pass recreates or repairs the policy for deployments that already have
+  sources. Without Ranger, or without `STREAM_WRITER_ROLE`, `CREATE STREAM`
+  fails instead of creating an unprotected journal.
+* User SQL that names a `__nova_stream_*` table (in any position: `FROM`,
+  `INSERT INTO`, `DROP TABLE`, `DESC`, a view or `CREATE TABLE … AS`) is
+  refused by the SQL frontend before it reaches the engine.
+* When the last Stream of a source is dropped, the source becomes `DROPPED`,
+  its two journal tables are dropped and its writer policy is removed. The
+  maintenance pass does the same for sources dropped before this existed.
 
 `SHOW STREAM LOAD` is StarRocks' own statement and unrelated to Nova Streams.

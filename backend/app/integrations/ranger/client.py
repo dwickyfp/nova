@@ -324,15 +324,19 @@ class RangerClient:
         users = (result or {}).get("xuserInfoList") or (result or {}).get("vXUsers") or []
         return next((dict(item) for item in users if item.get("name") == username), {})
 
-    async def list_policies(self, *, page_size: int = 100) -> list[dict[str, Any]]:
+    async def list_policies(
+        self, *, page_size: int = 100, service_name: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Every policy of ``service_name`` (default: the StarRocks service)."""
+        service = service_name or settings.RANGER_SERVICE_NAME
         policies = await _shared_read(
-            ("policies", id(self), settings.RANGER_SERVICE_NAME, page_size),
-            lambda: self._list_policies(page_size),
+            ("policies", id(self), service, page_size),
+            lambda: self._list_policies(page_size, service),
         )
         # Callers may edit what they receive; the shared read stays intact.
         return copy.deepcopy(policies)
 
-    async def _list_policies(self, page_size: int) -> list[dict[str, Any]]:
+    async def _list_policies(self, page_size: int, service: str) -> list[dict[str, Any]]:
         policies: list[dict[str, Any]] = []
         start = 0
         while True:
@@ -340,7 +344,7 @@ class RangerClient:
                 "GET",
                 "/service/public/v2/api/policy",
                 params={
-                    "serviceName": settings.RANGER_SERVICE_NAME,
+                    "serviceName": service,
                     "pageSize": page_size,
                     "startIndex": start,
                 },

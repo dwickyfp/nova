@@ -94,6 +94,13 @@ REGISTERING, READY, BLOCKED, SOURCE_INVALID, DROPPED = (
 )
 _LOCK_PREFIX = "nova:stream:source-lock:"
 _LOCK_TTL_MS = 120_000
+#: Prefix of every journal and lineage table (see ``app.sql_frontend.internal_names``).
+JOURNAL_PREFIX = "__nova_stream_"
+_WRITER_POLICY_PREFIX = "nova-managed/stream-writer/"
+#: One Ranger policy denies every journal and lineage table to everyone but the
+#: writer role (and ACCOUNTADMIN, whose privileges Nova never takes away).
+JOURNAL_GUARD_POLICY = "nova-managed/stream-journals"
+_JOURNAL_GUARD_ACCESSES = ("select", "insert", "update", "delete")
 
 
 @dataclass(frozen=True, slots=True)
@@ -521,6 +528,9 @@ class SourceRegistry:
                 "that every write was captured",
             )
         await require_governance_supported(database, table)
+        # The journal holds every historical row image: Ranger must deny it to
+        # everyone but the writer before it exists.
+        await ensure_journal_guard()
         epoch = (current.epoch + 1) if current is not None else 1
         if current is not None:
             await self.set_status(current, SOURCE_INVALID, "The source table was recreated")
@@ -586,21 +596,94 @@ class SourceRegistry:
             )
         if not live:
             await self.set_status(record, DROPPED, "No stream reads this source any more")
+            current = await self.get(record.source_id)
+            if current is not None and current.status == DROPPED:
+                await self.release(current)
+
+    async def release(self, record: SourceRecord) -> None:
+        """Drop a DROPPED source's journal and lineage, and the writer's grant on it.
+
+        The source table itself is untouched. A later stream on the table
+        registers a new source with new journal tables.
+        """
+        if record.status != DROPPED:
+            raise StreamError("STREAM_SOURCE_NOT_READY", "Only a dropped source is released")
+        for name in (record.journal_table, record.lineage_table):
+            if not name.casefold().startswith(JOURNAL_PREFIX):
+                raise StreamError("STREAM_METADATA_INCONSISTENT", "Unexpected journal table name")
+            await self._execute(
+                f"DROP TABLE IF EXISTS {quote_identifier(record.database)}.{quote_identifier(name)}"
+            )
+        await revoke_writer(record)
+
+    async def maintain_guards(self, *, has_sources: bool) -> dict[str, int]:
+        """Backfill the journal guard and release sources dropped before it existed.
+
+        Run by stream maintenance. The guard is created for a deployment that
+        has journal tables; releasing is idempotent: a dropped source is
+        released while its journal tables or writer policy remain.
+        """
+        if not (settings.RANGER_PASSWORD and settings.STREAM_WRITER_ROLE):
+            return {"released": 0}
+        from app.integrations.ranger.client import ranger_client
+
+        policies = await ranger_client.list_policies()
+        if has_sources:
+            await ensure_journal_guard(policies)
+        dropped = await self.sources((DROPPED,))
+        if not dropped:
+            return {"released": 0}
+        granted = {
+            str(policy.get("name", "")).removeprefix(_WRITER_POLICY_PREFIX)
+            for policy in policies
+            if str(policy.get("name", "")).startswith(_WRITER_POLICY_PREFIX)
+        }
+        result = await self._execute(
+            "SELECT TABLE_SCHEMA, TABLE_NAME FROM information_schema.tables "
+            "WHERE TABLE_NAME LIKE %s",
+            (JOURNAL_PREFIX.replace("_", "\\_") + "%",),
+        )
+        present = {(str(row[0]), str(row[1])) for row in result["rows"]}
+        released = 0
+        for record in dropped:
+            tables = {
+                (record.database, record.journal_table), (record.database, record.lineage_table)
+            }
+            if record.source_id in granted or tables & present:
+                await self.release(record)
+                released += 1
+        return {"released": released}
 
 
 async def require_governance_supported(database: str, table: str) -> None:
-    """Refuse sources with Ranger row filters or masks.
+    """Refuse sources that a Ranger row filter or mask could cover.
 
-    A stream returns historical before images (deleted and overwritten rows);
-    a filter or mask evaluated on current rows cannot be shown to govern them.
+    A stream returns historical before images (deleted and overwritten rows),
+    and its rows are read by the writer account, not the caller; a filter or
+    mask evaluated on current rows for the caller cannot be shown to govern
+    them. The check fails closed: without Ranger, when policies cannot be
+    read, and for any filter or mask whose resources could cover the source
+    (wildcards, exclusions, case differences, recursive or unknown resources,
+    see ``AccessControlService.resource_may_cover``) or that comes from a tag
+    service, whose tags Nova cannot resolve to tables.
     """
     if not settings.RANGER_PASSWORD:
-        return
+        raise StreamError(
+            "STREAM_GOVERNANCE_UNSUPPORTED",
+            "Streams need Ranger to prove the source has no row filter or masking policy",
+        )
     from app.integrations.ranger.client import ranger_client
     from app.modules.access_control.service import AccessControlService
 
     try:
         policies = await ranger_client.list_policies()
+        service = await ranger_client.get_service(settings.RANGER_SERVICE_NAME)
+        if not service:
+            raise LookupError("the Ranger service is missing")
+        tag_service = str(service.get("tagService") or "")
+        tag_policies = (
+            await ranger_client.list_policies(service_name=tag_service) if tag_service else []
+        )
     except Exception as exc:  # noqa: BLE001 - unknown governance is not "none"
         raise StreamError(
             "STREAM_GOVERNANCE_UNSUPPORTED", "Data policies could not be read for the source"
@@ -610,13 +693,24 @@ async def require_governance_supported(database: str, table: str) -> None:
             policy.get("service", settings.RANGER_SERVICE_NAME) == settings.RANGER_SERVICE_NAME
             and policy.get("isEnabled", True)
             and int(policy.get("policyType", 0)) in {1, 2}
-            and AccessControlService._resource_matches(policy, "default_catalog", database, table)
+            and AccessControlService.resource_may_cover(
+                policy, "default_catalog", database, table
+            )
         ):
             raise StreamError(
                 "STREAM_GOVERNANCE_UNSUPPORTED",
                 "The source has a row filter or masking policy; a stream would expose "
                 "historical values those policies cannot govern",
             )
+    if any(
+        policy.get("isEnabled", True) and int(policy.get("policyType", 0)) in {1, 2}
+        for policy in tag_policies
+    ):
+        raise StreamError(
+            "STREAM_GOVERNANCE_UNSUPPORTED",
+            "Tag-based masking policies may cover the source; streams cannot prove they "
+            "govern its historical values",
+        )
 
 
 async def grant_writer(record: SourceRecord) -> None:
@@ -638,7 +732,7 @@ async def grant_writer(record: SourceRecord) -> None:
 
         policy = RangerPolicy(
             service=settings.RANGER_SERVICE_NAME,
-            name=f"nova-managed/stream-writer/{record.source_id}",
+            name=f"{_WRITER_POLICY_PREFIX}{record.source_id}",
             description=f"Stream capture of {record.database}.{record.table}",
             resources={
                 "catalog": RangerPolicyResource(values=["default_catalog"]),
@@ -683,10 +777,97 @@ async def revoke_writer(record: SourceRecord) -> None:
         return
     from app.integrations.ranger.client import ranger_client
 
-    with contextlib.suppress(Exception):
-        policy = await ranger_client.get_policy(f"nova-managed/stream-writer/{record.source_id}")
+    with contextlib.suppress(Exception):  # maintenance retries a policy left behind
+        policy = await ranger_client.get_policy(f"{_WRITER_POLICY_PREFIX}{record.source_id}")
         if policy and policy.get("id") is not None:
             await ranger_client.delete_policy(int(policy["id"]))
+
+
+def journal_guard_policy() -> Any:
+    """The Ranger policy that keeps journal and lineage tables to the writer."""
+    from app.integrations.ranger.schemas import (
+        RangerPolicy,
+        RangerPolicyItem,
+        RangerPolicyItemAccess,
+        RangerPolicyResource,
+    )
+
+    accesses = [RangerPolicyItemAccess(type=access) for access in _JOURNAL_GUARD_ACCESSES]
+    return RangerPolicy(
+        service=settings.RANGER_SERVICE_NAME,
+        name=JOURNAL_GUARD_POLICY,
+        description="Managed by Nova. Stream journals hold every historical row image of "
+        "their source; only the stream writer reads or writes them.",
+        resources={
+            "catalog": RangerPolicyResource(values=["default_catalog"]),
+            "database": RangerPolicyResource(values=["*"]),
+            "table": RangerPolicyResource(values=[JOURNAL_PREFIX + "*"]),
+            "column": RangerPolicyResource(values=["*"]),
+        },
+        denyPolicyItems=[RangerPolicyItem(groups=["public"], accesses=accesses)],
+        denyExceptions=[
+            RangerPolicyItem(
+                roles=[settings.STREAM_WRITER_ROLE, "ACCOUNTADMIN"], accesses=accesses
+            )
+        ],
+    )
+
+
+def _guard_current(policy: dict[str, Any] | None, wanted: dict[str, Any]) -> bool:
+    if not policy or not policy.get("isEnabled", True):
+        return False
+    keys = ("resources", "denyPolicyItems", "denyExceptions", "policyItems", "allowExceptions")
+    return all(
+        json.dumps(_canonical(policy.get(key) or []), sort_keys=True)
+        == json.dumps(_canonical(wanted.get(key) or []), sort_keys=True)
+        for key in keys
+    )
+
+
+def _canonical(value: Any) -> Any:
+    """Compare Ranger JSON by what governs access, ignoring server-added defaults."""
+    if isinstance(value, dict):
+        return {
+            key: _canonical(item)
+            for key, item in value.items()
+            if key != "delegateAdmin" and item not in ([], {}, None, False)
+        }
+    if isinstance(value, list):
+        return sorted((_canonical(item) for item in value), key=lambda item: json.dumps(
+            item, sort_keys=True
+        ))
+    return value
+
+
+async def ensure_journal_guard(policies: list[dict[str, Any]] | None = None) -> None:
+    """Create or repair the journal guard; a source is not registered without it."""
+    if not settings.RANGER_PASSWORD:
+        raise StreamError(
+            "STREAM_GOVERNANCE_UNSUPPORTED",
+            "Streams need Ranger: the stream journals could not be protected",
+        )
+    if not settings.STREAM_WRITER_ROLE:
+        raise StreamError(
+            "STREAM_CHANGE_TRACKING_UNAVAILABLE",
+            "Streams need the stream writer role (STREAM_WRITER_ROLE), which is not set "
+            "up on this deployment",
+        )
+    from app.integrations.ranger.client import ranger_client
+
+    wanted = journal_guard_policy()
+    if policies is None:
+        current = await ranger_client.get_policy(JOURNAL_GUARD_POLICY)
+    else:
+        current = next((p for p in policies if p.get("name") == JOURNAL_GUARD_POLICY), None)
+    if _guard_current(current, wanted.to_api()):
+        return
+    try:
+        await ranger_client.put_policy(wanted)
+    except Exception as exc:  # noqa: BLE001 - an unprotected journal is not created
+        raise StreamError(
+            "STREAM_GOVERNANCE_UNSUPPORTED", "The stream journals could not be protected"
+        ) from exc
+    logger.warning("stream journal guard %s was created or repaired", JOURNAL_GUARD_POLICY)
 
 
 @asynccontextmanager
