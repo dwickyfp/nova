@@ -18,6 +18,26 @@ class PersonalSkillLoader(LoadSkillTool):
     def __init__(self, owner: str, definitions: dict[str, SkillDefinition]) -> None:
         self.owner = owner
         self.definitions = dict(definitions)
+        # The schema lists only this agent's skills. Inheriting the platform
+        # catalog let the model ask for playbooks it cannot load (live B8,
+        # 2026-11-24), which spent the turn's repairs and ended it.
+        names = sorted(self.definitions)
+        self.parameters = {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    **({"enum": names} if names else {}),
+                    "description": "Skill name to load, from this agent's available skills.",
+                },
+            },
+            "required": ["name"],
+            "additionalProperties": False,
+        }
+        self.description = (
+            "Load the full playbook for one of this agent's skills before answering a "
+            "task it covers. Available skills: " + (", ".join(names) or "none") + "."
+        )
 
     async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
         name = invocation.arguments.get("name")
