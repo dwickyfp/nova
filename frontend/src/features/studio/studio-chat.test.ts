@@ -51,7 +51,7 @@ const thinking = (
 ): AssistantEvent => ({ type: "thinking", phase, text, status });
 
 describe("studio transcript reducer", () => {
-  it("seals UI only with its close frame and restores the same ordered program", () => {
+  it("seals UI with its close frame or the run's end and restores the same ordered program", () => {
     const program =
       'root = Col([Text("Adjust assumptions"),Input($n,"Units")])\n$n=5';
     const parsed = validateProgram(program);
@@ -80,12 +80,7 @@ describe("studio transcript reducer", () => {
         text: program,
       }),
     )!;
-    const incomplete = run([
-      meta,
-      meta,
-      chunk,
-      { type: "done", message_id: "reply", finish_reason: "cancelled" },
-    ]);
+    const incomplete = run([meta, meta, chunk]);
     expect(incomplete.content).toHaveLength(1);
     expect(incomplete.content[0].complete).toBe(false);
     const complete = run([
@@ -94,6 +89,15 @@ describe("studio transcript reducer", () => {
       { type: "content_block_done", content_index: 1, content_id: "content-1" },
     ]);
     expect(complete.content[0].complete).toBe(true);
+    // A lost close frame does not cost the interactive answer once the run ends.
+    const closedByRun = run([
+      meta,
+      chunk,
+      { type: "done", message_id: "reply", finish_reason: "stop" },
+    ]);
+    expect(closedByRun.content[0].complete).toBe(true);
+    const sealedUi = closedByRun.content[0];
+    expect(sealedUi.type === "ui" && sealedUi.block.program).toBe(program);
     const restored = replayThread([
       {
         message_id: "reply",

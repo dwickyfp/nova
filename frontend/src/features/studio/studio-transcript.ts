@@ -971,13 +971,11 @@ export function applyEvent(
                   ? { ...step, status: "done" as const }
                   : step,
           ),
+          // The run is finished, so every block it opened is final, including an
+          // interactive program whose own close frame was lost. The renderer
+          // still validates the program before drawing it.
           content: (turn.content ?? []).map((item) =>
-            item.type === "ui"
-              ? item
-              : {
-                  ...item,
-                  complete: true as const,
-                },
+            item.complete ? item : { ...item, complete: true as const },
           ),
           state:
             turn.state === "error"

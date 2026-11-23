@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { userEvent } from "vitest/browser";
-import type { TableBlock } from "@/features/assistant/types";
+import type { AssistantEvent, TableBlock } from "@/features/assistant/types";
 import { type OrderedContent, type TranscriptTurn } from "./studio-chat";
-import { replayThread } from "./studio-transcript";
+import { applyEvent, replayThread, settleTurn } from "./studio-transcript";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TurnContent } from "./turn-content";
@@ -101,6 +101,30 @@ describe("one table per query result", () => {
       // A failed turn's results are never offered for publication.
       expect(screen.getByRole("button", { name: "Add to Dataviz" }).query()).toBeNull();
     }
+  });
+
+  it("draws an interactive answer whose close frame was lost once the run ends", async () => {
+    const start = turn("Retail leads.");
+    start.state = "streaming";
+    start.content = [];
+    const events = [
+      { type: "ui", content_index: 0, content_id: "run-1:0", payload: {
+        catalog_version: UI_CATALOG_VERSION, program_sha256: "test",
+        fallback: "Retail is ahead of web.", evidence: {}, state_defaults: {}, actions: [],
+        provenance: { evidence_ids: [], scope: "user_simulation", assumption: true },
+      } },
+      { type: "ui_delta", content_index: 0, content_id: "run-1:0",
+        text: 'root = Col([Text("Interactive summary")])' },
+      { type: "done", message_id: "", finish_reason: "stop" },
+    ] satisfies AssistantEvent[];
+    const ended = settleTurn(
+      events.reduce((turns, event) => applyEvent(turns, start.id, event), [start]),
+      start.id,
+      false,
+    )[0];
+    const screen = await render(withQueries(<TurnContent turn={ended} />));
+    await expect.element(screen.getByText("Interactive summary")).toBeVisible();
+    expect(screen.getByText("Retail is ahead of web.").query()).toBeNull();
   });
 
   it("explains an interactive answer that was too large to show", async () => {
