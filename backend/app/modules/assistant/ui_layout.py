@@ -508,7 +508,7 @@ def resolve_value(args: tuple[Any, ...], ctx: LayoutContext) -> float:
     rows = [row for row in rows if all(_same(row.get(k), v) for k, v in where.items())]
     how = params.get("aggregation", "value")
     if how == "count":
-        value: float | None = float(sum(1 for row in rows if row.get(column) is not None))
+        value: float = float(sum(1 for row in rows if row.get(column) is not None))
     else:
         numbers = [_to_number(row.get(column)) for row in rows]
         present = [n for n in numbers if n is not None]

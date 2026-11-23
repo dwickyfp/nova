@@ -64,7 +64,8 @@ def legacy_program(block: dict[str, Any]) -> str:
     """The layout program that replays a legacy block."""
     from app.modules.viz.openui_nodes import OpenUiParseError, data_nodes
 
-    evidence = block.get("evidence") if isinstance(block.get("evidence"), dict) else {}
+    stored = block.get("evidence")
+    evidence: dict[str, Any] = stored if isinstance(stored, dict) else {}
     charts = [item for item in block.get("charts") or [] if isinstance(item, dict)]
     try:
         nodes = data_nodes(str(block.get("program") or ""))
@@ -139,7 +140,8 @@ def _migrate_journal(step: Any, programs: dict[str, str]) -> Any:
             continue
         part_id = str(data.get("part_id"))
         if entry.get("event") == PART_START and data.get("type") == "ui":
-            block = data.get("block") if isinstance(data.get("block"), dict) else {}
+            raw = data.get("block")
+            block: dict[str, Any] = raw if isinstance(raw, dict) else {}
             program = programs.get(str(data.get("content_id") or ""))
             if block.get("catalog_version") in LEGACY_CATALOGS and program is not None:
                 legacy.add(part_id)

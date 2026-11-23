@@ -1,5 +1,9 @@
 # Data-first intelligent UI
 
+> **Historical proposal.** The current interactive-answer contract is the
+> page layout language (`nova-layout-1`) described in
+> [Studio interactive answers](../architecture/studio-intelligent-ui-v2.md#ui-contract-page-layouts-nova-layout-1).
+
 **Status:** Phase 0 is recorded in section 7, and the product owner approved
 `VizView` as the single chart renderer on 6 Nov 2026. Phase 1 (data-first
 composition with the existing components) is implemented; see "Phase 1

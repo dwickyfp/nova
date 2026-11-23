@@ -16,7 +16,6 @@ SCANNED = [APP / "assistant", APP / "agents"]
 EXTERNAL_HTTP = {
     "assistant/provider.py",  # the configured AI provider
     "assistant/measurements.py",  # counts provider dispatches
-    "assistant/ui_media.py",  # public images for answers
     "agents/mcp_client.py",  # MCP servers an agent owner configured
 }
 
