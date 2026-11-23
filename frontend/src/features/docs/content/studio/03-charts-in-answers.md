@@ -52,3 +52,7 @@ from **History**. To keep it as a live chart on a dashboard, use
   show it.
 - A chart shows at most the rows the query returned. Ask a narrower question
   if you need more detail.
+- "This interactive answer is too large to show. Here is the written answer."
+  means the interactive view was bigger than Studio can display, so the
+  written answer is shown in its place. Ask for fewer charts or a narrower
+  result to get an interactive view.

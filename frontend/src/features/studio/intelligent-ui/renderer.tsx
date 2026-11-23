@@ -423,7 +423,12 @@ function UiSession({
             void act(event);
           }}
           onError={(errors) => {
-            if (errors.length) setRenderError(true);
+            // The runtime reports warnings for programs that still render, such
+            // as a missing root statement it resolved itself. Only real errors
+            // replace the interactive answer with its fallback.
+            if (errors.some((error) => error.severity !== "warning")) setRenderError(true);
+            else if (errors.length && import.meta.env.DEV)
+              console.warn("Interactive answer rendered with warnings", errors);
           }}
           toolProvider={null}
           publishObservability={false}

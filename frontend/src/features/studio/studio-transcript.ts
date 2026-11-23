@@ -20,6 +20,15 @@ import {
   type ToolEvidence,
 } from "./evidence-health";
 
+/**
+ * The largest interactive program the browser accepts, in UTF-8 bytes. The
+ * server refuses larger programs before sending them (`MAX_PROGRAM_BYTES` in
+ * the assistant's intelligent UI module); this guards the stream itself, so an
+ * oversized program is reported instead of being cut into a broken one.
+ */
+export const MAX_UI_PROGRAM_BYTES = 64_000;
+const utf8 = new TextEncoder();
+
 /** Finish reasons that end a turn normally: an answer, or a question back. */
 const FINISHED = new Set(["stop", "clarification"]);
 
@@ -36,6 +45,8 @@ export type OrderedContent =
       type: "ui";
       block: import("./intelligent-ui/types").UiBlock;
       complete: boolean;
+      /** The streamed program passed the size limit; it is shown as its fallback. */
+      tooLarge?: true;
     }
   | {
       id: string;
@@ -378,6 +389,30 @@ export function patchTurn(
   patch: (turn: TranscriptTurn) => TranscriptTurn,
 ): TranscriptTurn[] {
   return turns.map((turn) => (turn.id === turnId ? patch(turn) : turn));
+}
+
+/**
+ * Close a turn whose stream has ended.
+ *
+ * A turn the server closed (its `done` frame set the message id) keeps the
+ * outcome that frame gave it. A stopped turn whose stream ended without that
+ * frame, because the browser stopped listening first, settles exactly as the
+ * server's cancelled frame would have settled it.
+ */
+export function settleTurn(
+  turns: TranscriptTurn[],
+  turnId: string,
+  stopped: boolean,
+): TranscriptTurn[] {
+  const turn = turns.find((item) => item.id === turnId);
+  if (!turn || turn.state !== "streaming") return turns;
+  if (stopped && turn.messageId === undefined)
+    return applyEvent(turns, turnId, {
+      type: "done",
+      message_id: "",
+      finish_reason: "cancelled",
+    });
+  return patchTurn(turns, turnId, (item) => ({ ...item, state: "done" }));
 }
 
 /**
@@ -738,11 +773,11 @@ export function applyEvent(
       case "text_delta": {
         const currentContent = turn.content ?? [];
         const index = event.content_index ?? 0;
-        const id = event.content_id ?? "legacy-text-0";
-        const existing = currentContent.findIndex(
-          (item) =>
-            item.id === id || (item.type === "text" && item.index === index),
-        );
+        // Blocks are matched by id alone: a text block at the same index in an
+        // earlier block list is a different block. A frame without an id (an
+        // older server) is the text at its index.
+        const id = event.content_id ?? `legacy-text-${index}`;
+        const existing = currentContent.findIndex((item) => item.id === id);
         const content =
           existing === -1
             ? [
@@ -859,25 +894,22 @@ export function applyEvent(
       case "ui_delta":
         return {
           ...turn,
-          content: turn.content.map((item) =>
-            item.id === event.content_id && item.type === "ui" && !item.complete
-              ? {
-                  ...item,
-                  block: {
-                    ...item.block,
-                    program: (item.block.program + event.text).slice(0, 64000),
-                  },
-                }
-              : item,
-          ),
+          content: turn.content.map((item) => {
+            if (item.id !== event.content_id || item.type !== "ui" || item.complete || item.tooLarge)
+              return item;
+            const program = item.block.program + event.text;
+            return utf8.encode(program).length > MAX_UI_PROGRAM_BYTES
+              ? { ...item, tooLarge: true as const, block: { ...item.block, program: "" } }
+              : { ...item, block: { ...item.block, program } };
+          }),
         };
       case "content_block_done":
+        // Sealed by id alone: an index can be shared with a block the frame
+        // does not close.
         return {
           ...turn,
           content: (turn.content ?? []).map((item) =>
-            item.id === event.content_id || item.index === event.content_index
-              ? { ...item, complete: true }
-              : item,
+            item.id === event.content_id ? { ...item, complete: true } : item,
           ),
         };
 
@@ -939,13 +971,11 @@ export function applyEvent(
                   ? { ...step, status: "done" as const }
                   : step,
           ),
+          // The run is finished, so every block it opened is final, including an
+          // interactive program whose own close frame was lost. The renderer
+          // still validates the program before drawing it.
           content: (turn.content ?? []).map((item) =>
-            item.type === "ui"
-              ? item
-              : {
-                  ...item,
-                  complete: true as const,
-                },
+            item.complete ? item : { ...item, complete: true as const },
           ),
           state:
             turn.state === "error"

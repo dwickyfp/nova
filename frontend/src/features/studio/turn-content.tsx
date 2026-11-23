@@ -132,7 +132,14 @@ export function TurnContent({
           ) : item.type === "dashboard" ? (
             <DashboardArtifactCard block={item.block} />
           ) : item.type === "ui" ? (
-            turn.state === "cancelled" ||
+            item.tooLarge ? (
+              <div className="text-sm">
+                <p role="status" className="mb-2 text-muted-foreground">
+                  This interactive answer is too large to show. Here is the written answer.
+                </p>
+                <Markdown offline>{item.block.fallback}</Markdown>
+              </div>
+            ) : turn.state === "cancelled" ||
             turn.state === "error" ||
             (turn.state === "done" && !item.complete) ? (
               <Markdown offline>{item.block.fallback}</Markdown>

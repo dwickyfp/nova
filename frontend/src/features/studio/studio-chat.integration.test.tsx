@@ -406,6 +406,8 @@ it("keeps a direct provider-format failure visible after reload without resubmit
   await expect.element(screen.getByText(
     "The run did not finish. Review its activity before retrying.",
   )).toBeVisible();
+  // The reopened question had files that were not kept, so it cannot be re-sent as it was.
+  expect(screen.getByRole("button", { name: "Retry", exact: true }).query()).toBeNull();
   expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
 });
 
@@ -631,6 +633,73 @@ describe("studio transcript click-through", () => {
       attachments: [{ name: "facts.txt", content: "The answer is 42." }],
     });
     expect(String(messageCall?.[1]?.body)).not.toContain("discard me");
+  });
+
+  it("retries a failed turn with the same text and files as a new turn", async () => {
+    await renderStudio();
+    const fetch = vi.mocked(globalThis.fetch);
+    const fallback = fetch.getMockImplementation()!;
+    let posts = 0;
+    fetch.mockImplementation(async (input, init) => {
+      if (String(input).endsWith("/messages") && init?.method === "POST") {
+        posts += 1;
+        if (posts === 1)
+          return Response.json({ detail: "The model provider is unavailable." }, { status: 503 });
+      }
+      return fallback(input, init);
+    });
+    await userEvent.upload(
+      page.getByLabelText("Choose files"),
+      new File(["The answer is 42."], "facts.txt", { type: "text/plain" }),
+    );
+    await userEvent.fill(page.getByRole("textbox", { name: "Message Nova" }), "Read the attachment");
+    await userEvent.click(page.getByRole("button", { name: "Send", exact: true }));
+    await expect.element(page.getByText("The model provider is unavailable.")).toBeVisible();
+    // The unsent draft returns to the composer; Retry does not take it.
+    await expect.element(page.getByRole("textbox", { name: "Message Nova" })).toHaveValue("Read the attachment");
+
+    await userEvent.click(page.getByRole("button", { name: "Retry", exact: true }));
+    await expect.element(page.getByText(/Omzet tertinggi/)).toBeVisible();
+    const bodies = fetch.mock.calls
+      .filter(([url, init]) => String(url).endsWith("/messages") && init?.method === "POST")
+      .map(([, init]) => JSON.parse(String(init?.body)));
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]).toMatchObject({
+      content: "Read the attachment",
+      attachments: [{ name: "facts.txt", content: "The answer is 42." }],
+    });
+    // Both turns stay in the transcript; only the latest failed turn offers Retry.
+    await expect.element(page.getByText("The model provider is unavailable.")).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Retry", exact: true })).not.toBeInTheDocument();
+    await expect.element(page.getByRole("textbox", { name: "Message Nova" })).toHaveValue("Read the attachment");
+  });
+
+  it("retries a stopped turn", async () => {
+    await renderStudio();
+    const fetch = vi.mocked(globalThis.fetch);
+    const fallback = fetch.getMockImplementation()!;
+    let posts = 0;
+    fetch.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/messages") && init?.method === "POST") {
+        posts += 1;
+        if (posts === 1)
+          return sseResponse(
+            'event: thinking\ndata: {"phase":"plan","text":"Planning","status":"running"}\n\n'
+            + 'event: done\ndata: {"message_id":"stopped","finish_reason":"cancelled"}\n\n',
+          );
+      }
+      return fallback(input, init);
+    });
+    await userEvent.fill(page.getByRole("textbox", { name: "Message Nova" }), "Top SKUs");
+    await userEvent.click(page.getByRole("button", { name: "Send", exact: true }));
+    await expect.element(page.getByText("Stopped before the answer finished.")).toBeVisible();
+    await userEvent.click(page.getByRole("button", { name: "Retry", exact: true }));
+    await expect.element(page.getByText(/Omzet tertinggi/)).toBeVisible();
+    const bodies = fetch.mock.calls
+      .filter(([url, init]) => String(url).endsWith("/messages") && init?.method === "POST")
+      .map(([, init]) => JSON.parse(String(init?.body)));
+    expect(bodies.map((body) => body.content)).toEqual(["Top SKUs", "Top SKUs"]);
   });
 
   it("allows a file to be sent without typed text", async () => {
@@ -1068,6 +1137,55 @@ describe("studio transcript click-through", () => {
     await expect
       .element(page.getByText("Reconsidering the previous answer"))
       .toBeVisible();
+  });
+
+  it.each([true, false])("stops a reconsider pass through its server run (server closes: %s)", async (serverCloses) => {
+    await renderStudio("read_only", true);
+    await page.getByPlaceholder("Ask a question about your data").fill("Top SKUs");
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect.element(page.getByText("Revenue per SKU")).toBeVisible();
+
+    const fetch = vi.mocked(globalThis.fetch);
+    const fallback = fetch.getMockImplementation()!;
+    let stream: ReadableStreamDefaultController<Uint8Array> | undefined;
+    let aborted = false;
+    fetch.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/messages") && init?.method === "POST") {
+        init.signal?.addEventListener("abort", () => {
+          aborted = true;
+          stream?.error(new DOMException("Aborted", "AbortError"));
+        });
+        return new Response(new ReadableStream({
+          start(controller) {
+            stream = controller;
+            controller.enqueue(new TextEncoder().encode(
+              'event: thinking\ndata: {"phase":"plan","text":"Reconsidering","status":"running"}\n\n',
+            ));
+          },
+        }), { headers: { "Content-Type": "text/event-stream", "X-Nova-Run-ID": "deepen-run" } });
+      }
+      if (url.endsWith("/runs/deepen-run/cancel")) {
+        if (serverCloses) {
+          stream?.enqueue(new TextEncoder().encode(
+            'event: done\ndata: {"message_id":"","finish_reason":"cancelled"}\n\n',
+          ));
+          stream?.close();
+        }
+        return Response.json({ cancelling: true });
+      }
+      return fallback(input, init);
+    });
+
+    await page.getByRole("button", { name: "Reconsider this answer" }).click();
+    await expect.element(page.getByText("Reconsidering the previous answer")).toBeVisible();
+    await page.getByRole("button", { name: "Stop", exact: true }).click();
+    await vi.waitFor(() => expect(fetch.mock.calls.filter(([url]) =>
+      String(url).endsWith("/agents/a1/threads/t1/runs/deepen-run/cancel"))).toHaveLength(1));
+    // Without the server's closing frame, the browser stops listening after the grace period.
+    await expect.element(page.getByText("Stopped before the answer finished."), { timeout: 6000 }).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Stop", exact: true })).not.toBeInTheDocument();
+    expect(aborted).toBe(!serverCloses);
   });
 
   it("rebuilds the process and the data when a stored thread is opened", async () => {

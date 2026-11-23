@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type TranscriptTurn } from "./studio-chat";
-import { replayThread } from "./studio-transcript";
+import { MAX_UI_PROGRAM_BYTES, replayThread, settleTurn } from "./studio-transcript";
 
 import { applyEvent } from "./studio-transcript";
 
@@ -51,7 +51,7 @@ const thinking = (
 ): AssistantEvent => ({ type: "thinking", phase, text, status });
 
 describe("studio transcript reducer", () => {
-  it("seals UI only with its close frame and restores the same ordered program", () => {
+  it("seals UI with its close frame or the run's end and restores the same ordered program", () => {
     const program =
       'root = Col([Text("Adjust assumptions"),Input($n,"Units")])\n$n=5';
     const parsed = validateProgram(program);
@@ -80,12 +80,7 @@ describe("studio transcript reducer", () => {
         text: program,
       }),
     )!;
-    const incomplete = run([
-      meta,
-      meta,
-      chunk,
-      { type: "done", message_id: "reply", finish_reason: "cancelled" },
-    ]);
+    const incomplete = run([meta, meta, chunk]);
     expect(incomplete.content).toHaveLength(1);
     expect(incomplete.content[0].complete).toBe(false);
     const complete = run([
@@ -94,6 +89,15 @@ describe("studio transcript reducer", () => {
       { type: "content_block_done", content_index: 1, content_id: "content-1" },
     ]);
     expect(complete.content[0].complete).toBe(true);
+    // A lost close frame does not cost the interactive answer once the run ends.
+    const closedByRun = run([
+      meta,
+      chunk,
+      { type: "done", message_id: "reply", finish_reason: "stop" },
+    ]);
+    expect(closedByRun.content[0].complete).toBe(true);
+    const sealedUi = closedByRun.content[0];
+    expect(sealedUi.type === "ui" && sealedUi.block.program).toBe(program);
     const restored = replayThread([
       {
         message_id: "reply",
@@ -119,6 +123,35 @@ describe("studio transcript reducer", () => {
       security_context_version: 2,
     });
     expect(cleared[0].content).toEqual([]);
+  });
+
+  it("reports an oversized interactive program instead of cutting it", () => {
+    const meta: AssistantEvent = {
+      type: "ui",
+      content_index: 0,
+      content_id: "run-1:0",
+      payload: {
+        catalog_version: "nova-openui-3",
+        program_sha256: "a".repeat(64),
+        fallback: "The written answer.",
+        state_defaults: {},
+        evidence: {},
+        actions: [],
+        provenance: { evidence_ids: [], scope: "user_simulation", assumption: true },
+      },
+    };
+    const chunk = (text: string): AssistantEvent =>
+      ({ type: "ui_delta", content_index: 0, content_id: "run-1:0", text });
+    // Multi-byte text reaches the byte limit before the character count does.
+    const half = "é".repeat(MAX_UI_PROGRAM_BYTES / 4);
+    const within = run([meta, chunk(half)]);
+    const ui = within.content[0];
+    expect(ui.type === "ui" && ui.block.program).toBe(half);
+    expect(ui.type === "ui" && ui.tooLarge).toBeFalsy();
+    const over = run([meta, chunk(half), chunk(half), chunk("x"), chunk("more")]);
+    const sealed = over.content[0];
+    expect(sealed.type === "ui" && sealed.tooLarge).toBe(true);
+    expect(sealed.type === "ui" && sealed.block.program).toBe("");
   });
 
   it("restores attached file cards without placing file content in the chat text", () => {
@@ -442,6 +475,32 @@ describe("studio transcript reducer", () => {
     expect(turn.blocks.citations).toHaveLength(1);
   });
 
+  it("matches content blocks by id, never by a shared index", () => {
+    const turn = run([
+      // Kept from an earlier block list (e.g. a partial answer) at index 0.
+      { type: "table", content_index: 0, content_id: "partial-content-0",
+        payload: { columns: ["sku"], rows: [["A"]] } },
+      { type: "text_delta", content_index: 0, content_id: "run-2:0", text: "First " },
+      { type: "text_delta", content_index: 0, content_id: "run-2:0", text: "answer." },
+      { type: "content_block_done", content_index: 0, content_id: "run-2:0" },
+    ]);
+    const text = turn.content.find((item) => item.id === "run-2:0");
+    expect(text?.type === "text" && text.text).toBe("First answer.");
+    expect(text?.complete).toBe(true);
+    expect(turn.content.filter((item) => item.type === "text")).toHaveLength(1);
+
+    const open = run([
+      { type: "text_delta", content_index: 0, content_id: "run-3:0", text: "Still writing" },
+      { type: "content_block_done", content_index: 0, content_id: "run-2:0" },
+    ]);
+    expect(open.content[0].complete).toBe(false);
+
+    // A frame without an id (an older server) still streams into one block.
+    const legacy = run([delta("Hello "), delta("there")]);
+    expect(legacy.content).toHaveLength(1);
+    expect(legacy.content[0].type === "text" && legacy.content[0].text).toBe("Hello there");
+  });
+
   it("holds a table until earlier text is sealed", () => {
     let turns = start();
     turns = applyEvent(turns, TURN, {
@@ -537,6 +596,24 @@ describe("studio transcript reducer", () => {
       { type: "done", message_id: "m", finish_reason: "cancelled" },
     ]);
     expect(turn.state).toBe("cancelled");
+  });
+
+  it("settles a stopped turn as cancelled when the closing frame never came", () => {
+    const streaming = run([
+      thinking("act", "Reading the table"),
+      { type: "tool_call", payload: {
+        tool_call_id: "call", tool_name: "query_execute", status: "running",
+        classification: "read_only", sql_preview: "SELECT 1",
+      } },
+    ]);
+    const [stopped] = settleTurn([streaming], TURN, true);
+    expect(stopped.state).toBe("cancelled");
+    expect(stopped.steps.every((step) => step.status !== "running")).toBe(true);
+    const [finished] = settleTurn([streaming], TURN, false);
+    expect(finished.state).toBe("done");
+    // A turn the server already closed keeps its own outcome.
+    const closed = run([{ type: "done", message_id: "m", finish_reason: "stop" }]);
+    expect(settleTurn([closed], TURN, true)[0].state).toBe("done");
   });
 
   it("gives every rail row a unique id across a multi-iteration run", () => {
