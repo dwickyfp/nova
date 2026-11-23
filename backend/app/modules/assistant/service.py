@@ -4184,6 +4184,22 @@ def _tool_progress_frame(
     )
 
 
+#: Stored content ids are bounded (UI state rows hold at most 64 bytes).
+_CONTENT_ID_MAX = 64
+
+
+def _content_id(run_id: str, index: int) -> str:
+    """A content id unique across the thread: the authoring run and the position.
+
+    Ids from earlier releases (``content-{index}``) stay valid in stored
+    threads; they were unique only within one message.
+    """
+    candidate = f"{run_id}:{index}"
+    if len(candidate.encode()) <= _CONTENT_ID_MAX:
+        return candidate
+    return f"{hashlib.sha256(run_id.encode()).hexdigest()[:32]}:{index}"
+
+
 def _ordered_output_frames(
     answer_text: str,
     artifacts: list[PendingArtifact],
@@ -4200,8 +4216,9 @@ def _ordered_output_frames(
     """
     items = _compose_output_items(answer_text, artifacts)
     frames: list[str] = []
+    run_id = context.run_id or uuid4().hex
     for index, item in enumerate(items):
-        content_id = f"content-{index}"
+        content_id = _content_id(run_id, index)
         kind = item["kind"]
         if kind == "text":
             text = str(item.get("text") or "")

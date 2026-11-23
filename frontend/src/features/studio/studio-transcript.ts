@@ -773,11 +773,11 @@ export function applyEvent(
       case "text_delta": {
         const currentContent = turn.content ?? [];
         const index = event.content_index ?? 0;
-        const id = event.content_id ?? "legacy-text-0";
-        const existing = currentContent.findIndex(
-          (item) =>
-            item.id === id || (item.type === "text" && item.index === index),
-        );
+        // Blocks are matched by id alone: a text block at the same index in an
+        // earlier block list is a different block. A frame without an id (an
+        // older server) is the text at its index.
+        const id = event.content_id ?? `legacy-text-${index}`;
+        const existing = currentContent.findIndex((item) => item.id === id);
         const content =
           existing === -1
             ? [
@@ -904,12 +904,12 @@ export function applyEvent(
           }),
         };
       case "content_block_done":
+        // Sealed by id alone: an index can be shared with a block the frame
+        // does not close.
         return {
           ...turn,
           content: (turn.content ?? []).map((item) =>
-            item.id === event.content_id || item.index === event.content_index
-              ? { ...item, complete: true }
-              : item,
+            item.id === event.content_id ? { ...item, complete: true } : item,
           ),
         };
 

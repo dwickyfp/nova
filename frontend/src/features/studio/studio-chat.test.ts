@@ -475,6 +475,32 @@ describe("studio transcript reducer", () => {
     expect(turn.blocks.citations).toHaveLength(1);
   });
 
+  it("matches content blocks by id, never by a shared index", () => {
+    const turn = run([
+      // Kept from an earlier block list (e.g. a partial answer) at index 0.
+      { type: "table", content_index: 0, content_id: "partial-content-0",
+        payload: { columns: ["sku"], rows: [["A"]] } },
+      { type: "text_delta", content_index: 0, content_id: "run-2:0", text: "First " },
+      { type: "text_delta", content_index: 0, content_id: "run-2:0", text: "answer." },
+      { type: "content_block_done", content_index: 0, content_id: "run-2:0" },
+    ]);
+    const text = turn.content.find((item) => item.id === "run-2:0");
+    expect(text?.type === "text" && text.text).toBe("First answer.");
+    expect(text?.complete).toBe(true);
+    expect(turn.content.filter((item) => item.type === "text")).toHaveLength(1);
+
+    const open = run([
+      { type: "text_delta", content_index: 0, content_id: "run-3:0", text: "Still writing" },
+      { type: "content_block_done", content_index: 0, content_id: "run-2:0" },
+    ]);
+    expect(open.content[0].complete).toBe(false);
+
+    // A frame without an id (an older server) still streams into one block.
+    const legacy = run([delta("Hello "), delta("there")]);
+    expect(legacy.content).toHaveLength(1);
+    expect(legacy.content[0].type === "text" && legacy.content[0].text).toBe("Hello there");
+  });
+
   it("holds a table until earlier text is sealed", () => {
     let turns = start();
     turns = applyEvent(turns, TURN, {

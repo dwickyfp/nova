@@ -426,7 +426,7 @@ async def test_ordered_ui_stream_is_validated_sealed_and_replayable():
         claims=None,
         language="en",
     )
-    context = LoopContext(user_name="alice")
+    context = LoopContext(user_name="alice", run_id="run-a")
     frames = _ordered_output_frames("A local calculator.", [PendingArtifact("ui", block)], context)
     names = [frame.split("\n", 1)[0] for frame in frames]
     assert names == [
@@ -438,7 +438,26 @@ async def test_ordered_ui_stream_is_validated_sealed_and_replayable():
     ]
     trace = next(step for step in context.steps if step["kind"] == "ui")
     assert trace["program"] == CALCULATOR
-    assert trace["content_index"] == 1 and trace["content_id"] == "content-1"
+    assert trace["content_index"] == 1 and trace["content_id"] == "run-a:1"
+    # Every frame of one block names the same id, and the next run's ids differ.
+    ids = {json.loads(frame.split("data: ", 1)[1]).get("content_id") for frame in frames}
+    assert ids == {"run-a:0", "run-a:1"}
+    later = _ordered_output_frames(
+        "A local calculator.", [PendingArtifact("ui", block)],
+        LoopContext(user_name="alice", run_id="run-b"),
+    )
+    assert not ids & {json.loads(f.split("data: ", 1)[1]).get("content_id") for f in later}
+
+
+def test_content_ids_stay_within_the_stored_bound():
+    from app.modules.assistant.service import _content_id
+
+    assert _content_id("0f6c7a52-9b0e-4c1e-8f1a-3d2b1c0e9f77", 12) == (
+        "0f6c7a52-9b0e-4c1e-8f1a-3d2b1c0e9f77:12"
+    )
+    long = _content_id("r" * 80, 3)
+    assert long.endswith(":3") and len(long.encode()) <= 64
+    assert long != _content_id("r" * 81, 3)
 
 
 async def test_source_is_owner_role_version_scoped_and_cross_device(monkeypatch):
