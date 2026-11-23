@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from app.core.metadata_db import MetadataConflict
 from app.modules.agents import releases, repository, resources, router, versions
 from app.modules.agents.registry import build_registry
+from app.modules.agents.schemas import AgentUpdateRequest
 from app.modules.agents.tools.ai_search import AISearchTool
 from app.modules.agents.tools.intelligence_views import FeatureLookupTool
 from app.modules.assistant.tools import ToolInvocation
@@ -484,3 +485,15 @@ async def test_publish_and_restore_roundtrip_keeps_all_snapshots(monkeypatch):
     assert (await versions.agent_versions.get("sales", "alice", draft["version_id"]))[
         "configuration"
     ]["instructions_response"] == "Gross"
+
+
+def test_an_agent_stored_with_the_retired_policy_stays_editable():
+    """Regression: a stored ``ask_every_tool`` agent failed every save with
+    "Agent configuration is incomplete or invalid" once the policy was retired."""
+    legacy = versions.configuration({**AGENT, "policy": "ask_every_tool"})
+    assert legacy["policy"] == "auto_read_only"
+    assert legacy == versions.configuration({**AGENT, "policy": "auto_read_only"})
+    with pytest.raises(ValidationError):
+        versions.configuration({**AGENT, "policy": "ask_sometimes"})
+    with pytest.raises(ValidationError):
+        AgentUpdateRequest.model_validate({"policy": "ask_every_tool"})
