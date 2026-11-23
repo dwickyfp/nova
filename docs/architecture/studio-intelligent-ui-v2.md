@@ -69,7 +69,8 @@ turn's verified results, and rewrites it:
   names a known city it must lie within 60 km of that city, or it is moved to
   the city centre (`corrected`). A place Nova cannot check is drawn as
   `approximate` with a dashed ring. When a route is asked for, the server
-  calls the public OSRM `route/v1/driving` service during the statement
+  calls the OSRM server set as `ROUTING_OSRM_URL` (the public server by
+  default; empty turns road routes off) `route/v1/driving` service during the statement
   check (8 s cap, up to three alternatives between two places, polyline
   geometry simplified to about 30 m and at most 5,000 positions in all).
   Only city-level positions (two decimals) are sent. `optimize` orders the
@@ -82,8 +83,12 @@ turn's verified results, and rewrites it:
   its distance and driving time.
 - `Image` and `SearchImage` become `Picture(url, alt, source)`. The image
   must be an `https://upload.wikimedia.org/` upload; a search uses the
-  Wikimedia Commons API. The browser loads only that image and credits its
-  Commons page.
+  Wikimedia Commons API. Commons refuses unidentified clients, so requests
+  carry a generic User-Agent plus the optional operator contact
+  `PUBLIC_CONTENT_CONTACT_URL`. A search Commons refuses, times out or cannot
+  answer becomes `Picture("", alt, <Commons search link>)`, and the page shows
+  "Image unavailable" with that link instead of refusing the statement. The
+  browser loads only the checked image and credits its Commons page.
 - `@Value` becomes the number computed from the verified rows. A typed
   business number, an unknown result or column, a filter that matches no row,
   a forged draft reference or an unknown component refuses that statement

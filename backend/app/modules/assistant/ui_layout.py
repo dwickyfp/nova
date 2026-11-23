@@ -809,9 +809,9 @@ class _Checker:
                 "rows": [[row.get(name) for name in names if not is_credential_column(name)]
                          for row in _rows(table)],
             }, title)
-            if found is None:
-                raise LayoutError(f"The result {args['evidence']!r} has no locations to map")
-            return Call("GeoMap", (Lit(found["props"]),))
+            if found is not None:
+                return Call("GeoMap", (Lit(found["props"]),))
+            return self._city_map(args["evidence"], table, label, measure, title)
         shown = [name for name in dict.fromkeys([latitude, longitude, label, measure])
                  if name and not is_credential_column(name)]
         records = []
@@ -822,13 +822,48 @@ class _Checker:
             lat, lon = _to_number(values.get(latitude)), _to_number(values.get(longitude))
             if lat is None or lon is None or not (-90 <= lat <= 90 and -180 <= lon <= 180):
                 continue
-            records.append(values)
+            if values not in records:  # the same row twice is one place on a map
+                records.append(values)
         if not records:
             raise LayoutError(f"The result {args['evidence']!r} has no valid coordinates")
         props: dict[str, Any] = {"title": title[:256], "evidence_id": args["evidence"],
                                  "rows": records, "latitude": latitude, "longitude": longitude}
         if label and label in shown:
             props["label"] = label
+        if measure and measure in shown:
+            props["options"] = {"popupFields": [measure]}
+        try:
+            validate_props("GeoMap", props)
+        except ComponentError as exc:
+            raise LayoutError("The map cannot be drawn") from exc
+        return Call("GeoMap", (Lit(props),))
+
+    def _city_map(self, evidence: str, table: dict[str, Any], label: str | None,
+                  measure: str | None, title: str) -> Call:
+        """Rows placed at the centre of the known city each one names."""
+        from app.modules.assistant.ui_components import ComponentError, validate_props
+        from app.modules.assistant.ui_public import city_centre
+
+        names = [name for name in _names(table) if not is_credential_column(name)]
+        rows = _rows(table)[:MAP_ROWS]
+        candidates = [label] if label else names
+        city = next((name for name in candidates if name in names and sum(
+            city_centre(row.get(name)) is not None for row in rows) * 2 >= len(rows) > 0), None)
+        if city is None:
+            raise LayoutError(f"The result {evidence!r} has no coordinates or known cities to map")
+        shown = [name for name in dict.fromkeys([city, measure]) if name and name in names]
+        records = []
+        for row in rows:
+            centre = city_centre(row.get(city))
+            values = {name: _json_value(row.get(name)) for name in shown}
+            if centre is None or any(is_credential_value(value) for value in values.values()):
+                continue
+            record = {**values, "city_latitude": centre[0], "city_longitude": centre[1]}
+            if record not in records:  # the same row twice is one place on a map
+                records.append(record)
+        props: dict[str, Any] = {"title": title[:256], "evidence_id": evidence, "rows": records,
+                                 "latitude": "city_latitude", "longitude": "city_longitude",
+                                 "label": city}
         if measure and measure in shown:
             props["options"] = {"popupFields": [measure]}
         try:
@@ -863,15 +898,23 @@ class _Checker:
         from app.modules.assistant.ui_public import (
             PublicContentError,
             commons_image,
+            commons_search,
             search_image,
         )
 
         args = self._args(node.name, node)
-        try:
-            found = (commons_image(str(args["url"])) if node.name == "Image"
-                     else await search_image(str(args["query"])))
-        except PublicContentError as exc:
-            raise LayoutError(str(exc)) from exc
+        if node.name == "Image":
+            try:
+                found = commons_image(str(args["url"]))
+            except PublicContentError as exc:
+                raise LayoutError(str(exc)) from exc
+        else:
+            try:
+                found = await search_image(str(args["query"]))
+            except PublicContentError:
+                # Commons found nothing, refused or did not answer: the page keeps
+                # a placeholder that links to the search instead of failing.
+                found = {"url": "", "source": commons_search(str(args["query"]))}
         return Call("Picture", (Lit(found["url"]), Lit(str(args["alt"])), Lit(found["source"])))
 
 

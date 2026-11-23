@@ -10,12 +10,16 @@ the live answer showed.
   range, and when its label names a known city it must lie near that city. A
   coordinate far from the city it names is replaced by the city's centre; a
   place Nova cannot check is marked approximate.
-* Road routes come from the public OSRM server. Only city-level positions are
-  sent (two decimals, about a kilometre), at most 25 of them. Places on
+* Road routes come from the OSRM server set as ``ROUTING_OSRM_URL`` (the
+  public server by default; empty turns road routes off). Only city-level
+  positions are sent (two decimals, about a kilometre), at most 25 of them. Places on
   different known islands get no route (the public server would cross by
   ferry); a route that is unavailable (no road, a timeout) leaves the places
   on the map with a note instead.
-* Images come from Wikimedia Commons only.
+* Images come from Wikimedia Commons only. Commons refuses clients that do not
+  say who they are, so requests carry a generic User-Agent plus the operator's
+  ``PUBLIC_CONTENT_CONTACT_URL`` when one is set. An image Commons does not
+  return leaves a picture placeholder with a link to search Commons instead.
 """
 
 from __future__ import annotations
@@ -31,9 +35,12 @@ from urllib.parse import urlparse
 
 import httpx
 
-OSRM = "https://router.project-osrm.org"
+from app.core.config import settings
+
 COMMONS = "https://commons.wikimedia.org/w/api.php"
-_HOSTS = frozenset({"router.project-osrm.org", "commons.wikimedia.org"})
+_HOSTS = frozenset({"commons.wikimedia.org"})
+_USER_AGENT = "NovaStudio/1.0 (Nova Studio public image check; +https://www.mediawiki.org/wiki/API:Etiquette)"
+_CONTACT = re.compile(r"^(?:https://[\x21-\x7e]{1,190}|mailto:[\x21-\x7e]{3,190}|[^\s@()<>;]{1,64}@[^\s@()<>;]{1,128})$")
 _IMAGE_HOSTS = frozenset({"upload.wikimedia.org"})
 _TIMEOUT_S = 8.0
 _RESPONSE_LIMIT = 1_000_000
@@ -138,8 +145,25 @@ LANDS: dict[str, str] = {
 _ALIASES = {
     "solo": "surakarta", "jogja": "yogyakarta", "jogjakarta": "yogyakarta",
     "djokjakarta": "yogyakarta", "dki jakarta": "jakarta", "lampung": "bandar lampung",
-    "ujung pandang": "makassar", "singapura": "singapore",
+    "ujung pandang": "makassar", "singapura": "singapore", "bali": "denpasar",
 }
+
+
+def user_agent() -> str:
+    """The generic client name, with the operator's contact appended when set."""
+    contact = (settings.PUBLIC_CONTENT_CONTACT_URL or "").strip()
+    if not contact or not _CONTACT.match(contact) or any(c in contact for c in "();"):
+        return _USER_AGENT
+    return f"{_USER_AGENT[:-1]}; {contact})"
+
+
+def osrm_base() -> str | None:
+    """The configured routing server, or None when road routes are off."""
+    base = (settings.ROUTING_OSRM_URL or "").strip().rstrip("/")
+    target = urlparse(base)
+    if target.scheme not in {"https", "http"} or not target.hostname or target.username:
+        return None
+    return base
 
 
 class PublicContentError(ValueError):
@@ -160,6 +184,14 @@ def _city_key(label: str) -> str | None:
         if plain.startswith(name + " "):
             return _ALIASES.get(name, name)
     return None
+
+
+def city_centre(label: Any) -> tuple[float, float] | None:
+    """The centre of the known city a value names, or None."""
+    if not isinstance(label, str) or not label.strip():
+        return None
+    city = _city_key(label)
+    return CITIES[city] if city else None
 
 
 def _km(a: tuple[float, float], b: tuple[float, float]) -> float:
@@ -203,7 +235,10 @@ _cache: OrderedDict[str, Any] = OrderedDict()
 async def _public_json(url: str, params: dict[str, Any] | None = None) -> Any:
     """A bounded JSON answer from an allowed public host."""
     target = urlparse(url)
-    if target.scheme != "https" or target.hostname not in _HOSTS or target.username:
+    routing = osrm_base()
+    allowed = (target.scheme == "https" and target.hostname in _HOSTS) or bool(
+        routing and url.startswith(f"{routing}/"))
+    if not allowed or target.username:
         raise PublicContentError("Unsupported public source")
     key = json.dumps([url, params], sort_keys=True)
     if key in _cache:
@@ -212,7 +247,7 @@ async def _public_json(url: str, params: dict[str, Any] | None = None) -> Any:
     async with (
         asyncio.timeout(_TIMEOUT_S),
         httpx.AsyncClient(timeout=_TIMEOUT_S, follow_redirects=False,
-                          headers={"User-Agent": "NovaStudio/1 public-content"}) as client,
+                          headers={"User-Agent": user_agent()}) as client,
         client.stream("GET", url, params=params) as response,
     ):
         body = bytearray()
@@ -221,12 +256,13 @@ async def _public_json(url: str, params: dict[str, Any] | None = None) -> Any:
             if len(body) > _RESPONSE_LIMIT:
                 raise PublicContentError("The public answer was too large")
         status = response.status_code
+    if status >= 400:
+        # Refused or throttled (Commons answers 403/429 with a text page).
+        raise PublicContentError("The public service refused the request")
     try:
         result = json.loads(body)
     except ValueError as exc:
         raise PublicContentError("The public answer was not readable") from exc
-    if status >= 500:
-        raise PublicContentError("The public service is unavailable")
     _cache[key] = result
     if len(_cache) > _CACHE_SIZE:
         _cache.popitem(last=False)
@@ -361,16 +397,19 @@ async def road_routes(places: list[dict[str, Any]], *, optimize: bool = False) -
     lands = {LANDS.get(_city_key(str(place["label"])) or "") for place in places} - {None}
     if len(lands) > 1:
         return {"unavailable": "These places are on different islands; no road joins them."}
+    base = osrm_base()
+    if base is None:
+        return {"unavailable": "Road routes are not set up in this deployment."}
     order: list[int] | None = None
     try:
         if optimize and len(places) > 2:
-            order = await _shortest_order(places)
+            order = await _shortest_order(base, places)
             if order is None:
                 return {"unavailable": "No road route connects these places."}
             places = [places[index] for index in order]
         positions = ";".join(city_level(place) for place in places)
         answer = await _public_json(
-            f"{OSRM}/route/v1/driving/{positions}",
+            f"{base}/route/v1/driving/{positions}",
             {"overview": "full", "geometries": "polyline6", "steps": "false",
              "alternatives": "true" if len(places) == 2 else "false"},
         )
@@ -384,10 +423,10 @@ async def road_routes(places: list[dict[str, Any]], *, optimize: bool = False) -
     return {"routes": routes, **({"order": order} if order is not None else {})}
 
 
-async def _shortest_order(places: list[dict[str, Any]]) -> list[int] | None:
+async def _shortest_order(base: str, places: list[dict[str, Any]]) -> list[int] | None:
     """The order that visits every place by the shortest driving time, from the first."""
     positions = ";".join(city_level(place) for place in places)
-    answer = await _public_json(f"{OSRM}/table/v1/driving/{positions}",
+    answer = await _public_json(f"{base}/table/v1/driving/{positions}",
                                 {"annotations": "duration"})
     if not isinstance(answer, dict) or answer.get("code") != "Ok":
         return None
@@ -492,6 +531,14 @@ async def search_image(query: str) -> dict[str, str]:
         if (url := _image_url(info)):
             return {"url": url, "source": _source(info.get("descriptionurl"))}
     raise PublicContentError("No public image found")
+
+
+def commons_search(query: str) -> str:
+    """A Commons search page for the query, the link a missing picture keeps."""
+    from urllib.parse import urlencode
+
+    return "https://commons.wikimedia.org/w/index.php?" + urlencode(
+        {"search": query[:200], "title": "Special:MediaSearch", "type": "image"})
 
 
 def commons_image(url: str) -> dict[str, str]:

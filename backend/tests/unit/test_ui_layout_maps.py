@@ -217,3 +217,122 @@ async def test_the_model_cannot_write_a_checked_map_itself():
                  'p = Picture("https://upload.wikimedia.org/x.jpg", "x", "y")']:
         with pytest.raises(ul.LayoutError, match="Nova"):
             await _check(line)
+
+
+async def test_rows_without_coordinates_are_placed_at_the_city_they_name():
+    tables = {"evidence_s": {"columns": ["shipping_city", "revenue"],
+                             "rows": [["Jakarta", 900], ["Bandung", 400], ["Atlantis", 5]],
+                             "sql": "SELECT shipping_city, SUM(total_amount) revenue FROM orders"}}
+    ctx = ul.LayoutContext(tables=tables, question="Revenue by city on a map")
+    statement = await ul.check_statement(
+        'm = DataMap("evidence_s", null, null, "shipping_city", "revenue", "Revenue by city")',
+        ctx, state_names=set(), defined=set())
+    _name, node = ul.parse_statement(statement.text)
+    props = ul._plain(node.args[0])
+    assert props["rows"] == [
+        {"shipping_city": "Jakarta", "revenue": 900, "city_latitude": -6.2088,
+         "city_longitude": 106.8456},
+        {"shipping_city": "Bandung", "revenue": 400, "city_latitude": -6.9175,
+         "city_longitude": 107.6191},
+    ]
+    assert props["label"] == "shipping_city" and props["options"] == {"popupFields": ["revenue"]}
+    ctx = ul.LayoutContext(tables={"e": {"columns": ["status", "n"], "rows": [["done", 1]]}})
+    with pytest.raises(ul.LayoutError, match="known cities"):
+        await ul.check_statement('m = DataMap("e")', ctx, state_names=set(), defined=set())
+
+
+async def test_the_same_city_listed_twice_is_one_place():
+    tables = {"e": {"columns": ["shipping_city"],
+                    "rows": [["Bandung"], ["Jakarta"], ["Jakarta"], ["Jakarta"], ["Bandung"],
+                             ["Yogyakarta"], ["Yogyakarta"]]}}
+    ctx = ul.LayoutContext(tables=tables, question="Show our cities on a map")
+    statement = await ul.check_statement('m = DataMap("e")', ctx, state_names=set(), defined=set())
+    props = ul._plain(ul.parse_statement(statement.text)[1].args[0])
+    assert [row["shipping_city"] for row in props["rows"]] == ["Bandung", "Jakarta", "Yogyakarta"]
+
+
+def test_a_page_keeps_a_tool_chart_of_a_result_it_does_not_chart():
+    from app.modules.assistant.service import PendingArtifact, _beside_page
+
+    bar = PendingArtifact("component", {"name": "DatavizChart", "props": {},
+                                        "source": {"evidence_id": "evidence_1"}}, "c2")
+    other = PendingArtifact("component", {"name": "DatavizChart", "props": {},
+                                          "source": {"evidence_id": "evidence_2"}}, "c3")
+    tiles = PendingArtifact("component", {"name": "KpiTiles", "props": {}}, "c4")
+    table = PendingArtifact("table", {"title": "Rows"}, "c1")
+    # The page maps evidence_1 and charts only evidence_2.
+    kept = _beside_page([table, bar, other, tiles],
+                        [{"source": {"evidence_id": "evidence_2"}}])
+    assert kept == [table, bar]
+    assert _beside_page([bar], []) == [bar]
+
+
+def test_public_requests_name_a_generic_client_and_the_operator_contact(monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "PUBLIC_CONTENT_CONTACT_URL", "")
+    agent = ui_public.user_agent()
+    assert agent.startswith("NovaStudio/1.0 (") and agent.endswith(")")
+    assert "@" not in agent and "github" not in agent.lower()
+    for contact in ("https://data.example.org/contact", "ops@example.org"):
+        monkeypatch.setattr(settings, "PUBLIC_CONTENT_CONTACT_URL", contact)
+        assert ui_public.user_agent().endswith(f"; {contact})")
+    # A value that could break the header or smuggle text is not sent.
+    for bad in ("not a contact", "https://x.test/a b", "ops@example.org)\r\nX-Evil: 1",
+                "javascript:alert(1)", "https://x.test/(a)"):
+        monkeypatch.setattr(settings, "PUBLIC_CONTENT_CONTACT_URL", bad)
+        assert ui_public.user_agent() == agent
+
+
+async def test_the_user_agent_reaches_commons_and_a_refusal_is_an_error(monkeypatch):
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers["user-agent"])
+        return httpx.Response(403, text="Please respect our robot policy")
+
+    real = httpx.AsyncClient
+
+    def client(**kwargs: Any) -> httpx.AsyncClient:
+        return real(transport=httpx.MockTransport(handler), **kwargs)
+
+    monkeypatch.setattr(ui_public.httpx, "AsyncClient", client)
+    with pytest.raises(ui_public.PublicContentError, match="refused"):
+        await ui_public._public_json(ui_public.COMMONS, {"action": "query"})
+    assert seen == [ui_public.user_agent()]
+
+
+async def test_a_picture_commons_does_not_return_stays_as_a_placeholder(monkeypatch):
+    async def refused(url: str, params: dict[str, Any] | None = None) -> Any:
+        raise ui_public.PublicContentError("The public service refused the request")
+
+    monkeypatch.setattr(ui_public, "_public_json", refused)
+    _name, node = await _check('p = SearchImage("Borobudur temple", "Borobudur temple")')
+    assert node.name == "Picture"
+    url, alt, source = (ul._plain(arg) for arg in node.args)
+    assert url == "" and alt == "Borobudur temple"
+    assert source == ("https://commons.wikimedia.org/w/index.php?search=Borobudur+temple"
+                      "&title=Special%3AMediaSearch&type=image")
+
+
+async def test_road_routes_follow_the_configured_routing_server(monkeypatch):
+    from app.core.config import settings
+
+    calls: list[str] = []
+
+    async def answer(url: str, params: dict[str, Any] | None = None) -> Any:
+        calls.append(url)
+        line = [[106.85, -6.21], [107.62, -6.92]]
+        return {"code": "Ok", "routes": [_route(line, 150_000, 9_000)]}
+
+    monkeypatch.setattr(ui_public, "_public_json", answer)
+    places = [{"label": "Jakarta", "lat": -6.21, "lon": 106.85},
+              {"label": "Bandung", "lat": -6.92, "lon": 107.62}]
+    monkeypatch.setattr(settings, "ROUTING_OSRM_URL", "http://osrm.internal:5000/")
+    assert "routes" in await ui_public.road_routes(places)
+    assert calls == ["http://osrm.internal:5000/route/v1/driving/106.85,-6.21;107.62,-6.92"]
+    # Empty turns road routes off: nothing leaves Nova and the places stay.
+    monkeypatch.setattr(settings, "ROUTING_OSRM_URL", "")
+    assert await ui_public.road_routes(places) == {
+        "unavailable": "Road routes are not set up in this deployment."}
+    assert len(calls) == 1

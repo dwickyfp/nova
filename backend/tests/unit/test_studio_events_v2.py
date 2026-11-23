@@ -606,3 +606,19 @@ def test_a_finished_call_carries_how_long_it_ran() -> None:
     # The fixed test clock reads 1.5 s apart, so every duration is a positive multiple.
     assert all(data["duration_ms"] > 0 and data["duration_ms"] % 1500 == 0 for data in timed)
     assert not any("duration_ms" in data for data in statuses if data["status"] == "running")
+
+
+def test_a_repeated_call_answered_from_its_earlier_result_adds_no_tool_part() -> None:
+    records = encode_case({
+        "name": "deduplicated call", "run_id": "run-d", "role": "ANALYST",
+        "v1": [
+            _call("c1", "running"),
+            _f("tool_status", tool_call_id="c1", status="done"),
+            _f("tool_status", tool_call_id="c9", status="done"),
+            _f("done", message_id="m1", finish_reason="stop"),
+        ],
+    })
+    tools = [r["data"] for r in records
+             if r["event"] == "part.start" and r["data"]["type"] == "tool"]
+    assert [part["tool_call_id"] for part in tools] == ["c1"]
+    assert all(part["tool_name"] != "tool" for part in tools)

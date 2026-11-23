@@ -18,6 +18,7 @@ import {
   useStateField,
 } from "@openuidev/react-lang";
 import type { ParseResult } from "@openuidev/react-lang";
+import { ImageOff } from "lucide-react";
 import { Markdown } from "@/features/assistant/markdown";
 import { cn } from "@/lib/utils";
 import type { DatavizLocator } from "../../dataviz/api";
@@ -214,12 +215,12 @@ function Picture({ props }: { props: Props }) {
   const url = text(props.url);
   const source = text(props.source);
   const alt = text(props.alt);
-  if (!url.startsWith("https://upload.wikimedia.org/")) return null;
+  const link = source.startsWith("https://commons.wikimedia.org/") ? source : "https://commons.wikimedia.org/";
+  // No image when Commons found none, refused or did not answer, or the file did not load.
+  const shown = url.startsWith("https://upload.wikimedia.org/") && !failed;
   return (
     <figure className="min-w-0 space-y-1.5" data-component="Picture">
-      {failed ? (
-        <p className="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">{alt}</p>
-      ) : (
+      {shown ? (
         <img
           src={url}
           alt={alt}
@@ -228,16 +229,16 @@ function Picture({ props }: { props: Props }) {
           onError={() => setFailed(true)}
           className="max-h-96 w-full rounded-lg bg-muted object-cover"
         />
+      ) : (
+        <div className="flex flex-col items-center gap-1 rounded-lg border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
+          <ImageOff aria-hidden="true" className="size-5" />
+          <p>Image unavailable</p>
+        </div>
       )}
       <figcaption className="text-xs text-muted-foreground">
         {alt} ·{" "}
-        <a
-          href={source.startsWith("https://commons.wikimedia.org/") ? source : "https://commons.wikimedia.org/"}
-          target="_blank"
-          rel="noopener noreferrer nofollow"
-          className="underline-offset-2 hover:underline"
-        >
-          Wikimedia Commons
+        <a href={link} target="_blank" rel="noopener noreferrer nofollow" className="underline-offset-2 hover:underline">
+          {shown ? "Wikimedia Commons" : "Search Wikimedia Commons"}
         </a>
       </figcaption>
     </figure>

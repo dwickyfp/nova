@@ -223,8 +223,23 @@ describe("maps and pictures on a page", () => {
     await expect
       .element(screen.getByRole("link", { name: "Wikimedia Commons" }))
       .toHaveAttribute("href", "https://commons.wikimedia.org/wiki/File:Borobudur.jpg");
+    // A file that does not load leaves the placeholder; fire its error so no network is involved.
+    screen.container.querySelector("[data-component=Picture] img")!.dispatchEvent(new Event("error"));
+    await expect.element(screen.getByText("Image unavailable")).toBeVisible();
     cleanup();
     const bad = await show(view('root = Page([p])\np = Picture("https://evil.test/x.jpg", "Temple", "https://evil.test")'));
     expect(bad.container.querySelector("img")).toBeNull();
+    await expect
+      .element(bad.getByRole("link", { name: "Search Wikimedia Commons" }))
+      .toHaveAttribute("href", "https://commons.wikimedia.org/");
+  });
+
+  it("keeps an unavailable picture as a placeholder with its search link", async () => {
+    const search = "https://commons.wikimedia.org/w/index.php?search=Borobudur&title=Special%3AMediaSearch&type=image";
+    const screen = await show(view(`root = Page([h, p])\nh = Header("Borobudur")\np = Picture("", "Borobudur temple", "${search}")`));
+    await expect.element(screen.getByText("Image unavailable")).toBeVisible();
+    expect(screen.container.querySelector("img")).toBeNull();
+    await expect.element(screen.getByRole("link", { name: "Search Wikimedia Commons" })).toHaveAttribute("href", search);
+    await expect.element(screen.getByRole("heading", { name: "Borobudur" })).toBeVisible();
   });
 });

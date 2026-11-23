@@ -58,8 +58,10 @@ them as scenarios. The figures read from your data do not move.
 
 ## Maps and pictures
 
-Ask for a map of results that have coordinates, and the page shows them on a
-map. Point at a place to see its name and figure. For example:
+Ask for a map of results that have coordinates, or that name cities, and the
+page shows them on a map. Results that only name a city are placed at the
+centre of that city. Click a place, or **Select** it under **View locations**,
+to see its name and figure. For example:
 
 ```text
 Show revenue by city on a map.
@@ -89,7 +91,9 @@ ke Malang lewat jalan").
 
 Ask for a picture of a public place or thing, such as "Show a picture of
 Borobudur", and the page shows a picture from Wikimedia Commons with a link
-to its page there.
+to its page there. When no picture can be found or loaded, the page shows
+"Image unavailable" with a link to search Wikimedia Commons, and the rest of
+the answer still appears.
 
 ## Ask for a chart
 

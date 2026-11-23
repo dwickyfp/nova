@@ -650,6 +650,29 @@ def test_the_routes_keep_their_paths_and_shapes(client):
     assert missing.json()["detail"]["code"] == "PREVIEW_NOT_FOUND"
 
 
+def test_a_page_chart_is_checked_by_its_position(client, monkeypatch):
+    seen = []
+
+    async def check(locators, user):
+        seen.extend(locator.node for locator in locators)
+        return [{"status": "SUPPORTED", "can_add": True} for _ in locators]
+
+    monkeypatch.setattr(studio_publish, "check", check)
+    base = "/api/v1/agents/studio/dataviz"
+    page = {"thread_id": "t1", "message_id": "m1", "content_id": "content-1"}
+    checked = client.post(f"{base}/capabilities/check", json={"items": [
+        {**page, "node": {"component": "DatavizChart", "position": 1}}]})
+    assert checked.status_code == 200, checked.text
+    assert seen == [{"component": "DatavizChart", "position": 1}]
+    for node in ({"component": "DatavizChart", "position": -1},
+                 {"component": "DatavizChart", "position": "1"},
+                 {"component": "DatavizChart", "position": 0, "evidence_id": "e1"},
+                 {"component": "DatavizChart"}):
+        refused = client.post(f"{base}/capabilities/check",
+                              json={"items": [{**page, "node": node}]})
+        assert refused.status_code == 422, node
+
+
 def test_http_errors_carry_only_a_code_and_a_message():
     from app.modules.viz.studio_publish_router import _error
 

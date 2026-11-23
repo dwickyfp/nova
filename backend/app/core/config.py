@@ -431,6 +431,10 @@ class Settings(BaseSettings):
     # public server receives the stops' coordinates; point it at a self-hosted OSRM
     # to keep them inside the deployment. Empty uses great-circle distances.
     ROUTING_OSRM_URL: str = "https://router.project-osrm.org"
+    # Contact (an https URL or an email) appended to the User-Agent of public
+    # content requests from Studio pages. Wikimedia Commons refuses clients that
+    # do not identify themselves; a generic name is sent when this is empty.
+    PUBLIC_CONTENT_CONTACT_URL: str = ""
     ML_INFERENCE_BATCH_ROWS: int = 4096
     ML_WORKER_RESULT_MAX_BYTES: int = 1024 * 1024
     ML_INFERENCE_MAX_BATCH_BYTES: int = 16 * 1024 * 1024

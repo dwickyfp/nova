@@ -34,8 +34,11 @@ export type ToolChip = {
   links: { title: string; url: string }[];
 };
 
-/** Tools that ask the user rather than reach anything. */
-const HIDDEN = new Set(["request_human_input", "suggest_follow_ups"]);
+/**
+ * Tools that ask the user rather than reach anything, and the unnamed part an
+ * older stored turn kept for a repeat answered from an earlier result.
+ */
+const HIDDEN = new Set(["request_human_input", "suggest_follow_ups", "tool"]);
 
 const DATA_SOURCES: Record<string, string> = {
   semantic_query: "Semantic model",
@@ -94,7 +97,9 @@ export function classifyTool(
   displayName?: string,
 ): { kind: ToolKind; name: string; source: string } {
   if (toolName === "load_skill") {
-    return { kind: "skill", name: skillName || "Skill", source: "Skill" };
+    // A skill is loaded by its slug ("monthly-revenue-review"); people read words.
+    const name = skillName && /^[a-z0-9]+(?:[-_][a-z0-9]+)+$/.test(skillName) ? humanise(skillName.replace(/-/g, "_")) : skillName;
+    return { kind: "skill", name: name || "Skill", source: "Skill" };
   }
   if (toolName.startsWith("mcp_") || (displayName && /^[^:]+:\s*\S/.test(displayName) && !DATA_SOURCES[toolName])) {
     const label = displayName || "Connected tool";
@@ -132,6 +137,21 @@ export function redact(text: string, limit = INPUT_LIMIT): string {
     .replace(OPAQUE, "[redacted]")
     .trim();
   return clean.length > limit ? `${clean.slice(0, limit - 1).trimEnd()}…` : clean;
+}
+
+const EXTERNAL_SOURCE = /\bexternal:([^/\n]+?)\/([A-Za-z0-9_-]+)/g;
+
+const EXTERNAL_CONTENT = /<EXTERNAL_CONTENT\b[^>]*>([\s\S]*?)(?:<\/EXTERNAL_CONTENT>|$)/;
+
+/**
+ * A result as people read it: a connector's reply without the guidance written
+ * for the model around it, and an internal source token
+ * (``external:Server/tool``) in words.
+ */
+function plain(text: string): string {
+  const wrapped = EXTERNAL_CONTENT.exec(text);
+  if (wrapped) text = wrapped[1].trim() || text;
+  return text.replace(EXTERNAL_SOURCE, (_match, server: string, tool: string) => `${server.trim()} (${tool.replace(/_/g, " ")})`);
 }
 
 function looksLikeSql(text: string): boolean {
@@ -172,7 +192,7 @@ export function toolChips(
     const chip = chips.get(key) ?? { key, kind, name, source, status: "success", calls: [], links: [] };
     const status = statusLabel(tool.status);
     const input = tool.preview?.trim() ? redact(tool.preview) : undefined;
-    const result = tool.detail?.trim() ? redact(tool.detail, RESULT_LIMIT) : undefined;
+    const result = tool.detail?.trim() ? redact(plain(tool.detail), RESULT_LIMIT) : undefined;
     chip.calls.push({
       stepId: tool.stepId,
       status,

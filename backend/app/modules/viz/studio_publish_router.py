@@ -42,13 +42,22 @@ class NodeLocator(BaseModel):
     geometry: str | None = Field(default=None, max_length=256)
 
 
+class PageChartLocator(BaseModel):
+    """A native chart on an answer page, by its position among the page's charts."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    component: Literal["DatavizChart"]
+    position: int = Field(ge=0, le=255, strict=True)
+
+
 class ResultLocator(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     thread_id: str = Field(pattern=_ID)
     message_id: str = Field(pattern=_ID)
     content_id: str = Field(pattern=_ID)
-    node: NodeLocator | None = None
+    node: Annotated[PageChartLocator | NodeLocator, Field(union_mode="left_to_right")] | None = None
 
     def locator(self) -> Locator:
         node = self.node.model_dump(exclude_none=True) if self.node else None

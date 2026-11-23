@@ -2193,10 +2193,10 @@ class AssistantLoop:
                     yield frame
                 page_shown = live_layout is not None and live_layout.opened
                 if page_shown:
-                    # The page is the answer's view: charts and figures drawn by
-                    # tools before it would repeat it.
-                    pending_artifacts = [item for item in pending_artifacts
-                                         if item.kind not in {"component", "chart", "ui"}]
+                    # The page is the answer's view: what tools drew before it
+                    # is kept only when the page does not show it already.
+                    pending_artifacts = _beside_page(pending_artifacts,
+                                                     live_layout.stream.ctx.charts)
                 else:
                     pending_artifacts = await _autocompose_artifacts(
                         pending_artifacts, evidence, context, shown=answer_tables
@@ -5279,6 +5279,32 @@ def _attach_tool_trace(context: Any, tool_call_id: str, trace_detail: dict[str, 
         if step.get("kind") == "tool" and step.get("tool_call_id") == tool_call_id:
             step["trace_detail"] = trace_detail
             return
+
+
+def _beside_page(
+    pending: list[PendingArtifact], page_charts: list[dict[str, Any]]
+) -> list[PendingArtifact]:
+    """Tool views a page answer keeps: native charts of results the page does not chart.
+
+    A page replaces composed views, KPI tiles and maps of its own; a tool's
+    chart of a result the page draws no chart of (for example a bar chart
+    beside a page that maps the same result) would otherwise be lost while
+    the page's text refers to it.
+    """
+    charted = {str((chart.get("source") or {}).get("evidence_id"))
+               for chart in page_charts if isinstance(chart.get("source"), dict)}
+    kept = []
+    for item in pending:
+        if item.kind == "ui" or item.kind == "chart":
+            continue
+        if item.kind == "component":
+            source = item.payload.get("source")
+            evidence = source.get("evidence_id") if isinstance(source, dict) else None
+            if item.payload.get("name") != "DatavizChart" or not evidence or (
+                    str(evidence) in charted):
+                continue
+        kept.append(item)
+    return kept
 
 
 def _live_layout(
