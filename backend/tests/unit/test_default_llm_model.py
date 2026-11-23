@@ -68,3 +68,52 @@ async def test_save_validates_before_writing(registry, monkeypatch):
             SecurityContext(principal="admin", active_role="ACCOUNTADMIN"),
         )
     execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_save_reads_the_registry_inside_the_administrators_transaction(monkeypatch):
+    """Regression: the settings route opens a transaction as the administrator,
+    and the registry check used to open its own as the registry reader, which
+    failed with "A metadata transaction is already open for another actor"."""
+    from contextlib import asynccontextmanager
+
+    from app.core import metadata_scope as scopes
+    from app.modules.access_control.security_context import SecurityContext
+    from app.modules.ai_ml import service as ai_service_module
+
+    transactions = []
+
+    class Database:
+        @asynccontextmanager
+        async def transaction(self, actor, *, read_only=False):
+            transactions.append(actor)
+            yield object()
+
+    class Repository:
+        def __init__(self, _connection):
+            pass
+
+        async def model(self, _model_id):
+            return {"id": "m1", "provider_id": "p1", "name": "gpt-power",
+                    "type": "llm", "is_active": True, "is_deleted": False}
+
+        async def provider(self, _provider_id):
+            return {"id": "p1", "name": "router", "is_active": True,
+                    "has_api_key": True, "is_deleted": False}
+
+    monkeypatch.setattr(scopes, "metadata_db", Database)
+    monkeypatch.setattr(ai_service_module, "AIRegistryRepository", Repository)
+    written = AsyncMock()
+    monkeypatch.setattr(default_model, "write_values", written)
+    admin = SecurityContext("admin", "ACCOUNTADMIN", session_id="login-1")
+    scopes.clear_actor()
+    try:
+        async with scopes.metadata_transaction(admin):
+            saved = await default_model.save_default_model(
+                default_model.DefaultModelSettings(model_id="m1"), admin,
+            )
+    finally:
+        scopes.clear_actor()
+    assert saved.model_id == "m1"
+    assert transactions == [admin]
+    written.assert_awaited_once()
