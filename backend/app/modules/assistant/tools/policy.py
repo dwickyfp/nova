@@ -358,14 +358,14 @@ def classify_statements(
       contained destructive intent so consent cannot auto-approve it and the
       tool card surfaces why.
     """
-    decisions = []
+    decisions: list[StatementDecision] = []
     for stmt in statements:
-        allowed = is_allowed_statement(stmt)
+        ok = is_allowed_statement(stmt)
         decisions.append(
             StatementDecision(
                 statement=stmt,
-                allowed=allowed,
-                reason=None if allowed else denial_reason(stmt),
+                allowed=ok,
+                reason=None if ok else denial_reason(stmt),
             )
         )
     allowed = [d for d in decisions if d.allowed]
