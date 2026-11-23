@@ -23,7 +23,6 @@ injected credentials.
 
 from __future__ import annotations
 
-
 from app.common.sql_guard import (
     guard_sql,
     redact_sql_credentials,
