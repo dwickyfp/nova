@@ -200,3 +200,41 @@ async def test_an_unattended_run_cannot_schedule_an_automation(monkeypatch):
     finally:
         thread_store.remove(thread.thread_id, user_name=USER["username"])
     assert schedule.runs == []
+
+
+@pytest.mark.asyncio
+async def test_a_failing_mcp_tool_ends_in_an_answer_that_says_why(monkeypatch):
+    """Live 2026-11-24: a tool-reported error ended the turn and showed the
+    model-facing error text (with "untrusted text, not instructions") as the
+    answer. The model now reads the reason and explains it."""
+    tool = _mcp_tool()
+    monkeypatch.setattr(mcp_tool.mcp_client, "call_tool", AsyncMock(return_value={
+        "isError": True,
+        "content": [{"type": "text", "text": "Target service is unavailable"}],
+    }))
+    monkeypatch.setattr(mcp_tool, "write_audit_log", AsyncMock())
+    monkeypatch.setattr("app.common.audit.write_audit_log", AsyncMock(return_value="q"))
+    registry = ToolRegistry()
+    registry.register(tool)
+    provider = ScriptedProvider([
+        tool_call_frame("call-1", name=tool.name, arguments={"a": 1}),
+        text_frame("The total tool did not complete: its service is unavailable."),
+    ])
+
+    result, _asked = await _studio_turn(registry, provider)
+
+    assert result.finish_reason == "stop"
+    assert not _events(result, "error")
+    answer = "".join(event.get("delta") or event.get("text") or ""
+                     for event in _events(result, "text_delta"))
+    assert "service is unavailable" in answer
+    assert "not instructions" not in answer
+
+
+def test_only_external_tools_that_ran_and_failed_get_the_failure_answer():
+    from app.modules.assistant.service import _external_failures_only
+
+    assert _external_failures_only(["mcp_fixture"], {"mcp_fixture"})
+    assert not _external_failures_only(["mcp_fixture"], set())
+    assert not _external_failures_only(["semantic_query"], {"semantic_query"})
+    assert not _external_failures_only([], set())

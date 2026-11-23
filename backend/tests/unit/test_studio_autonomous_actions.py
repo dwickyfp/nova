@@ -9,6 +9,7 @@ intent is recorded before it runs.
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 from unittest.mock import AsyncMock
 
@@ -174,3 +175,43 @@ def test_unattended_agent_turns_keep_the_gate():
 
     assert "approval_gate" not in inspect.getsource(turns)
     assert assistant_service.AssistantLoop.__init__.__kwdefaults__["approval_gate"] is True
+
+
+class _SlowTool(StubTool):
+    """Runs until cancelled, like an external report the person stops."""
+
+    async def run(self, invocation, context):
+        self.invocations.append(invocation)
+        await asyncio.sleep(30)
+        return await super().run(invocation, context)
+
+
+@pytest.mark.parametrize("classification", ["read_only", "destructive"])
+async def test_a_call_stopped_by_closing_the_stream_is_audited_as_cancelled(
+    audit, classification,
+):
+    """Live 2026-11-24: Stop in Studio closes the stream mid-call; the call had
+    no audit record at all because only the loop's own cancel flag was audited."""
+    tool = _SlowTool(classification=classification)
+    registry = ToolRegistry()
+    registry.register(tool)
+    stream = AssistantLoop(
+        provider=_script({"sql": "SELECT 1"}), registry=registry, approval_gate=False,
+    ).run(thread=_thread(), user_content="Run the slow report", context=_context(),
+          resolve_consent=AsyncMock(return_value=False))
+    # The request task is cancelled while the tool runs, as when the
+    # browser closes the stream.
+    consumer = asyncio.create_task(_collect(stream))
+    for _ in range(200):
+        if tool.invocations:
+            break
+        await asyncio.sleep(0.01)
+    assert tool.invocations
+    consumer.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await consumer
+
+    statuses = [call.kwargs["status"] for call in audit.await_args_list]
+    expected = ["CANCELLED"] if classification == "read_only" else ["STARTED", "CANCELLED"]
+    assert statuses == expected
+    assert audit.await_args_list[-1].kwargs["user_name"] == "alice"

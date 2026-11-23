@@ -29,7 +29,7 @@ import logging
 import math
 import re
 import time
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Iterable
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
@@ -408,6 +408,20 @@ _DERIVED_STEP_MISSING_PROMPT = (
     "already returned. State the numbers they contain, and say plainly that the derived "
     "figure (a difference, share, chart or model) was not calculated; do not compute it "
     "yourself."
+)
+
+
+def _external_failures_only(missing_required: list[str], failed: set[str]) -> bool:
+    """Every missing step is an external (MCP) tool that ran and reported an error."""
+    return bool(missing_required) and all(
+        name.startswith("mcp_") and name in failed for name in missing_required
+    )
+
+
+_EXTERNAL_STEP_FAILED_PROMPT = (
+    "These external tools ran and returned an error: {steps}. Tell the user plainly that "
+    "the step did not complete and give the reason from the tool's result in your own "
+    "words. Do not say it succeeded, and do not invent a result."
 )
 
 
@@ -1827,6 +1841,19 @@ class AssistantLoop:
                         })
                         messages.append(composer_message())
                         continue
+                    if _external_failures_only(missing_required, failed_capabilities):
+                        # An external tool ran and reported an error: the answer
+                        # says it failed and why, and claims nothing it did.
+                        composing_final = True
+                        messages.append({
+                            "role": "system",
+                            "content": _EXTERNAL_STEP_FAILED_PROMPT.format(steps=", ".join(
+                                _tool_label(self._registry.get(name), name)
+                                for name in missing_required
+                            )),
+                        })
+                        messages.append(composer_message())
+                        continue
                     if (
                         # Studio agents, and Neva turns with governed views the
                         # caller can open, fall back to the governed query.
@@ -2677,6 +2704,9 @@ class AssistantLoop:
             else:
                 _measure_tool_dispatch(context, tool)
                 tool_task = asyncio.create_task(self._dispatch_tool(tool, invocation, context))
+            # Whether this call's ending is in the audit trail. A stream closed
+            # mid-call (Stop in Studio) never reaches the branches below.
+            call_audited = self._approval_gate
             try:
                 while not tool_task.done():
                     if cancelled() or (
@@ -2684,7 +2714,8 @@ class AssistantLoop:
                     ):
                         tool_task.cancel()
                         _finish_tool_step(context, "cancelled", None)
-                        if not self._approval_gate:
+                        if not call_audited:
+                            call_audited = True
                             await _audit_tool_call(
                                 context, tool, invocation, classification, "CANCELLED"
                             )
@@ -2695,7 +2726,8 @@ class AssistantLoop:
                     if remaining <= 0:
                         tool_task.cancel()
                         _finish_tool_step(context, "failed", "time budget exceeded")
-                        if not self._approval_gate:
+                        if not call_audited:
+                            call_audited = True
                             await _audit_tool_call(
                                 context, tool, invocation, classification, "TIMEOUT",
                                 error="time budget exceeded",
@@ -2732,11 +2764,24 @@ class AssistantLoop:
                 # frames before the terminal status.
                 while not progress_queue.empty():
                     yield _tool_progress_frame(context, invocation, progress_queue.get_nowait())
-                if not self._approval_gate:
+                if not call_audited:
+                    call_audited = True
                     await _audit_tool_call(
                         context, tool, invocation, classification,
                         "SUCCESS" if outcome.ok else "FAILED", error=outcome.error,
                     )
+            except BaseException as exc:
+                if not call_audited:
+                    call_audited = True
+                    stopped = isinstance(exc, (GeneratorExit, asyncio.CancelledError))
+                    # The turn was closed while the call ran (Stop, or a dropped
+                    # connection), or the call itself raised.
+                    await _audit_tool_call(
+                        context, tool, invocation, classification,
+                        "CANCELLED" if stopped else "FAILED",
+                        error=None if stopped else type(exc).__name__,
+                    )
+                raise
             finally:
                 context.tool_progress_sink = None
                 context.execution_time_sink = None
@@ -5056,7 +5101,7 @@ async def _audit_tool_call(
         logger.warning("Tool call audit write failed for %s", invocation.tool_name, exc_info=True)
 
 
-def _chosen_tools_phrase(lookup: Any, names: list[str]) -> str:
+def _chosen_tools_phrase(lookup: Any, names: Iterable[str]) -> str:
     """The chosen tools in plain words. An external (MCP) tool's name is an
     internal id, so it goes by its label."""
     return tool_phrases(

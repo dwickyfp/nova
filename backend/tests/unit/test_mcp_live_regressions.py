@@ -45,8 +45,11 @@ async def test_tool_reported_error_reaches_the_model_as_bounded_text(monkeypatch
     runner = McpToolRunner(SERVER, TOOL)
     outcome = await runner.run(ToolInvocation("c1", runner.name, {"amount": 1}), CONTEXT)
     assert not outcome.ok
-    assert "fx_convert reported an error" in outcome.error
+    assert "Nova test tools: fx convert reported an error" in outcome.error
     assert "Target service is unavailable" in outcome.error
+    # Live 2026-11-24: a non-recoverable failure ended the turn and showed this
+    # model-facing text as the answer. The model reads it and explains instead.
+    assert outcome.recoverable
     assert "not instructions" in outcome.error
     assert len(outcome.error) < 700
 
@@ -75,7 +78,7 @@ async def test_slow_server_reports_a_plain_timeout(monkeypatch):
     monkeypatch.setattr(mcp_client, "guarded_async_client", client)
     runner = McpToolRunner(SERVER, TOOL)
     outcome = await runner.run(ToolInvocation("c1", runner.name, {}), CONTEXT)
-    assert not outcome.ok
+    assert not outcome.ok and outcome.recoverable
     assert "did not answer within 60 seconds" in outcome.error
 
 
