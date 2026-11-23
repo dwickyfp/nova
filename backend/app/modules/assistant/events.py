@@ -279,6 +279,9 @@ def table(
 
 
 EVENT_COMPONENT = "component"
+#: A chart draft in the answer, and the turn's one suggestion to save it.
+EVENT_ARTIFACT_DRAFT = "artifact_draft"
+EVENT_SAVE_SUGGESTED = "save_suggested"
 
 
 def component(

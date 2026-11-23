@@ -27,6 +27,7 @@ import {
   turnReducer,
   type ContentPart,
   type HitlPart,
+  type SaveSuggestionPart,
   type TurnPart,
   type TurnRunState,
   type WorkPart,
@@ -171,14 +172,20 @@ export type TurnSegment =
   | { kind: "work"; id: string; parts: WorkPart[] }
   | { kind: "content"; id: string; parts: ContentPart[] }
   | { kind: "hitl"; id: string; part: HitlPart }
-  | { kind: "role_change"; id: string; activeRole: string };
+  | { kind: "role_change"; id: string; activeRole: string }
+  | { kind: "save"; id: string; part: SaveSuggestionPart };
 
 /** Group a turn's ordered parts into what renders in place: work, content, a request, … */
 export function turnSegments(parts: TurnPart[]): TurnSegment[] {
   const segments: TurnSegment[] = [];
   for (const part of parts) {
     const last = segments[segments.length - 1];
-    if (part.type === "role_change") {
+    if (part.type === "artifact_preview") {
+      // Shown in place of the chart it belongs to (by draft_ref), not on its own.
+      continue;
+    } else if (part.type === "save_suggestion") {
+      segments.push({ kind: "save", id: part.id, part });
+    } else if (part.type === "role_change") {
       segments.push({ kind: "role_change", id: part.id, activeRole: part.activeRole });
     } else if (part.type === "hitl_request") {
       // A request to the user stands on its own, where it was asked.

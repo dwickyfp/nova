@@ -351,6 +351,42 @@ async def test_ui_state_saves_from_the_revision_read_in_its_role(meta):
                                     **{**fields, "message_id": "q-alice"})
 
 
+async def test_a_chat_charts_edit_log_has_one_writer_and_stays_in_its_role(meta):
+    """Studio chart artifacts keep edits and saves in the answer's UI state (F4)."""
+    await thread_with_answer(meta)
+    await thread_with_answer(meta, name="bob")
+    fields = {"thread_id": "t-alice", "message_id": "a-alice", "content_id": "artifacts",
+              "program_sha256": SHA}
+    state_id = hashlib.sha256(b"alice/t-alice/a-alice/artifacts/ANALYST").hexdigest()
+    ready = asyncio.Barrier(2)
+
+    async def first_edit(revision):
+        async with meta.transaction() as (repo, _):
+            await ready.wait()
+            return await repo.put_ui_state(
+                state_id, state={"events": [{"event": "artifact.draft", "revision": revision}]},
+                expected_revision=0, **fields)
+
+    # Two panels editing the same draft from nothing saved: one wins.
+    results = await asyncio.gather(first_edit(2), first_edit(2), return_exceptions=True)
+    assert sum(isinstance(r, dict) for r in results) == 1
+    assert sum(isinstance(r, MetadataConflict) for r in results) == 1
+    async with meta.transaction() as (repo, _):
+        logs = await repo.ui_states_of("t-alice", "artifacts")
+        assert [row["state_id"] for row in logs] == [state_id]
+        assert await repo.ui_states_of("t-alice", "c1") == []
+    # Another role of the same person and another person see none of it.
+    async with meta.transaction(role="ACCOUNTADMIN") as (repo, _):
+        assert await repo.ui_states_of("t-alice", "artifacts") == []
+    async with meta.transaction(name="bob") as (repo, _):
+        assert await repo.ui_states_of("t-alice", "artifacts") == []
+    # A log is only written against the person's own answer.
+    with pytest.raises(MetadataIntegrityViolation):
+        async with meta.transaction(name="bob") as (repo, _):
+            await repo.put_ui_state("bob-log", state={"events": []}, expected_revision=0,
+                                    **fields)
+
+
 async def test_translations_are_shared_and_never_move_back(meta):
     async with meta.transaction(workload="agent", name="alice") as (repo, _):
         await repo.store_translations("id", 2, {"loop.ui_unavailable": "Belum bisa."})

@@ -524,6 +524,15 @@ class AssistantMetadataRepository:
             (state_id, self.actor.principal, self.actor.active_role),
         )
 
+    async def ui_states_of(self, thread_id: str, content_id: str) -> list[dict[str, Any]]:
+        """The caller's saved states for one content slot across a thread, in this role."""
+        await self._bound()
+        return await self._all(
+            "SELECT * FROM nova_meta.config_assistant_ui_state WHERE user_name=%s "
+            "AND thread_id=%s AND content_id=%s AND active_role=%s",
+            (self.actor.principal, thread_id, content_id, self.actor.active_role),
+        )
+
     async def put_ui_state(
         self, state_id: str, *, thread_id: str, message_id: str, content_id: str,
         program_sha256: str, state: dict[str, Any], expected_revision: int,

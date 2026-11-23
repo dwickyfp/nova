@@ -460,6 +460,17 @@ role and fingerprint checks, and the per-query audit record. In the browser,
 `nativeDocuments().queryDraftChart`, with the same result checks and cache
 keys per source.
 
+A draft chart can be edited and saved from the answer
+(`viz/studio_artifacts.py`, see
+[Architecture 19](../../arch-19-studio-dataviz.md#chart-artifacts-and-the-save-suggestion)).
+An edit validates the definition against the draft dataset's fields and adds
+a revision to a role-bound per-answer log in `config_assistant_ui_state`; it
+writes no document. A save is the person's explicit
+`POST /agents/studio/dataviz/publish` with `draft_ref`: the dataset revision
+from the governed statement, the latest chart revision rebound to that dataset
+by source column and re-validated, and a `ChartWidget`, all through the native
+document service as the caller with revision CAS. The model has no save tool.
+
 ### Next required source boundaries
 
 Dashboard definitions now include an optional bounded `datasets` registry of

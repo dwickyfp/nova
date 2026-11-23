@@ -24,6 +24,8 @@ import type { GuardDecision } from "@/features/agents/api";
 import type { DashboardArtifactBlock } from "@/features/viz/types";
 import type { UiBlock } from "../intelligent-ui/types";
 import { hitlStatus, parseHitlRequest } from "./hitl/parse";
+import { parseCapability, parseDraft, parseSaved } from "./artifacts/parse";
+import type { ArtifactDraft, ArtifactSaved, SaveCapability } from "./artifacts/types";
 import { parseComponentBlock, type ComponentBlock } from "./components/block";
 import type { HitlKind, HitlRequestSpec, HitlStatus } from "./hitl/types";
 
@@ -108,6 +110,19 @@ export type StudioEvent = Envelope &
         summary: string;
         answer?: Record<string, unknown>;
       }
+    /** A chart draft the person may edit or save; a later one on the same part is a new revision. */
+    | { type: "artifact.draft"; partId: string; draft: ArtifactDraft }
+    /** The turn's one suggestion to save its chart drafts, or why the active role cannot. */
+    | {
+        type: "save.suggested";
+        partId: string;
+        draftRefs: string[];
+        capability: SaveCapability;
+        reasonCode: string;
+        message: string;
+      }
+    /** A draft was saved to a dashboard (after the turn, by the person). */
+    | { type: "artifact.saved"; partId: string; draftRef: string; saved: ArtifactSaved; suggestionPartId?: string }
     | { type: "role.changed"; activeRole: string }
     | {
         type: "run.finished";
@@ -346,6 +361,40 @@ export function parseStudioRecord(name: string, data: Record<string, unknown>): 
             status,
             summary: typeof data.summary === "string" ? data.summary : "",
             ...(answer ? { answer } : {}),
+          }
+        : null;
+    }
+    case "artifact.draft": {
+      const draft = parseDraft(data.draft);
+      return partId && draft ? { ...envelope, type: name, partId, draft } : null;
+    }
+    case "save.suggested": {
+      const capability = parseCapability(data.capability);
+      const refs = Array.isArray(data.draft_refs)
+        ? data.draft_refs.filter((ref): ref is string => typeof ref === "string" && ref.length > 0)
+        : [];
+      return partId && capability && refs.length
+        ? {
+            ...envelope,
+            type: name,
+            partId,
+            draftRefs: refs,
+            capability,
+            reasonCode: typeof data.reason_code === "string" ? data.reason_code : "",
+            message: typeof data.message === "string" ? data.message : "",
+          }
+        : null;
+    }
+    case "artifact.saved": {
+      const saved = parseSaved(data.saved);
+      return partId && saved && typeof data.draft_ref === "string"
+        ? {
+            ...envelope,
+            type: name,
+            partId,
+            draftRef: data.draft_ref,
+            saved,
+            ...(typeof data.suggestion_part_id === "string" ? { suggestionPartId: data.suggestion_part_id } : {}),
           }
         : null;
     }

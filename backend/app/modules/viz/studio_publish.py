@@ -707,26 +707,66 @@ def build_native_chart(
         raise Refusal("The table is not valid for its dataset.") from None
 
 
-async def publish(
-    user: dict[str, Any], *, ref: str, idempotency_key: str, target: Target,
-    title: str | None = None,
-) -> dict[str, Any]:
-    """Add one verified result to a native dashboard, as the caller."""
-    from app.modules.agents.tools.native_dataviz import (
-        DEFAULT_SIZE,
-        Refusal,
-        _dataset,
-        already_applied,
-        apply_changes,
-        first_free,
+async def target_dashboard(
+    user: dict[str, Any], target: Target, base: UUID, chart_title: str,
+) -> UUID:
+    """The dashboard to add to: the chosen one, or a new one in the personal workspace."""
+    from app.modules.viz.contracts.dashboards import DashboardDefinition, Page
+
+    if target.mode != "new":
+        if target.dashboard_id is None:
+            raise PublishError("Choose a dashboard to add the chart to.", code="BAD_TARGET")
+        return target.dashboard_id
+    dashboard_id = uuid5(base, "dashboard")
+    definition = DashboardDefinition(
+        dashboard_id=dashboard_id, title=(target.title or chart_title)[:256],
+        pages=(Page(page_id=uuid5(base, "page:1"), title="Page 1"),),
     )
+    create = uuid5(base, "create")
+    await _once(user, create, partial(
+        _documents().create_visual, user, "personal", definition, operation_id=create))
+    return dashboard_id
+
+
+async def place_chart(
+    user: dict[str, Any], dashboard_id: UUID, base: UUID, workspace: str, chart: Any,
+) -> dict[str, Any]:
+    """Create ``chart`` and place it in the dashboard's first free slot.
+
+    Both steps carry operation ids derived from ``base``; the placement applies
+    under the dashboard's revision CAS and finds its own receipt on a retry.
+    """
+    from app.modules.agents.tools.native_dataviz import DEFAULT_SIZE, apply_changes, first_free
     from app.modules.viz.contracts.commands import WidgetAdd
     from app.modules.viz.contracts.dashboards import (
         ChartReference,
         ChartWidget,
         DashboardDefinition,
-        Page,
     )
+
+    create_chart = uuid5(base, "chart-create")
+    await _once(user, create_chart, partial(
+        _documents().create_visual, user, workspace, chart, operation_id=create_chart))
+    widget_id = uuid5(base, "widget")
+
+    def place(current: DashboardDefinition) -> list[Any]:
+        page = current.pages[0]
+        width, height = DEFAULT_SIZE.get(chart.visual, (6, 4))
+        layout = first_free([widget.layout for widget in page.widgets], width, height)
+        return [WidgetAdd(page_id=page.page_id, widget=ChartWidget(
+            widget_id=widget_id, layout=layout,
+            chart_ref=ChartReference(chart_id=chart.chart_id, revision=1),
+        ))]
+
+    return await apply_changes(user, dashboard_id, uuid5(base, "place"), place)
+
+
+async def publish(
+    user: dict[str, Any], *, ref: str, idempotency_key: str, target: Target,
+    title: str | None = None,
+) -> dict[str, Any]:
+    """Add one verified result to a native dashboard, as the caller."""
+    from app.modules.agents.tools.native_dataviz import Refusal, _dataset, already_applied
 
     try:
         locator = verify(ref, user)
@@ -741,20 +781,7 @@ async def publish(
     sql = normal_sql(preview.sql)
     try:
         database = await source_database(sql, user)
-        if target.mode == "new":
-            dashboard_id = uuid5(base, "dashboard")
-            dashboard_title = (target.title or chart_title)[:256]
-            definition = DashboardDefinition(
-                dashboard_id=dashboard_id, title=dashboard_title,
-                pages=(Page(page_id=uuid5(base, "page:1"), title="Page 1"),),
-            )
-            create = uuid5(base, "create")
-            await _once(user, create, partial(
-                _documents().create_visual, user, "personal", definition, operation_id=create))
-        else:
-            if target.dashboard_id is None:
-                raise PublishError("Choose a dashboard to add the chart to.", code="BAD_TARGET")
-            dashboard_id = target.dashboard_id
+        dashboard_id = await target_dashboard(user, target, base, chart_title)
         workspace = await _documents().workspace_of(user, dashboard_id)
         # A replay of a request already placed returns its own first outcome;
         # only a new request looks for a copy already on the dashboard.
@@ -783,21 +810,7 @@ async def publish(
         chart_id = uuid5(base, "chart")
         chart = build_native_chart(result.chart, title=chart_title, chart_id=chart_id,
                                    dataset_id=dataset_id, revision=revision, dataset=dataset)
-        create_chart = uuid5(base, "chart-create")
-        await _once(user, create_chart, partial(
-            _documents().create_visual, user, workspace, chart, operation_id=create_chart))
-        widget_id = uuid5(base, "widget")
-
-        def place(current: DashboardDefinition) -> list[Any]:
-            page = current.pages[0]
-            width, height = DEFAULT_SIZE.get(chart.visual, (6, 4))
-            layout = first_free([widget.layout for widget in page.widgets], width, height)
-            return [WidgetAdd(page_id=page.page_id, widget=ChartWidget(
-                widget_id=widget_id, layout=layout,
-                chart_ref=ChartReference(chart_id=chart_id, revision=1),
-            ))]
-
-        receipt = await apply_changes(user, dashboard_id, place_base, place)
+        receipt = await place_chart(user, dashboard_id, base, workspace, chart)
     except Refusal as exc:
         raise PublishError(str(exc)) from exc
     except NovaException as exc:

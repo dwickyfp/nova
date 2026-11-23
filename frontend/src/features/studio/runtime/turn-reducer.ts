@@ -24,6 +24,7 @@ import type { RailStep } from "../thought-turn";
 import type { HitlKind, HitlRequestSpec, HitlStatus } from "./hitl/types";
 import type { ComponentBlock } from "./components/block";
 import type { PartEndState, ReasoningSource, StudioEvent, TextVerification } from "./protocol";
+import type { ArtifactDraft, ArtifactSaved, SaveCapability } from "./artifacts/types";
 
 export type PartState = "streaming" | PartEndState;
 
@@ -112,6 +113,24 @@ export type UiPart = PartBase & Positioned & {
 export const MAX_UI_PROGRAM_BYTES = 64_000;
 const utf8 = new TextEncoder();
 
+/**
+ * A chart draft of this turn (`artifact.draft`). It renders in place of the
+ * chart component it belongs to (same `draft_ref`) and opens in the artifact
+ * panel; an edit there replaces `draft` with the next revision.
+ */
+export type ArtifactPart = PartBase & { type: "artifact_preview"; draft: ArtifactDraft; saved?: ArtifactSaved };
+
+/** The turn's one suggestion to save its drafts, or the reason the role cannot. */
+export type SaveSuggestionPart = PartBase & {
+  type: "save_suggestion";
+  draftRefs: string[];
+  capability: SaveCapability;
+  reasonCode: string;
+  message: string;
+  /** Drafts already saved, by `draft_ref`. */
+  saved: Record<string, ArtifactSaved>;
+};
+
 /** A separator: the role changed mid-turn and earlier work was withdrawn. */
 export type RoleChangePart = PartBase & { type: "role_change"; activeRole: string };
 
@@ -124,7 +143,7 @@ export type LegacyStepPart = PartBase & { type: "legacy_step"; step: RailStep };
 export type ContentPart =
   | TextPart | TablePart | ChartPart | ComponentPart | CitationPart | DashboardPart | UiPart;
 export type WorkPart = ReasoningPart | ToolPart | GuardPart | LegacyStepPart;
-export type TurnPart = ContentPart | WorkPart | RoleChangePart | HitlPart;
+export type TurnPart = ContentPart | WorkPart | RoleChangePart | HitlPart | ArtifactPart | SaveSuggestionPart;
 
 export type TurnRunState = {
   parts: TurnPart[];
@@ -325,6 +344,46 @@ function reduce(state: TurnRunState, event: StudioEvent): TurnRunState {
     case "tool.evidence":
       // Evidence is attached by the transcript layer, which owns its merge rules.
       return state;
+    case "artifact.draft": {
+      const existing = state.parts.find((part) => part.id === event.partId);
+      if (existing) {
+        // A later revision of the same draft, edited in the artifact panel.
+        return patchPart(state, event.partId, (part) =>
+          part.type === "artifact_preview" && event.draft.revision > part.draft.revision
+            ? { ...part, draft: event.draft }
+            : part,
+        );
+      }
+      const part: ArtifactPart = { id: event.partId, seq: event.seq, state: "done", type: "artifact_preview", draft: event.draft };
+      return { ...state, parts: insertBySeq(state.parts, part) };
+    }
+    case "save.suggested": {
+      // One suggestion per turn.
+      if (state.parts.some((part) => part.type === "save_suggestion")) return state;
+      const part: SaveSuggestionPart = {
+        id: event.partId,
+        seq: event.seq,
+        state: "done",
+        type: "save_suggestion",
+        draftRefs: event.draftRefs,
+        capability: event.capability,
+        reasonCode: event.reasonCode,
+        message: event.message,
+        saved: {},
+      };
+      return { ...state, parts: insertBySeq(state.parts, part) };
+    }
+    case "artifact.saved":
+      return {
+        ...state,
+        parts: state.parts.map((part) =>
+          part.type === "artifact_preview" && part.draft.draft_ref === event.draftRef
+            ? { ...part, saved: event.saved }
+            : part.type === "save_suggestion" && part.draftRefs.includes(event.draftRef)
+              ? { ...part, saved: { ...part.saved, [event.draftRef]: event.saved } }
+              : part,
+        ),
+      };
     case "role.changed": {
       // Work produced under the previous role was withdrawn by the server and is
       // not shown to the new role; the separator says why the turn restarted.

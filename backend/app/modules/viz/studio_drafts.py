@@ -153,6 +153,9 @@ class ResolvedDraft:
     chart: ChartDefinition
     sql: str
     database: str
+    #: The assistant message holding the draft, and its recorded steps.
+    message_id: str = ""
+    steps: tuple[Any, ...] = ()
 
 
 def _statement(step: dict[str, Any] | None) -> str | None:
@@ -218,7 +221,8 @@ async def resolve(ref: str, user: dict[str, Any]) -> ResolvedDraft:
     except ValueError:
         raise DraftError("This chart's stored definition cannot be read.",
                          status_code=422) from None
-    return ResolvedDraft(locator=locator, chart=chart, sql=normal_sql(sql), database=database)
+    return ResolvedDraft(locator=locator, chart=chart, sql=normal_sql(sql), database=database,
+                         message_id=str(row.get("message_id") or ""), steps=tuple(steps))
 
 
 def _chart_record(steps: list[Any], locator: DraftLocator) -> dict[str, Any]:

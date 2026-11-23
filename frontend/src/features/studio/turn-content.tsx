@@ -17,6 +17,9 @@ import { IntelligentUi } from "./intelligent-ui/renderer";
 import type { UiAction } from "./intelligent-ui/types";
 import { UI_CATALOG_VERSION } from "./intelligent-ui/catalog";
 import { ComponentView } from "./runtime/components/registry";
+import type { ComponentBlock } from "./runtime/components/block";
+import { ArtifactPreviewCard } from "./runtime/artifacts/artifact-views";
+import { useArtifact } from "./runtime/artifacts/scope";
 
 /**
  * The canonical renderer for an agent turn's authored output.
@@ -212,7 +215,7 @@ export function TurnContent({
           ) : item.type === "table" ? (
             renderTable(item)
           ) : item.type === "component" ? (
-            <ComponentView block={item.block} ready={stored} dataviz={locate(item.id)} />
+            <ArtifactOrComponent block={item.block} ready={stored} dataviz={locate(item.id)} />
           ) : item.type === "chart" ? (
             <ResultChart block={item.block} dataviz={locate(item.id) ?? undefined} />
           ) : (
@@ -269,5 +272,23 @@ function SelectableOutput({
     >
       {children}
     </div>
+  );
+}
+
+/** A chart the turn announced as a draft shows as its artifact preview; anything else as is. */
+function ArtifactOrComponent({
+  block,
+  ready,
+  dataviz,
+}: {
+  block: ComponentBlock;
+  ready: boolean;
+  dataviz: DatavizLocator | null;
+}) {
+  const artifact = useArtifact(block.component === "DatavizChart" ? block.props.draft_ref : undefined);
+  return artifact ? (
+    <ArtifactPreviewCard part={artifact.part} scope={artifact.scope} />
+  ) : (
+    <ComponentView block={block} ready={ready} dataviz={dataviz} />
   );
 }

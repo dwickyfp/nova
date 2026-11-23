@@ -9,8 +9,10 @@ import {
 } from "../studio-transcript";
 import contract from "./protocol-v2-contract.json";
 import { reduceEvents, turnReducer } from "./turn-reducer";
+import { applyToTurn } from "../studio-transcript";
 import { encodeV1Turn, parsedEvents, type V1Frame, type V2Record } from "./v2-test-encoder";
 import type { StudioEvent } from "./protocol";
+import type { ArtifactDraft } from "./artifacts/types";
 
 /**
  * The Studio turn reducer (protocol v2).
@@ -238,3 +240,81 @@ describe("turn reducer", () => {
     expect(c1.map((part) => part.type === "tool" && part.originRunId)).toEqual([undefined, "mission-run"]);
   });
 });
+
+describe("chart artifacts", () => {
+  const draftCase = cases.find((item) => item.name === "a chart draft with its save suggestion")!;
+  const draft = draftCase.v1.find((frame) => frame.event === "artifact_draft")!.data.draft as Record<string, unknown>;
+  const ref = String(draft.draft_ref);
+  const saved = {
+    operation_id: "op-1", dashboard_id: "d1", dashboard_title: "Brand review", workspace_id: "w1",
+    chart_id: "c9", widget_id: "wd1", revision: 3, draft_revision: 2,
+  };
+  /** What the server appends to the journal after the turn: an edit, then a save. */
+  function later(journal: V2Record[]): V2Record[] {
+    const last = Math.max(...journal.map((record) => Number(record.data.seq ?? 0)));
+    const partId = String(journal.find((record) => record.event === "artifact.draft")!.data.part_id);
+    const suggestion = String(journal.find((record) => record.event === "save.suggested")!.data.part_id);
+    return [
+      { event: "artifact.draft", data: { part_id: partId, draft: { ...draft, revision: 2, title: "Units by brand, 2026" }, seq: last + 2, run_id: draftCase.run_id } },
+      { event: "artifact.saved", data: { part_id: partId, draft_ref: ref, saved, suggestion_part_id: suggestion, seq: last + 3, run_id: draftCase.run_id } },
+    ];
+  }
+
+  it("shows the draft in place and one suggestion after it, without rows or a statement", () => {
+    const turn = live(parsedEvents(draftCase.v2));
+    const types = turn.run.parts.map((part) => part.type);
+    expect(types.indexOf("artifact_preview")).toBeLessThan(types.indexOf("save_suggestion"));
+    expect(turnSegments(turn.run.parts).filter((segment) => segment.kind === "save")).toHaveLength(1);
+    expect(turn.run.parts.find((part) => part.type === "save_suggestion")).toMatchObject({
+      capability: "can_save",
+      draftRefs: [ref],
+      saved: {},
+    });
+    expect(JSON.stringify(turn.run.parts)).not.toMatch(/"rows"|SELECT/);
+  });
+
+  it("keeps one suggestion per turn and never goes back to an older revision", () => {
+    const events = parsedEvents(draftCase.v2);
+    const turn = live(events);
+    const next = Math.max(turn.run.lastSeq, 0) + 1;
+    const extra = parsedEvents([
+      { event: "save.suggested", data: { part_id: "other", draft_refs: [ref], capability: "role_cannot_author", reason_code: "X", message: "No", seq: next } },
+    ]);
+    const after = extra.reduce((current, event) => applyToTurn(current, event), turn);
+    expect(after.run.parts.filter((part) => part.type === "save_suggestion")).toHaveLength(1);
+    expect(after.run.parts.find((part) => part.type === "save_suggestion")).toMatchObject({ capability: "can_save" });
+
+    const partId = String(draftCase.v2.find((record) => record.event === "artifact.draft")!.data.part_id);
+    const older = turnReducer(after.run, {
+      type: "artifact.draft", seq: next + 1, partId,
+      draft: { ...(draft as unknown as ArtifactDraft), revision: 0, title: "Stale" },
+    });
+    expect(older.parts.find((part) => part.type === "artifact_preview")).toMatchObject({ draft: { revision: 1 } });
+  });
+
+  it("marks the draft and the suggestion saved, and a reopened answer shows the same edit and save", () => {
+    const stored = storedMessage(draftCase);
+    const journalStep = stored.steps![0] as unknown as { events: V2Record[] };
+    const appended = later(journalStep.events);
+
+    // Live: the turn finishes, then the edit and the save arrive.
+    const streamed = parsedEvents([...draftCase.v2, ...appended]).reduce(
+      (turns, event) => applyStudioEvent(turns, "t", event),
+      [newTurn({ id: "t", question: "Q" })],
+    )[0];
+    const preview = streamed.run.parts.find((part) => part.type === "artifact_preview");
+    expect(preview).toMatchObject({ draft: { revision: 2, title: "Units by brand, 2026" }, saved: { dashboard_title: "Brand review" } });
+    expect(streamed.run.parts.find((part) => part.type === "save_suggestion")).toMatchObject({ saved: { [ref]: saved } });
+
+    // Reopened: the server overlays the same events onto the stored journal.
+    journalStep.events = [...journalStep.events, ...appended];
+    const reopened = replayed(stored);
+    const artifacts = (turn: TranscriptTurn) =>
+      turn.run.parts
+        .filter((part) => part.type === "artifact_preview" || part.type === "save_suggestion")
+        .map(({ seq: _seq, ...part }) => part);
+    expect(artifacts(reopened)).toEqual(artifacts(streamed));
+    expect(reopened.state).toBe(streamed.state);
+  });
+});
+

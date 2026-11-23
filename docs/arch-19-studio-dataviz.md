@@ -38,6 +38,39 @@ operation ID derives from the caller, the idempotency key and the request, so a
 retry returns the first outcome. Maps, results that changed after the query,
 and SQL that names no database are refused in plain language.
 
+### Chart artifacts and the save suggestion
+
+A `DatavizChart` placed in an answer is also announced as a chart artifact
+(`backend/app/modules/viz/studio_artifacts.py`). After the answer's output,
+the turn emits one protocol v2 `artifact.draft` per chart (definition and
+`draft_ref`, never rows or SQL), then at most one `save.suggested`. The
+suggestion carries the active role's capability, decided by a zero-row
+inspection of the governed statement as the caller: `can_save`, or
+`role_cannot_author` with a plain reason. When the capability cannot be
+decided (engine unavailable), no suggestion is sent. No tool reaches the save
+path; the model can only draw the chart.
+
+- **Edits** (`POST /agents/studio/dataviz/drafts/{ref}/revisions`) validate
+  the edited definition against the draft's own dataset and append a new
+  revision. **Saves** (`POST /agents/studio/dataviz/publish` with `draft_ref`
+  and `idempotency_key`) create the dataset from the governed statement, the
+  latest revision's `ChartDefinition` rebound to it, and a `ChartWidget`, as
+  the caller through `operation_base`, `target_dashboard` and `place_chart`.
+  The operation is keyed by the draft revision, so a retry returns the first
+  outcome; dashboard writes use the document revision CAS; an existing
+  dashboard must pass the caller's edit ACL.
+- **Where edits and saves live.** Message steps are append-only for the web
+  workload, so the per-answer log (`artifact.draft` revisions and
+  `artifact.saved` receipts) is a role-bound row in
+  `config_assistant_ui_state` (content `artifacts`), written with revision
+  CAS. No new store, table or dual write. On thread read the log is appended
+  to the answer's journal, numbered after its terminal event, so a reopened
+  answer replays identically to the live session.
+- The draft resolves only for its owner under the same security context;
+  another role sees `ROLE_CHANGED` and cannot edit or save it.
+
+User documentation: `/docs/studio/edit-and-save-charts`.
+
 The document, dataset, query and publication contracts are owned by the
 [native visualization guide](../backend/app/modules/viz/AGENTS.md) and the
 [implementation boundary](architecture/native-dataviz/IMPLEMENTATION.md).

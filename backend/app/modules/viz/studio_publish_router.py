@@ -15,8 +15,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.common.responses import SanitizingJSONResponse
 from app.core.deps import get_current_user
 
-from . import studio_drafts, studio_publish
+from . import studio_artifacts, studio_drafts, studio_publish
 from .contracts.queries import DatasetQueryRequest, DatasetQueryResult
+from .studio_drafts import DraftError
 from .studio_publish import PublishError, Target
 from .studio_results import Locator
 
@@ -80,13 +81,32 @@ class TargetBody(BaseModel):
         return Target(self.mode, self.dashboard_id, (self.title or "").strip() or None)
 
 
+_REF = r"^[A-Za-z0-9_.\-]+$"
+
+
 class PublishBody(BaseModel):
+    """Exactly one of ``preview_ref`` (a result) or ``draft_ref`` (a chart draft)."""
+
     model_config = ConfigDict(extra="ignore")
 
-    preview_ref: str = Field(min_length=8, max_length=2048)
+    preview_ref: str | None = Field(default=None, min_length=8, max_length=2048)
+    draft_ref: str | None = Field(default=None, min_length=8, max_length=1024, pattern=_REF)
     idempotency_key: UUID
     target: TargetBody
     title: str | None = Field(default=None, max_length=250)
+
+    @model_validator(mode="after")
+    def one_source(self) -> PublishBody:
+        if (self.preview_ref is None) == (self.draft_ref is None):
+            raise ValueError("send either preview_ref or draft_ref")
+        return self
+
+
+class RevisionBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    chart: dict[str, Any]
+    base_revision: int = Field(ge=1, le=10_000)
 
 
 def _error(exc: PublishError) -> HTTPException:
@@ -115,8 +135,17 @@ async def list_dashboards(
 
 @router.post("/publish", response_class=SanitizingJSONResponse)
 async def publish_preview(body: PublishBody, user: CurrentUser) -> dict[str, Any]:
-    """Add a verified result to an existing or a new dashboard."""
+    """Add a verified result, or a chart draft as it is, to an existing or a new dashboard.
+
+    Nothing is saved without this explicit request; the agent cannot call it.
+    """
     try:
+        if body.draft_ref is not None:
+            return await studio_artifacts.publish_draft(
+                user, ref=body.draft_ref, idempotency_key=str(body.idempotency_key),
+                target=body.target.target(), title=body.title,
+            )
+        assert body.preview_ref is not None
         return await studio_publish.publish(
             user,
             ref=body.preview_ref,
@@ -139,3 +168,40 @@ async def query_draft(
     QueryService, so row filters and column masks apply. Never returns stored rows.
     """
     return await studio_drafts.query(ref, user, body)
+
+
+@router.get("/drafts/{ref}", response_class=SanitizingJSONResponse)
+async def draft_state(
+    user: CurrentUser,
+    ref: str = Path(min_length=8, max_length=1024, pattern=_REF),
+) -> dict[str, Any]:
+    """A chart draft's latest revision, its fields, capability and save receipt (no rows)."""
+    try:
+        return await studio_artifacts.state(ref, user)
+    except DraftError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.get("/drafts/{ref}/capability", response_class=SanitizingJSONResponse)
+async def draft_capability(
+    user: CurrentUser,
+    ref: str = Path(min_length=8, max_length=1024, pattern=_REF),
+) -> dict[str, Any]:
+    """Whether the caller's active role can save this chart draft now, and its save receipt."""
+    try:
+        return await studio_artifacts.capability(ref, user)
+    except DraftError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.post("/drafts/{ref}/revisions", response_class=SanitizingJSONResponse)
+async def revise_draft(
+    body: RevisionBody, user: CurrentUser,
+    ref: str = Path(min_length=8, max_length=1024, pattern=_REF),
+) -> dict[str, Any]:
+    """Record an edited chart definition as the draft's next revision (no data, no save)."""
+    try:
+        return await studio_artifacts.revise(ref, user, chart=body.chart,
+                                             base_revision=body.base_revision)
+    except DraftError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc

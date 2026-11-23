@@ -28,6 +28,7 @@ import {
   NATIVE_DASHBOARD_OPEN,
 } from "@/features/native-dataviz/dashboard/events";
 import { useDatavizCapability } from "./use-dataviz-capability";
+import { artifactsApi, type DraftPublication } from "../runtime/artifacts/api";
 
 /**
  * **Add to Dataviz** for one result. Rendered only when Nova's server resolver
@@ -84,12 +85,22 @@ function newKey() {
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+/** A chart draft from a Studio answer, saved exactly as it is shown. */
+export type DraftSource = {
+  draftRef: string;
+  title: string;
+  onSaved: (result: DraftPublication) => void;
+};
+
 export function AddToDatavizDialog({
   capability,
+  draft,
   onClose,
   preselectDashboardId,
 }: {
-  capability: DatavizCapability;
+  /** A result to add (Add to Dataviz); or pass ``draft``. */
+  capability?: DatavizCapability;
+  draft?: DraftSource;
   onClose: () => void;
   preselectDashboardId?: string | null;
 }) {
@@ -123,10 +134,10 @@ export function AddToDatavizDialog({
     () => dashboards.data?.pages.flatMap((page) => page.dashboards) ?? [],
     [dashboards.data],
   );
-  const concepts = (capability.concepts ?? []).filter((item) => item.label || item.qualified_name);
+  const concepts = (capability?.concepts ?? []).filter((item) => item.label || item.qualified_name);
 
   const submit = async () => {
-    if (!capability.preview_ref || busy) return;
+    if ((!draft && !capability?.preview_ref) || busy) return;
     const target: DatavizTarget | null =
       mode === "new"
         ? title.trim()
@@ -142,11 +153,14 @@ export function AddToDatavizDialog({
     setBusy(true);
     setError(null);
     try {
-      const result = await datavizApi.publish({
-        preview_ref: capability.preview_ref,
-        idempotency_key: idempotencyKey,
-        target,
-      });
+      const result = draft
+        ? await artifactsApi.publish({ draft_ref: draft.draftRef, idempotency_key: idempotencyKey, target })
+        : await datavizApi.publish({
+            preview_ref: capability!.preview_ref!,
+            idempotency_key: idempotencyKey,
+            target,
+          });
+      draft?.onSaved(result as DraftPublication);
       // An editor already showing this dashboard reloads the new revision.
       window.dispatchEvent(new CustomEvent(NATIVE_DASHBOARD_CHANGED, {
         detail: { dashboard_id: result.dashboard_id, revision: Number.MAX_SAFE_INTEGER },
@@ -159,7 +173,8 @@ export function AddToDatavizDialog({
       } catch {
         // The open Dataviz tab already switched; a reload starts on the list.
       }
-      toast.success(result.reused_chart ? "This chart is already on that dashboard" : "Chart added to Dataviz", {
+      const reused = "reused_chart" in result && result.reused_chart;
+      toast.success(reused ? "This chart is already on that dashboard" : draft ? "Chart saved to the dashboard" : "Chart added to Dataviz", {
         action: {
           label: "Open in Dataviz",
           onClick: () => void navigate({ to: "/studio", search: (prev) => ({ ...prev, tab: "dataviz" }) }),
@@ -181,10 +196,10 @@ export function AddToDatavizDialog({
     <Dialog open onOpenChange={(open) => (!open && !busy ? onClose() : undefined)}>
       <DialogContent className="sm:max-w-lg" onClick={(event) => event.stopPropagation()}>
         <DialogHeader>
-          <DialogTitle>Add to Dataviz</DialogTitle>
+          <DialogTitle>{draft ? "Save to dashboard" : "Add to Dataviz"}</DialogTitle>
           <DialogDescription>
-            “{capability.title || "This result"}” becomes a live dashboard chart. Everyone who
-            opens it sees only the rows their own role allows.
+            “{draft?.title || capability?.title || "This result"}” becomes a live dashboard chart.
+            Everyone who opens it sees only the rows their own role allows.
           </DialogDescription>
         </DialogHeader>
 
@@ -323,7 +338,9 @@ export function AddToDatavizDialog({
           </Button>
           <Button type="button" onClick={() => void submit()} disabled={busy}>
             {busy ? <Loader2 aria-hidden="true" className="size-4 animate-spin" /> : null}
-            {mode === "new" ? "Create and add" : "Add chart"}
+            {draft
+              ? mode === "new" ? "Create and save" : "Save chart"
+              : mode === "new" ? "Create and add" : "Add chart"}
           </Button>
         </DialogFooter>
       </DialogContent>

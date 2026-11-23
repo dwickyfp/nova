@@ -2201,6 +2201,8 @@ class AssistantLoop:
                     verification=verification,
                 ):
                     yield frame
+                for frame in await _artifact_frames(context):
+                    yield frame
                 pending_artifacts.clear()
                 context.pending_output = []
                 follow_ups = _follow_up_suggestions(context, user_content)
@@ -3261,6 +3263,8 @@ class AssistantLoop:
         if pending_artifacts:
             pending_artifacts = await _autocompose_artifacts(pending_artifacts, evidence, context)
             for frame in _ordered_output_frames("", pending_artifacts, context):
+                yield frame
+            for frame in await _artifact_frames(context):
                 yield frame
             pending_artifacts.clear()
             context.pending_output = []
@@ -4516,6 +4520,66 @@ def _ordered_output_frames(
                 },
             )
         frames.append(events.content_block_done(index, content_id))
+    return frames
+
+
+async def _artifact_frames(context: Any) -> list[str]:
+    """``artifact_draft`` for each chart draft this turn placed, then one save suggestion.
+
+    The suggestion is sent only with the capability the resolver gives the
+    caller's active role now: ``can_save``, or ``role_cannot_author`` with the
+    reason. When the capability cannot be decided (the engine is unavailable),
+    no suggestion is sent. Nothing is ever saved here.
+    """
+    from uuid import UUID
+
+    from app.modules.viz import studio_artifacts
+
+    steps = [step for step in context.steps or [] if isinstance(step, dict)]
+    announced = {step.get("draft_ref") for step in steps if step.get("kind") == "artifact_draft"}
+    frames: list[str] = []
+    drafts: list[dict[str, Any]] = []
+    for step in steps:
+        if step.get("kind") != "component":
+            continue
+        draft = studio_artifacts.draft_payload(step)
+        if draft is None or draft["draft_ref"] in announced:
+            continue
+        announced.add(draft["draft_ref"])
+        drafts.append(step)
+        frames.append(events.format_sse(events.EVENT_ARTIFACT_DRAFT, {"draft": draft}))
+        _record_step(context, {"kind": "artifact_draft", "content_id": step.get("content_id"),
+                               "draft_ref": draft["draft_ref"]})
+    user = getattr(context, "user", None)
+    if not drafts or not isinstance(user, dict) or any(
+        step.get("kind") == "save_suggestion" for step in steps
+    ):
+        return frames
+    first = drafts[0]
+    raw_source = first.get("source")
+    source: dict[str, Any] = raw_source if isinstance(raw_source, dict) else {}
+    sql = studio_artifacts.statement_for(steps, source)
+    chart = (first.get("props") or {}).get("chart") or {}
+    try:
+        if not sql or not source.get("database") or not chart.get("dataset_id"):
+            raise ValueError("draft source not recorded")
+        result = await studio_artifacts.authoring_capability(
+            user, sql=sql, database=str(source["database"]),
+            dataset_id=UUID(str(chart["dataset_id"])),
+        )
+    except Exception:  # noqa: BLE001 - an undecided capability suggests nothing
+        logger.warning("Save suggestion skipped: capability unavailable", exc_info=True)
+        return frames
+    refs = [str((step.get("props") or {}).get("draft_ref")) for step in drafts]
+    message = (result.message if result.capability != "can_save"
+               else studio_artifacts.SUGGESTION_ONE if len(refs) == 1
+               else studio_artifacts.SUGGESTION_MANY.format(count=len(refs)))
+    frames.append(events.format_sse(events.EVENT_SAVE_SUGGESTED, {
+        "draft_refs": refs, "capability": result.capability,
+        "reason_code": result.reason_code, "message": message,
+    }))
+    _record_step(context, {"kind": "save_suggestion", "draft_refs": refs,
+                           "capability": result.capability, "reason_code": result.reason_code})
     return frames
 
 
