@@ -160,6 +160,15 @@ function insertBySeq(parts: TurnPart[], part: TurnPart): TurnPart[] {
   return [...parts.slice(0, index), part, ...parts.slice(index)];
 }
 
+function isPlan(part: TurnPart): boolean {
+  return part.type === "reasoning" && part.phase === "plan" && part.planSteps !== undefined;
+}
+
+/** The steps of a numbered plan ("1. …" per line), as its row counts them. */
+function planStepCount(text: string): number {
+  return text.split("\n").filter((line) => /^\d+\.\s/.test(line)).length;
+}
+
 function openPart(event: Extract<StudioEvent, { type: "part.start" }>): TurnPart {
   const base = { id: event.partId, seq: event.seq, state: "streaming" as const };
   const fields = event.part;
@@ -235,12 +244,22 @@ function reduce(state: TurnRunState, event: StudioEvent): TurnRunState {
   switch (event.type) {
     case "run.started":
       return { ...state, status: "streaming" };
-    case "part.start":
+    case "part.start": {
       if (state.parts.some((part) => part.id === event.partId)) return state;
-      return { ...state, parts: insertBySeq(state.parts, openPart(event)) };
+      const opened = openPart(event);
+      // One plan row per turn: a later plan takes the earlier one's place.
+      const earlier = isPlan(opened) ? state.parts.findIndex(isPlan) : -1;
+      if (earlier !== -1) {
+        const parts = state.parts.slice();
+        parts[earlier] = { ...opened, seq: parts[earlier].seq };
+        return { ...state, parts };
+      }
+      return { ...state, parts: insertBySeq(state.parts, opened) };
+    }
     case "part.delta":
       return patchPart(state, event.partId, (part) => {
         if (part.state !== "streaming" && !event.replace) return part;
+        if (isPlan(part) && event.replace) return { ...part, text: event.text, planSteps: planStepCount(event.text) };
         if (part.type === "text" || part.type === "reasoning")
           return { ...part, text: event.replace ? event.text : part.text + event.text };
         if (part.type === "ui") {

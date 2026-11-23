@@ -108,6 +108,33 @@ describe("turn reducer", () => {
     expect(turnReducer(once, events[3])).toBe(once);
   });
 
+  it("keeps one plan row when a step resumes after an answer, live and on replay", () => {
+    const plan = [{ id: "u", text: "Understand the request", status: "running" }];
+    const longer = [...plan, { id: "a", text: "Answer", status: "pending" }];
+    const v1: V1Frame[] = [
+      { event: "plan", data: { steps: plan } },
+      { event: "plan", data: { steps: plan } },
+      { event: "plan", data: { steps: longer } },
+      { event: "done", data: { message_id: "m", finish_reason: "stop" } },
+    ];
+    const records = encodeV1Turn(v1);
+    const planRows = (turn: TranscriptTurn) =>
+      turn.run.parts.filter((part) => part.type === "reasoning" && part.phase === "plan");
+    const streamed = live(parsedEvents(records));
+    expect(planRows(streamed)).toEqual([
+      expect.objectContaining({ planSteps: 2, text: "1. Understand the request\n2. Answer" }),
+    ]);
+    const reopened = replayed(storedMessage({ name: "plan", run_id: "run-1", role: "ANALYST", v1, v2: records }));
+    expect(view(reopened)).toEqual(view(streamed));
+    expect(planRows(reopened)).toHaveLength(1);
+    // A second plan part (a run that restates its plan) takes the first one's place.
+    const restated = parsedEvents(records);
+    const start = restated.find((event) => event.type === "part.start")!;
+    const again = { ...start, partId: "run-1#9", seq: 99 } as StudioEvent;
+    const twice = reduceEvents([...restated.filter((event) => event.type !== "run.finished"), again]);
+    expect(twice.parts.filter((part) => part.type === "reasoning" && part.phase === "plan")).toHaveLength(1);
+  });
+
   it("produces the same turn live and from the stored journal", () => {
     for (const [item, outcome] of [[answerCase, "stop"], [roleCase, "stop"], [interruptedCase, "interrupted"]] as const) {
       const streamed = live(parsedEvents(item.v2));

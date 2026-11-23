@@ -35,7 +35,8 @@ protocol; provider reasoning is not read), ``text``, ``tool``, ``guard``,
 A ``hitl_request`` part is the turn asking its user (``kind`` approval,
 question, form or choice). It opens where the request was made, is followed by
 ``input.required`` with the request, and seals after ``input.resolved``. An
-approval part names the ``tool`` part it decides (``tool_part_id``). Side-effect events (``suggestions``, ``mission_updated``,
+approval part names the ``tool`` part it decides (``tool_part_id``).
+Side-effect events (``suggestions``, ``mission_updated``,
 ``mission_continuation``, ``dashboard_changed``, ``dashboard_activity``,
 ``client_action``, ``execution_time_context``, ``business_result``) keep their
 established payloads and are numbered in the same sequence.
@@ -169,6 +170,7 @@ class StudioStreamEncoder:
         self._open: dict[str, str] = {}  # part_id -> type, in opening order
         self._reasoning: tuple[str, str, str] | None = None  # part_id, phase, text
         self._plan: str | None = None
+        self._plan_text = ""
         self.started = False
         self.finished = False
 
@@ -375,12 +377,19 @@ class StudioStreamEncoder:
             for index, step in enumerate(steps) if isinstance(step, dict)
         )
         if self._plan is not None:
+            # One plan row per run: a restated plan replaces it in place, and
+            # an unchanged one (a step resumed after the user answered) adds
+            # nothing.
+            if text == self._plan_text:
+                return []
+            self._plan_text = text
             return [self._frame(PART_DELTA, {"part_id": self._plan, "text": text, "replace": True})]
         frames = self._close_reasoning()
         part_id, opened = self._start(
             "reasoning", source="nova", phase="plan", text=text, plan_steps=len(steps),
         )
         self._plan = part_id
+        self._plan_text = text
         return [*frames, opened, self._end(part_id)]
 
     def _tool_call(self, origin: str, view: dict[str, Any]) -> list[str]:

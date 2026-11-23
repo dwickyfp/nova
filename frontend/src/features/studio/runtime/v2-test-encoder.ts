@@ -53,6 +53,7 @@ export class TestStudioEncoder {
   private open = new Map<string, string>();
   private reasoning: [string, string, string] | null = null;
   private plan: string | null = null;
+  private planText = "";
   private finished = false;
 
   constructor(private readonly runId: string) {}
@@ -213,10 +214,16 @@ export class TestStudioEncoder {
         step && typeof step === "object" ? [`${index + 1}. ${str((step as Record<string, unknown>).text)}`] : [],
       )
       .join("\n");
-    if (this.plan) return [{ event: "part.delta", data: { part_id: this.plan, text, replace: true } }];
+    if (this.plan) {
+      // One plan row per run: an unchanged plan adds nothing, a changed one replaces it.
+      if (text === this.planText) return [];
+      this.planText = text;
+      return [{ event: "part.delta", data: { part_id: this.plan, text, replace: true } }];
+    }
     const frames = this.closeReasoning();
     const [partId, opened] = this.start("reasoning", { source: "nova", phase: "plan", text, plan_steps: steps.length });
     this.plan = partId;
+    this.planText = text;
     return [...frames, opened, this.end(partId)];
   }
 
