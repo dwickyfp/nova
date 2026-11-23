@@ -1,4 +1,8 @@
-"""Consent-gated runtime wrapper for an administrator-registered MCP tool."""
+"""Runtime wrapper for an administrator-registered MCP tool.
+
+A tool needs the action approval card on every call unless an ACCOUNTADMIN
+confirmed it as read-only in the Tools Registry.
+"""
 
 from __future__ import annotations
 
@@ -47,6 +51,10 @@ class McpToolRunner:
         self.server = server
         self.tool = tool
         self.name = "mcp_" + str(tool["tool_id"]).replace("-", "")
+        # Only an administrator-confirmed read-only switch lets a call run without
+        # the approval card; a server's own hint never does.
+        if tool.get("classification_source") == "admin" and tool.get("read_only") is True:
+            self.classification = "read_only"
         # The model-facing name is opaque and unique; people read this label.
         self.display_name = (
             f"{str(server.get('name') or 'external tool')[:80]}: "

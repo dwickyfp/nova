@@ -132,3 +132,16 @@ async def test_rediscovery_keeps_disabled_switch_and_disables_removed_tools(monk
     enabled = {c.kwargs["fields"]["name"]: c.kwargs["fields"]["is_enabled"] for c in upsert.await_args_list}
     assert enabled == {"fx_convert": False, "get_store_targets": True}
     disable.assert_awaited_once_with("tool-2", owner_name="__nova__", enabled=False)
+
+
+def test_fixture_skill_packages_parse_as_the_upload_route_does():
+    from pathlib import Path
+
+    from app.modules.agents.personal_skills import parse_skill_document
+
+    root = Path(__file__).resolve().parents[1] / "fixtures" / "skills"
+    fields = parse_skill_document((root / "monthly-revenue-review" / "SKILL.md").read_text())
+    assert fields["name"] == "monthly-revenue-review"
+    assert "get_store_targets" in fields["body"]
+    with pytest.raises(ValueError, match="Add YAML frontmatter"):
+        parse_skill_document((root / "broken-no-frontmatter" / "SKILL.md").read_text())

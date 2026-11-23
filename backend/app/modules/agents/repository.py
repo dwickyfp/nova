@@ -134,12 +134,12 @@ _SKILL_COLUMNS = "skill_id, owner_name, name, description, body, scope, created_
 
 _MCP_COLUMNS = (
     "server_id, owner_name, name, description, transport, endpoint, command, "
-    "args, is_active, last_status, created_at, updated_at"
+    "args, is_active, last_status, created_at, updated_at, auth_header_names, auth_headers"
 )
 
 _TOOL_COLUMNS = (
     "tool_id, owner_name, name, description, source, input_schema, is_enabled, "
-    "created_at, updated_at"
+    "created_at, updated_at, annotations, read_only, classification_source, hint_changed"
 )
 
 
@@ -433,6 +433,8 @@ def _mcp_row(row: list[Any]) -> dict:
         last_status,
         created_at,
         updated_at,
+        auth_header_names,
+        auth_headers,
     ) = row
     return {
         "server_id": server_id,
@@ -447,6 +449,9 @@ def _mcp_row(row: list[Any]) -> dict:
         "last_status": last_status,
         "created_at": _iso(created_at),
         "updated_at": _iso(updated_at),
+        "auth_header_names": list(_as_json(auth_header_names) or []),
+        # Ciphertext for the MCP client only. No API view has this field.
+        "auth_headers_ciphertext": auth_headers,
     }
 
 
@@ -461,6 +466,10 @@ def _tool_row(row: list[Any]) -> dict:
         is_enabled,
         created_at,
         updated_at,
+        annotations,
+        read_only,
+        classification_source,
+        hint_changed,
     ) = row
     return {
         "tool_id": tool_id,
@@ -472,6 +481,10 @@ def _tool_row(row: list[Any]) -> dict:
         "is_enabled": bool(is_enabled),
         "created_at": _iso(created_at),
         "updated_at": _iso(updated_at),
+        "annotations": _as_json(annotations) or {},
+        "read_only": bool(read_only),
+        "classification_source": classification_source or "server_hint",
+        "hint_changed": bool(hint_changed),
     }
 
 
@@ -723,6 +736,7 @@ class AgentRepository:
                 return None
             changes = {key: fields[key] for key in (
                 "name", "description", "transport", "endpoint", "command", "args", "is_active",
+                "auth_headers", "auth_header_names",
             ) if key in fields}
             if changes:
                 await store.update_mcp_server(
@@ -759,6 +773,14 @@ class AgentRepository:
             row = await store.get_tool(tool_id)
         return (_tool_row([row.get(key.strip()) for key in _TOOL_COLUMNS.split(",")])
                 if row and row["owner_name"] == owner_name else None)
+
+    async def set_tool_classification(
+        self, tool_id: str, *, owner_name: str, read_only: bool
+    ) -> dict | None:
+        async with agent_metadata(owner_name) as store:
+            row = await store.set_tool_classification(tool_id, read_only, owner_name=owner_name)
+        return (_tool_row([row.get(key.strip()) for key in _TOOL_COLUMNS.split(",")])
+                if row else None)
 
     async def set_tool_enabled(
         self, tool_id: str, *, owner_name: str, enabled: bool

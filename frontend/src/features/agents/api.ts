@@ -458,6 +458,16 @@ export type Tool = {
   source: string;
   input_schema: Record<string, unknown>;
   is_enabled: boolean;
+  /** MCP only: the server's annotation hints from the last Discover. */
+  annotations?: Record<string, unknown>;
+  /** MCP only: the read-only switch, pre-filled from the server's hint. */
+  read_only?: boolean;
+  /** `server_hint` until an ACCOUNTADMIN confirms it (`admin`). */
+  classification_source?: "server_hint" | "admin";
+  /** The server's hint changed after confirmation; approval is required again. */
+  hint_changed?: boolean;
+  /** Only a confirmed read-only MCP tool runs without the approval card. */
+  runs_without_approval?: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -473,6 +483,8 @@ export type McpServer = {
   args: string[];
   is_active: boolean;
   last_status: string | null;
+  /** Names of the saved auth headers. Values are write-only and never returned. */
+  auth_header_names?: string[];
   created_at: string;
   updated_at: string;
 };
@@ -553,6 +565,10 @@ export const toolsApi = {
     }),
   remove: (id: string) =>
     api.delete<void>(`/agents/tools/${encodeURIComponent(id)}`),
+  classify: (id: string, readOnly: boolean) =>
+    api.patch<Tool>(`/agents/tools/${encodeURIComponent(id)}/classification`, {
+      read_only: readOnly,
+    }),
 };
 
 export const mcpApi = {
@@ -566,12 +582,20 @@ export const mcpApi = {
     command?: string | null;
     args?: string[];
     is_active?: boolean;
+    /** Write-only. */
+    auth_headers?: Record<string, string>;
   }) => api.post<McpServer>("/agents/mcp-servers", body),
   update: (
     id: string,
     body: Partial<
-      Omit<McpServer, "server_id" | "owner_name" | "created_at" | "updated_at">
-    >,
+      Omit<
+        McpServer,
+        "server_id" | "owner_name" | "created_at" | "updated_at" | "auth_header_names"
+      >
+    > & {
+      /** Replaces every saved header; `{}` removes them. Omit to keep them. */
+      auth_headers?: Record<string, string>;
+    },
   ) =>
     api.patch<McpServer>(`/agents/mcp-servers/${encodeURIComponent(id)}`, body),
   remove: (id: string) =>

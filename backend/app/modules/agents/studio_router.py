@@ -16,6 +16,7 @@ Studio's Settings/Capabilities.
   PATCH  /mcp-servers/{server_id}         → update
   DELETE /mcp-servers/{server_id}         → delete (and its tools)
   POST   /mcp-servers/{server_id}/discover→ connect and register tools
+  PATCH  /tools/{tool_id}/classification  → confirm an MCP tool as read-only or an action
 
 Every route requires ``get_current_user``. Personal tools are owner-scoped;
 platform MCP connectors are managed by the active ACCOUNTADMIN role.
@@ -26,12 +27,15 @@ platform MCP connectors are managed by the active ACCOUNTADMIN role.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import re
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.common.audit import write_audit_log
+from app.common.crypto import EncryptionError, encrypt
 from app.common.responses import SanitizingJSONResponse
 from app.core.deps import get_current_user
 from app.modules.agents import mcp_client, observability, tool_catalog
@@ -61,6 +65,7 @@ from app.modules.agents.schemas import (
     McpServerView,
     SkillListResponse,
     SkillView,
+    ToolClassificationRequest,
     ToolCreateRequest,
     ToolListResponse,
     ToolToggleRequest,
@@ -322,6 +327,30 @@ async def toggle_tool(
     return ToolView(**updated)
 
 
+@router.patch("/tools/{tool_id}/classification", response_model=ToolView)
+async def classify_tool(
+    tool_id: str,
+    body: ToolClassificationRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Confirm an MCP tool's read-only switch. Only a confirmed read-only tool auto-runs."""
+    tool = await _tool_for_mutation(tool_id, user)
+    if not tool["source"].startswith("mcp:"):
+        raise HTTPException(status_code=409, detail="Only MCP tools have a read-only switch.")
+    updated = await agent_repository.set_tool_classification(
+        tool_id, owner_name=tool["owner_name"], read_only=body.read_only
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Tool not found")
+    await write_audit_log(
+        event_type="MCP_TOOL_CONFIG", user_name=user["username"],
+        action="CONFIRM_READ_ONLY" if body.read_only else "CONFIRM_ACTION",
+        object_type="MCP_TOOL", object_name=tool_id, status="SUCCESS",
+        session_id=user.get("session_id"), active_role=user.get("active_role"),
+    )
+    return ToolView(**updated)
+
+
 @router.delete("/tools/{tool_id}", status_code=204)
 async def delete_tool(tool_id: str, user: dict = Depends(get_current_user)):
     tool = await _tool_for_mutation(tool_id, user)
@@ -370,11 +399,57 @@ async def _audit_connector(
     )
 
 
+_MAX_AUTH_HEADERS = 8
+_HEADER_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,63}")
+#: Headers Nova sets itself for the MCP exchange; a connector cannot override them.
+_RESERVED_HEADERS = frozenset({
+    "accept", "connection", "content-length", "content-type", "cookie", "host",
+    "mcp-protocol-version", "mcp-session-id", "transfer-encoding", "upgrade",
+})
+
+
+def _encrypted_auth_headers(headers: dict[str, str]) -> dict[str, object]:
+    """Validate write-only auth headers and return the encrypted columns.
+
+    Messages name the rule, never a value. An encryption failure refuses the
+    request: a header is never stored in the clear.
+    """
+    if len(headers) > _MAX_AUTH_HEADERS:
+        raise HTTPException(422, f"Add at most {_MAX_AUTH_HEADERS} auth headers.")
+    seen: set[str] = set()
+    clean: dict[str, str] = {}
+    for name, value in headers.items():
+        name = name.strip()
+        if not _HEADER_NAME.fullmatch(name) or name.lower() in _RESERVED_HEADERS:
+            raise HTTPException(
+                422, "Use a header name of letters, numbers and hyphens that Nova does not set "
+                "itself (for example Authorization or X-Api-Key).",
+            )
+        if name.lower() in seen:
+            raise HTTPException(422, "Each auth header can be set once.")
+        if not value or len(value) > 4096 or any(c in value for c in "\r\n\x00"):
+            raise HTTPException(
+                422, f"The value of {name} must be 1 to 4096 characters on one line."
+            )
+        seen.add(name.lower())
+        clean[name] = value
+    if not clean:
+        return {"auth_headers": None, "auth_header_names": []}
+    try:
+        ciphertext = encrypt(json.dumps(clean))
+    except EncryptionError as exc:
+        raise HTTPException(503, "Auth headers cannot be stored securely right now.") from exc
+    return {"auth_headers": ciphertext, "auth_header_names": sorted(clean, key=str.lower)}
+
+
 @router.get("/mcp-servers", response_model=McpServerListResponse)
 async def list_mcp_servers(user: dict = Depends(get_current_user)):
     servers = await agent_repository.list_mcp_servers(owner_name=INTERNAL_CONNECTOR_OWNER)
     if user.get("active_role") != "ACCOUNTADMIN":
-        servers = [{**s, "endpoint": None, "command": None, "args": []} for s in servers]
+        servers = [
+            {**s, "endpoint": None, "command": None, "args": [], "auth_header_names": []}
+            for s in servers
+        ]
     views = [McpServerView(**s) for s in servers]
     return McpServerListResponse(servers=views, count=len(views))
 
@@ -385,8 +460,11 @@ async def create_mcp_server(
     user: dict = Depends(get_current_user),
 ):
     _require_connector_admin(user)
+    fields = body.model_dump(exclude={"auth_headers"})
+    if body.auth_headers:
+        fields.update(_encrypted_auth_headers(body.auth_headers))
     created = await agent_repository.create_mcp_server(
-        owner_name=INTERNAL_CONNECTOR_OWNER, fields=body.model_dump()
+        owner_name=INTERNAL_CONNECTOR_OWNER, fields=fields
     )
     await _audit_connector(user, "CREATE", created["server_id"])
     return McpServerView(**created)
@@ -407,8 +485,11 @@ async def update_mcp_server(
 ):
     _require_connector_admin(user)
     await _require_server(server_id, INTERNAL_CONNECTOR_OWNER)
+    fields = body.model_dump(exclude_unset=True, exclude={"auth_headers"})
+    if body.auth_headers is not None:
+        fields.update(_encrypted_auth_headers(body.auth_headers))
     updated = await agent_repository.update_mcp_server(
-        server_id, owner_name=INTERNAL_CONNECTOR_OWNER, fields=body.model_dump(exclude_unset=True)
+        server_id, owner_name=INTERNAL_CONNECTOR_OWNER, fields=fields
     )
     if updated is None:
         raise HTTPException(status_code=404, detail="MCP server not found")
@@ -423,6 +504,37 @@ async def delete_mcp_server(server_id: str, user: dict = Depends(get_current_use
         raise HTTPException(status_code=404, detail="MCP server not found")
     await _audit_connector(user, "DELETE", server_id)
     return None
+
+
+def _classification_after_discovery(
+    current: dict | None, annotations: dict
+) -> dict[str, object]:
+    """How a Discover updates a tool's read-only switch.
+
+    The server's hint only pre-fills the switch; it never confirms it. A
+    confirmed tool keeps the administrator's decision while the hint is
+    unchanged. If the hint changes, the tool is flagged and needs approval
+    again until an administrator confirms it.
+    """
+    hinted = mcp_client.hinted_read_only(annotations)
+    if current is None:
+        return {
+            "annotations": annotations, "read_only": hinted,
+            "classification_source": "server_hint", "hint_changed": False,
+        }
+    previous = mcp_client.hinted_read_only(current.get("annotations") or {})
+    if current.get("classification_source") == "admin":
+        if previous == hinted:
+            return {"annotations": annotations}
+        return {
+            "annotations": annotations, "read_only": hinted,
+            "classification_source": "server_hint", "hint_changed": True,
+        }
+    return {
+        "annotations": annotations, "read_only": hinted,
+        # A flag stays until an administrator confirms the tool again.
+        "hint_changed": bool(current.get("hint_changed")),
+    }
 
 
 @router.post("/mcp-servers/{server_id}/discover", response_model=McpDiscoverResponse)
@@ -467,6 +579,7 @@ async def discover_mcp_server(
                 "source": source,
                 "input_schema": tool["input_schema"],
                 "is_enabled": True if current is None else bool(current["is_enabled"]),
+                **_classification_after_discovery(current, tool.get("annotations") or {}),
             },
         )
     for name, tool in known.items():

@@ -85,3 +85,62 @@ it.each(['tools', 'MCP servers'])('shows a recoverable error for %s instead of a
   await expect.element(screen.getByText(tab === 'tools' ? 'fixture_total' : 'Fixture', { exact: true })).toBeVisible()
   await expect.element(screen.getByRole('alert')).not.toBeInTheDocument()
 })
+
+it('shows how an MCP tool is governed and lets the administrator confirm read-only', async () => {
+  const bodies: unknown[] = []
+  let confirmed = false
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    if (init?.method === 'PATCH' && String(input).endsWith('/classification')) {
+      bodies.push(JSON.parse(init.body as string))
+      confirmed = true
+      return response({ ...tool, read_only: true, classification_source: 'admin', runs_without_approval: true })
+    }
+    return response(String(input).endsWith('/tools')
+      ? { tools: [{ ...tool, annotations: { readOnlyHint: true }, read_only: true,
+          classification_source: confirmed ? 'admin' : 'server_hint', runs_without_approval: confirmed }] }
+      : { servers: [server] })
+  })
+  const screen = await setup('ACCOUNTADMIN')
+  await expect.element(screen.getByText('Read-only (not confirmed)')).toBeVisible()
+  await screen.getByRole('button', { name: 'Confirm read-only' }).click()
+  await vi.waitFor(() => expect(bodies).toEqual([{ read_only: true }]))
+  await expect.element(screen.getByText('Confirmed by an administrator. Runs without approval.')).toBeVisible()
+  await expect.element(screen.getByRole('button', { name: 'Require approval' })).toBeVisible()
+})
+
+it('flags a tool whose server hint changed and hides the controls from other roles', async () => {
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+    response(String(input).endsWith('/tools')
+      ? { tools: [{ ...tool, read_only: false, classification_source: 'server_hint', hint_changed: true }] }
+      : { servers: [server] }))
+  const screen = await setup('ANALYST')
+  await expect.element(screen.getByText('Needs review')).toBeVisible()
+  await expect.element(screen.getByRole('button', { name: 'Confirm read-only' })).not.toBeInTheDocument()
+})
+
+it('sends auth headers write-only and shows only their names', async () => {
+  const created: Record<string, unknown>[] = []
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    if (init?.method === 'POST' && String(input).endsWith('/mcp-servers')) {
+      created.push(JSON.parse(init.body as string))
+      return response({ ...server, server_id: 'server-2', auth_header_names: ['Authorization'] }, 201)
+    }
+    return response(String(input).endsWith('/tools') ? { tools: [] }
+      : { servers: created.length ? [{ ...server, endpoint: 'http://127.0.0.1:8299/mcp', auth_header_names: ['Authorization'] }] : [] })
+  })
+  const screen = await setup('ACCOUNTADMIN')
+  await screen.getByRole('tab', { name: 'MCP servers' }).click()
+  await screen.getByRole('button', { name: 'Add MCP server' }).first().click()
+  await screen.getByLabelText('Name').fill('Targets')
+  await screen.getByLabelText('Endpoint URL').fill('http://127.0.0.1:8299/mcp')
+  await screen.getByRole('button', { name: 'Add header' }).click()
+  await screen.getByLabelText('Header 1 name').fill('Authorization')
+  const value = screen.getByLabelText('Header 1 value')
+  await expect.element(value).toHaveAttribute('type', 'password')
+  await value.fill('Bearer fixture-secret')
+  await screen.getByRole('button', { name: 'Add server' }).click()
+  await vi.waitFor(() => expect(created).toHaveLength(1))
+  expect(created[0].auth_headers).toEqual({ Authorization: 'Bearer fixture-secret' })
+  await expect.element(screen.getByText('Auth headers: Authorization (values hidden)')).toBeVisible()
+  expect(document.body.textContent).not.toContain('fixture-secret')
+})
