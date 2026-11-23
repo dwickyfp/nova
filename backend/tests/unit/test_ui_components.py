@@ -100,3 +100,69 @@ def test_an_answer_with_only_tables_keeps_its_text_first():
                                   [PendingArtifact("table", {"title": "Rows"})])
     assert [item["kind"] for item in items] == ["text", "table"]
     assert items[0]["text"] == "One paragraph.\n\nAnother."
+
+
+TOTALS = {"columns": ["revenue", "order_count", "average_order_value"],
+          "rows": [[175184000.0, 15, 11678933.333333]]}
+BY_CITY = {"columns": ["city", "revenue"], "rows": [["Jakarta", 1.0], ["Medan", 2.0]]}
+
+
+def _evidence(tables):
+    return type("Evidence", (), {"business_tables": tables})()
+
+
+def test_a_table_of_one_row_of_measures_becomes_key_figure_tiles():
+    from app.modules.assistant.service import _key_figures
+    from app.modules.assistant.ui_autocompose import key_figures
+
+    program = ('root = Col([Table(@Evidence("evidence_1"), ["revenue", "order_count", '
+               '"average_order_value"], "Key figures")])')
+    tiles = key_figures(program, {"evidence_1": TOTALS})
+    assert tiles is not None and tiles["name"] == "KpiTiles"
+    items = tiles["props"]["items"]
+    assert [item["column"] for item in items] == TOTALS["columns"]
+    assert [item["value"] for item in items] == [175184000.0, 15.0, 11678933.333333]
+    assert all(item["evidence_id"] == "evidence_1" for item in items)
+    # Several rows, or a program that does more than tabulate, stay as written.
+    assert key_figures(program, {"evidence_1": BY_CITY}) is None
+    assert key_figures('root = Col([Text("x"), Table(@Evidence("evidence_1"))])',
+                       {"evidence_1": TOTALS}) is None
+
+    ui = PendingArtifact("ui", {"program": program, "fallback": "x"})
+    [replaced] = _key_figures([ui], _evidence({"evidence_1": TOTALS}))
+    assert replaced.kind == "component" and replaced.payload["name"] == "KpiTiles"
+
+
+def test_charts_without_tiles_gain_the_key_figures_of_one_row_results():
+    from app.modules.assistant.service import _key_figures
+
+    chart = PendingArtifact("component", {"name": "DatavizChart", "props": {}}, "call-1")
+    tables = {"evidence_1": BY_CITY, "evidence_2": TOTALS}
+    composed = _key_figures([chart], _evidence(tables))
+    assert [item.payload["name"] for item in composed] == ["DatavizChart", "KpiTiles"]
+    # Tiles already drawn, or no one-row result, add nothing.
+    tiles = PendingArtifact("component", {"name": "KpiTiles", "props": {}})
+    assert _key_figures([chart, tiles], _evidence(tables)) == [chart, tiles]
+    assert _key_figures([chart], _evidence({"evidence_1": BY_CITY})) == [chart]
+
+
+def test_a_program_that_repeats_native_charts_is_dropped():
+    from app.modules.assistant.service import _key_figures
+    from app.modules.assistant.ui_autocompose import charts_only
+
+    program = ('root = Col([a, b])\n'
+               'a = Chart(@Sort(@Evidence("evidence_1"), "revenue", "desc"), "city", "revenue", '
+               '"bar", "Revenue by city")\n'
+               'b = Chart(@Evidence("evidence_3"), "month", "orders", "line", "Orders")')
+    assert charts_only(program)
+    assert not charts_only('root = Col([Chart(@Evidence("e"), "a", "b", "bar", "t"), '
+                           'Slider("x", 0, 10)])')
+    charts = [PendingArtifact("component", {"name": "DatavizChart", "props": {},
+                                            "source": {"evidence_id": key}}, f"call-{key}")
+              for key in ("evidence_1", "evidence_3")]
+    ui = PendingArtifact("ui", {"program": program,
+                                "provenance": {"evidence_ids": ["evidence_1", "evidence_3"]}})
+    tables = {"evidence_1": BY_CITY, "evidence_3": BY_CITY}
+    assert _key_figures([*charts, ui], _evidence(tables)) == charts
+    # A program charting a result no native chart shows is kept.
+    assert _key_figures([charts[0], ui], _evidence(tables)) == [charts[0], ui]

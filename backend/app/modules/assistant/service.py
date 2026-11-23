@@ -5148,6 +5148,7 @@ async def _autocompose_artifacts(
             _record_step(context, {"kind": "runtime_decision",
                                    "ui_fallback": f"autocompose_{reason}", "status": "done"})
         ordered.extend(PendingArtifact(kind, payload) for kind, payload in built)
+    ordered = _key_figures(ordered, evidence)
     calls = {step["evidence_id"]: step["tool_call_id"] for step in context.steps or []
              if step.get("kind") == "tool" and step.get("evidence_id") and step.get("tool_call_id")}
     for item in ordered:
@@ -5164,6 +5165,36 @@ async def _autocompose_artifacts(
             }
             if statements:
                 provenance["statements"] = statements
+    return ordered
+
+
+def _key_figures(
+    artifacts: list[PendingArtifact], evidence: EvidenceTracker,
+) -> list[PendingArtifact]:
+    """Key figures as ``KpiTiles``, from the verified rows, never a one-line table.
+
+    A model program that only tabulates one row of measures becomes tiles in
+    its place, and one that only repeats charts already drawn as native
+    charts is dropped. When charts are drawn but no tiles are, one-row metric
+    results get tiles too, so the answer leads with its figures.
+    """
+    from app.modules.assistant.ui_autocompose import charts_only, key_figures, metric_tiles
+
+    tables = evidence.business_tables
+    charted = {str((item.payload.get("source") or {}).get("evidence_id") or "")
+               for item in artifacts
+               if item.kind == "component" and item.payload.get("name") == "DatavizChart"}
+    ordered = []
+    for item in artifacts:
+        program = str(item.payload.get("program") or "") if item.kind == "ui" else ""
+        bound = set((item.payload.get("provenance") or {}).get("evidence_ids") or [])
+        if program and bound and bound <= charted and charts_only(program):
+            continue
+        tiles = key_figures(program, tables) if program else None
+        ordered.append(PendingArtifact("component", tiles) if tiles else item)
+    names = [str(item.payload.get("name") or "") for item in ordered if item.kind == "component"]
+    if "DatavizChart" in names and "KpiTiles" not in names and (tiles := metric_tiles(tables)):
+        ordered.append(PendingArtifact("component", tiles))
     return ordered
 
 

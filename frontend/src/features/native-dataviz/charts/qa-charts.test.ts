@@ -265,5 +265,36 @@ describe('Studio answer charts: numeric identifiers', () => {
     expect(option.series[0].type).toBe('bar')
     expect(option.series[0].stack).toBeUndefined()
     expect(Math.max(...option.series[0].data.map(Number))).toBe(31_500_000)
+    // Both axes are titled from their fields, and short ids stay level.
+    expect(category.name).toBe('Customer ID')
+    expect(value.name).toBe('Revenue')
+    expect((category.axisLabel as { rotate?: number }).rotate).toBe(0)
+  })
+
+  it('rotates category labels only when they would collide in their bands', () => {
+    const bars = chart('bar', {
+      kind: 'cartesian', dimensions: [{ field_id: 'label' }],
+      measures: [{ field_id: 'revenue', aggregation: 'sum' }],
+    })
+    const rotation = (labels: string[]) => {
+      const data = result([dim('d0', 'label'), meas('m0', 'revenue')],
+        labels.map((label, index) => [s(label), d(String(index + 1))]))
+      const option = buildChartOption(bars, data, tokens, null, 560) as Option
+      return ((option.xAxis as Axis).axisLabel as { rotate?: number }).rotate
+    }
+    expect(rotation(Array.from({ length: 12 }, (_, i) => String(i + 1)))).toBe(0)
+    expect(rotation(['Jakarta Selatan', 'Jakarta Utara', 'Bandung Barat', 'Surabaya Timur',
+      'Medan Kota', 'Makassar'])).toBe(30)
+  })
+
+  it('leaves a value axis untitled when it carries several measures', () => {
+    const two = chart('bar', {
+      kind: 'cartesian', dimensions: [{ field_id: 'region' }],
+      measures: [{ field_id: 'revenue', aggregation: 'sum' }, { field_id: 'cost', aggregation: 'sum' }],
+    })
+    const data = result([dim('d0', 'region'), meas('m0', 'revenue'), meas('m1', 'cost')],
+      [[s('Jakarta'), d('10'), d('4')]])
+    const option = buildChartOption(two, data, tokens, null, 560) as Option
+    expect((option.yAxis as Axis[])[0].name).toBeUndefined()
   })
 })

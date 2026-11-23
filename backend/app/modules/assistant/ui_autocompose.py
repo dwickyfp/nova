@@ -297,6 +297,46 @@ def kpi_component(metrics: list[tuple[str, str, dict[str, Any]]]) -> dict[str, A
     return {"name": "KpiTiles", "props": props}
 
 
+#: A program that only lists one result as a table: ``Col([Table(@Evidence(...)...)])``.
+_LONE_TABLE = re.compile(
+    r'^\s*root\s*=\s*Col\(\[\s*Table\(@Evidence\("([^"\\]+)"\)[^()]*\)\s*\]\)\s*$'
+)
+
+
+#: Component calls in a program; ``@Sort(...)`` and other functions are not.
+_CALL = re.compile(r"(?<![@\w])([A-Z]\w*)\(")
+_LAYOUT = frozenset({"Col", "Row", "Stack"})
+
+
+def charts_only(program: str) -> bool:
+    """The program only lays out ``Chart`` nodes."""
+    calls = set(_CALL.findall(program or "")) - _LAYOUT
+    return calls == {"Chart"}
+
+
+def metric_tiles(tables: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+    """One ``KpiTiles`` for every one-row metric result, up to the tile limit."""
+    metrics = [(evidence_id, column, table) for evidence_id, table in tables.items()
+               for column in kpi_columns(table)][:_MAX_KPIS]
+    return kpi_component(metrics) if metrics else None
+
+
+def key_figures(program: str, tables: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+    """``KpiTiles`` for a program that only tabulates one row of measures.
+
+    Key figures read as tiles, not as a one-line grid of raw numbers; the rows
+    stay under Source data. Any other program is left as written.
+    """
+    match = _LONE_TABLE.match(program or "")
+    table = tables.get(match.group(1)) if match else None
+    if table is None:
+        return None
+    columns = kpi_columns(table)
+    if not columns:
+        return None
+    return kpi_component([(match.group(1), column, table) for column in columns])
+
+
 def chart_plan(table: dict[str, Any]) -> tuple[dict[str, Any], str] | None:
     """A native trend or ranking for a result, with the reason chosen."""
     rows = table.get("rows") or []
