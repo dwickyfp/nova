@@ -96,7 +96,7 @@ like any other part, and answered inline. There are four kinds:
 | --- | --- | --- |
 | `approval` | The shared tool gate, for a call that is not read-only | `allow_once` or `deny` |
 | `question` | The agent tool `request_human_input` | Choice chip or free text |
-| `form` | `request_id`, from a JSON Schema subset (text, select, date, date range, number, integer, toggle) | `values`, validated in the client and again by the server |
+| `form` | `request_human_input`, with 1–8 typed fields (text, select, date, date range, number, integer, toggle); a JSON Schema object is also accepted | `values`, validated in the client and again by the server |
 | `choice` | `request_human_input` | `option_id` of 2–6 option cards |
 
 Consent is the `approval` kind, and only actions reach it. A read-only call
@@ -124,7 +124,10 @@ A request waits at most 10 minutes (`expired`); Stop cancels it (`cancelled`).
 An agent can ask at most 4 times per turn, and only when a person is watching
 the run; automations get `TOOL_NOT_ALLOWED`. The waiting time does not count
 against the turn's time budget. `request_human_input` is never offered to the
-turn planner. Both events are journal boundaries, so replay shows the settled
+turn planner, and whenever it is offered the model is told to ask through it
+rather than end the answer on a question. Fields are a typed list because
+providers that enforce strict tool schemas cannot fill a free-form object.
+Both events are journal boundaries, so replay shows the settled
 request as its one-line summary; a replayed pending request offers no controls.
 
 The client renders requests through a kind registry
