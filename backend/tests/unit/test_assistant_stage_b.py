@@ -347,6 +347,10 @@ async def test_loop_opens_with_a_plan_then_thinking_before_answer():
     assert phases[0] == "plan"
     assert phases[-1] == "answer"
     assert events_seen[-1] == "done"
+    # "Writing the answer" closes the activity before the answer itself, so an
+    # ordered transcript does not show a separate step after the text.
+    last_thinking = max(i for i, name in enumerate(events_seen) if name == "thinking")
+    assert last_thinking < events_seen.index(events.EVENT_TEXT_DELTA)
 
 
 async def test_a_no_consent_tool_runs_without_prompting_while_a_query_still_prompts():
