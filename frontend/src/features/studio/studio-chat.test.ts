@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type TranscriptTurn } from "./studio-chat";
-import { replayThread } from "./studio-transcript";
+import { replayThread, settleTurn } from "./studio-transcript";
 
 import { applyEvent } from "./studio-transcript";
 
@@ -537,6 +537,24 @@ describe("studio transcript reducer", () => {
       { type: "done", message_id: "m", finish_reason: "cancelled" },
     ]);
     expect(turn.state).toBe("cancelled");
+  });
+
+  it("settles a stopped turn as cancelled when the closing frame never came", () => {
+    const streaming = run([
+      thinking("act", "Reading the table"),
+      { type: "tool_call", payload: {
+        tool_call_id: "call", tool_name: "query_execute", status: "running",
+        classification: "read_only", sql_preview: "SELECT 1",
+      } },
+    ]);
+    const [stopped] = settleTurn([streaming], TURN, true);
+    expect(stopped.state).toBe("cancelled");
+    expect(stopped.steps.every((step) => step.status !== "running")).toBe(true);
+    const [finished] = settleTurn([streaming], TURN, false);
+    expect(finished.state).toBe("done");
+    // A turn the server already closed keeps its own outcome.
+    const closed = run([{ type: "done", message_id: "m", finish_reason: "stop" }]);
+    expect(settleTurn([closed], TURN, true)[0].state).toBe("done");
   });
 
   it("gives every rail row a unique id across a multi-iteration run", () => {

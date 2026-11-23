@@ -65,7 +65,7 @@ import {
   type NativeDashboardActivity,
   type NevaState,
 } from "@/features/native-dataviz/dashboard/events";
-import { patchTurn, replayThread, type PendingCall, type TranscriptTurn } from "./studio-transcript";
+import { patchTurn, replayThread, settleTurn, type PendingCall, type TranscriptTurn } from "./studio-transcript";
 
 function activity(detail: NativeDashboardActivity) {
   window.dispatchEvent(new CustomEvent(NATIVE_DASHBOARD_ACTIVITY, { detail }));
@@ -76,6 +76,15 @@ export type { OrderedContent, TranscriptTurn } from "./studio-transcript";
 /** A News story handed to Studio: its thread, investigating Mission and prompt. */
 export type StudioHandoff = { threadId: string; missionId: string; prompt: string };
 
+
+/**
+ * How long Stop waits for the server's closing frame after the run accepted the
+ * cancel. The server normally ends the stream itself; past this, the browser
+ * stops listening so Stop always ends the turn on screen.
+ */
+const STOP_GRACE_MS = 3000;
+
+type ActiveRun = { agentId: string; threadId: string; runId: string };
 
 let turnSeq = 0;
 function nextTurnId(): string {
@@ -172,13 +181,29 @@ export function StudioChat({
   const [readingFiles, setReadingFiles] = useState(false);
   const [skillDraft, setSkillDraft] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
-  const directRunRef = useRef<{ agentId: string; threadId: string; runId: string } | null>(null);
+  const directRunRef = useRef<ActiveRun | null>(null);
   const stopRequestedRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [loadingThread, setLoadingThread] = useState(false);
   const [extended, setExtended] = useState(false);
   const [deepenTarget, setDeepenTarget] = useState<string | null>(null);
   const { abortRef, queueEvent, flushEvents, discardQueuedEvents } = useTranscriptStream(setTurns);
+  /** Ask the server to cancel a run, then stop listening if it does not close the stream. */
+  const cancelActiveRun = useCallback((run: ActiveRun) => {
+    const controller = abortRef.current;
+    void agentsApi.cancelRun(run.agentId, run.threadId, run.runId).then(() => {
+      window.setTimeout(() => {
+        if (controller && abortRef.current === controller) controller.abort();
+      }, STOP_GRACE_MS);
+    }, () => {
+      toast.error("Could not cancel the agent run. Try Stop again.");
+    });
+  }, [abortRef]);
+  /** Remember a turn's server run, cancelling it at once when Stop came first. */
+  const registerRun = useCallback((run: ActiveRun) => {
+    directRunRef.current = run;
+    if (stopRequestedRef.current) cancelActiveRun(run);
+  }, [cancelActiveRun]);
   const toolStatus = useRef(new Map<string, string>());
   const onTurnEvent = useCallback((turnId: string, event: AssistantEvent) => {
     const workflow = event as unknown as { type: string; mission?: Mission };
@@ -332,9 +357,7 @@ export function StudioChat({
           }).finally(() => {
             if (abortRef.current !== controller) return;
             flushEvents();
-            setTurns((current) => patchTurn(current, unfinished.id, (turn) => (
-              turn.state === "streaming" ? { ...turn, state: "done" } : turn
-            )));
+            setTurns((current) => settleTurn(current, unfinished.id, stopRequestedRef.current));
             setStreaming(false);
             directRunRef.current = null;
             abortRef.current = null;
@@ -551,7 +574,8 @@ export function StudioChat({
         const thread = await ensureThread(content || pending[0].name);
         if (!thread) throw new Error("Could not start the conversation");
         submittedThread = thread;
-        if (controller.signal.aborted) return;
+        // Stop pressed while the conversation was being created: send nothing.
+        if (controller.signal.aborted || stopRequestedRef.current) return;
         await streamAgentTurn(agent.agent_id, thread, content, {
           uiAction,
           dataviz: datavizContext?.() ?? null,
@@ -565,14 +589,7 @@ export function StudioChat({
             accepted = true;
             setFollowUpMissionId((current) => current === followUpMissionId ? undefined : current);
           },
-          onRunId: (runId) => {
-            directRunRef.current = { agentId: agent.agent_id, threadId: thread, runId };
-            if (stopRequestedRef.current) {
-              void agentsApi.cancelRun(agent.agent_id, thread, runId).catch(() => {
-                toast.error("Could not cancel the agent run. Try Stop again.");
-              });
-            }
-          },
+          onRunId: (runId) => registerRun({ agentId: agent.agent_id, threadId: thread, runId }),
           onEvent: (event: AssistantEvent) => onTurnEvent(turnId, event),
         });
       } catch (error) {
@@ -591,13 +608,7 @@ export function StudioChat({
         }
       } finally {
         flushEvents();
-        setTurns((prev) =>
-          prev.map((turn) =>
-            turn.id === turnId && turn.state === "streaming"
-              ? { ...turn, state: "done" }
-              : turn,
-          ),
-        );
+        setTurns((prev) => settleTurn(prev, turnId, stopRequestedRef.current));
         setStreaming(false);
         directRunRef.current = null;
         abortRef.current = null;
@@ -634,6 +645,7 @@ export function StudioChat({
       onTurnEvent,
       readingFiles,
       openingConversation,
+      registerRun,
       streaming,
       turns.length,
     ],
@@ -655,15 +667,14 @@ export function StudioChat({
     [agent, sendFromTurn, threadId],
   );
 
+  // Every run (a sent message, a reconnected run, a reconsider pass) registers
+  // its server run here, so Stop cancels whichever one is streaming. A run not
+  // yet accepted is cancelled the moment its id arrives.
   const stop = useCallback(() => {
     stopRequestedRef.current = true;
     const run = directRunRef.current;
-    if (run) {
-      void agentsApi.cancelRun(run.agentId, run.threadId, run.runId).catch(() => {
-        toast.error("Could not cancel the agent run. Try Stop again.");
-      });
-    }
-  }, []);
+    if (run) cancelActiveRun(run);
+  }, [cancelActiveRun]);
 
   /**
    * Send the user's decision on a tool call, then clear the card. The closing
@@ -723,6 +734,7 @@ export function StudioChat({
         "state any assumption you made, name any weakness in the numbers, and give a " +
         "revised conclusion. Do not repeat the original answer verbatim.";
       setStreaming(true);
+      stopRequestedRef.current = false;
       const controller = new AbortController();
       abortRef.current = controller;
       const deepenTurnId = nextTurnId();
@@ -745,10 +757,11 @@ export function StudioChat({
         await streamAgentTurn(agent.agent_id, threadId, prompt, {
           signal: controller.signal,
           role: currentRole,
+          onRunId: (runId) => registerRun({ agentId: agent.agent_id, threadId, runId }),
           onEvent: (event) => onTurnEvent(deepenTurnId, event),
         });
       } catch (error) {
-        if ((error as Error).name !== "AbortError") {
+        if ((error as Error).name !== "AbortError" && !controller.signal.aborted) {
           setTurns((prev) =>
             patchTurn(prev, deepenTurnId, (t) => ({
               ...t,
@@ -759,19 +772,14 @@ export function StudioChat({
         }
       } finally {
         flushEvents();
-        setTurns((prev) =>
-          prev.map((t) =>
-            t.id === deepenTurnId && t.state === "streaming"
-              ? { ...t, state: "done" }
-              : t,
-          ),
-        );
+        setTurns((prev) => settleTurn(prev, deepenTurnId, stopRequestedRef.current));
         setStreaming(false);
         setDeepenTarget(null);
+        directRunRef.current = null;
         abortRef.current = null;
       }
     },
-    [agent, currentRole, flushEvents, queueEvent, streaming, threadId],
+    [agent, abortRef, currentRole, flushEvents, onTurnEvent, registerRun, streaming, threadId],
   );
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

@@ -381,6 +381,30 @@ export function patchTurn(
 }
 
 /**
+ * Close a turn whose stream has ended.
+ *
+ * A turn the server closed (its `done` frame set the message id) keeps the
+ * outcome that frame gave it. A stopped turn whose stream ended without that
+ * frame, because the browser stopped listening first, settles exactly as the
+ * server's cancelled frame would have settled it.
+ */
+export function settleTurn(
+  turns: TranscriptTurn[],
+  turnId: string,
+  stopped: boolean,
+): TranscriptTurn[] {
+  const turn = turns.find((item) => item.id === turnId);
+  if (!turn || turn.state !== "streaming") return turns;
+  if (stopped && turn.messageId === undefined)
+    return applyEvent(turns, turnId, {
+      type: "done",
+      message_id: "",
+      finish_reason: "cancelled",
+    });
+  return patchTurn(turns, turnId, (item) => ({ ...item, state: "done" }));
+}
+
+/**
  * Return the contiguous authored prefix that is safe to display.
  *
  * The current block is visible while it streams. A higher index is visible

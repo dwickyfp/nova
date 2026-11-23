@@ -1070,6 +1070,55 @@ describe("studio transcript click-through", () => {
       .toBeVisible();
   });
 
+  it.each([true, false])("stops a reconsider pass through its server run (server closes: %s)", async (serverCloses) => {
+    await renderStudio("read_only", true);
+    await page.getByPlaceholder("Ask a question about your data").fill("Top SKUs");
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect.element(page.getByText("Revenue per SKU")).toBeVisible();
+
+    const fetch = vi.mocked(globalThis.fetch);
+    const fallback = fetch.getMockImplementation()!;
+    let stream: ReadableStreamDefaultController<Uint8Array> | undefined;
+    let aborted = false;
+    fetch.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/messages") && init?.method === "POST") {
+        init.signal?.addEventListener("abort", () => {
+          aborted = true;
+          stream?.error(new DOMException("Aborted", "AbortError"));
+        });
+        return new Response(new ReadableStream({
+          start(controller) {
+            stream = controller;
+            controller.enqueue(new TextEncoder().encode(
+              'event: thinking\ndata: {"phase":"plan","text":"Reconsidering","status":"running"}\n\n',
+            ));
+          },
+        }), { headers: { "Content-Type": "text/event-stream", "X-Nova-Run-ID": "deepen-run" } });
+      }
+      if (url.endsWith("/runs/deepen-run/cancel")) {
+        if (serverCloses) {
+          stream?.enqueue(new TextEncoder().encode(
+            'event: done\ndata: {"message_id":"","finish_reason":"cancelled"}\n\n',
+          ));
+          stream?.close();
+        }
+        return Response.json({ cancelling: true });
+      }
+      return fallback(input, init);
+    });
+
+    await page.getByRole("button", { name: "Reconsider this answer" }).click();
+    await expect.element(page.getByText("Reconsidering the previous answer")).toBeVisible();
+    await page.getByRole("button", { name: "Stop", exact: true }).click();
+    await vi.waitFor(() => expect(fetch.mock.calls.filter(([url]) =>
+      String(url).endsWith("/agents/a1/threads/t1/runs/deepen-run/cancel"))).toHaveLength(1));
+    // Without the server's closing frame, the browser stops listening after the grace period.
+    await expect.element(page.getByText("Stopped before the answer finished."), { timeout: 6000 }).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Stop", exact: true })).not.toBeInTheDocument();
+    expect(aborted).toBe(!serverCloses);
+  });
+
   it("rebuilds the process and the data when a stored thread is opened", async () => {
     await renderStudio("read_only", false, "t-past");
 
