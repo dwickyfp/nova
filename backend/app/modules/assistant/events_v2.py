@@ -302,12 +302,11 @@ class StudioStreamEncoder:
         }
         for part_id, part_type in list(self._open.items()):
             # The client seals parts left open the same way (``sealState``): a
-            # call still awaiting consent never ran, and an interactive block
-            # without its close frame is incomplete.
+            # call still awaiting consent never ran. A normally finished run
+            # made every block final, an interactive program whose own close
+            # frame was lost included; the renderer still validates it.
             if part_type == "tool" and part_id in waiting:
                 frames.append(self._end(part_id, "cancelled"))
-            elif part_type == "ui" and state == "done":
-                frames.append(self._end(part_id, "error"))
             else:
                 frames.append(self._end(part_id, state))
         payload: dict[str, Any] = {

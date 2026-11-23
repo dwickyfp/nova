@@ -71,7 +71,21 @@ export type TablePart = PartBase & Positioned & { type: "table"; block: TableBlo
 export type ChartPart = PartBase & Positioned & { type: "chart"; block: ChartBlock };
 export type CitationPart = PartBase & Positioned & { type: "citation"; block: CitationBlock };
 export type DashboardPart = PartBase & Positioned & { type: "dashboard"; block: DashboardArtifactBlock };
-export type UiPart = PartBase & Positioned & { type: "ui"; block: UiBlock };
+export type UiPart = PartBase & Positioned & {
+  type: "ui";
+  block: UiBlock;
+  /** The streamed program passed the size limit; it is shown as its fallback. */
+  tooLarge?: true;
+};
+
+/**
+ * The largest interactive program the browser accepts, in UTF-8 bytes. The
+ * server refuses larger programs before sending them (`MAX_PROGRAM_BYTES` in
+ * the assistant's intelligent UI module); this guards the stream itself, so an
+ * oversized program is reported instead of being cut into a broken one.
+ */
+export const MAX_UI_PROGRAM_BYTES = 64_000;
+const utf8 = new TextEncoder();
 
 /** A separator: the role changed mid-turn and earlier work was withdrawn. */
 export type RoleChangePart = PartBase & { type: "role_change"; activeRole: string };
@@ -157,10 +171,10 @@ function openPart(event: Extract<StudioEvent, { type: "part.start" }>): TurnPart
 export function sealState(finishReason: string, part: TurnPart): PartEndState {
   const state: PartEndState =
     finishReason === "cancelled" ? "cancelled" : finishReason === "error" || finishReason === "interrupted" ? "error" : "done";
-  // A call still awaiting consent never ran; an interactive block without its
-  // close frame is incomplete.
+  // A call still awaiting consent never ran. A run that finished normally made
+  // every block it opened final, including an interactive program whose own
+  // close frame was lost; the renderer still validates the program.
   if (part.type === "tool" && part.status === "pending") return "cancelled";
-  if (part.type === "ui" && state === "done") return "error";
   return state;
 }
 
@@ -198,8 +212,13 @@ function reduce(state: TurnRunState, event: StudioEvent): TurnRunState {
         if (part.state !== "streaming" && !event.replace) return part;
         if (part.type === "text" || part.type === "reasoning")
           return { ...part, text: event.replace ? event.text : part.text + event.text };
-        if (part.type === "ui")
-          return { ...part, block: { ...part.block, program: event.replace ? event.text : part.block.program + event.text } };
+        if (part.type === "ui") {
+          if (part.tooLarge) return part;
+          const program = event.replace ? event.text : part.block.program + event.text;
+          return utf8.encode(program).length > MAX_UI_PROGRAM_BYTES
+            ? { ...part, tooLarge: true as const, block: { ...part.block, program: "" } }
+            : { ...part, block: { ...part.block, program } };
+        }
         return part;
       });
     case "part.end":

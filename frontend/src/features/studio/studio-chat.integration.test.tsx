@@ -688,10 +688,10 @@ describe("studio transcript click-through", () => {
       if (url.endsWith("/messages") && init?.method === "POST") {
         posts += 1;
         if (posts === 1)
-          return sseResponse(
+          return sseResponse(v2Sse()(
             'event: thinking\ndata: {"phase":"plan","text":"Planning","status":"running"}\n\n'
             + 'event: done\ndata: {"message_id":"stopped","finish_reason":"cancelled"}\n\n',
-          );
+          ));
       }
       return fallback(input, init);
     });
@@ -1153,6 +1153,7 @@ describe("studio transcript click-through", () => {
     const fallback = fetch.getMockImplementation()!;
     let stream: ReadableStreamDefaultController<Uint8Array> | undefined;
     let aborted = false;
+    const encode = v2Sse({ runId: "deepen-run" });
     fetch.mockImplementation(async (input, init) => {
       const url = String(input);
       if (url.endsWith("/messages") && init?.method === "POST") {
@@ -1163,17 +1164,17 @@ describe("studio transcript click-through", () => {
         return new Response(new ReadableStream({
           start(controller) {
             stream = controller;
-            controller.enqueue(new TextEncoder().encode(
+            controller.enqueue(new TextEncoder().encode(encode(
               'event: thinking\ndata: {"phase":"plan","text":"Reconsidering","status":"running"}\n\n',
-            ));
+            )));
           },
         }), { headers: { "Content-Type": "text/event-stream", "X-Nova-Run-ID": "deepen-run" } });
       }
       if (url.endsWith("/runs/deepen-run/cancel")) {
         if (serverCloses) {
-          stream?.enqueue(new TextEncoder().encode(
+          stream?.enqueue(new TextEncoder().encode(encode(
             'event: done\ndata: {"message_id":"","finish_reason":"cancelled"}\n\n',
-          ));
+          )));
           stream?.close();
         }
         return Response.json({ cancelling: true });

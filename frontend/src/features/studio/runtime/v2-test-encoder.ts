@@ -160,7 +160,6 @@ export class TestStudioEncoder {
     );
     for (const [partId, type] of [...this.open.entries()]) {
       if (type === "tool" && waiting.has(partId)) frames.push(this.end(partId, "cancelled"));
-      else if (type === "ui" && state === "done") frames.push(this.end(partId, "error"));
       else frames.push(this.end(partId, state));
     }
     const payload: Record<string, unknown> = { message_id: str(done.message_id), finish_reason: reason };
