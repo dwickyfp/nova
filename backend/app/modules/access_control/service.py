@@ -1003,6 +1003,15 @@ class AccessControlService:
             resources = policy.get("resources", {})
             if not resources or set(resources) - {"catalog", "database", "table", "column"}:
                 continue
+            # A policy that cannot cover the table (compared conservatively:
+            # case-insensitive, wildcards expanded, unknown shapes cover) has
+            # no effect on it. Without this, one pattern elsewhere, such as the
+            # Stream journal guard on ``__nova_stream_*``, would make every
+            # table unsupported. ``_resource_matches`` ignores exclusions, so a
+            # policy it matches is never skipped: the checks below refuse it.
+            if not (cls.resource_may_cover(policy, catalog, database, table)
+                    or cls._resource_matches(policy, catalog, database, table)):
+                continue
             # The preview cannot evaluate Ranger exclusions, conditions, or
             # deny precedence. Consumers must not turn those into an allow.
             if any(
