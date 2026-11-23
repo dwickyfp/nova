@@ -7,7 +7,8 @@
 #   - minio:          S3-compatible object storage (port 9000/9001)
 #   - minio-init:     Auto-creates buckets + service account
 #   - redis:          Session store + cache (port 6379)
-#   - starrocks-fe:   StarRocks Frontend (8030 HTTP; 9030 stays internal)
+#   - starrocks-fe:   StarRocks Frontend (no host ports: 8030 HTTP, 9020 RPC,
+#                     9030 MySQL and 9408 Arrow Flight stay on the Docker network)
 #   - starrocks-be:   StarRocks Backend (port 8040 HTTP)
 #   - starrocks-init: Auto-creates NOVA_SYSTEM + admin + ACCOUNTADMIN
 #   - kafka, iceberg-rest, iceberg-minio-init: StarRocks compat test
@@ -19,8 +20,7 @@
 #   docker compose -f docker-compose-engine.yml up -d
 #
 # Access:
-#   StarRocks FE:    http://localhost:8030
-#   Arrow Flight:   grpc://localhost:9408
+#   StarRocks FE:    not published; clients use the Nova MySQL proxy or API
 #   StarRocks BE:    http://localhost:8040
 #   MinIO Console:   http://localhost:9001  (see MINIO_ROOT_USER / MINIO_ROOT_PASSWORD)
 #   MinIO API:       http://localhost:9000
@@ -476,10 +476,10 @@ services:
         condition: service_completed_successfully
       ranger-policy-proxy:
         condition: service_healthy
-    ports:
-      - "8030:8030"   # HTTP API
-      - "9020:9020"   # FE edit log port
-      - "9408:9408"   # Arrow Flight SQL
+    # No host ports. The FE HTTP API (8030, including its SQL endpoint), RPC
+    # port (9020, rpc_port in fe.conf) and Arrow Flight (9408) would bypass
+    # Nova's guards, role rules and audit, and root bypasses Ranger there.
+    # Services reach the FE on the Docker network; people go through Nova.
     environment:
       TZ: ${TZ:-Asia/Jakarta}
       HOST_TYPE: FQDN

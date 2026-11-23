@@ -142,16 +142,20 @@ Tekan `Ctrl+C` untuk keluar dari tampilan log. Container akan tetap berjalan.
 ### Verifikasi infrastructure
 
 ```bash
-curl http://localhost:8030/api/health
+docker compose -f docker-compose-engine.yml ps starrocks-fe
 curl http://localhost:8040/api/health
 ```
+
+Kolom `STATUS` untuk `starrocks-fe` harus `healthy`. Port FE (HTTP 8030, RPC
+9020, Arrow Flight 9408) tidak dipublikasikan ke host, karena jalur itu
+melewati guard, aturan role dan audit Nova. Akses data selalu lewat Nova.
 
 Alamat development:
 
 | Service | Address |
 |---|---|
-| StarRocks FE | `http://localhost:8030` |
-| StarRocks MySQL | `localhost:9030` |
+| StarRocks FE | tidak dipublikasikan (hanya jaringan Docker) |
+| StarRocks MySQL | `127.0.0.1:29030`, hanya dengan override `docker/docker-compose.dev.yml` |
 | StarRocks BE | `http://localhost:8040` |
 | Object Storage API | `http://localhost:9000` |
 | Object Storage Console | `http://localhost:9001` |
@@ -183,8 +187,7 @@ Contoh konfigurasi development:
 
 ```dotenv
 STARROCKS_HOST=localhost
-STARROCKS_FE_MYSQL_PORT=9030
-STARROCKS_HTTP_PORT=8030
+STARROCKS_FE_MYSQL_PORT=29030
 STARROCKS_ROOT_USER=root
 STARROCKS_ROOT_PASSWORD=
 
