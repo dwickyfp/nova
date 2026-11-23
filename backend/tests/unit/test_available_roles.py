@@ -12,7 +12,6 @@ import pytest
 
 from app.modules.access_control.security_context import SecurityContext
 from app.modules.access_control.service import AccessControlService, access_control_service
-from app.modules.access_control.statement_router import SecurityStatementRouter
 from app.sql_frontend.security import SecurityOperation, execute_security_operation
 
 RANGER_ROLES = [{"name": name} for name in ("ACCOUNTADMIN", "finance", "marketing", "analyst")]
@@ -77,9 +76,3 @@ async def test_show_available_roles_executes_the_session_list(sessions, monkeypa
         SecurityOperation("list_roles"), _security(), "SHOW ROLES"
     )
     assert [row[0] for row in every.rows] == [role["name"] for role in RANGER_ROLES]
-
-
-async def test_statement_router_matches(sessions):
-    router = SecurityStatementRouter(AccessControlService(Ranger()))
-    routed = await router.route("SHOW AVAILABLE ROLES", security=_security())
-    assert routed.result.rows == [["analyst", "Ranger"], ["finance", "Ranger"]]

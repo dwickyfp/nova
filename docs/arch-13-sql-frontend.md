@@ -390,8 +390,8 @@ client without holding the whole result. Stage listings and storage errors are
 rewritten so physical bucket roots appear as `@stage` and endpoints as
 `<storage endpoint>`.
 
-Compatibility APIs remain in `modules/query/dialect/parser.py`, the compact ML
-and task parsers, and the old security statement router for existing callers.
+Compatibility APIs remain in `modules/query/dialect/parser.py` and the compact ML
+and task parsers for existing callers.
 They are not production feature detectors. The stage parser's legacy short
 circuits do not apply to central SQL parsing. The semantic-expression parser
 retains its separate expression entrypoint and compatibility listener.

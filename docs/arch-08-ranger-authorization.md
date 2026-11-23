@@ -43,8 +43,8 @@ state changes. Redis and proxy sessions store assigned, default, and active role
 separately and advance the context version after a switch.
 
 The current SQL frontend parses managed security DDL/DCL into typed operations
-and routes them to `AccessControlService`; the old `SecurityStatementRouter`
-remains a compatibility API. UI and SQL governance converge on the same service.
+and routes them to `AccessControlService`; there is no separate regex security
+router. UI and SQL governance converge on the same service.
 Ranger writes are bounded, authenticated, paginated, idempotent, and
 credential-safe. See [SQL frontend architecture](arch-13-sql-frontend.md).
 

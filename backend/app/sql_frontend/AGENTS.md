@@ -45,9 +45,8 @@ grammar -> central parser -> typed AST -> semantic analysis/binding
   common frontend interfaces appropriate to their paths. Keep their contracts,
   caller context, and audit behavior intact.
 
-The parser APIs in `backend/app/modules/query/dialect/`, compact task/ML parsers,
-and legacy security routing are compatibility APIs, not new production syntax
-detectors. Existing translator/injector helpers remain execution-time lowering
+The parser APIs in `backend/app/modules/query/dialect/` and compact task/ML
+parsers are compatibility APIs, not new production syntax detectors. Existing translator/injector helpers remain execution-time lowering
 adapters; do not replace them with another storage or secret system.
 
 ## Validation
