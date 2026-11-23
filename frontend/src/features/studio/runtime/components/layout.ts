@@ -128,6 +128,62 @@ const segmented = z.object({
 });
 const toggle = z.object({ label: z.string().min(1).max(120), value: binding() });
 
+const latitude = z.number().min(-90).max(90);
+const longitude = z.number().min(-180).max(180);
+const dataMap = z.object({
+  evidence: id.describe("The verified result whose rows are mapped."),
+  latitude: column.nullable().optional().describe("Latitude column; null to find it."),
+  longitude: column.nullable().optional().describe("Longitude column; null to find it."),
+  label: column.nullable().optional().describe("Column naming each place."),
+  measure: column.nullable().optional().describe("A figure shown for each place."),
+  title: short.optional(),
+});
+/** The map a `DataMap` became: the shared GeoMap props, rows read by the server. */
+const geoMap = z.object({ map: z.record(z.string(), z.unknown()) });
+const place = z.object({
+  label: z.string().min(1).max(120),
+  lat: latitude,
+  lon: longitude,
+});
+const routeMap = z.object({
+  title,
+  places: z.array(place).min(1).max(25).describe("Public places in visiting order: {label, lat, lon}. Name each city or landmark."),
+  route: z.boolean().optional().describe("Draw the road route through the places in order (default false)."),
+  optimize: z.boolean().optional().describe("Visit the places in the shortest road order, starting from the first."),
+});
+const checkedPlace = place.extend({ check: z.enum(["verified", "corrected", "approximate"]) });
+const placeMap = z.object({
+  title,
+  places: z.array(checkedPlace).min(1).max(25),
+  /** Road routes the server fetched: the first is the fastest; up to three alternatives. */
+  routes: z
+    .array(
+      z.object({
+        /** The road line as an encoded polyline (five decimals), at most 5,000 positions in all. */
+        line: z.string().min(1).max(60_000),
+        distance_m: z.number().min(0),
+        duration_s: z.number().min(0),
+      }),
+    )
+    .max(3),
+  /** Why no road route is shown, when one was asked for. */
+  unavailable: z.string().max(240).nullable().optional(),
+  optimized: z.boolean().optional(),
+});
+const image = z.object({
+  url: z.string().url().max(2048).describe("An https://upload.wikimedia.org/ image."),
+  alt: z.string().min(1).max(240),
+});
+const searchImage = z.object({
+  query: z.string().min(1).max(200).describe("What the picture shows, e.g. 'Borobudur temple'."),
+  alt: z.string().min(1).max(240),
+});
+const picture = z.object({
+  url: z.string().max(2048),
+  alt: z.string().min(1).max(240),
+  source: z.string().max(2048),
+});
+
 type Entry = { author: Author; description: string; props: z.ZodObject; reactive?: readonly string[] };
 
 /** Components in prompt order. Positional arguments follow each schema's key order. */
@@ -147,6 +203,21 @@ export const LAYOUT_COMPONENTS = {
   Table: { author: "model", description: "Rows of one verified result (up to 50).", props: table },
   ResultTable: { author: "server", description: "Rows of a verified result.", props: resultTable },
   Text: { author: "both", description: "A short paragraph of narrative.", props: text },
+  DataMap: {
+    author: "model",
+    description: "A map of a verified result's located rows (latitude/longitude columns).",
+    props: dataMap,
+  },
+  GeoMap: { author: "server", description: "A map of verified rows.", props: geoMap },
+  RouteMap: {
+    author: "model",
+    description: "Public places (cities, landmarks) on a map, optionally with the road route between them.",
+    props: routeMap,
+  },
+  PlaceMap: { author: "server", description: "Checked public places and road routes.", props: placeMap },
+  Image: { author: "model", description: "A Wikimedia Commons image by its upload URL.", props: image },
+  SearchImage: { author: "model", description: "A public Wikimedia Commons image found by a search.", props: searchImage },
+  Picture: { author: "server", description: "A checked public image.", props: picture },
   Controls: {
     author: "both",
     description: "A panel of what-if controls whose $variables drive Metric values below it.",
@@ -171,7 +242,7 @@ export const valueFunction = z.object({
 });
 
 const RULES = [
-  "Write a layout only when the person asks for a dashboard, an overview, a page, a comparison of several figures, or a what-if/scenario. Answer a single figure, a short list or a plain question in Markdown without a layout: one number never becomes a page.",
+  "Write a layout only when the person asks for a dashboard, an overview, a page, a comparison of several figures, a what-if/scenario, a map, a route or a picture. Answer a single figure, a short list or a plain question in Markdown without a layout: one number never becomes a page.",
   "A layout replaces the Markdown answer. Write it in exactly one ```openui fence. After the fence write at most one plain sentence; put the narrative in Text blocks inside the page.",
   "Start with `root = Page([...])`, then define each referenced statement on its own line, top to bottom in reading order: Header first, then sections. Nova shows each statement as soon as its line is complete, so define blocks in the order they appear.",
   "Every figure comes from a verified result: write @Value(\"result-id\", \"column\", \"sum\") or a statement holding one, never a number you typed. Derived figures (differences, shares, scenarios) are arithmetic over those values and $variables, e.g. scenario = base * (1 + $uplift / 100). Use exact result ids and column names.",
@@ -179,6 +250,8 @@ const RULES = [
   "Metric(label, value, format, delta, badge): delta is a fraction computed from verified values, e.g. (jul - jun) / jun. badge is a few words such as \"6 months\". Use format \"currency\" with a currency code only when the data states one; otherwise use \"number\". Do not remark on a missing currency.",
   "Comparing periods or groups: show the latest period's figures once, each with its delta against the earlier one and a badge such as \"vs. June\", rather than one row of tiles per period. Chart the full series beside them.",
   "What-if: declare each control's state with a literal default ($uplift = 10), put Slider/Segmented/Toggle nodes in a Controls panel above the figures they change, and label scenario values as scenarios. Controls only recompute values already on the page; they never fetch data.",
+  "Maps: DataMap(\"result-id\", \"latitude\", \"longitude\", \"city\", \"revenue\", \"Revenue by city\") maps verified rows that have coordinates. RouteMap(title, [{label: \"Jakarta\", lat: -6.2088, lon: 106.8456}, ...], true) shows public places such as cities and, with true, the road route through them in order, with distance and travel time; add true as the fourth argument to visit them in the shortest order from the first. Use RouteMap only for public places by name, never for customer addresses or other private locations. A map asked for on its own is still one block: root = Page([map]).",
+  "Images: SearchImage(\"Borobudur temple\", \"Borobudur temple at sunrise\") shows a public Wikimedia Commons picture; use one only when the person asks for a picture of a public place or thing.",
   "Keep it to one Header, at most four sections, at most six KPI tiles per row and at most three charts. Text blocks are one to three sentences and state only figures shown on the page.",
 ];
 

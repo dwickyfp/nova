@@ -16,6 +16,13 @@ Python, before anything reaches the browser:
 * ``Chart(evidence, ...)`` becomes a native ``DatavizChart`` over the result's
   governed query (signed ``draft_ref``), and ``Table(evidence, ...)`` a
   ``ResultTable`` of redacted rows;
+* ``DataMap(evidence, ...)`` becomes a ``GeoMap`` of the result's located,
+  redacted rows;
+* ``RouteMap(title, places, ...)`` becomes a ``PlaceMap``: each place's
+  coordinate is checked, and its road routes are fetched from the public
+  routing service at city level and stored in the program
+  (:mod:`app.modules.assistant.ui_public`);
+* ``Image``/``SearchImage`` become a ``Picture`` from Wikimedia Commons;
 * figures written in text (titles, narrative, badges) are checked against the
   verified results like any answer; unsupported clauses are removed.
 
@@ -45,6 +52,7 @@ MAX_PROGRAM_BYTES = 64_000
 MAX_STATEMENTS = 80
 MAX_STATEMENT_CHARS = 8_000
 TABLE_ROWS = 50
+MAP_ROWS = 200
 #: Lang-core builtins a figure may pass through.
 _NUMBER_FUNCTIONS = frozenset({"Round", "Abs", "Min", "Max", "Floor", "Ceil"})
 _FENCE_OPEN = re.compile(r"```[ \t]*(?:openui|layout)[^\n]*\n", re.IGNORECASE)
@@ -640,6 +648,12 @@ class _Checker:
             return await self.chart(node)
         if node.name == "Table":
             return self.table(node)
+        if node.name == "DataMap":
+            return self.data_map(node)
+        if node.name == "RouteMap":
+            return await self.route_map(node)
+        if node.name in ("Image", "SearchImage"):
+            return await self.image(node)
         spec = _spec(node.name)
         if spec["author"] == "server":
             raise LayoutError(f"{node.name} is written by Nova, not by the answer")
@@ -772,6 +786,93 @@ class _Checker:
         title = args.get("title")
         return Call("ResultTable", (Lit(self.checked(title) if title else None), Lit(shown),
                                     Lit(rows)))
+
+
+    def data_map(self, node: Call) -> Call:
+        from app.modules.assistant.ui_autocompose import map_component
+        from app.modules.assistant.ui_components import ComponentError, validate_props
+
+        args = self._args("DataMap", node)
+        table = self._table(args["evidence"])
+        names = _names(table)
+        named = [args.get(key) for key in ("latitude", "longitude", "label", "measure")]
+        for name in named:
+            if name and name not in names:
+                raise LayoutError(f"The result {args['evidence']!r} has no column {name!r}")
+        title = self.checked(str(args.get("title") or "Locations"))
+        latitude, longitude, label, measure = named
+        if not (latitude and longitude):
+            # No columns named: the same reading of a located result as an
+            # answer without a page gets (coordinates, WKT or GeoJSON).
+            found = map_component(args["evidence"], {
+                **table, "columns": [name for name in names if not is_credential_column(name)],
+                "rows": [[row.get(name) for name in names if not is_credential_column(name)]
+                         for row in _rows(table)],
+            }, title)
+            if found is None:
+                raise LayoutError(f"The result {args['evidence']!r} has no locations to map")
+            return Call("GeoMap", (Lit(found["props"]),))
+        shown = [name for name in dict.fromkeys([latitude, longitude, label, measure])
+                 if name and not is_credential_column(name)]
+        records = []
+        for row in _rows(table)[:MAP_ROWS]:
+            values = {name: _json_value(row.get(name)) for name in shown}
+            if any(is_credential_value(value) for value in values.values()):
+                continue
+            lat, lon = _to_number(values.get(latitude)), _to_number(values.get(longitude))
+            if lat is None or lon is None or not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                continue
+            records.append(values)
+        if not records:
+            raise LayoutError(f"The result {args['evidence']!r} has no valid coordinates")
+        props: dict[str, Any] = {"title": title[:256], "evidence_id": args["evidence"],
+                                 "rows": records, "latitude": latitude, "longitude": longitude}
+        if label and label in shown:
+            props["label"] = label
+        if measure and measure in shown:
+            props["options"] = {"popupFields": [measure]}
+        try:
+            validate_props("GeoMap", props)
+        except ComponentError as exc:
+            raise LayoutError("The map cannot be drawn") from exc
+        return Call("GeoMap", (Lit(props),))
+
+    async def route_map(self, node: Call) -> Call:
+        from app.modules.assistant.ui_public import PublicContentError, check_place, road_routes
+
+        args = self._args("RouteMap", node)
+        try:
+            places = [check_place(str(item["label"]), item["lat"], item["lon"])
+                      for item in args["places"]]
+        except PublicContentError as exc:
+            raise LayoutError(str(exc)) from exc
+        optimize = bool(args.get("optimize")) and len(places) > 2
+        routes: list[dict[str, Any]] = []
+        unavailable: str | None = None
+        if args.get("route") or optimize:
+            found = await road_routes(places, optimize=optimize)
+            routes = found.get("routes") or []
+            unavailable = found.get("unavailable")
+            if found.get("order"):
+                places = [places[index] for index in found["order"]]
+        title = self.checked(str(args["title"]))
+        return Call("PlaceMap", (Lit(title), Lit(places), Lit(routes), Lit(unavailable),
+                                 Lit(optimize and bool(routes))))
+
+    async def image(self, node: Call) -> Call:
+        from app.modules.assistant.ui_public import (
+            PublicContentError,
+            commons_image,
+            search_image,
+        )
+
+        args = self._args(node.name, node)
+        try:
+            found = (commons_image(str(args["url"])) if node.name == "Image"
+                     else await search_image(str(args["query"])))
+        except PublicContentError as exc:
+            raise LayoutError(str(exc)) from exc
+        return Call("Picture", (Lit(found["url"]), Lit(str(args["alt"])), Lit(found["source"])))
 
 
 def _json_value(value: Any) -> Any:

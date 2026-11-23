@@ -79,8 +79,16 @@ When the agent finishes you see:
   [Charts in answers](/docs/studio/charts-in-answers).
 - **Source data**: when the agent drew a chart, the rows it used are folded
   under **Source data (1 table)**. Click it to see them.
-- **Follow-up suggestions**: buttons with related questions (for example
-  "net revenue by payment method"). Click one to ask it.
+- **Tools used**: one chip per tool the agent used, such as **SQL query** or
+  a connected tool, with **×2** when it ran more than once and a dot for how
+  it ended (green: succeeded, red: failed, grey: not finished). Click a chip
+  to see each call: what it was asked, a short result and how long it took.
+  **Show in steps** opens that step above the answer and **Show data** opens
+  the rows it returned. Web pages the agent read are listed under the web
+  search chip.
+- **Follow-up suggestions**: related questions under the answer, each with a
+  return arrow (for example "Net revenue by payment method"). Click one to
+  ask it.
 
 ### See how the answer was found
 

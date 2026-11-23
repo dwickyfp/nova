@@ -2,11 +2,14 @@
 
 > **Superseded in part (F5, 2026-11).** The `nova-openui-3` catalog, the
 > archived v2 validator, saved map state (viewport, route selection), map
-> actions, client map metrics and public media were retired with the page
-> layout language; see [Studio interactive answers](studio-intelligent-ui-v2.md#ui-contract-page-layouts-nova-layout-1).
-> Business `GeoMap` rendering, geometry validation, the bundled basemap and
-> route layers described here remain current. Old v3 answers replay as
-> read-only pages.
+> actions and client map metrics were retired with the page layout language;
+> see [Studio interactive answers](studio-intelligent-ui-v2.md#ui-contract-page-layouts-nova-layout-1).
+> Public places, road routes and images are page components now (`RouteMap`
+> → `PlaceMap`, `SearchImage` → `Picture`): the server fetches them while it
+> checks the statement and stores them, so the browser calls neither OSRM nor
+> Commons search. Business `GeoMap` rendering (also `DataMap` on a page),
+> geometry validation, the bundled basemap and route layers described here
+> remain current. Old v3 answers replay as read-only pages.
 
 Nova adapts [mapcn](https://github.com/AnmolSaini16/mapcn/tree/40c790f739c058f0f0d22b9287d13fe7cfd4a5bf), pinned at `40c790f739c058f0f0d22b9287d13fe7cfd4a5bf`, on the existing MapLibre 6.13.0 runtime. The upstream MIT notice is bundled in `frontend/public/licenses/mapcn.txt`. This migration changes presentation and map interactions; it does not introduce a tile server, routing engine, inference loop, or metadata database.
 

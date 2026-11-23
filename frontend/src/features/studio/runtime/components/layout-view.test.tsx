@@ -178,3 +178,53 @@ describe("chartPosition", () => {
     expect(chartPosition(undefined)).toBeNull();
   });
 });
+
+describe("maps and pictures on a page", () => {
+  // Two straight lines, encoded at five decimals: Jakarta -> Bandung.
+  const FAST = "~uhe@{dfjS~_|j@_tfqB";
+  const SLOW = "~uhe@{dfjS~``e@_i`tA~~|D_jkJ";
+  const placeMap = (routes: string, extra = "") =>
+    `root = Page([m])\nm = PlaceMap("Jakarta to Bandung", [{label: "Jakarta", lat: -6.2088, lon: 106.8456, check: "verified"}, {label: "Bandung", lat: -6.9175, lon: 107.6191, check: "verified"}, {label: "Ciater", lat: -6.73, lon: 107.66, check: "approximate"}], ${routes}${extra})`;
+
+  it("shows the stored routes with distance and time, and switches between them without a request", async () => {
+    const fetch = vi.spyOn(window, "fetch");
+    const program = placeMap(
+      `[{line: "${FAST}", distance_m: 151200, duration_s: 7320}, {line: "${SLOW}", distance_m: 165400, duration_s: 7560}]`,
+    );
+    const screen = await show(view(program));
+    const fastest = screen.getByRole("radio", { name: /Fastest route.*151 km.*2 h 2 min/ });
+    const alternative = screen.getByRole("radio", { name: /Alternative 1.*165 km.*2 h 6 min/ });
+    await expect.element(fastest).toHaveAttribute("aria-checked", "true");
+    await alternative.click();
+    await expect.element(alternative).toHaveAttribute("aria-checked", "true");
+    await expect.element(screen.getByText(/3 places by road: 165 km, about 2 h 6 min\./)).toBeInTheDocument();
+    await expect.element(screen.getByText(/dashed ring are approximate/)).toBeInTheDocument();
+    expect(fetch.mock.calls.map(([input]) => String(input)).filter((url) => url.includes("osrm"))).toEqual([]);
+  });
+
+  it("keeps the places and says why when no road route was found", async () => {
+    const screen = await show(view(placeMap("[]", ', "These places are on different islands; no road joins them."')));
+    await expect
+      .element(screen.getByText(/3 places\. These places are on different islands; no road joins them\./))
+      .toBeInTheDocument();
+    expect(screen.container.querySelector("[role=radiogroup]")).toBeNull();
+  });
+
+  it("draws a map of verified rows the server read", async () => {
+    const program = 'root = Page([m])\nm = GeoMap({title: "Revenue by city", evidence_id: "evidence_c", latitude: "lat", longitude: "lon", label: "city", rows: [{lat: -6.2, lon: 106.85, city: "Jakarta", revenue: 900}], options: {popupFields: ["revenue"]}})';
+    const screen = await show(view(program));
+    await expect.poll(() => screen.container.querySelector("[data-component=GeoMap]")).not.toBeNull();
+  });
+
+  it("shows a Wikimedia picture with its credit and nothing from another host", async () => {
+    const good = 'root = Page([p])\np = Picture("https://upload.wikimedia.org/x/Borobudur.jpg", "Borobudur temple", "https://commons.wikimedia.org/wiki/File:Borobudur.jpg")';
+    const screen = await show(view(good));
+    await expect.element(screen.getByRole("img", { name: "Borobudur temple" })).toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("link", { name: "Wikimedia Commons" }))
+      .toHaveAttribute("href", "https://commons.wikimedia.org/wiki/File:Borobudur.jpg");
+    cleanup();
+    const bad = await show(view('root = Page([p])\np = Picture("https://evil.test/x.jpg", "Temple", "https://evil.test")'));
+    expect(bad.container.querySelector("img")).toBeNull();
+  });
+});

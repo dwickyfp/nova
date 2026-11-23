@@ -3,7 +3,7 @@
 Tools run in-process as the caller. Going through Nova's HTTP surface would
 put route names in tool code, prompts and answers, and would act outside the
 caller's governed session. Only modules that talk to services outside Nova
-(the AI provider, MCP servers, web search, open media) may hold an HTTP client.
+(the AI provider, MCP servers, web search, public routes and images) may hold an HTTP client.
 """
 
 import re
@@ -17,6 +17,7 @@ EXTERNAL_HTTP = {
     "assistant/provider.py",  # the configured AI provider
     "assistant/measurements.py",  # counts provider dispatches
     "agents/mcp_client.py",  # MCP servers an agent owner configured
+    "assistant/ui_public.py",  # public road routes and Wikimedia images on pages
 }
 
 #: Files that name another service's routes (never Nova's), never shown to a model.

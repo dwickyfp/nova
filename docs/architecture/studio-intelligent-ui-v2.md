@@ -10,7 +10,7 @@ The implementation starts from `main` at `d068264f`, after the reversal of #185.
 | --- | --- | --- | --- |
 | [Open Intelligent UI, pinned source](https://github.com/thesysdev/open-intelligent-ui/tree/03213439358bf3408ad61a46ec9e3230c5572e48) | A component catalog and reactive variables let prose and useful controls form one answer. | Versioned layout catalog (`nova-layout-1`) streamed per statement; pages with KPIs, native charts, tables and local what-if controls. | `frontend/src/features/studio/intelligent-ui/`, assistant compositor |
 | [Library and prompt generation](https://github.com/thesysdev/open-intelligent-ui/blob/03213439358bf3408ad61a46ec9e3230c5572e48/src/lib/library.ts) | The model needs component signatures and examples matching the renderer. | One Zod source generates the catalog JSON the Python checker and prompt use; a drift check guards it. | `runtime/components/layout.ts`, `assistant/ui_layout.py` |
-| [Public map routing](https://github.com/thesysdev/open-intelligent-ui/blob/03213439358bf3408ad61a46ec9e3230c5572e48/src/app/api/street-route/route.ts) | Public location enrichment has external network dependencies. | Public media was retired in F5. Business GeoMap uses bundled land geometry and refuses external resources. | frontend `geo-map.tsx` |
+| [Public map routing](https://github.com/thesysdev/open-intelligent-ui/blob/03213439358bf3408ad61a46ec9e3230c5572e48/src/app/api/street-route/route.ts) | Public location enrichment has external network dependencies. | Public routes and images are fetched by the server while it checks the page statement and are stored in the program (`ui_public.py`); the browser never calls OSRM or Commons search. Business GeoMap keeps its own rules. | backend `ui_public.py`, frontend `place-map.tsx` |
 | [Harness², pinned source](https://github.com/google-research/harness2/tree/1cfe254e8d25b15f37048c3730134686abe60335) | An agent harness is an editable component tree (prompt, guardrails, tool guidance, skills, scripts, hooks) refined by propose–probe–compose with blind selection, reflection verdicts and a lesson library. | A typed, bounded harness policy per agent (standing rules, tool guidance, in-loop guards) beside skills, procedures, memory and budget. One offline cycle: baseline, two proposals (how the agent works; data knowledge), their probes, one composition and probe, then one reflected lesson. Probe tools remain read-only. | agents `harness.py`, `harness_experiments.py`; assistant `guards.py`; existing quality engine |
 | [Harness² experiment protocol](https://github.com/google-research/harness2/blob/1cfe254e8d25b15f37048c3730134686abe60335/docs/EXPERIMENTS.md) | Reproducible experiments require provenance and resumable stage records. | Version/manifest/case fingerprints, deterministic operation identity, stage checkpoints, latency/token budgets and lease fencing. Baseline wins ties and incomplete comparisons. No automatic production promotion. | quality records, versions and release manifests |
 
@@ -37,13 +37,15 @@ routes were retired in F5; see [Legacy answers](#legacy-answers).
 exports it into `backend/app/modules/assistant/ui_components.json` (key
 `layout`); `pnpm components:check` and CI fail on drift. Components: `Page`,
 `Header`, `Section`, `Row`, `Text`, `KpiTiles`/`Metric` (value, format,
-change, badge, digits), `DatavizChart`, `ResultTable`, `Controls`, `Slider`,
-`Segmented` and `Toggle`.
+change, badge, digits), `DatavizChart`, `ResultTable`, `GeoMap`, `PlaceMap`,
+`Picture`, `Controls`, `Slider`, `Segmented` and `Toggle`.
 
 **What the model writes.** In a fenced `openui` block after its prose, the
 model writes one statement per line. It may use `Chart(evidence, visual, x,
-y, title)`, `Table(evidence, columns, title)` and `@Value(evidence, column,
-aggregation, filter)` for verified figures; it never writes a business
+y, title)`, `Table(evidence, columns, title)`, `DataMap(evidence, latitude,
+longitude, label, measure, title)`, `RouteMap(title, places, route,
+optimize)`, `Image(url, alt)`/`SearchImage(query, alt)` and `@Value(evidence,
+column, aggregation, filter)` for verified figures; it never writes a business
 number as a literal. `$variables` take literal defaults and drive scenario
 expressions.
 
@@ -56,6 +58,32 @@ turn's verified results, and rewrites it:
   reference is signed by the server; the governed source stays on the server.
 - `Table` becomes `ResultTable(title, columns, rows)` with bounded rows of
   that result.
+- `DataMap` becomes `GeoMap(map)`: the shared business map over at most 200
+  of the result's rows with valid coordinates. Only the named columns are
+  kept, credential columns and values are dropped, and the tooltip shows the
+  label and the one measure. Without named columns it reads the result the
+  way an answer without a page does (coordinates, WKT or GeoJSON).
+- `RouteMap` becomes `PlaceMap(title, places, routes, unavailable,
+  optimized)` (`assistant/ui_public.py`). Places are public places typed by
+  the model, so each coordinate is checked: in range, and when its label
+  names a known city it must lie within 60 km of that city, or it is moved to
+  the city centre (`corrected`). A place Nova cannot check is drawn as
+  `approximate` with a dashed ring. When a route is asked for, the server
+  calls the public OSRM `route/v1/driving` service during the statement
+  check (8 s cap, up to three alternatives between two places, polyline
+  geometry simplified to about 30 m and at most 5,000 positions in all).
+  Only city-level positions (two decimals) are sent. `optimize` orders the
+  visit from the first place by the OSRM duration table (exact up to 12
+  places). Places on different known islands get no route, because the
+  public server would route through ferries; a missing road or a timeout
+  also leaves the places on the map with the reason. The geometry is stored
+  in the program, so the browser never calls OSRM and a replay works
+  offline. The user can switch between the stored alternatives, each with
+  its distance and driving time.
+- `Image` and `SearchImage` become `Picture(url, alt, source)`. The image
+  must be an `https://upload.wikimedia.org/` upload; a search uses the
+  Wikimedia Commons API. The browser loads only that image and credits its
+  Commons page.
 - `@Value` becomes the number computed from the verified rows. A typed
   business number, an unknown result or column, a filter that matches no row,
   a forged draft reference or an unknown component refuses that statement

@@ -1,6 +1,6 @@
 ---
 title: Charts in answers
-description: Read the charts, overview pages and what-if controls an agent draws in its answers, see the data behind them, and keep a chart.
+description: Read the charts, overview pages, maps and what-if controls an agent draws in its answers, see the data behind them, and keep a chart.
 ---
 
 ## What it is
@@ -55,6 +55,41 @@ page. They do not run a new query, and nothing you set is sent to the agent or
 saved: when you reopen the conversation, the controls start again from the
 values the agent chose. Scenario figures are assumptions, and the page labels
 them as scenarios. The figures read from your data do not move.
+
+## Maps and pictures
+
+Ask for a map of results that have coordinates, and the page shows them on a
+map. Point at a place to see its name and figure. For example:
+
+```text
+Show revenue by city on a map.
+```
+
+You can also ask for public places and the road between them:
+
+```text
+Show the road route from Jakarta to Bandung.
+```
+
+The map shows the places, the fastest road route, its distance and driving
+time, and up to two alternative routes. Click an alternative beside the map to
+draw it. Ask for several places to see one route through them in order, or ask
+for the shortest order to let the agent choose it, starting from the first
+place. Questions in Indonesian work the same way ("rute tercepat dari Semarang
+ke Malang lewat jalan").
+
+- Only the city names and their rough positions are used to find the route.
+  The customers, figures and other data on your page are not sent anywhere.
+- When there is no road between the places, for example between two islands,
+  the map shows the places and says that no road joins them.
+- A place the agent could not match to a known city has a dashed ring:
+  its position is approximate.
+- Routes and pictures are saved with the answer, so a reopened conversation
+  shows the same map without looking them up again.
+
+Ask for a picture of a public place or thing, such as "Show a picture of
+Borobudur", and the page shows a picture from Wikimedia Commons with a link
+to its page there.
 
 ## Ask for a chart
 

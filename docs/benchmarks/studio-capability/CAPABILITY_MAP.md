@@ -28,7 +28,7 @@ dimensions `order_date`, `status`, `payment_method`, `shipping_city`,
 | Table | `table` part from a governed result, or `Table` component | `table`, `breakdown` |
 | Chart: bar, line, area, pie/donut, scatter | `chart` part (Vega mirror from `data_to_chart`; chart types include stacked/side bars, bubble, heatmap) or `Chart` component (`bar`, `line`, `area`, `pie`, `donut`, `scatter`) | `chart_*`, `trend` |
 | KPI tiles | `KpiTiles` component, or `Metric` tiles on a page | `kpi` |
-| Map | `GeoMap` (governed, needs coordinates or geometry) | `map` |
+| Map | `GeoMap` (governed, needs coordinates or geometry), or `DataMap` on a page; public places and road routes with distance, time and alternatives via page `RouteMap` | `map` |
 | What-if / simulation | `compute_metrics`, and page `Slider`/`Segmented`/`Toggle` controls that recompute locally | `what_if` |
 | Narrative / summary / insight | Answer text | `narrative` |
 | Comparison, ranking, trend | Text + table/chart | `comparison`, `ranking`, `trend` |

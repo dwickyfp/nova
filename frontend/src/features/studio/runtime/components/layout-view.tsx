@@ -9,7 +9,7 @@
  * Controls are local: they recompute values already on the page, start from
  * the program's defaults on every load and never send anything.
  */
-import { createContext, useCallback, useContext, useId, useMemo, useState, type ReactNode } from "react";
+import { createContext, lazy, Suspense, useCallback, useContext, useId, useMemo, useState, type ReactNode } from "react";
 import {
   createLibrary,
   defineComponent,
@@ -23,7 +23,9 @@ import { cn } from "@/lib/utils";
 import type { DatavizLocator } from "../../dataviz/api";
 import { ResultTable } from "../../result-table";
 import { LAYOUT_COMPONENTS, LAYOUT_ROOT, type LayoutComponentName } from "./layout";
-import { DatavizChart } from "./registry";
+import { DatavizChart, GeoMap as RegistryGeoMap } from "./registry";
+import type { GeoMapProps } from "./schemas";
+import type { PlaceMapProps } from "../../intelligent-ui/place-map";
 import { cellOf } from "./spec-chart";
 import type { LayoutBlock } from "./block";
 import { FIGURE_GRID, FigureTile, type Figure } from "./figure-tile";
@@ -184,6 +186,61 @@ function Table({ props }: { props: Props }) {
         note={null}
       />
     </div>
+  );
+}
+
+const PlaceMapView = lazy(() => import("../../intelligent-ui/place-map"));
+
+/** A map of verified rows: the shared GeoMap, its rows read by the server. */
+function GeoMap({ props }: { props: Props }) {
+  const map = props.map as GeoMapProps | undefined;
+  return map ? <RegistryGeoMap props={map} /> : null;
+}
+
+/** Public places and road routes, fetched and checked when the page was written. */
+function PlaceMap({ props }: { props: Props }) {
+  return (
+    <div className="nova-chat-item min-w-0">
+      <Suspense fallback={<p role="status" className="text-sm text-muted-foreground">Loading map…</p>}>
+        <PlaceMapView {...(props as unknown as PlaceMapProps)} />
+      </Suspense>
+    </div>
+  );
+}
+
+/** A public image from Wikimedia Commons, credited to its page there. */
+function Picture({ props }: { props: Props }) {
+  const [failed, setFailed] = useState(false);
+  const url = text(props.url);
+  const source = text(props.source);
+  const alt = text(props.alt);
+  if (!url.startsWith("https://upload.wikimedia.org/")) return null;
+  return (
+    <figure className="min-w-0 space-y-1.5" data-component="Picture">
+      {failed ? (
+        <p className="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">{alt}</p>
+      ) : (
+        <img
+          src={url}
+          alt={alt}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setFailed(true)}
+          className="max-h-96 w-full rounded-lg bg-muted object-cover"
+        />
+      )}
+      <figcaption className="text-xs text-muted-foreground">
+        {alt} ·{" "}
+        <a
+          href={source.startsWith("https://commons.wikimedia.org/") ? source : "https://commons.wikimedia.org/"}
+          target="_blank"
+          rel="noopener noreferrer nofollow"
+          className="underline-offset-2 hover:underline"
+        >
+          Wikimedia Commons
+        </a>
+      </figcaption>
+    </figure>
   );
 }
 
@@ -365,6 +422,9 @@ const VIEWS: Partial<Record<LayoutComponentName, Renderer>> = {
   DatavizChart: Chart,
   ResultTable: Table,
   Text,
+  GeoMap,
+  PlaceMap,
+  Picture,
   Controls,
   Slider,
   Segmented,
