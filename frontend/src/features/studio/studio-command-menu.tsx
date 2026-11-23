@@ -76,7 +76,7 @@ export function StudioCommandMenu({
                   data-active={index === active || undefined}
                   className={cn(
                     "cursor-pointer rounded-lg px-2.5 py-2 text-popover-foreground",
-                    "data-[active]:bg-accent data-[active]:text-accent-foreground",
+                    "data-[active]:bg-accent",
                   )}
                   onMouseMove={() => {
                     if (index !== active) onActiveChange(index);
