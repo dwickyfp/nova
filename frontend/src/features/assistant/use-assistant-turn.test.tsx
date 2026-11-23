@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
-import { AssistantPanel } from "./assistant-panel";
 import { MessageList } from "./message-list";
 import {
   useAssistantTurn,
@@ -8,13 +7,9 @@ import {
   type UiAction,
 } from "./use-assistant-turn";
 
-const resetGrant = vi.fn();
 const getThread = vi.fn();
-const setGrant = vi.fn();
 
 vi.mock("./thread-client", () => ({
-  resetGrant: (...args: unknown[]) => resetGrant(...args),
-  setGrant: (...args: unknown[]) => setGrant(...args),
   getThread: (...args: unknown[]) => getThread(...args),
   listThreads: vi.fn(async () => ({ threads: [], count: 0 })),
   searchThreads: vi.fn(async () => ({ threads: [], count: 0 })),
@@ -73,25 +68,6 @@ function Harness({
   );
 }
 
-function PanelHarness({
-  holder,
-  onError,
-}: {
-  holder: { current: Turn | null };
-  onError?: (message: string) => void;
-}) {
-  const turn = useAssistantTurn({ ensureThread: async () => "t-1", onError });
-  holder.current = turn;
-  return (
-    <AssistantPanel
-      open
-      onOpenChange={() => {}}
-      messages={turn.messages}
-      statusMessage={turn.statusMessage}
-    />
-  );
-}
-
 function sseResponse(frames: string[]) {
   const encoder = new TextEncoder();
   const body = new ReadableStream<Uint8Array>({
@@ -107,9 +83,7 @@ function sseResponse(frames: string[]) {
 }
 
 afterEach(() => {
-  resetGrant.mockReset();
   getThread.mockReset();
-  setGrant.mockReset();
   vi.restoreAllMocks();
 });
 
@@ -177,7 +151,6 @@ describe("useAssistantTurn", () => {
     await holder.current!.decide({
       toolCallId: "call-1",
       decision: "approve",
-      alwaysAllow: false,
     });
     expect(canApproveUiAction).toHaveBeenCalledWith(action);
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -333,8 +306,8 @@ describe("useAssistantTurn", () => {
   });
 });
 
-/** Routes fetch: the SSE turn to a done frame, the decision to a grant response. */
-function mockTurnThenDecision(grantActive: boolean) {
+/** Routes fetch: the SSE turn to a done frame, the decision to its response. */
+function mockTurnThenDecision() {
   return vi
     .spyOn(globalThis, "fetch")
     .mockImplementation(async (input, init) => {
@@ -347,12 +320,7 @@ function mockTurnThenDecision(grantActive: boolean) {
       if (url.endsWith("/decision")) {
         const body = JSON.parse((init?.body as string) ?? "{}");
         return new Response(
-          JSON.stringify({
-            tool_call_id: "call-1",
-            status: "approved",
-            grant_active:
-              body.decision === "allow_session" ? grantActive : false,
-          }),
+          JSON.stringify({ tool_call_id: "call-1", status: body.decision === "deny" ? "denied" : "approved" }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
@@ -360,72 +328,17 @@ function mockTurnThenDecision(grantActive: boolean) {
     });
 }
 
-describe("useAssistantTurn grant reset", () => {
-  it("tracks the grant from an allow_session decision in the panel", async () => {
-    mockTurnThenDecision(true);
+describe("useAssistantTurn decisions and threads", () => {
+  it("sends one decision per approval, with no conversation-wide grant", async () => {
+    const fetchMock = mockTurnThenDecision();
     const holder: { current: Turn | null } = { current: null };
-    const { getByRole } = await render(<PanelHarness holder={holder} />);
+    await render(<Harness holder={holder} />);
     await holder.current!.sendMessage("hi");
-
-    expect(holder.current!.grantActive).toBe(false);
-    await holder.current!.decide({
-      toolCallId: "call-1",
-      decision: "approve",
-      alwaysAllow: true,
-    });
-
-    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(true));
-    await expect
-      .element(getByRole("button", { name: "Reset permissions" }))
-      .not.toBeInTheDocument();
-  });
-
-  it("revokes the grant and clears its active state", async () => {
-    mockTurnThenDecision(true);
-    resetGrant.mockResolvedValue(undefined);
-    const holder: { current: Turn | null } = { current: null };
-    const { getByText, container } = await render(
-      <PanelHarness holder={holder} />,
-    );
-    await holder.current!.sendMessage("hi");
-    await holder.current!.decide({
-      toolCallId: "call-1",
-      decision: "approve",
-      alwaysAllow: true,
-    });
-    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(true));
-
-    await holder.current!.resetPermissions();
-
-    expect(resetGrant).toHaveBeenCalledWith("t-1");
-    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(false));
-    await expect
-      .element(getByText("Read-only queries are allowed in this conversation."))
-      .not.toBeInTheDocument();
-    expect(container.textContent).not.toContain("Reset permissions");
-  });
-
-  it("surfaces a failed reset instead of swallowing it", async () => {
-    mockTurnThenDecision(true);
-    resetGrant.mockRejectedValue(new Error("Thread not found"));
-    const onError = vi.fn();
-    const holder: { current: Turn | null } = { current: null };
-    const { getByText } = await render(
-      <PanelHarness holder={holder} onError={onError} />,
-    );
-    await holder.current!.sendMessage("hi");
-    await holder.current!.decide({
-      toolCallId: "call-1",
-      decision: "approve",
-      alwaysAllow: true,
-    });
-    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(true));
-
-    await holder.current!.resetPermissions();
-
-    await expect.element(getByText("Thread not found")).toBeInTheDocument();
-    expect(onError).toHaveBeenCalledWith("Thread not found");
-    expect(holder.current!.grantActive).toBe(true);
+    await holder.current!.decide({ toolCallId: "call-1", decision: "approve" });
+    const call = fetchMock.mock.calls.find(([input]) => String(input).endsWith("/decision"))!;
+    expect(JSON.parse(call[1]!.body as string)).toEqual({ decision: "allow_once" });
+    expect(holder.current).not.toHaveProperty("grantActive");
+    expect(holder.current).not.toHaveProperty("approvalMode");
   });
 
   it("switches to an existing thread and replays its stored messages", async () => {
@@ -493,108 +406,4 @@ describe("useAssistantTurn grant reset", () => {
     expect(container.textContent).not.toContain("previous question");
   });
 
-  it("revokes an active grant when starting a new chat", async () => {
-    resetGrant.mockResolvedValue(undefined);
-    mockTurnThenDecision(true);
-    const holder: { current: Turn | null } = { current: null };
-    await render(<Harness holder={holder} />);
-    await holder.current!.sendMessage("hi");
-    await holder.current!.decide({
-      toolCallId: "call-1",
-      decision: "approve",
-      alwaysAllow: true,
-    });
-    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(true));
-
-    holder.current!.startNewThread();
-
-    await vi.waitFor(() => expect(resetGrant).toHaveBeenCalledWith("t-1"));
-  });
-});
-
-describe("useAssistantTurn approval mode", () => {
-  it.each([
-    { classification: "read_only", status: "pending", expected: "ask" },
-    { classification: "read_only", status: "running", expected: "allow_read_only" },
-    { classification: "destructive", status: "pending", expected: "allow_read_only" },
-    { classification: "session_change", status: "pending", expected: "allow_read_only" },
-  ])("reflects $classification $status approval from the server", async ({ classification, status, expected }) => {
-    setGrant.mockResolvedValue(true);
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(sseResponse([
-      `event: tool_call\ndata: ${JSON.stringify({
-        tool_call_id: "call-1",
-        tool_name: "query_execute",
-        sql_preview: "SELECT 1",
-        classification,
-        status,
-      })}\n\n`,
-      'event: done\ndata: {"message_id":"m","finish_reason":"stop"}\n\n',
-    ]));
-    const holder: { current: Turn | null } = { current: null };
-    await render(<Harness holder={holder} />);
-    await holder.current!.setApprovalMode("allow_read_only");
-    await expect.poll(() => holder.current!.approvalMode).toBe("allow_read_only");
-
-    await holder.current!.sendMessage("Check the query");
-
-    await expect.poll(() => holder.current!.approvalMode).toBe(expected);
-  });
-
-  it("presets the conversation grant and reflects it in the mode", async () => {
-    setGrant.mockResolvedValue(true);
-    const holder: { current: Turn | null } = { current: null };
-    await render(<Harness holder={holder} />);
-    expect(holder.current!.approvalMode).toBe("ask");
-
-    await holder.current!.setApprovalMode("allow_read_only");
-
-    expect(setGrant).toHaveBeenCalledWith("t-1", true);
-    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(true));
-    expect(holder.current!.approvalMode).toBe("allow_read_only");
-  });
-
-  it("clears the grant when switching back to ask", async () => {
-    setGrant.mockResolvedValueOnce(true);
-    const holder: { current: Turn | null } = { current: null };
-    await render(<Harness holder={holder} />);
-    await holder.current!.setApprovalMode("allow_read_only");
-    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(true));
-
-    setGrant.mockResolvedValueOnce(false);
-    await holder.current!.setApprovalMode("ask");
-
-    expect(setGrant).toHaveBeenLastCalledWith("t-1", false);
-    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(false));
-    expect(holder.current!.approvalMode).toBe("ask");
-  });
-
-  it("leaves the mode unchanged and surfaces the error when persisting fails", async () => {
-    setGrant.mockRejectedValue(new Error("Not allowed"));
-    const onError = vi.fn();
-    const holder: { current: Turn | null } = { current: null };
-    await render(<Harness holder={holder} onError={onError} />);
-
-    await holder.current!.setApprovalMode("allow_read_only");
-
-    await vi.waitFor(() => expect(onError).toHaveBeenCalledWith("Not allowed"));
-    expect(holder.current!.grantActive).toBe(false);
-    expect(holder.current!.approvalMode).toBe("ask");
-  });
-
-  it("aborts the mode change when no thread can be resolved", async () => {
-    const onError = vi.fn();
-    const holder: { current: Turn | null } = { current: null };
-    await render(
-      <Harness
-        holder={holder}
-        ensureThread={async () => null}
-        onError={onError}
-      />,
-    );
-
-    await holder.current!.setApprovalMode("allow_read_only");
-
-    expect(setGrant).not.toHaveBeenCalled();
-    expect(onError).toHaveBeenCalled();
-  });
 });

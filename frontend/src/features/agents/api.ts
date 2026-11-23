@@ -1,4 +1,5 @@
 import { api, apiBase, authHeaders } from "@/lib/api-client";
+import type { HitlAnswerBody } from "@/features/studio/runtime/hitl/types";
 import { useAuthStore } from "@/stores/auth-store";
 import { readSseFrames } from "@/features/assistant/events";
 import type { WorkflowProvenance } from "@/features/assistant/types";
@@ -36,7 +37,8 @@ export type Agent = {
   harness_mode?: "auto" | "fast" | "guided" | "strict";
   /** Loop limits: "analyst" leaves room to drill down after the first result. */
   budget_profile?: "fast" | "analyst" | "deep";
-  policy: "auto_read_only" | "ask_every_tool";
+  /** Data queries always run as the user's role without asking; only actions ask. */
+  policy: "auto_read_only";
   semantic_model_id: string | null;
   /** Legacy bindings retained for responses created before Semantic Views. */
   semantic_model_ids: string[];
@@ -282,18 +284,17 @@ export const agentsApi = {
       `/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}`,
       { title },
     ),
-  decideToolCall: (
+  /** Answer a human-in-the-loop request of a running turn (approval, question, form, choice). */
+  answerInput: (
     agentId: string,
-    toolCallId: string,
-    decision: "allow_once" | "allow_session" | "deny",
+    threadId: string,
+    runId: string,
+    requestId: string,
+    body: HitlAnswerBody,
   ) =>
-    api.post<{
-      tool_call_id: string;
-      status: string;
-      grant_active: boolean;
-    }>(
-      `/agents/${encodeURIComponent(agentId)}/tool-calls/${encodeURIComponent(toolCallId)}/decision`,
-      { decision },
+    api.post<{ request_id: string; status: string }>(
+      `/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}/runs/${encodeURIComponent(runId)}/inputs/${encodeURIComponent(requestId)}`,
+      body,
     ),
 };
 

@@ -933,7 +933,10 @@ async def test_governed_lifecycle_survives_objective_separation_replay_and_next_
     assert {ident for kind, ident in j.repo.rows if kind == "comparisons"} == (
         comparison_ids_before_resume
     )
-    assert j.consent[-1] == ("resume-turn", "semantic_query", "read_only", "next-session")
+    # The resumed read is read-only: it runs without asking, so the last
+    # approval on record is still the denied action above.
+    assert j.consent[-1][0] == "resumed-action-denied"
+    assert not [entry for entry in j.consent if entry[0] == "resume-turn"]
     assert (
         event_payloads(resumed_turn, "evidence_envelope")[0]["payload"]["semantic"]
         == envelope["semantic"]

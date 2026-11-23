@@ -14,10 +14,12 @@ from __future__ import annotations
 import asyncio
 import threading
 from dataclasses import dataclass
-from typing import IO, Any
+from typing import IO, TYPE_CHECKING, Any, TypeAlias
 
 from app.core.exceptions import InvalidCredentialsError
-from app.modules.assistant.read_grants import stamp
+
+if TYPE_CHECKING:
+    from app.modules.assistant.human_input import HumanAnswer
 
 
 @dataclass(repr=False)
@@ -28,15 +30,44 @@ class ConsentApproval:
     upload: tuple[str, IO[bytes], str] | None = None
 
 
+Decision: TypeAlias = "bool | None | ConsentApproval | HumanAnswer"
+
+
+def stamp(user: dict[str, Any]) -> dict[str, Any] | None:
+    """The login a pending request belongs to: principal, role, version, session.
+
+    A request cannot be answered across a login or active-role boundary.
+    """
+    from app.modules.access_control.security_context import SecurityContext
+
+    try:
+        security = SecurityContext.from_session(user)
+    except (TypeError, ValueError):
+        return None
+    session_id = security.session_id
+    if not isinstance(session_id, str) or not session_id.strip() or len(session_id) > 64:
+        return None
+    return {
+        "principal": security.principal,
+        "role": security.active_role,
+        "version": security.security_context_version,
+        "session_id": session_id,
+    }
+
+
 @dataclass
 class _PendingConsent:
-    future: asyncio.Future[bool | None | ConsentApproval]
+    future: asyncio.Future[Decision]
     loop: asyncio.AbstractEventLoop
     thread_id: str
     identity: dict[str, Any]
     classification: str = "read_only"
     secure_fields: tuple[str, ...] = ()
     upload_required: bool = False
+    #: The run that asked; an answer posted for another run is refused.
+    run_id: str | None = None
+    #: The human-input request this entry waits on (``kind`` and its spec).
+    request: dict[str, Any] | None = None
 
 
 class ConsentConflictError(RuntimeError):
@@ -59,16 +90,14 @@ class ConsentBroker:
 
     The pending entry records the thread and the complete login identity:
 
-    * ``thread_id`` lets an ``allow_session`` decision set the grant on exactly
-      the conversation that asked — never on every thread the user owns (E2b).
+    * ``thread_id`` binds an answer to the conversation that asked.
     * The principal, login, active role and security version must all match. A caller who
       is not the thread's owner must not be able to approve or deny someone
       else's pending call (NOVA-70: the route previously resolved on
       ``tool_call_id`` alone, which is an IDOR — the id is model-supplied and
       not a secret).
-    * ``classification`` is the class the loop computed for the pending call, so
-      the decision route can validate an ``allow_session`` against it rather
-      than trusting the client (NOVA-122, spec §6.1).
+    * ``classification`` is the class the loop computed for the pending call;
+      the client's view of it is never trusted (NOVA-122, spec §6.1).
     """
 
     def __init__(self) -> None:
@@ -84,7 +113,9 @@ class ConsentBroker:
         classification: str = "read_only",
         secure_fields: tuple[str, ...] = (),
         upload_required: bool = False,
-    ) -> asyncio.Future[bool | None | ConsentApproval]:
+        run_id: str | None = None,
+        request: dict[str, Any] | None = None,
+    ) -> asyncio.Future[Decision]:
         """Register a pending decision and return the future to await.
 
         Raises:
@@ -97,7 +128,7 @@ class ConsentBroker:
         if identity is None:
             raise InvalidCredentialsError("Sign in again before requesting tool approval")
         loop = asyncio.get_running_loop()
-        future: asyncio.Future[bool | None | ConsentApproval] = loop.create_future()
+        future: asyncio.Future[Decision] = loop.create_future()
         with self._lock:
             if tool_call_id in self._pending:
                 raise ConsentConflictError(tool_call_id)
@@ -109,12 +140,14 @@ class ConsentBroker:
                 classification=classification,
                 secure_fields=secure_fields,
                 upload_required=upload_required,
+                run_id=run_id,
+                request=request,
             )
         future.add_done_callback(lambda completed: self._forget_completed(tool_call_id, completed))
         return future
 
     def _forget_completed(
-        self, tool_call_id: str, future: asyncio.Future[bool | None | ConsentApproval]
+        self, tool_call_id: str, future: asyncio.Future[Decision]
     ) -> None:
         with self._lock:
             pending = self._pending.get(tool_call_id)
@@ -128,6 +161,29 @@ class ConsentBroker:
         if pending is None or pending.identity != stamp(user):
             return None
         return pending.thread_id, pending.identity["principal"]
+
+    def request_for(
+        self, request_id: str, *, user: dict[str, Any], run_id: str, thread_id: str,
+    ) -> dict[str, Any] | None:
+        """The pending request ``request_id`` when this caller may answer it.
+
+        The caller's login, principal, active role and security-context version
+        must be the ones that opened it, and the run and conversation must match.
+        Anything else is ``None`` — indistinguishable from no request at all.
+        """
+        with self._lock:
+            pending = self._pending.get(request_id)
+        if (
+            pending is None
+            or pending.future.done()
+            or pending.identity != stamp(user)
+            or pending.run_id != run_id
+            or pending.thread_id != thread_id
+        ):
+            return None
+        if pending.request is not None:
+            return pending.request
+        return {"kind": "approval", "classification": pending.classification}
 
     def classification_of(self, tool_call_id: str) -> str | None:
         """The classification of a still-pending call, or ``None``."""
@@ -153,7 +209,7 @@ class ConsentBroker:
     def resolve(
         self,
         tool_call_id: str,
-        allowed: bool | None | ConsentApproval,
+        allowed: Decision,
         *,
         user: dict[str, Any],
     ) -> bool:
@@ -189,10 +245,7 @@ class ConsentBroker:
             self._pending.clear()
 
 
-def _set_future(
-    future: asyncio.Future[bool | None | ConsentApproval],
-    value: bool | None | ConsentApproval,
-) -> None:
+def _set_future(future: asyncio.Future[Decision], value: Decision) -> None:
     if not future.done():
         future.set_result(value)
 

@@ -143,7 +143,7 @@ async def test_agent_rule_blocks_a_call_before_consent_and_the_model_recovers(_a
     frames, context, asked = await _run(provider, tool, policy=POLICY)
 
     assert tool.calls == ["SELECT region, revenue FROM sales LIMIT 100"]
-    assert asked == ["query_execute"]  # the blocked call never reached consent
+    assert asked == []  # read-only: neither call asks; the blocked one never ran
     guard = _events(frames, "guard")
     assert [item["rule_id"] for item in guard] == ["no-select-star"]
     assert guard[0]["action"] == "blocked" and guard[0]["tool_call_id"] != "c1"

@@ -48,11 +48,6 @@ describe("agents api paths", () => {
     expect(requestedUrl()).toBe("/api/v1/agents/a%20b/threads/c%2Fd?limit=50");
   });
 
-  it("posts a tool-call decision to the agent-scoped path", async () => {
-    await agentsApi.decideToolCall("ag1", "tc1", "allow_session");
-    expect(requestedUrl()).toBe("/api/v1/agents/ag1/tool-calls/tc1/decision");
-  });
-
 });
 
 function sseResponse(frames: string, runId?: string) {

@@ -10,7 +10,6 @@ from fastapi import HTTPException
 from app.modules.agents import releases
 from app.modules.agents.tools.ai_search import AISearchTool
 from app.modules.agents.tools.intelligence_views import FeatureLookupTool
-from app.modules.assistant.read_grants import stamp
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import AssistantThread
 from app.modules.assistant.tools import ToolInvocation, ToolRegistry
@@ -132,17 +131,15 @@ async def feature_boundary(monkeypatch):
     return await resource_boundary("feature", monkeypatch)
 
 
-async def run_turn(boundary, provider, *, consent=None, grant=True, tools=None, context=None):
+async def run_turn(boundary, provider, *, consent=None, tools=None, context=None):
     registry = ToolRegistry()
     for tool in tools or [boundary.tool]:
         registry.register(tool)
     thread = AssistantThread("thread", "reader", "Pinned resources")
-    thread.consent.always_allow_read_only = grant
     context = context or LoopContext(
         "reader", user=deepcopy(USER), agent_id="agent",
         release_manifest=deepcopy(boundary.manifest), steps=[],
     )
-    thread.consent.granted_under = stamp(context.user) if grant else None
     return TurnResult(frames=[frame async for frame in AssistantLoop(
         provider=provider, registry=registry, system_prompt="test", iterative=True,
         max_iterations=3,
@@ -176,22 +173,18 @@ def assert_blocked(boundary, provider, result):
     boundary.data_read.assert_not_awaited()
 
 
-@pytest.mark.parametrize("phase", ["provider", "consent"])
-async def test_active_version_change_before_dispatch_is_terminal(boundary, phase):
+async def test_active_version_change_before_dispatch_is_terminal(boundary):
+    # Resource reads are read-only and never wait for consent, so the version
+    # can only change while the provider is answering.
     frozen = deepcopy(boundary.manifest)
     context = LoopContext("reader", user=deepcopy(USER), agent_id="agent",
                           release_manifest=deepcopy(frozen), steps=[])
-    provider = provider_for(
-        boundary, change=boundary.change_version if phase == "provider" else lambda: None,
-    )
+    provider = provider_for(boundary, change=boundary.change_version)
+    consent = AsyncMock(return_value=True)
 
-    async def consent(*args):
-        boundary.change_version()
-        return True
-
-    result = await run_turn(boundary, provider, consent=consent, grant=phase == "provider",
-                            context=context)
+    result = await run_turn(boundary, provider, consent=consent, context=context)
     assert_blocked(boundary, provider, result)
+    consent.assert_not_awaited()
     assert context.release_manifest == frozen
 
 

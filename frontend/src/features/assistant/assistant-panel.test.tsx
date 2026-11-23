@@ -221,11 +221,7 @@ describe("AssistantPanel", () => {
 
   it("does not show a permissions banner", async () => {
     const { getByRole } = await render(
-      <AssistantPanel
-        open
-        onOpenChange={() => {}}
-        approvalMode="allow_read_only"
-      />,
+      <AssistantPanel open onOpenChange={() => {}} />,
     );
     expect(
       getByRole("button", { name: "Reset permissions" }).query(),

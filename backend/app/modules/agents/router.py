@@ -96,9 +96,9 @@ from app.modules.agents.versions import (
     revision_id,
     validate_publication_dependencies,
 )
-from app.modules.assistant import events, read_grants
+from app.modules.assistant import events
 from app.modules.assistant.attachments import attachment_prompt
-from app.modules.assistant.consent import ConsentApproval, consent_broker
+from app.modules.assistant.consent import Decision, consent_broker
 from app.modules.assistant.context import ContextManager
 from app.modules.assistant.events_v2 import (
     FLUSH_EVENTS,
@@ -126,6 +126,7 @@ from app.modules.assistant.schemas import (
     AttachmentView,
     ConsentDecisionRequest,
     ConsentDecisionResponse,
+    HumanInputAnswerRequest,
     MessageFeedbackRequest,
     MessageView,
     ThreadCreateRequest,
@@ -2105,7 +2106,8 @@ async def _business_terms_note(text: str, user: dict, views: list[str]) -> str:
     return (
         "\n\n## Business terms with more than one meaning in this agent's business\n"
         + "\n".join(lines)
-        + "\nAsk the user which one they mean, naming the choices, before any query. "
+        + "\nAsk the user which one they mean, naming the choices, before any query "
+        "(with request_human_input when it is available). "
         "Do not pick one and do not say you will check."
     )
 
@@ -2161,17 +2163,6 @@ async def send_agent_message(
         title=thread_row["title"],
         workspace_file_id=thread_row.get("workspace_file_id"),
     )
-    await read_grants.apply(runtime, user, thread_id)
-    # Apply the agent's HITL policy to this conversation's consent holder. An
-    # ``auto_read_only`` agent pre-grants read-only tools so a business question
-    # does not stall waiting for an approval no client will send; a destructive
-    # call is still never covered (the grant is read-only-only), and
-    # ``ask_every_tool`` leaves the grant off so every call prompts.
-    # User-issued approval is restored only for this login and security context;
-    # the policy grant is recomputed each turn and is never stored as approval.
-    if agent.get("policy") == "auto_read_only":
-        runtime.consent.always_allow_read_only = True
-        runtime.consent.granted_under = read_grants.stamp(user)
     history = await assistant_repository.list_messages(thread_id, user_name=user_name)
     from app.modules.agents.personal_skills import SKILL_AUTHORING_PROMPT, is_skill_authoring
     from app.modules.assistant.tools import ToolRegistry
@@ -2412,16 +2403,30 @@ async def send_agent_message(
 
     def resolve_consent(
         invocation: ToolInvocation, classification: str
-    ) -> asyncio.Future[bool | None | ConsentApproval]:
+    ) -> asyncio.Future[Decision]:
         approval_user = dict(context.user or user)
         future = consent_broker.open(
             invocation.tool_call_id,
             thread_id=thread_id,
             user=approval_user,
             classification=classification,
+            run_id=run_id,
         )
 
         return future
+
+    def ask_human(request_id: str, request: dict) -> asyncio.Future:
+        # The same broker as approvals: only this login, role and security
+        # version may answer, and only for this run and conversation.
+        return consent_broker.open(
+            request_id,
+            thread_id=thread_id,
+            user=dict(context.user or user),
+            run_id=run_id,
+            request=request,
+        )
+
+    context.ask_human = ask_human
 
     interruption_reason: str | None = None
     # Protocol v2 (ordered parts): one encoder per run, shared by the turn and
@@ -2728,6 +2733,64 @@ async def send_agent_message(
     )
 
 
+@router.post("/{agent_id}/threads/{thread_id}/runs/{run_id}/inputs/{request_id}")
+async def answer_agent_input(
+    agent_id: str,
+    thread_id: str,
+    run_id: str,
+    request_id: str,
+    body: HumanInputAnswerRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Answer one human-in-the-loop request of a running turn.
+
+    Approvals take ``allow_once`` or ``deny``; questions, forms and choices take
+    ``answer`` with an ``answer`` payload, or ``decline``. The
+    request must still be pending for this run and conversation, under the
+    caller's login, active role and security-context version; anything else is
+    a 404 that does not reveal whether the request exists.
+    """
+    from app.modules.assistant import human_input
+
+    await _require_agent(agent_id, user, platform=True)
+    await _require_agent_thread(thread_id, agent_id, user["username"])
+    request = consent_broker.request_for(
+        request_id, user=user, run_id=run_id, thread_id=thread_id,
+    )
+    if request is None:
+        raise HTTPException(status_code=404, detail="This request is no longer waiting")
+
+    kind = request.get("kind")
+    approval_actions = {"allow_once", "deny"}
+    if (kind == "approval") != (body.action in approval_actions):
+        raise HTTPException(status_code=422, detail="That answer does not fit this request")
+
+    decision: object
+    status: str
+    if kind == "approval":
+        allowed = body.action == "allow_once"
+        decision = allowed
+        status = human_input.ALLOWED if allowed else human_input.DENIED
+    elif body.action == "decline":
+        decision = human_input.declined()
+        status = decision.status
+    else:
+        try:
+            decision = human_input.validate_answer(request, body.answer)
+        except human_input.HumanInputError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        status = decision.status
+    if not consent_broker.resolve(request_id, decision, user=user):
+        raise HTTPException(status_code=404, detail="This request is no longer waiting")
+    await write_audit_log(
+        event_type="AGENT_RUN", user_name=user["username"], action="HUMAN_INPUT",
+        object_type="AGENT_RUN", object_name=run_id, status="SUCCESS",
+        active_role=session_security(user).active_role, session_id=user.get("session_id"),
+        decision=f"{kind}:{status}",
+    )
+    return {"request_id": request_id, "status": status}
+
+
 @router.post("/{agent_id}/tool-calls/{tool_call_id}/decision")
 async def resolve_agent_tool_call(
     agent_id: str,
@@ -2735,36 +2798,14 @@ async def resolve_agent_tool_call(
     body: ConsentDecisionRequest,
     user: dict = Depends(get_current_user),
 ):
-    """Resolve a pending agent tool call with owner and grant validation."""
+    """Allow or deny a pending agent action, for its owner's own login only."""
     await _require_agent(agent_id, user, platform=True)
     owner = consent_broker.owner_of(tool_call_id, user=user)
     if owner is None or owner[1] != user["username"]:
         raise HTTPException(status_code=404, detail="Tool call not found")
-
-    thread_id, _owner_name = owner
-    runtime = thread_store.get(thread_id, user_name=user["username"])
-    if runtime is None:
-        raise HTTPException(status_code=404, detail="Tool call not found")
-
-    if body.decision == "deny":
-        resolved = consent_broker.resolve(tool_call_id, False, user=user)
-        return ConsentDecisionResponse(
-            tool_call_id=tool_call_id,
-            status="denied" if resolved else "cancelled",
-            grant_active=runtime.consent.covers("read_only", user=user),
-        )
-
-    if body.decision == "allow_session":
-        if consent_broker.classification_of(tool_call_id) != "read_only":
-            raise HTTPException(
-                status_code=400,
-                detail="allow_session is only valid for a read-only tool call",
-            )
-        await read_grants.grant(runtime, user, thread_id, True)
-
-    resolved = consent_broker.resolve(tool_call_id, True, user=user)
+    allowed = body.decision == "allow_once"
+    resolved = consent_broker.resolve(tool_call_id, allowed, user=user)
     return ConsentDecisionResponse(
         tool_call_id=tool_call_id,
-        status="approved" if resolved else "cancelled",
-        grant_active=runtime.consent.covers("read_only", user=user),
+        status=("approved" if allowed else "denied") if resolved else "cancelled",
     )

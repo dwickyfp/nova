@@ -21,7 +21,7 @@ import "@/styles/index.css";
  * The Studio transcript driven end to end against a scripted SSE stream.
  *
  * The unit tests cover the reducer; this covers the wiring: a real send, the
- * rail opening and collapsing, the SQL disclosure, the consent card resolving,
+ * rail opening and collapsing, the SQL disclosure, an approval request answered,
  * and the reconsider pass. Every assertion is a control that has to actually do
  * something, so a silent regression in the event plumbing fails here.
  */
@@ -98,7 +98,8 @@ const STREAM = v2Sse()([
 
 const CONSENT_STREAM = v2Sse()([
   'event: thinking\ndata: {"phase":"plan","text":"Understanding the request","status":"running"}\n\n',
-  'event: tool_call\ndata: {"tool_call_id":"c9","tool_name":"query_execute","sql_preview":"DROP TABLE sales.sku","classification":"destructive","status":"pending"}\n\n',
+  'event: tool_call\ndata: {"tool_call_id":"c9","tool_name":"schedule_automation","sql_preview":"Schedule the automation Weekly revenue every Monday","classification":"destructive","status":"pending"}\n\n',
+  'event: input_required\ndata: {"request_id":"c9","tool_call_id":"c9","expires_at":"2026-11-23T10:05:00+00:00","request":{"kind":"approval","title":"Allow this action?","classification":"destructive","reason":"changes_data","role":"ANALYST","action":"Schedule the automation Weekly revenue every Monday"}}\n\n',
 ].join(""));
 
 /**
@@ -177,7 +178,7 @@ function pendingConsentResponse(signal: AbortSignal | null | undefined): Respons
 }
 
 function mockFetch(
-  mode: "read_only" | "ask_every_tool" = "read_only",
+  mode: "read_only" | "pending_action" = "read_only",
   extended = false,
 ) {
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
@@ -208,7 +209,7 @@ function mockFetch(
       return new Response(String(init?.body), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     if (url.includes("/threads") && url.includes("/messages")) {
-      return mode === "ask_every_tool" ? pendingConsentResponse(init?.signal) : sseResponse(STREAM);
+      return mode === "pending_action" ? pendingConsentResponse(init?.signal) : sseResponse(STREAM);
     }
     // GET one thread returns the thread plus its messages, each carrying the
     // trace the loop recorded.
@@ -251,16 +252,12 @@ function mockFetch(
 }
 
 function renderStudio(
-  mode: "read_only" | "ask_every_tool" = "read_only",
+  mode: "read_only" | "pending_action" = "read_only",
   extended = false,
   activeThreadId: string | null = null,
   sampleQuestions = AGENT.sample_questions,
 ) {
-  const baseAgent =
-    mode === "ask_every_tool"
-      ? { ...AGENT, policy: "ask_every_tool" as const }
-      : AGENT;
-  const agent = { ...baseAgent, sample_questions: sampleQuestions };
+  const agent = { ...AGENT, sample_questions: sampleQuestions };
   mockFetch(mode, extended);
   const client = createTestClient({
     defaultOptions: { queries: { retry: false } },
@@ -415,7 +412,7 @@ it("keeps a direct provider-format failure visible after reload without resubmit
 });
 
 it("shows a storage interruption beside the partial answer and removes consent", async () => {
-  const screen = await renderStudio("ask_every_tool");
+  const screen = await renderStudio("pending_action");
   const fetch = vi.mocked(globalThis.fetch);
   const fallback = fetch.getMockImplementation()!;
   let stream: ReadableStreamDefaultController<Uint8Array> | undefined;
@@ -427,7 +424,8 @@ it("shows a storage interruption beside the partial answer and removes consent",
           stream = controller;
           controller.enqueue(new TextEncoder().encode(sse(
             'event: text_delta\ndata: {"text":"Partial answer from the agent."}\n\n'
-            + 'event: tool_call\ndata: {"tool_call_id":"read","tool_name":"query_execute","sql_preview":"SELECT 42","classification":"read_only","status":"pending"}\n\n',
+            + 'event: tool_call\ndata: {"tool_call_id":"act","tool_name":"schedule_automation","sql_preview":"Schedule the automation Weekly revenue","classification":"destructive","status":"pending"}\n\n'
+            + 'event: input_required\ndata: {"request_id":"act","tool_call_id":"act","expires_at":"2026-11-23T10:05:00+00:00","request":{"kind":"approval","title":"Allow this action?","classification":"destructive","reason":"changes_data","role":"ANALYST","action":"Schedule the automation Weekly revenue"}}\n\n',
           )));
         },
       }), { headers: { "Content-Type": "text/event-stream" } });
@@ -445,8 +443,10 @@ it("shows a storage interruption beside the partial answer and removes consent",
   await expect.element(screen.getByText("Partial answer from the agent.")).toBeVisible();
   await expect.element(screen.getByText("The run stopped because its progress could not be saved.")).toBeVisible();
   await expect.element(screen.getByRole("button", { name: "Allow once" })).not.toBeInTheDocument();
+  // The approval the run was waiting on stays in place, closed.
+  await expect.element(screen.getByText("Stopped before you answered")).toBeVisible();
   await expect.element(screen.getByRole("button", { name: "Stop", exact: true })).not.toBeInTheDocument();
-  expect(fetch.mock.calls.filter(([url]) => String(url).endsWith("/decision"))).toHaveLength(0);
+  expect(fetch.mock.calls.filter(([url]) => String(url).includes("/inputs/"))).toHaveLength(0);
 });
 
 it("preserves the draft when the user switches agents", async () => {
@@ -1060,8 +1060,8 @@ describe("studio transcript click-through", () => {
     await expect.element(page.getByText("Omzet per SKU")).toBeVisible();
   });
 
-  it("shows a consent card for an ask_every_tool agent and resolves it", async () => {
-    await renderStudio("ask_every_tool");
+  it("asks for approval inline for an action and sends the decision to the run", async () => {
+    await renderStudio("pending_action");
     await page
       .getByPlaceholder("Ask a question about your data")
       .fill("Top SKUs");
@@ -1071,19 +1071,16 @@ describe("studio transcript click-through", () => {
     await expect.element(allow).toBeVisible();
     await allow.click();
 
-    // The card is replaced by a rail row recording the decision.
-    await expect
-      .element(page.getByRole("button", { name: "Allow once" }))
-      .not.toBeInTheDocument();
-    await expect
-      .element(page.getByText("Approved query_execute"))
-      .toBeVisible();
+    // The card waits for the run to confirm; the decision went to this run.
+    await expect.element(page.getByText("Sending your answer…")).toBeVisible();
+    await expect.element(page.getByText("Changes data", { exact: true })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Allow for this chat" })).not.toBeInTheDocument();
     await expect.element(page.getByText("The agent run ended before completion")).not.toBeInTheDocument();
     const decisions = vi.mocked(globalThis.fetch).mock.calls.filter(([url]) =>
-      String(url).endsWith("/tool-calls/c9/decision"),
+      String(url).endsWith("/threads/t1/runs/run-1/inputs/c9"),
     );
     expect(decisions).toHaveLength(1);
-    expect(JSON.parse(String(decisions[0][1]?.body))).toMatchObject({ decision: "allow_once" });
+    expect(JSON.parse(String(decisions[0][1]?.body))).toEqual({ action: "allow_once" });
   });
 
   it("keeps the composer controls keyboard reachable", async () => {

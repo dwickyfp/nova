@@ -24,7 +24,7 @@ import {
   type NevaSuggestedAction,
 } from "./surface-registry";
 import { useAssistantConversation } from "./use-assistant-conversation";
-import type { ApprovalMode, UiAction } from "./use-assistant-turn";
+import type { UiAction } from "./use-assistant-turn";
 import type { AssistantPanelProps } from "./assistant-panel";
 import type { SentFile } from "./stream-client";
 import type { UiAction as UiBlockAction } from "@/features/studio/intelligent-ui/types";
@@ -106,11 +106,6 @@ type AssistantContextType = {
   /** Model pinned for the next turn; persisted across the session. */
   selectedModel: SelectedModel;
   setSelectedModel: (model: SelectedModel) => void;
-  /** How the next read-only query is approved: a card, or the conversation grant. */
-  approvalMode: ApprovalMode;
-  setApprovalMode: (mode: ApprovalMode) => Promise<void>;
-  /** True while an approval-mode change is being persisted. */
-  settlingApprovalMode: boolean;
   /** True while an existing thread's messages are being fetched. */
   loadingThread: boolean;
   /** Switches the conversation to an existing thread. */
@@ -448,9 +443,6 @@ export function AssistantProvider({ children, loadWorkspaceDefaults = true }: {
       setProposedRewrite,
       selectedModel,
       setSelectedModel,
-      approvalMode: conversation.approvalMode,
-      setApprovalMode: conversation.setApprovalMode,
-      settlingApprovalMode: conversation.settlingGrant,
       loadingThread: conversation.loadingThread,
       openThread,
       newChat,
@@ -570,9 +562,6 @@ export function useAssistantPanelProps(): AssistantPanelProps {
       statusMessage: conversation.statusMessage,
       selectedModel,
       onSelectModel: setSelectedModel,
-      approvalMode: conversation.approvalMode,
-      onSelectApprovalMode: conversation.setApprovalMode,
-      settlingApprovalMode: conversation.settlingGrant,
       onNewChat: newChat,
       onOpenThread: openThread,
       activeThreadId: conversation.threadId,

@@ -77,9 +77,54 @@ Under each answer:
 The token count next to the buttons (for example "13,189 tokens") is how much
 AI model work the answer used.
 
-Tool approvals belong to the login and active role that requested them. After
-switching roles or signing in again, start a new request to approve a tool. A
-pending approval cannot be accepted from another login, even for the same account.
+## When the agent asks you
+
+Sometimes the agent stops and asks you something before it continues. The
+request appears in the answer, in the place where the agent stopped, and waits
+for you. Only you can answer it: other people, and you under another role or
+another sign-in, cannot.
+
+| Card | What it asks | How to answer |
+| --- | --- | --- |
+| **Approval needed** | Permission to take an action that changes something | **Allow once** or **Deny** |
+| **Question** | Which of a few things you mean | Click a suggested answer, or type in **Your answer** and press **Enter** |
+| **Details needed** | A few values, such as a period or a region | Fill in the fields and click **Continue** |
+| **Choose one** | Which of a few approaches to take | Pick a card (the agent may mark one **Suggested**) and click **Continue with this option** |
+
+On a question, form or choice, **Skip, let the agent assume** lets the agent
+continue with its own assumption, which it states in the answer.
+
+### Approve an action
+
+Questions about your data run without asking. The agent reads only what your
+active role may read, so there is nothing to approve. Statements that would
+change data are never run from a question.
+
+An action that changes something always asks first: for example scheduling an
+automation, calling an outside tool, creating an agent or a semantic model,
+changing a Dataviz dashboard or a definition, or switching your role. The card
+says what the action does, the role it runs as, and why it asks.
+
+- **Allow once** takes this action.
+- **Deny** stops this action; the agent continues without it.
+
+Each approval covers one action. The next action asks again.
+
+### After you answer
+
+The card closes to one line, such as "You chose: By month" or "You allowed this
+action". Click the line to see what was asked. The same line appears when you
+open the conversation again from **History**.
+
+A request waits up to 10 minutes; after that it shows "The request expired".
+Clicking **Stop** while a request is waiting closes it as "Stopped before you
+answered". An agent asks at most four times per answer, and never asks during
+scheduled automations, where nobody is there to answer.
+
+Approvals belong to the login and active role that requested them. After
+switching roles or signing in again, start a new request to approve an action. A
+pending request cannot be answered from another login, even for the same
+account.
 
 ## Limits and errors
 
@@ -93,8 +138,8 @@ pending approval cannot be accepted from another login, even for the same accoun
 - One agent answers each question. Studio does not hand a question from one
   agent to another.
 - If the agent asks which metric you mean (for example two metrics with the
-  same name in different areas), answer in the next message with the one you
-  want.
+  same name in different areas) in its answer text rather than in a card,
+  answer in the next message with the one you want.
 - "The agent run stopped. Review saved steps before retrying." means the run
   was interrupted. Open the conversation again from **History**: anything the
   agent saved is shown. Check the results of any actions before asking again.
@@ -104,6 +149,6 @@ pending approval cannot be accepted from another login, even for the same accoun
   does not mean an action failed.
 - "The run stopped because its progress could not be saved." means Nova
   stopped the agent after a storage problem. A partial answer may remain on
-  screen. Pending approvals close, and an unfinished tool is marked **Result
+  screen. Waiting requests close, and an unfinished tool is marked **Result
   not confirmed**. Review **History** and check any actions before trying
   again; an action may have completed even if its result could not be saved.

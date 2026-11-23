@@ -119,7 +119,7 @@ async def test_benchmark_tool_round_trip():
 async def test_benchmark_consent_auto_approve():
     """Read-only grant: the gate is skipped, no tool_call frame is emitted."""
     loop = _tool_loop()
-    granted = thread(read_only_grant=True)
+    granted = thread()
     result = await measure(
         lambda: drain(loop, thread_=granted, content="run it"),
         iterations=500,
@@ -202,7 +202,7 @@ async def test_benchmark_iteration_cap_termination():
         max_iterations=8,
     )
     result = await measure(
-        lambda: drain(loop, thread_=thread(read_only_grant=True), content="loop"),
+        lambda: drain(loop, thread_=thread(), content="loop"),
         iterations=300,
     )
     _print("iteration_cap_termination", result)

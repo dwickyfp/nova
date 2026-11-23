@@ -8,7 +8,6 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { ToolCallView, ToolCallStatus } from "./types";
@@ -60,7 +59,6 @@ const TOOL_LABEL: Record<string, string> = {
 export type ToolCallDecision = {
   toolCallId: string;
   decision: "approve" | "deny";
-  alwaysAllow: boolean;
   secureInput?: { password: string };
   uploadFile?: File;
 };
@@ -80,11 +78,9 @@ export function ToolCallCard({
   onDecide,
   busy,
 }: ToolCallCardProps) {
-  const [alwaysAllow, setAlwaysAllow] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const canOfferAlwaysAllow = toolCall.classification === "read_only";
   const needsPassword = toolCall.tool_name === "provision_user";
   const needsFile =
     toolCall.tool_name === "call_ui_operation" &&
@@ -126,7 +122,6 @@ export function ToolCallCard({
     onDecide?.({
       toolCallId,
       decision,
-      alwaysAllow: alwaysAllow && canOfferAlwaysAllow,
       ...(decision === "approve" && needsPassword && passwordField
         ? { secureInput: { password: passwordField.value } }
         : {}),
@@ -252,16 +247,6 @@ export function ToolCallCard({
                 disabled={busy}
                 onChange={(event) => event.currentTarget.setCustomValidity("")}
               />
-            </label>
-          ) : null}
-          {canOfferAlwaysAllow ? (
-            <label className="flex min-h-11 cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-              <Checkbox
-                checked={alwaysAllow}
-                onCheckedChange={(value) => setAlwaysAllow(value === true)}
-                disabled={busy}
-              />
-              Always allow read-only queries in this conversation
             </label>
           ) : null}
           <div className="flex items-center gap-2">

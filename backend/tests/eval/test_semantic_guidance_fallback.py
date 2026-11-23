@@ -34,7 +34,7 @@ async def test_natural_guidance_runs_through_consent_and_returns_grounded_result
             resolve_consent=consent,
         )
     ]
-    assert prompts == [("semantic_query", "read_only")]
+    assert prompts == []  # read-only: it runs without asking
     planner.complete.assert_awaited_once()
     execute.assert_awaited_once()
     sql = execute.call_args.kwargs["sql"]

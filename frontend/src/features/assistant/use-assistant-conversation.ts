@@ -54,10 +54,7 @@ type ConversationStore = {
   turns: Record<string, AssistantTurnSnapshot>;
 };
 
-const EMPTY_TURNS: AssistantTurnSnapshot = {
-  threadId: null,
-  grantActive: false,
-};
+const EMPTY_TURNS: AssistantTurnSnapshot = { threadId: null };
 
 /**
  * The store-agnostic seam between a conversation surface and the turn driver.
@@ -173,13 +170,11 @@ export function useAssistantConversation({
     onUiActionCompleted,
     transcript,
   });
-  const { snapshot, restore, resetPermissions } = assistant;
+  const { snapshot, restore } = assistant;
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
   const restoreRef = useRef(restore);
   restoreRef.current = restore;
-  const resetGrantRef = useRef(resetPermissions);
-  resetGrantRef.current = resetPermissions;
 
   useEffect(() => {
     const previous = keyRef.current;
@@ -200,17 +195,11 @@ export function useAssistantConversation({
       return;
     }
 
-    // Closing the outgoing conversation: drop its transcript and, when it held
-    // a grant, revoke it. The revoke runs before the restore so it targets the
-    // outgoing thread, not the one being restored. Fire-and-forget, mirroring
-    // the workspace behaviour.
+    // Closing the outgoing conversation: drop its transcript.
     const nextMessages = { ...saved.messages };
     delete nextMessages[leaving];
     const nextTurns = { ...saved.turns };
     delete nextTurns[leaving];
-    if (leaveSnapshot.grantActive) {
-      void resetGrantRef.current();
-    }
     setStore({ messages: nextMessages, turns: nextTurns });
     restoreRef.current(saved.turns[bindingKey ?? ""] ?? EMPTY_TURNS);
   }, [bindingKey]);

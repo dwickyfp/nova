@@ -39,8 +39,10 @@ async def test_draft_repairs_syntax_without_consent_or_execution():
         turn_plan={"intent": "sql_authoring", "tools": ["validate_sql"],
                    "required_tools": [], "skills": [], "ml_task": None},
         script=[
-            tool_call_frame("invalid", name="validate_sql", arguments={"sql": "GRANT ROLE analyst TO USER 'alice'"}),
-            tool_call_frame("valid", name="validate_sql", arguments={"sql": "GRANT analyst TO USER 'alice'"}),
+            tool_call_frame("invalid", name="validate_sql",
+                            arguments={"sql": "GRANT ROLE analyst TO USER 'alice'"}),
+            tool_call_frame("valid", name="validate_sql",
+                            arguments={"sql": "GRANT analyst TO USER 'alice'"}),
             text_frame("```sql\nGRANT analyst TO USER 'alice';\n```"),
         ],
     ))
@@ -51,11 +53,11 @@ async def test_draft_repairs_syntax_without_consent_or_execution():
 
 
 @pytest.mark.asyncio
-async def test_write_requires_approval_even_with_read_only_grant():
+async def test_a_write_requires_approval():
     result = await run_scenario(Scenario(
         name="typed_write", content="Run the insert", tools=[TrackedWrite()],
-        read_only_grant=True,
-        script=[tool_call_frame("write", name="query_mutate", arguments={"sql": "INSERT INTO t VALUES(1)"}),
+        script=[tool_call_frame("write", name="query_mutate",
+                                arguments={"sql": "INSERT INTO t VALUES(1)"}),
                 text_frame("Insert completed.")],
     ))
     assert result.consent_prompts == [("query_mutate", "destructive")]
@@ -71,7 +73,8 @@ async def test_denied_write_never_runs():
     result = await run_scenario(Scenario(
         name="typed_write_denied", content="Delete row 1", tools=[TrackedWrite()],
         resolve_consent=deny,
-        script=[tool_call_frame("write", name="query_mutate", arguments={"sql": "DELETE FROM t WHERE id=1"})],
+        script=[tool_call_frame("write", name="query_mutate",
+                                arguments={"sql": "DELETE FROM t WHERE id=1"})],
     ))
     assert result.tool_runs == []
     assert result.finish_reason == "denied"
@@ -81,7 +84,8 @@ async def test_denied_write_never_runs():
 async def test_protected_role_rejected_before_execution():
     result = await run_scenario(Scenario(
         name="typed_protected_role", content="Drop ACCOUNTADMIN", tools=[TrackedWrite()],
-        script=[tool_call_frame("write", name="query_mutate", arguments={"sql": "DROP ROLE ACCOUNTADMIN"})],
+        script=[tool_call_frame("write", name="query_mutate",
+                                arguments={"sql": "DROP ROLE ACCOUNTADMIN"})],
     ))
     assert result.tool_runs == []
     assert result.consent_prompts == []
@@ -109,7 +113,8 @@ async def test_protected_password_is_transient_and_never_model_input():
     result = await run_scenario(Scenario(
         name="typed_secure_user", content="Create user alice role analyst",
         tools=[SecureProvision()], resolve_consent=approve,
-        script=[tool_call_frame("create", name="provision_user", arguments={"username": "alice", "role": "analyst"}),
+        script=[tool_call_frame("create", name="provision_user",
+                                arguments={"username": "alice", "role": "analyst"}),
                 text_frame("User created; password change required.")],
     ))
     assert result.tool_runs == ["provision_user"]

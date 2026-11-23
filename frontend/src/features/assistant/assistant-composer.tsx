@@ -2,7 +2,6 @@ import { useRef, useState } from "react";
 import { ArrowUp, FileCode, FileText, ImageIcon, Info, Plus, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ApprovalModeSelector } from "./approval-mode-selector";
 import type { SelectedModel } from "./assistant-provider";
 import { ModelSelector } from "./model-selector";
 import {
@@ -13,7 +12,6 @@ import {
 } from "@/features/studio/studio-attachments";
 import type { SentFile } from "./stream-client";
 import type { AttachedQuery } from "./query-attach";
-import type { ApprovalMode } from "./use-assistant-turn";
 
 export type AssistantComposerProps = {
   onSendMessage?: (message: string, files?: SentFile[]) => void;
@@ -23,11 +21,6 @@ export type AssistantComposerProps = {
   disabled?: boolean;
   selectedModel?: SelectedModel;
   onSelectModel?: (model: SelectedModel) => void;
-  /** How the next read-only query is approved; null hides the selector. */
-  approvalMode?: ApprovalMode;
-  onSelectApprovalMode?: (mode: ApprovalMode) => void;
-  /** True while an approval-mode change is being persisted. */
-  settlingApprovalMode?: boolean;
   /** Queries attached from the workspace, shown as badges above the textarea. */
   attachments?: AttachedQuery[];
   onRemoveAttachment?: (id: string) => void;
@@ -35,7 +28,7 @@ export type AssistantComposerProps = {
 
 /**
  * The message composer. A single bordered card holds the auto-growing textarea
- * and a footer row with the model and approval-mode selectors and the send/stop
+ * and a footer row with the model selector and the send/stop
  * control, matching the familiar "prompt box" shape rather than a bare textarea
  * beside a button. The textarea uses `field-sizing-content`, so it grows with
  * the message up to a cap and then scrolls. Attached queries appear as removable
@@ -49,9 +42,6 @@ export function AssistantComposer({
   disabled,
   selectedModel,
   onSelectModel,
-  approvalMode,
-  onSelectApprovalMode,
-  settlingApprovalMode,
   attachments,
   onRemoveAttachment,
 }: AssistantComposerProps) {
@@ -232,15 +222,6 @@ export function AssistantComposer({
             <ModelSelector
               selected={selectedModel ?? null}
               onSelect={onSelectModel}
-              disabled={disabled || streaming}
-              align="start"
-            />
-          ) : null}
-          {onSelectApprovalMode && approvalMode ? (
-            <ApprovalModeSelector
-              selected={approvalMode}
-              onSelect={onSelectApprovalMode}
-              settling={settlingApprovalMode}
               disabled={disabled || streaming}
               align="start"
             />

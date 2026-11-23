@@ -7,14 +7,11 @@ import { useWorkspaceAssistant } from "./use-workspace-assistant";
 
 const createThread = vi.fn();
 const streamAssistantTurn = vi.fn();
-const resetGrant = vi.fn();
 
 vi.mock("./thread-client", () => ({
   createThread: (...args: unknown[]) => createThread(...args),
   getThread: vi.fn(),
   listThreads: vi.fn(async () => ({ threads: [], count: 0 })),
-  resetGrant: (...args: unknown[]) => resetGrant(...args),
-  setGrant: vi.fn(async () => true),
   searchThreads: vi.fn(async () => ({ threads: [], count: 0 })),
   renameThread: vi.fn(),
   deleteThread: vi.fn(),
@@ -78,47 +75,9 @@ function PanelHarness({
   );
 }
 
-/** Routes fetch: the SSE turn to a done frame, the decision to a grant response. */
-function mockTurnThenSessionGrant() {
-  return vi
-    .spyOn(globalThis, "fetch")
-    .mockImplementation(async (input, init) => {
-      const url = String(input);
-      if (url.endsWith("/messages")) {
-        const body = new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.enqueue(
-              new TextEncoder().encode(
-                'event: done\ndata: {"message_id":"m","finish_reason":"stop"}\n\n',
-              ),
-            );
-            controller.close();
-          },
-        });
-        return new Response(body, {
-          status: 200,
-          headers: { "Content-Type": "text/event-stream" },
-        });
-      }
-      if (url.endsWith("/decision")) {
-        const body = JSON.parse((init?.body as string) ?? "{}");
-        return new Response(
-          JSON.stringify({
-            tool_call_id: "call-1",
-            status: "approved",
-            grant_active: body.decision === "allow_session",
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
-      }
-      return new Response(null, { status: 204 });
-    });
-}
-
 afterEach(() => {
   createThread.mockReset();
   streamAssistantTurn.mockReset();
-  resetGrant.mockReset();
 });
 
 function echoStream() {
@@ -195,184 +154,33 @@ describe("useWorkspaceAssistant", () => {
   });
 });
 
-describe("useWorkspaceAssistant grant lifecycle across files", () => {
-  it("revokes the previous conversation grant when the active file changes", async () => {
+describe("useWorkspaceAssistant thread lifecycle across files", () => {
+  it("returns to the file's own thread after a switch", async () => {
     createThread.mockResolvedValueOnce({ thread_id: "thread-a" });
     createThread.mockResolvedValueOnce({ thread_id: "thread-b" });
-    mockTurnThenSessionGrant();
-    resetGrant.mockResolvedValue(undefined);
+    echoStream();
     const holder: { current: Assistant | null } = { current: null };
     const view = await render(<PanelHarness holder={holder} fileId="file-1" />);
 
     await holder.current!.sendMessage("hi");
-    await holder.current!.decide({
-      toolCallId: "call-1",
-      decision: "approve",
-      alwaysAllow: true,
-    });
-    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(true));
-
     await view.rerender(<PanelHarness holder={holder} fileId="file-2" />);
-
-    await vi.waitFor(() => expect(resetGrant).toHaveBeenCalledWith("thread-a"));
-    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(false));
-    await expect
-      .element(
-        view.getByText("Read-only queries are allowed in this conversation."),
-      )
-      .not.toBeInTheDocument();
-  });
-
-  it("reuses the file thread for the next send after a switch, with no grant carried over", async () => {
-    createThread.mockResolvedValueOnce({ thread_id: "thread-a" });
-    createThread.mockResolvedValueOnce({ thread_id: "thread-b" });
-    mockTurnThenSessionGrant();
-    resetGrant.mockResolvedValue(undefined);
-    const holder: { current: Assistant | null } = { current: null };
-    const view = await render(<PanelHarness holder={holder} fileId="file-1" />);
-
-    await holder.current!.sendMessage("hi");
-    await holder.current!.decide({
-      toolCallId: "call-1",
-      decision: "approve",
-      alwaysAllow: true,
-    });
-    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(true));
-
-    await view.rerender(<PanelHarness holder={holder} fileId="file-2" />);
-    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(false));
-
     await view.rerender(<PanelHarness holder={holder} fileId="file-1" />);
-    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(false));
 
-    echoStream();
     await holder.current!.sendMessage("again");
-    expect(streamAssistantTurn).toHaveBeenLastCalledWith(
-      "thread-a",
-      "again",
-      expect.anything(),
-    );
+    expect(streamAssistantTurn).toHaveBeenLastCalledWith("thread-a", "again", expect.anything());
   });
 
-  it("clears the stale conversation on switch even when the revoke fails, and the next send opens a new thread", async () => {
+  it("sends from a newly opened file into its own new thread", async () => {
     createThread.mockResolvedValueOnce({ thread_id: "thread-a" });
     createThread.mockResolvedValueOnce({ thread_id: "thread-b" });
-    mockTurnThenSessionGrant();
-    resetGrant.mockRejectedValue(new Error("Network unreachable"));
-    const onError = vi.fn();
-    const holder: { current: Assistant | null } = { current: null };
-    const view = await render(
-      <PanelHarness holder={holder} fileId="file-1" onError={onError} />,
-    );
-
-    await holder.current!.sendMessage("hi");
-    await holder.current!.decide({
-      toolCallId: "call-1",
-      decision: "approve",
-      alwaysAllow: true,
-    });
-    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(true));
-
-    await view.rerender(
-      <PanelHarness holder={holder} fileId="file-2" onError={onError} />,
-    );
-
-    await vi.waitFor(() => expect(resetGrant).toHaveBeenCalledWith("thread-a"));
-    await vi.waitFor(() => expect(holder.current!.threadId).toBeNull());
-    expect(holder.current!.grantActive).toBe(false);
-    expect(holder.current!.messages.map((message) => message.content)).toEqual([
-      "Network unreachable",
-    ]);
-    expect(onError).toHaveBeenCalledWith("Network unreachable");
-
     echoStream();
-    await holder.current!.sendMessage("sent-on-file-2");
-
-    expect(streamAssistantTurn).toHaveBeenLastCalledWith(
-      "thread-b",
-      "sent-on-file-2",
-      expect.anything(),
-    );
-  });
-
-  it("sends from the new file into the new thread while the old revoke is still in flight", async () => {
-    createThread.mockResolvedValueOnce({ thread_id: "thread-a" });
-    createThread.mockResolvedValueOnce({ thread_id: "thread-b" });
-    mockTurnThenSessionGrant();
-    let releaseRevoke: () => void = () => {};
-    resetGrant.mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          releaseRevoke = resolve;
-        }),
-    );
     const holder: { current: Assistant | null } = { current: null };
     const view = await render(<PanelHarness holder={holder} fileId="file-1" />);
 
     await holder.current!.sendMessage("hi");
-    await holder.current!.decide({
-      toolCallId: "call-1",
-      decision: "approve",
-      alwaysAllow: true,
-    });
-    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(true));
-
     await view.rerender(<PanelHarness holder={holder} fileId="file-2" />);
-    await vi.waitFor(() => expect(resetGrant).toHaveBeenCalledWith("thread-a"));
-
-    expect(holder.current!.threadId).toBeNull();
-    expect(holder.current!.grantActive).toBe(false);
-
-    echoStream();
-    await holder.current!.sendMessage("sent-on-file-2-during-flight");
-
-    expect(streamAssistantTurn).toHaveBeenLastCalledWith(
-      "thread-b",
-      "sent-on-file-2-during-flight",
-      expect.anything(),
-    );
-    const lastCall =
-      streamAssistantTurn.mock.calls[streamAssistantTurn.mock.calls.length - 1];
-    expect(lastCall[0]).not.toBe("thread-a");
-
-    releaseRevoke();
-    await vi.waitFor(() => expect(holder.current!.threadId).toBe("thread-b"));
-  });
-
-  it("clears the stale conversation on switch when the revoke answers 404", async () => {
-    createThread.mockResolvedValueOnce({ thread_id: "thread-a" });
-    createThread.mockResolvedValueOnce({ thread_id: "thread-b" });
-    mockTurnThenSessionGrant();
-    resetGrant.mockResolvedValue(undefined);
-    const onError = vi.fn();
-    const holder: { current: Assistant | null } = { current: null };
-    const view = await render(
-      <PanelHarness holder={holder} fileId="file-1" onError={onError} />,
-    );
-
-    await holder.current!.sendMessage("hi");
-    await holder.current!.decide({
-      toolCallId: "call-1",
-      decision: "approve",
-      alwaysAllow: true,
-    });
-    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(true));
-
-    await view.rerender(
-      <PanelHarness holder={holder} fileId="file-2" onError={onError} />,
-    );
-
-    await vi.waitFor(() => expect(holder.current!.threadId).toBeNull());
-    expect(holder.current!.grantActive).toBe(false);
-    expect(holder.current!.messages).toHaveLength(0);
-
-    echoStream();
     await holder.current!.sendMessage("sent-on-file-2");
 
-    expect(streamAssistantTurn).toHaveBeenLastCalledWith(
-      "thread-b",
-      "sent-on-file-2",
-      expect.anything(),
-    );
+    expect(streamAssistantTurn).toHaveBeenLastCalledWith("thread-b", "sent-on-file-2", expect.anything());
   });
 });

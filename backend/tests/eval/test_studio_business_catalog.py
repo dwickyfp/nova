@@ -84,7 +84,7 @@ async def test_an_analyst_turn_keeps_the_analysis_tools_its_owner_enabled(monkey
     result = TurnResult(frames=[frame async for frame in AssistantLoop(
         provider=provider, registry=registry, system_prompt="Finance", max_iterations=8,
         iterative=True,
-    ).run(thread=thread(read_only_grant=True), user_content="Forecast expense next month",
+    ).run(thread=thread(), user_content="Forecast expense next month",
           context=context, resolve_consent=AsyncMock(return_value=False))])
     assert result.finish_reason == "stop", result.error_codes
     assert len(query.runs) == 1 and len(ml.runs) == 1
@@ -118,7 +118,7 @@ async def test_the_model_is_shown_the_rows_it_is_asked_to_write_about():
     result = TurnResult(frames=[frame async for frame in AssistantLoop(
         provider=provider, registry=registry, system_prompt="Finance", max_iterations=6,
         iterative=True,
-    ).run(thread=thread(read_only_grant=True), user_content="Total expense?",
+    ).run(thread=thread(), user_content="Total expense?",
           context=LoopContext("reader", agent_id="finance"),
           resolve_consent=AsyncMock(return_value=False))])
     assert result.finish_reason == "stop", result.error_codes

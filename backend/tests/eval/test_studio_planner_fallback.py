@@ -42,7 +42,6 @@ async def run(question, *, studio=True, views=True):
         context.agent_scope = {"agent": "Sales"}
         context.authorized_semantic_models = [{"_scoped_ir": bench_model()}] if views else []
     thread = AssistantThread(thread_id="fallback", user_name="alice", title="Eval")
-    thread.consent.always_allow_read_only = True
     frames = [
         frame async for frame in AssistantLoop(provider=provider, registry=registry).run(
             thread=thread, user_content=question, context=context, resolve_consent=allow,

@@ -85,7 +85,7 @@ async def test_action_trajectory_requires_per_call_consent_even_with_read_grant(
                 system_prompt="test",
             ).run(
                 thread=AssistantThread(
-                    "action-thread", "alice", "Business", consent=ConsentPolicy(True)
+                    "action-thread", "alice", "Business", consent=ConsentPolicy()
                 ),
                 user_content="Execute the reviewed monitor action",
                 context=LoopContext("alice", user=USER, thread_id="action-thread"),

@@ -37,7 +37,7 @@ async def test_child_coordination_message_arrives_before_next_model_call() -> No
     registry = ToolRegistry()
     registry.register(tool)
     loop = AssistantLoop(provider=provider, registry=registry, system_prompt="Specialist")
-    child_thread = thread(read_only_grant=True)
+    child_thread = thread()
 
     async def checkpoint() -> list[str]:
         ready = list(mailbox)

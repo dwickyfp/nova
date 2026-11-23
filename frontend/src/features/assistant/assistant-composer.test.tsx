@@ -50,24 +50,11 @@ describe("AssistantComposer", () => {
     expect(onStop).toHaveBeenCalledTimes(1);
   });
 
-  it("shows the approval mode and reports a change", async () => {
-    const onSelectApprovalMode = vi.fn();
-    const { getByRole } = await render(
-      <AssistantComposer
-        onSendMessage={() => {}}
-        approvalMode="ask"
-        onSelectApprovalMode={onSelectApprovalMode}
-      />,
-    );
-
-    const trigger = getByRole("combobox", {
-      name: "Approval mode: Need approval",
-    });
-    await trigger.click();
-    await getByRole("option", { name: /Always allow read-only/ }).click();
-
-    expect(onSelectApprovalMode).toHaveBeenCalledWith("allow_read_only");
+  it("offers no approval-mode setting: queries run without asking", async () => {
+    const { getByRole } = await render(<AssistantComposer onSendMessage={() => {}} />);
+    expect(getByRole("combobox", { name: /Approval mode/ }).query()).toBeNull();
   });
+
 
   it("hides the approval selector when the mode or handler is absent", async () => {
     const { container } = await render(

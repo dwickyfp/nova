@@ -30,7 +30,6 @@ async def _run(tool, script, *, agent=False, content="Which users exist?"):
     if agent:
         context.agent_scope = {"agent": "Sales"}
     thread = AssistantThread(thread_id="lookup", user_name="alice", title="Eval")
-    thread.consent.always_allow_read_only = True
     frames = [
         frame async for frame in AssistantLoop(
             provider=ScriptedProvider(script=script), registry=registry

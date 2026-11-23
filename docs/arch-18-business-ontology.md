@@ -588,10 +588,9 @@ The ontology release used is chosen in this order:
 - `ontology_status` returns the release in use and the caller's own
   proposals with their review status.
 - `knowledge_propose` files a proposal and `knowledge_withdraw` withdraws the
-  caller's own pending one. Both ask for approval every time; a read-only
-  grant never covers them.
+  caller's own pending one. Both ask for approval every time.
 
-The reads need consent once (a read-only grant covers them). Studio bundles
+The reads are read-only and run without consent. Studio bundles
 the tools per agent; Neva always has all five and grounds a business word in
 this order: glossary, Semantic View, verified query, new SQL. Bindings are
 limited to the agent's Semantic Views and to views the caller can see.

@@ -48,7 +48,7 @@ async def test_mixed_stream_executes_required_query_before_answering():
         )
     ]
     assert tool.runs == 1
-    assert approvals == [("query_execute", "read_only")]
+    assert approvals == []  # read-only: it runs without asking
     output = "".join(frames)
     assert '"finish_reason":"stop"' in output.replace(" ", "")
     assert "required_capability_incomplete" not in output

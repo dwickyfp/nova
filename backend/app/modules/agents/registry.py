@@ -78,6 +78,11 @@ def build_registry(agent: dict[str, Any]) -> ToolRegistry:
     from app.modules.assistant.tools.load_skill import load_skill_tool
 
     registry.register(load_skill_tool)
+    # Asking the user is part of every Studio agent; the loop offers it only
+    # when a person is on the other end of the run.
+    from app.modules.assistant.human_input import request_human_input_tool
+
+    registry.register(request_human_input_tool)
     if "catalog_search" in selected:
         from app.modules.assistant.tools.catalog_search import catalog_search_tool
 

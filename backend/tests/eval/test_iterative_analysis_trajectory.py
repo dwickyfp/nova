@@ -36,9 +36,10 @@ SEMANTIC_PARAMETERS = {
 }
 
 
-def semantic_tool(*tables):
+def semantic_tool(*tables, classification="read_only"):
     return EvalTool(
         "semantic_query",
+        classification=classification,
         parameters=SEMANTIC_PARAMETERS,
         outcomes=[
             ToolOutcome(
@@ -81,7 +82,6 @@ async def run(script, tools, *, iterative=True, max_iterations=16, consent=None,
 
     thread = AssistantThread(thread_id="iterative", user_name="alice", title="Eval")
     # Tool calls prompt for approval only when the thread has no read-only grant.
-    thread.consent.always_allow_read_only = consent is None
     frames = [
         frame
         async for frame in AssistantLoop(
@@ -177,7 +177,8 @@ async def test_separate_repair_budgets_survive_two_different_slips():
 
 
 async def test_one_declined_approval_is_reported_back_to_the_model():
-    semantic = semantic_tool(MONTHS)
+    # Denial applies to actions; read-only calls never ask.
+    semantic = semantic_tool(MONTHS, classification="destructive")
     finish, text, joined, prompts = await run(
         [
             semantic_call("s1", "revenue Juli dan Agustus 2026"),
@@ -197,7 +198,7 @@ async def test_one_declined_approval_is_reported_back_to_the_model():
 
 
 async def test_a_second_denial_ends_the_turn():
-    semantic = semantic_tool(MONTHS, CITIES)
+    semantic = semantic_tool(MONTHS, CITIES, classification="destructive")
     finish, _text, _joined, prompts = await run(
         [
             semantic_call("s1", "revenue Juli dan Agustus 2026"),
@@ -213,7 +214,7 @@ async def test_a_second_denial_ends_the_turn():
 
 
 async def test_the_declined_call_is_never_asked_again():
-    semantic = semantic_tool(MONTHS)
+    semantic = semantic_tool(MONTHS, classification="destructive")
     finish, _text, _joined, prompts = await run(
         [
             semantic_call("s1", "revenue Juli dan Agustus 2026"),
@@ -228,7 +229,7 @@ async def test_the_declined_call_is_never_asked_again():
 
 
 async def test_non_iterative_loop_still_ends_on_the_first_denial():
-    semantic = semantic_tool(MONTHS)
+    semantic = semantic_tool(MONTHS, classification="destructive")
     finish, _text, _joined, prompts = await run(
         [semantic_call("s1", "revenue"), text_frame("unused")],
         [semantic],

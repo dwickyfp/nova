@@ -9,7 +9,6 @@ from app.modules.agents.tools.custom_tool import (
     CustomToolRunner,
     validate_custom_tool_definition,
 )
-from app.modules.assistant.read_grants import stamp
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import AssistantThread
 from app.modules.assistant.tools import ToolInvocation, ToolRegistry
@@ -140,7 +139,7 @@ async def test_insert_then_select_tools_run_in_one_agent_turn(monkeypatch) -> No
     }
     registry = build_registry(agent)
     await add_custom_tools(registry, agent)
-    assert registry.names() == ["load_skill", insert.name, select.name]
+    assert registry.names() == ["load_skill", "request_human_input", insert.name, select.name]
     provider = ScriptedProvider(
         script=[
             tool_call_frame("i", name=insert.name, arguments={"value": "abc"}),
@@ -149,8 +148,6 @@ async def test_insert_then_select_tools_run_in_one_agent_turn(monkeypatch) -> No
         ]
     )
     thread = AssistantThread(thread_id="custom-tool-eval", user_name="analyst", title="Eval")
-    thread.consent.always_allow_read_only = True
-    thread.consent.granted_under = stamp(_context().user)
     prompts: list[tuple[str, str]] = []
 
     async def consent(invocation, classification):
@@ -244,8 +241,6 @@ async def test_stage_export_custom_tool_requires_consent_and_reaches_pipeline(mo
         ]
     )
     thread = AssistantThread(thread_id="custom-tool-eval", user_name="analyst", title="Eval")
-    thread.consent.always_allow_read_only = True
-    thread.consent.granted_under = stamp(_context().user)
     prompts = []
 
     async def consent(invocation, classification):
@@ -328,8 +323,6 @@ async def test_identifier_parameter_cannot_downgrade_stage_export_consent(monkey
         script=[tool_call_frame("x", name=tool.name, arguments={"verb": "INTO"})]
     )
     thread = AssistantThread(thread_id="custom-tool-eval", user_name="analyst", title="Eval")
-    thread.consent.always_allow_read_only = True
-    thread.consent.granted_under = stamp(_context().user)
     prompts = []
 
     async def deny(invocation, classification):

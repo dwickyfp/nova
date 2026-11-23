@@ -207,7 +207,7 @@ export type AssistantEvent = (
 export type ConsentDecision = "approve" | "deny";
 
 /** Wire enum frozen in spec §6.1. The backend rejects `approve`/`deny`. */
-export type ConsentDecisionPayload = "allow_once" | "allow_session" | "deny";
+export type ConsentDecisionPayload = "allow_once" | "deny";
 
 /** Outcome of a turn, so the transcript can mark a cancelled partial answer. */
 export type TurnState = "streaming" | "done" | "cancelled" | "error";

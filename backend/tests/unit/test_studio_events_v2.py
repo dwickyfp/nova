@@ -60,6 +60,30 @@ UI_PAYLOAD = {
 }
 
 
+APPROVAL = {
+    "kind": "approval", "title": "Allow this action?", "classification": "destructive",
+    "reason": "changes_data", "role": "ANALYST",
+    "action": "Schedule the automation 'Weekly revenue' every Monday at 08:00",
+}
+QUESTION = {
+    "kind": "question", "title": "Gross or net revenue?",
+    "detail": "Net excludes refunds.", "choices": ["Gross revenue", "Net revenue"],
+    "allow_free_text": True,
+}
+CHOICE = {
+    "kind": "choice", "title": "How should I break it down?",
+    "options": [
+        {"id": "region", "title": "By region", "description": "Revenue per region"},
+        {"id": "month", "title": "By month", "recommended": True},
+    ],
+}
+FORM = {
+    "kind": "form", "title": "Which period?",
+    "fields": [{"name": "period", "title": "Period", "widget": "date_range"}],
+    "required": ["period"],
+}
+
+
 def _f(event: str, **data: Any) -> dict[str, Any]:
     return {"event": event, "data": data}
 
@@ -88,6 +112,10 @@ CASES: list[dict[str, Any]] = [
                payload=ASSESSMENT),
             _f("thinking", phase="observe", text="Reading the result", status="done"),
             _call("c2", "pending"),
+            _f("input_required", request_id="c2", kind="approval", tool_call_id="c2",
+               expires_at="2026-11-23T10:05:00+00:00", request=APPROVAL),
+            _f("input_resolved", request_id="c2", status="allowed",
+               summary="You allowed this action"),
             _f("tool_status", tool_call_id="c2", status="running"),
             _f("tool_status", tool_call_id="c2", status="done"),
             _call("c1", "done", run_id="mission-run"),
@@ -132,9 +160,41 @@ CASES: list[dict[str, Any]] = [
             _f("text_delta", text="Partial answer", content_index=0, content_id="content-0"),
             _call("c1", "running"),
             _call("c2", "pending"),
+            _f("input_required", request_id="c2", kind="approval", tool_call_id="c2",
+               expires_at="2026-11-23T10:05:00+00:00", request=APPROVAL),
             _f("ui", payload=UI_PAYLOAD, content_index=1, content_id="content-1"),
             _f("error", code="run_persistence_unavailable", message="Progress could not be saved."),
             _f("done", message_id="", finish_reason="interrupted"),
+        ],
+    },
+    {
+        "name": "human in the loop: question, choice, form, edit then run, stopped",
+        "run_id": "run-d",
+        "role": "MARKETING",
+        "v1": [
+            _f("thinking", phase="act", text="Choosing the metric", status="running"),
+            _f("input_required", request_id="h1", kind="question",
+               expires_at="2026-11-23T10:10:00+00:00", request=QUESTION),
+            _f("input_resolved", request_id="h1", status="answered",
+               summary="You answered: Net revenue", answer={"text": "Net revenue"}),
+            _f("input_required", request_id="h2", kind="choice",
+               expires_at="2026-11-23T10:10:00+00:00", request=CHOICE),
+            _f("input_resolved", request_id="h2", status="answered",
+               summary="You chose: By region",
+               answer={"option_id": "region", "title": "By region"}),
+            _f("input_required", request_id="h3", kind="form",
+               expires_at="2026-11-23T10:10:00+00:00", request=FORM),
+            _f("input_resolved", request_id="h3", status="declined",
+               summary="You skipped this question"),
+            _call("c3", "pending"),
+            _f("input_required", request_id="c3", kind="approval", tool_call_id="c3",
+               expires_at="2026-11-23T10:05:00+00:00", request=APPROVAL),
+            _f("input_resolved", request_id="c3", status="denied",
+               summary="You denied this action"),
+            _f("tool_status", tool_call_id="c3", status="denied"),
+            _f("input_required", request_id="h4", kind="question",
+               expires_at="2026-11-23T10:10:00+00:00", request=QUESTION),
+            _f("done", message_id="", finish_reason="cancelled"),
         ],
     },
 ]
@@ -192,6 +252,36 @@ def test_every_event_carries_run_id_and_monotonic_seq() -> None:
         assert {record["data"]["run_id"] for record in records} == {case["run_id"]}
 
 
+def test_a_run_keeps_one_plan_row_when_a_step_resumes_after_an_answer() -> None:
+    plan = [{"id": "u", "text": "Understand the request", "status": "running"}]
+    longer = [*plan, {"id": "a", "text": "Answer", "status": "pending"}]
+    records = encode_case({
+        "run_id": "run-p", "role": "ANALYST",
+        "v1": [
+            _f("plan", steps=plan),
+            _f("input_required", request_id="h1", kind="question",
+               expires_at="2026-11-23T10:10:00+00:00", request=QUESTION),
+            _f("input_resolved", request_id="h1", status="answered", summary="You answered"),
+            # The resumed step restates the same plan: nothing is added.
+            _f("plan", steps=plan),
+            # A changed plan replaces the one row in place.
+            _f("plan", steps=longer),
+            _f("done", message_id="m", finish_reason="stop"),
+        ],
+    })
+    plans = [
+        r["data"] for r in records
+        if r["event"] == "part.start" and r["data"].get("phase") == "plan"
+    ]
+    assert len(plans) == 1
+    replaced = [
+        r["data"] for r in records
+        if r["event"] == "part.delta" and r["data"]["part_id"] == plans[0]["part_id"]
+    ]
+    assert [d["text"] for d in replaced] == ["1. Understand the request\n2. Answer"]
+    assert all(d["replace"] for d in replaced)
+
+
 def test_parts_open_once_and_close_once_in_production_order() -> None:
     records = encode_case(CASES[0])
     starts = [r["data"]["part_id"] for r in records if r["event"] == "part.start"]
@@ -221,9 +311,13 @@ def test_consent_and_nested_mission_calls_reach_their_own_parts() -> None:
         for r in records if r["event"] == "part.start" and r["data"]["type"] == "tool"
     }
     assert set(tools) == {(None, "c1"), (None, "c2"), ("mission-run", "c1")}
-    consent = next(r for r in records if r["event"] == "consent.required")
-    assert consent["data"]["part_id"] == tools[(None, "c2")]
-    assert consent["data"]["tool_call"]["status"] == "pending"
+    approval = next(
+        r for r in records if r["event"] == "part.start" and r["data"]["type"] == "hitl_request"
+    )
+    assert approval["data"]["tool_part_id"] == tools[(None, "c2")]
+    required = next(r for r in records if r["event"] == "input.required")
+    assert required["data"]["part_id"] == approval["data"]["part_id"]
+    assert required["data"]["request"]["action"] == APPROVAL["action"]
     evidence = next(r for r in records if r["event"] == "tool.evidence")
     assert evidence["data"]["part_id"] == tools[(None, "c1")]
     assert evidence["data"]["kind"] == "health"
@@ -251,7 +345,10 @@ def test_run_finished_seals_open_parts_by_outcome() -> None:
     ends = {starts[r["data"]["part_id"]]: r["data"]["state"]
             for r in records if r["event"] == "part.end"}
     # A call awaiting consent never ran; a running one broke off; so did the rest.
-    assert ends == {"text": "error", "c1": "error", "c2": "cancelled", "ui": "error"}
+    assert ends == {
+        "text": "error", "c1": "error", "c2": "cancelled", "ui": "error",
+        "hitl_request": "cancelled",
+    }
     names = _events(records)
     assert names.index("run.error") < names.index("part.end")
     assert records[-1]["data"]["finish_reason"] == "interrupted"
@@ -311,6 +408,35 @@ def test_unknown_and_v1_only_frames_are_never_passed_on_unnumbered() -> None:
     assert encoder.translate('event: something_new\ndata: {"x":1}\n\n') == []
     assert encoder.translate("not a frame") == []
     assert events_v2.frame_name(encoder.start(role="R")) == "run.started"
+
+
+def test_human_input_parts_sit_where_asked_and_record_how_they_settled() -> None:
+    records = encode_case(CASES[3])
+    hitl = [
+        r["data"] for r in records
+        if r["event"] == "part.start" and r["data"]["type"] == "hitl_request"
+    ]
+    assert [(h["request_id"], h["kind"]) for h in hitl] == [
+        ("h1", "question"), ("h2", "choice"), ("h3", "form"), ("c3", "approval"),
+        ("h4", "question"),
+    ]
+    resolved = {
+        r["data"]["part_id"]: r["data"]["status"] for r in records if r["event"] == "input.resolved"
+    }
+    by_request = {h["request_id"]: resolved[h["part_id"]] for h in hitl}
+    # The last question was still waiting when the run stopped: it is cancelled,
+    # in the journal too, so a replay never shows it as answerable.
+    assert by_request == {
+        "h1": "answered", "h2": "answered", "h3": "declined", "c3": "denied", "h4": "cancelled",
+    }
+    ends = {r["data"]["part_id"]: r["data"]["state"] for r in records if r["event"] == "part.end"}
+    assert ends[hitl[-1]["part_id"]] == "cancelled"
+    names = _events(records)
+    denied = next(
+        r for r in records if r["event"] == "tool.status" and r["data"]["status"] == "denied"
+    )
+    assert names.index("input.resolved") < records.index(denied)
+    assert "input.required" in events_v2.FLUSH_EVENTS
 
 
 if __name__ == "__main__":

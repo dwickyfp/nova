@@ -129,20 +129,14 @@ export async function streamAssistantTurn(
   }
 }
 
-/** Maps the card's two-part intent to the frozen wire enum (spec §6.1). */
-export function toConsentPayload(
-  decision: ConsentDecision,
-  alwaysAllow: boolean,
-): ConsentDecisionPayload {
-  if (decision === "deny") return "deny";
-  return alwaysAllow ? "allow_session" : "allow_once";
+/** Maps the card's decision to the wire enum. Each approval covers one call. */
+export function toConsentPayload(decision: ConsentDecision): ConsentDecisionPayload {
+  return decision === "deny" ? "deny" : "allow_once";
 }
 
 export type ConsentDecisionResponse = {
   tool_call_id: string;
   status: string;
-  /** True only when this decision set the conversation's read-only grant. */
-  grant_active: boolean;
 };
 
 /**
@@ -150,14 +144,11 @@ export type ConsentDecisionResponse = {
  * still-open stream then emits `tool_status` once the decision is applied.
  *
  * The path is `tool-calls/{id}/decision`, scoped by call id only: no thread
- * segment, and the body carries the enum, not an `always_allow` flag (§6.1).
- * The response's `grant_active` is the only signal that a grant is now live,
- * so it is returned rather than discarded; the panel needs it to offer reset.
+ * segment. Read-only queries never wait here; only actions do, one at a time.
  */
 export async function decideToolCall(
   toolCallId: string,
   decision: ConsentDecision,
-  alwaysAllow = false,
   secureInput?: { password: string },
   uploadFile?: File,
 ): Promise<ConsentDecisionResponse> {
@@ -180,7 +171,7 @@ export async function decideToolCall(
   return api.post<ConsentDecisionResponse>(
     `/assistant/tool-calls/${encodeURIComponent(toolCallId)}/decision`,
     {
-      decision: toConsentPayload(decision, alwaysAllow),
+      decision: toConsentPayload(decision),
       ...(secureInput ? { secure_input: secureInput } : {}),
     },
   );

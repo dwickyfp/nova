@@ -21,6 +21,7 @@ import type { GuardDecision } from "@/features/agents/api";
 import type { DashboardArtifactBlock } from "@/features/viz/types";
 import type { UiBlock } from "../intelligent-ui/types";
 import type { RailStep } from "../thought-turn";
+import type { HitlKind, HitlRequestSpec, HitlStatus } from "./hitl/types";
 import type { PartEndState, StudioEvent } from "./protocol";
 
 export type PartState = "streaming" | PartEndState;
@@ -56,15 +57,29 @@ export type ToolPart = PartBase & {
   preview?: string;
   progress: { stage: string; text: string }[];
   detail?: string;
-  /** The call the user must decide on, while it waits. */
-  consent?: ToolCallView & { tool_call_id: string };
-  /** The decision the user sent from this client. */
-  decision?: "approved" | "denied";
   /** The run broke off while the call ran: its result is not confirmed. */
   unconfirmed?: boolean;
 };
 
 export type GuardPart = PartBase & { type: "guard"; decision: GuardDecision };
+
+/**
+ * The turn asking its user: an approval, a question, a form or a choice. It
+ * sits where it was asked and keeps how it settled, so a replay shows the
+ * same answer.
+ */
+export type HitlPart = PartBase & {
+  type: "hitl_request";
+  requestId: string;
+  kind: HitlKind;
+  toolPartId?: string;
+  /** Set by `input.required`; absent only for a part whose request was malformed. */
+  request?: HitlRequestSpec;
+  status: HitlStatus;
+  expiresAt?: string;
+  summary?: string;
+  answer?: Record<string, unknown>;
+};
 
 type Positioned = { contentIndex?: number; contentId?: string };
 export type TablePart = PartBase & Positioned & { type: "table"; block: TableBlock & { tool_call_id?: string } };
@@ -98,7 +113,7 @@ export type LegacyStepPart = PartBase & { type: "legacy_step"; step: RailStep };
 
 export type ContentPart = TextPart | TablePart | ChartPart | CitationPart | DashboardPart | UiPart;
 export type WorkPart = ReasoningPart | ToolPart | GuardPart | LegacyStepPart;
-export type TurnPart = ContentPart | WorkPart | RoleChangePart;
+export type TurnPart = ContentPart | WorkPart | RoleChangePart | HitlPart;
 
 export type TurnRunState = {
   parts: TurnPart[];
@@ -145,6 +160,15 @@ function insertBySeq(parts: TurnPart[], part: TurnPart): TurnPart[] {
   return [...parts.slice(0, index), part, ...parts.slice(index)];
 }
 
+function isPlan(part: TurnPart): boolean {
+  return part.type === "reasoning" && part.phase === "plan" && part.planSteps !== undefined;
+}
+
+/** The steps of a numbered plan ("1. …" per line), as its row counts them. */
+function planStepCount(text: string): number {
+  return text.split("\n").filter((line) => /^\d+\.\s/.test(line)).length;
+}
+
 function openPart(event: Extract<StudioEvent, { type: "part.start" }>): TurnPart {
   const base = { id: event.partId, seq: event.seq, state: "streaming" as const };
   const fields = event.part;
@@ -157,6 +181,8 @@ function openPart(event: Extract<StudioEvent, { type: "part.start" }>): TurnPart
       return { ...base, ...fields, status: "running", progress: [] };
     case "guard":
       return { ...base, ...fields };
+    case "hitl_request":
+      return { ...base, ...fields, status: "pending" };
     case "ui":
       return { ...base, ...fields, block: { ...fields.block, program: "" } as UiBlock };
     default:
@@ -175,22 +201,36 @@ export function sealState(finishReason: string, part: TurnPart): PartEndState {
   // every block it opened final, including an interactive program whose own
   // close frame was lost; the renderer still validates the program.
   if (part.type === "tool" && part.status === "pending") return "cancelled";
+  if (part.type === "hitl_request") return "cancelled";
   return state;
+}
+
+/** A request the run left waiting: nobody can answer it any more. */
+function sealedHitl(part: HitlPart, finishReason: string): Partial<HitlPart> {
+  if (part.status !== "pending") return {};
+  return finishReason === "consent_timeout"
+    ? { status: "expired", summary: "The request expired" }
+    : { status: "cancelled", summary: "Stopped before you answered" };
 }
 
 /** The tool status a sealed part ends with; `unconfirmed` when its outcome is unknown. */
 function sealedTool(part: ToolPart, state: PartEndState): Partial<ToolPart> {
-  if (TERMINAL_TOOL.has(part.status)) return { consent: undefined };
-  if (state === "done") return { consent: undefined, status: "done" };
-  if (state === "cancelled") return { consent: undefined, status: "cancelled" };
+  if (TERMINAL_TOOL.has(part.status)) return {};
+  if (state === "done") return { status: "done" };
+  if (state === "cancelled") return { status: "cancelled" };
   // Running when the run broke off: the call may or may not have taken effect.
-  return { consent: undefined, status: "failed", unconfirmed: part.status === "running" };
+  return { status: "failed", unconfirmed: part.status === "running" };
 }
 
 /** Seal one part the stream left open, as `run.finished` (or a local stop) does. */
 export function sealPart(part: TurnPart, finishReason: string): TurnPart {
   const state = sealState(finishReason, part);
-  return { ...part, state, ...(part.type === "tool" ? sealedTool(part, state) : {}) } as TurnPart;
+  return {
+    ...part,
+    state,
+    ...(part.type === "tool" ? sealedTool(part, state) : {}),
+    ...(part.type === "hitl_request" ? sealedHitl(part, finishReason) : {}),
+  } as TurnPart;
 }
 
 /** Apply one v2 event. Pure; returns the same object when nothing changed. */
@@ -204,12 +244,22 @@ function reduce(state: TurnRunState, event: StudioEvent): TurnRunState {
   switch (event.type) {
     case "run.started":
       return { ...state, status: "streaming" };
-    case "part.start":
+    case "part.start": {
       if (state.parts.some((part) => part.id === event.partId)) return state;
-      return { ...state, parts: insertBySeq(state.parts, openPart(event)) };
+      const opened = openPart(event);
+      // One plan row per turn: a later plan takes the earlier one's place.
+      const earlier = isPlan(opened) ? state.parts.findIndex(isPlan) : -1;
+      if (earlier !== -1) {
+        const parts = state.parts.slice();
+        parts[earlier] = { ...opened, seq: parts[earlier].seq };
+        return { ...state, parts };
+      }
+      return { ...state, parts: insertBySeq(state.parts, opened) };
+    }
     case "part.delta":
       return patchPart(state, event.partId, (part) => {
         if (part.state !== "streaming" && !event.replace) return part;
+        if (isPlan(part) && event.replace) return { ...part, text: event.text, planSteps: planStepCount(event.text) };
         if (part.type === "text" || part.type === "reasoning")
           return { ...part, text: event.replace ? event.text : part.text + event.text };
         if (part.type === "ui") {
@@ -229,6 +279,7 @@ function reduce(state: TurnRunState, event: StudioEvent): TurnRunState {
           ? { text: event.final }
           : {}),
         ...(part.type === "tool" ? sealedTool(part, event.state) : {}),
+        ...(part.type === "hitl_request" ? sealedHitl(part, "cancelled") : {}),
       }) as TurnPart);
     case "tool.status":
       return patchPart(state, event.partId, (part) =>
@@ -241,13 +292,23 @@ function reduce(state: TurnRunState, event: StudioEvent): TurnRunState {
               ...(event.preview ? { preview: event.preview } : {}),
               ...(event.progress ? { progress: [...part.progress, event.progress] } : {}),
               ...(event.detail !== undefined ? { detail: event.detail } : {}),
-              ...(event.status !== "pending" ? { consent: undefined } : {}),
             },
       );
-    case "consent.required":
+    case "input.required":
       return patchPart(state, event.partId, (part) =>
-        part.type === "tool"
-          ? { ...part, status: "pending", consent: event.call, ...(event.call.sql_preview ? { preview: event.call.sql_preview } : {}) }
+        part.type === "hitl_request" && part.status === "pending"
+          ? { ...part, request: event.request, ...(event.expiresAt ? { expiresAt: event.expiresAt } : {}) }
+          : part,
+      );
+    case "input.resolved":
+      return patchPart(state, event.partId, (part) =>
+        part.type === "hitl_request"
+          ? {
+              ...part,
+              status: event.status,
+              summary: event.summary,
+              ...(event.answer ? { answer: event.answer } : {}),
+            }
           : part,
       );
     case "tool.evidence":

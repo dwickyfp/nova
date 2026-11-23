@@ -142,7 +142,7 @@ async def run_sample(*, workflow: bool, binding: str, barrier: bool = False) -> 
         business_result_hook=ordered_hook if binding == "ordered_hook" else None,
     )
     loop = AssistantLoop(provider=provider, registry=registry, iterative=True, max_calls_per_tool=6)
-    fixture_thread = thread(read_only_grant=True)
+    fixture_thread = thread()
     canonical_query = AsyncMock(side_effect=RuntimeError("Fixture excludes canonicalization I/O"))
     with (
         patch.object(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", workflow),

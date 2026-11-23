@@ -286,272 +286,20 @@ def test_unknown_tool_call_id_is_404(app_and_broker):
     assert resp.status_code == 404
 
 
-async def test_owner_sets_the_grant_on_their_own_conversation_only(monkeypatch):
-    """``allow_session`` sets the read-only grant on the owner's thread only."""
-    broker = ConsentBroker()
-    monkeypatch.setattr("app.modules.assistant.router.consent_broker", broker, raising=True)
-    alice_thread = thread_store.create(user_name="alice", title="A")
-    bob_thread = thread_store.create(user_name="bob", title="B")
-    broker.open("victim-call", thread_id=alice_thread.thread_id, user=_signed_in("alice"))
-
-    response = await resolve_tool_call(
-        "victim-call",
-        ConsentDecisionRequest(decision="allow_session"),
-        user=_signed_in("alice"),
-    )
-
-    assert response.grant_active is True
-    assert alice_thread.consent.always_allow_read_only is True
-    assert bob_thread.consent.always_allow_read_only is False
-
-
-# ── allow_session is gated on the call's classification (NOVA-122) ───────────
-#
-# The route used to set the grant on *any* ``allow_session`` decision, so a
-# direct API caller could record consent the UI never presented (it only offers
-# always-allow for ``classification === 'read_only'``). These pin that the
-# decision is validated against the pending call's class.
-
-
-async def test_allow_session_on_a_read_only_call_sets_the_grant(monkeypatch):
-    broker = ConsentBroker()
-    monkeypatch.setattr("app.modules.assistant.router.consent_broker", broker, raising=True)
-    thread = thread_store.create(user_name="alice", title="A")
-    broker.open(
-        "call-1",
-        thread_id=thread.thread_id,
-        user=_signed_in("alice"),
-        classification="read_only",
-    )
-
-    response = await resolve_tool_call(
-        "call-1",
-        ConsentDecisionRequest(decision="allow_session"),
-        user=_signed_in("alice"),
-    )
-
-    assert response.grant_active is True
-    assert response.status == "approved"
-    assert thread.consent.always_allow_read_only is True
-
-
-async def test_agent_studio_allow_session_sets_the_same_read_only_grant(monkeypatch):
-    """Agent Studio must not downgrade its Allow session button to Allow once."""
-    from app.modules.agents import router as agent_router
-
-    broker = ConsentBroker()
-    monkeypatch.setattr(agent_router, "consent_broker", broker, raising=True)
-
-    async def _agent(_agent_id: str, _user_name: str, *, platform: bool = False) -> dict:
-        return {"agent_id": "agent-1"}
-
-    monkeypatch.setattr(agent_router, "_require_agent", _agent, raising=True)
-    thread = thread_store.create(user_name="alice", title="A")
-    broker.open(
-        "agent-call-1",
-        thread_id=thread.thread_id,
-        user=_signed_in("alice"),
-        classification="read_only",
-    )
-
-    response = await agent_router.resolve_agent_tool_call(
-        "agent-1",
-        "agent-call-1",
-        ConsentDecisionRequest(decision="allow_session"),
-        user=_signed_in("alice"),
-    )
-
-    assert response.grant_active is True
-    assert response.status == "approved"
-    assert thread.consent.always_allow_read_only is True
-
-
-@pytest.mark.parametrize("classification", ["destructive", "denied"])
-async def test_allow_session_on_a_non_read_only_call_is_rejected(monkeypatch, classification):
-    """The grant is not set, and the pending call is left for a valid decision."""
-    from fastapi import HTTPException
-
-    broker = ConsentBroker()
-    monkeypatch.setattr("app.modules.assistant.router.consent_broker", broker, raising=True)
-    thread = thread_store.create(user_name="alice", title="A")
-    broker.open(
-        "call-1",
-        thread_id=thread.thread_id,
-        user=_signed_in("alice"),
-        classification=classification,
-    )
-
-    with pytest.raises(HTTPException) as exc:
-        await resolve_tool_call(
-            "call-1",
-            ConsentDecisionRequest(decision="allow_session"),
-            user=_signed_in("alice"),
-        )
-
-    assert exc.value.status_code == 400
-    assert thread.consent.always_allow_read_only is False
-    # Not consumed: the owner can still resolve it with allow_once.
-    assert broker.owner_of("call-1", user=_signed_in("alice")) == (thread.thread_id, "alice")
-
-    response = await resolve_tool_call(
-        "call-1",
-        ConsentDecisionRequest(decision="allow_once"),
-        user=_signed_in("alice"),
-    )
-    assert response.status == "approved"
-    assert response.grant_active is False
-    assert thread.consent.always_allow_read_only is False
-
-
-def test_allow_session_on_a_non_read_only_call_is_400_over_http(app_and_broker):
-    """Same gate at the HTTP boundary the defect was reported on."""
+def test_a_conversation_wide_grant_no_longer_exists(app_and_broker):
+    """Read-only runs without asking, so there is nothing to grant or revoke."""
     client, broker, current, repo = app_and_broker
     thread = _seed_thread(repo, user_name="alice")
     _open_pending_classification_sync(broker, "call-1", thread.thread_id, "alice", "destructive")
-
-    current["username"] = "alice"
-    resp = client.post(
-        "/api/v1/assistant/tool-calls/call-1/decision",
-        json={"decision": "allow_session"},
+    response = client.post(
+        "/api/v1/assistant/tool-calls/call-1/decision", json={"decision": "allow_session"},
     )
-
-    assert resp.status_code == 400
-    runtime = thread_store.get(thread.thread_id, user_name="alice")
-    assert runtime is not None
-    assert runtime.consent.always_allow_read_only is False
-
-
-# ── Reset grant (NOVA-100) ───────────────────────────────────────────────────
-#
-# ``DELETE /threads/{thread_id}/grant`` had no committed test at all, so a
-# regression in ``_require_thread`` or ``ConsentPolicy`` could silently stop
-# revocation — leaving ``query_execute`` auto-approving read-only calls without
-# a prompt (spec §6). These tests pin the owner/foreign boundary and the
-# auto-approve reversal that NOVA-96 item 4 requires.
-
-
-def test_owner_revoke_clears_the_grant(app_and_broker):
-    client, _broker, current, repo = app_and_broker
-    thread = _seed_thread(repo, user_name="alice")
-    thread_store.get(thread.thread_id, user_name="alice").consent.always_allow_read_only = True
-
-    current["username"] = "alice"
-    resp = client.delete(f"/api/v1/assistant/threads/{thread.thread_id}/grant")
-
-    assert resp.status_code == 204
-    runtime = thread_store.get(thread.thread_id, user_name="alice")
-    assert runtime.consent.always_allow_read_only is False
-
-
-def test_foreign_revoke_is_404_and_leaves_the_owner_grant_intact(app_and_broker):
-    client, _broker, current, repo = app_and_broker
-    thread = _seed_thread(repo, user_name="alice")
-    thread_store.get(thread.thread_id, user_name="alice").consent.always_allow_read_only = True
-
-    current["username"] = "bob"
-    resp = client.delete(f"/api/v1/assistant/threads/{thread.thread_id}/grant")
-
-    # 404, never 403: a foreign id must not leak existence.
-    assert resp.status_code == 404
-    runtime = thread_store.get(thread.thread_id, user_name="alice")
-    assert runtime.consent.always_allow_read_only is True
-
-
-# ── Set grant (composer approval-mode) ───────────────────────────────────────
-#
-# ``PUT /threads/{thread_id}/grant`` lets the composer's approval-mode selector
-# pre-grant read-only queries before the first turn. These pin the owner/foreign
-# boundary, that setting is idempotent and cannot disturb another thread, and
-# that ``false`` clears a live grant the same way ``DELETE`` does.
-
-
-def test_owner_sets_the_grant_on_a_fresh_thread(app_and_broker):
-    client, _broker, current, repo = app_and_broker
-    thread = _seed_thread(repo, user_name="alice")
-
-    current["username"] = "alice"
-    resp = client.put(
-        f"/api/v1/assistant/threads/{thread.thread_id}/grant",
-        json={"always_allow_read_only": True},
-    )
-
-    assert resp.status_code == 200
-    assert resp.json() == {"grant_active": True}
-    runtime = thread_store.get(thread.thread_id, user_name="alice")
-    assert runtime.consent.always_allow_read_only is True
-
-
-@pytest.mark.parametrize("pending_call", [False, True])
-def test_read_only_approval_without_a_login_is_refused(app_and_broker, pending_call):
-    client, broker, current, repo = app_and_broker
-    thread = _seed_thread(repo, user_name="alice")
-    current["session_id"] = None
-    if pending_call:
-        _open_pending_classification_sync(
-            broker, "call-1", thread.thread_id, "alice", "read_only",
-        )
-        response = client.post(
-            "/api/v1/assistant/tool-calls/call-1/decision",
-            json={"decision": "allow_session"},
-        )
-        assert broker.owner_of("call-1", user=_signed_in("alice")) == (thread.thread_id, "alice")
-    else:
-        response = client.put(
+    assert response.status_code == 422
+    assert broker.owner_of("call-1", user=_signed_in("alice")) == (thread.thread_id, "alice")
+    for method in ("put", "delete"):
+        assert getattr(client, method)(
             f"/api/v1/assistant/threads/{thread.thread_id}/grant",
-            json={"always_allow_read_only": True},
-        )
-    assert response.status_code == (404 if pending_call else 401)
-    assert not thread_store.get(thread.thread_id, user_name="alice").consent.always_allow_read_only
-
-
-def test_owner_clears_the_grant_with_false(app_and_broker):
-    client, _broker, current, repo = app_and_broker
-    thread = _seed_thread(repo, user_name="alice")
-    thread_store.get(thread.thread_id, user_name="alice").consent.always_allow_read_only = True
-
-    current["username"] = "alice"
-    resp = client.put(
-        f"/api/v1/assistant/threads/{thread.thread_id}/grant",
-        json={"always_allow_read_only": False},
-    )
-
-    assert resp.status_code == 200
-    assert resp.json() == {"grant_active": False}
-    runtime = thread_store.get(thread.thread_id, user_name="alice")
-    assert runtime.consent.always_allow_read_only is False
-
-
-def test_foreign_set_is_404_and_leaves_the_owner_grant_untouched(app_and_broker):
-    client, _broker, current, repo = app_and_broker
-    thread = _seed_thread(repo, user_name="alice")
-
-    current["username"] = "bob"
-    resp = client.put(
-        f"/api/v1/assistant/threads/{thread.thread_id}/grant",
-        json={"always_allow_read_only": True},
-    )
-
-    assert resp.status_code == 404
-    runtime = thread_store.get(thread.thread_id, user_name="alice")
-    assert runtime.consent.always_allow_read_only is False
-
-
-def test_set_grant_does_not_reset_a_grant_on_another_thread(app_and_broker):
-    client, _broker, current, repo = app_and_broker
-    alice_thread = _seed_thread(repo, user_name="alice")
-    other = _seed_thread(repo, user_name="alice", title="B")
-    thread_store.get(other.thread_id, user_name="alice").consent.always_allow_read_only = True
-
-    current["username"] = "alice"
-    resp = client.put(
-        f"/api/v1/assistant/threads/{alice_thread.thread_id}/grant",
-        json={"always_allow_read_only": True},
-    )
-
-    assert resp.status_code == 200
-    assert (
-        thread_store.get(other.thread_id, user_name="alice").consent.always_allow_read_only is True
-    )
+        ).status_code in {404, 405}
 
 
 class _FakeProvider:
@@ -605,19 +353,11 @@ def _tool_call(call_id: str) -> dict:
     }
 
 
-async def test_revoked_grant_prompts_again_on_the_next_read_only_call(
-    app_and_broker,
-):
-    """The reset is real: after it, a read-only call asks instead of auto-approving."""
-    client, _broker, current, repo = app_and_broker
+async def test_a_read_only_call_runs_without_asking(app_and_broker):
+    """No grant, no prompt: the caller's role governs what a read-only call reads."""
+    _client, _broker, _current, repo = app_and_broker
     seeded = _seed_thread(repo, user_name="alice")
     thread = thread_store.get(seeded.thread_id, user_name="alice")
-    thread.consent.always_allow_read_only = True
-
-    current["username"] = "alice"
-    resp = client.delete(f"/api/v1/assistant/threads/{seeded.thread_id}/grant")
-    assert resp.status_code == 204
-
     provider = _FakeProvider(
         [
             {"role": "assistant", "content": "", "tool_calls": [_tool_call("c1")]},
@@ -644,14 +384,13 @@ async def test_revoked_grant_prompts_again_on_the_next_read_only_call(
         )
     ]
 
-    # With the grant revoked, the loop surfaces the prompt and consults the
-    # resolver — the opposite of the auto-approve that a live grant pins.
     assert any(frame.startswith("event: tool_call") for frame in frames)
-    assert asked == ["read_only"]
+    assert not any(frame.startswith("event: input_required") for frame in frames)
+    assert asked == []
 
 
 @pytest.mark.parametrize("surface", ["assistant", "agent"])
-@pytest.mark.parametrize("decision", ["allow_once", "allow_session", "deny"])
+@pytest.mark.parametrize("decision", ["allow_once", "deny"])
 @pytest.mark.parametrize("changed", [
     {"session_id": "second-login"},
     {"session_id": None},
@@ -673,8 +412,6 @@ async def test_pending_approval_requires_the_original_full_identity(
     for module in (assistant_module, agent_router):
         monkeypatch.setattr(module, "consent_broker", broker)
     monkeypatch.setattr(agent_router, "_require_agent", AsyncMock())
-    grant = AsyncMock()
-    monkeypatch.setattr(assistant_module.read_grants, "grant", grant)
     original = _signed_in("alice")
     thread = thread_store.create(user_name="alice", title="Approval identity")
     future = broker.open("scoped", thread_id=thread.thread_id, user=original)
@@ -687,7 +424,6 @@ async def test_pending_approval_requires_the_original_full_identity(
             else:
                 await resolve_tool_call("scoped", body, altered)
         assert refused.value.status_code == 404
-        grant.assert_not_awaited()
         assert not future.done()
         assert broker.owner_of("scoped", user=altered) is None
         assert broker.owner_of("scoped", user=original) == (thread.thread_id, "alice")

@@ -110,16 +110,15 @@ describe("toConsentPayload", () => {
       security_context_version: 2,
     });
   });
-  it("maps allow to allow_once, allow + always to allow_session, and deny to deny", () => {
-    expect(toConsentPayload("approve", false)).toBe("allow_once");
-    expect(toConsentPayload("approve", true)).toBe("allow_session");
-    expect(toConsentPayload("deny", false)).toBe("deny");
+  it("maps allow to allow_once and deny to deny; there is no conversation-wide grant", () => {
+    expect(toConsentPayload("approve")).toBe("allow_once");
+    expect(toConsentPayload("deny")).toBe("deny");
   });
 });
 
 describe("decideToolCall", () => {
   it("posts the tool-call-scoped path with the frozen decision enum", async () => {
-    await decideToolCall("call-1", "approve", false);
+    await decideToolCall("call-1", "approve");
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -129,18 +128,8 @@ describe("decideToolCall", () => {
     expect(JSON.parse(init.body as string)).toEqual({ decision: "allow_once" });
   });
 
-  it("sends allow_session when the user checked always-allow", async () => {
-    await decideToolCall("call-2", "approve", true);
-
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("/api/v1/assistant/tool-calls/call-2/decision");
-    expect(JSON.parse(init.body as string)).toEqual({
-      decision: "allow_session",
-    });
-  });
-
   it("sends secure input only in the approval request", async () => {
-    await decideToolCall("create-user", "approve", false, {
+    await decideToolCall("create-user", "approve", {
       password: "private-marker",
     });
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -154,7 +143,7 @@ describe("decideToolCall", () => {
     const file = new File(["private-file-data"], "data.csv", {
       type: "text/csv",
     });
-    await decideToolCall("stage-upload", "approve", false, undefined, file);
+    await decideToolCall("stage-upload", "approve", undefined, file);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe(
       "/api/v1/assistant/tool-calls/stage-upload/upload-decision",
@@ -167,7 +156,7 @@ describe("decideToolCall", () => {
   });
 
   it("sends deny without an always-allow field", async () => {
-    await decideToolCall("call-3", "deny", true);
+    await decideToolCall("call-3", "deny");
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(init.body as string);
@@ -184,20 +173,4 @@ describe("decideToolCall", () => {
     );
   });
 
-  it("returns the response grant_active flag so the panel can track the grant", async () => {
-    fetchMock.mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          tool_call_id: "call-1",
-          status: "approved",
-          grant_active: true,
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-    );
-
-    const result = await decideToolCall("call-1", "approve", true);
-
-    expect(result.grant_active).toBe(true);
-  });
 });

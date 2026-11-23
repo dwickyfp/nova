@@ -68,7 +68,7 @@ async def test_post_outcome_selection_stops_before_query_and_success_claim(monke
         context=context, resolve_consent=consent,
     )]
     result = TurnResult(frames=frames)
-    assert approvals == [("decision_lab", "read_only")]
+    assert approvals == []  # read-only: it runs without asking
     authorization.assert_awaited_once()
     assert authorization.await_args.args[1]["session_id"] == "causal-session"
     query.assert_not_awaited()

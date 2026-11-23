@@ -41,9 +41,9 @@ once; anything still unmet ends in a plain "I won't guess" message, never an
 empty reply or an engine error.
 
 Files attached in the panel (up to 3: text, PDF or image) reach the model as
-data, are kept with the message and audited. The "always allow read-only"
-grant is kept per user and thread in Redis, stamped with the active role and
-session version; another context never inherits it. Durable facts the person
+data, are kept with the message and audited. Read-only calls run without
+consent as the active role; only actions ask, one call at a time, with no
+conversation-wide grant. Durable facts the person
 states are remembered per user and role (Studio's memory store, system id
 `neva-assistant`), listed and removed through `/memories`, and given to the
 model as untrusted data.
@@ -54,7 +54,7 @@ Nova is role-based: every Neva turn runs as the one active role of the user's we
 
 When a check is denied and another assigned role may allow it, Neva offers `USE ROLE <role>` (or `SET ROLE`) as its own statement. A role switch:
 
-- always asks for approval, separately from any "always allow read-only" grant, and that grant is cleared afterwards;
+- always asks for approval;
 - goes through the session's role activation, so only an assigned role can become active, and the account menu shows the new role at once (`role_changed` event);
 - hides results and history from the previous role, re-lists the Semantic Views the new role can open, and is audited, including refusals.
 

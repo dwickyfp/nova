@@ -58,7 +58,6 @@ function turn(answer: string, result = table): TranscriptTurn {
       { id: "answer", index: 0, type: "text", text: answer, complete: true },
       { id: "result", index: 1, type: "table", block: result, complete: true },
     ],
-    pendingConsent: null,
     blocks: { tables: [], charts: [], citations: [] },
     state: "done",
     run: emptyRunState("done"),

@@ -145,7 +145,7 @@ class SemanticQueryTool:
         "schema inspection. Returns verified rows and semantic evidence."
     )
     parameters = _PARAMETERS
-    #: Read-only only; the loop may auto-approve under an auto_read_only policy.
+    #: Read-only only, so it runs without a prompt; the role governs what it reads.
     classification: ToolClassification = "read_only"
     requires_consent = True
 

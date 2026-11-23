@@ -350,7 +350,6 @@ async def evaluate_live(
         )
         thread = AssistantThread(thread_id=f"bench-{case.id}", user_name=user["username"],
                                  title=case.id)
-        thread.consent.always_allow_read_only = True
 
         def context_factory(case_id: str = case.id) -> LoopContext:
             # A Studio turn: scoped agent, one bound Semantic View already authorized.

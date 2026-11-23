@@ -80,7 +80,6 @@ async def test_custom_sql_tools_offline_cost(monkeypatch, capsys) -> None:
             ]
         )
         thread = AssistantThread(thread_id="bench-custom", user_name="bench", title="Bench")
-        thread.consent.always_allow_read_only = True
 
         async def allow(_invocation, _classification):
             return True

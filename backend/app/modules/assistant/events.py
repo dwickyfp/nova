@@ -68,6 +68,12 @@ EVENT_DASHBOARD_CHANGED = "dashboard_changed"
 #: "action", "widget_ids", "page_id"}``. Whether it was saved comes from
 #: ``tool_status`` and ``dashboard_changed`` for the same call.
 EVENT_DASHBOARD_ACTIVITY = "dashboard_activity"
+#: Human in the loop: the turn waits for its user. ``input_required`` carries
+#: ``{"request_id", "kind", "request", "expires_at", "tool_call_id"?}``;
+#: ``input_resolved`` carries ``{"request_id", "status", "summary", "answer"?}``.
+#: An approval's request id is its tool call id.
+EVENT_INPUT_REQUIRED = "input_required"
+EVENT_INPUT_RESOLVED = "input_resolved"
 
 #: Media type the route must set on the response.
 SSE_MEDIA_TYPE = "text/event-stream"
@@ -165,6 +171,39 @@ def tool_call(view: ToolCallView) -> str:
 
 def tool_status(tool_call_id: str, status: str) -> str:
     return format_sse(EVENT_TOOL_STATUS, {"tool_call_id": tool_call_id, "status": status})
+
+
+def input_required(
+    request_id: str,
+    request: dict[str, Any],
+    *,
+    expires_at: str,
+    tool_call_id: str | None = None,
+) -> str:
+    """The turn pauses for its user; ``request`` is already bounded and redacted."""
+    payload: dict[str, Any] = {
+        "request_id": request_id,
+        "kind": request.get("kind"),
+        "request": request,
+        "expires_at": expires_at,
+    }
+    if tool_call_id:
+        payload["tool_call_id"] = tool_call_id
+    return format_sse(EVENT_INPUT_REQUIRED, payload)
+
+
+def input_resolved(
+    request_id: str,
+    status: str,
+    summary: str,
+    *,
+    answer: dict[str, Any] | None = None,
+) -> str:
+    """How a human-input request settled, as the journal replays it."""
+    payload: dict[str, Any] = {"request_id": request_id, "status": status, "summary": summary}
+    if answer:
+        payload["answer"] = answer
+    return format_sse(EVENT_INPUT_RESOLVED, payload)
 
 
 def client_action(action: dict[str, Any]) -> str:

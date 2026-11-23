@@ -14,7 +14,6 @@ import type { SelectedModel } from "./assistant-provider";
 import { ASSISTANT_DEFAULT_WIDTH } from "./assistant-panel-state";
 import { AssistantComposer } from "./assistant-composer";
 import { AssistantEmptyState } from "./assistant-empty-state";
-import type { ApprovalMode } from "./use-assistant-turn";
 import { MessageList, type UiContext } from "./message-list";
 import type { TurnContext } from "./stream-client";
 import type { NevaSuggestedAction } from "./surface-registry";
@@ -49,11 +48,6 @@ export type AssistantPanelProps = {
   /** Model pinned for the next turn; null lets the backend choose. */
   selectedModel?: SelectedModel;
   onSelectModel?: (model: SelectedModel) => void;
-  /** How the next read-only query is approved, shown in the composer. */
-  approvalMode?: ApprovalMode;
-  onSelectApprovalMode?: (mode: ApprovalMode) => void;
-  /** True while an approval-mode change is being persisted. */
-  settlingApprovalMode?: boolean;
   /** Clears the conversation so the next message starts a fresh thread. */
   onNewChat?: () => void;
   /** Switches the panel to an existing thread. */
@@ -103,9 +97,6 @@ function AssistantBody({
   onLoadOlderMessages,
   selectedModel,
   onSelectModel,
-  approvalMode,
-  onSelectApprovalMode,
-  settlingApprovalMode,
   activeContext,
   attachments,
   onRemoveAttachment,
@@ -203,9 +194,6 @@ function AssistantBody({
         disabled={disabled}
         selectedModel={selectedModel}
         onSelectModel={onSelectModel}
-        approvalMode={approvalMode}
-        onSelectApprovalMode={onSelectApprovalMode}
-        settlingApprovalMode={settlingApprovalMode}
         attachments={attachments}
         onRemoveAttachment={onRemoveAttachment}
       />

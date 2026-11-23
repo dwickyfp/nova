@@ -92,8 +92,8 @@ describe("turn reducer", () => {
     const turn = live(parsedEvents(answerCase.v2));
     const seqs = turn.run.parts.map((part) => part.seq);
     expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
-    expect(turnSegments(turn.run.parts).map((segment) => segment.kind)).toEqual(["work", "content"]);
-    expect(turn.content.map((item) => item.id)).toEqual(["content-0", "content-1", "content-2", "run-a#10"]);
+    expect(turnSegments(turn.run.parts).map((segment) => segment.kind)).toEqual(["work", "hitl", "work", "content"]);
+    expect(turn.content.map((item) => item.id)).toEqual(["content-0", "content-1", "content-2", "run-a#11"]);
     expect(turn.answer).toBe("Revenue rose 12%.");
     expect(turn.state).toBe("done");
     expect(turn.suggestions).toEqual(["Break it down by region"]);
@@ -106,6 +106,33 @@ describe("turn reducer", () => {
     const resumed = reduceEvents([...events.slice(0, 12), ...events, ...events.slice(8)]);
     expect(resumed).toEqual(once);
     expect(turnReducer(once, events[3])).toBe(once);
+  });
+
+  it("keeps one plan row when a step resumes after an answer, live and on replay", () => {
+    const plan = [{ id: "u", text: "Understand the request", status: "running" }];
+    const longer = [...plan, { id: "a", text: "Answer", status: "pending" }];
+    const v1: V1Frame[] = [
+      { event: "plan", data: { steps: plan } },
+      { event: "plan", data: { steps: plan } },
+      { event: "plan", data: { steps: longer } },
+      { event: "done", data: { message_id: "m", finish_reason: "stop" } },
+    ];
+    const records = encodeV1Turn(v1);
+    const planRows = (turn: TranscriptTurn) =>
+      turn.run.parts.filter((part) => part.type === "reasoning" && part.phase === "plan");
+    const streamed = live(parsedEvents(records));
+    expect(planRows(streamed)).toEqual([
+      expect.objectContaining({ planSteps: 2, text: "1. Understand the request\n2. Answer" }),
+    ]);
+    const reopened = replayed(storedMessage({ name: "plan", run_id: "run-1", role: "ANALYST", v1, v2: records }));
+    expect(view(reopened)).toEqual(view(streamed));
+    expect(planRows(reopened)).toHaveLength(1);
+    // A second plan part (a run that restates its plan) takes the first one's place.
+    const restated = parsedEvents(records);
+    const start = restated.find((event) => event.type === "part.start")!;
+    const again = { ...start, partId: "run-1#9", seq: 99 } as StudioEvent;
+    const twice = reduceEvents([...restated.filter((event) => event.type !== "run.finished"), again]);
+    expect(twice.parts.filter((part) => part.type === "reasoning" && part.phase === "plan")).toHaveLength(1);
   });
 
   it("produces the same turn live and from the stored journal", () => {
@@ -139,7 +166,11 @@ describe("turn reducer", () => {
       ["c1", "failed", "Result not confirmed"],
       ["c2", "cancelled", expect.any(String)],
     ]);
-    expect(turn.pendingConsent).toBeNull();
+    // The approval it was waiting on can no longer be given.
+    expect(turn.run.parts.find((part) => part.type === "hitl_request")).toMatchObject({
+      status: "cancelled",
+      state: "cancelled",
+    });
     expect(turn.error).toBe("Progress could not be saved.");
     expect(turn.state).toBe("error");
     expect(turn.content.find((item) => item.type === "ui")?.complete).toBe(false);

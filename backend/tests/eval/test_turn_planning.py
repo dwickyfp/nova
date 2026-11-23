@@ -182,7 +182,7 @@ async def test_multilingual_data_turn_executes_required_tool_with_consent(prompt
     )
     assert result.finish_reason == "stop"
     assert len(query.runs) == 1
-    assert approved == ["read_only"]
+    assert approved == []  # read-only: it runs without asking
 
 
 @pytest.mark.asyncio

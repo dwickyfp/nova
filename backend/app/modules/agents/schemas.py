@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field, field_validator
 
 from app.modules.agents.harness import HarnessPolicy
 from app.modules.agents.resources import ResourceBindings
@@ -25,10 +25,10 @@ from app.modules.agents.resources import ResourceBindings
 #: the agent, so the model cannot call it.
 AgentToolName = str
 
-#: HITL policy. ``auto_read_only`` runs read-only tools without a prompt;
-#: ``ask_every_tool`` prompts for each. There is deliberately no bypass value in
-#: v1 (Phase 12 §8).
-AgentPolicy = Literal["auto_read_only", "ask_every_tool"]
+#: Consent policy, a single behaviour: read-only tools run without a prompt (the
+#: caller's role governs what they read) and every other action asks. The former
+#: ``ask_every_tool`` value is refused on write and read back as this one.
+AgentPolicy = Literal["auto_read_only"]
 
 #: Loop limits. ``analyst`` lets an agent drill down after its first result;
 #: ``deep`` runs only as an asynchronous Deep Research run.
@@ -70,6 +70,12 @@ class AgentView(BaseModel):
     harness_mode: Literal["auto", "fast", "guided", "strict"] = "auto"
     budget_profile: BudgetProfile = "analyst"
     policy: AgentPolicy = "auto_read_only"
+
+    @field_validator("policy", mode="before")
+    @classmethod
+    def _one_policy(cls, _value: object) -> str:
+        # Agents saved with the retired ``ask_every_tool`` behave like every other.
+        return "auto_read_only"
     semantic_model_id: str | None = None
     semantic_model_ids: list[str] = Field(default_factory=list)
     semantic_view_ids: list[str] = Field(default_factory=list)

@@ -17,14 +17,15 @@ from tests.unit.test_assistant_consent_ownership import _signed_in
 
 
 async def _turn(thread_id, resolver, *, script=None, granted=False, iterative=False):
-    tool = EvalTool("query_execute")
+    # ``granted``: a read-only call, which runs without asking. Otherwise the
+    # call is an action, which asks every time.
+    tool = EvalTool("query_execute", classification="read_only" if granted else "destructive")
     registry = ToolRegistry()
     registry.register(tool)
     provider = RecordingProvider(script or [
         tool_call_frame("provider-reused-id", sql="SELECT 42"), text_frame("42"),
     ])
     thread = AssistantThread(thread_id, "alice", "Synthetic consent identity")
-    thread.consent.always_allow_read_only = granted
     frames = [frame async for frame in AssistantLoop(
         provider=provider, registry=registry, iterative=iterative,
     ).run(thread=thread, user_content="Run the requested constant queries",
@@ -98,7 +99,7 @@ async def test_prefetched_calls_with_reused_wire_ids_run_once_and_keep_public_id
     message["tool_calls"] += tool_call_frame("reused-in-batch", sql="SELECT 2")["tool_calls"]
 
     async def unexpected_consent(*_args):
-        pytest.fail("The existing read-only grant covers this controlled turn")
+        pytest.fail("A read-only call never asks")
 
     tool, provider, result = await _turn(
         "prefetch", unexpected_consent, granted=True, iterative=True,

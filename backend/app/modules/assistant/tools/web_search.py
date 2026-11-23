@@ -171,7 +171,7 @@ class WebSearchTool:
     description = DESCRIPTION
     parameters = PARAMETERS
     classification: ToolClassification = "read_only"
-    #: Fail closed: an ``ask_every_tool`` agent asks before every search.
+    #: Read-only: it runs without a prompt; the consent gate still sees the call.
     requires_consent = True
 
     def preview(self, invocation: ToolInvocation) -> str:

@@ -145,7 +145,7 @@ async def _turn(loop):
     frames = [
         frame
         async for frame in loop.run(
-            thread=thread(read_only_grant=True),
+            thread=thread(),
             user_content="Explain the available capability.",
             context=context,
             resolve_consent=allow,

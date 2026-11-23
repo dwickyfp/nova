@@ -49,9 +49,11 @@ export class TestStudioEncoder {
   private tools = new Map<string, string>();
   private toolState = new Map<string, string>();
   private content = new Map<string, string>();
+  private inputs = new Map<string, string>();
   private open = new Map<string, string>();
   private reasoning: [string, string, string] | null = null;
   private plan: string | null = null;
+  private planText = "";
   private finished = false;
 
   constructor(private readonly runId: string) {}
@@ -136,6 +138,10 @@ export class TestStudioEncoder {
         const partId = this.content.get(str(b.content_id));
         return partId && this.open.has(partId) ? [this.end(partId)] : [];
       }
+      case "input_required":
+        return this.inputRequired(key(b.request_id), origin, b);
+      case "input_resolved":
+        return this.inputResolved(key(b.request_id), b);
       case "role_changed":
         return this.roleChanged(b);
       case "error":
@@ -160,7 +166,18 @@ export class TestStudioEncoder {
     );
     for (const [partId, type] of [...this.open.entries()]) {
       if (type === "tool" && waiting.has(partId)) frames.push(this.end(partId, "cancelled"));
-      else frames.push(this.end(partId, state));
+      else if (type === "hitl_request") {
+        const status = reason === "consent_timeout" ? "expired" : "cancelled";
+        frames.push({
+          event: "input.resolved",
+          data: {
+            part_id: partId,
+            status,
+            summary: status === "expired" ? "The request expired" : "Stopped before you answered",
+          },
+        });
+        frames.push(this.end(partId, "cancelled"));
+      } else frames.push(this.end(partId, state));
     }
     const payload: Record<string, unknown> = { message_id: str(done.message_id), finish_reason: reason };
     for (const key of ["usage", "source"]) if (done[key]) payload[key] = done[key];
@@ -197,10 +214,16 @@ export class TestStudioEncoder {
         step && typeof step === "object" ? [`${index + 1}. ${str((step as Record<string, unknown>).text)}`] : [],
       )
       .join("\n");
-    if (this.plan) return [{ event: "part.delta", data: { part_id: this.plan, text, replace: true } }];
+    if (this.plan) {
+      // One plan row per run: an unchanged plan adds nothing, a changed one replaces it.
+      if (text === this.planText) return [];
+      this.planText = text;
+      return [{ event: "part.delta", data: { part_id: this.plan, text, replace: true } }];
+    }
     const frames = this.closeReasoning();
     const [partId, opened] = this.start("reasoning", { source: "nova", phase: "plan", text, plan_steps: steps.length });
     this.plan = partId;
+    this.planText = text;
     return [...frames, opened, this.end(partId)];
   }
 
@@ -211,10 +234,7 @@ export class TestStudioEncoder {
     const preview = view.sql_preview || undefined;
     if (status === "pending") {
       this.toolState.set(toolKey, status);
-      frames.push({
-        event: "consent.required",
-        data: { part_id: partId, classification: view.classification, tool_call: view, ...(preview ? { preview } : {}) },
-      });
+      frames.push({ event: "tool.status", data: { part_id: partId, status, ...(preview ? { preview } : {}) } });
       return frames;
     }
     frames.push(...this.toolStatus(toolKey, status, preview));
@@ -318,6 +338,38 @@ export class TestStudioEncoder {
     return frames;
   }
 
+  private inputRequired(inputKey: string, origin: string, b: Record<string, unknown>): V2Record[] {
+    const requestId = str(b.request_id);
+    const request = b.request;
+    if (!requestId || !request || typeof request !== "object" || this.inputs.has(inputKey)) return [];
+    const frames = this.closeReasoning();
+    const kind = str((request as Record<string, unknown>).kind);
+    const fields: Record<string, unknown> = { request_id: requestId, kind };
+    if (b.tool_call_id) {
+      const toolPart = this.tools.get(JSON.stringify([origin, str(b.tool_call_id)]));
+      if (toolPart) fields.tool_part_id = toolPart;
+    }
+    const [partId, opened] = this.start("hitl_request", fields);
+    this.inputs.set(inputKey, partId);
+    frames.push(opened);
+    frames.push({
+      event: "input.required",
+      data: { part_id: partId, request_id: requestId, kind, request, expires_at: str(b.expires_at) },
+    });
+    return frames;
+  }
+
+  private inputResolved(inputKey: string, b: Record<string, unknown>): V2Record[] {
+    const partId = this.inputs.get(inputKey);
+    if (!partId || !this.open.has(partId)) return [];
+    const status = str(b.status, "cancelled");
+    const answer = b.answer && typeof b.answer === "object" && !Array.isArray(b.answer) ? { answer: b.answer } : {};
+    return [
+      { event: "input.resolved", data: { part_id: partId, status, summary: str(b.summary), ...answer } },
+      this.end(partId, status === "cancelled" || status === "expired" ? "cancelled" : "done"),
+    ];
+  }
+
   private roleChanged(b: Record<string, unknown>): V2Record[] {
     const frames = [...this.open.keys()].map((partId) => this.end(partId, "cancelled"));
     this.reasoning = null;
@@ -325,6 +377,7 @@ export class TestStudioEncoder {
     this.tools.clear();
     this.toolState.clear();
     this.content.clear();
+    this.inputs.clear();
     frames.push({ event: "role.changed", data: { active_role: str(b.active_role) } });
     return frames;
   }

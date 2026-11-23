@@ -2,7 +2,6 @@ import type {
   ChartBlock as ChartBlockType,
   CitationBlock,
   TableBlock,
-  ToolCallView,
 } from "@/features/assistant/types";
 import type { AgentMessage, GuardDecision } from "@/features/agents/api";
 import type { RailStep } from "./thought-turn";
@@ -25,6 +24,7 @@ import {
   sealPart,
   turnReducer,
   type ContentPart,
+  type HitlPart,
   type TurnPart,
   type TurnRunState,
   type WorkPart,
@@ -36,9 +36,6 @@ export { MAX_UI_PROGRAM_BYTES } from "./runtime/turn-reducer";
 const FINISHED = new Set(["stop", "clarification"]);
 
 export type { StudioEvent } from "./runtime/protocol";
-
-/** A tool call with the id this conversation uses to resolve it. */
-export type PendingCall = ToolCallView & { tool_call_id: string };
 
 export type OrderedContent =
   | { id: string; index: number; type: "dashboard"; block: import("../viz/types").DashboardArtifactBlock; complete: true }
@@ -99,8 +96,6 @@ export type TranscriptTurn = {
   answer: string;
   /** Canonical authored output. Higher indexes wait for lower text to seal. */
   content: OrderedContent[];
-  /** A pending tool call waiting on the user's decision, if any. */
-  pendingConsent: PendingCall | null;
   blocks: {
     tables: { id: string; block: TableBlock }[];
     charts: { id: string; block: ChartBlockType }[];
@@ -135,7 +130,7 @@ export type TranscriptTurn = {
   /**
    * The source of truth: ordered parts from the protocol v2 reducer (or, for
    * a protocol 1 turn, rebuilt from its stored trace). `steps`, `content`,
-   * `answer`, `blocks`, `pendingConsent` and the outcome fields above are a
+   * `answer`, `blocks` and the outcome fields above are a
    * projection of it, kept for readers such as Observability and the footer.
    */
   run: TurnRunState;
@@ -151,7 +146,6 @@ export function newTurn(
     steps: [],
     answer: "",
     content: [],
-    pendingConsent: null,
     blocks: { tables: [], charts: [], citations: [] },
     state: "streaming",
     run: emptyRunState(),
@@ -164,15 +158,19 @@ export function newTurn(
 export type TurnSegment =
   | { kind: "work"; id: string; parts: WorkPart[] }
   | { kind: "content"; id: string; parts: ContentPart[] }
+  | { kind: "hitl"; id: string; part: HitlPart }
   | { kind: "role_change"; id: string; activeRole: string };
 
-/** Group a turn's ordered parts into what renders in place: work, content, work, … */
+/** Group a turn's ordered parts into what renders in place: work, content, a request, … */
 export function turnSegments(parts: TurnPart[]): TurnSegment[] {
   const segments: TurnSegment[] = [];
   for (const part of parts) {
     const last = segments[segments.length - 1];
     if (part.type === "role_change") {
       segments.push({ kind: "role_change", id: part.id, activeRole: part.activeRole });
+    } else if (part.type === "hitl_request") {
+      // A request to the user stands on its own, where it was asked.
+      segments.push({ kind: "hitl", id: part.id, part });
     } else if (isContentPart(part)) {
       if (last?.kind === "content") last.parts.push(part);
       else segments.push({ kind: "content", id: part.id, parts: [part] });
@@ -232,14 +230,6 @@ export function stepsFromParts(parts: TurnPart[]): RailStep[] {
           preview: part.toolName === "load_skill" ? undefined : part.preview,
           detail: showsToolDetail(part.toolName) ? part.detail : undefined,
         });
-        if (part.decision)
-          steps.push({
-            id: `${part.toolCallId}-decision`,
-            kind: "consent",
-            label: part.decision,
-            text: part.decision === "denied" ? `Denied ${part.toolName}` : `Approved ${part.toolName}`,
-            status: part.decision === "denied" ? "denied" : "done",
-          });
         break;
       case "guard":
         steps.push(guardStep(steps, part.decision));
@@ -287,9 +277,6 @@ export function contentFromParts(parts: TurnPart[]): OrderedContent[] {
 export function syncTurn(turn: TranscriptTurn): TranscriptTurn {
   const { run } = turn;
   const content = contentFromParts(run.parts);
-  const pending = [...run.parts]
-    .reverse()
-    .find((part) => part.type === "tool" && part.consent);
   return {
     ...turn,
     steps: stepsFromParts(run.parts),
@@ -300,7 +287,6 @@ export function syncTurn(turn: TranscriptTurn): TranscriptTurn {
       charts: content.flatMap((item) => (item.type === "chart" ? [{ id: item.id, block: item.block }] : [])),
       citations: content.flatMap((item) => (item.type === "citation" ? [item.block] : [])),
     },
-    pendingConsent: pending && pending.type === "tool" && pending.consent ? pending.consent : null,
     state: run.status,
     stopReason: run.stopReason,
     error: run.error,
@@ -331,18 +317,13 @@ function withPreview(turn: TranscriptTurn, toolCallId: string, runId: string | u
 /** Evidence and SQL previews a tool event adds; the transcript owns their merge rules. */
 function withToolEvidence(turn: TranscriptTurn, event: StudioEvent): TranscriptTurn {
   if (event.type === "role.changed") return { ...turn, evidence: [], toolPreviews: {} };
-  if (event.type !== "tool.status" && event.type !== "tool.evidence" && event.type !== "consent.required")
-    return turn;
+  if (event.type !== "tool.status" && event.type !== "tool.evidence") return turn;
   const tool = toolPart(turn, event.partId);
   if (!tool) return turn;
   const toolCallId = tool.toolCallId;
   // A Mission's nested run keeps its own identity for evidence and previews;
   // the turn's own calls are identified by call id alone, as in the stored trace.
   const toolRun = tool.originRunId;
-  if (event.type === "consent.required")
-    return event.call.sql_preview && tool.toolName !== "load_skill"
-      ? withPreview(turn, toolCallId, toolRun, event.call.sql_preview)
-      : turn;
   if (event.type === "tool.status") {
     let next = event.preview && tool.toolName !== "load_skill"
       ? withPreview(turn, toolCallId, toolRun, event.preview)
@@ -417,26 +398,6 @@ export function settleTurn(
   return syncTurn({
     ...turn,
     run: { ...turn.run, parts, status, ...(error !== undefined ? { error } : {}) },
-  });
-}
-
-/** Record the user's consent decision on the tool part it answers. */
-export function decideToolCall(
-  turn: TranscriptTurn,
-  toolCallId: string,
-  decision: "approved" | "denied",
-): TranscriptTurn {
-  return syncTurn({
-    ...turn,
-    revealKey: (turn.revealKey ?? 0) + 1,
-    run: {
-      ...turn.run,
-      parts: turn.run.parts.map((part) =>
-        part.type === "tool" && part.toolCallId === toolCallId
-          ? { ...part, decision, consent: undefined }
-          : part,
-      ),
-    },
   });
 }
 
@@ -566,7 +527,6 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
         steps: [],
         answer: "",
         content: [],
-        pendingConsent: null,
         blocks: { tables: [], charts: [], citations: [] },
         state: "done",
         run: emptyRunState("done"),
@@ -585,7 +545,6 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
         steps: [],
         answer: "",
         content: [],
-        pendingConsent: null,
         blocks: { tables: [], charts: [], citations: [] },
         state: "done",
         run: emptyRunState("done"),

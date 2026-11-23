@@ -28,7 +28,8 @@ async def test_approval_wait_preserves_execution_budget(monkeypatch, tool_expire
                     cancelled.set()
             return await super().run(invocation, context)
 
-    tool = Tool("query_execute")
+    # An action asks first; a read-only call never waits for anyone.
+    tool = Tool("query_execute", classification="destructive")
     registry = ToolRegistry()
     registry.register(tool)
     loop = AssistantLoop(
@@ -54,7 +55,7 @@ async def test_approval_wait_preserves_execution_budget(monkeypatch, tool_expire
         )
     ]
     result = TurnResult(frames=frames)
-    assert approvals == ["read_only"]
+    assert approvals == ["destructive"]
     if tool_expires:
         assert result.finish_reason == "timeout"
         assert cancelled.is_set()
@@ -73,7 +74,7 @@ async def test_abandoned_approval_has_its_own_bound(monkeypatch):
     import app.modules.assistant.service as service
 
     monkeypatch.setattr(service, "CONSENT_TIMEOUT_SECONDS", 0)
-    tool = EvalTool("query_execute")
+    tool = EvalTool("query_execute", classification="destructive")
     registry = ToolRegistry()
     registry.register(tool)
     loop = AssistantLoop(

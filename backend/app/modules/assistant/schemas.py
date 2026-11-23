@@ -287,29 +287,26 @@ class AgentMessageRequest(MessageRequest):
 
 
 class ConsentDecisionRequest(BaseModel):
-    """Resolve a pending tool call.
+    """Allow or deny one pending action. It covers that call only."""
 
-    ``decision`` is one of ``allow_once`` / ``allow_session`` / ``deny``.
-    ``allow_session`` grants a read-only, conversation-scoped policy (E2b).
+    decision: Literal["allow_once", "deny"]
+    secure_input: dict[str, str] | None = None
+
+
+class HumanInputAnswerRequest(BaseModel):
+    """The answer to one human-in-the-loop request.
+
+    ``action`` is ``allow_once`` / ``deny`` for an approval, and ``answer`` /
+    ``decline`` for a question, form or choice. ``answer`` is validated against
+    the request.
     """
 
-    decision: Literal["allow_once", "allow_session", "deny"]
-    secure_input: dict[str, str] | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["allow_once", "deny", "answer", "decline"]
+    answer: dict[str, Any] | None = None
 
 
 class ConsentDecisionResponse(BaseModel):
     tool_call_id: str
     status: ToolStatus
-    grant_active: bool = False
-
-
-class GrantRequest(BaseModel):
-    """Set or clear the conversation's read-only always-allow grant.
-
-    The composer's approval-mode selector sets this before a turn runs, so a
-    read-only query does not need a per-call approval card. Only the
-    read-only grant exists, so the value is a bounded boolean rather than a
-    policy string; a future grant type adds a field, not a free-form policy.
-    """
-
-    always_allow_read_only: bool

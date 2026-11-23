@@ -189,7 +189,6 @@ class Scenario:
     content: str = "How many orders are there?"
     tools: list[EvalTool] = field(default_factory=list)
     turn_plan: dict[str, Any] | None = None
-    read_only_grant: bool = False
     resolve_consent: Callable[[ToolInvocation, str], Awaitable[bool | None]] | None = None
     history_turns: int = 0
     history_chars: int = 0
@@ -250,7 +249,6 @@ async def run_scenario(scenario: Scenario) -> TurnResult:
             AssistantMessage(message_id=f"a{i}", role="assistant", content=f"answer {i} {pad}")
         )
     thread.messages.extend(scenario.history_messages)
-    thread.consent.always_allow_read_only = scenario.read_only_grant
     thread.messages.append(
         AssistantMessage(
             message_id="cur", role="user", content=scenario.content,
