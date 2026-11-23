@@ -19,7 +19,8 @@ TOOL = {
     "source": "mcp:server-1", "is_enabled": True, "created_at": NOW, "updated_at": NOW,
 }
 MUTATIONS = [
-    ("POST", "/mcp-servers", {"name": "Synthetic fixture"}, "create_mcp_server", SERVER, 201),
+    ("POST", "/mcp-servers", {"name": "Synthetic fixture", "endpoint": "https://tools.example.com/mcp"},
+     "create_mcp_server", SERVER, 201),
     ("PATCH", "/mcp-servers/server-1", {"is_active": False}, "update_mcp_server", SERVER, 200),
     ("DELETE", "/mcp-servers/server-1", None, "delete_mcp_server", True, 204),
     ("POST", "/mcp-servers/server-1/discover", None, "update_mcp_server", SERVER, 200),

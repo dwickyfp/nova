@@ -169,3 +169,14 @@ def test_public_steps_name_tools_by_their_label():
     assert _tool_label(runner, runner.name) == "Nova test tools: fx convert"
     assert _tool_label(None, "query_execute") == "query_execute"
     assert _tool_label(SimpleNamespace(display_name="  "), "load_skill") == "load_skill"
+
+
+def test_chosen_tools_step_names_an_external_tool_by_its_label():
+    """After #232 the plan step says "Chose ..."; an MCP id must not reach it."""
+    from app.modules.assistant.service import _chosen_tools_phrase
+
+    runner = McpToolRunner(SERVER, TOOL)
+    tools = {runner.name: runner}
+    phrase = _chosen_tools_phrase(tools.get, [runner.name, "load_skill"])
+    assert "Nova test tools: fx convert" in phrase
+    assert "mcp" not in phrase.lower().replace("nova test tools", "")

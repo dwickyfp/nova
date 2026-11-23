@@ -1232,12 +1232,8 @@ class AssistantLoop:
             )))
             context.selected_tools = list(selected_tools)
         # The rail names the chosen tools in plain words; a turn that needs no
-        # tool says what was done instead of reporting an empty selection. An
-        # external (MCP) tool's name is an internal id, so it goes by its label.
-        chosen = tool_phrases(
-            _tool_label(self._registry.get(name), name) if name.startswith("mcp_") else name
-            for name in selected_tools
-        )
+        # tool says what was done instead of reporting an empty selection.
+        chosen = _chosen_tools_phrase(self._registry.get, selected_tools)
         yield _thinking_step(
             context,
             "plan",
@@ -5058,6 +5054,15 @@ async def _audit_tool_call(
         )
     except Exception:  # noqa: BLE001 - an audit outage must not stop the turn
         logger.warning("Tool call audit write failed for %s", invocation.tool_name, exc_info=True)
+
+
+def _chosen_tools_phrase(lookup: Any, names: list[str]) -> str:
+    """The chosen tools in plain words. An external (MCP) tool's name is an
+    internal id, so it goes by its label."""
+    return tool_phrases(
+        _tool_label(lookup(name), name) if name.startswith("mcp_") else name
+        for name in names
+    )
 
 
 def _tool_label(tool: Any, name: str) -> str:
