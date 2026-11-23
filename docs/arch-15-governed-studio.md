@@ -64,6 +64,8 @@ and interactive-UI state use.
 
 The run journal stores the same v2 frames, so a reconnect replays from its
 `seq` cursor and the client ignores events at or below the last applied `seq`.
+The PG run-event guard (revision `0061`) checks that a stored row's sequence is
+the frame's `seq`, or `sequence` for a v1 frame.
 The assistant message stores the delivered events as its first step
 (`{"kind": "event_journal", "protocol_version": 2, "events": [...]}`), without
 keep-alives, Mission projections or events from before the last role change.

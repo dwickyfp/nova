@@ -316,3 +316,15 @@ def test_unknown_and_v1_only_frames_are_never_passed_on_unnumbered() -> None:
 if __name__ == "__main__":
     CONTRACT.write_text(json.dumps(_contract(), indent=2) + "\n")
     print(f"wrote {CONTRACT}")
+
+
+def test_numbered_frames_are_accepted_by_the_run_event_store() -> None:
+    # The resume journal stores the frames the route numbers. Its sequence reader
+    # must find the v2 ``seq``, or every Studio run fails to save its progress.
+    from app.modules.agents.metadata_repository import frame_sequence as stored_sequence
+
+    for case in CASES:
+        records = encode_case(case)
+        frames = _frames(records)
+        assert [stored_sequence(frame) for frame in frames] == list(range(len(records)))
+        assert [events_v2.frame_sequence(frame) for frame in frames] == list(range(len(records)))

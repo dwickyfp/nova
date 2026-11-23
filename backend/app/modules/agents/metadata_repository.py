@@ -88,10 +88,13 @@ class CredentialRefused(ValueError):
 
 
 def frame_sequence(frame: str) -> int:
-    """The sequence inside an SSE ``data:`` frame, as the source journal reads it."""
+    """The sequence inside an SSE ``data:`` frame, as the source journal reads it.
+
+    Studio protocol v2 frames number events as ``seq``; v1 frames as ``sequence``.
+    """
     try:
         payload = json.loads(frame.split("data: ", 1)[1])
-        sequence = payload["sequence"]
+        sequence = payload["seq"] if "seq" in payload else payload["sequence"]
     except (IndexError, KeyError, TypeError, ValueError) as exc:
         raise ValueError("The run event has no sequence.") from exc
     if type(sequence) is not int or sequence < 0:
