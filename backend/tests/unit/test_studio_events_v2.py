@@ -354,6 +354,22 @@ def test_run_finished_seals_open_parts_by_outcome() -> None:
     assert records[-1]["data"]["finish_reason"] == "interrupted"
 
 
+def test_a_chart_part_keeps_the_query_it_was_drawn_from() -> None:
+    from app.modules.assistant import events
+
+    encoder = StudioStreamEncoder("run")
+    frame = events.chart(
+        "chart-1", "{}", source_tool_call_id="query-1", content_index=1, content_id="run:1"
+    )
+    started = [
+        payload
+        for name, payload in map(parse_frame, encoder.translate(frame))
+        if name == "part.start"
+    ]
+    assert started[0]["block"]["tool_call_id"] == "chart-1"
+    assert started[0]["block"]["source_tool_call_id"] == "query-1"
+
+
 def test_finish_force_reissues_an_undelivered_terminal() -> None:
     encoder = StudioStreamEncoder("run")
     assert encoder.finish({"finish_reason": "stop"})
