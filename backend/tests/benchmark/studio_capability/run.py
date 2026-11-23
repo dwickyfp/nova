@@ -1,0 +1,320 @@
+"""Run the Studio capability corpus against a live Nova, as the user under test.
+
+    cd backend && NOVA_BENCH_PASSWORD=... NOVA_BENCH_OUT=/path/outside/repo \\
+        uv run python -m tests.benchmark.studio_capability.run [--ids a,b] [--limit N]
+
+Each unit is one real Studio turn over HTTP: sign in, the named agent, a new
+thread (or the session's thread), the protocol-v2 SSE stream. Per turn the
+runner stores the full event journal with arrival times, the folded view of
+what the user saw, the deterministic checks, the human-input answers it gave,
+and whether the stored journal replays to the same parts (reload).
+
+The run is resumable: a finished unit is skipped, and an interrupted session
+continues in its own thread from its next turn. Turns are paced (``--pause``)
+and at most two run at once; sessions run their turns in order. The run stops
+after ``--max-failures`` consecutive transport failures so a dying stack is
+not hammered. No credential is printed or stored.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import time
+from pathlib import Path
+from typing import Any
+
+import httpx
+
+from tests.benchmark.studio_capability import corpus, settings
+from tests.benchmark.studio_capability.checks import check
+from tests.benchmark.studio_capability.client import StudioClient, TurnResult, with_retry
+from tests.benchmark.studio_capability.journal import Part, TurnView, fold
+
+DATA_START, DATA_END = "2025-06-01", "2025-07-05"
+
+
+# ── human-in-the-loop answers ──────────────────────────────────────────
+
+def hitl_policy(unit: dict[str, Any]):  # noqa: ANN201 - returns a client.HitlPolicy
+    """Answer like a cooperative person, and deny every action by default.
+
+    ``first`` answers a question with its first choice, picks the suggested (or
+    first) option and fills a form with the first value or the data's range.
+    ``deny`` declines questions and denies approvals. An approval is allowed
+    only when the unit says ``allow``.
+    """
+    policy = str((unit.get("hitl") or {}).get("policy") or "first")
+    text = (unit.get("hitl") or {}).get("text")
+
+    def decide(kind: str, request: dict[str, Any]) -> tuple[str, dict[str, Any] | None]:
+        if kind == "approval":
+            return ("allow_once", None) if policy == "allow" else ("deny", None)
+        if policy == "deny":
+            return "decline", None
+        if kind == "question":
+            choices = request.get("choices") or []
+            answer = text or (choices[0] if choices else "Use revenue, all dates, all cities.")
+            return "answer", {"text": str(answer)}
+        if kind == "choice":
+            options = request.get("options") or []
+            chosen = next((o for o in options if o.get("recommended")),
+                          options[0] if options else None)
+            return ("answer", {"option_id": chosen["id"]}) if chosen else ("decline", None)
+        if kind == "form":
+            values: dict[str, Any] = {}
+            for field in request.get("fields") or []:
+                widget = field.get("widget")
+                if widget == "select" and field.get("values"):
+                    values[field["name"]] = field["values"][0]
+                elif widget == "date":
+                    values[field["name"]] = DATA_START
+                elif widget == "date_range":
+                    values[field["name"]] = {"start": DATA_START, "end": DATA_END}
+                elif widget in {"number", "integer"}:
+                    values[field["name"]] = field.get("minimum", 1)
+                elif widget == "toggle":
+                    values[field["name"]] = True
+                elif widget == "text":
+                    values[field["name"]] = str(field.get("default") or "All")
+            return "answer", {"values": values}
+        return "decline", None
+
+    return decide
+
+
+# ── one unit ───────────────────────────────────────────────────────────
+
+class Runner:
+    def __init__(self, client: StudioClient, agent: dict[str, Any], out: Path, *,
+                 pause: float, max_failures: int, replay: bool):
+        self.client = client
+        self.agent = agent
+        self.out = out
+        self.pause = pause
+        self.max_failures = max_failures
+        self.replay = replay
+        self.gt = corpus.ground_truth().get("items", {})
+        self._last_start = 0.0
+        self._pace = asyncio.Lock()
+        self.failures = 0
+        self.stopped = False
+        (out / "turns").mkdir(parents=True, exist_ok=True)
+        (out / "sessions").mkdir(parents=True, exist_ok=True)
+
+    def done(self, unit_id: str) -> bool:
+        return (self.out / "turns" / f"{unit_id}.json").is_file()
+
+    async def _paced(self) -> None:
+        async with self._pace:
+            wait = self._last_start + self.pause - time.monotonic()
+            if wait > 0:
+                await asyncio.sleep(wait)
+            self._last_start = time.monotonic()
+
+    async def _healthy(self) -> bool:
+        try:
+            async with httpx.AsyncClient(timeout=10) as http:
+                return (await http.get(f"{settings.api()}/health")).status_code == 200
+        except httpx.HTTPError:
+            return False
+
+    async def turn(self, unit: dict[str, Any], thread_id: str | None) -> dict[str, Any]:
+        await self._paced()
+        agent_id = self.agent["agent_id"]
+        if unit.get("mode") == "deep_research":
+            return await self._deep_research(unit)
+        if thread_id is None:
+            thread_id = await with_retry(
+                lambda: self.client.new_thread(agent_id, f"bench {unit['id']}"))
+        result: TurnResult = await self.client.turn(
+            agent_id, thread_id, unit["question"], hitl=hitl_policy(unit),
+            stop_after_s=unit.get("stop_after_s"),
+        )
+        view = fold(result.events)
+        record = self._record(unit, result, view)
+        if self.replay and result.run_id and not result.transport_error:
+            record["replay"] = await self._replay_check(agent_id, thread_id, result.run_id, view)
+        return record
+
+    async def _replay_check(self, agent_id: str, thread_id: str, run_id: str,
+                            live: TurnView) -> dict[str, Any]:
+        try:
+            stored = fold(await self.client.replay(agent_id, thread_id, run_id))
+        except Exception as exc:  # noqa: BLE001 - recorded, never fatal
+            return {"ok": False, "error": type(exc).__name__}
+        shape = [(p.type, p.tool_name) for p in live.parts]
+        replayed = [(p.type, p.tool_name) for p in stored.parts]
+        return {"ok": shape == replayed and stored.answer_text == live.answer_text,
+                "live_parts": len(shape), "replayed_parts": len(replayed),
+                "same_text": stored.answer_text == live.answer_text}
+
+    def _record(self, unit: dict[str, Any], result: TurnResult, view: TurnView) -> dict[str, Any]:
+        checks = check(unit, self.gt.get(unit["id"]), view,
+                       transport_error=result.transport_error, total_s=result.total_s)
+        return {
+            "id": unit["id"],
+            "unit": unit,
+            "agent": {"agent_id": self.agent["agent_id"], "name": self.agent.get("name"),
+                      "model": self.agent.get("model_name")},
+            "identity": {"user": self.client.username, "role": self.client.role},
+            "thread_id": result.thread_id,
+            "run_id": result.run_id,
+            "started_at": result.started_at,
+            "total_s": result.total_s,
+            "http_status": result.http_status,
+            "transport_error": result.transport_error,
+            "cancelled_by_runner": result.cancelled_by_runner,
+            "hitl_answers": result.hitl_answers,
+            "view": view.summary(),
+            "checks": checks,
+            "events": result.events,
+        }
+
+    async def _deep_research(self, unit: dict[str, Any]) -> dict[str, Any]:
+        started = time.monotonic()
+        try:
+            state = await self.client.deep_research(self.agent["agent_id"], unit["question"])
+            error = None
+        except Exception as exc:  # noqa: BLE001 - recorded as the unit's failure
+            state, error = {}, type(exc).__name__
+        final = state.get("final") or {}
+        report = str(final.get("report") or "")
+        view = TurnView(parts=[Part(part_id="report", type="text", text=report)] if report else [],
+                        finish_reason="stop" if report else "error")
+        result = TurnResult(thread_id=str((state.get("start") or {}).get("thread_id") or ""),
+                            question=unit["question"], transport_error=error,
+                            total_s=round(time.monotonic() - started, 3))
+        record = self._record(unit, result, view)
+        record["deep_research"] = {"status": final.get("status"),
+                                   "plan": final.get("plan"), "progress": final.get("progress")}
+        return record
+
+    def save(self, record: dict[str, Any]) -> None:
+        path = self.out / "turns" / f"{record['id']}.json"
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(record, ensure_ascii=False, default=str))
+        tmp.replace(path)
+        checks = record["checks"]
+        print(f"{record['id']:<28} {checks['outcome']:<10} "
+              f"num={checks['numeric']['recall']} ui={checks['ui_recall']} "
+              f"t={record.get('total_s')}s tools={','.join(checks['tools'])[:60]}", flush=True)
+
+    async def guard(self, record: dict[str, Any]) -> None:
+        if record.get("transport_error") or (record.get("http_status") or 200) >= 500:
+            self.failures += 1
+            if not await self._healthy():
+                await asyncio.sleep(30)
+            if self.failures >= self.max_failures:
+                print("Stopping: too many consecutive transport failures.", flush=True)
+                self.stopped = True
+        else:
+            self.failures = 0
+
+    async def single(self, unit: dict[str, Any]) -> None:
+        if self.stopped or self.done(unit["id"]):
+            return
+        record = await self.turn(unit, None)
+        await self.guard(record)
+        if not record.get("transport_error"):
+            self.save(record)
+
+    async def session(self, session: dict[str, Any], turns: list[dict[str, Any]]) -> None:
+        state_path = self.out / "sessions" / f"{session['id']}.json"
+        state = json.loads(state_path.read_text()) if state_path.is_file() else {}
+        thread_id = state.get("thread_id")
+        for unit in turns:
+            if self.stopped:
+                return
+            if self.done(unit["id"]):
+                continue
+            if thread_id is None:
+                thread_id = await with_retry(lambda: self.client.new_thread(
+                    self.agent["agent_id"], f"bench {session['id']}"))
+                state = {"thread_id": thread_id, "session_id": session["id"]}
+                state_path.write_text(json.dumps(state))
+            record = await self.turn(unit, thread_id)
+            await self.guard(record)
+            if record.get("transport_error"):
+                return  # resume this session from this turn next time
+            self.save(record)
+
+
+def select(units: list[dict[str, Any]], args: argparse.Namespace) -> list[dict[str, Any]]:
+    wanted = {"single": {"single"}, "session": {"session_turn"}, "fresh": {"fresh_twin"},
+              "all": {"single", "session_turn", "fresh_twin"}}[args.units]
+    chosen = [u for u in units if u["unit"] in wanted]
+    if args.ids:
+        ids = set(args.ids.split(","))
+        chosen = [u for u in units if u["id"] in ids or u.get("session_id") in ids]
+    if args.category:
+        chosen = [u for u in chosen if u["category"] in args.category]
+    if args.limit:
+        chosen = chosen[: args.limit]
+    return chosen
+
+
+async def main_async(args: argparse.Namespace) -> None:
+    out = settings.out_dir(args.out)
+    units = select(corpus.units(), args)
+    if args.dry_run:
+        for unit in units:
+            print(unit["id"], "|", unit["question"][:90])
+        print(f"{len(units)} units")
+        return
+    identity = settings.user()
+    client = StudioClient(settings.api())
+    try:
+        await client.login(identity.username, identity.password, identity.role)
+        agent = await client.agent_by_name(settings.agent_name())
+        detail = await client.request("GET", f"agents/{agent['agent_id']}")
+        agent = {**agent, "model_name": detail.get("model_name")}
+        manifest = {"corpus_version": units[0]["corpus_version"] if units else None,
+                    "api": settings.api(), "agent": agent.get("name"),
+                    "agent_id": agent["agent_id"], "model": agent.get("model_name"),
+                    "user": identity.username, "role": client.role,
+                    "started_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+        (out / "manifest.json").write_text(json.dumps(manifest, indent=1))
+        runner = Runner(client, agent, out, pause=args.pause, max_failures=args.max_failures,
+                        replay=not args.no_replay)
+        sessions = {s["id"]: s for s in corpus.sessions()}
+        jobs: list[Any] = []
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for unit in units:
+            if unit["unit"] == "session_turn":
+                grouped.setdefault(unit["session_id"], []).append(unit)
+            else:
+                jobs.append(("single", unit))
+        jobs.extend(("session", (sessions[sid], turns)) for sid, turns in grouped.items())
+        gate = asyncio.Semaphore(max(1, min(2, args.concurrency)))
+
+        async def run(job: tuple[str, Any]) -> None:
+            async with gate:
+                if job[0] == "single":
+                    await runner.single(job[1])
+                else:
+                    await runner.session(*job[1])
+
+        await asyncio.gather(*(run(job) for job in jobs))
+    finally:
+        await client.close()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--out", help="results directory outside the repository")
+    parser.add_argument("--units", choices=["single", "session", "fresh", "all"], default="all")
+    parser.add_argument("--ids", help="comma-separated unit or session ids")
+    parser.add_argument("--category", action="append", help="limit to a category (repeatable)")
+    parser.add_argument("--limit", type=int)
+    parser.add_argument("--concurrency", type=int, default=1, help="1 or 2")
+    parser.add_argument("--pause", type=float, default=3.0, help="seconds between turn starts")
+    parser.add_argument("--max-failures", type=int, default=4)
+    parser.add_argument("--no-replay", action="store_true", help="skip the reload check")
+    parser.add_argument("--dry-run", action="store_true")
+    asyncio.run(main_async(parser.parse_args()))
+
+
+if __name__ == "__main__":
+    main()
