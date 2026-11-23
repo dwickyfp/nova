@@ -34,13 +34,13 @@ These primitives live under `frontend/src/components/ui/map/`. The model receive
 ## Resource and design adaptation
 
 - Worker code remains bundled. Upstream CDN worker fallback and automatic CARTO styles are removed.
-- Business maps use bundled Natural Earth land geometry and bundled Noto Sans Regular count glyphs. Their request transform rejects every cross-origin resource, including after a theme change.
+- Since #217 business maps use the same online CARTO street basemap as public maps; the tile coordinates reveal the viewed area to CARTO, while no rows, labels or figures leave Nova. The bundled Natural Earth land geometry and Noto Sans Regular count glyphs remain for `basemap="bundled"` (tests, previews without network), whose request transform rejects every cross-origin resource, including after a theme change.
 - Noto glyphs and their license originate from the [MapLibre demo font distribution](https://github.com/maplibre/demotiles/tree/gh-pages/font/Noto%20Sans%20Regular); only the 0–255 range used by cluster counts is bundled.
-- Public maps use the CARTO basemaps from the mapcn examples: Positron for light and Dark Matter for dark, with CARTO and OpenStreetMap attribution from the tile source. Business maps never load them, because tile requests reveal the viewed area. Public maps also offer a 3D view toggle, matching mapcn's "OpenStreetMap 3D" example: it switches to OpenFreeMap Liberty, which carries extruded buildings from zoom 14, and eases to pitch 60° and at least zoom 15. Show all and Reset leave 3D, and a saved camera at 60° reopens in 3D. Liberty has no dark variant. Business maps have no 3D view. The legacy renderer behind the rollback flag keeps OpenFreeMap. Public driving routes retain the existing bounded OSRM adapter.
+- Public maps use the CARTO basemaps from the mapcn examples: Positron for light and Dark Matter for dark, with CARTO and OpenStreetMap attribution from the tile source. Business maps load them too (see above). Public and business maps also offer a 3D view toggle, matching mapcn's "OpenStreetMap 3D" example: it switches to OpenFreeMap Liberty, which carries extruded buildings from zoom 14, and eases to pitch 60° and at least zoom 15. Show all and Reset leave 3D, and a saved camera at 60° reopens in 3D. Liberty has no dark variant. The legacy renderer behind the rollback flag keeps OpenFreeMap. Public driving routes retain the existing bounded OSRM adapter.
 - Colors resolve Nova semantic tokens to MapLibre-compatible RGBA. Popup and attribution CSS is scoped to `.nova-map`; controls use Nova surfaces and visible keyboard focus.
 - Map actions (show all, map view, tilt, reset) render above the canvas so they never cover evidence. The canvas has no navigation buttons; pan, scroll/pinch zoom and keyboard navigation remain. Camera fits pad for the attribution and half a numbered marker. Show all returns to a flat, north-up overview.
 - Camera animation respects reduced motion. Popup Escape handling restores its trigger's focus. Failed initialization and resources provide visible outcomes.
-- The business basemap remains an overview. A different React component does not add street-level cartographic detail.
+- The bundled overview basemap stays an overview. A different React component does not add street-level cartographic detail.
 
 ## Catalog and state
 

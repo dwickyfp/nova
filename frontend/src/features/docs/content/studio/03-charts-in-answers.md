@@ -88,6 +88,8 @@ ke Malang lewat jalan").
   its position is approximate.
 - Routes and pictures are saved with the answer, so a reopened conversation
   shows the same map without looking them up again.
+- The street map is loaded from an online map service, which sees the area
+  you are looking at but none of your data.
 
 Ask for a picture of a public place or thing, such as "Show a picture of
 Borobudur", and the page shows a picture from Wikimedia Commons with a link

@@ -166,7 +166,7 @@ GeoMap accepts longitude/latitude columns or validated WKT/GeoJSON Point, LineSt
 
 MapLibre renders point clusters, lines and polygon outlines/fills. Selection is declarative and linked to the location table. The table remains usable if WebGL fails. Radius and containment results must originate in Semantic Views or configured SQL tools through Nova's SQL frontend. Tests use the pinned StarRocks 4.1.4 functions; browser geometry rendering does not establish analytical containment or distance evidence.
 
-Business basemap: bundled Natural Earth 1:110m land geometry, public domain. Attribution is visible; licensing/source information is in `frontend/public/licenses/natural-earth.txt`. It is an overview, not a street map. No business coordinates, labels or viewport go to external tile, routing, glyph or geocoding services.
+Basemap (runtime since #217): business and public maps both draw the CARTO street basemap (Positron light, Dark Matter dark) from `basemaps.cartocdn.com` (style, sprites, glyphs) and `tiles.basemaps.cartocdn.com` (vector tiles); the 3D toggle switches to OpenFreeMap Liberty from `tiles.openfreemap.org`. The browser sends those hosts only standard tile and style requests: the tile coordinates (z/x/y) reveal the area being viewed, and the browser's default referrer policy sends Nova's origin. No rows, labels, figures, popups or cookies are sent, and no geocoding service is called. The bundled Natural Earth 1:110m overview (public domain; `frontend/public/licenses/natural-earth.txt`) remains for `basemap="bundled"` (tests and previews without network). Nova sets no Content-Security-Policy today, so no CSP lists these hosts.
 
 ## Runtime harness changes
 
