@@ -195,4 +195,25 @@ journal through a Ranger policy (`nova-managed/stream-writer/<source>`) when
 a Stream is created. Without the account, `CREATE STREAM` fails with
 `STREAM_CHANGE_TRACKING_UNAVAILABLE`.
 
+### Journal tables
+
+Each source keeps its change journal and lineage in two tables beside it,
+`__nova_stream_changes_<id>` and `__nova_stream_lineage_<id>`. They hold every
+historical row image of the source, so only the writer may use them:
+
+* Before the first journal is created, Nova creates the Ranger policy
+  `nova-managed/stream-journals`. It denies `SELECT`, `INSERT`, `UPDATE` and
+  `DELETE` on `__nova_stream_*` in every database to the `public` group, with
+  exceptions for the writer role and `ACCOUNTADMIN`. A wildcard grant such as
+  `sales.*` therefore does not reach the journals. The scheduler's maintenance
+  pass recreates or repairs the policy for deployments that already have
+  sources. Without Ranger, or without `STREAM_WRITER_ROLE`, `CREATE STREAM`
+  fails instead of creating an unprotected journal.
+* User SQL that names a `__nova_stream_*` table (in any position: `FROM`,
+  `INSERT INTO`, `DROP TABLE`, `DESC`, a view or `CREATE TABLE … AS`) is
+  refused by the SQL frontend before it reaches the engine.
+* When the last Stream of a source is dropped, the source becomes `DROPPED`,
+  its two journal tables are dropped and its writer policy is removed. The
+  maintenance pass does the same for sources dropped before this existed.
+
 `SHOW STREAM LOAD` is StarRocks' own statement and unrelated to Nova Streams.

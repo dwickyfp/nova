@@ -164,6 +164,10 @@ class SQLPlanner:
     async def plan(
         self, statement: ast.Statement, context: PlanningContext, *, source_key: int = 0
     ) -> ExecutionPlan:
+        from app.sql_frontend.internal_names import refuse_internal_relations
+
+        # Stream journals hold every historical row image: user SQL never names them.
+        refuse_internal_relations(statement.parsed)
         context.semantics = self.semantics
         context.validated[source_key] = self.semantics.validate(statement, context)
         logical = LogicalPlan(statement, self.semantics.analyze(statement), source_key)

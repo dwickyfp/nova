@@ -21,6 +21,7 @@ A stream with nothing pending never goes stale: there is nothing to lose.
 from __future__ import annotations
 
 import functools
+import logging
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -66,6 +67,8 @@ from app.modules.streams.sources import (
     writer_query,
 )
 from app.modules.streams.verification import TargetCommitVerifier, TargetIdentity
+
+logger = logging.getLogger(__name__)
 
 STALE = "STALE"
 #: Journal operation of a ``SHOW_INITIAL_ROWS`` snapshot row; only the stream
@@ -836,6 +839,12 @@ class StreamService:
             by_status[source.status] = by_status.get(source.status, 0) + 1
             if source.status == READY:
                 await self.collect_source(source)
+        try:
+            # Journal guard backfill and release of dropped sources' journals.
+            guards = await source_registry.maintain_guards(has_sources=bool(sources))
+        except Exception:  # noqa: BLE001 - housekeeping; retried on the next pass
+            logger.warning("stream journal guard maintenance failed", exc_info=True)
+            guards = {"released": 0}
         for status, count in counts.items():
             STREAM_OBJECTS.labels(status).set(count)
         for status in ("READY", "BLOCKED", "SOURCE_INVALID", "REGISTERING"):
@@ -846,6 +855,7 @@ class StreamService:
             "streams": counts,
             "sources": by_status,
             "backlog_commits_max": backlog_max,
+            "released_sources": guards["released"],
             "seconds": round(time.time() - started, 3),
         }
 

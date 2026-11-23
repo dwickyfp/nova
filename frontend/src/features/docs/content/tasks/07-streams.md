@@ -228,7 +228,8 @@ DROP STREAM IF EXISTS orders_changes;
 
 `DROP STREAM` asks you to confirm. Only the stream's owner role can drop or
 replace it. When the last stream on a table is dropped, Nova stops capturing
-that table and the refused writes above work again.
+that table, deletes the change history it kept for it, and the refused writes
+above work again.
 
 ## Limits and errors
 
@@ -241,3 +242,8 @@ that table and the refused writes above work again.
 | `Streams can be read by SELECT and INSERT` | Another kind of statement, such as `CREATE TABLE ... AS SELECT`, tried to read a stream. |
 
 Streams on views, external catalogs or partitioned tables are not supported.
+
+Nova keeps each table's change history in tables whose names start with
+`__nova_stream_`. Only Nova uses them: SQL that names one fails with
+`Tables named __nova_stream_… are managed by Nova Streams and cannot be used
+in SQL`. Read the changes through the stream instead.
