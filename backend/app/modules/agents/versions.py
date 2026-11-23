@@ -14,6 +14,9 @@ from app.modules.agents.schemas import AgentCreateRequest, AgentUpdateRequest
 from app.modules.assistant.skills import contains_credential_shape
 from app.modules.assistant.tools.redaction import redact_row
 
+#: The consent policy retired when read-only queries stopped asking.
+RETIRED_POLICY = "ask_every_tool"
+
 VERSIONS_DDL = """
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_AGENT_VERSIONS (
     version_id VARCHAR(64) NOT NULL,
@@ -44,6 +47,12 @@ def configuration(agent: dict) -> dict:
     fields.pop("semantic_model_id", None)
     fields.pop("semantic_model_ids", None)
     fields["resource_bindings"] = fields.get("resource_bindings") or {}
+    # Agents stored before the single consent policy still carry the retired
+    # ``ask_every_tool``. It reads back as ``auto_read_only`` (``AgentView``),
+    # so it is snapshotted that way too; otherwise such an agent could never
+    # be edited again. The API still refuses the old value on write.
+    if fields.get("policy") == RETIRED_POLICY:
+        fields["policy"] = "auto_read_only"
     return AgentCreateRequest.model_validate(fields).model_dump(
         exclude={"semantic_model_id", "semantic_model_ids"}
     )

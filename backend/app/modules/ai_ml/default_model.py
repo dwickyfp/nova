@@ -24,11 +24,19 @@ async def read_default_model(actor: SecurityContext | None = None) -> DefaultMod
     return DefaultModelSettings.model_validate_json(stored) if stored else DefaultModelSettings()
 
 
-async def registered_model(model_id: str, kind: str) -> tuple[dict, dict]:
-    model = await ai_service.get_model(model_id)
+async def registered_model(
+    model_id: str, kind: str, *, actor: SecurityContext | None = None,
+) -> tuple[dict, dict]:
+    """The active model and its provider.
+
+    Inside a caller's metadata transaction, pass that caller as ``actor``: the
+    registry reader is a different actor, and a second actor cannot join an
+    open transaction.
+    """
+    model = await ai_service.get_model(model_id, actor=actor)
     if not model or model.get("type") != kind or not model.get("is_active", True):
         raise ValueError(f"Selected {kind} model is unavailable.")
-    provider = await ai_service.get_provider(model["provider_id"])
+    provider = await ai_service.get_provider(model["provider_id"], actor=actor)
     if not provider or not provider.get("is_active", True):
         raise ValueError("Selected model's provider is unavailable.")
     if kind == "llm" and not provider.get("has_api_key"):
@@ -41,6 +49,6 @@ async def save_default_model(
 ) -> DefaultModelSettings:
     """Store the default as an active administrator (enforced by RLS)."""
     if value.model_id:
-        await registered_model(value.model_id, "llm")
+        await registered_model(value.model_id, "llm", actor=actor)
     await write_values(actor, SYSTEM_OWNER, {DEFAULT_MODEL_KEY: json.dumps(value.model_dump())})
     return value
