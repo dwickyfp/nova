@@ -295,7 +295,7 @@
         {
           "event": "part.start",
           "data": {
-            "part_id": "run-a:0",
+            "part_id": "run-a#0",
             "type": "reasoning",
             "source": "nova",
             "phase": "plan",
@@ -308,7 +308,7 @@
         {
           "event": "part.end",
           "data": {
-            "part_id": "run-a:0",
+            "part_id": "run-a#0",
             "state": "done",
             "run_id": "run-a",
             "seq": 2
@@ -317,7 +317,7 @@
         {
           "event": "part.start",
           "data": {
-            "part_id": "run-a:1",
+            "part_id": "run-a#1",
             "type": "reasoning",
             "source": "nova",
             "phase": "act",
@@ -329,7 +329,7 @@
         {
           "event": "part.delta",
           "data": {
-            "part_id": "run-a:1",
+            "part_id": "run-a#1",
             "text": "Reading the orders table",
             "replace": true,
             "run_id": "run-a",
@@ -339,7 +339,7 @@
         {
           "event": "part.end",
           "data": {
-            "part_id": "run-a:1",
+            "part_id": "run-a#1",
             "state": "done",
             "run_id": "run-a",
             "seq": 5
@@ -348,7 +348,7 @@
         {
           "event": "part.start",
           "data": {
-            "part_id": "run-a:2",
+            "part_id": "run-a#2",
             "type": "tool",
             "tool_call_id": "c1",
             "tool_name": "query_execute",
@@ -360,7 +360,7 @@
         {
           "event": "tool.status",
           "data": {
-            "part_id": "run-a:2",
+            "part_id": "run-a#2",
             "status": "running",
             "preview": "SELECT 1",
             "run_id": "run-a",
@@ -370,7 +370,7 @@
         {
           "event": "tool.status",
           "data": {
-            "part_id": "run-a:2",
+            "part_id": "run-a#2",
             "status": "running",
             "progress": {
               "stage": "query_started",
@@ -383,7 +383,7 @@
         {
           "event": "tool.status",
           "data": {
-            "part_id": "run-a:2",
+            "part_id": "run-a#2",
             "status": "done",
             "run_id": "run-a",
             "seq": 9
@@ -392,7 +392,7 @@
         {
           "event": "part.end",
           "data": {
-            "part_id": "run-a:2",
+            "part_id": "run-a#2",
             "state": "done",
             "run_id": "run-a",
             "seq": 10
@@ -401,7 +401,7 @@
         {
           "event": "tool.status",
           "data": {
-            "part_id": "run-a:2",
+            "part_id": "run-a#2",
             "status": "done",
             "detail": "1 row returned",
             "run_id": "run-a",
@@ -411,7 +411,7 @@
         {
           "event": "tool.evidence",
           "data": {
-            "part_id": "run-a:2",
+            "part_id": "run-a#2",
             "kind": "health",
             "tool_name": "query_execute",
             "payload": {
@@ -462,7 +462,7 @@
         {
           "event": "part.start",
           "data": {
-            "part_id": "run-a:3",
+            "part_id": "run-a#3",
             "type": "reasoning",
             "source": "nova",
             "phase": "observe",
@@ -474,7 +474,7 @@
         {
           "event": "part.end",
           "data": {
-            "part_id": "run-a:3",
+            "part_id": "run-a#3",
             "state": "done",
             "run_id": "run-a",
             "seq": 14
@@ -483,7 +483,7 @@
         {
           "event": "part.start",
           "data": {
-            "part_id": "run-a:4",
+            "part_id": "run-a#4",
             "type": "tool",
             "tool_call_id": "c2",
             "tool_name": "query_execute",
@@ -495,7 +495,7 @@
         {
           "event": "consent.required",
           "data": {
-            "part_id": "run-a:4",
+            "part_id": "run-a#4",
             "classification": "read_only",
             "tool_call": {
               "tool_call_id": "c2",
@@ -512,7 +512,7 @@
         {
           "event": "tool.status",
           "data": {
-            "part_id": "run-a:4",
+            "part_id": "run-a#4",
             "status": "running",
             "run_id": "run-a",
             "seq": 17
@@ -521,7 +521,7 @@
         {
           "event": "tool.status",
           "data": {
-            "part_id": "run-a:4",
+            "part_id": "run-a#4",
             "status": "done",
             "run_id": "run-a",
             "seq": 18
@@ -530,7 +530,7 @@
         {
           "event": "part.end",
           "data": {
-            "part_id": "run-a:4",
+            "part_id": "run-a#4",
             "state": "done",
             "run_id": "run-a",
             "seq": 19
@@ -539,7 +539,7 @@
         {
           "event": "part.start",
           "data": {
-            "part_id": "run-a:5",
+            "part_id": "run-a#5",
             "type": "tool",
             "tool_call_id": "c1",
             "tool_name": "query_execute",
@@ -552,7 +552,7 @@
         {
           "event": "tool.status",
           "data": {
-            "part_id": "run-a:5",
+            "part_id": "run-a#5",
             "status": "done",
             "preview": "SELECT 1",
             "run_id": "run-a",
@@ -562,7 +562,7 @@
         {
           "event": "part.end",
           "data": {
-            "part_id": "run-a:5",
+            "part_id": "run-a#5",
             "state": "done",
             "run_id": "run-a",
             "seq": 22
@@ -571,7 +571,7 @@
         {
           "event": "part.start",
           "data": {
-            "part_id": "run-a:6",
+            "part_id": "run-a#6",
             "type": "guard",
             "decision": {
               "rule_id": "credential-in-answer",
@@ -588,7 +588,7 @@
         {
           "event": "part.end",
           "data": {
-            "part_id": "run-a:6",
+            "part_id": "run-a#6",
             "state": "done",
             "run_id": "run-a",
             "seq": 24
@@ -597,7 +597,7 @@
         {
           "event": "part.start",
           "data": {
-            "part_id": "run-a:7",
+            "part_id": "run-a#7",
             "type": "text",
             "content_index": 0,
             "content_id": "content-0",
@@ -608,7 +608,7 @@
         {
           "event": "part.delta",
           "data": {
-            "part_id": "run-a:7",
+            "part_id": "run-a#7",
             "text": "Revenue rose ",
             "run_id": "run-a",
             "seq": 26
@@ -617,7 +617,7 @@
         {
           "event": "part.delta",
           "data": {
-            "part_id": "run-a:7",
+            "part_id": "run-a#7",
             "text": "12%.",
             "run_id": "run-a",
             "seq": 27
@@ -626,7 +626,7 @@
         {
           "event": "part.end",
           "data": {
-            "part_id": "run-a:7",
+            "part_id": "run-a#7",
             "state": "done",
             "run_id": "run-a",
             "seq": 28
@@ -635,7 +635,7 @@
         {
           "event": "part.start",
           "data": {
-            "part_id": "run-a:8",
+            "part_id": "run-a#8",
             "type": "table",
             "block": {
               "title": "Revenue",
@@ -659,7 +659,7 @@
         {
           "event": "part.end",
           "data": {
-            "part_id": "run-a:8",
+            "part_id": "run-a#8",
             "state": "done",
             "run_id": "run-a",
             "seq": 30
@@ -668,7 +668,7 @@
         {
           "event": "part.start",
           "data": {
-            "part_id": "run-a:9",
+            "part_id": "run-a#9",
             "type": "ui",
             "block": {
               "catalog_version": "1",
@@ -692,7 +692,7 @@
         {
           "event": "part.delta",
           "data": {
-            "part_id": "run-a:9",
+            "part_id": "run-a#9",
             "text": "root = Col([Text(\"Adjust\")])",
             "run_id": "run-a",
             "seq": 32
@@ -701,7 +701,7 @@
         {
           "event": "part.end",
           "data": {
-            "part_id": "run-a:9",
+            "part_id": "run-a#9",
             "state": "done",
             "run_id": "run-a",
             "seq": 33
@@ -710,7 +710,7 @@
         {
           "event": "part.start",
           "data": {
-            "part_id": "run-a:10",
+            "part_id": "run-a#10",
             "type": "chart",
             "block": {
               "tool_call_id": "c1",
@@ -723,7 +723,7 @@
         {
           "event": "part.end",
           "data": {
-            "part_id": "run-a:10",
+            "part_id": "run-a#10",
             "state": "done",
             "run_id": "run-a",
             "seq": 35
@@ -829,7 +829,7 @@
         {
           "event": "part.start",
           "data": {
-            "part_id": "run-b:0",
+            "part_id": "run-b#0",
             "type": "reasoning",
             "source": "nova",
             "phase": "act",
@@ -841,7 +841,7 @@
         {
           "event": "part.end",
           "data": {
-            "part_id": "run-b:0",
+            "part_id": "run-b#0",
             "state": "done",
             "run_id": "run-b",
             "seq": 2
@@ -850,7 +850,7 @@
         {
           "event": "part.start",
           "data": {
-            "part_id": "run-b:1",
+            "part_id": "run-b#1",
             "type": "tool",
             "tool_call_id": "c1",
             "tool_name": "query_execute",
@@ -862,7 +862,7 @@
         {
           "event": "tool.status",
           "data": {
-            "part_id": "run-b:1",
+            "part_id": "run-b#1",
             "status": "running",
             "preview": "SELECT 1",
             "run_id": "run-b",
@@ -872,7 +872,7 @@
         {
           "event": "part.start",
           "data": {
-            "part_id": "run-b:2",
+            "part_id": "run-b#2",
             "type": "text",
             "content_index": 0,
             "content_id": "content-0",
@@ -883,7 +883,7 @@
         {
           "event": "part.delta",
           "data": {
-            "part_id": "run-b:2",
+            "part_id": "run-b#2",
             "text": "finance-secret",
             "run_id": "run-b",
             "seq": 6
@@ -892,7 +892,7 @@
         {
           "event": "part.end",
           "data": {
-            "part_id": "run-b:1",
+            "part_id": "run-b#1",
             "state": "cancelled",
             "run_id": "run-b",
             "seq": 7
@@ -901,7 +901,7 @@
         {
           "event": "part.end",
           "data": {
-            "part_id": "run-b:2",
+            "part_id": "run-b#2",
             "state": "cancelled",
             "run_id": "run-b",
             "seq": 8
@@ -918,7 +918,7 @@
         {
           "event": "part.start",
           "data": {
-            "part_id": "run-b:3",
+            "part_id": "run-b#3",
             "type": "text",
             "content_index": 0,
             "content_id": "content-0",
@@ -929,7 +929,7 @@
         {
           "event": "part.delta",
           "data": {
-            "part_id": "run-b:3",
+            "part_id": "run-b#3",
             "text": "Marketing answer.",
             "run_id": "run-b",
             "seq": 11
@@ -938,7 +938,7 @@
         {
           "event": "part.end",
           "data": {
-            "part_id": "run-b:3",
+            "part_id": "run-b#3",
             "state": "done",
             "run_id": "run-b",
             "seq": 12
@@ -1036,7 +1036,7 @@
         {
           "event": "part.start",
           "data": {
-            "part_id": "run-c:0",
+            "part_id": "run-c#0",
             "type": "text",
             "content_index": 0,
             "content_id": "content-0",
@@ -1047,7 +1047,7 @@
         {
           "event": "part.delta",
           "data": {
-            "part_id": "run-c:0",
+            "part_id": "run-c#0",
             "text": "Partial answer",
             "run_id": "run-c",
             "seq": 2
@@ -1056,7 +1056,7 @@
         {
           "event": "part.start",
           "data": {
-            "part_id": "run-c:1",
+            "part_id": "run-c#1",
             "type": "tool",
             "tool_call_id": "c1",
             "tool_name": "query_execute",
@@ -1068,7 +1068,7 @@
         {
           "event": "tool.status",
           "data": {
-            "part_id": "run-c:1",
+            "part_id": "run-c#1",
             "status": "running",
             "preview": "SELECT 1",
             "run_id": "run-c",
@@ -1078,7 +1078,7 @@
         {
           "event": "part.start",
           "data": {
-            "part_id": "run-c:2",
+            "part_id": "run-c#2",
             "type": "tool",
             "tool_call_id": "c2",
             "tool_name": "query_execute",
@@ -1090,7 +1090,7 @@
         {
           "event": "consent.required",
           "data": {
-            "part_id": "run-c:2",
+            "part_id": "run-c#2",
             "classification": "read_only",
             "tool_call": {
               "tool_call_id": "c2",
@@ -1107,7 +1107,7 @@
         {
           "event": "part.start",
           "data": {
-            "part_id": "run-c:3",
+            "part_id": "run-c#3",
             "type": "ui",
             "block": {
               "catalog_version": "1",
@@ -1140,7 +1140,7 @@
         {
           "event": "part.end",
           "data": {
-            "part_id": "run-c:0",
+            "part_id": "run-c#0",
             "state": "error",
             "run_id": "run-c",
             "seq": 9
@@ -1149,7 +1149,7 @@
         {
           "event": "part.end",
           "data": {
-            "part_id": "run-c:1",
+            "part_id": "run-c#1",
             "state": "error",
             "run_id": "run-c",
             "seq": 10
@@ -1158,7 +1158,7 @@
         {
           "event": "part.end",
           "data": {
-            "part_id": "run-c:2",
+            "part_id": "run-c#2",
             "state": "cancelled",
             "run_id": "run-c",
             "seq": 11
@@ -1167,7 +1167,7 @@
         {
           "event": "part.end",
           "data": {
-            "part_id": "run-c:3",
+            "part_id": "run-c#3",
             "state": "error",
             "run_id": "run-c",
             "seq": 12

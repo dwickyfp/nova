@@ -39,7 +39,7 @@ re-encodes the loop's frames with
 [`StudioStreamEncoder`](../backend/app/modules/assistant/events_v2.py) before it
 numbers, journals and delivers them. The shared loop and other assistant
 surfaces keep their v1 frames. Every v2 event carries the run's `run_id` and a
-monotonic `seq`; part ids are `<run_id>:<n>` in production order.
+monotonic `seq`; part ids are `<run_id>#<n>` in production order.
 
 | Event | Payload | Meaning |
 | --- | --- | --- |

@@ -196,7 +196,7 @@ def test_parts_open_once_and_close_once_in_production_order() -> None:
     records = encode_case(CASES[0])
     starts = [r["data"]["part_id"] for r in records if r["event"] == "part.start"]
     ends = [r["data"]["part_id"] for r in records if r["event"] == "part.end"]
-    assert starts == [f"run-a:{n}" for n in range(len(starts))]
+    assert starts == [f"run-a#{n}" for n in range(len(starts))]
     assert sorted(starts) == sorted(ends)
     assert len(set(ends)) == len(ends)
 

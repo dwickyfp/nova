@@ -93,7 +93,7 @@ describe("turn reducer", () => {
     const seqs = turn.run.parts.map((part) => part.seq);
     expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
     expect(turnSegments(turn.run.parts).map((segment) => segment.kind)).toEqual(["work", "content"]);
-    expect(turn.content.map((item) => item.id)).toEqual(["content-0", "content-1", "content-2", "run-a:10"]);
+    expect(turn.content.map((item) => item.id)).toEqual(["content-0", "content-1", "content-2", "run-a#10"]);
     expect(turn.answer).toBe("Revenue rose 12%.");
     expect(turn.state).toBe("done");
     expect(turn.suggestions).toEqual(["Break it down by region"]);

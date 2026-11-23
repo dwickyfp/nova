@@ -57,7 +57,7 @@ export class TestStudioEncoder {
   constructor(private readonly runId: string) {}
 
   private partId(): string {
-    return `${this.runId}:${this.count++}`;
+    return `${this.runId}#${this.count++}`;
   }
 
   private start(type: string, fields: Record<string, unknown>): [string, V2Record] {

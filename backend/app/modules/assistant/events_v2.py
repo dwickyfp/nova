@@ -7,8 +7,8 @@ journal stored on the assistant message are the same list of events.
 
 Every v2 frame carries ``run_id`` and ``seq``; the route assigns ``seq`` when it
 numbers the frame. ``part_id`` values are assigned here, in production order,
-as ``<run_id>:<n>``, so a replay of the stored journal yields the same ids as
-the live stream.
+as ``<run_id>#<n>`` (distinct from content ids, ``<run_id>:<index>``), so a
+replay of the stored journal yields the same ids as the live stream.
 
 =====================  =====================================================
 Event                  Payload
@@ -165,7 +165,7 @@ class StudioStreamEncoder:
     # ── helpers ─────────────────────────────────────────────────────────
 
     def _part_id(self) -> str:
-        part_id = f"{self.run_id}:{self._count}"
+        part_id = f"{self.run_id}#{self._count}"
         self._count += 1
         return part_id
 
