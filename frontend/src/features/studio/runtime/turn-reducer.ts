@@ -67,6 +67,8 @@ export type ToolPart = PartBase & {
   preview?: string;
   progress: { stage: string; text: string }[];
   detail?: string;
+  /** How long the call ran, once it finished. */
+  durationMs?: number;
   /** The run broke off while the call ran: its result is not confirmed. */
   unconfirmed?: boolean;
 };
@@ -323,6 +325,7 @@ function reduce(state: TurnRunState, event: StudioEvent): TurnRunState {
               ...(event.preview ? { preview: event.preview } : {}),
               ...(event.progress ? { progress: [...part.progress, event.progress] } : {}),
               ...(event.detail !== undefined ? { detail: event.detail } : {}),
+              ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
             },
       );
     case "input.required":

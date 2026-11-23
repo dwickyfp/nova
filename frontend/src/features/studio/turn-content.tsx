@@ -5,7 +5,7 @@ import { Markdown } from "@/features/assistant/markdown";
 import type { TurnContext } from "@/features/assistant/stream-client";
 import type { ChartBlock } from "@/features/assistant/types";
 import { cn } from "@/lib/utils";
-import { CitationList, ResultChart } from "./result-cards";
+import { ResultChart } from "./result-cards";
 import { ResultTable } from "./result-table";
 import { TextShimmer } from "./text-shimmer";
 import { StreamingMarkdown } from "./streaming-markdown";
@@ -55,7 +55,8 @@ export function TurnContent({
   // ("Source data") instead of repeating its numbers above it. Studio passes
   // one content segment at a time; a run composes its content at the end, so
   // a table and the chart drawn from it share a segment.
-  const ordered = content ?? visibleContent(turn.content);
+  // Sources are listed with the tools under the answer, not between its blocks.
+  const ordered = (content ?? visibleContent(turn.content)).filter((item) => item.type !== "citation");
   // A chart tool's block names its own call; `source_tool_call_id` names the
   // query whose result it drew.
   const drawnFrom = (block: ChartBlock) =>
@@ -82,10 +83,12 @@ export function TurnContent({
   // A draft chart's rows are read from the stored turn, so it waits for it.
   const stored = Boolean(turn.messageId) && turn.state === "done";
   const renderTable = (item: Extract<OrderedContent, { type: "table" }>) => (
-    <ResultTable
-      block={item.block}
-      action={<AddToDatavizButton locator={locate(item.id)} />}
-    />
+    <div className="min-w-0" data-tool-call-id={item.block.tool_call_id || undefined}>
+      <ResultTable
+        block={item.block}
+        action={<AddToDatavizButton locator={locate(item.id)} />}
+      />
+    </div>
   );
 
   if (!ordered.length && (content || !turn.answer)) return null;
@@ -183,9 +186,7 @@ export function TurnContent({
             <ArtifactOrComponent block={item.block} ready={stored} dataviz={locate(item.id)} />
           ) : item.type === "chart" ? (
             <ResultChart block={item.block} dataviz={locate(item.id) ?? undefined} />
-          ) : (
-            <CitationList citations={[item.block]} />
-          )}
+          ) : null}
         </SelectableOutput>
       ))}
     </div>

@@ -262,6 +262,7 @@ export function stepsFromParts(parts: TurnPart[]): RailStep[] {
           status: part.status,
           preview: part.toolName === "load_skill" ? undefined : part.preview,
           detail: showsToolDetail(part.toolName) ? part.detail : undefined,
+          ...(part.durationMs !== undefined ? { durationMs: part.durationMs } : {}),
         });
         break;
       case "guard":

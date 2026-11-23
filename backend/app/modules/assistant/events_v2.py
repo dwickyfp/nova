@@ -64,6 +64,8 @@ recorded steps (protocol 1, read-only).
 from __future__ import annotations
 
 import json
+import time
+from collections.abc import Callable
 from typing import Any
 
 from app.modules.assistant import events
@@ -180,9 +182,13 @@ class StudioStreamEncoder:
     a frame it has no mapping for is dropped rather than passed on unnumbered.
     """
 
-    def __init__(self, run_id: str) -> None:
+    def __init__(self, run_id: str, *, clock: Callable[[], float] = time.monotonic) -> None:
         self.run_id = run_id
         self._count = 0
+        # Each call's run time, sent with its terminal status so a replay shows
+        # the same duration as the live run.
+        self._clock = clock
+        self._tool_started: dict[tuple[str, str], float] = {}
         # Keyed by (originating run, tool call id): a Mission's nested runs share
         # this stream, and their call ids are only unique within each run.
         self._tools: dict[tuple[str, str], str] = {}
@@ -482,6 +488,12 @@ class StudioStreamEncoder:
         payload: dict[str, Any] = {"part_id": part_id, "status": status}
         if preview:
             payload["preview"] = preview
+        if status == "running":
+            if key not in self._tool_started:
+                self._tool_started[key] = self._clock()
+        elif status in _TERMINAL_TOOL and key in self._tool_started:
+            elapsed = self._clock() - self._tool_started.pop(key)
+            payload["duration_ms"] = max(0, round(elapsed * 1000))
         frames.append(self._frame(TOOL_STATUS, payload))
         if status in _TERMINAL_TOOL:
             frames.append(self._end(part_id, "error" if status == "failed" else (

@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import {
   FileText,
   ImageIcon,
+  CornerDownRight,
   RefreshCcw,
   RotateCcw,
   X,
@@ -33,6 +34,8 @@ import {
   type DatavizTurnContext,
 } from "@/features/agents/api";
 import { ProcessRail, StopNotice, type RailStep } from "./thought-turn";
+import { ToolChips } from "./tool-chips";
+import { followUpQuestions, toolChips } from "./tool-chip-model";
 import { HitlRequest } from "./runtime/hitl/hitl-request";
 import type { HitlAnswerBody } from "./runtime/hitl/types";
 import { TurnContent } from "./turn-content";
@@ -1078,6 +1081,20 @@ const TurnView = memo(function TurnView({
     () => ({ database: agent.database_name ?? undefined }),
     [agent.database_name],
   );
+  // The tools the turn used and the sources they cited, shown under the answer.
+  const used = useMemo(() => {
+    const content = contentFromParts(turn.run.parts);
+    return {
+      steps: stepsFromParts(turn.run.parts),
+      citations: content.flatMap((item) => (item.type === "citation" ? [item.block] : [])),
+      dataCalls: new Set(content.flatMap((item) =>
+        item.type === "table" && item.block.tool_call_id ? [item.block.tool_call_id] : [])),
+    };
+  }, [turn.run.parts]);
+  const followUps = useMemo(
+    () => followUpQuestions(turn.suggestions, toolChips(used.steps).chips),
+    [turn.suggestions, used.steps],
+  );
   const stored = Boolean(turn.messageId) && turn.state === "done";
   const artifacts = useMemo(
     () => artifactScope(turn.run.parts, {
@@ -1187,6 +1204,10 @@ const TurnView = memo(function TurnView({
         </div>
       ) : null}
 
+      {!running ? (
+        <ToolChips steps={used.steps} citations={used.citations} dataCalls={used.dataCalls} />
+      ) : null}
+
       {!running && (turn.answer || turn.content.length > 0) ? (
         <AnswerFooter
           answer={turn.answer}
@@ -1202,19 +1223,21 @@ const TurnView = memo(function TurnView({
         />
       ) : null}
 
-      {!running && onAsk && turn.suggestions?.length ? (
-        <nav aria-label="Suggested follow-up questions" className="nova-chat-item flex flex-wrap gap-2">
-          {turn.suggestions.map((question) => (
-            <Button
+      {!running && onAsk && followUps.length ? (
+        <nav aria-label="Suggested follow-up questions" className="nova-chat-item flex flex-col items-start gap-1">
+          {followUps.map((question) => (
+            <button
               key={question}
               type="button"
-              variant="outline"
-              size="sm"
-              className="h-auto max-w-full py-1.5 text-left whitespace-normal"
+              className="group inline-flex max-w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               onClick={() => onAsk(question)}
             >
-              {question}
-            </Button>
+              <CornerDownRight
+                aria-hidden="true"
+                className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground motion-reduce:transition-none motion-reduce:group-hover:translate-x-0"
+              />
+              <span className="min-w-0 break-words">{question}</span>
+            </button>
           ))}
         </nav>
       ) : null}

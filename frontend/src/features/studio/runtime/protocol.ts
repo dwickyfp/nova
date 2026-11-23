@@ -91,6 +91,8 @@ export type StudioEvent = Envelope &
         progress?: { stage: string; text: string };
         detail?: string;
         evidence?: Record<string, unknown>;
+        /** How long the call ran, sent with its terminal status. */
+        durationMs?: number;
       }
     | {
         type: "tool.evidence";
@@ -335,6 +337,9 @@ export function parseStudioRecord(name: string, data: Record<string, unknown>): 
           : {}),
         ...(typeof data.detail === "string" ? { detail: data.detail } : {}),
         ...(evidence ? { evidence } : {}),
+        ...(typeof data.duration_ms === "number" && Number.isFinite(data.duration_ms) && data.duration_ms >= 0
+          ? { durationMs: data.duration_ms }
+          : {}),
       };
     }
     case "tool.evidence": {

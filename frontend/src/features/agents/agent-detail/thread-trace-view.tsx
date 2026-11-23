@@ -45,6 +45,7 @@ import {
 import { emptyRunState } from "@/features/studio/runtime/turn-reducer";
 import { ProcessRail } from "@/features/studio/thought-turn";
 import { TurnContent } from "@/features/studio/turn-content";
+import { ToolChips } from "@/features/studio/tool-chips";
 import { cn } from "@/lib/utils";
 
 type Pane = "conversation" | "thread" | "detail";
@@ -412,6 +413,12 @@ function ConversationPane({
                       contentId,
                     });
                   }}
+                />
+                <ToolChips
+                  steps={group.transcript.steps}
+                  citations={group.transcript.content.flatMap((item) =>
+                    item.type === "citation" ? [item.block] : [],
+                  )}
                 />
                 {group.assistant.model_name || group.assistant.total_tokens ? (
                   <p className="flex gap-2 text-xs text-muted-foreground">

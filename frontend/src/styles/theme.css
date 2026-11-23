@@ -69,6 +69,15 @@
   --chart-8: #38bdf8;
   --chart-9: #34d399;
 
+  /* Tool kinds under an answer: icon tiles, chip accents and detail rules.
+     Strong enough for small text on the page background. */
+  --tool-mcp: #6d4fd1;
+  --tool-skill: var(--warning-strong);
+  --tool-data: var(--success-strong);
+  --tool-chart: #b83f6c;
+  --tool-web: var(--info-strong);
+  --tool-other: var(--muted-foreground);
+
   --chart-tone-1: #5b8def;
   --chart-tone-2: #76a0ef;
   --chart-tone-3: #90b4f2;
@@ -251,6 +260,13 @@
   --chart-8: #38bdf8;
   --chart-9: #34d399;
 
+  --tool-mcp: #b4a0fb;
+  --tool-skill: var(--warning-strong);
+  --tool-data: var(--success-strong);
+  --tool-chart: #ec8db1;
+  --tool-web: var(--info-strong);
+  --tool-other: var(--muted-foreground);
+
   --chart-tone-1: #5b8def;
   --chart-tone-2: #76a0ef;
   --chart-tone-3: #90b4f2;
@@ -327,6 +343,12 @@
   --color-chart-7: var(--chart-7);
   --color-chart-8: var(--chart-8);
   --color-chart-9: var(--chart-9);
+  --color-tool-mcp: var(--tool-mcp);
+  --color-tool-skill: var(--tool-skill);
+  --color-tool-data: var(--tool-data);
+  --color-tool-chart: var(--tool-chart);
+  --color-tool-web: var(--tool-web);
+  --color-tool-other: var(--tool-other);
   --color-chart-tone-1: var(--chart-tone-1);
   --color-chart-tone-2: var(--chart-tone-2);
   --color-chart-tone-3: var(--chart-tone-3);
