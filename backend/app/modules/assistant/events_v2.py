@@ -293,12 +293,9 @@ class StudioStreamEncoder:
         if name == events.EVENT_TOOL_CALL:
             return self._tool_call(origin, body)
         if name == events.EVENT_TOOL_STATUS:
-            key = (origin, str(body.get("tool_call_id") or ""))
-            if key not in self._tools:
-                # A repeated call answered from the earlier result reports only
-                # its status; it ran nothing, so it adds no tool part.
-                return []
-            return self._tool_status(key, str(body.get("status") or ""))
+            return self._tool_status(
+                (origin, str(body.get("tool_call_id") or "")), str(body.get("status") or ""),
+            )
         if name == events.EVENT_TOOL_PROGRESS:
             return self._tool_progress(origin, body)
         if name == events.EVENT_TOOL_DETAIL:

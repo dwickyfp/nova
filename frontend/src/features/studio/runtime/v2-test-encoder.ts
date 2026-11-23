@@ -130,8 +130,7 @@ export class TestStudioEncoder {
       case "tool_call":
         return this.toolCall(key(b.tool_call_id), b);
       case "tool_status":
-        // A status for a call never announced (a repeat answered from the earlier result) adds no part.
-        return b.tool_call_id && this.tools.has(key(b.tool_call_id)) ? this.toolStatus(key(b.tool_call_id), str(b.status)) : [];
+        return b.tool_call_id ? this.toolStatus(key(b.tool_call_id), str(b.status)) : [];
       case "tool_progress":
         return this.toolProgress(key(b.tool_call_id), b);
       case "tool_detail":

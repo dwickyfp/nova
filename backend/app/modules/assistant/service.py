@@ -2440,7 +2440,8 @@ class AssistantLoop:
             # instead of running again (no second engine query for the same rows).
             fingerprint = self._call_fingerprint(invocation)
             if fingerprint in seen_calls:
-                yield events.tool_status(invocation.tool_call_id, "done")
+                # It runs nothing and was never announced, so the stream shows no
+                # call for it (a status alone would open an unnamed tool row).
                 messages.append(
                     _tool_message(
                         provider_capabilities.supports_tool_role_messages,
@@ -2473,7 +2474,6 @@ class AssistantLoop:
                 else self._max_calls_per_tool
             )
             if tool_uses.get(usage_key, 0) >= call_limit:
-                yield events.tool_status(invocation.tool_call_id, "done")
                 messages.append(
                     _tool_message(
                         provider_capabilities.supports_tool_role_messages,

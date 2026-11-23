@@ -625,9 +625,25 @@ def scenario_duplicate_call_is_not_rerun() -> Scenario:
         tools=[tool],
         checks=[
             check("tool ran once", _ran_once),
+            check("no status for a call that was never announced", _statuses_follow_calls),
             check("finished", finished_with("stop")),
         ],
     )
+
+
+def _statuses_follow_calls(result) -> bool | str:
+    announced: set[str] = set()
+    for frame in result.frames:
+        name = frame.partition("\n")[0].removeprefix("event: ").strip()
+        data = frame.partition("data: ")[2].strip()
+        if name not in {"tool_call", "tool_status"} or not data:
+            continue
+        call_id = json.loads(data).get("tool_call_id")
+        if name == "tool_call":
+            announced.add(call_id)
+        elif call_id not in announced:
+            return f"status for unannounced call {call_id}"
+    return True
 
 
 def _ran_once(result) -> bool | str:
