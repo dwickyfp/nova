@@ -49,8 +49,15 @@ another role is active does not allow connector changes.
 5. Add a **Description** and click **Add server**.
 6. Click **Discover** on the server. Its tools appear in **Tools**.
 
-Nova runs tools only over **HTTP (Streamable)**. A **stdio** server is saved
-for reference but never started by Nova; ask its owner to expose it over HTTP.
+The **Endpoint URL** starts with `http://` or `https://`, for example
+`https://tools.example.com/mcp`. Put a key or token in **Auth headers**, never
+in the address; an address with a user name or password is refused.
+
+Nova runs tools only over **HTTP (Streamable)**. For a **stdio** server, enter
+the **Command** that starts it instead of an endpoint. Nova saves it for
+reference but never runs it: **Discover** reports "Nova does not run stdio
+servers". Run the server so it answers over HTTP, then add that address as an
+**HTTP (Streamable)** server.
 
 ### Auth headers
 

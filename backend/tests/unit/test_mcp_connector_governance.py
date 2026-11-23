@@ -94,6 +94,15 @@ async def test_discover_against_cloud_metadata_is_refused():
         await mcp_client.list_tools({**SERVER, "endpoint": "http://169.254.169.254/mcp"})
 
 
+async def test_discover_on_a_stdio_server_names_the_step_that_works():
+    """Before: the message offered "register its tools manually", which Nova cannot do."""
+    stdio = {**SERVER, "transport": "stdio", "endpoint": None, "command": "uv run tools.py"}
+    with pytest.raises(mcp_client.McpError) as raised:
+        await mcp_client.list_tools(stdio)
+    assert "add that address as an HTTP (Streamable) server" in str(raised.value)
+    assert "manually" not in str(raised.value)
+
+
 # ── Q2: annotations are information ───────────────────────────────────
 
 READ_ONLY_HINT = {"readOnlyHint": True, "destructiveHint": False}
@@ -205,6 +214,58 @@ def test_update_replaces_or_clears_headers(monkeypatch):
         client.patch("/mcp-servers/server-1", json={"auth_headers": {}})
     assert "auth_headers" not in seen[0]
     assert seen[1] == {"auth_headers": None, "auth_header_names": []}
+
+
+# ── Registration shape (live finding 2026-11-23) ─────────────────────
+# Before: a non-URL endpoint or a stdio entry reached the metadata trigger and
+# the administrator saw "Metadata operation violates a record constraint"; the
+# form also had no command field, so a stdio server could never be saved.
+
+@pytest.mark.parametrize(("body", "reason"), [
+    ({"endpoint": "uv run tools.py --transport stdio"}, "http:// or https://"),
+    ({"endpoint": "https://user:secret@tools.example.com/mcp"}, "Auth headers"),
+    ({"endpoint": None}, "http:// or https://"),
+    ({"transport": "stdio", "command": "  "}, "command that starts"),
+])
+def test_registration_the_store_would_refuse_gets_a_plain_reason(monkeypatch, body, reason):
+    create = AsyncMock()
+    monkeypatch.setattr(studio_router.agent_repository, "create_mcp_server", create)
+    with client_for() as client:
+        response = client.post("/mcp-servers", json={"name": "Probe", **body})
+    assert response.status_code == 422
+    assert reason in response.json()["detail"]
+    assert "secret" not in response.text
+    create.assert_not_awaited()
+
+
+@pytest.mark.parametrize("body", [
+    {"endpoint": "http://127.0.0.1:8299/mcp"},
+    {"transport": "sse", "endpoint": "https://tools.example.com/sse"},
+    {"transport": "stdio", "command": "uv run tools.py --transport stdio"},
+])
+def test_valid_registrations_are_saved(monkeypatch, body):
+    create = AsyncMock(return_value={**SERVER, **body})
+    monkeypatch.setattr(studio_router.agent_repository, "create_mcp_server", create)
+    monkeypatch.setattr(studio_router, "write_audit_log", AsyncMock())
+    with client_for() as client:
+        response = client.post("/mcp-servers", json={"name": "Probe", **body})
+    assert response.status_code == 201, response.text
+    create.assert_awaited_once()
+
+
+def test_update_checks_the_merged_registration(monkeypatch):
+    update = AsyncMock(return_value=SERVER)
+    monkeypatch.setattr(studio_router.agent_repository, "get_mcp_server",
+                        AsyncMock(return_value=SERVER))
+    monkeypatch.setattr(studio_router.agent_repository, "update_mcp_server", update)
+    monkeypatch.setattr(studio_router, "write_audit_log", AsyncMock())
+    with client_for() as client:
+        moved = client.patch("/mcp-servers/server-1", json={"endpoint": "tools.example.com"})
+        to_stdio = client.patch("/mcp-servers/server-1", json={"transport": "stdio"})
+        renamed = client.patch("/mcp-servers/server-1", json={"name": "Targets 2"})
+    assert moved.status_code == 422 and to_stdio.status_code == 422
+    assert renamed.status_code == 200
+    assert update.await_count == 1
 
 
 def test_listing_hides_header_names_from_other_roles(monkeypatch):

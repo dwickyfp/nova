@@ -374,6 +374,26 @@ async def _audit_connector(
 
 
 _MAX_AUTH_HEADERS = 8
+#: The stored-registration rule the metadata trigger enforces; checked here
+#: first so the administrator gets a plain message instead of a constraint error.
+_ENDPOINT_URL = re.compile(r"^https?://[^/@?#]+(/[^@]*)?$")
+
+
+def _check_registration(transport: str, endpoint: str | None, command: str | None) -> None:
+    """Refuse a registration the metadata store would reject, with a plain reason."""
+    if transport == "stdio":
+        if not (command or "").strip():
+            raise HTTPException(422, "Enter the command that starts the stdio server.")
+        return
+    if not _ENDPOINT_URL.fullmatch(endpoint or ""):
+        raise HTTPException(
+            422,
+            "Enter the endpoint as an http:// or https:// address, for example "
+            "https://tools.example.com/mcp. Put a key or token in Auth headers, "
+            "not in the address.",
+        )
+
+
 _HEADER_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,63}")
 #: Headers Nova sets itself for the MCP exchange; a connector cannot override them.
 _RESERVED_HEADERS = frozenset({
@@ -434,6 +454,7 @@ async def create_mcp_server(
     user: dict = Depends(get_current_user),
 ):
     _require_connector_admin(user)
+    _check_registration(body.transport, body.endpoint, body.command)
     fields = body.model_dump(exclude={"auth_headers"})
     if body.auth_headers:
         fields.update(_encrypted_auth_headers(body.auth_headers))
@@ -458,8 +479,13 @@ async def update_mcp_server(
     user: dict = Depends(get_current_user),
 ):
     _require_connector_admin(user)
-    await _require_server(server_id, INTERNAL_CONNECTOR_OWNER)
+    stored = await _require_server(server_id, INTERNAL_CONNECTOR_OWNER)
     fields = body.model_dump(exclude_unset=True, exclude={"auth_headers"})
+    if {"transport", "endpoint", "command"} & fields.keys():
+        merged = {**stored, **fields}
+        _check_registration(
+            str(merged.get("transport") or "http"), merged.get("endpoint"), merged.get("command")
+        )
     if body.auth_headers is not None:
         fields.update(_encrypted_auth_headers(body.auth_headers))
     updated = await agent_repository.update_mcp_server(

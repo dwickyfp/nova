@@ -131,8 +131,8 @@ async def list_tools(server: dict[str, Any]) -> list[dict[str, Any]]:
     transport = (server.get("transport") or "http").lower()
     if transport == "stdio":
         raise McpError(
-            "stdio servers are not executed by Nova. Run the server and expose it "
-            "over HTTP, or register its tools manually."
+            "Nova does not run stdio servers. Run the server so it answers over "
+            "HTTP, then add that address as an HTTP (Streamable) server."
         )
     if transport in {"http", "sse"}:
         return await _list_tools_http(server)
