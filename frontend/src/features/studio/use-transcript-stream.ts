@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, type Dispatch, type SetStateAction } from "react";
-import { applyEvent, type StudioAssistantEvent, type TranscriptTurn } from "./studio-transcript";
+import { applyStudioEvent, type StudioEvent, type TranscriptTurn } from "./studio-transcript";
 
 export function useTranscriptStream(setTurns: Dispatch<SetStateAction<TranscriptTurn[]>>) {
   const abortRef = useRef<AbortController | null>(null);
-  const queuedEventsRef = useRef<Array<{ turnId: string; event: StudioAssistantEvent }>>([]);
+  const queuedEventsRef = useRef<Array<{ turnId: string; event: StudioEvent }>>([]);
   const eventFrameRef = useRef<number | null>(null);
 
   const flushEvents = useCallback(() => {
@@ -14,11 +14,11 @@ export function useTranscriptStream(setTurns: Dispatch<SetStateAction<Transcript
     const queued = queuedEventsRef.current.splice(0);
     if (!queued.length) return;
     setTurns((current) => queued.reduce(
-      (next, item) => applyEvent(next, item.turnId, item.event), current,
+      (next, item) => applyStudioEvent(next, item.turnId, item.event), current,
     ));
   }, [setTurns]);
 
-  const queueEvent = useCallback((turnId: string, event: StudioAssistantEvent) => {
+  const queueEvent = useCallback((turnId: string, event: StudioEvent) => {
     queuedEventsRef.current.push({ turnId, event });
     if (eventFrameRef.current !== null) return;
     eventFrameRef.current = window.requestAnimationFrame(() => {

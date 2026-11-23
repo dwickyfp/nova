@@ -1,5 +1,4 @@
 import type {
-  AssistantEvent,
   ChartBlock as ChartBlockType,
   CitationBlock,
   TableBlock,
@@ -19,20 +18,24 @@ import {
   readEvidenceHealth,
   type ToolEvidence,
 } from "./evidence-health";
+import { parseStudioRecord, PROTOCOL_VERSION, type StudioEvent } from "./runtime/protocol";
+import {
+  emptyRunState,
+  isContentPart,
+  sealPart,
+  turnReducer,
+  type ContentPart,
+  type TurnPart,
+  type TurnRunState,
+  type WorkPart,
+} from "./runtime/turn-reducer";
 
-/**
- * The largest interactive program the browser accepts, in UTF-8 bytes. The
- * server refuses larger programs before sending them (`MAX_PROGRAM_BYTES` in
- * the assistant's intelligent UI module); this guards the stream itself, so an
- * oversized program is reported instead of being cut into a broken one.
- */
-export const MAX_UI_PROGRAM_BYTES = 64_000;
-const utf8 = new TextEncoder();
+export { MAX_UI_PROGRAM_BYTES } from "./runtime/turn-reducer";
 
 /** Finish reasons that end a turn normally: an answer, or a question back. */
 const FINISHED = new Set(["stop", "clarification"]);
 
-export type StudioAssistantEvent = AssistantEvent;
+export type { StudioEvent } from "./runtime/protocol";
 
 /** A tool call with the id this conversation uses to resolve it. */
 export type PendingCall = ToolCallView & { tool_call_id: string };
@@ -129,7 +132,393 @@ export type TranscriptTurn = {
   feedback?: AnswerFeedback;
   evidence?: ToolEvidence[];
   toolPreviews?: Record<string, string>;
+  /**
+   * The source of truth: ordered parts from the protocol v2 reducer (or, for
+   * a protocol 1 turn, rebuilt from its stored trace). `steps`, `content`,
+   * `answer`, `blocks`, `pendingConsent` and the outcome fields above are a
+   * projection of it, kept for readers such as Observability and the footer.
+   */
+  run: TurnRunState;
+  /** `2` for a streamed or journaled turn; `1` for a stored trace replayed read-only. */
+  protocolVersion: 1 | 2;
 };
+
+/** A new, empty turn about to stream. */
+export function newTurn(
+  fields: Pick<TranscriptTurn, "id" | "question"> & Partial<TranscriptTurn>,
+): TranscriptTurn {
+  return {
+    steps: [],
+    answer: "",
+    content: [],
+    pendingConsent: null,
+    blocks: { tables: [], charts: [], citations: [] },
+    state: "streaming",
+    run: emptyRunState(),
+    protocolVersion: PROTOCOL_VERSION as 2,
+    ...fields,
+  };
+}
+
+/** One rendering segment: adjacent work rows, adjacent content, or a separator. */
+export type TurnSegment =
+  | { kind: "work"; id: string; parts: WorkPart[] }
+  | { kind: "content"; id: string; parts: ContentPart[] }
+  | { kind: "role_change"; id: string; activeRole: string };
+
+/** Group a turn's ordered parts into what renders in place: work, content, work, … */
+export function turnSegments(parts: TurnPart[]): TurnSegment[] {
+  const segments: TurnSegment[] = [];
+  for (const part of parts) {
+    const last = segments[segments.length - 1];
+    if (part.type === "role_change") {
+      segments.push({ kind: "role_change", id: part.id, activeRole: part.activeRole });
+    } else if (isContentPart(part)) {
+      if (last?.kind === "content") last.parts.push(part);
+      else segments.push({ kind: "content", id: part.id, parts: [part] });
+    } else if (last?.kind === "work") {
+      last.parts.push(part);
+    } else {
+      segments.push({ kind: "work", id: part.id, parts: [part] });
+    }
+  }
+  return segments;
+}
+
+function toolText(part: Extract<TurnPart, { type: "tool" }>): string {
+  if (part.unconfirmed) return "Result not confirmed";
+  const progress = part.progress[part.progress.length - 1];
+  if (part.status === "running" && progress) return progress.text;
+  return describeStatus(part.toolName, part.status, part.skillName);
+}
+
+/** The rail rows for work parts, in their order. */
+export function stepsFromParts(parts: TurnPart[]): RailStep[] {
+  const steps: RailStep[] = [];
+  for (const part of parts) {
+    switch (part.type) {
+      case "legacy_step":
+        steps.push(part.step);
+        break;
+      case "reasoning":
+        steps.push(
+          part.phase === "plan" && part.planSteps !== undefined
+            ? {
+                id: part.id,
+                kind: "note",
+                label: "plan",
+                text: `Planned ${part.planSteps} step${part.planSteps === 1 ? "" : "s"}`,
+                status: "done",
+                body: part.text,
+              }
+            : {
+                id: part.id,
+                kind: "thinking",
+                label: part.phase ?? "act",
+                text: part.text,
+                status: part.state === "streaming" ? "running" : "done",
+                body: part.text,
+              },
+        );
+        break;
+      case "tool":
+        steps.push({
+          id: part.toolCallId,
+          kind: "tool",
+          label: part.toolName,
+          skillName: part.skillName,
+          text: toolText(part),
+          status: part.status,
+          preview: part.toolName === "load_skill" ? undefined : part.preview,
+          detail: showsToolDetail(part.toolName) ? part.detail : undefined,
+        });
+        if (part.decision)
+          steps.push({
+            id: `${part.toolCallId}-decision`,
+            kind: "consent",
+            label: part.decision,
+            text: part.decision === "denied" ? `Denied ${part.toolName}` : `Approved ${part.toolName}`,
+            status: part.decision === "denied" ? "denied" : "done",
+          });
+        break;
+      case "guard":
+        steps.push(guardStep(steps, part.decision));
+        break;
+      default:
+        break;
+    }
+  }
+  return steps;
+}
+
+/** Authored content parts as ordered blocks; `index` is their position in the turn. */
+export function contentFromParts(parts: TurnPart[]): OrderedContent[] {
+  const content: OrderedContent[] = [];
+  for (const part of parts) {
+    if (!isContentPart(part)) continue;
+    const id = part.contentId ?? part.id;
+    const index = content.length;
+    switch (part.type) {
+      case "text":
+        content.push({ id, index, type: "text", text: part.text, complete: part.state !== "streaming" });
+        break;
+      case "ui":
+        // An interactive block counts as complete only when its program was sealed.
+        content.push({ id, index, type: "ui", block: part.block, complete: part.state === "done", ...(part.tooLarge ? { tooLarge: true as const } : {}) });
+        break;
+      case "table":
+        content.push({ id, index, type: "table", block: part.block, complete: true });
+        break;
+      case "chart":
+        content.push({ id, index, type: "chart", block: part.block, complete: true });
+        break;
+      case "citation":
+        content.push({ id, index, type: "citation", block: part.block, complete: true });
+        break;
+      case "dashboard":
+        content.push({ id, index, type: "dashboard", block: part.block, complete: true });
+        break;
+    }
+  }
+  return content;
+}
+
+/** Recompute the projection from `run`. */
+export function syncTurn(turn: TranscriptTurn): TranscriptTurn {
+  const { run } = turn;
+  const content = contentFromParts(run.parts);
+  const pending = [...run.parts]
+    .reverse()
+    .find((part) => part.type === "tool" && part.consent);
+  return {
+    ...turn,
+    steps: stepsFromParts(run.parts),
+    content,
+    answer: content.flatMap((item) => (item.type === "text" && item.text ? [item.text] : [])).join("\n\n"),
+    blocks: {
+      tables: content.flatMap((item) => (item.type === "table" ? [{ id: item.id, block: item.block }] : [])),
+      charts: content.flatMap((item) => (item.type === "chart" ? [{ id: item.id, block: item.block }] : [])),
+      citations: content.flatMap((item) => (item.type === "citation" ? [item.block] : [])),
+    },
+    pendingConsent: pending && pending.type === "tool" && pending.consent ? pending.consent : null,
+    state: run.status,
+    stopReason: run.stopReason,
+    error: run.error,
+    messageId: run.messageId ?? turn.messageId,
+    tokens: run.tokens ?? turn.tokens,
+    inputTokens: run.inputTokens ?? turn.inputTokens,
+    outputTokens: run.outputTokens ?? turn.outputTokens,
+    suggestions: run.suggestions,
+  };
+}
+
+function toolPart(turn: TranscriptTurn, partId: string) {
+  const part = turn.run.parts.find((item) => item.id === partId);
+  return part?.type === "tool" ? part : undefined;
+}
+
+function withPreview(turn: TranscriptTurn, toolCallId: string, runId: string | undefined, preview: string): TranscriptTurn {
+  const identity = evidenceIdentity({ toolCallId, runId });
+  return {
+    ...turn,
+    toolPreviews: { ...turn.toolPreviews, [identity]: preview },
+    evidence: turn.evidence?.map((item) =>
+      evidenceIdentity(item) === identity ? { ...item, sqlPreview: preview } : item,
+    ),
+  };
+}
+
+/** Evidence and SQL previews a tool event adds; the transcript owns their merge rules. */
+function withToolEvidence(turn: TranscriptTurn, event: StudioEvent): TranscriptTurn {
+  if (event.type === "role.changed") return { ...turn, evidence: [], toolPreviews: {} };
+  if (event.type !== "tool.status" && event.type !== "tool.evidence" && event.type !== "consent.required")
+    return turn;
+  const tool = toolPart(turn, event.partId);
+  if (!tool) return turn;
+  const toolCallId = tool.toolCallId;
+  // A Mission's nested run keeps its own identity for evidence and previews;
+  // the turn's own calls are identified by call id alone, as in the stored trace.
+  const toolRun = tool.originRunId;
+  if (event.type === "consent.required")
+    return event.call.sql_preview && tool.toolName !== "load_skill"
+      ? withPreview(turn, toolCallId, toolRun, event.call.sql_preview)
+      : turn;
+  if (event.type === "tool.status") {
+    let next = event.preview && tool.toolName !== "load_skill"
+      ? withPreview(turn, toolCallId, toolRun, event.preview)
+      : turn;
+    const health = event.evidence ? evidenceHealthFromTrace(event.evidence) : null;
+    if (health)
+      next = {
+        ...next,
+        evidence: mergeToolEvidence(next.evidence ?? [], {
+          toolCallId,
+          toolName: tool.toolName,
+          health,
+          runId: toolRun,
+        }),
+      };
+    return next;
+  }
+  const source = event.event;
+  const envelope = source.type === "evidence_envelope" ? readEvidenceEnvelope(source.payload) : null;
+  const health = envelope?.health ?? (source.type === "evidence_health" ? readEvidenceHealth(source.payload) : null);
+  if (!health) return turn;
+  const workflowProvenance = workflowProvenanceFromTrace(source) ?? undefined;
+  if ((source.workflow ?? source.workflow_provenance) != null && !workflowProvenance) return turn;
+  const runId = workflowProvenance?.run_id ?? toolRun;
+  const preview =
+    turn.toolPreviews?.[evidenceIdentity({ toolCallId, runId })] ?? (!workflowProvenance ? tool.preview : undefined);
+  return {
+    ...turn,
+    evidence: mergeToolEvidence(turn.evidence ?? [], {
+      toolCallId,
+      toolName: source.tool_name ?? tool.toolName,
+      health,
+      ...(envelope ? { envelope } : {}),
+      ...(workflowProvenance ? { workflowProvenance } : {}),
+      runId,
+      ...(preview ? { sqlPreview: preview } : {}),
+    }),
+  };
+}
+
+/** Fold one v2 event into a single turn (live and replay share this). */
+export function applyToTurn(turn: TranscriptTurn, event: StudioEvent): TranscriptTurn {
+  const run = turnReducer(turn.run, event);
+  if (run === turn.run) return turn;
+  return syncTurn(withToolEvidence({ ...turn, run, protocolVersion: 2 }, event));
+}
+
+/**
+ * Fold one v2 event into the transcript.
+ *
+ * A `role.changed` keeps only this turn: earlier turns belong to the previous
+ * role and stay hidden. The turn shows a separator that says so.
+ */
+export function applyStudioEvent(
+  turns: TranscriptTurn[],
+  turnId: string,
+  event: StudioEvent,
+): TranscriptTurn[] {
+  const scoped = event.type === "role.changed" ? turns.filter((turn) => turn.id === turnId) : turns;
+  return patchTurn(scoped, turnId, (turn) => applyToTurn(turn, event));
+}
+
+/** End a turn locally (transport failure, stop, or a stream that closed early). */
+export function settleTurn(
+  turn: TranscriptTurn,
+  status: TranscriptTurn["state"],
+  error?: string,
+): TranscriptTurn {
+  if (turn.run.status !== "streaming" && status === "done") return turn;
+  const reason = status === "error" ? "error" : status === "cancelled" ? "cancelled" : "stop";
+  const parts = turn.run.parts.map((part) => (part.state === "streaming" ? sealPart(part, reason) : part));
+  return syncTurn({
+    ...turn,
+    run: { ...turn.run, parts, status, ...(error !== undefined ? { error } : {}) },
+  });
+}
+
+/** Record the user's consent decision on the tool part it answers. */
+export function decideToolCall(
+  turn: TranscriptTurn,
+  toolCallId: string,
+  decision: "approved" | "denied",
+): TranscriptTurn {
+  return syncTurn({
+    ...turn,
+    revealKey: (turn.revealKey ?? 0) + 1,
+    run: {
+      ...turn.run,
+      parts: turn.run.parts.map((part) =>
+        part.type === "tool" && part.toolCallId === toolCallId
+          ? { ...part, decision, consent: undefined }
+          : part,
+      ),
+    },
+  });
+}
+
+type JournalStep = Extract<NonNullable<AgentMessage["steps"]>[number], { kind: "event_journal" }>;
+
+function journalOf(message: AgentMessage): JournalStep | undefined {
+  return message.steps?.find(
+    (step): step is JournalStep => step.kind === "event_journal" && step.protocol_version === PROTOCOL_VERSION,
+  );
+}
+
+/** Replay a protocol v2 turn: the stored journal, then its stored outcome. */
+function replayJournal(turn: TranscriptTurn, journal: JournalStep, message: AgentMessage): TranscriptTurn {
+  let replayed: TranscriptTurn = { ...turn, run: emptyRunState(), protocolVersion: 2, evidence: [], toolPreviews: {} };
+  for (const entry of journal.events) {
+    const event = parseStudioRecord(entry.event, entry.data);
+    if (event) replayed = applyToTurn(replayed, event);
+  }
+  const outcome = message.steps?.find((step) => step.kind === "turn_outcome");
+  // The terminal event follows the message write; it is rebuilt from the row.
+  return applyToTurn(replayed, {
+    type: "run.finished",
+    seq: replayed.run.lastSeq + 1,
+    ...(replayed.run.runId ? { run_id: replayed.run.runId } : {}),
+    messageId: message.message_id,
+    finishReason: outcome && "finish_reason" in outcome && outcome.finish_reason ? outcome.finish_reason : "stop",
+    ...(message.total_tokens != null ? { totalTokens: message.total_tokens } : {}),
+    ...(message.prompt_tokens != null ? { promptTokens: message.prompt_tokens } : {}),
+    ...(message.completion_tokens != null ? { completionTokens: message.completion_tokens } : {}),
+  });
+}
+
+/** Parts for a protocol 1 turn: its rebuilt rows, then its ordered content. */
+function legacyRun(turn: TranscriptTurn): TurnRunState {
+  const parts: TurnPart[] = turn.steps.map((step, seq) => ({
+    id: `${turn.id}:step:${step.id}`,
+    seq,
+    state: "done" as const,
+    type: "legacy_step" as const,
+    step,
+  }));
+  const ordered = [...turn.content].sort((a, b) => a.index - b.index);
+  ordered.forEach((item, offset) => {
+    const base = {
+      id: `${turn.id}:content:${item.id}`,
+      seq: parts.length + offset,
+      contentIndex: item.index,
+      contentId: item.id,
+    };
+    const state = item.complete ? ("done" as const) : ("error" as const);
+    switch (item.type) {
+      case "text":
+        parts.push({ ...base, state, type: "text", text: item.text });
+        break;
+      case "ui":
+        parts.push({ ...base, state, type: "ui", block: item.block });
+        break;
+      case "table":
+        parts.push({ ...base, state, type: "table", block: item.block });
+        break;
+      case "chart":
+        parts.push({ ...base, state, type: "chart", block: item.block });
+        break;
+      case "citation":
+        parts.push({ ...base, state, type: "citation", block: item.block });
+        break;
+      case "dashboard":
+        parts.push({ ...base, state, type: "dashboard", block: item.block });
+        break;
+    }
+  });
+  return {
+    parts,
+    lastSeq: parts.length - 1,
+    status: turn.state,
+    stopReason: turn.stopReason,
+    messageId: turn.messageId,
+    tokens: turn.tokens,
+    inputTokens: turn.inputTokens,
+    outputTokens: turn.outputTokens,
+  };
+}
 
 /**
  * Whether a tool's recorded summary is written for the reader.
@@ -180,6 +569,8 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
         pendingConsent: null,
         blocks: { tables: [], charts: [], citations: [] },
         state: "done",
+        run: emptyRunState("done"),
+        protocolVersion: 1,
       };
       turns.push(open);
       continue;
@@ -197,6 +588,8 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
         pendingConsent: null,
         blocks: { tables: [], charts: [], citations: [] },
         state: "done",
+        run: emptyRunState("done"),
+        protocolVersion: 1,
       };
       turns.push(open);
     }
@@ -378,6 +771,16 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
         complete: true,
       });
     }
+    const journal = journalOf(message);
+    if (journal) {
+      // Evidence comes from the recorded tool trace, as for every stored turn.
+      const evidence = open.evidence;
+      const replayed = replayJournal(open, journal, message);
+      Object.assign(open, replayed, evidence?.length ? { evidence } : {});
+    } else {
+      open.run = legacyRun(open);
+      open.protocolVersion = 1;
+    }
   }
 
   return turns;
@@ -394,39 +797,20 @@ export function patchTurn(
 /**
  * Close a turn whose stream has ended.
  *
- * A turn the server closed (its `done` frame set the message id) keeps the
- * outcome that frame gave it. A stopped turn whose stream ended without that
- * frame, because the browser stopped listening first, settles exactly as the
- * server's cancelled frame would have settled it.
+ * A turn the server closed (its terminal event set the message id) keeps the
+ * outcome that event gave it. A stopped turn whose stream ended without it,
+ * because the browser stopped listening first, settles exactly as the server's
+ * cancelled terminal would have settled it.
  */
-export function settleTurn(
+export function settleStream(
   turns: TranscriptTurn[],
   turnId: string,
   stopped: boolean,
 ): TranscriptTurn[] {
-  const turn = turns.find((item) => item.id === turnId);
-  if (!turn || turn.state !== "streaming") return turns;
-  if (stopped && turn.messageId === undefined)
-    return applyEvent(turns, turnId, {
-      type: "done",
-      message_id: "",
-      finish_reason: "cancelled",
-    });
-  return patchTurn(turns, turnId, (item) => ({ ...item, state: "done" }));
-}
-
-/**
- * Return the contiguous authored prefix that is safe to display.
- *
- * The current block is visible while it streams. A higher index is visible
- * only after every preceding block exists and is sealed. This is the client
- * side of the ordering barrier: a table at index 1 waits for text at index 0,
- * while a table intentionally authored at index 0 appears immediately.
- */
-let blockSeq = 0;
-function nextBlockId(): string {
-  blockSeq += 1;
-  return `block-${blockSeq}`;
+  return patchTurn(turns, turnId, (turn) => {
+    if (turn.run.status !== "streaming") return turn;
+    return settleTurn(turn, stopped && turn.messageId === undefined ? "cancelled" : "done");
+  });
 }
 
 /**
@@ -486,514 +870,6 @@ function nextLegacyArtifactIndex(content: OrderedContent[]): number {
     0,
   );
   return highestArtifact + 1;
-}
-
-/**
- * Fold one SSE event into the turn it belongs to.
- *
- * The rules that matter:
- *
- *  - `text_delta` appends to the turn's answer, so it streams in place.
- *  - `thinking` becomes a rail row. A frame that repeats the phase already live
- *    replaces it rather than stacking, because the loop re-announces `act` on
- *    every iteration and a row per iteration would bury the real steps.
- *  - `tool_call` both opens a rail row and, when consent is required, raises the
- *    card. The card is what the turn is waiting on; the row records it either way.
- *  - a status frame updates its row in place, matched by tool call id.
- *  - result blocks are keyed so React keeps them stable across re-renders.
- */
-export function applyEvent(
-  turns: TranscriptTurn[],
-  turnId: string,
-  event: StudioAssistantEvent,
-): TranscriptTurn[] {
-  if (event.type === "role_changed") {
-    return turns
-      .filter((turn) => turn.id === turnId)
-      .map((turn) => ({
-        ...turn,
-        answer: "",
-        content: [],
-        steps: [],
-        evidence: [],
-        toolPreviews: {},
-        pendingConsent: null,
-        blocks: { tables: [], charts: [], citations: [] },
-      }));
-  }
-  return patchTurn(turns, turnId, (turn) => {
-    switch (event.type) {
-      case "evidence_envelope":
-      case "evidence_health": {
-        const envelope =
-          event.type === "evidence_envelope"
-            ? readEvidenceEnvelope(event.payload)
-            : null;
-        const health =
-          envelope?.health ??
-          (event.type === "evidence_health"
-            ? readEvidenceHealth(event.payload)
-            : null);
-        if (!health) return turn;
-        const workflowProvenance =
-          workflowProvenanceFromTrace(event) ?? undefined;
-        if (
-          (event.workflow ?? event.workflow_provenance) != null &&
-          !workflowProvenance
-        )
-          return turn;
-        const step = turn.steps.find((item) => item.id === event.tool_call_id);
-        const runId = workflowProvenance?.run_id ?? event.run_id;
-        const preview =
-          turn.toolPreviews?.[
-            evidenceIdentity({ toolCallId: event.tool_call_id, runId })
-          ] ?? (!runId ? step?.preview : undefined);
-        return {
-          ...turn,
-          evidence: mergeToolEvidence(turn.evidence ?? [], {
-            toolCallId: event.tool_call_id,
-            toolName: event.tool_name ?? step?.label ?? "Query",
-            health,
-            ...(envelope ? { envelope } : {}),
-            ...(workflowProvenance ? { workflowProvenance } : {}),
-            runId,
-            ...(preview ? { sqlPreview: preview } : {}),
-          }),
-        };
-      }
-      case "guard":
-        return { ...turn, steps: [...turn.steps, guardStep(turn.steps, event)] };
-      case "plan": {
-        const plan: RailStep = {
-          id: "execution-plan",
-          kind: "note",
-          label: "plan",
-          text: `Planned ${event.steps.length} step${event.steps.length === 1 ? "" : "s"}`,
-          status: "done",
-          body: event.steps
-            .map((step, index) => `${index + 1}. ${step.text}`)
-            .join("\n"),
-        };
-        const existing = turn.steps.findIndex((step) => step.id === plan.id);
-        return {
-          ...turn,
-          steps:
-            existing === -1
-              ? [...turn.steps, plan]
-              : turn.steps.map((step, index) =>
-                  index === existing ? plan : step,
-                ),
-        };
-      }
-
-      case "thinking": {
-        let existing = -1;
-        for (let index = turn.steps.length - 1; index >= 0; index -= 1) {
-          const step = turn.steps[index];
-          if (
-            step.kind === "thinking" &&
-            step.label === event.phase &&
-            step.status === "running"
-          ) {
-            existing = index;
-            break;
-          }
-        }
-        const id =
-          existing === -1
-            ? uniqueStepId(turn.steps, `think-${event.phase}`)
-            : turn.steps[existing].id;
-        const row: RailStep = {
-          id,
-          kind: "thinking",
-          label: event.phase,
-          text: event.text,
-          status: event.status,
-          // Every phase carries its own text as the row's body, so any step can
-          // be opened to read what it did. The `act` row is the only one the
-          // loop re-announces with real narration, but a plan, a skill load and
-          // an observation each say something worth keeping.
-          body: event.text,
-        };
-        const steps =
-          existing === -1
-            ? [...turn.steps, row]
-            : turn.steps.map((step, i) =>
-                i === existing ? { ...row, body: step.body ?? row.body } : step,
-              );
-        // A later phase means the earlier one is finished. The loop announces
-        // ``act`` on every iteration without closing it, so an unclosed row would
-        // otherwise keep its spinner forever once the turn settles.
-        const PHASE_ORDER = ["plan", "skill", "act", "observe", "answer"];
-        const rank = (step: RailStep) =>
-          step.kind === "thinking" ? PHASE_ORDER.indexOf(step.label) : -1;
-        const current = rank(row);
-        const settled = steps.map((step) =>
-          step.kind === "thinking" &&
-          step.status === "running" &&
-          current > -1 &&
-          rank(step) > -1 &&
-          rank(step) < current
-            ? { ...step, status: "done" as const }
-            : step,
-        );
-        return { ...turn, steps: settled };
-      }
-
-      case "tool_call": {
-        const { payload } = event;
-        const row: RailStep = {
-          id: payload.tool_call_id,
-          kind: "tool",
-          label: payload.tool_name,
-          skillName: payload.skill_name || undefined,
-          // The row names the work in the tense of its status: a call still
-          // running or waiting for approval has not done anything yet, and a
-          // refused one never ran.
-          text: describeStatus(
-            payload.tool_name,
-            payload.status,
-            payload.skill_name,
-          ),
-          status: payload.status,
-          preview:
-            payload.tool_name === "load_skill"
-              ? undefined
-              : payload.sql_preview || undefined,
-        };
-        const existing = turn.steps.findIndex(
-          (s) => s.id === payload.tool_call_id,
-        );
-        return {
-          ...turn,
-          ...(row.preview
-            ? {
-                toolPreviews: {
-                  ...turn.toolPreviews,
-                  [evidenceIdentity({
-                    toolCallId: payload.tool_call_id,
-                    runId: event.run_id,
-                  })]: row.preview,
-                },
-              }
-            : {}),
-          steps:
-            existing === -1
-              ? [...turn.steps, row]
-              : turn.steps.map((s, i) => (i === existing ? row : s)),
-          // A `pending` call is the one the turn is blocked on.
-          pendingConsent:
-            payload.status === "pending" ? payload : turn.pendingConsent,
-        };
-      }
-
-      case "tool_status": {
-        const existing = turn.steps.findIndex(
-          (step) => step.id === event.tool_call_id,
-        );
-        // A call that needed no approval never got a `tool_call` frame carrying
-        // its preview in older streams; a status frame alone must still produce
-        // a row, or the tool and its SQL would vanish from the rail. The raw
-        // call id is never shown: it is a provider artifact, not a tool name.
-        const steps =
-          existing === -1
-            ? [
-                ...turn.steps,
-                {
-                  id: event.tool_call_id,
-                  kind: "tool" as const,
-                  label: "tool",
-                  text: describeStatus("tool", event.status),
-                  status: event.status,
-                },
-              ]
-            : turn.steps.map((step) =>
-                step.id === event.tool_call_id
-                  ? {
-                      ...step,
-                      status: event.status,
-                      text: describeStatus(
-                        step.label,
-                        event.status,
-                        step.skillName,
-                      ),
-                    }
-                  : step,
-              );
-        const pendingConsent =
-          turn.pendingConsent &&
-          turn.pendingConsent.tool_call_id === event.tool_call_id &&
-          event.status !== "pending"
-            ? null
-            : turn.pendingConsent;
-        return { ...turn, steps, pendingConsent };
-      }
-
-      case "tool_progress":
-        return {
-          ...turn,
-          ...(event.sql_preview
-            ? {
-                toolPreviews: {
-                  ...turn.toolPreviews,
-                  [evidenceIdentity({
-                    toolCallId: event.tool_call_id,
-                    runId: event.run_id,
-                  })]: event.sql_preview,
-                },
-                evidence: turn.evidence?.map((item) =>
-                  evidenceIdentity(item) ===
-                  evidenceIdentity({
-                    toolCallId: event.tool_call_id,
-                    runId: event.run_id,
-                  })
-                    ? { ...item, sqlPreview: event.sql_preview }
-                    : item,
-                ),
-              }
-            : {}),
-          steps: turn.steps.map((step) =>
-            step.id === event.tool_call_id
-              ? {
-                  ...step,
-                  text: event.text,
-                  preview:
-                    step.label === "load_skill"
-                      ? undefined
-                      : (event.sql_preview ?? step.preview),
-                  status:
-                    event.stage === "query_completed"
-                      ? ("done" as const)
-                      : ("running" as const),
-                }
-              : step,
-          ),
-        };
-
-      case "text_delta": {
-        const currentContent = turn.content ?? [];
-        const index = event.content_index ?? 0;
-        // Blocks are matched by id alone: a text block at the same index in an
-        // earlier block list is a different block. A frame without an id (an
-        // older server) is the text at its index.
-        const id = event.content_id ?? `legacy-text-${index}`;
-        const existing = currentContent.findIndex((item) => item.id === id);
-        const content =
-          existing === -1
-            ? [
-                ...currentContent,
-                {
-                  id,
-                  index,
-                  type: "text" as const,
-                  text: event.text,
-                  complete: false,
-                },
-              ]
-            : currentContent.map((item, itemIndex) =>
-                itemIndex === existing && item.type === "text"
-                  ? { ...item, text: item.text + event.text }
-                  : item,
-              );
-        return { ...turn, answer: turn.answer + event.text, content };
-      }
-
-      case "table": {
-        const currentContent = turn.content ?? [];
-        const id = event.content_id ?? nextBlockId();
-        const index =
-          event.content_index ?? nextLegacyArtifactIndex(currentContent);
-        return {
-          ...turn,
-          content: [
-            ...currentContent,
-            {
-              id,
-              index,
-              type: "table" as const,
-              block: event.payload,
-              complete: true as const,
-            },
-          ],
-          blocks: {
-            ...turn.blocks,
-            tables: [...turn.blocks.tables, { id, block: event.payload }],
-          },
-        };
-      }
-
-      case "chart": {
-        const currentContent = turn.content ?? [];
-        const id = event.content_id ?? nextBlockId();
-        const index =
-          event.content_index ?? nextLegacyArtifactIndex(currentContent);
-        return {
-          ...turn,
-          content: [
-            ...currentContent,
-            {
-              id,
-              index,
-              type: "chart" as const,
-              block: event.payload,
-              complete: true as const,
-            },
-          ],
-          blocks: {
-            ...turn.blocks,
-            charts: [...turn.blocks.charts, { id, block: event.payload }],
-          },
-        };
-      }
-
-      case "citation": {
-        const currentContent = turn.content ?? [];
-        const id = event.content_id ?? nextBlockId();
-        const index =
-          event.content_index ?? nextLegacyArtifactIndex(currentContent);
-        return {
-          ...turn,
-          content: [
-            ...currentContent,
-            {
-              id,
-              index,
-              type: "citation" as const,
-              block: event.payload,
-              complete: true as const,
-            },
-          ],
-          blocks: {
-            ...turn.blocks,
-            citations: [...turn.blocks.citations, event.payload],
-          },
-        };
-      }
-
-      case "dashboard": {
-        if (turn.content.some(item => item.id === event.content_id)) return turn;
-        return { ...turn, content: [...turn.content, { id: event.content_id!, index: event.content_index!, type: "dashboard", block: event.payload, complete: true }] };
-      }
-      case "ui": {
-        const id = event.content_id!;
-        if (turn.content.some((item) => item.id === id)) return turn;
-        return {
-          ...turn,
-          content: [
-            ...turn.content,
-            {
-              id,
-              index: event.content_index!,
-              type: "ui",
-              block: { ...event.payload, program: "" },
-              complete: false,
-            },
-          ],
-        };
-      }
-      case "ui_delta":
-        return {
-          ...turn,
-          content: turn.content.map((item) => {
-            if (item.id !== event.content_id || item.type !== "ui" || item.complete || item.tooLarge)
-              return item;
-            const program = item.block.program + event.text;
-            return utf8.encode(program).length > MAX_UI_PROGRAM_BYTES
-              ? { ...item, tooLarge: true as const, block: { ...item.block, program: "" } }
-              : { ...item, block: { ...item.block, program } };
-          }),
-        };
-      case "content_block_done":
-        // Sealed by id alone: an index can be shared with a block the frame
-        // does not close.
-        return {
-          ...turn,
-          content: (turn.content ?? []).map((item) =>
-            item.id === event.content_id ? { ...item, complete: true } : item,
-          ),
-        };
-
-      case "tool_detail": {
-        const health = evidenceHealthFromTrace(event);
-        return {
-          ...turn,
-          ...(health
-            ? {
-                evidence: mergeToolEvidence(turn.evidence ?? [], {
-                  toolCallId: event.tool_call_id,
-                  toolName:
-                    turn.steps.find((step) => step.id === event.tool_call_id)
-                      ?.label ?? "Query",
-                  health,
-                  runId: event.run_id,
-                }),
-              }
-            : {}),
-          steps: turn.steps.map((step) =>
-            step.id === event.tool_call_id && showsToolDetail(step.label)
-              ? { ...step, detail: event.text }
-              : step,
-          ),
-        };
-      }
-
-      case "error": {
-        // Tool failures already appear on the rail. A persistence failure must
-        // remain visible even when part of the answer has reached the browser.
-        const persistenceFailed = event.code === "run_persistence_unavailable";
-        return {
-          ...turn,
-          state: turn.answer && !persistenceFailed ? turn.state : "error",
-          error: turn.answer && !persistenceFailed ? turn.error : event.message,
-        };
-      }
-
-      case "suggestions":
-        return { ...turn, suggestions: event.suggestions };
-
-      case "done":
-        return {
-          ...turn,
-          pendingConsent: null,
-          // The turn is over: nothing on the rail can still be running, whatever
-          // a missed close frame left behind. This is the backstop that stops a
-          // spinner outliving the answer.
-          steps: turn.steps.map((step) =>
-            step.status === "pending"
-              ? {
-                  ...step,
-                  status: "cancelled" as const,
-                  text: describeStatus(step.label, "cancelled", step.skillName),
-                }
-              : step.status === "running" && event.finish_reason === "interrupted"
-                ? { ...step, status: "failed" as const, text: "Result not confirmed" }
-                : step.status === "running"
-                  ? { ...step, status: "done" as const }
-                  : step,
-          ),
-          // The run is finished, so every block it opened is final, including an
-          // interactive program whose own close frame was lost. The renderer
-          // still validates the program before drawing it.
-          content: (turn.content ?? []).map((item) =>
-            item.complete ? item : { ...item, complete: true as const },
-          ),
-          state:
-            turn.state === "error"
-              ? "error"
-              : event.finish_reason === "cancelled"
-                ? "cancelled"
-                : turn.state,
-          stopReason: FINISHED.has(event.finish_reason) ? undefined : event.finish_reason,
-          tokens: event.total_tokens ?? turn.tokens,
-          messageId: event.message_id,
-          inputTokens: event.prompt_tokens ?? turn.inputTokens,
-          outputTokens: event.completion_tokens ?? turn.outputTokens,
-        };
-
-      default:
-        return turn;
-    }
-  });
 }
 
 /** A tool name turned into the line a reader understands. */

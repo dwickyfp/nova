@@ -100,6 +100,20 @@ from app.modules.assistant import events, read_grants
 from app.modules.assistant.attachments import attachment_prompt
 from app.modules.assistant.consent import ConsentApproval, consent_broker
 from app.modules.assistant.context import ContextManager
+from app.modules.assistant.events_v2 import (
+    FLUSH_EVENTS,
+    ROLE_CHANGED,
+    RUN_ERROR,
+    RUN_FINISHED,
+    RUN_STARTED,
+    V1_ONLY,
+    StudioStreamEncoder,
+    frame_name,
+    frame_sequence,
+    journal_protocol,
+    journal_step,
+    parse_frame,
+)
 from app.modules.assistant.guards import GuardChain
 from app.modules.assistant.history import history_repository
 from app.modules.assistant.provider import assistant_provider
@@ -359,6 +373,7 @@ def _message_view(row: dict, user: dict | None = None) -> MessageView:
         content=content,
         created_at=row["created_at"],
         steps=steps,
+        protocol_version=journal_protocol(steps),
         prompt_tokens=row.get("prompt_tokens"),
         completion_tokens=row.get("completion_tokens"),
         total_tokens=row.get("total_tokens"),
@@ -1917,6 +1932,29 @@ async def replay_agent_run(
 
         cursor = after
         terminal_seen = False
+        # A run streamed in protocol v2 opens with ``run.started``; one that
+        # was in flight across an upgrade keeps its v1 terminal frames.
+        protocol: list[bool] = []
+
+        async def synthesized(code: str, message: str, finish_reason: str) -> list[str]:
+            if not protocol:
+                first = await run_journal.events_after(run_id, -1, limit=1)
+                protocol.append(not first or frame_name(first[0]) == RUN_STARTED)
+            v2 = protocol[0]
+            error_name, done_name, key = (
+                (RUN_ERROR, RUN_FINISHED, "seq") if v2
+                else (events.EVENT_ERROR, events.EVENT_DONE, "sequence")
+            )
+            return [
+                events.format_sse(error_name, {
+                    "run_id": run_id, key: cursor + 1, "code": code, "message": message,
+                }),
+                events.format_sse(done_name, {
+                    "run_id": run_id, key: cursor + 2, "message_id": "",
+                    "finish_reason": finish_reason,
+                }),
+            ]
+
         deadline = asyncio.get_running_loop().time() + 3690
         while asyncio.get_running_loop().time() < deadline:
             state = await run_journal.get(run_id, **scope)
@@ -1924,9 +1962,12 @@ async def replay_agent_run(
                 return
             frames = await run_journal.events_after(run_id, cursor)
             for frame in frames:
-                payload = json.loads(frame.split("data: ", 1)[1])
-                cursor = int(payload["sequence"])
-                terminal_seen = terminal_seen or frame.startswith(f"event: {events.EVENT_DONE}\n")
+                cursor = frame_sequence(frame)
+                if not protocol:
+                    protocol.append(frame_name(frame) not in V1_ONLY)
+                terminal_seen = terminal_seen or frame_name(frame) in {
+                    events.EVENT_DONE, RUN_FINISHED,
+                }
                 yield sanitize_workflow_sse(frame)
             if (
                 state["status"] == "running"
@@ -1941,24 +1982,11 @@ async def replay_agent_run(
                 and (not frames or cursor >= state["last_sequence"])
             ):
                 code = "run_interrupted" if state["status"] == "interrupted" else "run_failed"
-                yield events.format_sse(
-                    events.EVENT_ERROR,
-                    {
-                        "run_id": run_id,
-                        "sequence": cursor + 1,
-                        "code": code,
-                        "message": "The agent run stopped. Review saved steps before retrying.",
-                    },
-                )
-                yield events.format_sse(
-                    events.EVENT_DONE,
-                    {
-                        "run_id": run_id,
-                        "sequence": cursor + 2,
-                        "message_id": "",
-                        "finish_reason": state["status"],
-                    },
-                )
+                for frame in await synthesized(
+                    code, "The agent run stopped. Review saved steps before retrying.",
+                    state["status"],
+                ):
+                    yield frame
                 return
             if (
                 state is not None
@@ -1966,25 +1994,12 @@ async def replay_agent_run(
                 and not frames
                 and cursor < state["last_sequence"]
             ):
-                yield events.format_sse(
-                    events.EVENT_ERROR,
-                    {
-                        "run_id": run_id,
-                        "sequence": cursor + 1,
-                        "code": "run_history_unavailable",
-                        "message": "Saved run events are unavailable. "
-                        "Open the conversation to review the result.",
-                    },
-                )
-                yield events.format_sse(
-                    events.EVENT_DONE,
-                    {
-                        "run_id": run_id,
-                        "sequence": cursor + 2,
-                        "message_id": "",
-                        "finish_reason": "error",
-                    },
-                )
+                for frame in await synthesized(
+                    "run_history_unavailable",
+                    "Saved run events are unavailable. Open the conversation to review the result.",
+                    "error",
+                ):
+                    yield frame
                 return
             if state is None or (state["status"] != "running" and cursor >= state["last_sequence"]):
                 return
@@ -2409,6 +2424,10 @@ async def send_agent_message(
         return future
 
     interruption_reason: str | None = None
+    # Protocol v2 (ordered parts): one encoder per run, shared by the turn and
+    # the producer so every frame of the run is numbered in one sequence.
+    encoder = StudioStreamEncoder(run_id)
+    delivered: list[str] = []
 
     async def generate() -> AsyncGenerator[str, None]:
         reply_parts: list[str] = []
@@ -2421,6 +2440,7 @@ async def send_agent_message(
 
         plain = plain_frames()
         try:
+            yield encoder.start(role=security.active_role)
             raw_frames = loop.run(
                 thread=runtime,
                 user_content=prompt,
@@ -2446,10 +2466,12 @@ async def send_agent_message(
                             finish_reason = payload.get("finish_reason")
                             done_frame = frame
                             continue
-                        yield frame
+                        for encoded in encoder.translate(frame):
+                            yield encoded
             for frame in plain.flush():
                 reply_parts.append(_text_from_frame(frame))
-                yield frame
+                for encoded in encoder.translate(frame):
+                    yield encoded
         except asyncio.CancelledError:
             finish_reason = "cancelled"
             done_frame = events.done(reply_message_id, finish_reason="cancelled")
@@ -2459,9 +2481,10 @@ async def send_agent_message(
         except Exception:  # noqa: BLE001 - never leak an internal trace
             finish_reason = "error"
             logger.exception("Agent stream failed")
-            yield events.error(
+            for encoded in encoder.translate(events.error(
                 "internal_error", "The agent could not finish this answer. Please try again."
-            )
+            )):
+                yield encoded
             done_frame = events.done(reply_message_id, finish_reason="error")
         finally:
             if reply_parts or context.steps or context.pending_output or finish_reason:
@@ -2485,6 +2508,10 @@ async def send_agent_message(
                             0,
                             {"kind": "context", **context.context_stats},
                         )
+                    # The delivered v2 events, so a reopened turn replays in the
+                    # order it streamed. The terminal event follows this write and
+                    # is rebuilt from the stored outcome.
+                    steps.insert(0, journal_step(delivered))
                     async with asyncio.timeout(RUN_STORAGE_TIMEOUT_SECONDS):
                         await assistant_repository.append_message(
                             thread_id,
@@ -2508,7 +2535,8 @@ async def send_agent_message(
                     logger.warning("Could not persist the agent reply (%s)", type(exc).__name__)
                     raise RuntimeError("Agent reply persistence failed") from None
         if done_frame is not None:
-            yield done_frame
+            for encoded in encoder.translate(done_frame):
+                yield encoded
 
     stream_queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=128)
     subscriber_connected = True
@@ -2518,11 +2546,20 @@ async def send_agent_message(
         nonlocal next_sequence
         # Text filtering can split precomposed frames. Number the final stream,
         # including mission updates, so delivery and journal replay agree.
-        name, encoded = frame.split("\ndata: ", 1)
-        payload = json.loads(encoded)
-        payload["sequence"] = next_sequence
+        name, payload = parse_frame(frame)
+        payload.pop("sequence", None)
+        payload["run_id"] = run_id
+        payload["seq"] = next_sequence
         next_sequence += 1
-        return events.format_sse(name.removeprefix("event: "), payload)
+        numbered = (
+            f"event: {name}\ndata: "
+            f"{json.dumps(payload, separators=(',', ':'), default=events._json_default)}\n\n"
+        )
+        delivered.append(numbered)
+        return numbered
+
+    def terminal_delivered() -> bool:
+        return bool(delivered) and frame_name(delivered[-1]) == RUN_FINISHED
 
     def queue_frame(frame: str | None) -> None:
         nonlocal subscriber_connected
@@ -2580,28 +2617,19 @@ async def send_agent_message(
         iterator = generate()
         try:
             async for frame in iterator:
-                terminal = frame.startswith(f"event: {events.EVENT_DONE}\n")
+                terminal = frame_name(frame) == RUN_FINISHED
                 if terminal:
                     # Persist the final projection before numbering completion;
                     # a failed projection must not publish a successful done.
                     await flush()
                 frame = sequence_frame(frame)
-                if frame.startswith("event: role_changed\n"):
+                if frame_name(frame) == ROLE_CHANGED:
                     async with asyncio.timeout(RUN_STORAGE_TIMEOUT_SECONDS):
                         await run_journal.block_replay_after_role_change(run_id)
                 if not terminal:
                     queue_frame(frame)
                 batch.append(frame)
-                if len(batch) >= 32 or frame.startswith(
-                    (
-                        "event: tool_call\n",
-                        "event: execution_time_context\n",
-                        "event: tool_status\n",
-                        "event: role_changed\n",
-                        "event: error\n",
-                        "event: done\n",
-                    )
-                ):
+                if len(batch) >= 32 or frame_name(frame) in FLUSH_EVENTS:
                     await flush(project_mission=not terminal)
                 if terminal:
                     queue_frame(frame)
@@ -2615,9 +2643,13 @@ async def send_agent_message(
         except asyncio.CancelledError:
             status = "cancelled"
             interruption_reason = "cancelled"
-            frame = sequence_frame(events.done("", finish_reason="cancelled"))
-            queue_frame(frame)
-            batch.append(frame)
+            for raw in encoder.finish(
+                {"message_id": "", "finish_reason": "cancelled"},
+                force=not terminal_delivered(),
+            ):
+                frame = sequence_frame(raw)
+                queue_frame(frame)
+                batch.append(frame)
         except Exception as exc:
             logger.warning("Agent run persistence failed (%s)", type(exc).__name__)
             status = "interrupted"
@@ -2625,14 +2657,17 @@ async def send_agent_message(
             # An uncertain journal write must stop iteration before another tool
             # can run. Preserve the error even if storage remains unavailable.
             batch.clear()
-            for raw in (
-                events.error(
+            for raw in [
+                *encoder.translate(events.error(
                     "run_persistence_unavailable",
                     "The run stopped because its progress could not be saved. "
                     "Review saved steps and check any actions before trying again.",
+                )),
+                *encoder.finish(
+                    {"message_id": "", "finish_reason": "interrupted"},
+                    force=not terminal_delivered(),
                 ),
-                events.done("", finish_reason="interrupted"),
-            ):
+            ]:
                 frame = sequence_frame(raw)
                 queue_frame(frame)
                 batch.append(frame)

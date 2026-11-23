@@ -139,7 +139,9 @@ async def test_replay_reports_interrupted_run_without_resending_a_tool(monkeypat
         {"username": "alice", "active_role": "analyst", "roles": ["analyst"]},
     )
     frames = [frame async for frame in response.body_iterator]
-    assert [frame.split("\n", 1)[0] for frame in frames] == ["event: error", "event: done"]
+    assert [frame.split("\n", 1)[0] for frame in frames] == [
+        "event: run.error", "event: run.finished",
+    ]
     assert "run_interrupted" in frames[0]
     assert '"finish_reason":"interrupted"' in frames[1]
 
@@ -230,22 +232,30 @@ async def test_slow_subscriber_replays_bounded_queue_while_run_completes(
     )
     await asyncio.gather(*list(router._active_run_tasks))
     frames = [frame async for frame in response.body_iterator]
-    assert len(frames) == (2 if cancel == "journal" else 1 if cancel else 0)
+    # v2: run.started opens the run; a cancelled tool part is sealed before
+    # run.finished, and text arrives as one part (start, deltas, end).
+    assert len(frames) == (5 if cancel == "journal" else 2 if cancel else 0)
     assert sum(len(call.args[1]) for call in append.call_args_list) == (
-        3 if cancel == "journal" else 1 if cancel else 203 if precomposed else 201
+        8 if cancel == "journal" else 2 if cancel else 208 if precomposed else 204
     )
     assert finish.await_args.args[1] == ("cancelled" if cancel else "completed")
     if cancel:
         assert '"finish_reason":"cancelled"' in frames[-1]
     else:
         journaled = [frame for call in append.call_args_list for frame in call.args[1]]
-        sequences = [json.loads(frame.split("data: ", 1)[1])["sequence"] for frame in journaled]
+        sequences = [json.loads(frame.split("data: ", 1)[1])["seq"] for frame in journaled]
         assert all(left < right for left, right in zip(sequences, sequences[1:], strict=False))
         if precomposed:
-            assert [frame.splitlines()[0] for frame in journaled[-3:]] == [
-                "event: table",
-                "event: chart",
-                "event: done",
+            assert [
+                (frame.splitlines()[0], json.loads(frame.split("data: ", 1)[1]).get("type"))
+                for frame in journaled[-6:]
+            ] == [
+                ("event: part.start", "table"),
+                ("event: part.end", None),
+                ("event: part.start", "chart"),
+                ("event: part.end", None),
+                ("event: part.end", None),
+                ("event: run.finished", None),
             ]
     saved = router.assistant_repository.append_message.await_args.kwargs
     assert {

@@ -103,7 +103,7 @@ async def test_storage_failure_closes_stream_and_loop_without_another_effect(
         assert closed.is_set() and not effects
         assert "synthetic-storage-secret-canary" not in "".join(frames) + caplog.text
         done = [json.loads(frame.split("data: ", 1)[1]) for frame in frames
-                if frame.startswith("event: done\n")]
+                if frame.startswith("event: run.finished\n")]
         assert len(done) == 1 and done[0]["finish_reason"] == "interrupted"
         assert any('"code":"run_persistence_unavailable"' in frame for frame in frames)
         finish.assert_awaited_once()

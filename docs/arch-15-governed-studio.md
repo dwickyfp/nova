@@ -32,6 +32,57 @@ user last chatted with, remembered per browser, and otherwise the first agent.
 With no agents it shows an empty state that links to Agents. Per-agent
 automations run through the task worker.
 
+### Stream protocol v2
+
+The Studio route ([agents router](../backend/app/modules/agents/router.py))
+re-encodes the loop's frames with
+[`StudioStreamEncoder`](../backend/app/modules/assistant/events_v2.py) before it
+numbers, journals and delivers them. The shared loop and other assistant
+surfaces keep their v1 frames. Every v2 event carries the run's `run_id` and a
+monotonic `seq`; part ids are `<run_id>:<n>` in production order.
+
+| Event | Payload | Meaning |
+| --- | --- | --- |
+| `run.started` | `protocol_version`, `role` | First event of every run |
+| `part.start` | `part_id`, `type`, type fields | Opens a part: `reasoning` (`source: "nova"`, `phase`), `text`, `tool`, `guard`, `table`, `chart`, `citation`, `dashboard`, `ui` |
+| `part.delta` | `part_id`, `text`, `replace?` | Appends to (or replaces) a part's text or interactive program |
+| `part.end` | `part_id`, `state` (`done`, `error`, `cancelled`), `final?` | Seals a part |
+| `tool.status` | `part_id`, `status`, `preview?`, `progress?`, `detail?`, `evidence?` | A tool call's progress and result summary |
+| `tool.evidence` | `part_id`, `kind`, `payload`, `workflow?` | Evidence Health or envelope for a call |
+| `consent.required` | `part_id`, `classification`, `tool_call`, `preview?` | A call waits for the user's decision |
+| `role.changed` | `active_role` | Work under the previous role is withdrawn; earlier turns stay hidden |
+| `run.finished` | `message_id`, `finish_reason`, `usage?`, `source?` | Terminal event; seals parts left open |
+| `run.error` | `code`, `message` | A failure the turn reports |
+| `ping` | — | Keep-alive |
+
+Side-effect events (`suggestions`, `mission_updated`, `mission_continuation`,
+`dashboard_changed`, `dashboard_activity`, `client_action`,
+`execution_time_context`, `business_result`) keep their payloads and share the
+sequence. A tool part from a Mission's nested run carries `origin_run_id`.
+Content parts keep `content_index` and `content_id`, the identity Add to Dataviz
+and interactive-UI state use.
+
+The run journal stores the same v2 frames, so a reconnect replays from its
+`seq` cursor and the client ignores events at or below the last applied `seq`.
+The assistant message stores the delivered events as its first step
+(`{"kind": "event_journal", "protocol_version": 2, "events": [...]}`), without
+keep-alives, Mission projections or events from before the last role change.
+The terminal `run.finished` follows the message write and is rebuilt on replay
+from the stored outcome; the client seals parts exactly as the encoder does.
+Message views report `protocol_version` (`2` with a journal, otherwise `1`).
+When interactive blocks are hidden from a reader, their parts and events are
+removed from the journal too.
+
+The client folds events with one reducer
+([`turn-reducer.ts`](../frontend/src/features/studio/runtime/turn-reducer.ts))
+for live streams and replay, producing ordered parts that render as work rows,
+content and role-change separators in `seq` order. Turns stored before v2 have
+no journal; they replay read-only from their recorded steps. The encoder and the
+client's test mirror are both checked against
+[`protocol-v2-contract.json`](../frontend/src/features/studio/runtime/protocol-v2-contract.json).
+Not in this protocol yet: model text before numeric verification, provider
+reasoning, and a component registry.
+
 The Smart coordinator and its agent worker were removed on 2026-11-07. Existing
 Smart automations are switched off once at startup, and old Smart chats no
 longer appear in history. [Architecture 11](arch-11-smart-collaboration.md)

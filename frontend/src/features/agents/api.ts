@@ -1,10 +1,8 @@
 import { api, apiBase, authHeaders } from "@/lib/api-client";
 import { useAuthStore } from "@/stores/auth-store";
-import {
-  parseAssistantEvent,
-  readSseFrames,
-} from "@/features/assistant/events";
-import type { AssistantEvent, WorkflowProvenance } from "@/features/assistant/types";
+import { readSseFrames } from "@/features/assistant/events";
+import type { WorkflowProvenance } from "@/features/assistant/types";
+import { parseStudioEvent, type StudioEvent } from "@/features/studio/runtime/protocol";
 import { historyQuery } from "@/features/assistant/thread-client";
 
 /** Agent Studio API client (Phase 12). Mirrors /api/v1/agents/*. */
@@ -197,6 +195,8 @@ export type AgentMessage = {
   model_name?: string | null;
   feedback?: "like" | "dislike" | null;
   attachments?: { name: string; size_bytes: number; media_type?: string }[];
+  /** `2`: the turn carries its stream journal in `steps`; `1`: replay from steps. */
+  protocol_version?: number;
 };
 
 export const agentsApi = {
@@ -327,7 +327,8 @@ export type StreamAgentTurnOptions = {
   uiAction?: import('../studio/intelligent-ui/types').UiAction;
   dataviz?: DatavizTurnContext | null;
   signal?: AbortSignal;
-  onEvent: (event: AssistantEvent) => void;
+  /** Protocol v2 events of the run, deduplicated by `seq`. */
+  onEvent: (event: StudioEvent) => void;
   role?: string | null;
   model?: string | null;
   providerId?: string | null;
@@ -401,26 +402,27 @@ async function consumeAgentRun(
 ) {
   let activeRun = runId || response.headers.get("X-Nova-Run-ID") || undefined;
   if (activeRun) onRunId?.(activeRun);
-  let lastSequence = -1n;
+  let lastSequence = -1;
   let finished = false;
   async function consume(body: ReadableStream<Uint8Array>) {
     for await (const frame of readSseFrames(body)) {
-      const event = parseAssistantEvent(frame.event, frame.data);
+      const event = parseStudioEvent(frame.event, frame.data);
       if (!event) continue;
       if (event.run_id && event.run_id !== activeRun) {
         activeRun = event.run_id;
-        lastSequence = -1n;
+        lastSequence = -1;
       }
-      if (event.sequence !== undefined) {
-        if (BigInt(event.sequence) <= lastSequence) continue;
-        lastSequence = BigInt(event.sequence);
-      }
-      if (event.type === "role_changed") {
+      // Resumed pages may repeat events already delivered: `seq` dedupes them.
+      if (event.seq <= lastSequence) continue;
+      lastSequence = event.seq;
+      if (event.type === "role.changed") {
         const auth = useAuthStore.getState().auth;
+        // The version is a private binding the stream does not carry; clearing
+        // it starts a new security epoch until the session is read again.
         if (auth.user)
-          auth.setUser({ ...auth.user, activeRole: event.active_role, securityContextVersion: event.security_context_version });
+          auth.setUser({ ...auth.user, activeRole: event.activeRole, securityContextVersion: undefined });
       }
-      if (event.type === "done") finished = true;
+      if (event.type === "run.finished") finished = true;
       onEvent(event);
     }
   }
@@ -713,6 +715,12 @@ export type GuardDecision = {
 };
 
 export type TraceStep =
+  | {
+      /** The protocol v2 events the turn streamed, in order (without the terminal event). */
+      kind: "event_journal";
+      protocol_version: number;
+      events: { event: string; data: Record<string, unknown> }[];
+    }
   | {
       kind: "reasoning";
       phase: string;

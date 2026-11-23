@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { type TranscriptTurn } from "./studio-chat";
-import { MAX_UI_PROGRAM_BYTES, replayThread, settleTurn } from "./studio-transcript";
-
-import { applyEvent } from "./studio-transcript";
+import { applyStudioEvent, MAX_UI_PROGRAM_BYTES, newTurn, replayThread, settleStream } from "./studio-transcript";
+import { liveEncoder } from "./runtime/v2-test-encoder";
 
 import { visibleContent } from "./turn-content-order";
 import type { AssistantEvent } from "@/features/assistant/types";
@@ -21,26 +20,27 @@ import { validateProgram } from "./intelligent-ui/validator";
 const TURN = "t1";
 
 function start(): TranscriptTurn[] {
-  return [
-    {
-      id: TURN,
-      question: "How many orders?",
-      steps: [],
-      answer: "",
-      content: [],
-      pendingConsent: null,
-      blocks: { tables: [], charts: [], citations: [] },
-      state: "streaming",
+  return [newTurn({ id: TURN, question: "How many orders?" })];
+}
+
+/**
+ * A live turn: each loop event goes through the protocol v2 encoding the
+ * server applies, then into the same reducer Studio uses.
+ */
+function session() {
+  const feed = liveEncoder();
+  let turns = start();
+  return {
+    push(...events: AssistantEvent[]): TranscriptTurn {
+      for (const event of events)
+        for (const v2 of feed(event)) turns = applyStudioEvent(turns, TURN, v2);
+      return turns[0];
     },
-  ];
+  };
 }
 
 function run(events: AssistantEvent[]): TranscriptTurn {
-  const end = events.reduce(
-    (turns, event) => applyEvent(turns, TURN, event),
-    start(),
-  );
-  return end[0];
+  return session().push(...events);
 }
 
 const delta = (text: string): AssistantEvent => ({ type: "text_delta", text });
@@ -83,11 +83,12 @@ describe("studio transcript reducer", () => {
     const incomplete = run([meta, meta, chunk]);
     expect(incomplete.content).toHaveLength(1);
     expect(incomplete.content[0].complete).toBe(false);
-    const complete = run([
+    const live = session();
+    const complete = live.push(
       meta,
       chunk,
       { type: "content_block_done", content_index: 1, content_id: "content-1" },
-    ]);
+    );
     expect(complete.content[0].complete).toBe(true);
     // A lost close frame does not cost the interactive answer once the run ends.
     const closedByRun = run([
@@ -117,12 +118,12 @@ describe("studio transcript reducer", () => {
     ]);
     const ui = restored[0].content.find((item) => item.type === "ui");
     expect(ui?.type === "ui" && ui.block.program).toBe(program);
-    const cleared = applyEvent([complete], complete.id, {
+    const cleared = live.push({
       type: "role_changed",
       active_role: "other",
       security_context_version: 2,
     });
-    expect(cleared[0].content).toEqual([]);
+    expect(cleared.content).toEqual([]);
   });
 
   it("reports an oversized interactive program instead of cutting it", () => {
@@ -202,8 +203,8 @@ describe("studio transcript reducer", () => {
       thinking("act", "Reasoning about the next step"),
       thinking("act", "Reasoning about the next step, again"),
     ]);
-    expect(turn.steps.filter((s) => s.id === "think-act")).toHaveLength(1);
-    expect(turn.steps.find((s) => s.id === "think-act")?.text).toBe(
+    expect(turn.steps.filter((s) => s.label === "act")).toHaveLength(1);
+    expect(turn.steps.find((s) => s.label === "act")?.text).toBe(
       "Reasoning about the next step, again",
     );
   });
@@ -224,7 +225,7 @@ describe("studio transcript reducer", () => {
     ]);
     expect(turn.steps).toHaveLength(1);
     expect(turn.steps[0]).toMatchObject({
-      id: "execution-plan",
+      label: "plan",
       kind: "note",
       text: "Planned 2 steps",
       status: "done",
@@ -239,7 +240,7 @@ describe("studio transcript reducer", () => {
       thinking("act", "Reasoning about the next step"),
       thinking("observe", "Reading the result", "done"),
     ]);
-    expect(turn.steps.find((s) => s.id === "think-act")?.status).toBe("done");
+    expect(turn.steps.find((s) => s.label === "act")?.status).toBe("done");
   });
 
   it("creates a tool row from a status frame alone", () => {
@@ -411,7 +412,8 @@ describe("studio transcript reducer", () => {
   });
 
   it("raises a consent card for a pending tool call and clears it on status", () => {
-    const pending = run([
+    const live = session();
+    const pending = live.push(
       {
         type: "tool_call",
         payload: {
@@ -422,18 +424,10 @@ describe("studio transcript reducer", () => {
           status: "pending",
         },
       },
-    ]);
+    );
     expect(pending.pendingConsent?.tool_call_id).toBe("c1");
 
-    const resolved = applyEvent(
-      [
-        {
-          ...pending,
-        },
-      ],
-      TURN,
-      { type: "tool_status", tool_call_id: "c1", status: "running" },
-    )[0];
+    const resolved = live.push({ type: "tool_status", tool_call_id: "c1", status: "running" });
     expect(resolved.pendingConsent).toBeNull();
     expect(resolved.steps[0].status).toBe("running");
     expect(resolved.steps[0].preview).toBe("SELECT count(*) FROM orders");
@@ -501,34 +495,27 @@ describe("studio transcript reducer", () => {
     expect(legacy.content[0].type === "text" && legacy.content[0].text).toBe("Hello there");
   });
 
-  it("holds a table until earlier text is sealed", () => {
-    let turns = start();
-    turns = applyEvent(turns, TURN, {
-      type: "table",
-      content_index: 1,
-      content_id: "table-1",
-      payload: { columns: ["sku"], rows: [["A"]] },
-    });
-    expect(visibleContent(turns[0].content)).toEqual([]);
-
-    turns = applyEvent(turns, TURN, {
+  it("places content in the order it streamed", () => {
+    const live = session();
+    let turn = live.push({
       type: "text_delta",
       content_index: 0,
-      content_id: "text-0",
+      content_id: "content-0",
       text: "Here is the result.",
     });
-    expect(visibleContent(turns[0].content).map((item) => item.type)).toEqual([
-      "text",
-    ]);
-
-    turns = applyEvent(turns, TURN, {
-      type: "content_block_done",
-      content_index: 0,
-      content_id: "text-0",
-    });
-    expect(visibleContent(turns[0].content).map((item) => item.type)).toEqual([
-      "text",
-      "table",
+    expect(turn.content.map((item) => [item.type, item.complete])).toEqual([["text", false]]);
+    turn = live.push(
+      { type: "content_block_done", content_index: 0, content_id: "content-0" },
+      {
+        type: "table",
+        content_index: 1,
+        content_id: "content-1",
+        payload: { columns: ["sku"], rows: [["A"]] },
+      },
+    );
+    expect(turn.content.map((item) => [item.id, item.type, item.complete])).toEqual([
+      ["content-0", "text", true],
+      ["content-1", "table", true],
     ]);
   });
 
@@ -606,14 +593,14 @@ describe("studio transcript reducer", () => {
         classification: "read_only", sql_preview: "SELECT 1",
       } },
     ]);
-    const [stopped] = settleTurn([streaming], TURN, true);
+    const [stopped] = settleStream([streaming], TURN, true);
     expect(stopped.state).toBe("cancelled");
     expect(stopped.steps.every((step) => step.status !== "running")).toBe(true);
-    const [finished] = settleTurn([streaming], TURN, false);
+    const [finished] = settleStream([streaming], TURN, false);
     expect(finished.state).toBe("done");
     // A turn the server already closed keeps its own outcome.
     const closed = run([{ type: "done", message_id: "m", finish_reason: "stop" }]);
-    expect(settleTurn([closed], TURN, true)[0].state).toBe("done");
+    expect(settleStream([closed], TURN, true)[0].state).toBe("done");
   });
 
   it("gives every rail row a unique id across a multi-iteration run", () => {
@@ -629,7 +616,7 @@ describe("studio transcript reducer", () => {
     ]);
     const ids = turn.steps.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids.filter((id) => id.startsWith("think-act"))).toHaveLength(2);
+    expect(turn.steps.filter((s) => s.label === "act")).toHaveLength(2);
   });
 
   it("ignores lifecycle events it does not render", () => {

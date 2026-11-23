@@ -42,6 +42,7 @@ import {
   replayThread,
   type TranscriptTurn,
 } from "@/features/studio/studio-transcript";
+import { emptyRunState } from "@/features/studio/runtime/turn-reducer";
 import { ProcessRail } from "@/features/studio/thought-turn";
 import { TurnContent } from "@/features/studio/turn-content";
 import { cn } from "@/lib/utils";
@@ -1607,6 +1608,8 @@ function emptyTranscript(message: ThreadTurn): TranscriptTurn {
     pendingConsent: null,
     blocks: { tables: [], charts: [], citations: [] },
     state: "done",
+    run: emptyRunState("done"),
+    protocolVersion: 1,
   };
 }
 

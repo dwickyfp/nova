@@ -28,8 +28,14 @@ export function TurnContent({
   onSelectContent,
   datavizThreadId,
   uiContext,
+  content,
 }: {
   turn: TranscriptTurn;
+  /**
+   * The content to show, already in stream order. Studio passes one segment
+   * of the turn at a time; without it the whole turn's content is shown.
+   */
+  content?: OrderedContent[];
   runContext?: TurnContext;
   running?: boolean;
   selectedContentId?: string | null;
@@ -45,7 +51,7 @@ export function TurnContent({
     onAction: (message: string, action: UiAction) => Promise<void>;
   };
 }) {
-  const ordered = visibleContent(turn.content);
+  const ordered = content ?? visibleContent(turn.content);
   const representedTables = ordered.flatMap((item) =>
     item.type === "table" ? [item.block] : [],
   );
@@ -65,7 +71,7 @@ export function TurnContent({
     />
   );
 
-  if (!ordered.length && !turn.answer) return null;
+  if (!ordered.length && (content || !turn.answer)) return null;
 
   if (!ordered.length) {
     return (

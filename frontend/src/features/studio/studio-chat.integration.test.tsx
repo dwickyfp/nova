@@ -14,6 +14,7 @@ import type { Agent } from "@/features/agents/api";
 import { signInNavigation } from "@/lib/api-client";
 import { StudioChat } from "./studio-chat";
 import { registerUiFlush } from "./intelligent-ui/state";
+import { v2Sse } from "./runtime/v2-test-encoder";
 import "@/styles/index.css";
 
 /**
@@ -80,7 +81,7 @@ const AGENT: Agent = {
   updated_at: "",
 };
 
-const STREAM = [
+const STREAM = v2Sse()([
   'event: plan\ndata: {"steps":[{"id":"understand","text":"Understand the request","status":"running"}]}\n\n',
   'event: thinking\ndata: {"phase":"plan","text":"Understanding the request and choosing a skill","status":"running"}\n\n',
   'event: thinking\ndata: {"phase":"skill","text":"Loaded skill: revenue-playbook","status":"done"}\n\n',
@@ -93,12 +94,12 @@ const STREAM = [
   'event: citation\ndata: {"title":"Semantic model","source":"sales.sku"}\n\n',
   'event: text_delta\ndata: {"text":"Omzet tertinggi ada di **D. COKLAT 12**."}\n\n',
   'event: done\ndata: {"message_id":"m1","finish_reason":"stop"}\n\n',
-].join("");
+].join(""));
 
-const CONSENT_STREAM = [
+const CONSENT_STREAM = v2Sse()([
   'event: thinking\ndata: {"phase":"plan","text":"Understanding the request","status":"running"}\n\n',
   'event: tool_call\ndata: {"tool_call_id":"c9","tool_name":"query_execute","sql_preview":"DROP TABLE sales.sku","classification":"destructive","status":"pending"}\n\n',
-].join("");
+].join(""));
 
 /**
  * A stored thread, shaped exactly as the backend now returns it: the trace on
@@ -306,6 +307,7 @@ it.each([false, true])("reconnects a direct run after reload and supports server
   const fetch = mockFetch();
   const fallback = fetch.getMockImplementation()!;
   let stream: ReadableStreamDefaultController<Uint8Array> | undefined;
+  let sse = v2Sse({ runId: "direct-run" });
   fetch.mockImplementation(async (input, init) => {
     const url = String(input);
     if (/\/threads\/t-past(?:\?|$)/.test(url))
@@ -314,22 +316,23 @@ it.each([false, true])("reconnects a direct run after reload and supports server
     if (url.includes("/runs/direct-run/events")) return new Response(new ReadableStream({
       start(controller) {
         stream = controller;
-        controller.enqueue(new TextEncoder().encode(
+        sse = v2Sse({ runId: "direct-run" });
+        controller.enqueue(new TextEncoder().encode(sse(
           'event: thinking\ndata: {"phase":"act","text":"Resumed work","status":"running"}\n\n',
-        ));
+        )));
         if (!cancel) {
-          controller.enqueue(new TextEncoder().encode(
+          controller.enqueue(new TextEncoder().encode(sse(
             'event: text_delta\ndata: {"text":"Recovered answer."}\n\n'
             + 'event: done\ndata: {"message_id":"recovered","finish_reason":"stop"}\n\n',
-          ));
+          )));
           controller.close();
         }
       },
     }), { headers: { "Content-Type": "text/event-stream" } });
     if (url.endsWith("/runs/direct-run/cancel")) {
-      stream?.enqueue(new TextEncoder().encode(
+      stream?.enqueue(new TextEncoder().encode(sse(
         'event: done\ndata: {"message_id":"stopped","finish_reason":"cancelled"}\n\n',
-      ));
+      )));
       stream?.close();
       return Response.json({ cancelling: true });
     }
@@ -416,15 +419,16 @@ it("shows a storage interruption beside the partial answer and removes consent",
   const fetch = vi.mocked(globalThis.fetch);
   const fallback = fetch.getMockImplementation()!;
   let stream: ReadableStreamDefaultController<Uint8Array> | undefined;
+  const sse = v2Sse();
   fetch.mockImplementation(async (input, init) => {
     if (String(input).endsWith("/messages") && init?.method === "POST") {
       return new Response(new ReadableStream({
         start(controller) {
           stream = controller;
-          controller.enqueue(new TextEncoder().encode(
+          controller.enqueue(new TextEncoder().encode(sse(
             'event: text_delta\ndata: {"text":"Partial answer from the agent."}\n\n'
             + 'event: tool_call\ndata: {"tool_call_id":"read","tool_name":"query_execute","sql_preview":"SELECT 42","classification":"read_only","status":"pending"}\n\n',
-          ));
+          )));
         },
       }), { headers: { "Content-Type": "text/event-stream" } });
     }
@@ -433,10 +437,10 @@ it("shows a storage interruption beside the partial answer and removes consent",
   await screen.getByRole("textbox", { name: "Message Nova" }).fill("Read the synthetic result");
   await screen.getByRole("button", { name: "Send", exact: true }).click();
   await expect.element(screen.getByRole("button", { name: "Allow once" })).toBeVisible();
-  stream!.enqueue(new TextEncoder().encode(
+  stream!.enqueue(new TextEncoder().encode(sse(
     'event: error\ndata: {"code":"run_persistence_unavailable","message":"The run stopped because its progress could not be saved."}\n\n'
     + 'event: done\ndata: {"message_id":"","finish_reason":"interrupted"}\n\n',
-  ));
+  )));
   stream!.close();
   await expect.element(screen.getByText("Partial answer from the agent.")).toBeVisible();
   await expect.element(screen.getByText("The run stopped because its progress could not be saved.")).toBeVisible();
@@ -752,10 +756,10 @@ describe("studio transcript click-through", () => {
     fetchMock.mockImplementation(async (input, init) => {
       const url = String(input);
       if (url.includes("/messages"))
-        return sseResponse(
+        return sseResponse(v2Sse()(
           `event: text_delta\ndata: ${JSON.stringify({ text: "```skill\n" + draft + "\n```" })}\n\n` +
             'event: done\ndata: {"message_id":"draft1","finish_reason":"stop"}\n\n',
-        );
+        ));
       if (url.endsWith("/studio/skills"))
         return new Response(
           JSON.stringify({ skill_id: "s1", name: "weekly-review" }),

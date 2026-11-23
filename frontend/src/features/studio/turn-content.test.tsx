@@ -1,3 +1,4 @@
+import { emptyRunState } from "./runtime/turn-reducer";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { userEvent } from "vitest/browser";
@@ -59,6 +60,8 @@ function turn(answer: string, result = table): TranscriptTurn {
     pendingConsent: null,
     blocks: { tables: [], charts: [], citations: [] },
     state: "done",
+    run: emptyRunState("done"),
+    protocolVersion: 1,
   };
 }
 
