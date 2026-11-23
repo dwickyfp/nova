@@ -522,7 +522,16 @@ class QueryRepository:
                 identity.fetch_ms += result.fetch_ms
             from app.modules.query_autopilot.telemetry import PURPOSE
 
-            if identity is not None and (collector.enabled or PURPOSE.get() != "workload"):
+            # One more round trip, so only when something reads the engine id:
+            # an experiment or diagnostic run, a captured profile, or a workload
+            # observation this process will persist (never a private dataset
+            # query). Audit rows carry the ids when they exist.
+            correlate = identity is not None and (
+                PURPOSE.get() != "workload"
+                or identity.profile_enabled
+                or (collector.collects_workload() and not private_query)
+            )
+            if identity is not None and correlate:
                 try:
                     async with conn.cursor(asyncmy.cursors.DictCursor) as correlation:
                         identity.scope_checked = True

@@ -73,6 +73,9 @@ class Collector:
         self.profile_sample_rate = 0.01
         self.payload_hours = 24
         self.policy_revision: str | None = None
+        #: True while :meth:`run` flushes this process's queue. Without it an
+        #: observation is never persisted, so nothing needs its correlation.
+        self.running = False
 
     def request_profile(self, identity: ExecutionIdentity, sql: str, arguments: dict) -> bool:
         identity.policy_revision = self.policy_revision
@@ -259,7 +262,18 @@ class Collector:
                 self.samples.pop(item.id, None)
                 self.queue.task_done()
 
+    def collects_workload(self) -> bool:
+        """Whether a workload statement run now will be observed and persisted."""
+        return self.enabled and self.running and PURPOSE.get() == "workload"
+
     async def run(self, stop: asyncio.Event, repo) -> None:
+        self.running = True
+        try:
+            await self._run(stop, repo)
+        finally:
+            self.running = False
+
+    async def _run(self, stop: asyncio.Event, repo) -> None:
         with acting(TELEMETRY_ACTOR):
             while not stop.is_set():
                 if time.monotonic() - self._last_refresh >= 5:
