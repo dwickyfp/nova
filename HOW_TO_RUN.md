@@ -338,7 +338,7 @@ Pengaturan beban, semuanya per proses:
 | --- | --- | --- |
 | `QUERY_MAX_CONCURRENCY` | `64` | Statement yang dijalankan sekaligus lewat API query (execute, explain), route eksekusi ML, dan proxy MySQL. Di atas batas, request ditolak (429 dengan `Retry-After`, atau error MySQL) dan tercatat di audit sebagai `REFUSED`. Statement di dalam transaksi proxy yang sedang terbuka tidak pernah ditolak. `0` mematikan. |
 | `SQL_PARSE_OFFLOAD_MIN_CHARS` | `8192` | Statement sepanjang ini atau lebih diproses (guard, parse, build, plan) di thread terpisah agar event loop tidak tertahan. `0` mematikan. |
-| `SQL_PARSE_THREADS` | `2` | Jumlah thread tersebut. Tiap thread menyimpan cache parser sendiri (terukur di bawah 20 MB per thread untuk korpus uji). |
+| `SQL_PARSE_THREADS` | `2` | Jumlah thread tersebut. Tiap thread menyimpan cache parser sendiri (terukur di bawah 20 MB per thread untuk korpus uji). Saat start, API dan proxy MySQL memanaskan cache parser di thread utama dan di tiap thread ini (maksimal 2 detik, durasinya tercatat di log). |
 | `PROXY_MAX_CONNECTIONS` | `100` | Sesi MySQL per proses proxy. |
 | `PROXY_MAX_ROWS` | `0` (tanpa batas) | Batas baris per statement lewat proxy. Hasil yang melebihi batas ditolak, tidak dipotong. |
 | `LLM_GATEWAY_MAX_CONCURRENCY` | `32` | Panggilan provider LLM yang diteruskan sekaligus untuk fungsi `AI_*`; sisanya menunggu. |

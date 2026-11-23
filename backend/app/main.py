@@ -185,6 +185,11 @@ async def _serve(app: FastAPI, role: str, service: str):
     # per-session init_command is the guarantee). Best-effort inside the method.
     await db.apply_global_time_zone()
     await session_store.init()
+    # Train the SQL parser's prediction caches before the first request, on
+    # this thread and on every parse worker thread (bounded; logged).
+    from app.sql_frontend.warmup import warm_parser
+
+    warm_parser()
     control = _owns_control_plane(role)
     if control:
         await _bootstrap_exclusively()

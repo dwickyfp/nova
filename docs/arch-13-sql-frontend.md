@@ -61,6 +61,17 @@ reparses with full LL prediction only when SLL cannot decide. SLL accepts a
 subset of what LL accepts and builds the same tree when it succeeds, so the
 fallback changes speed, not results; diagnostics always come from the LL pass.
 
+The generated parser learns its prediction DFA lazily, and each parse worker
+thread keeps private caches, so the first statement of a new shape on each
+thread is slow. The API and MySQL proxy processes call
+`app/sql_frontend/warmup.py` before serving: it parses a small fixed corpus of
+common shapes on the serving thread and once on every `SQL_PARSE_THREADS`
+worker (a barrier puts one pass on each thread). It is bounded at 2 seconds,
+never fails startup and logs what it parsed and how long it took. Measured
+locally (Apple M-series, Python 3.11, default two workers): about 0.8 s at
+startup, and the first parse of an unseen CTE/join/window query falls from
+about 136 ms to about 26 ms on both the serving thread and a worker.
+
 Both lexer and parser default error listeners are removed. Errors report a
 position and a generic message; rejected tokens and literals are omitted.
 Direct execution accepts exactly one complete statement. Script execution keeps
