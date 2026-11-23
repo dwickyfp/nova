@@ -41,7 +41,7 @@ describe("a stored chart in Studio", () => {
       [{ thread_id: "t", message_id: "m", content_id: "content-3" }],
     );
     await screen.getByText("View chart data").click();
-    await expect.element(screen.getByRole("cell", { name: "3200", exact: true })).toBeVisible();
+    await expect.element(screen.getByRole("cell", { name: "3,200", exact: true })).toBeVisible();
     expect(screen.getByRole("button", { name: "Add to Dataviz" }).elements()).toHaveLength(1);
   });
 

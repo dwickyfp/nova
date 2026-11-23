@@ -1,6 +1,7 @@
 import { DashboardArtifactCard } from "@/features/viz/dashboard-artifact-card";
 import { Markdown } from "@/features/assistant/markdown";
 import type { TurnContext } from "@/features/assistant/stream-client";
+import type { ChartBlock } from "@/features/assistant/types";
 import { cn } from "@/lib/utils";
 import { CitationList, ResultChart } from "./result-cards";
 import { ResultTable } from "./result-table";
@@ -51,7 +52,30 @@ export function TurnContent({
     onAction: (message: string, action: UiAction) => Promise<void>;
   };
 }) {
-  const ordered = content ?? visibleContent(turn.content);
+  // One request, one visual: a tool chart of a result an interactive answer
+  // already draws is left out, and a table is folded under the chart drawn
+  // from it ("Source data") instead of repeating its numbers above it.
+  // Studio passes one content segment at a time; a run composes its content
+  // at the end, so a table and the chart drawn from it share a segment.
+  const all = content ?? visibleContent(turn.content);
+  const uiCalls = new Set(
+    all.flatMap((item) =>
+      item.type === "ui" && item.complete
+        ? Object.values(item.block.provenance.tool_calls ?? {})
+        : [],
+    ),
+  );
+  // A chart tool's block names its own call; `source_tool_call_id` names the
+  // query whose result it drew.
+  const drawnFrom = (block: ChartBlock) =>
+    block.source_tool_call_id ? [block.tool_call_id, block.source_tool_call_id] : [block.tool_call_id];
+  const ordered = all.filter(
+    (item) => !(item.type === "chart" && drawnFrom(item.block).some((id) => uiCalls.has(id))),
+  );
+  const chartedCalls = new Set([
+    ...uiCalls,
+    ...ordered.flatMap((item) => (item.type === "chart" ? drawnFrom(item.block) : [])),
+  ]);
   const representedTables = ordered.flatMap((item) =>
     item.type === "table" ? [item.block] : [],
   );
@@ -59,11 +83,16 @@ export function TurnContent({
     datavizThreadId && turn.messageId && turn.state === "done"
       ? { thread_id: datavizThreadId, message_id: turn.messageId, content_id: contentId }
       : null;
-  const sourceTables = ordered.filter((item) => item.type === "table");
-  const foldSources = ordered.some(
+  const foldAll = ordered.some(
     (item) => item.type === "ui" && item.complete &&
       item.block.catalog_version === UI_CATALOG_VERSION,
-  ) && turn.state === "done";
+  );
+  const folded = (item: OrderedContent): boolean =>
+    turn.state === "done" && item.type === "table" &&
+    (foldAll || (!!item.block.tool_call_id && chartedCalls.has(item.block.tool_call_id)));
+  const sourceTables = ordered.flatMap((item) =>
+    item.type === "table" && folded(item) ? [item] : [],
+  );
   const renderTable = (item: Extract<OrderedContent, { type: "table" }>) => (
     <ResultTable
       block={item.block}
@@ -91,7 +120,7 @@ export function TurnContent({
 
   return (
     <div className="flex flex-col gap-3" data-testid="ordered-response">
-      {ordered.map((item, itemIndex) => foldSources && item.type === "table" ? (
+      {ordered.map((item, itemIndex) => folded(item) ? (
         item.id === sourceTables[0]?.id ? (
           <details key={item.id} className="min-w-0 text-sm">
             <summary className="w-fit cursor-pointer rounded-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">

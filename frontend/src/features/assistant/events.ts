@@ -517,6 +517,9 @@ function parseChart(record: Record<string, unknown>): AssistantEvent | null {
       presmodel: plain(record.presmodel)
         ? (record.presmodel as ChartBlock["presmodel"])
         : null,
+      ...(typeof record.source_tool_call_id === "string" && record.source_tool_call_id
+        ? { source_tool_call_id: record.source_tool_call_id }
+        : {}),
     },
   };
 }

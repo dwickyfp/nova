@@ -13,6 +13,7 @@ leaks, and the answer guard uses it to keep them out.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 #: Internal tool names. A person never needs them; the assistant describes what
@@ -153,7 +154,7 @@ def find_technical_leaks(text: str) -> list[Leak]:
 
 #: What each internal tool did, in words a maintainer uses.
 _TOOL_WORDS = {
-    "load_skill": "a Nova guide",
+    "load_skill": "a skill",
     "search_knowledge": "Nova's guides",
     "catalog_search": "the data catalog",
     "list_semantic_views": "the list of Semantic Views",
@@ -194,7 +195,35 @@ _TOOL_WORDS = {
     "knowledge_propose": "a glossary proposal",
     "ontology_status": "the business glossary",
     "knowledge_withdraw": "a glossary proposal",
+    "analysis_workspace": "an analysis workspace",
+    "analyze_documents": "a count of document themes",
+    "context_graph": "the business context",
+    "decision_lab": "a driver and trend analysis",
+    "diagnose_change": "a change diagnosis",
+    "request_human_input": "a question for you",
+    "execute_business_action": "a business action",
+    "incident_context": "the incident details",
+    "investigation_update": "an investigation finding",
+    "schedule_automation": "a scheduled question",
+    "semantic_search": "a text search in the data",
 }
+
+
+def tool_phrases(names: Iterable[str], *, limit: int = 5) -> str:
+    """Tools as one plain phrase, such as "the semantic view, a chart and a
+    change diagnosis". Tools with the same words are named once. A tool without
+    words (an owner's custom tool) is named by its own name, without underscores.
+    """
+    words = list(dict.fromkeys(
+        _TOOL_WORDS.get(name) or name.removeprefix("custom:").replace("_", " ")
+        for name in names
+    ))
+    if len(words) > limit:
+        shown = ", ".join(words[:limit])
+        return f"{shown} and {len(words) - limit} more"
+    if len(words) < 2:
+        return "".join(words)
+    return ", ".join(words[:-1]) + " and " + words[-1]
 
 _REWRITES: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"Traceback \(most recent call last\):[\s\S]*?(?=\n\S|\Z)"), ""),

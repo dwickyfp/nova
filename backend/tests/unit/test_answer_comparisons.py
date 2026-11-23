@@ -286,17 +286,18 @@ def test_a_comparison_is_wrong_only_when_no_result_it_could_mean_supports_it():
     assert check_comparisons("Sales paling sedikit.", tables, (wrong,))
 
 
-def test_the_extremes_are_not_repeated_when_the_answer_already_names_them():
-    kept = finalize_verified_answer(
+def test_a_verified_comparison_is_kept_as_written():
+    # The result table is shown beside the answer; computed "tertinggi …;
+    # terendah …" lines appended to verified prose only repeated it.
+    for answer in (
         "Medan 1.200, Jakarta 900, Bandung 400. Medan tertinggi dan Bandung terendah.",
-        question="Penjualan per kota?", tables=CITIES, language="id", compares_groups=True,
-    )
-    assert kept.text.count("Medan") == 2 and "tertinggi Medan" not in kept.text
-    added = finalize_verified_answer(
-        "Medan 1.200, Jakarta 900.", question="Penjualan per kota?", tables=CITIES,
-        language="id", compares_groups=True,
-    )
-    assert "Bandung" in added.text
+        "Medan 1.200, Jakarta 900.",
+    ):
+        kept = finalize_verified_answer(
+            answer, question="Penjualan per kota?", tables=CITIES, language="id",
+            compares_groups=True,
+        )
+        assert kept.text == answer
 
 
 def test_a_fallback_reads_like_a_sentence_not_a_dump():

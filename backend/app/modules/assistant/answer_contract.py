@@ -1181,14 +1181,10 @@ def finalize_verified_answer(
         ).accepted:
             return VerifiedAnswer(rendered, check, True, comparison)
     if check.accepted:
-        # An answer that already sets out a table has shown the comparison; computed
-        # highest/lowest lines after it only repeat it.
-        leaders = (
-            verified_leaders(tables, language=language, answer=answer)
-            if comparison and not _MARKDOWN_TABLE.search(answer) else []
-        )
-        text = answer.rstrip() + ("\n\n" + "\n".join(leaders) if leaders else "")
-        return VerifiedAnswer(text, check, False, comparison)
+        # A verified answer stands as written. The result table is shown with it,
+        # so computed "highest …; lowest …" lines would only repeat it in
+        # machine form.
+        return VerifiedAnswer(answer.rstrip(), check, False, comparison)
     data_claims = [claim for claim in check.claims if claim.evidence_id]
     tokens = number_tokens(_mask_dates(_mask_labels(answer, tables), language), language)
     headline = tokens[0].text if tokens else None
@@ -1276,7 +1272,6 @@ _REFERENCE_COLUMNS = re.compile(
 )
 
 
-_MARKDOWN_TABLE = re.compile(r"^\s*\|.*\|\s*\n\s*\|\s*:?-{3,}", re.MULTILINE)
 
 
 def _is_reference(column: str) -> bool:
@@ -1344,48 +1339,6 @@ def render_verified_comparison(
     tables: dict[str, dict[str, Any]], *, language: str = "en", include_table: bool = True
 ) -> str:
     return render_with_claims(tables, language=language, include_table=include_table)[0]
-
-
-def verified_leaders(
-    tables: dict[str, dict[str, Any]], *, language: str = "en", answer: str = ""
-) -> list[str]:
-    """Highest/lowest lines computed from result cells, in the user's language.
-
-    A line is left out when ``answer`` already names both rows: the reader was told.
-    """
-    rendering = _Rendering(language)
-    said = answer.casefold()
-    lines = []
-    for evidence_id, table in tables.items():
-        columns, rows, labels, measures = _layout(table)
-        if labels:
-            # A Total row sums the members; it is never the highest member.
-            rows = [row for row in rows if not _is_total_row(row, labels)]
-        if len(rows) < 2 or not labels:
-            continue
-        for index in measures:
-            ordered = sorted(rows, key=partial(_numeric_cell, index=index), reverse=True)
-
-            def describe(
-                row: list[Any], i: int = index, source: str = evidence_id,
-                data: dict[str, Any] = table, names: list[str] = columns,
-                positions: list[int] = labels,
-            ) -> str:
-                label = " / ".join(_period_name(row[p], language) for p in positions)
-                value = _value_text(
-                    rendering, source, data, names[i], row[i], str(row[positions[0]])
-                )
-                return f"{label} ({value})"
-
-            ends = [
-                str(row[labels[0]]).strip().casefold() for row in (ordered[0], ordered[-1])
-            ]
-            if said and all(end and end in said for end in ends):
-                continue
-            lines.append(f"{columns[index].replace('_', ' ')}: " + say(
-                "render.extremes", language, high=describe(ordered[0]), low=describe(ordered[-1]),
-            ) + ".")
-    return lines
 
 
 def render_with_claims(

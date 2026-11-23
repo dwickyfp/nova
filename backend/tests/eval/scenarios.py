@@ -899,7 +899,7 @@ def scenario_trace_is_recorded_for_replay() -> Scenario:
                 "selected capability is visible without private model text",
                 lambda result: any(
                     frame.startswith("event: thinking\n")
-                    and "Selected actions: query_execute" in frame
+                    and "Chose a query" in frame
                     for frame in result.frames
                 ),
             ),

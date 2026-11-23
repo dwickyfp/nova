@@ -74,6 +74,23 @@ function view(turn: TranscriptTurn) {
   };
 }
 
+describe("chart parts", () => {
+  it("keep the query a chart tool drew from", () => {
+    const state = reduceEvents(parsedEvents(encodeV1Turn([
+      { event: "table", data: { tool_call_id: "q-1", title: "Revenue", columns: ["m"], rows: [["Jun"]], content_index: 0, content_id: "run-1:0" } },
+      { event: "content_block_done", data: { content_index: 0, content_id: "run-1:0" } },
+      { event: "chart", data: { tool_call_id: "chart-1", source_tool_call_id: "q-1", chart_spec: "{}", content_index: 1, content_id: "run-1:1" } },
+      { event: "content_block_done", data: { content_index: 1, content_id: "run-1:1" } },
+      { event: "done", data: { message_id: "m-1", finish_reason: "stop" } },
+    ])));
+    const chart = state.parts.find((part) => part.type === "chart");
+    expect(chart).toMatchObject({
+      state: "done",
+      block: { tool_call_id: "chart-1", source_tool_call_id: "q-1" },
+    });
+  });
+});
+
 describe("protocol v2 contract", () => {
   it.each(cases.map((item) => [item.name, item] as const))(
     "the client test encoder matches the server encoder: %s",

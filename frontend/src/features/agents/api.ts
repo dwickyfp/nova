@@ -840,6 +840,7 @@ export type TraceStep =
       chart_spec: string;
       viz_spec?: Record<string, unknown> | null;
       presmodel?: import("../viz/types").PresModel | null;
+      source_tool_call_id?: string;
     }
   /** A dashboard artifact the turn created, replayable from Artifacts. */
   | ({ kind: "dashboard"; content_index: number; content_id: string } & import("../viz/types").DashboardArtifactBlock)

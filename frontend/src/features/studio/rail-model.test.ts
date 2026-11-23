@@ -1,14 +1,16 @@
 import { expect, it } from "vitest";
-import { formatSpan, isFailedStatus, isLiveStatus, recordedSpan } from "./rail-model";
+import { formatSpan, isFailedStatus, isLiveStatus, isStoppedStatus, recordedSpan } from "./rail-model";
 
-it("tells live and failed rows apart", () => {
+it("tells live, failed and stopped rows apart", () => {
   expect(isLiveStatus("running")).toBe(true);
   expect(isLiveStatus("pending")).toBe(true);
   expect(isLiveStatus("done")).toBe(false);
   expect(isFailedStatus("failed")).toBe(true);
   expect(isFailedStatus("denied")).toBe(true);
-  expect(isFailedStatus("cancelled")).toBe(true);
+  expect(isFailedStatus("cancelled")).toBe(false);
   expect(isFailedStatus("done")).toBe(false);
+  expect(isStoppedStatus("cancelled")).toBe(true);
+  expect(isStoppedStatus("done")).toBe(false);
 });
 
 it("formats spans for the rail", () => {

@@ -155,3 +155,25 @@ def test_a_preview_shows_the_question_not_the_tool_name():
     assert json.loads(plain(sql)[0].split("data: ", 1)[1])["sql_preview"] == (
         "SELECT query_execute FROM t"
     )
+
+
+def test_every_agent_tool_has_plain_words():
+    from app.modules.agents.registry import KNOWN_TOOLS, build_registry
+    from app.modules.assistant.plain_language import _TOOL_WORDS
+
+    registry = build_registry({"default_tools": sorted(KNOWN_TOOLS)})
+    assert sorted(set(registry.names()) - set(_TOOL_WORDS)) == []
+
+
+def test_tool_phrases_reads_as_one_plain_list():
+    from app.modules.assistant.plain_language import tool_phrases
+
+    assert tool_phrases([]) == ""
+    assert tool_phrases(["diagnose_change"]) == "a change diagnosis"
+    # Tools with the same words are named once; a custom tool keeps its own name.
+    assert tool_phrases(["semantic_query", "semantic_view_query", "data_to_chart",
+                         "custom:crm_lookup"]) == "the semantic view, a chart and crm lookup"
+    many = ["query_execute", "data_to_chart", "compute_metrics", "web_search",
+            "catalog_search", "diagnose_change", "decision_lab"]
+    assert tool_phrases(many) == (
+        "a query, a chart, a calculation, a web search, the data catalog and 2 more")

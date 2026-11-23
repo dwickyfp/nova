@@ -255,6 +255,7 @@ def chart(
     *,
     viz_spec: dict[str, Any] | None = None,
     presmodel: dict[str, Any] | None = None,
+    source_tool_call_id: str | None = None,
     content_index: int | None = None,
     content_id: str | None = None,
 ) -> str:
@@ -262,7 +263,8 @@ def chart(
 
     ``viz_spec``/``presmodel`` carry the viz-core worksheet and its computed
     presentation model; a client that understands them renders those and keeps
-    the Vega mirror for replay paths that do not.
+    the Vega mirror for replay paths that do not. ``source_tool_call_id`` names
+    the query call whose result a separate chart tool drew.
 
     The shape mirrors Snowflake Cortex Agents' ``response.chart`` so a client
     that understands one understands the other.
@@ -275,6 +277,8 @@ def chart(
         payload["viz_spec"] = viz_spec
     if presmodel is not None:
         payload["presmodel"] = presmodel
+    if source_tool_call_id:
+        payload["source_tool_call_id"] = source_tool_call_id
     _with_content_position(payload, content_index, content_id)
     return format_sse(EVENT_CHART, payload)
 

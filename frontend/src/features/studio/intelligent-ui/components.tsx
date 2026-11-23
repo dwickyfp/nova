@@ -26,6 +26,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Markdown } from "@/features/assistant/markdown";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/context/theme-provider";
+import { formatResultValue } from "../result-format";
 import { ResultTable } from "../result-table";
 import { NodeDatavizAction } from "./artifact-button";
 import { PublicMedia } from "./media";
@@ -443,7 +444,9 @@ export function UiNode({ name, p }: { name: string; p: Props }) {
               ? new Intl.NumberFormat(undefined, {
                   maximumFractionDigits: num(p, "digits", 2),
                 }).format(value)
-              : String(value ?? "No result")}
+              : value === null || value === undefined
+                ? "No result"
+                : formatResultValue(value as string | boolean, str(p, "column"))}
           </p>
         </section>
       );

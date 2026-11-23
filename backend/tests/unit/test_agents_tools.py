@@ -272,6 +272,37 @@ def test_sse_chart_frame_shape_matches_cortex() -> None:
     assert '"chart_spec"' in frame
 
 
+def test_a_chart_tool_names_the_query_it_drew() -> None:
+    import json
+
+    from app.modules.assistant.service import (
+        LoopContext,
+        PendingArtifact,
+        _chart_source,
+        _ordered_output_frames,
+    )
+
+    table = PendingArtifact(
+        "table", {"title": "rev", "columns": ["m"], "rows": [["Jun"]]}, "query-1"
+    )
+    assert _chart_source([table], "chart-1") == "query-1"
+    assert _chart_source([table], "query-1") is None
+    assert _chart_source([], "chart-1") is None
+
+    chart = PendingArtifact(
+        "chart", {"chart_spec": "{}", "source_tool_call_id": "query-1"}, "chart-1"
+    )
+    context = LoopContext(user_name="alice", steps=[])
+    frames = _ordered_output_frames("Revenue by month.", [table, chart], context)
+    frame = next(frame for frame in frames if frame.startswith("event: chart\n"))
+    payload = json.loads(frame.split("data: ", 1)[1])
+    assert payload["tool_call_id"] == "chart-1"
+    assert payload["source_tool_call_id"] == "query-1"
+    step = next(step for step in context.steps if step.get("kind") == "chart")
+    assert step["source_tool_call_id"] == "query-1"
+    assert '"source_tool_call_id"' not in events.chart("call-1", "{}")
+
+
 class _FakeResult:
     def __init__(self, columns: list[str], rows: list[list]) -> None:
         self.columns = columns

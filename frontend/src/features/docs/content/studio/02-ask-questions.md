@@ -30,7 +30,8 @@ SQL or table names.
 5. Wait for the answer. While the agent works, a **Working** line shows each
    step and how long it has taken. Click **Stop** (the square button) to cancel.
    Stop also cancels a **Reconsider this answer** pass. A stopped answer shows
-   "Stopped before the answer finished."
+   "Stopped before the answer finished.", and its step summary starts with
+   "Stopped" and a grey square instead of a green check.
 
 ## Use a command
 
@@ -57,10 +58,20 @@ When the agent finishes you see:
 
 ### See how the answer was found
 
-Above the answer is a summary such as "Planned the run, Reasoned, Ran
-semantic_query, and more · 7 steps". Click it to open every step: the plan,
-each tool the agent called, and, for data queries, the **SQL** that ran. Use
-**Copy** to copy that SQL into a worksheet.
+Above the answer is a summary such as "Planned the run, Reasoned, Queried the
+semantic model, and more · 7 steps". Click it to open every step: the plan,
+the tools the agent chose (for example "Chose the semantic view and a chart"),
+each tool it called, and, for data queries, the **SQL** that ran. Use **Copy**
+to copy that SQL into a worksheet.
+
+### Read a result table
+
+Amounts show with thousands separators and at most two decimals (for example
+24,999,000 or 10,165,333.33), dates show as dates (Jun 1, 2025), and column
+headings show as words (Shipping city). Identifiers such as IDs, codes and
+years are shown exactly as stored. Hover over a heading to see the column's
+name in the data. **Download CSV** keeps the values exactly as the query
+returned them.
 
 Steps and answer parts appear in the order the agent produced them. When the
 agent writes part of the answer and then runs more steps, those steps appear

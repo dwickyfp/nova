@@ -102,6 +102,9 @@ export function restoredMessage(message: {
         chart_spec: step.chart_spec,
         viz_spec: step.viz_spec ?? null,
         presmodel: step.presmodel ?? null,
+        ...(typeof step.source_tool_call_id === "string" && step.source_tool_call_id
+          ? { source_tool_call_id: step.source_tool_call_id }
+          : {}),
       } as ChartBlock });
     } else if (step.kind === "citation" && Array.isArray(step.citations)) {
       for (const citation of step.citations as CitationBlock[]) {

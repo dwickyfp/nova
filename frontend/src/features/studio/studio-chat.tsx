@@ -1103,6 +1103,7 @@ const TurnView = memo(function TurnView({
             steps={stepsFromParts(segment.parts)}
             running={running && index === lastWork}
             revealKey={turn.revealKey}
+            stopped={turn.state === "cancelled" && index === lastWork}
           />
         ) : (
           <TurnContent

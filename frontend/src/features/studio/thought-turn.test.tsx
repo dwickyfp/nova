@@ -40,6 +40,11 @@ describe("tool preview", () => {
     expect(isSqlPreview("Propose a change to a business definition for steward review")).toBe(false);
     expect(isSqlPreview("semantic_query: Berapa omzet per region?")).toBe(false);
     expect(isSqlPreview("Look up approved business definitions")).toBe(false);
+    // Leading words that are also English: a request is not a statement.
+    expect(isSqlPreview("Show revenue by order status.")).toBe(false);
+    expect(isSqlPreview("Use last month's numbers?")).toBe(false);
+    expect(isSqlPreview("SHOW TABLES")).toBe(true);
+    expect(isSqlPreview("show grants for role analyst;")).toBe(true);
   });
 
   it("shows a tool sentence as text without a SQL label", async () => {
@@ -96,5 +101,32 @@ describe("process rail", () => {
     ];
     await render(<ProcessRail steps={steps} running={false} />);
     await expect.element(page.getByTestId("process-rail-toggle")).toHaveTextContent("4.0s");
+  });
+
+  it("shows a stopped turn as Stopped, not as a success", async () => {
+    await render(<ProcessRail steps={[plan, { ...query, status: "done" }]} running={false} stopped />);
+    const toggle = page.getByTestId("process-rail-toggle");
+    await expect.element(toggle).toHaveTextContent(/^Stopped/);
+    const mark = toggle.element().querySelector("[data-mark]");
+    expect(mark?.getAttribute("data-mark")).toBe("stopped");
+    expect(mark?.getAttribute("class")).not.toMatch(/text-success|text-destructive/);
+  });
+
+  it("marks a step the user stopped as stopped, not failed", async () => {
+    await render(<ProcessRail steps={[plan, { ...query, status: "cancelled" }]} running={false} />);
+    const toggle = page.getByTestId("process-rail-toggle");
+    await expect.element(toggle).toHaveTextContent(/^Stopped/);
+    expect(toggle.element().querySelector("[data-mark]")?.getAttribute("data-mark")).toBe("stopped");
+    await toggle.click();
+    const row = page.getByText("Running a SQL query");
+    await expect.element(row).toBeVisible();
+    expect(row.element().className).not.toMatch(/text-destructive/);
+  });
+
+  it("keeps a finished run's success mark", async () => {
+    await render(<ProcessRail steps={[plan, { ...query, status: "done" }]} running={false} />);
+    const toggle = page.getByTestId("process-rail-toggle");
+    expect(toggle.element().querySelector("[data-mark]")?.getAttribute("data-mark")).toBe("done");
+    await expect.element(toggle).not.toHaveTextContent(/Stopped/);
   });
 });

@@ -441,14 +441,8 @@ function UiSession({
             to narrow the query for more detail.
           </p>
         ) : null
-      ) : block.provenance.evidence_ids.length ? (
-        <p className="mt-3 text-xs text-muted-foreground">
-          Within these verified result rows. Inputs are assumptions; filters and
-          calculations do not fetch new data.
-          {Number.isSafeInteger(block.provenance.omitted_rows) && (block.provenance.omitted_rows ?? 0) > 0
-            ? ` ${block.provenance.omitted_rows} result rows were omitted from this visual. Ask Nova to narrow the query for more detail.`
-            : ""}
-        </p>
+      ) : block.provenance.evidence_ids.length && verifiedNote(block) ? (
+        <p className="mt-3 text-xs text-muted-foreground">{verifiedNote(block)}</p>
       ) : block.provenance.assumption ? (
         <p className="mt-3 text-xs text-muted-foreground">
           Inputs, sample data and calculated values are assumptions.
@@ -465,4 +459,25 @@ function UiSession({
       )}
     </section>
   );
+}
+
+
+/**
+ * The note under a view drawn from verified rows. Only a view a reader can
+ * change needs to say what changing it does; rows left out are always said.
+ */
+function verifiedNote(block: { state_defaults: object; provenance: { omitted_rows?: number | null } }): string {
+  const notes: string[] = [];
+  if (Object.keys(block.state_defaults).length > 0) {
+    notes.push(
+      "Filters and inputs here use only the rows already returned; they do not fetch new data. Values you enter are assumptions.",
+    );
+  }
+  const omitted = block.provenance.omitted_rows ?? 0;
+  if (Number.isSafeInteger(omitted) && omitted > 0) {
+    notes.push(
+      `${omitted} result rows were omitted from this visual. Ask Nova to narrow the query for more detail.`,
+    );
+  }
+  return notes.join(" ");
 }
