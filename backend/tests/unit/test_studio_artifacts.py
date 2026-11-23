@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from unittest.mock import patch
 from uuid import UUID, uuid4
 
 import pytest
 
 from app.core.exceptions import NovaException
 from app.core.metadata_db import MetadataConflict
-from app.modules.agents.tools import native_dataviz as native
 from app.modules.viz import dataset_service, studio_artifacts, studio_drafts
 from app.modules.viz.contracts.charts import ChartDefinition
 from app.modules.viz.contracts.dashboards import ChartWidget
@@ -391,3 +391,101 @@ def test_the_draft_routes_edit_and_save_as_the_caller(client, engine):
     assert refused.json()["detail"]["code"] == "ROLE_CANNOT_AUTHOR"
     assert client.get(f"{BASE}/drafts/{REF}/capability").json()["capability"] == (
         "role_cannot_author")
+
+
+# ── What a turn emits ───────────────────────────────────────────────
+
+
+def _chart_step(ref: str, title: str = "Units by brand") -> dict[str, Any]:
+    return {
+        "kind": "component", "component": "DatavizChart", "content_id": f"run:{ref}",
+        "props": {"draft_ref": ref, "title": title, "chart": {
+            "dataset_id": "88888888-8888-4888-8888-888888888888", "title": title}},
+        "source": {"database": "NOVA_DEMO", "statement": "SELECT brand, units FROM sales"},
+    }
+
+
+def _sse(frame: str) -> tuple[str, dict[str, Any]]:
+    lines = dict(line.split(": ", 1) for line in frame.strip().splitlines() if ": " in line)
+    body = json.loads(lines["data"])
+    return lines["event"], body.get("data", body)
+
+
+async def _emit(steps: list[dict[str, Any]], capability: Any) -> tuple[list[tuple[str, dict]], Any]:
+    from types import SimpleNamespace
+
+    from app.modules.assistant import service
+
+    context = SimpleNamespace(steps=steps, user={"username": "alice", "active_role": "ANALYST"})
+    calls: list[dict[str, Any]] = []
+
+    async def decide(user: dict[str, Any], **kwargs: Any) -> Any:
+        calls.append(kwargs)
+        if isinstance(capability, Exception):
+            raise capability
+        return capability
+
+    with patch.object(studio_artifacts, "authoring_capability", decide):
+        frames = await service._artifact_frames(context)
+    return [_sse(frame) for frame in frames], SimpleNamespace(context=context, calls=calls)
+
+
+@pytest.mark.asyncio
+async def test_a_turn_announces_each_draft_and_suggests_saving_once():
+    can = studio_artifacts.AuthoringCapability("can_save", "OK", studio_artifacts.CAN_SAVE_MESSAGE)
+    steps = [_chart_step("dr-a"), _chart_step("dr-b", "Revenue")]
+    frames, run = await _emit(steps, can)
+    assert [name for name, _ in frames] == ["artifact_draft", "artifact_draft", "save_suggested"]
+    suggestion = frames[-1][1]
+    assert suggestion["draft_refs"] == ["dr-a", "dr-b"] and suggestion["capability"] == "can_save"
+    assert suggestion["message"] == studio_artifacts.SUGGESTION_MANY.format(count=2)
+    # The capability is decided as the caller, over the recorded statement.
+    assert run.calls[0]["sql"] == "SELECT brand, units FROM sales"
+    assert run.calls[0]["database"] == "NOVA_DEMO"
+    # The draft carries the definition, never rows or the statement.
+    assert "SELECT" not in json.dumps([body for _, body in frames[:2]])
+
+    # A later pass of the same turn neither re-announces nor suggests again.
+    again, _ = await _emit(run.context.steps, can)
+    assert again == []
+
+
+@pytest.mark.asyncio
+async def test_a_role_that_cannot_author_gets_the_reason_instead():
+    refusal = studio_artifacts.cannot_read({"active_role": "VIEWER"})
+    frames, _ = await _emit([_chart_step("dr-a")], refusal)
+    name, body = frames[-1]
+    assert name == "save_suggested" and body["capability"] == "role_cannot_author"
+    assert body["reason_code"] == "ROLE_CANNOT_READ_SOURCE" and "VIEWER" in body["message"]
+
+
+@pytest.mark.asyncio
+async def test_an_undecided_capability_suggests_nothing():
+    frames, run = await _emit([_chart_step("dr-a")], RuntimeError("engine unavailable"))
+    assert [name for name, _ in frames] == ["artifact_draft"]
+    assert not any(step.get("kind") == "save_suggestion" for step in run.context.steps)
+
+
+@pytest.mark.asyncio
+async def test_a_turn_without_a_draft_chart_emits_nothing():
+    other = {"kind": "component", "component": "KpiTiles", "props": {"items": []}}
+    frames, run = await _emit([other], RuntimeError("never asked"))
+    assert frames == [] and run.calls == []
+
+
+def test_no_tool_can_save_a_draft():
+    """Saving a chat chart is the person's action: no tool reaches the save path."""
+    from pathlib import Path
+
+    import app
+
+    root = Path(app.__file__).parent
+    saving = ("publish_draft", "place_chart", "target_dashboard", "studio_publish.publish(")
+    offenders = [
+        f"{path.relative_to(root)}: {name}"
+        for folder in ("modules/agents/tools", "modules/assistant")
+        for path in (root / folder).rglob("*.py")
+        for name in saving
+        if name in path.read_text()
+    ]
+    assert offenders == []

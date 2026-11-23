@@ -55,8 +55,10 @@ are assumptions. A view without filters or inputs shows no note.
 ## Keep a chart
 
 A chart in an answer stays in the conversation, so you can come back to it
-from **History**. To keep it as a live chart on a dashboard, use
-**Add to Dataviz** at the top right of the chart. See
+from **History**. Click a chart to open it beside the conversation, change it,
+and save it to a dashboard when you decide to keep it. Nothing is saved until
+you confirm. See [Edit and save a chart from an answer](/docs/studio/edit-and-save-charts).
+Tables use **Add to Dataviz**; see
 [Add an answer to Dataviz](/docs/studio/add-to-dataviz).
 
 ## Limits
