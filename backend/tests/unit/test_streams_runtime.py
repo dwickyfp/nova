@@ -86,6 +86,7 @@ def capture_env(monkeypatch):
     monkeypatch.setattr(capture_module, "writer_conn", writer_conn)
     monkeypatch.setattr(capture_module, "writer_query", writer_query)
     monkeypatch.setattr(capture_module, "source_lock", lock)
+    monkeypatch.setattr(capture_module, "require_governance_supported", AsyncMock())
     from app.modules.access_control.service import access_control_service
 
     allow = AsyncMock(return_value=[True])

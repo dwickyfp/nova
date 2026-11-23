@@ -52,6 +52,7 @@ from app.modules.streams.sources import (
     SourceHead,
     SourceRecord,
     journal_digest,
+    require_governance_supported,
     source_lock,
     source_registry,
     writer_conn,
@@ -150,6 +151,7 @@ class CaptureCoordinator:
         else:
             raise unsupported({"overwrite": "INSERT OVERWRITE"}.get(kind, kind.upper()))
         await self._authorize(record, accesses, caller)
+        await self._require_ungoverned(record)
         plan = self._plan(record, statement, sql, kind, merge)
         async with source_lock(record.source_id):
             fresh = await source_registry.get(record.source_id)
@@ -252,6 +254,24 @@ class CaptureCoordinator:
                 f"{' and '.join(a.upper() for a in dict.fromkeys(accesses))} "
                 f"{record.database}.{record.table}",
             )
+
+    @staticmethod
+    async def _require_ungoverned(record: SourceRecord) -> None:
+        """Refuse the write while a row filter or mask could cover the source.
+
+        The rows a write changes are read as the caller (masked, filtered)
+        and written back whole by the writer, so under a mask an UPDATE
+        would store the masked values. A policy added after the stream was
+        created is caught here, before the lock and before any read.
+        """
+        try:
+            await require_governance_supported(record.database, record.table)
+        except StreamError as exc:
+            raise StreamError(
+                exc.code,
+                f"Writes to {record.database}.{record.table} are refused while it has streams: "
+                f"{str(exc).rstrip('.')}. Drop its streams or remove the policy, then write again",
+            ) from None
 
     # ── planning: the caller's read of the affected rows ────────────────
 

@@ -168,6 +168,7 @@ One write can change at most 50,000 rows of a table that has streams.
 | `ALTER TABLE orders ADD COLUMN ...` | `ALTER TABLE on a table with streams is not supported; drop its streams first` |
 | `INSERT INTO orders (order_id, amount) VALUES ...` | `An INSERT that does not list every column on a table with streams is not supported; drop its streams first` |
 | `INSERT OVERWRITE orders ...` | `INSERT OVERWRITE on a table with streams is not supported; drop its streams first` |
+| Any write, after a row filter or masking policy was added for the table | `Writes to <database>.orders are refused while it has streams: The source has a row filter or masking policy; ...` |
 
 > **Warning:** A write that reaches the table **without** going through Nova
 > (for example a load job run directly against the database engine) cannot be

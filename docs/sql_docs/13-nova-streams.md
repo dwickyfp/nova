@@ -132,6 +132,13 @@ pattern other than `*` or an exclusion, the write is refused with
   partial column lists, `UPDATE … FROM`, `DELETE … USING`, labels, partitions
   (including `TRUNCATE … PARTITION`), `DEFAULT`, and writes inside an explicit
   transaction.
+* A write is refused (`STREAM_GOVERNANCE_UNSUPPORTED`) while a Ranger row
+  filter or masking policy could cover the table, with the same fail-closed
+  check as `CREATE STREAM` (see below), before any row is read. The rows a
+  write changes are read as you and written back whole by the writer, so
+  under a mask an `UPDATE` would store the masked values. A policy added
+  after the Stream was created is caught here; drop the table's Streams or
+  remove the policy to write again.
 * A write that reaches the table **without** Nova (a direct engine client,
   Stream Load, an external job) is detected from the engine's own version: the
   Stream becomes `BLOCKED` and every read or `HAS_DATA` call fails until the
