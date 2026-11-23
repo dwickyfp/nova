@@ -21,6 +21,9 @@ Event                  Payload
 ``tool.evidence``      ``{part_id, kind, tool_name?, payload, workflow?}``
 ``input.required``     ``{part_id, request_id, kind, request, expires_at}``
 ``input.resolved``     ``{part_id, status, summary, answer?}``
+``artifact.draft``     ``{part_id, draft}`` a chart draft the person may edit or save
+``save.suggested``     ``{part_id, draft_ref, draft_refs, capability, reason_code, message}``
+``artifact.saved``     ``{part_id, draft_ref, saved, suggestion_part_id?}`` (after the turn)
 ``role.changed``       ``{active_role}``
 ``run.finished``       ``{message_id, finish_reason, usage?, source?}``
 ``run.error``          ``{code, message}``
@@ -48,6 +51,12 @@ Side-effect events (``suggestions``, ``mission_updated``,
 ``client_action``, ``execution_time_context``, ``business_result``) keep their
 established payloads and are numbered in the same sequence.
 
+``artifact.draft`` and ``save.suggested`` each open and seal their own part
+(types ``artifact_preview`` and ``save_suggestion``). After the turn, an edit in
+the artifact panel (a further ``artifact.draft`` on the same part) and a save
+(``artifact.saved``) are kept in the message's artifact log and appended to the
+journal when the thread is read (:mod:`app.modules.viz.studio_artifacts`).
+
 Threads stored before this protocol have no journal and replay from their
 recorded steps (protocol 1, read-only).
 """
@@ -70,6 +79,9 @@ TOOL_EVIDENCE = "tool.evidence"
 INPUT_REQUIRED = "input.required"
 INPUT_RESOLVED = "input.resolved"
 ROLE_CHANGED = "role.changed"
+ARTIFACT_DRAFT = "artifact.draft"
+SAVE_SUGGESTED = "save.suggested"
+ARTIFACT_SAVED = "artifact.saved"
 RUN_FINISHED = "run.finished"
 RUN_ERROR = "run.error"
 PING = "ping"
@@ -91,6 +103,7 @@ V1_ONLY = frozenset({
     "role_changed", "evidence_health", "evidence_envelope",
     events.EVENT_INPUT_REQUIRED, events.EVENT_INPUT_RESOLVED,
     events.EVENT_MODEL_REASONING, events.EVENT_NARRATION,
+    events.EVENT_ARTIFACT_DRAFT, events.EVENT_SAVE_SUGGESTED,
 })
 
 #: Frames that mark a durable boundary: the route flushes its journal batch.
@@ -301,6 +314,10 @@ class StudioStreamEncoder:
             return self._input_required(origin, body)
         if name == events.EVENT_INPUT_RESOLVED:
             return self._input_resolved(origin, body)
+        if name == events.EVENT_ARTIFACT_DRAFT:
+            return self._artifact(body)
+        if name == events.EVENT_SAVE_SUGGESTED:
+            return self._save_suggested(body)
         if name == "role_changed":
             return self._role_changed(body)
         if name == events.EVENT_ERROR:
@@ -593,6 +610,27 @@ class StudioStreamEncoder:
             self._frame(INPUT_RESOLVED, payload),
             self._end(part_id, "cancelled" if status in {"cancelled", "expired"} else "done"),
         ]
+
+    def _artifact(self, body: dict[str, Any]) -> list[str]:
+        draft = body.get("draft")
+        if not isinstance(draft, dict) or not isinstance(draft.get("draft_ref"), str):
+            return []
+        frames = self._close_reasoning()
+        frames.append(self._frame(ARTIFACT_DRAFT, {"part_id": self._part_id(), "draft": draft}))
+        return frames
+
+    def _save_suggested(self, body: dict[str, Any]) -> list[str]:
+        refs = [ref for ref in body.get("draft_refs") or [] if isinstance(ref, str)]
+        if not refs or body.get("capability") not in {"can_save", "role_cannot_author"}:
+            return []
+        frames = self._close_reasoning()
+        frames.append(self._frame(SAVE_SUGGESTED, {
+            "part_id": self._part_id(), "draft_ref": refs[0], "draft_refs": refs,
+            "capability": body["capability"],
+            "reason_code": str(body.get("reason_code") or ""),
+            "message": str(body.get("message") or ""),
+        }))
+        return frames
 
     def _role_changed(self, body: dict[str, Any]) -> list[str]:
         # Work done under the previous role is discarded by the loop; its parts

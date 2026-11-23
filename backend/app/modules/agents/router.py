@@ -1482,14 +1482,22 @@ async def get_agent_thread(
                 status_code=503, detail="Conversation history is temporarily unavailable"
             ) from exc
         return ThreadDetailResponse(
-            thread=_thread_view(thread), messages=[_message_view(m, user) for m in messages],
+            thread=_thread_view(thread),
+            messages=await _with_artifacts(thread_id, user, messages),
             next_cursor=next_cursor,
         )
     messages = await assistant_repository.list_messages(thread_id, user_name=user["username"])
     return ThreadDetailResponse(
         thread=_thread_view(thread),
-        messages=[_message_view(m, user) for m in messages],
+        messages=await _with_artifacts(thread_id, user, messages),
     )
+
+
+async def _with_artifacts(thread_id: str, user: dict, messages: list[dict]) -> list[MessageView]:
+    """Message views with the chart edits and saves made after each turn."""
+    from app.modules.viz.studio_artifacts import overlay
+
+    return await overlay(thread_id, user, [_message_view(m, user) for m in messages])
 
 
 @router.put(
