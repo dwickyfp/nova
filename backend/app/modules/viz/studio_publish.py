@@ -60,6 +60,7 @@ _VEGA_KINDS = {"bar": "bar", "line": "line", "area": "area", "arc": "pie", "pie"
                "point": "scatter", "circle": "scatter", "square": "scatter", "tick": "scatter"}
 _SHEET_KINDS = {"bar": "bar", "line": "line", "area": "area", "pie": "pie", "arc": "pie",
                 "text": "table"}
+_POINT_MARKS = frozenset({"circle", "point", "square"})
 _AGGREGATIONS = {"sum": "sum", "avg": "avg", "min": "min", "max": "max", "count": "count",
                  "distinct_count": "count_distinct", "count_distinct": "count_distinct"}
 _GRAINS = frozenset({"day", "week", "month", "quarter", "year"})
@@ -208,10 +209,15 @@ def _vega_chart(preview: ResolvedPreview) -> Capability:
 
 
 def _worksheet_chart(preview: ResolvedPreview) -> Capability:
+    return worksheet_plan(preview.viz_spec, preview.columns)
+
+
+def worksheet_plan(viz_spec: Any, columns: list[str]) -> Capability:
+    """The native chart for a viz-core worksheet over a result with ``columns``."""
     from app.modules.viz.spec import WorksheetSpec
 
     try:
-        sheet = WorksheetSpec.model_validate(preview.viz_spec)
+        sheet = WorksheetSpec.model_validate(viz_spec)
     except ValidationError:
         return _unknown("CHART_SPEC_INVALID", "The chart's stored definition cannot be read.")
     if sheet.calculations or sheet.table_calcs:
@@ -239,10 +245,21 @@ def _worksheet_chart(preview: ResolvedPreview) -> Capability:
                 dimension["date_grain"] = pill.date_part
             dimensions.append(dimension)
     missing = sorted({item["field"] for item in [*dimensions, *measures]}
-                     - set(preview.columns)) if preview.columns else []
+                     - set(columns)) if columns else []
     if missing:
         return _unknown("FIELDS_NOT_IN_RESULT",
                         "The chart names fields its result does not have: " + ", ".join(missing))
+    if str(sheet.marks.type) in _POINT_MARKS:
+        # A scatter plots one row per mark: the x and y pills as they are.
+        axes = [pill.field for pill in [*sheet.columns, *sheet.rows]]
+        if len(axes) != 2 or axes[0] == axes[1]:
+            return _unsupported("CHART_KIND_NOT_REPRESENTABLE",
+                                "A Dataviz scatter plot needs exactly one x and one y field.")
+        scatter: dict[str, Any] = {"visual": "scatter", "x": axes[0], "y": axes[1]}
+        color = sheet.marks.color
+        if color is not None and not color.is_measure and color.field in columns:
+            scatter["color"] = color.field
+        return _supported(scatter)
     visual = _SHEET_KINDS.get(str(sheet.marks.type))
     if visual is None:
         return _unsupported("CHART_KIND_NOT_REPRESENTABLE",

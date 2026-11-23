@@ -2131,7 +2131,7 @@ class AssistantLoop:
                                 or context.ui_private_context
                             ),
                             question=_asked(thread, user_content), claims=answer_claims,
-                            language=language,
+                            language=language, chart=_draft_chart_builder(context),
                         )
                     except UiValidationError:
                         context.quality_facts["ui_validity"] = {"valid": False}
@@ -2148,6 +2148,8 @@ class AssistantLoop:
                                 "inside exactly one ```openui fence: "
                                 "use only the Nova catalog, valid declared state and exact "
                                 "@Evidence ids; business values must bind verified results, "
+                                "each Chart must draw one verified result directly (sorting "
+                                "is allowed; draw any other view with data_to_chart), "
                                 "and media/HTML must be static public content. Keep the "
                                 "verified Markdown fallback. Include a useful Markdown answer "
                                 "even when omitting the program."
@@ -2175,8 +2177,10 @@ class AssistantLoop:
                 pending_artifacts = await _autocompose_artifacts(
                     pending_artifacts, evidence, context, shown=answer_tables
                 )
-                # A verified map drawn in its place is still an interactive view.
-                if ui_unavailable and not any(item.kind == "ui" for item in pending_artifacts):
+                # A verified map, chart or KPI drawn in its place is still an
+                # interactive view.
+                if ui_unavailable and not any(item.kind in ("ui", "component")
+                                              for item in pending_artifacts):
                     answer_text = (
                         say("loop.ui_fallback_notice", language) + "\n\n" + answer_text
                     ).strip()
@@ -3002,21 +3006,11 @@ class AssistantLoop:
                     )
                 )
                 context.pending_output = _pending_trace(pending_artifacts)
-            if outcome.chart is not None:
-                chart_payload: dict[str, Any] = {
-                    "chart_spec": str(outcome.chart.get("chart_spec") or "")
-                }
-                for key in ("viz_spec", "presmodel"):
-                    value = outcome.chart.get(key)
-                    if isinstance(value, dict):
-                        chart_payload[key] = value
-                drawn_from = _chart_source(pending_artifacts, invocation.tool_call_id)
-                if drawn_from:
-                    chart_payload["source_tool_call_id"] = drawn_from
+            if outcome.component is not None:
                 pending_artifacts.append(
                     PendingArtifact(
-                        kind="chart",
-                        payload=chart_payload,
+                        kind="component",
+                        payload=dict(outcome.component),
                         tool_call_id=invocation.tool_call_id,
                     )
                 )
@@ -3655,7 +3649,7 @@ def _verify_tool_outcome(tool_name: str, outcome: Any) -> str | None:
         recorded = {"PENDING", "APPROVED", "APPLIED"}
         if not data.get("proposal_id") or data.get("status") not in recorded:
             return "The proposal was not recorded for steward review."
-    elif tool_name == "data_to_chart" and not outcome.chart:
+    elif tool_name == "data_to_chart" and not outcome.component:
         return "The chart tool returned no chart artifact."
     elif tool_name == "ml_execute":
         trace = outcome.trace_detail if isinstance(outcome.trace_detail, dict) else {}
@@ -4413,18 +4407,6 @@ def _content_id(run_id: str, index: int) -> str:
     return f"{hashlib.sha256(run_id.encode()).hexdigest()[:32]}:{index}"
 
 
-def _chart_source(artifacts: list[PendingArtifact], chart_call: str | None) -> str | None:
-    """The query call whose result a separate chart tool drew, if any.
-
-    A chart tool draws the latest result of the turn, so the client can fold
-    that result's table under the chart instead of repeating it above.
-    """
-    for item in reversed(artifacts):
-        if item.kind == "table" and item.tool_call_id:
-            return item.tool_call_id if item.tool_call_id != chart_call else None
-    return None
-
-
 def _ordered_output_frames(
     answer_text: str,
     artifacts: list[PendingArtifact],
@@ -4485,43 +4467,18 @@ def _ordered_output_frames(
                     **payload,
                 },
             )
-        elif kind == "chart":
-            tool_call_id = str(item.get("tool_call_id") or "")
-            chart_spec = str(item["payload"].get("chart_spec") or "")
-            viz_spec = item["payload"].get("viz_spec")
-            presmodel = item["payload"].get("presmodel")
-            source = item["payload"].get("source_tool_call_id")
-            source = source if isinstance(source, str) and source else None
-            frames.append(
-                events.chart(
-                    tool_call_id,
-                    chart_spec,
-                    viz_spec=viz_spec if isinstance(viz_spec, dict) else None,
-                    presmodel=presmodel if isinstance(presmodel, dict) else None,
-                    source_tool_call_id=source,
-                    content_index=index,
-                    content_id=content_id,
-                )
-            )
-            _record_step(
-                context,
-                {
-                    "kind": "chart",
-                    "content_index": index,
-                    "content_id": content_id,
-                    "tool_call_id": tool_call_id,
-                    "chart_spec": chart_spec,
-                    **({"source_tool_call_id": source} if source else {}),
-                    **(
-                        {"viz_spec": viz_spec}
-                        if isinstance(viz_spec, dict) else {}
-                    ),
-                    **(
-                        {"presmodel": presmodel}
-                        if isinstance(presmodel, dict) else {}
-                    ),
-                },
-            )
+        elif kind == "component":
+            placed = _placed_component(item, context, content_id)
+            if placed is None:
+                continue
+            frames.append(events.component(
+                placed["component"], placed["version"], placed["props"],
+                content_index=index, content_id=content_id,
+            ))
+            _record_step(context, {
+                "kind": "component", "content_index": index, "content_id": content_id,
+                "tool_call_id": item.get("tool_call_id"), **placed,
+            })
         elif kind == "dashboard":
             payload = dict(item["payload"])
             frames.append(events.format_sse("dashboard", {
@@ -4534,6 +4491,7 @@ def _ordered_output_frames(
         elif kind == "ui":
             payload = dict(item["payload"])
             program = payload.pop("program")
+            recorded_charts = _signed_program_charts(payload, context, content_id)
             frames.append(events.format_sse("ui", {
                 "content_index": index, "content_id": content_id, "payload": payload,
             }))
@@ -4543,7 +4501,8 @@ def _ordered_output_frames(
                     "text": program[offset:offset + 4096],
                 }))
             _record_step(context, {"kind": "ui", "content_index": index,
-                                   "content_id": content_id, **payload, "program": program})
+                                   "content_id": content_id, **payload, "program": program,
+                                   **({"charts": recorded_charts} if recorded_charts else {})})
         elif kind == "citation":
             payload = dict(item["payload"])
             frames.append(events.citation(payload, content_index=index, content_id=content_id))
@@ -4560,9 +4519,119 @@ def _ordered_output_frames(
     return frames
 
 
+def _placed_component(
+    item: dict[str, Any], context: Any, content_id: str,
+) -> dict[str, Any] | None:
+    """A registry component ready to send: signed draft, validated props.
+
+    A ``DatavizChart`` gets its ``draft_ref`` here, where its content id is
+    final: the reference names this thread and content block and is bound to
+    the caller. A component that fails the registry schema is dropped and
+    recorded, never sent half-valid.
+    """
+    from app.modules.assistant.ui_components import ComponentError, component
+
+    payload = item.get("payload") or {}
+    name = str(payload.get("name") or "")
+    props = dict(payload.get("props") or {})
+    source = payload.get("source")
+    try:
+        if name == "DatavizChart":
+            from app.modules.viz.studio_drafts import DraftLocator, sign
+
+            username = str((getattr(context, "user", None) or {}).get("username") or "")
+            thread_id = str(getattr(context, "thread_id", "") or "")
+            if not username or not thread_id:
+                raise ComponentError("A draft chart needs a saved conversation")
+            props["draft_ref"] = sign(DraftLocator(thread_id, content_id), username)
+        placed = component(name, props)
+    except (ComponentError, ValueError) as exc:
+        logger.warning("Dropped an invalid %s component: %s", name or "unknown", exc)
+        _record_step(context, {"kind": "runtime_decision", "component_dropped": name,
+                               "status": "done"})
+        return None
+    if isinstance(source, dict):
+        placed["source"] = source
+    return placed
+
+
+def _signed_program_charts(
+    payload: dict[str, Any], context: Any, content_id: str,
+) -> list[dict[str, Any]]:
+    """Sign each native chart of a program in place; return the recorded form.
+
+    The browser gets the chart and its ``draft_ref``; the governed source stays
+    on the server-side trace only.
+    """
+    charts = payload.get("charts")
+    if not isinstance(charts, list) or not charts:
+        return []
+    from app.modules.viz.studio_drafts import DraftLocator, sign
+
+    username = str((getattr(context, "user", None) or {}).get("username") or "")
+    thread_id = str(getattr(context, "thread_id", "") or "")
+    recorded: list[dict[str, Any]] = []
+    sent: list[dict[str, Any]] = []
+    for position, item in enumerate(charts):
+        ref = (sign(DraftLocator(thread_id, content_id, position), username)
+               if username and thread_id else None)
+        visible = {key: value for key, value in item.items() if key != "source"}
+        if ref:
+            visible["draft_ref"] = ref
+        sent.append(visible)
+        recorded.append({**item, **({"draft_ref": ref} if ref else {})})
+    payload["charts"] = sent
+    return recorded
+
+
+#: Where an artifact sits in a composed answer when the model placed none:
+#: headline numbers, then charts and views, then the narrative, then sources.
+_LEAD_COMPONENTS = frozenset({"KpiTiles"})
+
+
+def _artifact_rank(artifact: PendingArtifact) -> int:
+    if artifact.kind == "component" and artifact.payload.get("name") in _LEAD_COMPONENTS:
+        return 0
+    if artifact.kind in {"component", "ui", "dashboard"}:
+        return 1
+    return 3
+
+
+def _headline_split(text: str) -> tuple[str, str]:
+    """The answer's first paragraph (its headline) and the rest."""
+    stripped = text.strip()
+    if not stripped:
+        return "", ""
+    head, _, rest = stripped.partition("\n\n")
+    return head.strip(), rest.strip()
+
+
 def _compose_output_items(
     answer_text: str, artifacts: list[PendingArtifact]
 ) -> list[dict[str, Any]]:
+    """Ordered answer blocks.
+
+    The model may place artifacts with the marker. Without one, a data answer
+    reads as a composed page: the headline paragraph, KPI tiles, charts and
+    views, the remaining narrative, then tables and sources.
+    """
+    if artifacts and ARTIFACT_MARKER not in answer_text:
+        def block(artifact: PendingArtifact) -> dict[str, Any]:
+            return {"kind": artifact.kind, "payload": artifact.payload,
+                    "tool_call_id": artifact.tool_call_id}
+
+        ranked = sorted(artifacts, key=_artifact_rank)
+        headline, rest = _headline_split(answer_text)
+        if not any(_artifact_rank(artifact) < 3 for artifact in artifacts):
+            headline, rest = answer_text.strip(), ""
+        composed: list[dict[str, Any]] = []
+        if headline:
+            composed.append({"kind": "text", "text": headline})
+        composed.extend(block(item) for item in ranked if _artifact_rank(item) < 3)
+        if rest:
+            composed.append({"kind": "text", "text": rest})
+        composed.extend(block(item) for item in ranked if _artifact_rank(item) >= 3)
+        return composed
     queue = list(artifacts)
     items: list[dict[str, Any]] = []
     parts = re.split(f"({re.escape(ARTIFACT_MARKER)})", answer_text)
@@ -4603,8 +4672,11 @@ def _pending_trace(artifacts: list[PendingArtifact]) -> list[dict[str, Any]]:
             "content_id": f"partial-content-{index}",
             "tool_call_id": artifact.tool_call_id,
         }
-        if artifact.kind == "chart":
-            step["chart_spec"] = artifact.payload.get("chart_spec", "")
+        if artifact.kind == "component":
+            # A draft is signed only when it is placed; an interrupted turn
+            # keeps the component's definition without a reference.
+            step.update({"component": artifact.payload.get("name"),
+                         "props": artifact.payload.get("props") or {}})
         elif artifact.kind == "citation":
             step["citations"] = [artifact.payload]
         else:
@@ -4669,6 +4741,9 @@ def _history_artifact_context(steps: list[dict] | None) -> str:
             )
         elif kind == "chart":
             lines.append("- chart derived from the preceding retrieved data")
+        elif kind == "component":
+            title = str((step.get("props") or {}).get("title") or "view")
+            lines.append(f"- {step.get('component')} {title!r} drawn from the preceding data")
         elif kind == "citation":
             sources = [
                 str(citation.get("source") or citation.get("title") or "source")
@@ -4711,11 +4786,23 @@ def _latest_thread_result(thread: AssistantThread) -> dict[str, Any] | None:
                         rows.append(list(raw_row[: len(columns)]))
                     elif isinstance(raw_row, dict):
                         rows.append([raw_row.get(column) for column in columns])
+            producer = next((
+                item for item in message.steps or []
+                if item.get("kind") == "tool" and step.get("tool_call_id")
+                and item.get("tool_call_id") == step.get("tool_call_id")
+                and item.get("name") in {"query_execute", "semantic_query"}
+                and item.get("status") in ("done", None)
+            ), None)
+            statement = str((producer or {}).get("preview") or "").strip()
             return {
                 "title": str(step.get("title") or "query result"),
                 "columns": columns,
                 "rows": rows,
                 "source": "previous_turn",
+                # The governed statement behind the kept rows, so a follow-up
+                # chart draws from the same query under the caller's role.
+                **({"sql": statement}
+                   if re.match(r"^\s*(SELECT|WITH)\b", statement, re.IGNORECASE) else {}),
                 # What a kept result measures, when it was recorded.
                 **({"metadata": step["metadata"]}
                    if isinstance(step.get("metadata"), dict) and step["metadata"] else {}),
@@ -5003,6 +5090,30 @@ def _attach_tool_trace(context: Any, tool_call_id: str, trace_detail: dict[str, 
             return
 
 
+def _draft_chart_builder(context: LoopContext) -> Any:
+    """Builds a native ``DatavizChart`` draft for one verified result, as the caller."""
+
+    async def chart(evidence_id: str, table: dict[str, Any], plan: dict[str, Any],
+                    title: str) -> dict[str, Any] | None:
+        from app.modules.agents.tools.data_to_chart import native_chart_component
+
+        if not table.get("sql"):
+            # The producing tool step's statement is the result's record.
+            producer = next((
+                step for step in reversed(context.steps or [])
+                if step.get("kind") == "tool" and step.get("evidence_id") == evidence_id
+                and step.get("name") in {"semantic_query", "query_execute"}
+            ), None)
+            if producer and producer.get("preview"):
+                table = {**table, "sql": str(producer["preview"])}
+        return await native_chart_component(
+            plan, table, title=title, context=context, evidence_id=evidence_id,
+            key=f"answer:{evidence_id}:{json.dumps(plan, sort_keys=True, default=str)}",
+        )
+
+    return chart
+
+
 async def _autocompose_artifacts(
     artifacts: list[PendingArtifact],
     evidence: EvidenceTracker,
@@ -5016,24 +5127,25 @@ async def _autocompose_artifacts(
     map beside it. No provider call is made. Every UI block also records the
     query behind each result it binds, so its visuals can be saved as artifacts.
     """
-    from app.modules.assistant.intelligent_ui import runtime_available
     from app.modules.assistant.ui_autocompose import compose
 
     ordered = list(artifacts)
-    if (context.intelligent_ui and runtime_available()
-            and not any(item.kind == "ui" for item in artifacts)):
+    # Registry components need no OpenUI runtime; a route map or grid that
+    # does is skipped with a recorded reason when the runtime is missing.
+    if context.intelligent_ui and not any(item.kind == "ui" for item in artifacts):
         business = evidence.business_tables
         tables = business if shown is None else {
             key: table for key, table in shown.items() if key in business
         }
-        blocks, skipped = await compose(
+        built, skipped = await compose(
             tables, {item.evidence_id: display_title(item.summary) for item in evidence.items},
-            maps_only=any(item.kind == "chart" for item in artifacts),
+            maps_only=any(item.kind == "component" for item in artifacts),
+            chart=_draft_chart_builder(context),
         )
         for reason in skipped:
             _record_step(context, {"kind": "runtime_decision",
                                    "ui_fallback": f"autocompose_{reason}", "status": "done"})
-        ordered.extend(PendingArtifact("ui", block) for block in blocks)
+        ordered.extend(PendingArtifact(kind, payload) for kind, payload in built)
     calls = {step["evidence_id"]: step["tool_call_id"] for step in context.steps or []
              if step.get("kind") == "tool" and step.get("evidence_id") and step.get("tool_call_id")}
     for item in ordered:

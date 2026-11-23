@@ -239,6 +239,74 @@ async def parse_program(
                 await process.wait()
 
 
+#: Props that identify a chart node to the browser renderer.
+CHART_NODE_KEYS = ("x", "y", "type", "title")
+
+
+def chart_node_key(props: dict[str, Any]) -> dict[str, Any]:
+    return {key: props.get(key) for key in CHART_NODE_KEYS}
+
+
+async def native_charts(
+    program: str, tables: dict, chart: Any, *, business: bool = True,
+) -> list[dict[str, Any]]:
+    """A native Dataviz draft for every evidence-bound ``Chart`` in a program.
+
+    A chart of a verified result is drawn by the same native engine as the
+    dashboard, over the governed query behind that result. A chart of rows the
+    program derived from a result (filtered, grouped, topped) has no such
+    query, so the program is refused and the model is asked to draw it with
+    ``data_to_chart`` instead.
+    """
+    from app.modules.viz.openui_nodes import OpenUiParseError, data_nodes
+    from app.modules.viz.studio_publish import _ui_chart
+    from app.modules.viz.studio_results import Locator, ResolvedPreview
+
+    try:
+        nodes = [node for node in data_nodes(program) if node.component == "Chart"]
+    except OpenUiParseError as exc:
+        raise UiValidationError("The program could not be read") from exc
+    out: list[dict[str, Any]] = []
+    for node in nodes:
+        if node.evidence_id is None and not business:
+            # A what-if chart of values the program computed: no business
+            # result, no governed query. The browser draws it natively from
+            # the program's own evaluated rows.
+            continue
+        table = tables.get(node.evidence_id or "")
+        if table is None or node.opaque or chart is None:
+            raise UiValidationError("A chart must draw one verified result directly")
+        evidence_id = str(node.evidence_id)
+        records = _records({evidence_id: table}).get(evidence_id, [])
+        visualization: dict[str, Any] = {"component": "Chart"}
+        for key in ("x", "y", "type", "series", "title"):
+            value = node.prop(key)
+            if isinstance(value, str | list) or value is None:
+                visualization[key] = value
+        columns = [str(c.get("name", "")) if isinstance(c, dict) else str(c)
+                   for c in table.get("columns") or []]
+        preview = ResolvedPreview(
+            locator=Locator("program", "program", "program"), render_kind="chart",
+            title=str(node.prop("title") or "Chart"), sql="SELECT 1", provenance="tool_step",
+            producer_tool=None, columns=columns, visualization=visualization,
+            transforms=[{"name": call.name,
+                         "args": [a for a in call.args[1:] if isinstance(a, str | int | float)],
+                         "exact": all(isinstance(a, str | int | float) for a in call.args[1:])}
+                        for call in node.transforms],
+            rows=records,
+        )
+        capability = _ui_chart(preview)
+        if capability.status != "SUPPORTED" or capability.chart is None:
+            raise UiValidationError(f"A chart cannot be drawn natively: {capability.message}")
+        built = await chart(node.evidence_id, table, capability.chart,
+                            str(node.prop("title") or "Chart")[:120])
+        if built is None:
+            raise UiValidationError("A chart's result has no governed query to draw from")
+        out.append({"node": chart_node_key(node.props), "title": built["props"]["title"],
+                    "chart": built["props"]["chart"], "source": built["source"]})
+    return out
+
+
 async def compose_block(
     program: str,
     fallback: str,
@@ -249,6 +317,7 @@ async def compose_block(
     claims: Any,
     language: str,
     private_context: bool = False,
+    chart: Any = None,
 ) -> dict:
     if not fallback.strip():
         raise UiValidationError("Interactive answers require a Markdown fallback")
@@ -271,15 +340,19 @@ async def compose_block(
         fallback, prose_adjusted = _simulation_prose(
             fallback, result["simulation_tables"], question=question, language=language,
         )
+    charts = await native_charts(program, tables, chart, business=business)
     from app.modules.assistant.messages import say
 
-    return block_dict(program, fallback, result, tables, provenance={
+    block = block_dict(program, fallback, result, tables, provenance={
         "composer": "model",
         "prose_adjusted": prose_adjusted,
         "prose_rebuilt": prose_adjusted and fallback.startswith(
             say("loop.simulation_values", language) + "\n\n|"
         ),
     })
+    if charts:
+        block["charts"] = charts
+    return block
 
 
 def block_dict(program: str, fallback: str, result: dict, tables: dict, *,

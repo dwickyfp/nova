@@ -1,4 +1,4 @@
-"""Verified results no other visual shows get a map or KPI without a model call."""
+"""Verified results no other visual shows get a map, chart or KPI without a model call."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import AssistantThread
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome, ToolRegistry
 from tests.benchmark.harness import ScriptedProvider, allow, text_frame, tool_call_frame
+from tests.eval import draft_charts
 
 SALES = {
     "columns": ["salesperson", "revenue"],
@@ -39,7 +40,8 @@ class TableQuery:
         return str(invocation.arguments.get("sql", "SELECT 1"))
 
     async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
-        context.last_result = {"title": "", **self.table}
+        context.last_result = {"title": "", **self.table,
+                               "sql": str(invocation.arguments.get("sql") or "")}
         return ToolOutcome(ok=True, summary=f"{len(self.table['rows'])} rows",
                            table=dict(self.table))
 
@@ -52,7 +54,8 @@ def _payloads(frames: list[str], event: str) -> list[dict[str, Any]]:
 async def _run(script: list[dict[str, Any]], registry: ToolRegistry, *, intelligent_ui: bool,
                plan: dict[str, Any]) -> tuple[list[str], LoopContext, ScriptedProvider]:
     provider = ScriptedProvider(script=script, turn_plan=plan)
-    context = LoopContext(user_name="alice", intelligent_ui=intelligent_ui)
+    context = LoopContext(user_name="alice", intelligent_ui=intelligent_ui,
+                          user=dict(draft_charts.USER), thread_id="auto-ui")
     frames = [frame async for frame in AssistantLoop(provider=provider, registry=registry).run(
         thread=AssistantThread(thread_id="auto-ui", user_name="alice", title="Eval"),
         user_content="Chart revenue by salesperson", context=context, resolve_consent=allow,
@@ -62,14 +65,6 @@ async def _run(script: list[dict[str, Any]], registry: ToolRegistry, *, intellig
 
 def _chart_registry() -> ToolRegistry:
     chart = DataToChartTool()
-    chart._model_spec = AsyncMock(return_value={  # type: ignore[method-assign]
-        "mark": "bar",
-        "data": {"values": []},
-        "encoding": {
-            "y": {"field": "salesperson", "type": "nominal", "sort": "-x"},
-            "x": {"field": "revenue", "type": "quantitative"},
-        },
-    })
     chart._model_intent = AsyncMock(return_value=None)  # type: ignore[method-assign]
     registry = ToolRegistry()
     registry.register(TableQuery(SALES))
@@ -81,18 +76,26 @@ CHART_PLAN = {"intent": "chart", "tools": ["query_execute", "data_to_chart"],
               "required_tools": ["query_execute", "data_to_chart"], "skills": [],
               "ml_task": None, "presentation": "text"}
 CHART_SCRIPT = [
-    tool_call_frame("q-1", name="query_execute", arguments={"sql": "SELECT 1"}),
+    tool_call_frame("q-1", name="query_execute",
+                    arguments={"sql": "SELECT salesperson, revenue FROM sales.people"}),
     tool_call_frame("c-1", name="data_to_chart", arguments={"intent": "revenue"}),
     text_frame("Revenue by salesperson is shown below."),
 ]
 
 
-async def test_a_charted_answer_gets_no_extra_visual_or_provider_call() -> None:
+def _components(frames: list[str], name: str) -> list[dict[str, Any]]:
+    return [item for item in _payloads(frames, "component") if item["component"] == name]
+
+
+async def test_a_charted_answer_gets_no_extra_visual_or_provider_call(monkeypatch) -> None:
+    draft_charts.install(monkeypatch, ["salesperson", "revenue"], measures={"revenue"})
     frames, context, provider = await _run(
         [dict(item) for item in CHART_SCRIPT], _chart_registry(),
         intelligent_ui=True, plan=CHART_PLAN,
     )
-    assert not _payloads(frames, "ui") and len(_payloads(frames, "chart")) == 1
+    assert not _payloads(frames, "ui") and len(_payloads(frames, "component")) == 1
+    chart = _components(frames, "DatavizChart")[0]["props"]
+    assert chart["chart"]["visual"] == "bar" and chart["draft_ref"].startswith("dr1.")
     assert "OPTIONAL_UI_CATALOG" in context.ui_prompt
     assert '"finish_reason":"stop"' in "".join(frames).replace(" ", "")
     _, _, plain_provider = await _run(
@@ -119,21 +122,22 @@ def _map_run(intelligent_ui: bool = True):
 
 async def test_participant_gate_preserves_the_map_for_user_answers() -> None:
     frames, _, _ = await _map_run()
-    assert len(_payloads(frames, "ui")) == 1
+    assert len(_components(frames, "GeoMap")) == 1
     specialist, _, _ = await _map_run(intelligent_ui=False)
-    assert not _payloads(specialist, "ui")
+    assert not _payloads(specialist, "component") and not _payloads(specialist, "ui")
     assert len(_payloads(frames, "table")) == 1
 
 
-async def test_a_charted_located_result_still_gets_its_map() -> None:
+async def test_a_charted_located_result_still_gets_its_map(monkeypatch) -> None:
+    draft_charts.install(monkeypatch, OUTLETS["columns"],
+                         measures={"latitude", "longitude"})
     registry = _chart_registry()
     registry.register(TableQuery(OUTLETS))
     frames, _, _ = await _run(
         [dict(item) for item in CHART_SCRIPT], registry, intelligent_ui=True, plan=CHART_PLAN,
     )
-    ui = _payloads(frames, "ui")
-    assert len(_payloads(frames, "chart")) == 1
-    assert len(ui) == 1 and ui[0]["payload"]["provenance"]["auto"] == "map"
+    assert len(_components(frames, "DatavizChart")) == 1
+    assert len(_components(frames, "GeoMap")) == 1
 
 
 async def test_a_rejected_program_on_a_located_result_still_shows_its_map() -> None:
@@ -145,23 +149,20 @@ async def test_a_rejected_program_on_a_located_result_still_shows_its_map() -> N
          text_frame(invalid), text_frame(invalid)],
         registry, intelligent_ui=True, plan=MAP_PLAN,
     )
-    ui = _payloads(frames, "ui")
-    assert len(ui) == 1 and ui[0]["payload"]["provenance"]["auto"] == "map"
+    assert len(_components(frames, "GeoMap")) == 1 and not _payloads(frames, "ui")
     assert any(step.get("ui_fallback") == "validation_failed" for step in context.steps)
     assert "Only text is available" not in "".join(frames)
 
 
 async def test_located_result_gets_a_governed_map() -> None:
     frames, _, provider = await _map_run()
-    ui = _payloads(frames, "ui")
-    assert len(ui) == 1 and ui[0]["payload"]["provenance"]["auto"] == "map"
-    calls = _payloads(frames, "tool_call")
-    assert len(calls) == 1 and calls[0]["tool_call_id"] != "q-1"
-    assert ui[0]["payload"]["provenance"]["tool_calls"] == {
-        "evidence_1": calls[0]["tool_call_id"],
-    }
-    program = "".join(item["text"] for item in _payloads(frames, "ui_delta"))
-    assert 'GeoMap(@Evidence("evidence_1"), "longitude", "latitude"' in program
+    maps = _components(frames, "GeoMap")
+    assert len(maps) == 1 and not _payloads(frames, "ui")
+    props = maps[0]["props"]
+    assert props["evidence_id"] == "evidence_1"
+    assert (props["longitude"], props["latitude"], props["label"]) == (
+        "longitude", "latitude", "outlet_name")
+    assert [row["outlet_name"] for row in props["rows"]] == ["Toko A", "Toko B"]
     assert len(_payloads(frames, "table")) == 1
     assert provider.calls == 2
 
@@ -178,32 +179,31 @@ def _events(frames: list[str]) -> set[str]:
             for frame in frames if frame.startswith("event: ")}
 
 
-async def test_a_plain_data_answer_gets_a_ranking_on_the_same_stream() -> None:
+async def test_a_plain_data_answer_gets_a_ranking_on_the_same_stream(monkeypatch) -> None:
+    draft_charts.install(monkeypatch, REGION["columns"], measures={"revenue_total"})
     registry = ToolRegistry()
     registry.register(TableQuery(REGION))
+    script = [tool_call_frame("q-1", name="query_execute",
+                              arguments={"sql": "SELECT region, revenue_total FROM sales.r"}),
+              text_frame("Jakarta leads revenue.")]
     frames, context, provider = await _run(
-        [tool_call_frame("q-1", name="query_execute", arguments={"sql": "SELECT 1"}),
-         text_frame("Jakarta leads revenue.")],
-        registry, intelligent_ui=True, plan=MAP_PLAN,
+        [dict(item) for item in script], registry, intelligent_ui=True, plan=MAP_PLAN,
     )
-    ui = _payloads(frames, "ui")
-    assert len(ui) == 1
-    provenance = ui[0]["payload"]["provenance"]
-    assert provenance["auto"] == "ranking" and provenance["composer"] == "deterministic"
-    assert provenance["evidence_ids"] == ["evidence_1"]
-    calls = _payloads(frames, "tool_call")
-    assert len(calls) == 1 and calls[0]["tool_call_id"] != "q-1"
-    assert provenance["tool_calls"] == {"evidence_1": calls[0]["tool_call_id"]}
-    program = "".join(item["text"] for item in _payloads(frames, "ui_delta"))
-    assert 'Chart(@Sort(@Evidence("evidence_1"), "revenue_total", "desc")' in program
-    assert any(step.get("kind") == "ui" for step in context.steps)
+    charts = _components(frames, "DatavizChart")
+    assert len(charts) == 1 and not _payloads(frames, "ui")
+    chart = charts[0]["props"]["chart"]
+    assert chart["visual"] == "bar"
+    assert chart["sort"][0]["direction"] == "desc"
+    step = next(step for step in context.steps if step.get("kind") == "component")
+    # The query that produced the rows is the chart's record, not a copy of it.
+    query = next(step for step in context.steps if step.get("kind") == "tool")
+    assert step["source"]["tool_call_id"] == query["tool_call_id"]
+    assert "statement" not in step["source"]
     # No provider call is added, and the view travels on the frames a map already uses.
     assert provider.calls == 2
     map_frames, _, _ = await _map_run()
     assert _events(frames) <= _events(map_frames)
     plain, _, _ = await _run(
-        [tool_call_frame("q-1", name="query_execute", arguments={"sql": "SELECT 1"}),
-         text_frame("Jakarta leads revenue.")],
-        registry, intelligent_ui=False, plan=MAP_PLAN,
+        [dict(item) for item in script], registry, intelligent_ui=False, plan=MAP_PLAN,
     )
-    assert not _payloads(plain, "ui")
+    assert not _payloads(plain, "component")

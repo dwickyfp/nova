@@ -354,6 +354,22 @@ class AssistantMetadataRepository:
             "AND message_id=%s AND user_name=%s", (thread_id, message_id, self.actor.principal),
         )
 
+    async def message_with_content(
+        self, thread_id: str, content_id: str,
+    ) -> list[dict[str, Any]]:
+        """The caller's assistant turns on a thread that hold one content block.
+
+        Content ids are unique across a thread, so a well-formed thread returns
+        at most one row; callers refuse anything else.
+        """
+        await self._bound()
+        return await self._all(
+            "SELECT message_id,steps,security_context FROM nova_meta.config_assistant_messages "
+            "WHERE thread_id=%s AND user_name=%s AND role='assistant' AND steps @> %s "
+            "LIMIT 2",
+            (thread_id, self.actor.principal, Jsonb([{"content_id": content_id}])),
+        )
+
     async def ui_action_seen(self, thread_id: str, operation_id: str) -> bool:
         """Whether an interactive action with this operation id is already a turn."""
         await self._bound()

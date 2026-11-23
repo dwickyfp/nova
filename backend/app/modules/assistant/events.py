@@ -278,6 +278,23 @@ def table(
     return format_sse(EVENT_TABLE, ordered)
 
 
+EVENT_COMPONENT = "component"
+
+
+def component(
+    name: str,
+    version: int,
+    props: dict[str, Any],
+    *,
+    content_index: int | None = None,
+    content_id: str | None = None,
+) -> str:
+    """A Studio registry component (``ui_components.json``) with validated props."""
+    payload: dict[str, Any] = {"component": name, "version": version, "props": props}
+    _with_content_position(payload, content_index, content_id)
+    return format_sse(EVENT_COMPONENT, payload)
+
+
 def chart(
     tool_call_id: str,
     chart_spec: str,

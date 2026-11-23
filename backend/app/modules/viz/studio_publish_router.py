@@ -9,13 +9,14 @@ from __future__ import annotations
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.common.responses import SanitizingJSONResponse
 from app.core.deps import get_current_user
 
-from . import studio_publish
+from . import studio_drafts, studio_publish
+from .contracts.queries import DatasetQueryRequest, DatasetQueryResult
 from .studio_publish import PublishError, Target
 from .studio_results import Locator
 
@@ -125,3 +126,16 @@ async def publish_preview(body: PublishBody, user: CurrentUser) -> dict[str, Any
         )
     except PublishError as exc:
         raise _error(exc) from exc
+
+
+@router.post("/drafts/{ref}/query", response_model=DatasetQueryResult)
+async def query_draft(
+    body: DatasetQueryRequest, user: CurrentUser,
+    ref: str = Path(min_length=8, max_length=1024, pattern=r"^[A-Za-z0-9_.\-]+$"),
+) -> DatasetQueryResult:
+    """Read a draft chart's data from its governed query, as the caller.
+
+    Runs under the caller's active role through the Dataviz aggregate planner and
+    QueryService, so row filters and column masks apply. Never returns stored rows.
+    """
+    return await studio_drafts.query(ref, user, body)

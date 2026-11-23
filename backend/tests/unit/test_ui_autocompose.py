@@ -41,15 +41,26 @@ def test_results_without_valid_locations_get_no_map(table):
     assert ac.map_program("e", table, "Places") is None
 
 
-def test_single_metric_is_a_kpi_and_several_share_a_grid():
+def test_single_metric_is_a_kpi_tile_read_from_its_row():
     assert ac.kpi_column(TOTAL) == "total_revenue"
     assert ac.kpi_column(SALES) is None
     assert ac.kpi_column({"columns": ["name"], "rows": [["Budi"]]}) is None
-    assert ac.kpi_program([("e1", "total_revenue", TOTAL)]) == (
-        'root = Col([Kpi(@Evidence("e1"), "total_revenue", "Total revenue", 0)])'
-    )
-    assert "Grid([" in ac.kpi_program([("e1", "total_revenue", TOTAL),
-                                       ("e2", "total_revenue", TOTAL)])
+    tiles = ac.kpi_component([("e1", "total_revenue", TOTAL), ("e2", "total_revenue", TOTAL)])
+    assert tiles is not None and tiles["name"] == "KpiTiles"
+    first = tiles["props"]["items"][0]
+    assert first == {"label": "Total revenue", "value": 356805054.0, "format": "number",
+                     "decimals": 0, "aggregation": "value", "evidence_id": "e1",
+                     "column": "total_revenue"}
+
+
+def _kinds(composed):
+    return [payload["name"] if kind == "component" else payload["provenance"]["auto"]
+            for kind, payload in composed]
+
+
+async def _fake_chart(evidence_id, table, plan, title):
+    return {"name": "DatavizChart", "props": {"title": title, "chart": {"visual": plan["visual"]}},
+            "source": {"evidence_id": evidence_id}, "plan": plan}
 
 
 async def test_maps_come_before_metrics_and_only_one_is_drawn():
@@ -57,11 +68,12 @@ async def test_maps_come_before_metrics_and_only_one_is_drawn():
         {"evidence_1": TOTAL, "evidence_2": OUTLETS}, {"evidence_2": "Outlets"},
     )
     assert skipped == []
-    assert [block["provenance"]["auto"] for block in composed] == ["map"]
-    block = composed[0]
-    assert block["fallback"] == "**Outlets**"
-    assert block["provenance"]["composer"] == "deterministic"
-    assert set(block["evidence"]) == {"evidence_2"}
+    assert _kinds(composed) == ["GeoMap"]
+    props = composed[0][1]["props"]
+    assert props["title"] == "Outlets" and props["evidence_id"] == "evidence_2"
+    assert (props["longitude"], props["latitude"], props["label"]) == (
+        "longitude", "latitude", "outlet_name")
+    assert props["rows"][0]["outlet_name"] == "Toko A"
 
 
 async def test_planned_routes_are_the_map_before_their_stops():
@@ -69,16 +81,17 @@ async def test_planned_routes_are_the_map_before_their_stops():
         {"evidence_2": OUTLETS, "evidence_3": ROUTES},
         {"evidence_2": "Outlets", "evidence_3": "Optimized routes"},
     )
-    assert [block["fallback"] for block in composed] == ["**Optimized routes**"]
+    # A route stays an OpenUI route map; only places become a GeoMap component.
+    assert [payload["fallback"] for _, payload in composed] == ["**Optimized routes**"]
 
 
 async def test_metrics_come_first_and_other_results_get_their_own_view():
-    composed, skipped = await ac.compose({"evidence_1": TOTAL, "evidence_2": SALES}, {})
+    composed, skipped = await ac.compose({"evidence_1": TOTAL, "evidence_2": SALES}, {},
+                                         chart=_fake_chart)
     assert skipped == []
-    assert [block["provenance"]["auto"] for block in composed] == ["kpi", "grid"]
-    assert set(composed[0]["evidence"]) == {"evidence_1"}
-    assert set(composed[1]["evidence"]) == {"evidence_2"}
-    assert all(block["provenance"]["composer"] == "deterministic" for block in composed)
+    assert _kinds(composed) == ["KpiTiles", "grid"]
+    assert composed[0][1]["props"]["items"][0]["evidence_id"] == "evidence_1"
+    assert set(composed[1][1]["evidence"]) == {"evidence_2"}
 
 
 REGION = {"columns": ["region", "revenue_total"], "rows": [
@@ -145,24 +158,40 @@ async def test_one_row_of_measures_becomes_kpi_tiles():
     assert ac.kpi_columns(DAY) == ["visits", "km"]
     assert ac.kpi_columns(REGION) == []
     composed, _ = await ac.compose({"e1": DAY}, {})
-    assert [block["provenance"]["auto"] for block in composed] == ["kpi"]
-    assert composed[0]["program"].count("Kpi(") == 2
+    assert _kinds(composed) == ["KpiTiles"]
+    items = composed[0][1]["props"]["items"]
+    assert [(item["column"], item["value"], item["decimals"]) for item in items] == [
+        ("visits", 8.0, 0), ("km", 25.17, 2)]
 
 
-async def test_the_field_sales_shapes_all_get_a_validated_view():
-    composed, skipped = await ac.compose({"e1": REGION}, {"e1": "Revenue by region"})
-    assert skipped == []
-    assert [block["provenance"]["auto"] for block in composed] == ["ranking"]
-    assert composed[0]["fallback"] == "**Revenue by region**"
-    composed, skipped = await ac.compose({"e1": WEEKLY}, {})
-    assert skipped == [] and composed[0]["provenance"]["auto"] == "trend"
-    assert composed[0]["fallback"] == "**Revenue**"
+async def test_trends_and_rankings_are_native_dataviz_charts():
+    composed, skipped = await ac.compose({"e1": REGION}, {"e1": "Revenue by region"},
+                                         chart=_fake_chart)
+    assert skipped == [] and _kinds(composed) == ["DatavizChart"]
+    payload = composed[0][1]
+    assert payload["props"]["title"] == "Revenue by region"
+    assert payload["plan"] == {"visual": "bar", "dimensions": [{"field": "region"}],
+                               "measures": [{"field": "revenue_total", "aggregation": "sum"}],
+                               "sort": {"field": "revenue_total", "direction": "desc"}}
+    composed, _ = await ac.compose({"e1": WEEKLY}, {}, chart=_fake_chart)
+    assert composed[0][1]["plan"]["visual"] == "line"
+    assert composed[0][1]["props"]["title"] == "Revenue"
+    composed, _ = await ac.compose({"e1": OUTLET_SALES}, {}, chart=_fake_chart)
+    assert composed[0][1]["plan"]["top_n"] == 10
+
+
+async def test_a_chart_without_a_governed_query_is_not_drawn_by_another_engine():
+    async def no_chart(*_args):
+        return None
+
+    composed, skipped = await ac.compose({"e1": REGION}, {}, chart=no_chart)
+    assert composed == [] and skipped == ["ranking_native"]
 
 
 async def test_at_most_two_results_get_a_view_and_charts_leave_only_maps():
     tables = {"e1": REGION, "e2": WEEKLY, "e3": CROSSTAB}
-    composed, _ = await ac.compose(tables, {})
-    assert [block["provenance"]["auto"] for block in composed] == ["ranking", "trend"]
+    composed, _ = await ac.compose(tables, {}, chart=_fake_chart)
+    assert [payload["plan"]["visual"] for _, payload in composed] == ["bar", "line"]
     assert await ac.compose(tables, {}, maps_only=True) == ([], [])
 
 
@@ -171,9 +200,8 @@ async def test_validation_failure_is_reported_not_raised(monkeypatch):
         raise UiValidationError("rejected")
 
     monkeypatch.setattr(ac, "parse_program", reject)
-    assert await ac.compose({"evidence_2": OUTLETS}, {}) == ([], ["map_validation"])
-    assert await ac.compose({"evidence_1": TOTAL}, {}) == ([], ["kpi_validation"])
-    assert await ac.compose({"evidence_1": REGION}, {}) == ([], ["ranking_validation"])
+    assert await ac.compose({"evidence_3": ROUTES}, {}) == ([], ["map_validation"])
+    assert await ac.compose({"evidence_1": SALES}, {}) == ([], ["grid_validation"])
 
 
 STOPS = {"columns": ["route", "stop_seq", "stop", "latitude", "longitude", "demand",
@@ -193,4 +221,4 @@ async def test_ordered_stops_are_drawn_as_numbered_routes():
         {"evidence_2": "Outlets", "evidence_4": "Delivery routes"},
     )
     assert skipped == []
-    assert [block["fallback"] for block in composed] == ["**Delivery routes**"]
+    assert [payload["fallback"] for _, payload in composed] == ["**Delivery routes**"]

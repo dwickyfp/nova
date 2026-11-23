@@ -1,10 +1,17 @@
 """Deterministic Nova UI for verified results that no other visual shows.
 
-When the model writes no OpenUI program, a data answer still gets a data view.
-Each verified result is classified by the shape of its columns and compiled
-here into a map, KPI tiles, a trend, a ranking or a grid bound to its evidence,
-without another provider call, and validated by the same Node runtime as model
-programs. Results with no recognisable shape get no block.
+When the model composes no view, a data answer still gets one. Each verified
+result is classified by the shape of its columns, without another provider
+call, into the same Studio registry components the model uses:
+
+* a trend or ranking becomes a native ``DatavizChart`` over the result's
+  governed query (built by the caller-supplied ``chart`` callback);
+* one-row metrics become ``KpiTiles`` whose values are read from the rows;
+* a located result becomes a ``GeoMap``; ordered stops stay an OpenUI route
+  map, validated by the OpenUI runtime like model programs;
+* a multi-column grid stays an OpenUI table.
+
+Results with no recognisable shape get no view.
 """
 
 from __future__ import annotations
@@ -12,11 +19,19 @@ from __future__ import annotations
 import json
 import math
 import re
+from collections.abc import Awaitable, Callable
 from datetime import date
 from decimal import Decimal
 from typing import Any
 
 from app.modules.assistant.intelligent_ui import UiValidationError, block_dict, parse_program
+from app.modules.assistant.ui_components import ComponentError, validate_props
+
+#: An artifact for the answer: ``("ui", block)`` or ``("component", payload)``.
+Artifact = tuple[str, dict[str, Any]]
+#: Builds a native chart component for one result from a chart plan, or None.
+ChartBuilder = Callable[[str, dict[str, Any], dict[str, Any], str],
+                        Awaitable[dict[str, Any] | None]]
 
 _LATITUDE = ("latitude", "lat", "lintang")
 _LONGITUDE = ("longitude", "lon", "lng", "long", "bujur")
@@ -206,6 +221,102 @@ def map_program(evidence_id: str, table: dict[str, Any], title: str) -> str | No
             f"root = Col([GeoMap({', '.join(args)})])")
 
 
+def map_component(evidence_id: str, table: dict[str, Any], title: str) -> dict[str, Any] | None:
+    """A ``GeoMap`` component for a located result that is not an ordered route."""
+    names = _names(table)
+    rows = table.get("rows") or []
+    if not rows:
+        return None
+    latitude, longitude = _coordinate(names, _LATITUDE), _coordinate(names, _LONGITUDE)
+    geometry = None
+    if latitude and longitude:
+        if not _located(_column(table, latitude), _column(table, longitude)):
+            return None
+        if _route_columns(table):
+            return None
+    else:
+        latitude = longitude = None
+        geometry = next((
+            name for name in names
+            if any(isinstance(value, str) and (_GEOMETRY.match(value) or _GEOJSON.match(value))
+                   for value in _column(table, name)[:20])
+        ), None)
+        if geometry is None or _lines(table, geometry):
+            return None
+    located = {latitude, longitude, geometry}
+    rest = [name for name in names if name not in located]
+    label = next((name for name in rest if _LABEL.search(name)), None) or next(
+        (name for name in rest
+         if all(_number(value) is None for value in _column(table, name)[:20])), None,
+    )
+    records = [
+        {name: _plain(value) for name, value in zip(names, row, strict=False)}
+        if isinstance(row, list | tuple) else {name: _plain(row.get(name)) for name in names}
+        for row in rows[:200]
+    ]
+    props: dict[str, Any] = {"title": title or "Locations", "evidence_id": evidence_id,
+                             "rows": records}
+    for key, value in (("longitude", longitude), ("latitude", latitude),
+                       ("geometry", geometry), ("label", label)):
+        if value:
+            props[key] = value
+    try:
+        validate_props("GeoMap", props)
+    except ComponentError:
+        return None
+    return {"name": "GeoMap", "props": props}
+
+
+def _plain(value: Any) -> Any:
+    if value is None or isinstance(value, str | bool | int):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, Decimal):
+        return float(value) if value.is_finite() else None
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value)
+
+
+def kpi_component(metrics: list[tuple[str, str, dict[str, Any]]]) -> dict[str, Any] | None:
+    """``KpiTiles`` read from one-row results: the value is the row's own."""
+    items = []
+    for evidence_id, column, table in metrics:
+        value = _number(_column(table, column)[0])
+        items.append({
+            "label": _label(column), "value": value, "format": "number",
+            "decimals": 0 if value is not None and value.is_integer() else 2,
+            "aggregation": "value", "evidence_id": evidence_id, "column": column,
+        })
+    props = {"items": items}
+    try:
+        validate_props("KpiTiles", props)
+    except ComponentError:
+        return None
+    return {"name": "KpiTiles", "props": props}
+
+
+def chart_plan(table: dict[str, Any]) -> tuple[dict[str, Any], str] | None:
+    """A native trend or ranking for a result, with the reason chosen."""
+    rows = table.get("rows") or []
+    kinds = shape(table)
+    temporal, measures, categories = kinds["temporal"], kinds["measure"], kinds["category"]
+    if (len(temporal) == 1 and len(measures) == 1 and not categories
+            and len(rows) >= _TREND_MIN_ROWS):
+        return {"visual": "line", "dimensions": [{"field": temporal[0]}],
+                "measures": [{"field": measures[0], "aggregation": "sum"}],
+                "sort": {"field": temporal[0], "direction": "asc"}}, "trend"
+    if len(categories) == 1 and len(measures) == 1 and not temporal and len(rows) >= 2:
+        plan: dict[str, Any] = {"visual": "bar", "dimensions": [{"field": categories[0]}],
+                                "measures": [{"field": measures[0], "aggregation": "sum"}],
+                                "sort": {"field": measures[0], "direction": "desc"}}
+        if len(rows) > _RANKING_MAX_ROWS:
+            plan["top_n"] = _TOP
+        return plan, "ranking"
+    return None
+
+
 def kpi_column(table: dict[str, Any]) -> str | None:
     """The single numeric column of a one-row, one-column result."""
     names, rows = _names(table), table.get("rows") or []
@@ -225,20 +336,6 @@ def kpi_columns(table: dict[str, Any]) -> list[str]:
     if not measures or len(measures) > _MAX_KPIS or len(measures) != len(_names(table)):
         return []
     return measures
-
-
-def kpi_program(metrics: list[tuple[str, str, dict[str, Any]]]) -> str:
-    tiles = []
-    for evidence_id, column, table in metrics:
-        value = _number(_column(table, column)[0])
-        digits = 0 if value is not None and value.is_integer() else 2
-        tiles.append(
-            f"Kpi(@Evidence({_text(evidence_id)}), {_text(column)}, "
-            f"{_text(_label(column))}, {digits})"
-        )
-    if len(tiles) == 1:
-        return f"root = Col([{tiles[0]}])"
-    return f"root = Col([Grid([{', '.join(tiles)}], {len(tiles)})])"
 
 
 def _kind(name: str, values: list[Any]) -> str:
@@ -318,54 +415,72 @@ async def compose(
     summaries: dict[str, str],
     *,
     maps_only: bool = False,
-) -> tuple[list[dict[str, Any]], list[str]]:
+    chart: ChartBuilder | None = None,
+) -> tuple[list[Artifact], list[str]]:
     """Data views for an answer no other visual shows.
 
     ``tables`` are the verified results the answer displays. A located result
     gets a map and nothing else. Otherwise single metrics share KPI tiles, and
-    up to two other results each get a trend, ranking or grid. A tool chart
-    does not show locations, so ``maps_only`` still draws a located result but
-    nothing else. Returns the blocks and the reasons any were skipped.
+    up to two other results each get a native trend or ranking (through
+    ``chart``) or a grid. A tool chart does not show locations, so
+    ``maps_only`` still draws a located result but nothing else. Returns the
+    artifacts and the reasons any were skipped.
     """
-    blocks: list[dict[str, Any]] = []
+    artifacts: list[Artifact] = []
     skipped: list[str] = []
     for evidence_id, table in _route_first(tables).items():
         title = (summaries.get(evidence_id) or "Locations")[:256]
+        located = map_component(evidence_id, table, title)
+        if located is not None:
+            artifacts.append(("component", located))
+            return artifacts, skipped
         program = map_program(evidence_id, table, title)
         if program is None:
             continue
         try:
-            blocks.append(await _block(program, {evidence_id: table}, f"**{title}**", "map"))
+            artifacts.append(("ui", await _block(program, {evidence_id: table},
+                                                 f"**{title}**", "map")))
         except UiValidationError:
             skipped.append("map_validation")
-        return blocks, skipped
+        return artifacts, skipped
     if maps_only:
-        return blocks, skipped
+        return artifacts, skipped
 
     metrics = [(evidence_id, column, table) for evidence_id, table in tables.items()
                for column in kpi_columns(table)][:_MAX_KPIS]
     if metrics:
-        try:
-            blocks.append(await _block(
-                kpi_program(metrics), {evidence_id: table for evidence_id, _, table in metrics},
-                "\n".join(f"**{_label(column)}**" for _, column, _ in metrics), "kpi",
-            ))
-        except UiValidationError:
+        tiles = kpi_component(metrics)
+        if tiles is None:
             skipped.append("kpi_validation")
+        else:
+            artifacts.append(("component", tiles))
     shown_metrics = {evidence_id for evidence_id, _, _ in metrics}
     drawn = 0
     for evidence_id, table in tables.items():
         if evidence_id in shown_metrics or kpi_columns(table) or drawn >= _MAX_DATA_BLOCKS:
             continue
         summary = (summaries.get(evidence_id) or "")[:256] or None
+        names = _names(table)
+        if not table.get("rows") or not names or len(names) > _MAX_COLUMNS:
+            continue
+        planned = chart_plan(table)
+        if planned is not None and chart is not None:
+            plan, auto = planned
+            measure = plan["measures"][0]["field"]
+            built = await chart(evidence_id, table, plan, summary or _label(measure))
+            if built is not None:
+                drawn += 1
+                artifacts.append(("component", built))
+                continue
+            skipped.append(f"{auto}_native")
         chosen = data_program(evidence_id, table, summary)
-        if chosen is None:
+        if chosen is None or chosen[1] != "grid":
             continue
         program, auto = chosen
         drawn += 1
-        fallback = f"**{summary or _label(next(iter(shape(table)['measure']), 'Result'))}**"
+        fallback = f"**{summary or 'Result'}**"
         try:
-            blocks.append(await _block(program, {evidence_id: table}, fallback, auto))
+            artifacts.append(("ui", await _block(program, {evidence_id: table}, fallback, auto)))
         except UiValidationError:
             skipped.append(f"{auto}_validation")
-    return blocks, skipped
+    return artifacts, skipped
