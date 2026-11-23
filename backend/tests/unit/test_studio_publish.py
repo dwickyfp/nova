@@ -176,6 +176,39 @@ async def test_a_node_the_program_does_not_contain_is_refused(monkeypatch):
             Locator("t1", "m1", "content-2", {**BAR_NODE, "y": "revenue"}), ALICE)
 
 
+PLAN = {"visual": "bar", "dimensions": [{"field": "brand"}],
+        "measures": [{"field": "units", "aggregation": "sum"}],
+        "sort": {"field": "units", "direction": "desc"}, "top_n": 1}
+
+
+def _component_block(source):
+    return {"kind": "component", "content_id": "content-3", "component": "DatavizChart",
+            "version": 1, "props": {"title": "Units by brand", "chart": {}},
+            "plan": PLAN, "source": source}
+
+
+async def test_a_native_chat_chart_is_added_with_the_plan_it_was_drawn_from(monkeypatch):
+    source = {"statement_fingerprint": studio_results.fingerprint(
+        studio_results.normal_sql(SQL)), "database": "sales", "tool_call_id": "q1"}
+    monkeypatch.setattr(studio_results, "_message",
+                        _message([*TABLE_STEPS, _component_block(source)]))
+    preview = await studio_results.resolve(Locator("t1", "m1", "content-3"), ALICE)
+    assert preview.sql == SQL and preview.provenance == "tool_step"
+    assert preview.title == "Units by brand" and preview.columns == ["brand", "units"]
+    result = studio_publish.capability(preview)
+    assert result.status == "SUPPORTED" and result.chart == PLAN
+
+
+async def test_a_native_chat_chart_whose_query_differs_from_its_record_is_not_added(
+        monkeypatch):
+    source = {"statement_fingerprint": "0" * 64, "database": "sales", "tool_call_id": "q1"}
+    monkeypatch.setattr(studio_results, "_message",
+                        _message([*TABLE_STEPS, _component_block(source)]))
+    preview = await studio_results.resolve(Locator("t1", "m1", "content-3"), ALICE)
+    assert preview.sql is None
+    assert studio_publish.capability(preview).status != "SUPPORTED"
+
+
 # ── Capability ──────────────────────────────────────────────────────────────
 
 
@@ -570,6 +603,8 @@ def test_charts_are_built_from_the_dataset_fields():
     with pytest.raises(native.Refusal):
         studio_publish.build_native_chart(
             {"visual": "kpi", "measures": [{"field": "brand", "aggregation": "sum"}]}, **common)
+    top = studio_publish.build_native_chart(PLAN, **common)
+    assert top.top_n is not None and top.top_n.count == 1
 
 
 # ── HTTP contract ───────────────────────────────────────────────────────────

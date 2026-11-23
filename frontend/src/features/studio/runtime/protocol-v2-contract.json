@@ -276,6 +276,34 @@
           }
         },
         {
+          "event": "component",
+          "data": {
+            "component": "KpiTiles",
+            "version": 1,
+            "props": {
+              "items": [
+                {
+                  "label": "Revenue",
+                  "value": 12,
+                  "format": "number",
+                  "aggregation": "value",
+                  "evidence_id": "e1",
+                  "column": "revenue"
+                }
+              ]
+            },
+            "content_index": 3,
+            "content_id": "content-3"
+          }
+        },
+        {
+          "event": "content_block_done",
+          "data": {
+            "content_index": 3,
+            "content_id": "content-3"
+          }
+        },
+        {
           "event": "chart",
           "data": {
             "tool_call_id": "c1",
@@ -779,11 +807,25 @@
           "event": "part.start",
           "data": {
             "part_id": "run-a#11",
-            "type": "chart",
+            "type": "component",
             "block": {
-              "tool_call_id": "c1",
-              "chart_spec": "{\"mark\":\"bar\"}"
+              "component": "KpiTiles",
+              "version": 1,
+              "props": {
+                "items": [
+                  {
+                    "label": "Revenue",
+                    "value": 12,
+                    "format": "number",
+                    "aggregation": "value",
+                    "evidence_id": "e1",
+                    "column": "revenue"
+                  }
+                ]
+              }
             },
+            "content_index": 3,
+            "content_id": "content-3",
             "run_id": "run-a",
             "seq": 38
           }
@@ -798,20 +840,42 @@
           }
         },
         {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-a#12",
+            "type": "chart",
+            "block": {
+              "tool_call_id": "c1",
+              "chart_spec": "{\"mark\":\"bar\"}"
+            },
+            "run_id": "run-a",
+            "seq": 40
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-a#12",
+            "state": "done",
+            "run_id": "run-a",
+            "seq": 41
+          }
+        },
+        {
           "event": "suggestions",
           "data": {
             "suggestions": [
               "Break it down by region"
             ],
             "run_id": "run-a",
-            "seq": 40
+            "seq": 42
           }
         },
         {
           "event": "ping",
           "data": {
             "run_id": "run-a",
-            "seq": 41
+            "seq": 43
           }
         },
         {
@@ -825,7 +889,7 @@
               "total_tokens": 15
             },
             "run_id": "run-a",
-            "seq": 42
+            "seq": 44
           }
         }
       ]

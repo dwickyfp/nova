@@ -20,7 +20,7 @@ import {
   type SqlInspect, type SqlDatasetCreate,
   type ObjectDatasetUpdate, type SqlDatasetUpdate,
   type SemanticInspect, type SemanticDatasetCreate, type SemanticDatasetUpdate,
-  type DatasetPreviewRequest, type DatasetQueryRequest,
+  type DatasetPreviewRequest, type DatasetQueryRequest, type DatasetQueryResult,
 } from './contracts'
 
 type Collection = 'charts' | 'dashboards' | 'datasets'

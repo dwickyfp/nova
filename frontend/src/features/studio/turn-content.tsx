@@ -16,6 +16,7 @@ import { visibleContent } from "./turn-content-order";
 import { IntelligentUi } from "./intelligent-ui/renderer";
 import type { UiAction } from "./intelligent-ui/types";
 import { UI_CATALOG_VERSION } from "./intelligent-ui/catalog";
+import { ComponentView } from "./runtime/components/registry";
 
 /**
  * The canonical renderer for an agent turn's authored output.
@@ -86,9 +87,11 @@ export function TurnContent({
     datavizThreadId && turn.messageId && turn.state === "done"
       ? { thread_id: datavizThreadId, message_id: turn.messageId, content_id: contentId }
       : null;
+  // Once charts, figures or an interactive view show the answer, its tables
+  // are the source data behind them: folded below, one click away.
   const foldAll = ordered.some(
-    (item) => item.type === "ui" && item.complete &&
-      item.block.catalog_version === UI_CATALOG_VERSION,
+    (item) => item.type === "component" || (item.type === "ui" && item.complete &&
+      item.block.catalog_version === UI_CATALOG_VERSION),
   );
   const folded = (item: OrderedContent): boolean =>
     turn.state === "done" && item.type === "table" &&
@@ -96,6 +99,8 @@ export function TurnContent({
   const sourceTables = ordered.flatMap((item) =>
     item.type === "table" && folded(item) ? [item] : [],
   );
+  // A draft chart's rows are read from the stored turn, so it waits for it.
+  const stored = Boolean(turn.messageId) && turn.state === "done";
   const renderTable = (item: Extract<OrderedContent, { type: "table" }>) => (
     <ResultTable
       block={item.block}
@@ -206,6 +211,8 @@ export function TurnContent({
             )
           ) : item.type === "table" ? (
             renderTable(item)
+          ) : item.type === "component" ? (
+            <ComponentView block={item.block} ready={stored} dataviz={locate(item.id)} />
           ) : item.type === "chart" ? (
             <ResultChart block={item.block} dataviz={locate(item.id) ?? undefined} />
           ) : (

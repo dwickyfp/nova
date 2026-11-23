@@ -303,6 +303,44 @@ async def _resolve_notebook(locator: Locator, user: dict[str, Any]) -> ResolvedP
     )
 
 
+def _native_component(
+    locator: Locator, block: dict[str, Any], steps: list[dict], agent_id: str | None,
+) -> ResolvedPreview:
+    """A native ``DatavizChart`` drawn in the answer, with the plan it was drawn from."""
+    plan = block.get("plan")
+    source = block.get("source") if isinstance(block.get("source"), dict) else {}
+    if block.get("component") != "DatavizChart" or not isinstance(plan, dict):
+        raise PreviewError("Only charts in an answer can be added to Dataviz.")
+    producer = _producer(steps, tool_call_id=_string(source.get("tool_call_id")))
+    sql = _statement(producer)
+    origin: Literal["tool_step", "block_statement", "none"] = "tool_step" if sql else "none"
+    recorded = source.get("statement")
+    if not sql and isinstance(recorded, str) and re.match(r"^\s*(SELECT|WITH)\b", recorded,
+                                                         re.IGNORECASE):
+        sql, origin = recorded.strip(), "block_statement"
+    issue = None
+    if sql and fingerprint(normal_sql(sql)) != source.get("statement_fingerprint"):
+        issue, sql, origin = "The chart's recorded source differs from its query.", None, "none"
+    table = next((step for step in steps if step.get("kind") == "table" and producer
+                  and step.get("tool_call_id") == producer.get("tool_call_id")), None)
+    props = block.get("props") if isinstance(block.get("props"), dict) else {}
+    return ResolvedPreview(
+        locator=locator,
+        render_kind="chart",
+        title=str(props.get("title") or "Chart")[:256],
+        sql=sql,
+        provenance=origin,
+        producer_tool=(producer or {}).get("name"),
+        columns=[str(c) for c in (table or {}).get("columns") or []],
+        visualization={"kind": str(plan.get("visual") or "unknown"), "source": "native",
+                       "plan": plan},
+        semantic=(producer or {}).get("semantic_evidence"),
+        agent_id=agent_id,
+        provenance_issue=issue if issue else None if sql else
+        "The chart's producing query was not recorded.",
+    )
+
+
 async def resolve(locator: Locator, user: dict[str, Any]) -> ResolvedPreview:
     """Read the located result back from Nova's own record of it."""
     from app.modules.assistant.security import (
@@ -325,7 +363,7 @@ async def resolve(locator: Locator, user: dict[str, Any]) -> ResolvedPreview:
         step
         for step in steps
         if step.get("content_id") == locator.content_id
-        and step.get("kind") in ("table", "chart", "ui")
+        and step.get("kind") in ("table", "chart", "ui", "component")
     ]
     if len(blocks) != 1:
         raise PreviewError("That result is no longer in the conversation.")
@@ -349,6 +387,9 @@ async def resolve(locator: Locator, user: dict[str, Any]) -> ResolvedPreview:
             agent_id=agent_id,
             provenance_issue=None if sql else "The table's producing query was not recorded.",
         )
+
+    if kind == "component":
+        return _native_component(locator, block, steps, agent_id)
 
     if kind == "chart":
         viz_spec = _json(block.get("viz_spec"))

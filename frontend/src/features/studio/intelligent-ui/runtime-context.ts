@@ -1,6 +1,6 @@
 import { createContext } from "react";
 import type { DatavizLocator } from "../dataviz/api";
-import type { UiSource } from "./types";
+import type { UiNativeChart, UiSource } from "./types";
 
 /** A data view inside an answer, named the way its program names it. */
 export type UiDatavizTarget = NonNullable<DatavizLocator["node"]>;
@@ -17,4 +17,8 @@ export const UiRuntimeContext = createContext<{
   source?: UiSource;
   markAction: (id: string) => void;
   artifacts?: UiArtifacts;
+  /** Native charts for the program's `Chart` nodes. */
+  nativeCharts?: UiNativeChart[];
+  /** The answer is stored, so a native chart can read its governed rows. */
+  chartsReady?: boolean;
 }>({ readOnly: true, markAction: () => {} });

@@ -167,6 +167,9 @@ class DataToChartTool:
             component={
                 "name": "DatavizChart",
                 "props": props,
+                # The plan in result column names, so Add to Dataviz can draw the
+                # same chart over the saved dataset. Recorded, never sent.
+                "plan": plan,
                 "source": source_record(
                     evidence_id=evidence_id, sql=sql, database=database,
                     producer_tool_call_id=_producer(context, sql),
@@ -344,7 +347,6 @@ async def _native_chart(
 ) -> tuple[Any, str]:
     """The native chart over the caller's own statement, as a draft dataset."""
     from app.modules.viz.contracts.authoring import SqlInspect, SqlInspection, SqlSelection
-    from app.modules.viz.contracts.charts import TopN
     from app.modules.viz.contracts.datasets import DatasetDefinition
     from app.modules.viz.dataset_service import native_dataset_service
     from app.modules.viz.studio_drafts import DRAFT_REVISION, draft_dataset_id
@@ -370,7 +372,6 @@ async def _native_chart(
         dataset_id=dataset_id, title=title[:256] or "Result", source=inspected.source,
         fields=inspected.fields, schema_fingerprint=inspected.schema_fingerprint,
     )
-    top_n = plan.pop("top_n", None)
     try:
         chart = build_native_chart(plan, title=title or "Chart",
                                    chart_id=uuid5(dataset_id, "chart"), dataset_id=dataset_id,
@@ -381,13 +382,6 @@ async def _native_chart(
         if exc.__class__.__name__ == "Refusal":
             raise _Refused(str(exc)) from None
         raise
-    encoding = chart.encoding
-    if top_n and getattr(encoding, "kind", None) in {"cartesian", "category"}:
-        dimension = (encoding.dimensions[0] if encoding.kind == "cartesian"
-                     else encoding.category)
-        measure = (encoding.measures[0] if encoding.kind == "cartesian" else encoding.measure)
-        chart = chart.model_copy(update={"top_n": TopN(dimension=dimension, measure=measure,
-                                                       count=int(top_n))})
     return chart, database
 
 
@@ -410,6 +404,7 @@ async def native_chart_component(
     return {
         "name": "DatavizChart",
         "props": {"title": chart.title, "chart": chart.model_dump(mode="json")},
+        "plan": dict(plan),
         "source": source_record(evidence_id=evidence_id, sql=sql, database=database,
                                 producer_tool_call_id=_producer(context, sql)),
     }

@@ -4552,6 +4552,8 @@ def _placed_component(
         return None
     if isinstance(source, dict):
         placed["source"] = source
+    if isinstance(payload.get("plan"), dict):
+        placed["plan"] = payload["plan"]
     return placed
 
 

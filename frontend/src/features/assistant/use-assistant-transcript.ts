@@ -14,6 +14,7 @@ import type {
   TurnState,
 } from "./types";
 import { answerSource, type AnswerSource } from "./types";
+import { parseComponentBlock, type ComponentBlock } from "../studio/runtime/components/block";
 
 /** One observed agentic step, kept so the block renders the whole trace. */
 export type ActivityStep = {
@@ -63,6 +64,7 @@ export type TranscriptMessage = AssistantMessage & {
 export type TranscriptBlock =
   | { kind: "table"; block: TableBlock }
   | { kind: "chart"; block: ChartBlock }
+  | { kind: "component"; block: ComponentBlock }
   | { kind: "citation"; block: CitationBlock }
   | {
       /** An interactive answer (Intelligence UI); its program streams in. */
@@ -106,6 +108,10 @@ export function restoredMessage(message: {
           ? { source_tool_call_id: step.source_tool_call_id }
           : {}),
       } as ChartBlock });
+    } else if (step.kind === "component") {
+      // A component the registry no longer draws is left out, not guessed.
+      const block = parseComponentBlock(step);
+      if (block) blocks.push({ kind: "component", block });
     } else if (step.kind === "citation" && Array.isArray(step.citations)) {
       for (const citation of step.citations as CitationBlock[]) {
         blocks.push({ kind: "citation", block: citation });
@@ -409,6 +415,8 @@ function applyEvent(
       return appendBlock(state, { kind: "table", block: event.payload });
     case "chart":
       return appendBlock(state, { kind: "chart", block: event.payload });
+    case "component":
+      return appendBlock(state, { kind: "component", block: event.block });
     case "citation":
       return appendBlock(state, { kind: "citation", block: event.payload });
     case "suggestions":

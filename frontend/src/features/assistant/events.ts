@@ -9,6 +9,7 @@ import type {
   WorkflowProvenance,
 } from "./types";
 import { answerSource } from "./types";
+import { parseComponentBlock } from "../studio/runtime/components/block";
 
 /**
  * Parses one SSE frame into a typed event. Returns null for frames the client
@@ -181,6 +182,10 @@ export function parseAssistantEvent(
         return parseTable(record);
       case "chart":
         return parseChart(record);
+      case "component": {
+        const block = parseComponentBlock(record);
+        return block ? { type: "component", block, ...contentPosition(record) } : null;
+      }
       case "citation":
         return parseCitation(record);
       case "suggestions": {

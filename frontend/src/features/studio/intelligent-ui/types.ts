@@ -1,6 +1,18 @@
 import type { EvidenceRows } from "./catalog";
 import type { UiValidation } from "./validator";
 
+/**
+ * A native Dataviz chart for one `Chart` node of the program, bound to the
+ * governed query of the result it draws. `node` names the node by its
+ * arguments; a null argument matches any value.
+ */
+export type UiNativeChart = {
+  node: { x?: unknown; y?: unknown; type?: unknown; title?: unknown };
+  title: string;
+  chart: Record<string, unknown>;
+  draft_ref?: string;
+};
+
 export type UiBlock = {
   catalog_version: string;
   program_sha256: string;
@@ -21,6 +33,8 @@ export type UiBlock = {
     /** The statement behind a result another participant fetched (no tool call here). */
     statements?: Record<string, string>;
   };
+  /** Native charts for the program's evidence-bound `Chart` nodes, in order. */
+  charts?: UiNativeChart[];
 };
 /** Where a turn's interactive answer is stored, for Dataviz references. */
 export type UiDatavizSource = {

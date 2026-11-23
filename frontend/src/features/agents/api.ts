@@ -842,6 +842,16 @@ export type TraceStep =
       presmodel?: import("../viz/types").PresModel | null;
       source_tool_call_id?: string;
     }
+  /** A registry component the answer showed (native chart, KPI tiles, map). */
+  | {
+      kind: "component";
+      content_index: number;
+      content_id: string;
+      tool_call_id?: string | null;
+      component: string;
+      version: number;
+      props: Record<string, unknown>;
+    }
   /** A dashboard artifact the turn created, replayable from Artifacts. */
   | ({ kind: "dashboard"; content_index: number; content_id: string } & import("../viz/types").DashboardArtifactBlock)
   /** Sources a semantic search cited. */

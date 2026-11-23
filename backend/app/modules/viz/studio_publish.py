@@ -327,6 +327,10 @@ def capability(preview: ResolvedPreview) -> Capability:
         return _unknown("NO_PROVENANCE",
                         preview.provenance_issue or "The query behind this result was not "
                         "recorded, so Dataviz cannot keep it up to date.")
+    if preview.visualization.get("source") == "native":
+        plan = preview.visualization.get("plan")
+        return _supported(dict(plan)) if isinstance(plan, dict) else _unknown(
+            "CHART_SPEC_INVALID", "The chart's stored definition cannot be read.")
     if preview.render_kind == "chart" and preview.locator.node is not None:
         return _ui_chart(preview)
     if preview.render_kind == "chart":
@@ -637,6 +641,19 @@ def short_title(asked: str | None, answer_title: str | None, chart: dict[str, An
     return title or "Chart"
 
 
+def _with_top_n(chart: Any, top_n: Any) -> Any:
+    """Keep only the largest ``top_n`` categories of a bar, line, area or pie."""
+    from app.modules.viz.contracts.charts import TopN
+
+    encoding = chart.encoding
+    if not top_n or getattr(encoding, "kind", None) not in {"cartesian", "category"}:
+        return chart
+    dimension = encoding.dimensions[0] if encoding.kind == "cartesian" else encoding.category
+    measure = encoding.measures[0] if encoding.kind == "cartesian" else encoding.measure
+    return chart.model_copy(update={"top_n": TopN(dimension=dimension, measure=measure,
+                                                  count=int(top_n))})
+
+
 def build_native_chart(
     plan: dict[str, Any], *, title: str, chart_id: UUID, dataset_id: UUID, revision: int,
     dataset: Any,
@@ -662,6 +679,7 @@ def build_native_chart(
         return {"field": item["field"], "date_grain": grain}
 
     shaped = dict(plan)
+    top_n = shaped.pop("top_n", None)
     if shaped.get("dimensions"):
         shaped["dimensions"] = [dimension(item) for item in shaped["dimensions"]]
     if plan["visual"] != "table":
@@ -670,8 +688,9 @@ def build_native_chart(
         except ValidationError:
             raise PublishError("This chart cannot be drawn in Dataviz as it is.",
                                code="NOT_REPRESENTABLE") from None
-        return build_chart(spec, chart_id=chart_id, dataset_id=dataset_id, revision=revision,
-                           dataset=dataset)
+        chart = build_chart(spec, chart_id=chart_id, dataset_id=dataset_id, revision=revision,
+                            dataset=dataset)
+        return _with_top_n(chart, top_n)
     dims = tuple(fields.dimension(DimensionArg.model_validate(item))
                  for item in shaped.get("dimensions") or [])
     from app.modules.agents.tools.native_dataviz import MeasureArg

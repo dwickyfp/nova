@@ -1,5 +1,4 @@
 import { useContext, useMemo, useState } from "react";
-import { useStateField } from "@openuidev/react-lang";
 import { Button } from "@/components/ui/button";
 import {
   MapArc,
@@ -20,6 +19,7 @@ import { MapSurface } from "./map-surface";
 import { UiRuntimeContext } from "./runtime-context";
 import LegacyGeoMap from "./geo-map-legacy";
 import RouteStopsMap from "./route-stops-map";
+import { useMapField } from "./map-state";
 
 export default function GeoMap({ p }: { p: Record<string, unknown> }) {
   if (!MAPCN_ENABLED) return <LegacyGeoMap p={p} />;
@@ -77,8 +77,8 @@ function MapcnGeoMap({ p }: { p: Record<string, unknown> }) {
     [data],
   );
   const bounds = useMemo(() => geoBounds(data.collection.features), [data]);
-  const selected = useStateField("selected", p.selected);
-  const viewport = useStateField("viewport", p.viewport);
+  const selected = useMapField("selected", p.selected);
+  const viewport = useMapField("viewport", p.viewport);
   const { readOnly } = useContext(UiRuntimeContext);
   const [error, setError] = useState(false);
   const [loaded, setLoaded] = useState(false);

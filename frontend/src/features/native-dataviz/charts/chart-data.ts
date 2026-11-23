@@ -8,9 +8,13 @@ import { applyCalculations } from './calculations'
 import { cellNumber, chartQueryShape, ChartQueryError, combineFilters } from './chart-query'
 import { capacityDelay, capacityRetry, queuedQuery } from './query-queue'
 
-export function queryError(error: unknown): string {
+/** Refusals a Studio draft chart explains in its own words: owner, role and record checks. */
+const DRAFT_REFUSALS = new Set([404, 409, 422])
+
+export function queryError(error: unknown, source: 'dataset' | 'draft' = 'dataset'): string {
   if (error instanceof ChartQueryError) return error.message
   if (error instanceof ApiError) {
+    if (source === 'draft' && DRAFT_REFUSALS.has(error.status) && error.message) return error.message
     if ([401, 403, 404].includes(error.status)) return 'This data is unavailable with your current role.'
     if (error.status === 409) return 'The data source changed since this chart was saved. Someone who can edit the dashboard can review it in the Data tab.'
     if (error.status === 413) return 'The result is too large. Reduce the row limit or add a filter.'
@@ -24,6 +28,8 @@ export function queryError(error: unknown): string {
 
 type ChartRequestInput = {
   chart: ChartDefinition; draft: boolean; context?: FilterTree; parameters?: ParameterInput[]
+  /** A Studio answer's unsaved chart: its rows come from the draft query, never a saved dataset. */
+  draftRef?: string
 }
 
 /** One server page of a table: where it starts, how many rows, and a viewer's column sort. */
@@ -55,13 +61,14 @@ export function chartRequest({ chart, draft, context, parameters }: ChartRequest
 const SHOWN_ROWS_STALE_TIME = 30_000
 
 /** One cache entry per chart request, shared by the chart and its downloads. */
-export function chartDataQuery(epoch: number, chart: ChartDefinition, request: NonNullable<ReturnType<typeof chartRequest>>) {
+export function chartDataQuery(epoch: number, chart: ChartDefinition, request: NonNullable<ReturnType<typeof chartRequest>>,
+  draftRef?: string) {
   return {
-    queryKey: ['native-dataviz', 'chart-data', epoch, chart.dataset_id, JSON.stringify(request),
+    queryKey: ['native-dataviz', 'chart-data', epoch, sourceKey(chart, draftRef), JSON.stringify(request),
       JSON.stringify(chart.table_calculations ?? [])],
     // Table calculations run on the governed result, so charts, downloads and print agree.
     queryFn: ({ signal }: { signal: AbortSignal }) =>
-      queuedQuery(() => nativeDocuments(epoch).queryDataset(chart.dataset_id, request), signal)
+      queuedQuery(() => readRows(epoch, chart, request, draftRef), signal)
         .then(result => applyCalculations(chart, result)),
     retry: capacityRetry,
     retryDelay: capacityDelay,
@@ -72,8 +79,20 @@ export function chartDataQuery(epoch: number, chart: ChartDefinition, request: N
 
 /** Rows for a download: always read again, so a file never holds rows the current policy hides. */
 export function freshChartData(client: QueryClient, epoch: number, chart: ChartDefinition,
-  request: NonNullable<ReturnType<typeof chartRequest>>) {
-  return client.fetchQuery({ ...chartDataQuery(epoch, chart, request), staleTime: 0 })
+  request: NonNullable<ReturnType<typeof chartRequest>>, draftRef?: string) {
+  return client.fetchQuery({ ...chartDataQuery(epoch, chart, request, draftRef), staleTime: 0 })
+}
+
+function sourceKey(chart: ChartDefinition, draftRef?: string) {
+  return draftRef ? `draft:${draftRef}` : chart.dataset_id
+}
+
+function readRows(epoch: number, chart: ChartDefinition, request: NonNullable<ReturnType<typeof chartRequest>>,
+  draftRef?: string) {
+  const documents = nativeDocuments(epoch)
+  return draftRef
+    ? documents.queryDraftChart(draftRef, chart.dataset_id, request)
+    : documents.queryDataset(chart.dataset_id, request)
 }
 
 /** The same governed request narrowed to one page; a viewer sort replaces the chart's. */
@@ -93,15 +112,15 @@ export function totalsRequest(request: NonNullable<ReturnType<typeof chartReques
   return { ...rest, limit: 1 }
 }
 
-export function useChartData({ chart, draft, context, parameters, page }: ChartRequestInput & { page?: TablePage | null }) {
+export function useChartData({ chart, draft, context, parameters, page, draftRef }: ChartRequestInput & { page?: TablePage | null }) {
   const epoch = useAuthStore(state => state.securityEpoch)
   const request = useMemo(() => {
     const full = chartRequest({ chart, draft, context, parameters })
     return full && page ? pagedRequest(full, page) : full
   }, [chart, draft, context, parameters, page])
-  const options = request ? chartDataQuery(epoch, chart, request) : null
+  const options = request ? chartDataQuery(epoch, chart, request, draftRef) : null
   return useQuery({
-    queryKey: options?.queryKey ?? ['native-dataviz', 'chart-data', epoch, chart.dataset_id, 'null'],
+    queryKey: options?.queryKey ?? ['native-dataviz', 'chart-data', epoch, sourceKey(chart, draftRef), 'null'],
     queryFn: options?.queryFn ?? (() => Promise.reject(new Error('unreachable'))),
     enabled: request !== null,
     placeholderData: keepPreviousData,
@@ -132,16 +151,15 @@ export function remainderOf(result: DatasetQueryResult, totals: DatasetQueryResu
   return rest > 0 ? rest : null
 }
 
-export function useTableTotals({ chart, draft, context, parameters, enabled }: ChartRequestInput & { enabled: boolean }) {
+export function useTableTotals({ chart, draft, context, parameters, enabled, draftRef }: ChartRequestInput & { enabled: boolean }) {
   const epoch = useAuthStore(state => state.securityEpoch)
   const request = useMemo(() => {
     const full = chartRequest({ chart, draft, context, parameters })
     return full ? totalsRequest(full) : null
   }, [chart, draft, context, parameters])
   return useQuery({
-    queryKey: ['native-dataviz', 'chart-totals', epoch, chart.dataset_id, JSON.stringify(request)],
-    queryFn: ({ signal }) =>
-      queuedQuery(() => nativeDocuments(epoch).queryDataset(chart.dataset_id, request!), signal),
+    queryKey: ['native-dataviz', 'chart-totals', epoch, sourceKey(chart, draftRef), JSON.stringify(request)],
+    queryFn: ({ signal }) => queuedQuery(() => readRows(epoch, chart, request!, draftRef), signal),
     enabled: enabled && request !== null,
     retry: capacityRetry,
     retryDelay: capacityDelay,
