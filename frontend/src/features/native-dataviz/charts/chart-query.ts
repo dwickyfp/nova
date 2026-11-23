@@ -159,11 +159,15 @@ export function periodEnd(from: string, grain: DateGrain): string {
 }
 
 /** A field name as people read it: `order_date` → `Order date`. Names with spaces or capitals stay as written. */
+const ACRONYMS = new Set(['id', 'ids', 'sku', 'url', 'api', 'kpi', 'gmv', 'aov', 'roi', 'vat', 'nik', 'npwp'])
+
 export function humanize(name: string): string {
   // A qualified engine name (`table.column`) is labelled by its column.
   if (/^[a-z0-9_]+(\.[a-z0-9_]+)+$/.test(name)) name = name.slice(name.lastIndexOf('.') + 1)
   if (!/^[a-z0-9_]+$/.test(name)) return name
-  const words = name.split('_').filter(Boolean).join(' ')
+  // Initialisms read as such: `customer_id` is "Customer ID", not "Customer id".
+  const words = name.split('_').filter(Boolean)
+    .map(word => ACRONYMS.has(word) ? word.toUpperCase() : word).join(' ')
   return words ? words[0].toUpperCase() + words.slice(1) : name
 }
 

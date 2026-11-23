@@ -37,19 +37,20 @@ class ToolOutcome:
     ``summary`` is what the panel shows (row/affected count or a status line).
     It must never carry rows or credential-shaped values.
 
-    ``table`` / ``chart`` / ``citations`` are optional **structured** payloads
-    the loop turns into ``table`` / ``chart`` / ``citation`` SSE frames, so the
-    chat can render data instead of only prose. They are redacted by the tool
-    before they are set; the loop does not inspect them. ``table`` is
-    ``{"title", "columns", "rows"}``; ``chart`` is ``{"chart_spec"}`` where
-    ``chart_spec`` is a Vega-Lite v5 JSON string.
+    ``table`` / ``component`` / ``citations`` are optional **structured**
+    payloads the loop turns into ``table`` / ``component`` / ``citation`` SSE
+    frames, so the chat can render data instead of only prose. They are
+    redacted by the tool before they are set. ``table`` is
+    ``{"title", "columns", "rows"}``; ``component`` is a Studio registry
+    component ``{"name", "props", "source"?}`` whose props match
+    ``ui_components.json`` (``source`` stays on the server-side trace).
     """
 
     ok: bool
     summary: str
     error: str | None = None
     table: dict[str, Any] | None = None
-    chart: dict[str, Any] | None = None
+    component: dict[str, Any] | None = None
     citations: list[dict[str, Any]] | None = None
     #: Bounded, credential-free observability metadata owned by the tool. The
     #: loop stores it on the matching tool step but never sends it to the model.

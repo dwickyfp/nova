@@ -1,0 +1,290 @@
+{
+  "version": "nova-components-1",
+  "components": {
+    "DatavizChart": {
+      "version": 1,
+      "description": "A native Dataviz chart bound to the governed query behind a verified result.",
+      "props": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "chart": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "draft_ref": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "title",
+          "chart",
+          "draft_ref"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "KpiTiles": {
+      "version": 1,
+      "description": "Headline numbers read from verified result rows.",
+      "props": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "items": {
+            "minItems": 1,
+            "maxItems": 6,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "format": {
+                  "default": "number",
+                  "type": "string",
+                  "enum": [
+                    "number",
+                    "currency",
+                    "percent"
+                  ]
+                },
+                "currency": {
+                  "type": "string",
+                  "pattern": "^[A-Z]{3}$"
+                },
+                "decimals": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 6
+                },
+                "aggregation": {
+                  "type": "string",
+                  "enum": [
+                    "value",
+                    "sum",
+                    "avg",
+                    "min",
+                    "max",
+                    "count"
+                  ]
+                },
+                "evidence_id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                },
+                "column": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": [
+                "label",
+                "value",
+                "aggregation",
+                "evidence_id",
+                "column"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "GeoMap": {
+      "version": 1,
+      "description": "A map of the locations in a verified result.",
+      "props": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "evidence_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+          },
+          "longitude": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "latitude": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "geometry": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "rows": {
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          }
+        },
+        "required": [
+          "title",
+          "evidence_id",
+          "rows"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "tools": {
+    "data_to_chart": {
+      "description": "Show a verified data result as a native Dataviz chart or as headline KPI tiles. Name the visual and the exact result columns (x, y); Nova reads every value from the result and binds the chart to its governed query. Call it after a query, or for a follow-up about the preceding result. Do not call it before a data result exists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "intent": {
+            "description": "What the view should show, e.g. 'revenue by month'. Used when no fields are given.",
+            "type": "string",
+            "maxLength": 1000
+          },
+          "evidence_id": {
+            "description": "The verified result to show; defaults to the latest data result.",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+          },
+          "title": {
+            "description": "A short business title, e.g. 'Revenue by month'.",
+            "type": "string",
+            "maxLength": 120
+          },
+          "visual": {
+            "description": "bar: rankings and comparisons. line or area: trends over time. pie: share of a whole with few parts. kpi: headline numbers from the result. auto: let Nova choose.",
+            "type": "string",
+            "enum": [
+              "auto",
+              "bar",
+              "line",
+              "area",
+              "pie",
+              "scatter",
+              "table",
+              "kpi"
+            ]
+          },
+          "x": {
+            "description": "The category or date column, spelled exactly as in the result.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "date_grain": {
+            "description": "For a date x: the period each point stands for.",
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month",
+              "quarter",
+              "year"
+            ]
+          },
+          "y": {
+            "description": "The measure columns. For kpi, each becomes one tile.",
+            "minItems": 1,
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "aggregation": {
+            "description": "How rows that share an x value combine. Defaults to sum.",
+            "type": "string",
+            "enum": [
+              "sum",
+              "avg",
+              "min",
+              "max",
+              "count",
+              "count_distinct"
+            ]
+          },
+          "color": {
+            "description": "A second category that splits the series.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "sort": {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "direction": {
+                "type": "string",
+                "enum": [
+                  "asc",
+                  "desc"
+                ]
+              }
+            },
+            "required": [
+              "field",
+              "direction"
+            ],
+            "additionalProperties": false
+          },
+          "top_n": {
+            "description": "Keep only the largest N categories.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

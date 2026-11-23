@@ -1,5 +1,4 @@
 import { useContext, useEffect, useMemo, useState } from "react";
-import { useStateField } from "@openuidev/react-lang";
 import {
   MapMarker,
   MapPopup,
@@ -14,6 +13,7 @@ import { MapSurface } from "./map-surface";
 import { caption, routeGroups, type RouteGroup } from "./route-data";
 import { roadRoute, type RoadRoute } from "./route-road";
 import { UiRuntimeContext } from "./runtime-context";
+import { useMapField } from "./map-state";
 
 /** Numbered markers stay readable up to this many stops; beyond it they are dots. */
 const NUMBERED_STOPS = 80;
@@ -91,8 +91,8 @@ export default function RouteStopsMap({
       ),
     [routes],
   );
-  const selected = useStateField("selected", p.selected);
-  const viewport = useStateField("viewport", p.viewport);
+  const selected = useMapField("selected", p.selected);
+  const viewport = useMapField("viewport", p.viewport);
   const { readOnly } = useContext(UiRuntimeContext);
   const [error, setError] = useState(false);
   const [loaded, setLoaded] = useState(false);

@@ -438,6 +438,28 @@ measures-only query over all matching rows. Tables with table calculations and
 all downloads still read the full `row_limit` result. Conditional-format ranges
 on a paged table are computed from the page on screen.
 
+### Studio draft charts
+
+A chart in a Studio answer is a native `ChartDefinition` over a draft dataset
+that is never stored as a document. The dataset id is
+`uuid5(draft-namespace, thread + producing tool call)`. Revision 1 and the
+field ids come from inspecting the answer's statement as the caller, the same
+way SQL dataset authoring does. `NativeDatasetService.query_statement` serves
+`POST /agents/studio/dataviz/drafts/{ref}/query`:
+
+- It re-inspects the statement as the caller.
+- It plans the aggregate over it with the shared planner.
+- It executes the plan under the same admission, capacity, 30-second timeout,
+  held engine session, 4 MiB sink and source fingerprint check (`SCHEMA_STALE`)
+  as any dataset query.
+
+The statement comes only from Nova's record of the caller's own message, never
+from the client. `viz/studio_drafts.py` owns the signed reference, the owner,
+role and fingerprint checks, and the per-query audit record. In the browser,
+`NativeChart` takes a `draftRef` and reads through
+`nativeDocuments().queryDraftChart`, with the same result checks and cache
+keys per source.
+
 ### Next required source boundaries
 
 Dashboard definitions now include an optional bounded `datasets` registry of

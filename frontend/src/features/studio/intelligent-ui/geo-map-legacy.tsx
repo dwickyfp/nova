@@ -1,11 +1,11 @@
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
-import { useStateField } from "@openuidev/react-lang";
 import type { Map as MapLibreMap, GeoJSONSource } from "maplibre-gl";
 import mapWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import { useTheme } from "@/context/theme-provider";
 import { Button } from "@/components/ui/button";
 import { geoBounds, geoFeatures } from "./geometry";
 import { UiRuntimeContext } from "./runtime-context";
+import { useMapField } from "./map-state";
 
 export default function GeoMap({ p }: { p: Record<string, unknown> }) {
   const rows = useMemo(() => Array.isArray(p.data) ? p.data as Record<string, unknown>[] : [], [p.data]);
@@ -14,7 +14,7 @@ export default function GeoMap({ p }: { p: Record<string, unknown> }) {
     geometry: p.geometry as string | undefined, label: p.label as string | undefined,
   }), [p.longitude, p.latitude, p.geometry, p.label]);
   const data = useMemo(() => geoFeatures(rows, fields), [rows, fields]);
-  const selected = useStateField("selected", p.selected);
+  const selected = useMapField("selected", p.selected);
   const { readOnly } = useContext(UiRuntimeContext);
   const [error, setError] = useState(false);
   const [loaded, setLoaded] = useState(false);

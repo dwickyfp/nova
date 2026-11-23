@@ -215,6 +215,29 @@ async def test_evidence_transport_reports_omitted_rows(count):
     assert block["provenance"]["omitted_rows"] == max(0, count - 200)
 
 
+async def _draft(evidence_id, table, plan, title):
+    return {"name": "DatavizChart",
+            "props": {"title": title, "chart": {"visual": plan["visual"], "plan": plan}},
+            "source": {"evidence_id": evidence_id}}
+
+
+async def test_program_charts_of_derived_rows_or_without_a_query_are_refused():
+    derived = ('root = Col([Chart(@Filter(@Evidence("e1"),"region","==","East"),'
+               '"region","revenue")])')
+    with pytest.raises(ui.UiValidationError, match="cannot be drawn natively"):
+        await ui.native_charts(derived, TABLES, _draft)
+
+    async def no_query(*_args):
+        return None
+
+    with pytest.raises(ui.UiValidationError, match="no governed query"):
+        await ui.native_charts('root = Col([Chart(@Evidence("e1"),"region","revenue")])',
+                               TABLES, no_query)
+    # A what-if chart of computed values has no business result to bind.
+    simulated = 'root = Col([Chart([{a:"x",b:1}],"a","b","bar")])'
+    assert await ui.native_charts(simulated, {}, None, business=False) == []
+
+
 async def test_official_parser_validates_functional_programs_and_bound_evidence():
     result = await ui.parse_program(CALCULATOR)
     assert result["state"] == {"$units": 5}
@@ -229,11 +252,20 @@ async def test_official_parser_validates_functional_programs_and_bound_evidence(
         question="Show regional revenue",
         claims=None,
         language="en",
+        chart=_draft,
     )
     assert block["evidence"] == {
         "e1": [{"region": "East", "revenue": 42}, {"region": "West", "revenue": 58}]
     }
     assert block["provenance"]["evidence_ids"] == ["e1"]
+    # The program's chart is a native Dataviz draft over the result's query.
+    assert block["charts"] == [{
+        "node": {"x": "region", "y": "revenue", "type": None, "title": None},
+        "title": "Chart", "chart": {"visual": "bar", "plan": {
+            "visual": "bar", "dimensions": [{"field": "region"}],
+            "measures": [{"field": "revenue", "aggregation": "sum"}]}},
+        "source": {"evidence_id": "e1"},
+    }]
     filtered = await ui.parse_program(
         'root = Col([Chart(@Filter(@Evidence("e1"),"region","==",$region),'
         '"region","revenue")])\n$region="East"',

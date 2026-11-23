@@ -28,8 +28,8 @@ Event                  Payload
 =====================  =====================================================
 
 Part types are ``reasoning``, ``text``, ``tool``, ``guard``, ``hitl_request``
-and the authored content blocks ``table``, ``chart``, ``citation``,
-``dashboard`` and ``ui``.
+and the authored content blocks ``table``, ``chart``, ``component``,
+``citation``, ``dashboard`` and ``ui``.
 
 A ``reasoning`` part has a ``source``: ``nova`` for Nova's own phase labels,
 ``model`` for the provider's reasoning summary (opened with empty text, grown
@@ -86,7 +86,8 @@ V1_ONLY = frozenset({
     events.EVENT_TEXT_DELTA, events.EVENT_THINKING, events.EVENT_PLAN, events.EVENT_TOOL_CALL,
     events.EVENT_TOOL_PROGRESS, events.EVENT_TOOL_STATUS, events.EVENT_TOOL_DETAIL,
     events.EVENT_CONTENT_BLOCK_DONE, events.EVENT_DONE, events.EVENT_ERROR, events.EVENT_TABLE,
-    events.EVENT_CHART, events.EVENT_CITATION, "ui", "ui_delta", "dashboard", "guard",
+    events.EVENT_CHART, events.EVENT_CITATION, events.EVENT_COMPONENT, "ui", "ui_delta",
+    "dashboard", "guard",
     "role_changed", "evidence_health", "evidence_envelope",
     events.EVENT_INPUT_REQUIRED, events.EVENT_INPUT_RESOLVED,
     events.EVENT_MODEL_REASONING, events.EVENT_NARRATION,
@@ -106,6 +107,7 @@ _TERMINAL_TOOL = frozenset({"done", "failed", "denied", "cancelled"})
 _CONTENT_TYPES = {
     events.EVENT_TABLE: "table",
     events.EVENT_CHART: "chart",
+    events.EVENT_COMPONENT: "component",
     events.EVENT_CITATION: "citation",
     "dashboard": "dashboard",
 }

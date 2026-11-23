@@ -24,6 +24,7 @@ import type { GuardDecision } from "@/features/agents/api";
 import type { DashboardArtifactBlock } from "@/features/viz/types";
 import type { UiBlock } from "../intelligent-ui/types";
 import { hitlStatus, parseHitlRequest } from "./hitl/parse";
+import { parseComponentBlock, type ComponentBlock } from "./components/block";
 import type { HitlKind, HitlRequestSpec, HitlStatus } from "./hitl/types";
 
 export const PROTOCOL_VERSION = 2;
@@ -65,6 +66,7 @@ export type PartStartFields =
     }
   | { type: "table"; block: TableBlock & { tool_call_id?: string }; contentIndex?: number; contentId?: string }
   | { type: "chart"; block: ChartBlock; contentIndex?: number; contentId?: string }
+  | { type: "component"; block: ComponentBlock; contentIndex?: number; contentId?: string }
   | { type: "citation"; block: CitationBlock; contentIndex?: number; contentId?: string }
   | { type: "dashboard"; block: DashboardArtifactBlock; contentIndex?: number; contentId?: string }
   | { type: "ui"; block: Omit<UiBlock, "program">; contentIndex?: number; contentId?: string };
@@ -131,7 +133,7 @@ const AUX = new Set([
 ]);
 
 const PART_TYPES = new Set([
-  "reasoning", "text", "tool", "guard", "hitl_request", "table", "chart", "citation", "dashboard", "ui",
+  "reasoning", "text", "tool", "guard", "hitl_request", "table", "chart", "component", "citation", "dashboard", "ui",
 ]);
 const HITL_KINDS = new Set(["approval", "question", "form", "choice"]);
 
@@ -215,6 +217,11 @@ function partStart(data: Record<string, unknown>): PartStartFields | null {
     case "chart": {
       const chart = nested("chart", data.block);
       return chart ? { type, block: chart.payload, ...position(data) } : null;
+    }
+    case "component": {
+      // Checked against the registry schemas the server validated it with.
+      const block = parseComponentBlock(data.block);
+      return block ? { type, block, ...position(data) } : null;
     }
     case "citation": {
       const citation = nested("citation", data.block);

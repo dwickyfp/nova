@@ -27,7 +27,8 @@ async def test_bound_model_chart_uses_semantic_query_before_chart(monkeypatch):
             "properties": {"intent": {"type": "string"}},
             "required": ["intent"],
         },
-        chart={"chart_spec": '{"mark":"line"}'},
+        component={"name": "DatavizChart",
+                   "props": {"title": "Monthly trend", "chart": {"visual": "line"}}},
     )
     registry = ToolRegistry()
     registry.register(semantic)

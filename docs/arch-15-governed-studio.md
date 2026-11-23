@@ -44,7 +44,7 @@ monotonic `seq`; part ids are `<run_id>#<n>` in production order (content blocks
 | Event | Payload | Meaning |
 | --- | --- | --- |
 | `run.started` | `protocol_version`, `role` | First event of every run |
-| `part.start` | `part_id`, `type`, type fields | Opens a part: `reasoning` (`source`: `nova` with `phase`, `model`, or `narration`), `text` (`verification?`: `verified`, `adjusted`), `tool`, `guard`, `table`, `chart`, `citation`, `dashboard`, `ui` |
+| `part.start` | `part_id`, `type`, type fields | Opens a part: `reasoning` (`source`: `nova` with `phase`, `model`, or `narration`), `text` (`verification?`: `verified`, `adjusted`), `tool`, `guard`, `table`, `chart`, `component`, `citation`, `dashboard`, `ui` |
 | `part.delta` | `part_id`, `text`, `replace?` | Appends to (or replaces) a part's text or interactive program |
 | `part.end` | `part_id`, `state` (`done`, `error`, `cancelled`), `final?` | Seals a part |
 | `tool.status` | `part_id`, `status`, `preview?`, `progress?`, `detail?`, `evidence?` | A tool call's progress and result summary |
@@ -98,6 +98,59 @@ Answer text is not streamed before numeric verification. Once the loop has
 verified the answer, it is sent in sentence pieces on a `text` part carrying
 `verification`; the client reveals growing text at reading pace and memoises
 finished Markdown blocks so nothing above the growing block reflows.
+
+### Answer components
+
+Data answers are composed of registry components rather than free-form
+charts. One Zod source,
+[`runtime/components/schemas.ts`](../frontend/src/features/studio/runtime/components/schemas.ts),
+defines each component's props and the `data_to_chart` tool arguments.
+`pnpm components:bundle` exports it to JSON Schema in
+`backend/app/modules/assistant/ui_components.json`; `ui_components.py`
+validates every emitted component and every tool argument against that file
+and gives the model the same schema as its tool definition. CI runs
+`pnpm components:check`, so the three readers cannot drift.
+
+| Component | Built by | Data |
+| --- | --- | --- |
+| `DatavizChart` | `data_to_chart`, the deterministic composer, and evidence-bound `Chart` nodes of an OpenUI program | A native `ChartDefinition` over a draft dataset; rows come from the draft query below |
+| `KpiTiles` | `data_to_chart` (`visual: "kpi"`), the deterministic composer | Values read on the server from verified result rows; the model never writes them |
+| `GeoMap` | The deterministic composer for located results | Up to 200 redacted result rows; route maps stay OpenUI programs |
+
+A component reaches the client as a `component` content part
+(`{component, version, props}`) and is stored as a `kind: "component"` step.
+The client checks it against the same schemas and leaves out anything that does
+not match, instead of guessing. Older `chart` blocks replay unchanged and
+read-only. OpenUI programs remain for what-if views, route maps, media and
+layouts. A `Chart` node that draws a verified result is drawn as a
+`DatavizChart` (the block's `charts` list). A chart of rows the program derived
+is refused at composition. A chart of the program's own computed values is
+drawn from those values.
+
+Without an artifact marker, a data answer is ordered as: headline paragraph,
+KPI tiles, charts and views, the rest of the narrative, then tables and
+citations. The client folds the tables under **Source data** once a component
+or an interactive view shows the answer. Saving is never automatic. **Add to
+Dataviz** is an explicit action. It reuses the plan recorded on the
+component step.
+
+**Draft charts.** A `DatavizChart` carries a `draft_ref`. This is an HMAC over
+`{thread, content_id[, node]}`, bound to the caller's principal, and holds no
+SQL, rows or credentials
+([`viz/studio_drafts.py`](../backend/app/modules/viz/studio_drafts.py)).
+`POST /api/v1/agents/studio/dataviz/drafts/{ref}/query` verifies the
+signature. It then requires the thread to be the caller's and exactly one of
+the caller's assistant messages to hold that content, and checks that the
+message's security stamp matches the caller's current principal, active role
+and (within one sign-in) security-context version. The statement is read from
+Nova's record: the producing tool step, or the statement the component recorded
+when the result came from an earlier turn. Its fingerprint must match.
+`NativeDatasetService.query_statement` plans the aggregate over that statement
+and runs it through `QueryService` as the caller under the active role, with
+the dataset query timeout, row limit and capacity admission, so Ranger row
+filters and masks apply. Every query, allowed or refused, writes a
+`DRAFT_QUERY` audit record. The client reads a draft only after the turn is
+stored.
 
 ### Human-in-the-loop requests
 

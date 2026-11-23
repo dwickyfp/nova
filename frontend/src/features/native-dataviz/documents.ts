@@ -20,7 +20,7 @@ import {
   type SqlInspect, type SqlDatasetCreate,
   type ObjectDatasetUpdate, type SqlDatasetUpdate,
   type SemanticInspect, type SemanticDatasetCreate, type SemanticDatasetUpdate,
-  type DatasetPreviewRequest, type DatasetQueryRequest,
+  type DatasetPreviewRequest, type DatasetQueryRequest, type DatasetQueryResult,
 } from './contracts'
 
 type Collection = 'charts' | 'dashboards' | 'datasets'
@@ -253,18 +253,18 @@ export function nativeDocuments(securityEpoch: number) {
       const result = await send(`${resourcePath('datasets', id)}/query`, datasetQueryResultSchema, options, {
         method: 'POST', body,
       })
-      const expected = [
-        ...(body.dimensions ?? []).map((_, index) => `d${index}`),
-        ...(body.measures ?? []).map((_, index) => `m${index}`),
-      ]
-      if (result.dataset_id !== id.toLowerCase() || result.revision !== body.revision
-        || result.columns.map(column => column.key).join() !== expected.join()
-        || result.rows.length > (body.limit ?? 1000)
-        || result.rows.some(row => row.length !== result.columns.length || row.some((cell, i) =>
-          cell !== null && cell.type !== result.columns[i].logical_type))) {
-        throw new Error('Unexpected dataset query result')
-      }
-      return result
+      return checkedQueryResult(id, body, result)
+    },
+    /**
+     * A chart in a Studio answer that is not saved yet. `ref` names the chart in
+     * the caller's own conversation; the server reads its query from there and
+     * runs it as the caller under the active role.
+     */
+    async queryDraftChart(ref: string, datasetId: string, value: DatasetQueryRequest, options?: RequestOptions) {
+      const body = validated(datasetQueryRequestSchema, value, 'request')
+      const result = await send(`/agents/studio/dataviz/drafts/${encodeURIComponent(ref)}/query`,
+        datasetQueryResultSchema, options, { method: 'POST', body })
+      return checkedQueryResult(datasetId, body, result)
     },
     createChart(value: ChartCreate, operationId: string, options?: RequestOptions) {
       const body = validated(chartCreateSchema, value, 'request')
@@ -324,4 +324,20 @@ export function nativeDocuments(securityEpoch: number) {
       return receipt
     },
   }
+}
+
+/** A query result must answer the request it was sent for, column by column. */
+function checkedQueryResult(id: string, body: DatasetQueryRequest, result: DatasetQueryResult) {
+  const expected = [
+    ...(body.dimensions ?? []).map((_, index) => `d${index}`),
+    ...(body.measures ?? []).map((_, index) => `m${index}`),
+  ]
+  if (result.dataset_id !== id.toLowerCase() || result.revision !== body.revision
+    || result.columns.map(column => column.key).join() !== expected.join()
+    || result.rows.length > (body.limit ?? 1000)
+    || result.rows.some(row => row.length !== result.columns.length || row.some((cell, i) =>
+      cell !== null && cell.type !== result.columns[i].logical_type))) {
+    throw new Error('Unexpected dataset query result')
+  }
+  return result
 }

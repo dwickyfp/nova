@@ -12,6 +12,7 @@ import { IntelligentUi } from "@/features/studio/intelligent-ui/renderer";
 import type { UiAction } from "@/features/studio/intelligent-ui/types";
 import type { TranscriptMessage } from "./use-assistant-transcript";
 import type { AnswerSource } from "./types";
+import { ComponentView } from "@/features/studio/runtime/components/registry";
 
 export type MessageListProps = {
   messages: TranscriptMessage[];
@@ -229,6 +230,8 @@ function AnswerBlocks({
           <ResultTable key={`table-${index}`} block={item.block} />
         ) : item.kind === "chart" ? (
           <ResultChart key={`chart-${index}`} block={item.block} />
+        ) : item.kind === "component" ? (
+          <ComponentView key={`component-${index}`} block={item.block} ready={stored} />
         ) : item.kind === "ui" ? (
           message.turn_state === "cancelled" ||
           message.turn_state === "error" ||

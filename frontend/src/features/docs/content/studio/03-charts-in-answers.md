@@ -6,9 +6,22 @@ description: Read the charts and tables an agent draws in its answers, see the d
 ## What it is
 
 When an answer rests on data, the agent can draw it: a line chart for a trend,
-a bar chart for a comparison, a table, a single number, or a map. These views
-are drawn only from the rows the agent's query actually returned. The agent
-cannot type numbers into a chart by hand.
+a bar chart for a comparison, key figures, a table, or a map. Charts in answers
+are the same charts as in [Dataviz](/docs/dataviz/what-is-dataviz). They read
+their rows from the query behind the answer, as you and under your current
+role, so the same row filters and masked columns apply. Key figures are read
+from the returned rows. The agent cannot type numbers into a chart or a figure
+by hand.
+
+## How a data answer reads
+
+A data answer is laid out like a short report:
+
+1. One sentence with the main finding.
+2. The key figures, when the question asks for totals or a comparison.
+3. The charts.
+4. A short explanation of what the charts show.
+5. **Source data**, folded, with the tables the answer used.
 
 ## Ask for a chart
 
@@ -19,18 +32,19 @@ example, with a sales agent:
 Show net revenue per month from May to October 2026 as a line chart.
 ```
 
-The answer shows a short explanation, then the chart with its title (for
-example "Monthly net revenue (IDR), May–October 2026"). Months run in time
+The answer starts with its main finding, then shows the chart with its title
+(for example "Monthly net revenue (IDR), May–October 2026"). Months run in time
 order along the bottom and large values are shortened on the side axis (for
-example **1.6B** for 1.6 billion). The table and chart appear as the answer
-finishes; you do not need to reload the page.
+example **1.6B** for 1.6 billion). Hover over a point or bar to see its exact
+value. The chart fills in as the answer finishes; you do not need to reload
+the page.
 
 ## See the numbers behind a chart
 
-- Some answers show the result table directly above the chart. Use **Filter
-  rows** to find a value, or click a column heading to sort the table.
-- Interactive answers may instead offer **View chart data** or **Source data
-  (1 table)** to open the values behind the chart.
+- Open **Source data (1 table)** under the answer to see the rows behind its
+  charts. Use **Filter rows** to find a value, or click a column heading to
+  sort the table.
+- Answers without a chart show the result table directly.
 - Open the step summary at the top of the answer to see the SQL that produced
   the rows.
 
@@ -46,6 +60,14 @@ from **History**. To keep it as a live chart on a dashboard, use
 [Add an answer to Dataviz](/docs/studio/add-to-dataviz).
 
 ## Limits
+
+- A chart in an answer shows data only while you use the role you asked the
+  question with. After you switch roles, the chart says "This chart was made
+  under another role or session. Ask again under your current role to see
+  it." Ask the question again under the new role.
+- Only you can see the charts in your own conversations.
+- Charts in conversations from before this change still show as they were
+  drawn.
 
 - **Add to Dataviz** appears only on charts and tables that Nova can rebuild
   exactly in Dataviz. Maps, and views that combine or recalculate rows, do not

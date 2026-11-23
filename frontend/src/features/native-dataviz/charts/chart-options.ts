@@ -168,7 +168,11 @@ export function buildChartOption(chart: ChartDefinition, result: Result, tokens:
     // A split series is coloured by its name, so filtering others never repaints it.
     const colors = colorIndex >= 0 && base.length > 1 ? stableColors(series.map(item => item.name), base) : base
     const horizontal = encoding.orientation === 'horizontal'
-    const rotated = !horizontal && categories.length > 8
+    // Rotate only when the labels would collide in their bands: short labels
+    // (ids, codes) stay level however many there are.
+    const longest = categories.reduce((most, label) => Math.max(most, label.length), 0)
+    const band = width && categories.length ? (width - 56) / categories.length : 0
+    const rotated = !horizontal && (band ? longest * 7 + 8 > band : categories.length > 8)
     // A category axis title would collide with rotated labels, or with the labels
     // of a horizontal bar's vertical axis; the chart title names it instead.
     const categoryAxis = { ...axisBase(tokens), type: 'category', data: categories,
@@ -179,18 +183,31 @@ export function buildChartOption(chart: ChartDefinition, result: Result, tokens:
         ...(!horizontal && !rotated && width && categories.length
           ? { interval: 0, hideOverlap: false, overflow: 'truncate', width: Math.max(32, Math.floor((width - 56) / categories.length) - 4) }
           : {}) } }
+    // A value axis names its one measure unless the chart sets its own title.
+    const axisMeasure = (index: number) => {
+      if (colorIndex >= 0) return undefined
+      const own = series.flatMap((item, position) => item.axis === index ? [measureColumns[position]] : [])
+      if (own.length !== 1 || !own[0]) return undefined
+      // The field's label; the aggregation stays in the legend and tooltip.
+      return own[0].aggregation === 'count' && !own[0].field_id ? 'Rows' : humanize(own[0].name)
+    }
     const valueAxis = (index: number) => ({ ...axisBase(tokens), type: 'value', scale: false,
-      name: axisTitles ? (index === 0 ? chart.left_axis?.title : chart.right_axis?.title) ?? undefined : undefined,
+      name: axisTitles ? (index === 0 ? chart.left_axis?.title : chart.right_axis?.title) ?? axisMeasure(index) : undefined,
+      // Vertical: above the axis, aligned to it. Horizontal: centred under it.
+      ...(horizontal ? { nameLocation: 'middle', nameGap: 28 }
+        : { nameTextStyle: { align: index === 0 ? 'left' : 'right' } }),
       axisLabel: { ...axisBase(tokens).axisLabel, formatter: (value: number) => encoding.stack === 'percent' ? `${value}%` : formatNumber(value, 'compact') } })
     const hasRight = series.some(item => item.axis === 1)
     const valueAxes = hasRight ? [valueAxis(0), { ...valueAxis(1), splitLine: { show: false } }] : [valueAxis(0)]
+    const valueTitled = valueAxes.some(axis => axis.name)
     const bySeries = chosen !== null && series.some(item => chosen.has(item.name))
     return {
       ...common(tokens, style, series.length > 1),
       color: colors,
       tooltip: { ...tooltipTheme(tokens), trigger: 'axis', confine: true, axisPointer: { type: horizontal ? 'shadow' : 'line' },
         valueFormatter: (value: unknown) => typeof value === 'number' ? formatNumber(value) : '–' },
-      grid: { left: 8, right: 16, top: 24, bottom: (series.length > 1 ? 36 : 8) + (categoryAxis.name && !horizontal ? 20 : 0), outerBoundsMode: 'same', outerBoundsContain: 'axisLabel' },
+      grid: { left: 8, right: 16, top: valueTitled && !horizontal ? 32 : 24,
+        bottom: (series.length > 1 ? 36 : 8) + (categoryAxis.name && !horizontal ? 20 : 0) + (valueTitled && horizontal ? 20 : 0), outerBoundsMode: 'same', outerBoundsContain: 'axisLabel' },
       xAxis: horizontal ? valueAxes : categoryAxis,
       yAxis: horizontal ? categoryAxis : valueAxes,
       dataZoom: categories.length > 60 ? [{ type: 'inside' }] : undefined,

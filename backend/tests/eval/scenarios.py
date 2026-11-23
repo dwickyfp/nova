@@ -1150,7 +1150,8 @@ def scenario_follow_up_chart_reuses_previous_table() -> Scenario:
             "properties": {"intent": {"type": "string"}},
         },
         summary="chart built",
-        chart={"chart_spec": '{"mark":"bar"}'},
+        component={"name": "DatavizChart",
+                   "props": {"title": "Revenue by category", "chart": {"visual": "bar"}}},
     )
     prior_table = {
         "kind": "table",

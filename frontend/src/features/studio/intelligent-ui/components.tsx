@@ -31,6 +31,7 @@ import { ResultTable } from "../result-table";
 import { NodeDatavizAction } from "./artifact-button";
 import { PublicMedia } from "./media";
 import { UiRuntimeContext } from "./runtime-context";
+import type { UiNativeChart } from "./types";
 const DataChart = lazy(() => import("./data-chart"));
 const GeoMap = lazy(() => import("./geo-map"));
 type Props = Record<string, unknown>;
@@ -418,6 +419,60 @@ function HtmlView({ p }: { p: Props }) {
   );
 }
 
+const NativeDraftChart = lazy(() =>
+  import("../runtime/components/registry").then((module) => ({ default: module.DatavizChart })),
+);
+
+/** Whether a program `Chart` node is the one a native chart was drawn for. */
+function nodeMatches(node: UiNativeChart["node"], p: Props): boolean {
+  return (["x", "y", "type", "title"] as const).every(
+    (key) => node[key] == null || JSON.stringify(node[key]) === JSON.stringify(p[key]),
+  );
+}
+
+/**
+ * A chart in a program. A chart of a verified result is the native Dataviz
+ * chart over that result's governed query; a what-if chart of values the
+ * program computed is drawn from those values.
+ */
+function ProgramChart({ p }: { p: Props }) {
+  const { nativeCharts, chartsReady } = useContext(UiRuntimeContext);
+  const native = nativeCharts?.find((item) => item.draft_ref && nodeMatches(item.node, p));
+  // The chart code loads on first use. Hold the chart's own box (title row
+  // and plot) meanwhile, so the transcript does not jump when it lands.
+  const fallback = (
+    <p role="status" className="h-[18.25rem] text-sm text-muted-foreground">
+      Loading chart…
+    </p>
+  );
+  if (native?.draft_ref)
+    return (
+      <Suspense fallback={fallback}>
+        <NativeDraftChart
+          props={{ title: native.title, chart: native.chart, draft_ref: native.draft_ref }}
+          ready={Boolean(chartsReady)}
+          action={
+            <NodeDatavizAction
+              data={p.data}
+              target={{
+                component: "Chart",
+                x: typeof p.x === "string" ? p.x : undefined,
+                y: typeof p.y === "string" ? p.y : undefined,
+                type: typeof p.type === "string" ? p.type : undefined,
+                title: typeof p.title === "string" ? p.title : undefined,
+              }}
+            />
+          }
+        />
+      </Suspense>
+    );
+  return (
+    <Suspense fallback={fallback}>
+      <DataChart p={p} />
+    </Suspense>
+  );
+}
+
 export function UiNode({ name, p }: { name: string; p: Props }) {
   const render = useRenderNode();
   const content = () => render(p.children);
@@ -672,19 +727,7 @@ export function UiNode({ name, p }: { name: string; p: Props }) {
     case "Table":
       return <DataTable p={p} />;
     case "Chart":
-      return (
-        // The chart code loads on first use. Hold the chart's own box (title
-        // row and plot) meanwhile, so the transcript does not jump when it lands.
-        <Suspense
-          fallback={
-            <p role="status" className="h-[18.25rem] text-sm text-muted-foreground">
-              Loading chart…
-            </p>
-          }
-        >
-          <DataChart p={p} />
-        </Suspense>
-      );
+      return <ProgramChart p={p} />;
     case "Flashcard":
       return <Flashcard p={p} />;
     case "Celebration":

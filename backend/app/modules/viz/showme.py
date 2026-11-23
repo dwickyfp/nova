@@ -8,6 +8,7 @@ worksheet.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -146,18 +147,36 @@ SHOWME_TYPES: tuple[ChartTemplate, ...] = (
 SHOWME_BY_ID = {item.id: item for item in SHOWME_TYPES}
 
 
+#: Column names that identify a thing (``customer_id``, ``sku``, ``postal_code``):
+#: categories even when their values are numbers. Summing them means nothing.
+_IDENTIFIER = re.compile(
+    r"(?:^|_)(?:id|ids|key|code|sku|no|nr|num|number|nik|npwp|zip|postcode|phone)$",
+    re.IGNORECASE,
+)
+
+
+def is_identifier(column: str) -> bool:
+    # ``CustomerKey`` and ``customerId`` name identifiers as ``customer_key`` does.
+    words = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", column.strip())
+    return bool(_IDENTIFIER.search(words))
+
+
 def classify_fields(columns: list[str], rows: list[list[Any]]) -> list[FieldRef]:
     """Classify result columns into field pills.
 
-    Numbers become measures with
-    their default aggregation, everything else becomes dimensions; date-shaped
-    text or date values become temporal dimensions. The first non-null sample
-    decides; an all-null column is a dimension.
+    Numbers become measures with their default aggregation, everything else
+    becomes dimensions; date-shaped text or date values become temporal
+    dimensions. A column named as an identifier (``customer_id``, ``sku``) is a
+    category even when its values are numbers, so it is drawn on a band axis,
+    never summed or placed on a linear scale. The first non-null sample decides;
+    an all-null column is a dimension.
     """
     pills: list[FieldRef] = []
     for index, column in enumerate(columns):
         values = [row[index] for row in rows[:50] if index < len(row) and row[index] is not None]
         field_type = _classify(values)
+        if field_type == "quantitative" and is_identifier(column):
+            field_type = "nominal"
         if field_type == "quantitative":
             pills.append(
                 FieldRef(

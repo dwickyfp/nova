@@ -1,19 +1,22 @@
-"""``data_to_chart`` — build a chart from conversation data with the viz core.
+"""``data_to_chart`` — show a verified result as a native Dataviz chart or KPI tiles.
 
-Business answers are usually charts. The model returns a small **chart
-intent** (chart type + the fields it wants), the Show Me placement engine
-resolves it into a worksheet, and the viz core computes the presentation
-model from rows the turn already verified — no re-query, and no chart
-shaped by free-form JSON.
+Business answers are usually charts. The model names a visual and the exact
+result columns (arguments validated against the Studio component registry
+schema, ``ui_components.json``), or gives only an intent and the Show Me
+placement engine picks the chart. The result is a registry component:
 
-A sanitized Vega-Lite mirror of the worksheet still ships as ``chart_spec``
-so persisted answers and older replay paths keep rendering.
+* ``DatavizChart`` — a native ``ChartDefinition`` over a *draft dataset*: the
+  governed statement that produced the rows, inspected as the caller. The
+  chart's data is read later through the drafts endpoint
+  (:mod:`app.modules.viz.studio_drafts`) as the viewer under the active role;
+  the chart itself carries no rows. The loop signs its ``draft_ref`` when it
+  places the component in the answer.
+* ``KpiTiles`` — headline numbers read here from the verified rows, never
+  typed by the model.
 
-Safety: the Vega mirror passes through :func:`sanitize_chart_spec`, which
-whitelists marks and strips expression-bearing fields; a worksheet carries
-typed pills only, and every identifier is quoted at compile time. The data
-comes from ``context.last_result`` — this tool never re-runs a query and
-never takes rows from the model's own text.
+The data comes from ``context.last_result`` or a named evidence result of the
+turn — this tool never runs the statement for rows and never takes values
+from the model's own text.
 """
 
 from __future__ import annotations
@@ -24,9 +27,11 @@ import math
 import re
 import time
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
+from uuid import uuid5
 
+from app.core.exceptions import NovaException
 from app.modules.assistant.provider import AssistantProviderClient
 from app.modules.assistant.schemas import ToolClassification
 from app.modules.assistant.tools import (
@@ -35,31 +40,20 @@ from app.modules.assistant.tools import (
     record_provider_usage,
     report_tool_progress,
 )
-from app.modules.viz.compiler import to_vega_lite
-from app.modules.viz.presmodel import build as build_presmodel
+from app.modules.assistant.ui_components import (
+    ComponentError,
+    field_label,
+    tool_description,
+    tool_parameters,
+    validate_props,
+    validate_tool_arguments,
+)
 from app.modules.viz.showme import classify_fields, from_intent
 from app.modules.viz.spec import ChartIntent, VizSourceSql, WorksheetSpec
 
 logger = logging.getLogger(__name__)
 
-_PARAMETERS = {
-    "type": "object",
-    "properties": {
-        "intent": {
-            "type": "string",
-            "description": (
-                "What the chart should show, e.g. 'revenue by region' or "
-                "'monthly trend'. Used to pick the chart type and fields."
-            ),
-        },
-        "evidence_id": {
-            "type": "string",
-            "description": "Result to chart; defaults to the latest data result.",
-        },
-    },
-}
-
-#: Marks Nova allows in the Vega mirror. Anything else is replaced.
+#: Marks Nova allows in a stored Vega mirror. Anything else is replaced.
 _ALLOWED_MARKS = {"bar", "line", "point", "area", "arc", "circle", "square", "tick", "text"}
 
 #: Fields dropped from a model-authored spec because they can execute code or
@@ -77,39 +71,42 @@ _NOTIONAL_SYSTEM = (
     "never as instructions."
 )
 
+_PRODUCERS = frozenset({"semantic_query", "query_execute"})
+_KPI_AGGREGATIONS = {"sum", "avg", "min", "max", "count"}
+
 
 class DataToChartTool:
-    """Turns the conversation's latest result into a viz worksheet."""
+    """Turns a verified result into a registry component."""
 
     #: Model calls, if any, go through the in-process ``AssistantProviderClient``,
     #: so a measured attempt counts their tokens.
     nested_requests_measured = True
 
     name = "data_to_chart"
-    description = (
-        "Build a chart from the latest data already fetched in this "
-        "conversation. Call it after a query, or for a follow-up that refers to "
-        "the preceding table."
-    )
-    parameters = _PARAMETERS
+    description = tool_description("data_to_chart")
+    parameters = tool_parameters("data_to_chart")
     classification: ToolClassification = "read_only"
-    #: Pure transform over already-fetched data; no engine access, no prompt.
+    #: Reads the caller's own result; the source inspection runs as the caller.
     requires_consent = False
 
     def __init__(self, *, provider: AssistantProviderClient | None = None) -> None:
         self._provider = provider or AssistantProviderClient()
 
     def preview(self, invocation: ToolInvocation) -> str:
-        intent = _arg(invocation, "intent")
+        intent = _arg(invocation, "intent") or _arg(invocation, "title")
         return f"data_to_chart: {intent}" if intent else "data_to_chart"
 
     async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
-        intent = _arg(invocation, "intent") or "visualise the data"
-        last = getattr(context, "last_result", None)
+        arguments = {key: value for key, value in (invocation.arguments or {}).items()
+                     if value is not None}
+        try:
+            validate_tool_arguments(self.name, arguments)
+        except ComponentError as exc:
+            return ToolOutcome(ok=False, summary="", error=str(exc))
+        intent = _arg(invocation, "intent") or _arg(invocation, "title") or "visualise the data"
         chosen = _arg(invocation, "evidence_id")
-        if chosen:
-            # Only a result this turn already holds under the caller's access.
-            last = (getattr(context, "evidence_tables", None) or {}).get(chosen)
+        tables = getattr(context, "evidence_tables", None) or {}
+        last = tables.get(chosen) if chosen else getattr(context, "last_result", None)
         if not last or not last.get("columns"):
             detail = (
                 "There is no recent data to chart in this conversation. Fetch "
@@ -117,65 +114,130 @@ class DataToChartTool:
             )
             return ToolOutcome(ok=False, summary="", error=detail)
 
-        columns: list[str] = list(last.get("columns") or [])
-        rows: list[list] = list(last.get("rows") or [])
-        title = str(last.get("title") or intent)
-        provenance_sql = str(last.get("sql") or "").strip()
-        source = VizSourceSql(sql=provenance_sql) if provenance_sql else None
+        columns: list[str] = [str(name) for name in last.get("columns") or []]
+        rows: list[list] = [list(row) if isinstance(row, list | tuple) else
+                            [row.get(name) for name in columns] if isinstance(row, dict) else []
+                            for row in last.get("rows") or []]
+        evidence_id = chosen or _evidence_of(last, tables)
+        title = str(arguments.get("title") or last.get("title") or intent).strip()[:120]
+        unknown = [name for name in _named_columns(arguments) if name not in columns]
+        if unknown:
+            return ToolOutcome(ok=False, summary="", error=(
+                f"The result has no column {', '.join(map(repr, unknown))}. "
+                f"Its columns: {', '.join(columns[:30])}."))
+        started = time.perf_counter()
+        report_tool_progress(context, stage="generating_chart",
+                             text="Designing a view of the retrieved data")
+        if arguments.get("visual") == "kpi":
+            return self._kpis(arguments, columns, rows, title=title, evidence_id=evidence_id,
+                              started=started)
+        sql = str(last.get("sql") or "").strip()
+        if not sql:
+            return ToolOutcome(ok=False, summary="", error=(
+                "This result has no recorded governed query, so it cannot be drawn as a "
+                "Dataviz chart. Run the query again, then chart it."))
+        plan = _explicit_plan(arguments)
+        if plan is None:
+            pills = classify_fields(columns, rows)
+            chart_intent = (
+                None if _shape_decides(intent, pills)
+                else await self._model_intent(intent, columns, rows, context)
+            )
+            sheet = self._resolve_spec(intent, pills, columns, rows, chart_intent,
+                                       VizSourceSql(sql=sql), title)
+            from app.modules.viz.studio_publish import worksheet_plan
 
-        generation_started = time.perf_counter()
-        report_tool_progress(
-            context,
-            stage="generating_chart",
-            text="Designing a chart from the retrieved data",
-        )
+            capability = worksheet_plan(sheet.model_dump(mode="json"), columns)
+            if capability.status != "SUPPORTED" or capability.chart is None:
+                return ToolOutcome(ok=False, summary="", error=capability.message)
+            plan = capability.chart
+        try:
+            chart, database = await _native_chart(plan, arguments, sql=sql, title=title,
+                                                  context=context,
+                                                  tool_call_id=invocation.tool_call_id)
+        except _Refused as exc:
+            return ToolOutcome(ok=False, summary="", error=str(exc))
+        from app.modules.viz.studio_drafts import source_record
 
-        pills = classify_fields(columns, rows)
-        chart_intent = (
-            None if _shape_decides(intent, pills)
-            else await self._model_intent(intent, columns, rows, context)
-        )
-        spec = self._resolve_spec(intent, pills, columns, rows, chart_intent, source, title)
-
-        presmodel = build_presmodel(spec, columns, rows)
-        vega = _vega_mirror(spec, presmodel, title)
-        if vega is None:
-            return ToolOutcome(ok=False, summary="", error="Could not build a valid chart.")
-
-        viz_payload = spec.model_dump(mode="json")
-        if source is None:
-            # The rows came from a persisted turn whose statement is not held
-            # here; the Studio save flow re-attaches provenance SQL at save time.
-            viz_payload.pop("source", None)
-
-        report_tool_progress(
-            context,
-            stage="chart_completed",
-            text=f"Built a {spec.marks.type} chart",
-        )
-
+        props = {"title": chart.title, "chart": chart.model_dump(mode="json")}
+        report_tool_progress(context, stage="chart_completed",
+                             text=f"Built a {chart.visual} chart")
         return ToolOutcome(
             ok=True,
-            summary=f"chart: {title} ({spec.marks.type})",
-            chart={
-                "chart_spec": json.dumps(vega, separators=(",", ":")),
-                "viz_spec": viz_payload,
-                "presmodel": presmodel,
+            summary=f"chart: {chart.title} ({chart.visual}) bound to its governed query",
+            component={
+                "name": "DatavizChart",
+                "props": props,
+                # The plan in result column names, so Add to Dataviz can draw the
+                # same chart over the saved dataset. Recorded, never sent.
+                "plan": plan,
+                "source": source_record(
+                    evidence_id=evidence_id, sql=sql, database=database,
+                    producer_tool_call_id=_producer(context, sql),
+                ),
             },
-            data={"title": title, "mark": spec.marks.type, "row_count": len(rows)},
+            data={"title": chart.title, "visual": chart.visual, "row_count": len(rows)},
             evidence={"source": "latest_verified_table", "row_count": len(rows)},
             metadata={"columns": columns[:50]},
             trace_detail={
                 "kind": "chart_generation",
                 "intent": intent[:1000],
-                "title": title[:500],
-                "mark": spec.marks.type,
+                "title": chart.title[:500],
+                "mark": chart.visual,
                 "columns": columns[:50],
                 "row_count": len(rows),
-                "generation_duration_ms": round(
-                    (time.perf_counter() - generation_started) * 1000, 3
-                ),
+                "generation_duration_ms": round((time.perf_counter() - started) * 1000, 3),
             },
+        )
+
+    def _kpis(self, arguments: dict[str, Any], columns: list[str], rows: list[list], *,
+              title: str, evidence_id: str | None, started: float) -> ToolOutcome:
+        measures = list(arguments.get("y") or [])
+        if not measures:
+            measures = [name for name in columns if _numeric(_column(rows, columns, name))][:4]
+        if not measures or not rows:
+            return ToolOutcome(ok=False, summary="", error=(
+                "KPI tiles need a result with at least one number column. Name it in y."))
+        how = str(arguments.get("aggregation") or "sum")
+        if how not in _KPI_AGGREGATIONS:
+            how = "sum"
+        items = []
+        for name in measures:
+            values = _column(rows, columns, name)
+            numbers = [_number(value) for value in values]
+            if len(rows) == 1:
+                value, aggregation = numbers[0], "value"
+            elif how == "count":
+                value, aggregation = float(sum(1 for item in values if item is not None)), how
+            else:
+                present = [item for item in numbers if item is not None]
+                aggregation = how
+                value = (None if not present else sum(present) if how == "sum"
+                         else sum(present) / len(present) if how == "avg"
+                         else min(present) if how == "min" else max(present))
+            if value is not None and not _numeric(values) and aggregation != "count":
+                return ToolOutcome(ok=False, summary="", error=f"{name!r} is not a number column.")
+            items.append({
+                "label": field_label(name), "value": value, "format": "number",
+                "decimals": 0 if all(_whole(item) for item in numbers if item is not None) else 2,
+                "aggregation": aggregation, "evidence_id": evidence_id or "latest", "column": name,
+            })
+        props = {"title": title, "items": items[:6]}
+        try:
+            validate_props("KpiTiles", props)
+        except ComponentError as exc:
+            return ToolOutcome(ok=False, summary="", error=str(exc))
+        return ToolOutcome(
+            ok=True,
+            summary=f"kpi tiles: {', '.join(str(item['label']) for item in items)}",
+            component={"name": "KpiTiles", "props": props},
+            data={"title": title, "visual": "kpi", "row_count": len(rows)},
+            evidence={"source": "latest_verified_table", "row_count": len(rows)},
+            metadata={"columns": columns[:50]},
+            trace_detail={"kind": "chart_generation", "title": title[:500], "mark": "kpi",
+                          "columns": columns[:50], "row_count": len(rows),
+                          "generation_duration_ms": round((time.perf_counter() - started) * 1000,
+                                                          3)},
         )
 
     def _resolve_spec(
@@ -239,6 +301,164 @@ class DataToChartTool:
         return candidate
 
 
+class _Refused(Exception):
+    """A plain-language reason the chart cannot be drawn natively."""
+
+
+def _named_columns(arguments: dict[str, Any]) -> list[str]:
+    names = [arguments.get("x"), arguments.get("color"), *(arguments.get("y") or [])]
+    sort = arguments.get("sort")
+    if isinstance(sort, dict):
+        names.append(sort.get("field"))
+    return [str(name) for name in names if name]
+
+
+def _explicit_plan(arguments: dict[str, Any]) -> dict[str, Any] | None:
+    """The chart the model named, in result column names; None to let Show Me pick."""
+    visual = arguments.get("visual") or "auto"
+    measures = list(arguments.get("y") or [])
+    x = arguments.get("x")
+    if visual == "auto" or not measures or (visual != "table" and not x):
+        return None
+    aggregation = arguments.get("aggregation") or "sum"
+    if visual == "scatter":
+        return {"visual": "scatter", "x": x, "y": measures[0],
+                **({"color": arguments["color"]} if arguments.get("color") else {})}
+    dimension: dict[str, Any] = {"field": x} if x else {}
+    if x and arguments.get("date_grain"):
+        dimension["date_grain"] = arguments["date_grain"]
+    plan: dict[str, Any] = {
+        "visual": visual,
+        "dimensions": [dimension] if x else [],
+        "measures": [{"field": name, "aggregation": aggregation}
+                     for name in (measures[:1] if visual == "pie" else measures)],
+    }
+    if arguments.get("color") and visual in {"bar", "line", "area"}:
+        plan["color"] = arguments["color"]
+    if isinstance(arguments.get("sort"), dict):
+        plan["sort"] = dict(arguments["sort"])
+    if arguments.get("top_n"):
+        plan["top_n"] = int(arguments["top_n"])
+    return plan
+
+
+async def _native_chart(
+    plan: dict[str, Any], arguments: dict[str, Any], *, sql: str, title: str, context: Any,
+    tool_call_id: str,
+) -> tuple[Any, str]:
+    """The native chart over the caller's own statement, as a draft dataset."""
+    from app.modules.viz.contracts.authoring import SqlInspect, SqlInspection, SqlSelection
+    from app.modules.viz.contracts.datasets import DatasetDefinition
+    from app.modules.viz.dataset_service import native_dataset_service
+    from app.modules.viz.studio_drafts import DRAFT_REVISION, draft_dataset_id
+    from app.modules.viz.studio_publish import PublishError, build_native_chart, source_database
+
+    user = getattr(context, "user", None)
+    thread_id = str(getattr(context, "thread_id", "") or "")
+    if not isinstance(user, dict) or not thread_id:
+        raise _Refused("Charts are drawn inside a saved conversation.")
+    try:
+        database = await source_database(sql, user)
+    except PublishError as exc:
+        raise _Refused(exc.message) from None
+    dataset_id = draft_dataset_id(thread_id, tool_call_id)
+    try:
+        inspected = await native_dataset_service.inspect(user, SqlInspect(
+            dataset_id=dataset_id, source=SqlSelection(database=database, sql=sql)))
+    except NovaException as exc:
+        raise _Refused(f"The result's query cannot be charted: {exc.message}") from None
+    if not isinstance(inspected, SqlInspection):
+        raise _Refused("The result's query cannot be charted.")
+    dataset = DatasetDefinition(
+        dataset_id=dataset_id, title=title[:256] or "Result", source=inspected.source,
+        fields=inspected.fields, schema_fingerprint=inspected.schema_fingerprint,
+    )
+    try:
+        chart = build_native_chart(plan, title=title or "Chart",
+                                   chart_id=uuid5(dataset_id, "chart"), dataset_id=dataset_id,
+                                   revision=DRAFT_REVISION, dataset=dataset)
+    except PublishError as exc:
+        raise _Refused(exc.message) from None
+    except Exception as exc:  # Refusal from the shared chart builder
+        if exc.__class__.__name__ == "Refusal":
+            raise _Refused(str(exc)) from None
+        raise
+    return chart, database
+
+
+async def native_chart_component(
+    plan: dict[str, Any], table: dict[str, Any], *, title: str, context: Any,
+    evidence_id: str | None, key: str,
+) -> dict[str, Any] | None:
+    """A ``DatavizChart`` payload for a verified result, or None when it has no
+    governed statement Nova can chart natively. Used by the answer composer."""
+    from app.modules.viz.studio_drafts import source_record
+
+    sql = str(table.get("sql") or "").strip()
+    if not sql:
+        return None
+    try:
+        chart, database = await _native_chart(dict(plan), {}, sql=sql, title=title,
+                                              context=context, tool_call_id=key)
+    except _Refused:
+        return None
+    return {
+        "name": "DatavizChart",
+        "props": {"title": chart.title, "chart": chart.model_dump(mode="json")},
+        "plan": dict(plan),
+        "source": source_record(evidence_id=evidence_id, sql=sql, database=database,
+                                producer_tool_call_id=_producer(context, sql)),
+    }
+
+
+def _producer(context: Any, sql: str) -> str | None:
+    """The tool call of this turn whose recorded statement is exactly ``sql``."""
+    from app.modules.viz.studio_results import normal_sql
+
+    wanted = normal_sql(sql)
+    for step in reversed(getattr(context, "steps", None) or []):
+        if (isinstance(step, dict) and step.get("kind") == "tool"
+                and step.get("name") in _PRODUCERS and step.get("status") in ("done", None)
+                and normal_sql(str(step.get("preview") or "")) == wanted):
+            tool_call_id = step.get("tool_call_id")
+            return str(tool_call_id) if tool_call_id else None
+    return None
+
+
+def _evidence_of(table: dict[str, Any], tables: dict[str, dict[str, Any]]) -> str | None:
+    for key, candidate in tables.items():
+        if candidate is table or (table.get("sql") and candidate.get("sql") == table.get("sql")
+                                  and candidate.get("columns") == table.get("columns")):
+            return key
+    return None
+
+
+def _column(rows: list[list], columns: list[str], name: str) -> list[Any]:
+    index = columns.index(name)
+    return [row[index] if index < len(row) else None for row in rows]
+
+
+def _number(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int | float):
+        return float(value) if math.isfinite(float(value)) else None
+    try:
+        number = float(Decimal(str(value).strip()))
+    except (InvalidOperation, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _numeric(values: list[Any]) -> bool:
+    present = [value for value in values if value is not None]
+    return bool(present) and all(_number(value) is not None for value in present)
+
+
+def _whole(value: float) -> bool:
+    return float(value).is_integer()
+
+
 #: Words that ask for a chart type, by the ShowMe chart they mean.
 _CHART_WORDS = {
     "bar": "bar", "bars": "bar", "batang": "bar", "column": "bar", "kolom": "bar",
@@ -263,20 +483,6 @@ def _shape_decides(intent: str, pills: list) -> bool:
     named = {_CHART_WORDS[word] for word in re.findall(r"[a-z]+", intent.lower())
              if word in _CHART_WORDS}
     return named <= {default_chart_id(pills)}
-
-
-def _vega_mirror(
-    spec: WorksheetSpec, presmodel: dict[str, Any], title: str
-) -> dict[str, Any] | None:
-    """The sanitized Vega-Lite mirror of an already-computed worksheet."""
-    columns = [column["name"] for column in presmodel["columns"]]
-    rows = [
-        {column: _chart_value(value) for column, value in zip(columns, row, strict=False)}
-        for row in presmodel["rows"]
-    ]
-    mirror = to_vega_lite(spec, rows)
-    mirror["title"] = title
-    return sanitize_chart_spec(mirror, title=title)
 
 
 def sanitize_chart_spec(spec: Any, *, title: str) -> dict[str, Any] | None:

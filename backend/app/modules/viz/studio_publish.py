@@ -60,6 +60,7 @@ _VEGA_KINDS = {"bar": "bar", "line": "line", "area": "area", "arc": "pie", "pie"
                "point": "scatter", "circle": "scatter", "square": "scatter", "tick": "scatter"}
 _SHEET_KINDS = {"bar": "bar", "line": "line", "area": "area", "pie": "pie", "arc": "pie",
                 "text": "table"}
+_POINT_MARKS = frozenset({"circle", "point", "square"})
 _AGGREGATIONS = {"sum": "sum", "avg": "avg", "min": "min", "max": "max", "count": "count",
                  "distinct_count": "count_distinct", "count_distinct": "count_distinct"}
 _GRAINS = frozenset({"day", "week", "month", "quarter", "year"})
@@ -208,10 +209,15 @@ def _vega_chart(preview: ResolvedPreview) -> Capability:
 
 
 def _worksheet_chart(preview: ResolvedPreview) -> Capability:
+    return worksheet_plan(preview.viz_spec, preview.columns)
+
+
+def worksheet_plan(viz_spec: Any, columns: list[str]) -> Capability:
+    """The native chart for a viz-core worksheet over a result with ``columns``."""
     from app.modules.viz.spec import WorksheetSpec
 
     try:
-        sheet = WorksheetSpec.model_validate(preview.viz_spec)
+        sheet = WorksheetSpec.model_validate(viz_spec)
     except ValidationError:
         return _unknown("CHART_SPEC_INVALID", "The chart's stored definition cannot be read.")
     if sheet.calculations or sheet.table_calcs:
@@ -239,10 +245,21 @@ def _worksheet_chart(preview: ResolvedPreview) -> Capability:
                 dimension["date_grain"] = pill.date_part
             dimensions.append(dimension)
     missing = sorted({item["field"] for item in [*dimensions, *measures]}
-                     - set(preview.columns)) if preview.columns else []
+                     - set(columns)) if columns else []
     if missing:
         return _unknown("FIELDS_NOT_IN_RESULT",
                         "The chart names fields its result does not have: " + ", ".join(missing))
+    if str(sheet.marks.type) in _POINT_MARKS:
+        # A scatter plots one row per mark: the x and y pills as they are.
+        axes = [pill.field for pill in [*sheet.columns, *sheet.rows]]
+        if len(axes) != 2 or axes[0] == axes[1]:
+            return _unsupported("CHART_KIND_NOT_REPRESENTABLE",
+                                "A Dataviz scatter plot needs exactly one x and one y field.")
+        scatter: dict[str, Any] = {"visual": "scatter", "x": axes[0], "y": axes[1]}
+        color = sheet.marks.color
+        if color is not None and not color.is_measure and color.field in columns:
+            scatter["color"] = color.field
+        return _supported(scatter)
     visual = _SHEET_KINDS.get(str(sheet.marks.type))
     if visual is None:
         return _unsupported("CHART_KIND_NOT_REPRESENTABLE",
@@ -310,6 +327,10 @@ def capability(preview: ResolvedPreview) -> Capability:
         return _unknown("NO_PROVENANCE",
                         preview.provenance_issue or "The query behind this result was not "
                         "recorded, so Dataviz cannot keep it up to date.")
+    if preview.visualization.get("source") == "native":
+        plan = preview.visualization.get("plan")
+        return _supported(dict(plan)) if isinstance(plan, dict) else _unknown(
+            "CHART_SPEC_INVALID", "The chart's stored definition cannot be read.")
     if preview.render_kind == "chart" and preview.locator.node is not None:
         return _ui_chart(preview)
     if preview.render_kind == "chart":
@@ -620,6 +641,19 @@ def short_title(asked: str | None, answer_title: str | None, chart: dict[str, An
     return title or "Chart"
 
 
+def _with_top_n(chart: Any, top_n: Any) -> Any:
+    """Keep only the largest ``top_n`` categories of a bar, line, area or pie."""
+    from app.modules.viz.contracts.charts import TopN
+
+    encoding = chart.encoding
+    if not top_n or getattr(encoding, "kind", None) not in {"cartesian", "category"}:
+        return chart
+    dimension = encoding.dimensions[0] if encoding.kind == "cartesian" else encoding.category
+    measure = encoding.measures[0] if encoding.kind == "cartesian" else encoding.measure
+    return chart.model_copy(update={"top_n": TopN(dimension=dimension, measure=measure,
+                                                  count=int(top_n))})
+
+
 def build_native_chart(
     plan: dict[str, Any], *, title: str, chart_id: UUID, dataset_id: UUID, revision: int,
     dataset: Any,
@@ -645,6 +679,7 @@ def build_native_chart(
         return {"field": item["field"], "date_grain": grain}
 
     shaped = dict(plan)
+    top_n = shaped.pop("top_n", None)
     if shaped.get("dimensions"):
         shaped["dimensions"] = [dimension(item) for item in shaped["dimensions"]]
     if plan["visual"] != "table":
@@ -653,8 +688,9 @@ def build_native_chart(
         except ValidationError:
             raise PublishError("This chart cannot be drawn in Dataviz as it is.",
                                code="NOT_REPRESENTABLE") from None
-        return build_chart(spec, chart_id=chart_id, dataset_id=dataset_id, revision=revision,
-                           dataset=dataset)
+        chart = build_chart(spec, chart_id=chart_id, dataset_id=dataset_id, revision=revision,
+                            dataset=dataset)
+        return _with_top_n(chart, top_n)
     dims = tuple(fields.dimension(DimensionArg.model_validate(item))
                  for item in shaped.get("dimensions") or [])
     from app.modules.agents.tools.native_dataviz import MeasureArg

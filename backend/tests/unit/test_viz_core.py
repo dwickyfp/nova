@@ -243,6 +243,25 @@ def test_classify_fields_marks_numbers_as_measures_with_aggregation() -> None:
     assert not by_name["region"].is_measure
 
 
+def test_numeric_identifiers_are_categories_never_summed() -> None:
+    # Top customers by revenue: a numeric customer_id is the category axis. Read
+    # as a measure it lost the bars (a 0-24 linear axis) or summed every
+    # customer into one bar several times the largest value.
+    rows = [[7, "Toko Maju", 31_500_000], [12, "Sinar Jaya", 28_000_000],
+            [3, "Berkah", 27_400_000]]
+    pills = {pill.field: pill for pill in classify_fields(
+        ["customer_id", "customer_name", "revenue"], rows)}
+    assert pills["customer_id"].field_type == "nominal"
+    assert not pills["customer_id"].is_measure
+    assert pills["revenue"].is_measure
+    assert default_chart_id(classify_fields(["customer_id", "revenue"],
+                                            [row[::2] for row in rows])) == "bar"
+    for name in ("sku", "postal_code", "order_no", "CustomerKey", "id", "store_nr"):
+        assert classify_fields([name], [[42]])[0].field_type == "nominal", name
+    for name in ("revenue", "video_views", "paid", "android_users", "quantity"):
+        assert classify_fields([name], [[42]])[0].is_measure, name
+
+
 def test_rank_orders_satisfied_types_first() -> None:
     pills = classify_fields(COLUMNS, ROWS)
     ranked = rank(pills)

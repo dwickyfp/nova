@@ -38,6 +38,7 @@ dependencies = [
     "opensandbox==1.2.0",
     "opensandbox-code-interpreter==1.2.0",
     "psycopg-pool>=3.2,<4",
+    "jsonschema>=4.23,<5",
 ]
 
 [dependency-groups]
@@ -50,6 +51,7 @@ dev = [
     "boto3-stubs[s3,secretsmanager]>=1.43.113",
     "pandas-stubs>=3.0.5.260914",
     "scipy-stubs==1.15.3.*",
+    "types-jsonschema>=4.23",
     { include-group = "test" },
 ]
 test = [

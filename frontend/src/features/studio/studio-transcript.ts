@@ -19,6 +19,7 @@ import {
 } from "./evidence-health";
 import { parseStudioRecord, PROTOCOL_VERSION, type StudioEvent } from "./runtime/protocol";
 import { MODEL_REASONING_LABEL } from "./rail-model";
+import { parseComponentBlock } from "./runtime/components/block";
 import {
   emptyRunState,
   isContentPart,
@@ -77,6 +78,14 @@ export type OrderedContent =
       index: number;
       type: "citation";
       block: CitationBlock;
+      complete: true;
+    }
+  | {
+      id: string;
+      index: number;
+      /** A registry component: a native chart, KPI tiles or a map. */
+      type: "component";
+      block: import("./runtime/components/block").ComponentBlock;
       complete: true;
     };
 
@@ -285,6 +294,9 @@ export function contentFromParts(parts: TurnPart[]): OrderedContent[] {
       case "chart":
         content.push({ id, index, type: "chart", block: part.block, complete: true });
         break;
+      case "component":
+        content.push({ id, index, type: "component", block: part.block, complete: true });
+        break;
       case "citation":
         content.push({ id, index, type: "citation", block: part.block, complete: true });
         break;
@@ -483,6 +495,9 @@ function legacyRun(turn: TranscriptTurn): TurnRunState {
         break;
       case "chart":
         parts.push({ ...base, state, type: "chart", block: item.block });
+        break;
+      case "component":
+        parts.push({ ...base, state, type: "component", block: item.block });
         break;
       case "citation":
         parts.push({ ...base, state, type: "citation", block: item.block });
@@ -726,6 +741,20 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
               block,
               complete: true,
             });
+          }
+          break;
+        case "component":
+          {
+            // A component the registry no longer draws is left out, not guessed.
+            const block = parseComponentBlock(step);
+            if (block)
+              open.content.push({
+                id: step.content_id,
+                index: step.content_index,
+                type: "component",
+                block,
+                complete: true,
+              });
           }
           break;
         case "citation":

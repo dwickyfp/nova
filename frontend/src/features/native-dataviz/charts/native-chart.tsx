@@ -34,6 +34,8 @@ type Props = {
   /** The category this chart's selection cross-filters by; other marks are dimmed. */
   selectedLabel?: string | readonly string[] | null
   className?: string
+  /** An unsaved chart in a Studio answer: rows come from its draft query as the viewer. */
+  draftRef?: string
 }
 
 function measureFormatter(chart: ChartDefinition, index: number) {
@@ -283,7 +285,7 @@ function useTableView(chart: ChartDefinition, base: string) {
 }
 
 /** Renders one native chart from a governed query under the viewer's active role. */
-export function NativeChart({ chart, draft, context, parameters, onSelectValue, selectedLabel, className }: Props) {
+export function NativeChart({ chart, draft, context, parameters, onSelectValue, selectedLabel, className, draftRef }: Props) {
   let shapeError: string | null = null
   try {
     chartQueryShape(chart)
@@ -293,17 +295,17 @@ export function NativeChart({ chart, draft, context, parameters, onSelectValue, 
   const base = useMemo(() => JSON.stringify(chartRequest({ chart, draft, context, parameters })),
     [chart, draft, context, parameters])
   const table = useTableView(chart, base)
-  const query = useChartData({ chart, draft, context, parameters, page: table.page })
+  const query = useChartData({ chart, draft, context, parameters, page: table.page, draftRef })
   const result = query.data
   const pageOffset = result?.offset ?? 0
   const pageEnd = pageOffset + (result?.rows.length ?? 0)
   const hasNextPage = Boolean(table.paged && result?.truncated && result.next_offset != null && pageEnd < table.rowLimit)
   const multiPage = table.paged && (pageOffset > 0 || Boolean(result?.truncated))
   const showTotal = chart.encoding.kind === 'table' && Boolean(chart.encoding.grand_total)
-  const totals = useTableTotals({ chart, draft, context, parameters, enabled: showTotal && multiPage })
+  const totals = useTableTotals({ chart, draft, context, parameters, enabled: showTotal && multiPage, draftRef })
   // A capped pie that combines the rest asks the engine for the whole, under the same filters.
   const combine = combinesOther(chart) && Boolean(result?.truncated)
-  const whole = useTableTotals({ chart, draft, context, parameters, enabled: combine })
+  const whole = useTableTotals({ chart, draft, context, parameters, enabled: combine, draftRef })
   const remainder = combine && result ? remainderOf(result, whole.data) : null
   const build = useCallback((tokens: VizTokens, width: number) => buildChartOption(chart, result!, tokens, selectedLabel ?? null, width || undefined, remainder),
     [chart, result, selectedLabel, remainder])
@@ -349,7 +351,7 @@ export function NativeChart({ chart, draft, context, parameters, onSelectValue, 
   if (query.isPending) return <div aria-busy='true' className='flex flex-1 flex-col gap-2 p-1' role='status' aria-label={`Loading ${chart.title}`}>
     <div className='h-4 w-1/3 motion-safe:animate-pulse rounded bg-muted' /><div className='min-h-0 flex-1 motion-safe:animate-pulse rounded bg-muted/60' />
   </div>
-  if (query.isError) return <State tone='error' text={queryError(query.error)} retry={() => void query.refetch()} />
+  if (query.isError) return <State tone='error' text={queryError(query.error, draftRef ? 'draft' : 'dataset')} retry={() => void query.refetch()} />
   if (!result) return null
   const empty = !result.rows.length
   // Clicking filters other charts by a category; a chart of totals alone has none to give.

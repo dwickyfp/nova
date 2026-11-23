@@ -146,6 +146,11 @@ export type AssistantEvent = (
       payload: TableBlock & { tool_call_id?: string };
     } & ContentPosition)
   | ({ type: "chart"; payload: ChartBlock } & ContentPosition)
+  /** A registry component: a native chart, KPI tiles or a map. */
+  | ({
+      type: "component";
+      block: import("../studio/runtime/components/block").ComponentBlock;
+    } & ContentPosition)
   | ({ type: "citation"; payload: CitationBlock } & ContentPosition)
   /** Catalog-bound follow-up questions offered after a Studio answer. */
   | { type: "suggestions"; suggestions: string[] }

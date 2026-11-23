@@ -109,7 +109,7 @@ class EvalTool:
         summary: str = "1 row (eval)",
         error: str | None = None,
         table: dict[str, Any] | None = None,
-        chart: dict[str, Any] | None = None,
+        component: dict[str, Any] | None = None,
         citations: list[dict[str, Any]] | None = None,
         data: dict[str, Any] | None = None,
         trace_detail: dict[str, Any] | None = None,
@@ -128,7 +128,7 @@ class EvalTool:
         self.summary = summary
         self.error = error
         self.table = table
-        self.chart = chart
+        self.component = component
         self.citations = citations
         self.data = data
         self.trace_detail = trace_detail
@@ -159,7 +159,7 @@ class EvalTool:
                 ok=True,
                 summary=self.summary,
                 table=self.table,
-                chart=self.chart,
+                component=self.component,
                 citations=self.citations,
                 data=self.data,
                 trace_detail=self.trace_detail,

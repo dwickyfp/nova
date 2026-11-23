@@ -118,61 +118,78 @@ def test_sanitize_chart_spec_rejects_missing_data() -> None:
 
 
 @pytest.mark.asyncio
-async def test_chart_uses_every_verified_row_not_only_model_preview() -> None:
+async def test_chart_is_a_native_dataviz_chart_bound_to_the_governed_query(monkeypatch) -> None:
+    from tests.eval import draft_charts
+
+    seen = draft_charts.install(monkeypatch, ["x", "y"], measures={"x", "y"})
     tool = DataToChartTool()
     tool._model_intent = AsyncMock(
         return_value=ChartIntent(chart_type="scatter", x="x", y="y")
     )
-    context = SimpleNamespace(
-        last_result={
-            "title": "Scatter",
-            "columns": ["x", "y"],
-            "rows": [[i, Decimal("1.5")] for i in range(35)],
-        }
-    )
+    context = draft_charts.context({
+        "title": "Scatter", "columns": ["x", "y"], "sql": "SELECT x, y FROM sales.points",
+        "rows": [[i, Decimal("1.5")] for i in range(35)],
+    })
 
     outcome = await tool.run(ToolInvocation("chart-1", "data_to_chart", {}), context)
 
-    assert outcome.ok
-    # A scatter with no dimension keeps every verified row: one mark per row,
-    # never only the preview the model saw.
-    assert outcome.chart["presmodel"]["row_count"] == 35
-    assert outcome.chart["presmodel"]["rows"][34] == [34, 1.5]
-    assert outcome.chart["viz_spec"]["marks"]["type"] == "circle"
+    assert outcome.ok, outcome.error
+    assert outcome.component["name"] == "DatavizChart"
+    chart = outcome.component["props"]["chart"]
+    # The chart holds no rows: the browser reads them through the draft query,
+    # as the viewer, so every verified row (not the model preview) is drawn.
+    assert "rows" not in json.dumps(chart)
+    assert chart["visual"] == "scatter" and chart["dataset_revision"] == 1
+    source = outcome.component["source"]
+    assert source["statement"] == "SELECT x, y FROM sales.points"
+    assert seen[0].source.sql == "SELECT x, y FROM sales.points"
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("request_text", "chart_intent", "expected_mark"),
-    [
-        # Naming a type other than the shape's own pick sends the request to the model.
-        ("line chart of sales by region", ChartIntent(chart_type="bar", x="invented"), "bar"),
-        # The real tool rejects this chart_intent before it reaches the engine; the
-        # engine itself still places a chart from the pills that do exist.
-        ("pie chart of sales by region", ChartIntent(chart_type="pie", x="region", y="ghost"),
-         "arc"),
-    ],
-)
-async def test_chart_falls_back_when_the_model_names_unknown_fields(
-    request_text: str,
-    chart_intent: ChartIntent,
-    expected_mark: str,
-) -> None:
+async def test_chart_names_the_real_columns_when_the_model_names_unknown_fields() -> None:
     tool = DataToChartTool()
-    tool._model_intent = AsyncMock(return_value=chart_intent)
-    context = SimpleNamespace(last_result={"columns": ["region", "sales"], "rows": [["West", 12]]})
+    context = SimpleNamespace(last_result={"columns": ["region", "sales"], "rows": [["West", 12]],
+                                           "sql": "SELECT 1"})
 
     outcome = await tool.run(
-        ToolInvocation("chart-1", "data_to_chart", {"intent": request_text}), context
+        ToolInvocation("chart-1", "data_to_chart", {"visual": "bar", "x": "invented",
+                                                    "y": ["sales"]}), context
     )
 
+    assert not outcome.ok
+    assert "'invented'" in outcome.error and "region, sales" in outcome.error
+
+
+@pytest.mark.asyncio
+async def test_chart_of_a_result_without_a_recorded_query_is_refused() -> None:
+    outcome = await DataToChartTool().run(
+        ToolInvocation("chart-1", "data_to_chart", {"visual": "bar", "x": "region"}),
+        SimpleNamespace(last_result={"columns": ["region", "sales"], "rows": [["West", 12]]}),
+    )
+    assert not outcome.ok and "no recorded governed query" in outcome.error
+
+
+@pytest.mark.asyncio
+async def test_kpi_values_are_read_from_the_verified_rows() -> None:
+    outcome = await DataToChartTool().run(
+        ToolInvocation("kpi-1", "data_to_chart", {"visual": "kpi", "y": ["sales"],
+                                                  "aggregation": "sum"}),
+        SimpleNamespace(last_result={"columns": ["region", "sales"],
+                                     "rows": [["West", 12], ["East", Decimal("3.5")]]},
+                        evidence_tables={}),
+    )
     assert outcome.ok
-    tool._model_intent.assert_awaited_once()
-    # Unknown fields never reach the worksheet; ShowMe places the real pills,
-    # so the chart still builds.
-    spec = json.loads(outcome.chart["chart_spec"])
-    assert spec["mark"] == expected_mark
-    assert outcome.chart["viz_spec"]["columns"][0]["field"] == "region"
+    item = outcome.component["props"]["items"][0]
+    assert (item["value"], item["aggregation"], item["decimals"]) == (15.5, "sum", 2)
+
+
+@pytest.mark.asyncio
+async def test_invalid_chart_arguments_are_refused_by_the_shared_schema() -> None:
+    outcome = await DataToChartTool().run(
+        ToolInvocation("chart-1", "data_to_chart", {"visual": "radar"}),
+        SimpleNamespace(last_result={"columns": ["a"], "rows": [[1]]}),
+    )
+    assert not outcome.ok and "visual" in outcome.error
 
 
 @pytest.mark.asyncio
@@ -273,33 +290,25 @@ def test_sse_chart_frame_shape_matches_cortex() -> None:
 
 
 def test_a_chart_tool_names_the_query_it_drew() -> None:
-    import json
-
-    from app.modules.assistant.service import (
-        LoopContext,
-        PendingArtifact,
-        _chart_source,
-        _ordered_output_frames,
-    )
+    # A native chart records the query call whose result it drew, so that
+    # result's table folds under it as source data, live and on replay.
+    from app.modules.assistant.service import LoopContext, PendingArtifact, _ordered_output_frames
 
     table = PendingArtifact(
         "table", {"title": "rev", "columns": ["m"], "rows": [["Jun"]]}, "query-1"
     )
-    assert _chart_source([table], "chart-1") == "query-1"
-    assert _chart_source([table], "query-1") is None
-    assert _chart_source([], "chart-1") is None
-
-    chart = PendingArtifact(
-        "chart", {"chart_spec": "{}", "source_tool_call_id": "query-1"}, "chart-1"
-    )
+    chart = PendingArtifact("component", {
+        "name": "KpiTiles",
+        "props": {"items": [{"label": "Revenue", "value": 1, "format": "number",
+                             "aggregation": "value", "evidence_id": "e1", "column": "m"}]},
+        "source": {"tool_call_id": "query-1", "evidence_id": "e1"},
+    }, "chart-1")
     context = LoopContext(user_name="alice", steps=[])
-    frames = _ordered_output_frames("Revenue by month.", [table, chart], context)
-    frame = next(frame for frame in frames if frame.startswith("event: chart\n"))
-    payload = json.loads(frame.split("data: ", 1)[1])
-    assert payload["tool_call_id"] == "chart-1"
-    assert payload["source_tool_call_id"] == "query-1"
-    step = next(step for step in context.steps if step.get("kind") == "chart")
-    assert step["source_tool_call_id"] == "query-1"
+    _ordered_output_frames("Revenue by month.", [table, chart], context)
+    step = next(step for step in context.steps if step.get("kind") == "component")
+    assert step["tool_call_id"] == "chart-1"
+    assert step["source"]["tool_call_id"] == "query-1"
+    # Stored legacy chart frames still replay without a source.
     assert '"source_tool_call_id"' not in events.chart("call-1", "{}")
 
 

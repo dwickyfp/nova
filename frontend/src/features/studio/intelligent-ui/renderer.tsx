@@ -410,6 +410,8 @@ function UiSession({
             actionId.current = id;
           },
           artifacts,
+          nativeCharts: block.charts,
+          chartsReady: Boolean(dataviz),
         }}
       >
         <Renderer

@@ -163,7 +163,7 @@ async def test_invalid_ui_repairs_once_then_publishes_nonempty_text(answer):
     assert "Only text is available" in "".join(frames)
 
 
-async def test_composing_again_after_a_number_rewrite_sends_the_composer_once():
+async def test_composing_again_after_a_number_rewrite_sends_the_composer_once(monkeypatch):
     """A rewrite reopens the turn; composing again points back to the composer
     already in the conversation instead of sending its evidence a second time."""
     from tests.benchmark.harness import tool_call_frame
@@ -194,9 +194,13 @@ async def test_composing_again_after_a_number_rewrite_sends_the_composer_once():
                    "required_tools": ["query_execute"], "skills": [], "ml_task": None,
                    "presentation": "interactive"},
     )
+    from tests.eval import draft_charts
+
+    draft_charts.install(monkeypatch, ["region", "revenue"], measures={"revenue"})
     context = LoopContext(
         user_name="alice", intelligent_ui=True,
         run_id="00000000-0000-4000-9996-000000000001",
+        user=draft_charts.USER, thread_id="compose-once",
     )
     frames = [frame async for frame in AssistantLoop(
         provider=provider, registry=registry, max_iterations=10,

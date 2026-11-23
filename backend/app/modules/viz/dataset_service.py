@@ -536,6 +536,87 @@ class NativeDatasetService:
             next_offset=next_offset if sink.has_more and next_offset <= MAX_QUERY_OFFSET else None,
         )
 
+    async def query_statement(
+        self, user: Mapping[str, Any], *, identity: UUID, database: str, sql: str,
+        request: DatasetQueryRequest,
+    ) -> DatasetQueryResult:
+        """Aggregate an unsaved read-only statement as if it were a SQL dataset.
+
+        Studio draft charts use this before anything is saved: the statement is
+        inspected as the caller, planned by the same aggregate planner as a
+        dataset query and executed through QueryService under the caller's
+        active role, with the same admission, capacity, timeout and row bounds.
+        ``identity`` is the draft's dataset id, so field ids match the chart.
+        """
+        with dataviz_read("query"):
+            async with document_admission(user, action="DRAFT_QUERY", identity=identity):
+                try:
+                    async with (
+                        source_capacity(user, identity, operation="query",
+                                        revision=request.revision),
+                        asyncio.timeout(SOURCE_TIMEOUT_SECONDS),
+                        held_engine_session(user),
+                    ):
+                        return await self._query_statement(
+                            user, identity=identity, database=database, sql=sql,
+                            request=request,
+                        )
+                except TimeoutError:
+                    raise NovaException("Draft query timed out", status_code=504) from None
+                except SQLFrontendError:
+                    raise NovaException(
+                        "Draft query is unavailable or unsupported", status_code=422
+                    ) from None
+                except StarRocksError as error:
+                    raise _engine_refusal(error, "Data is unavailable or not permitted") from None
+
+    async def _query_statement(
+        self, user: Mapping[str, Any], *, identity: UUID, database: str, sql: str,
+        request: DatasetQueryRequest,
+    ) -> DatasetQueryResult:
+        selection = SqlInspect(dataset_id=identity, source=SqlSelection(sql=sql, database=database))
+        inspected = await self._inspect(user, selection)
+        if not isinstance(inspected, SqlInspection):
+            raise NovaException("Draft query is unavailable or unsupported", status_code=422)
+        parsed = await parse_statement_async(sql)
+        validate_read_query(parsed)
+        relation = parsed.statement_context.queryRelation()
+        inner = parsed.normalized_sql[relation.start.start : relation.stop.stop + 1]
+        plan = await run_sql_cpu(
+            len(inner), plan_aggregate, inner, inspected.fields, request,
+            dataset_id=str(identity), reserved_parameters=set(),
+        )
+        if len(plan.specs) > 32:
+            raise NovaException("The query uses too many filter values", status_code=422)
+        bound = BoundParameters(tuple(plan.specs), tuple(plan.values)) if plan.specs else None
+        session = await current_session(user)
+        sink = PreviewRows(plan.output_fields, request.limit, max_bytes=4 * 1_048_576)
+        result = await query_service.execute(
+            sql=plan.sql,
+            username=session["username"],
+            encrypted_password=user["encrypted_password"],
+            database=database,
+            schema=selection.source.schema_name,
+            role=session["active_role"],
+            session_id=session["session_id"],
+            security_context_version=session["security_context_version"],
+            max_rows=request.limit + 1,
+            row_sink=sink,
+            parameters=bound,
+        )
+        if result.error or not result.streamed or not sink.begun or result.rows:
+            raise NovaException("Draft query could not be completed", status_code=422)
+        # The source must not have changed shape while the query ran.
+        after = await self._inspect(user, selection)
+        if after.schema_fingerprint != inspected.schema_fingerprint:
+            raise NovaException("SCHEMA_STALE: inspect the source again", status_code=409)
+        next_offset = request.offset + len(sink.values)
+        return DatasetQueryResult(
+            dataset_id=identity, revision=request.revision, columns=plan.columns,
+            rows=tuple(sink.values), truncated=sink.has_more, offset=request.offset,
+            next_offset=next_offset if sink.has_more and next_offset <= MAX_QUERY_OFFSET else None,
+        )
+
     async def inspect(
         self, user: Mapping[str, Any], request: DatasetInspect
     ) -> DatasetInspection:

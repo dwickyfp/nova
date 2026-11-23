@@ -22,6 +22,7 @@ import type { DashboardArtifactBlock } from "@/features/viz/types";
 import type { UiBlock } from "../intelligent-ui/types";
 import type { RailStep } from "../thought-turn";
 import type { HitlKind, HitlRequestSpec, HitlStatus } from "./hitl/types";
+import type { ComponentBlock } from "./components/block";
 import type { PartEndState, ReasoningSource, StudioEvent, TextVerification } from "./protocol";
 
 export type PartState = "streaming" | PartEndState;
@@ -92,6 +93,8 @@ type Positioned = { contentIndex?: number; contentId?: string };
 export type TablePart = PartBase & Positioned & { type: "table"; block: TableBlock & { tool_call_id?: string } };
 export type ChartPart = PartBase & Positioned & { type: "chart"; block: ChartBlock };
 export type CitationPart = PartBase & Positioned & { type: "citation"; block: CitationBlock };
+/** A registry component (native chart, KPI tiles, map) the answer is composed of. */
+export type ComponentPart = PartBase & Positioned & { type: "component"; block: ComponentBlock };
 export type DashboardPart = PartBase & Positioned & { type: "dashboard"; block: DashboardArtifactBlock };
 export type UiPart = PartBase & Positioned & {
   type: "ui";
@@ -118,7 +121,8 @@ export type RoleChangePart = PartBase & { type: "role_change"; activeRole: strin
  */
 export type LegacyStepPart = PartBase & { type: "legacy_step"; step: RailStep };
 
-export type ContentPart = TextPart | TablePart | ChartPart | CitationPart | DashboardPart | UiPart;
+export type ContentPart =
+  | TextPart | TablePart | ChartPart | ComponentPart | CitationPart | DashboardPart | UiPart;
 export type WorkPart = ReasoningPart | ToolPart | GuardPart | LegacyStepPart;
 export type TurnPart = ContentPart | WorkPart | RoleChangePart | HitlPart;
 
@@ -141,7 +145,7 @@ export type TurnRunState = {
 
 /** Finish reasons that end a turn normally: an answer, or a question back. */
 const FINISHED = new Set(["stop", "clarification"]);
-const CONTENT_TYPES = new Set(["text", "table", "chart", "citation", "dashboard", "ui"]);
+const CONTENT_TYPES = new Set(["text", "table", "chart", "component", "citation", "dashboard", "ui"]);
 const TERMINAL_TOOL = new Set<ToolCallStatus>(["done", "failed", "denied", "cancelled"]);
 
 export function isContentPart(part: TurnPart): part is ContentPart {
