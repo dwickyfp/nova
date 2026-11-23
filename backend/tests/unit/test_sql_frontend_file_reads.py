@@ -142,3 +142,223 @@ async def test_query_service_refuses_before_the_engine(monkeypatch):
     assert result.error == FILES_READ_REFUSAL
     service._repo.execute_as_user.assert_not_awaited()
     assert [entry["status"] for entry in audits] == ["ERROR"]
+
+
+# --- The migration import: Nova's one generated FILES() read --------------------
+
+_ROOT = "s3://stages/migration-staging"
+_FOLDER = f"{_ROOT}/run1/sales/orders/"
+_CREDS = {
+    "aws.s3.access_key": "AK",
+    "aws.s3.secret_key": "SK",
+    "aws.s3.endpoint": "http://minio:9000",
+    "aws.s3.enable_path_style_access": "true",
+}
+_GRANT_PROPERTIES = {"format": "parquet", **_CREDS}
+
+
+def _creds_sql(creds: dict[str, str]) -> str:
+    return ", ".join(f"'{key}'='{value}'" for key, value in creds.items())
+
+
+def _migration_import_sql(folder: str = _FOLDER, creds: dict[str, str] = _CREDS) -> str:
+    from app.modules.migration.data_mover import CopyColumn, build_table_copy
+
+    plan = build_table_copy(
+        source_database="sales",
+        target_database="sales_copy",
+        table="orders",
+        columns=(CopyColumn("id", "BIGINT"), CopyColumn("amount", "DOUBLE")),
+        stage_path=folder,
+        files_credential_sql=_creds_sql(creds),
+    )
+    assert plan.stage_path == folder
+    return plan.import_sql
+
+
+def _build(sql: str):
+    return ast_builders.build(parse_statement(sql))
+
+
+def _grant(folder: str = _FOLDER, root: str = _ROOT, properties=None):
+    from app.sql_frontend.file_reads import internal_file_read
+
+    return internal_file_read(
+        folder, root=root, properties=_GRANT_PROPERTIES if properties is None else properties
+    )
+
+
+def test_migration_import_is_refused_without_the_grant():
+    # The exact statement the migration generates, written as user SQL.
+    with pytest.raises(SemanticError, match="Reading with FILES"):
+        _build(_migration_import_sql())
+
+
+def test_migration_import_is_accepted_inside_its_grant_and_only_there():
+    with _grant():
+        SQLPlanner().preflight(_build(_migration_import_sql()))
+    with pytest.raises(SemanticError):
+        _build(_migration_import_sql())
+
+
+def test_the_grant_is_cleared_when_the_import_fails():
+    with pytest.raises(RuntimeError), _grant():
+        raise RuntimeError("import failed")
+    with pytest.raises(SemanticError):
+        _build(_migration_import_sql())
+
+
+_PARQUET = f"'{_FOLDER}*.parquet','format'='parquet', {_creds_sql(_CREDS)}"
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        # Outside the folder: another folder, a sibling sharing the prefix text,
+        # a sub-folder, a climb out, the folder itself.
+        f"SELECT * FROM FILES('path'='{_ROOT}/other/x.parquet','format'='parquet', "
+        f"{_creds_sql(_CREDS)})",
+        f"SELECT * FROM FILES('path'='{_ROOT}/run1/sales/orders2/x.parquet','format'="
+        f"'parquet', {_creds_sql(_CREDS)})",
+        f"SELECT * FROM FILES('path'='{_FOLDER}sub/x.parquet','format'='parquet', "
+        f"{_creds_sql(_CREDS)})",
+        f"SELECT * FROM FILES('path'='{_FOLDER}../../secret/x.parquet','format'='parquet', "
+        f"{_creds_sql(_CREDS)})",
+        f"SELECT * FROM FILES('path'='{_FOLDER}','format'='parquet', {_creds_sql(_CREDS)})",
+        # The right path with a user-supplied endpoint, region or extra property.
+        _migration_import_sql(creds={**_CREDS, "aws.s3.endpoint": "http://10.0.0.5:9000"}),
+        _migration_import_sql(creds={**_CREDS, "aws.s3.region": "us-east-1"}),
+        _migration_import_sql(creds={**_CREDS, "aws.s3.use_instance_profile": "true"}),
+        _migration_import_sql(creds={k: v for k, v in _CREDS.items() if k != "aws.s3.endpoint"}),
+        # A second FILES() read next to the granted one, two paths, a doubled key.
+        f"SELECT * FROM FILES('path'={_PARQUET}) a "
+        "JOIN FILES('path'='hdfs://10.0.0.7:8020/x','format'='parquet') b ON 1=1",
+        f"SELECT * FROM FILES('path'='{_FOLDER}a.parquet','path'='s3://x/y','format'='parquet', "
+        f"{_creds_sql(_CREDS)})",
+        f"SELECT * FROM FILES('path'={_PARQUET}, 'format'='csv')",
+        # DESC FILES is never granted.
+        f"DESC FILES('path'={_PARQUET})",
+    ],
+)
+def test_the_grant_covers_only_its_folder_and_properties(sql):
+    with _grant(), pytest.raises(SemanticError, match="Reading with FILES"):
+        _build(sql)
+
+
+def test_the_granted_read_also_works_as_a_plain_select():
+    with _grant():
+        _build(f"SELECT * FROM FILES('path'={_PARQUET})")
+
+
+@pytest.mark.parametrize(
+    ("folder", "root"),
+    [
+        ("s3://stages/migration-staging/run1/x/", "s3://other-bucket/migration-staging"),
+        ("s3://stages/migration-staging/", _ROOT),
+        ("s3://stages/elsewhere/run1/", _ROOT),
+        ("s3://stages/migration-staging/../x/", _ROOT),
+        ("s3://stages/migration-staging/run1/*/", _ROOT),
+        ("s3://stages/migration-staging//run1/", _ROOT),
+        ("relative/folder/", "relative"),
+        ("", _ROOT),
+    ],
+)
+def test_the_grant_needs_a_concrete_folder_inside_the_transfer_location(folder, root):
+    with pytest.raises(ValueError), _grant(folder, root):
+        pass
+
+
+def test_the_grant_properties_may_not_name_the_path():
+    with pytest.raises(ValueError), _grant(properties={**_GRANT_PROPERTIES, "path": "x"}):
+        pass
+
+
+async def test_concurrent_migrations_and_a_user_query_do_not_share_grants(monkeypatch):
+    """Two migrations hold different grants while a user query parses on the same worker."""
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    from app.core.config import settings
+    from app.sql_frontend import parser as sql_parser
+
+    one_worker = ThreadPoolExecutor(max_workers=1, initializer=sql_parser._mark_worker_thread)
+    monkeypatch.setattr(sql_parser, "_pool", lambda: one_worker)
+    monkeypatch.setattr(settings, "SQL_PARSE_OFFLOAD_MIN_CHARS", 1)
+    other = f"{_ROOT}/run2/sales/orders/"
+    started = asyncio.Event()
+
+    async def parse(sql):
+        return await sql_parser.run_sql_cpu(len(sql), _build, sql)
+
+    async def migration(folder, foreign):
+        with _grant(folder):
+            started.set()
+            await asyncio.sleep(0)
+            await parse(_migration_import_sql(folder))
+            with pytest.raises(SemanticError):
+                await parse(_migration_import_sql(foreign))
+            await asyncio.sleep(0)
+            await parse(_migration_import_sql(folder))
+
+    async def user_query():
+        await started.wait()
+        for sql in (_migration_import_sql(_FOLDER), _migration_import_sql(other)):
+            with pytest.raises(SemanticError):
+                await parse(sql)
+
+    try:
+        await asyncio.gather(
+            migration(_FOLDER, other), migration(other, _FOLDER), user_query()
+        )
+    finally:
+        one_worker.shutdown(wait=True)
+    # Nothing is left behind on the worker or here.
+    with pytest.raises(SemanticError):
+        _build(_migration_import_sql())
+
+
+async def test_migration_runs_its_import_inside_the_grant(monkeypatch):
+    """The service grants exactly the folder and properties of the table it imports."""
+    from unittest.mock import AsyncMock
+
+    from app.modules.migration import service as migration_service
+    from app.modules.migration.service import MigrationService
+
+    seen: list[str] = []
+
+    async def run_on_target(self, statement, **kwargs):
+        _build(statement)  # refused unless the grant is active and matches
+        seen.append(statement)
+        return None, type("R", (), {"affected_rows": 3})()
+
+    async def scalar_on_target(self, statement, **kwargs):
+        return None, 3.0
+
+    repo = migration_service.migration_repo
+    monkeypatch.setattr(
+        repo, "list_columns", AsyncMock(return_value=[("id", "BIGINT"), ("amount", "DOUBLE")])
+    )
+    monkeypatch.setattr(repo, "count_rows", AsyncMock(return_value=3))
+    monkeypatch.setattr(repo, "scalar", AsyncMock(return_value=3.0))
+    monkeypatch.setattr(MigrationService, "_run_on_source", AsyncMock(return_value=None))
+    monkeypatch.setattr(MigrationService, "_run_on_target", run_on_target)
+    monkeypatch.setattr(MigrationService, "_scalar_on_target", scalar_on_target)
+
+    result = await MigrationService()._copy_one_table(
+        conn=object(),
+        source_database="sales",
+        target_database="sales_copy",
+        table="orders",
+        migration_id="run1",
+        stage_root=_ROOT,
+        credential_params=dict(_CREDS),
+        actor="alice",
+        encrypted_password="enc",
+        session_id=None,
+        role="analyst",
+    )
+    assert result.errors == [] and result.verified and result.rows_imported == 3
+    assert len(seen) == 1 and _FOLDER + "*.parquet" in seen[0]
+    # The grant ended with the import.
+    with pytest.raises(SemanticError):
+        _build(seen[0])

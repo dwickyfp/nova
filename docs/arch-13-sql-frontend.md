@@ -270,6 +270,24 @@ before any secret is resolved. Pipes keep their validated
 `FILES("path" = "@stage/...")` source (the pipe validator and planner, not
 this check), and `INSERT INTO FILES` remains an unload validated as below.
 The `FILES()` calls the translator generates at execution are not re-parsed.
+One Nova-generated statement is parsed with a `FILES()` read: a database
+migration with data imports the rows it exported to its own per-run transfer
+folder (`app/modules/migration/data_mover.py`). The migration service runs that
+import inside `internal_file_read(folder, root=..., properties=...)`, a grant
+held in a server-side context variable. Only that service code path sets it;
+nothing in an HTTP request, SQL text, session variable or proxy connection can
+create or widen it. The folder must lie inside the configured transfer location
+(same scheme and bucket), with no `.`/`..`/empty segments or globs. Inside the
+grant, a `FILES()` relation is accepted only when its single `path` is a file
+name or one `*` pattern directly inside that folder and its other properties
+are exactly the format and storage settings Nova injected, so a user-supplied
+endpoint, region or instance-profile property is refused. A second `FILES()`
+relation, `DESC FILES(...)` and every statement outside the context are still
+refused. The grant is reset in `finally` and, as a context variable, is copied
+into parse worker threads per call without reaching concurrent requests
+(`tests/unit/test_sql_frontend_file_reads.py` runs two concurrent migrations
+and a user query on one worker). The import still runs as the caller, so
+Ranger governs the target write.
 
 Unload (`app/sql_frontend/unload.py`): `INSERT INTO FILES(...)`,
 `SELECT ... INTO OUTFILE` and `EXPORT TABLE` write only to a stage path written
