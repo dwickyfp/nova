@@ -26,6 +26,7 @@ const PASSTHROUGH = new Set([
 const CONTENT_TYPES: Record<string, string> = {
   table: "table",
   chart: "chart",
+  component: "component",
   citation: "citation",
   dashboard: "dashboard",
 };
@@ -463,6 +464,10 @@ export function wireFrame(event: AssistantEvent): V1Frame {
     case "citation": {
       const { payload, ...position } = fields;
       return { event: type, data: { ...(payload as Record<string, unknown>), ...position } };
+    }
+    case "component": {
+      const { block, ...position } = fields;
+      return { event: type, data: { ...(block as Record<string, unknown>), ...position } };
     }
     default:
       return { event: type, data: fields };

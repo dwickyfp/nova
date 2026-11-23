@@ -21,6 +21,13 @@ Ranger filters, masks and audit apply. Nova owns identity, the active role,
 data authorization, provenance, ontology meaning
 ([Supernova Business Ontology](arch-18-business-ontology.md)) and audit.
 
+Charts inside Agent answers are native too: a `DatavizChart` component draws
+a `ChartDefinition` over a draft dataset with the same `NativeChart` renderer.
+Its rows come from the caller-bound draft query
+(`/agents/studio/dataviz/drafts/{ref}/query`), which runs as the viewer under
+the active role; see
+[Answer components](arch-15-governed-studio.md#answer-components).
+
 **Add to Dataviz** on an Agent answer is native too.
 `backend/app/modules/viz/studio_publish.py` (routes in
 `studio_publish_router.py`) checks each chart with a signed, caller-bound

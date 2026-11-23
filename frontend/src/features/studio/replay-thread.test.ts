@@ -125,6 +125,32 @@ describe("replayThread", () => {
     expect(turns[0].blocks.citations).toHaveLength(1);
   });
 
+  it("replays registry components in their place, and leaves out ones it cannot draw", () => {
+    const kpi = {
+      kind: "component" as const, content_index: 1, content_id: "run:1",
+      component: "KpiTiles", version: 1,
+      props: { items: [{ label: "Revenue", value: 12, format: "number", aggregation: "value",
+                         evidence_id: "e1", column: "revenue" }] },
+    };
+    const turns = replayThread([
+      user("q"),
+      assistant("Revenue rose.", [
+        { kind: "text", content_index: 0, content_id: "run:0", text: "Revenue rose." },
+        kpi,
+        // A future component, or one whose props no longer match: not guessed.
+        { ...kpi, content_index: 2, content_id: "run:2", component: "Sparkline" },
+        { ...kpi, content_index: 3, content_id: "run:3", props: { items: [] } },
+        // An old chart block still replays read-only.
+        { kind: "chart", content_index: 4, content_id: "run:4", tool_call_id: "c1",
+          chart_spec: '{"mark":"bar"}' },
+      ]),
+    ]);
+    const kinds = turns[0].content.map((item) => item.type);
+    expect(kinds).toEqual(["text", "component", "chart"]);
+    const component = turns[0].content[1];
+    expect(component.type === "component" && component.block.component).toBe("KpiTiles");
+  });
+
   it("carries the token count and model onto the turn", () => {
     const turns = replayThread([
       user("q"),

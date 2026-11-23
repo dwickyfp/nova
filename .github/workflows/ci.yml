@@ -587,6 +587,9 @@ jobs:
       - name: Intelligent UI catalog and validator drift
         run: pnpm ui:check
 
+      - name: Studio component schema drift
+        run: pnpm components:check
+
       - name: Lint
         run: pnpm lint
 
