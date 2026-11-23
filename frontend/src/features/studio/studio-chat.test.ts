@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type TranscriptTurn } from "./studio-chat";
-import { replayThread, settleTurn } from "./studio-transcript";
+import { MAX_UI_PROGRAM_BYTES, replayThread, settleTurn } from "./studio-transcript";
 
 import { applyEvent } from "./studio-transcript";
 
@@ -119,6 +119,35 @@ describe("studio transcript reducer", () => {
       security_context_version: 2,
     });
     expect(cleared[0].content).toEqual([]);
+  });
+
+  it("reports an oversized interactive program instead of cutting it", () => {
+    const meta: AssistantEvent = {
+      type: "ui",
+      content_index: 0,
+      content_id: "run-1:0",
+      payload: {
+        catalog_version: "nova-openui-3",
+        program_sha256: "a".repeat(64),
+        fallback: "The written answer.",
+        state_defaults: {},
+        evidence: {},
+        actions: [],
+        provenance: { evidence_ids: [], scope: "user_simulation", assumption: true },
+      },
+    };
+    const chunk = (text: string): AssistantEvent =>
+      ({ type: "ui_delta", content_index: 0, content_id: "run-1:0", text });
+    // Multi-byte text reaches the byte limit before the character count does.
+    const half = "é".repeat(MAX_UI_PROGRAM_BYTES / 4);
+    const within = run([meta, chunk(half)]);
+    const ui = within.content[0];
+    expect(ui.type === "ui" && ui.block.program).toBe(half);
+    expect(ui.type === "ui" && ui.tooLarge).toBeFalsy();
+    const over = run([meta, chunk(half), chunk(half), chunk("x"), chunk("more")]);
+    const sealed = over.content[0];
+    expect(sealed.type === "ui" && sealed.tooLarge).toBe(true);
+    expect(sealed.type === "ui" && sealed.block.program).toBe("");
   });
 
   it("restores attached file cards without placing file content in the chat text", () => {

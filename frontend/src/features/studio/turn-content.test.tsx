@@ -103,6 +103,24 @@ describe("one table per query result", () => {
     }
   });
 
+  it("explains an interactive answer that was too large to show", async () => {
+    const message = turn("Retail leads.");
+    message.content.push({
+      id: "ui", index: 2, type: "ui", complete: true, tooLarge: true,
+      block: {
+        catalog_version: UI_CATALOG_VERSION, program_sha256: "test", program: "",
+        fallback: "Retail is ahead of web.", evidence: {}, state_defaults: {}, actions: [],
+        provenance: { evidence_ids: [], scope: "user_simulation", assumption: true },
+      },
+    });
+    const screen = await render(withQueries(<TurnContent turn={message} />));
+    await expect.element(screen.getByText(
+      "This interactive answer is too large to show. Here is the written answer.",
+    )).toBeVisible();
+    await expect.element(screen.getByText("Retail is ahead of web.")).toBeVisible();
+    expect(screen.getByRole("region", { name: "Interactive answer" }).query()).toBeNull();
+  });
+
   it.each(["ordered", "legacy"])(
     "keeps %s fallback media offline without hiding its labels",
     async (mode) => {
