@@ -131,9 +131,13 @@ async def test_reused_response_object_gets_a_new_identity_without_repeating_its_
     assert len(tool.runs) == len(approved) == 1
     statuses = [json.loads(frame.split("data: ", 1)[1]) for frame in result.frames
                 if frame.startswith("event: tool_status\n")]
-    assert [status["status"] for status in statuses] == ["running", "done", "done"]
+    # The repeat runs nothing, so it sends no status: a status for a call that was
+    # never announced would show as an unnamed tool chip.
+    assert [status["status"] for status in statuses] == ["running", "done"]
     assert statuses[0]["tool_call_id"] == statuses[1]["tool_call_id"] == approved[0]
-    assert statuses[2]["tool_call_id"] != approved[0]
+    announced = {json.loads(frame.split("data: ", 1)[1])["tool_call_id"]
+                 for frame in result.frames if frame.startswith("event: tool_call\n")}
+    assert {status["tool_call_id"] for status in statuses} <= announced
     replies = [m for m in provider.requests[-1] if m.get("role") == "tool"]
     assert [m["tool_call_id"] for m in replies] == ["same-object", "same-object"]
     assert json.loads(replies[-1]["content"])["metadata"]["deduplicated"] is True
