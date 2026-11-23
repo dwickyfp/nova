@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render } from "vitest-browser-react";
 import { userEvent } from "vitest/browser";
 import type { LayoutBlock } from "./block";
-import { chartPosition, LayoutView } from "./layout-view";
+import { chartPosition } from "./chart-position";
+import { LayoutView } from "./layout-view";
 import "@/styles/index.css";
 
 const BLOCK: LayoutBlock = {

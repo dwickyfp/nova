@@ -26,12 +26,12 @@ export type PlaceMapProps = {
 
 const ROUTE_TOKEN = "--chart-4";
 
-export function formatDistance(metres: number): string {
+function formatDistance(metres: number): string {
   const km = metres / 1000;
   return `${km.toLocaleString(undefined, { maximumFractionDigits: km < 10 ? 1 : 0 })} km`;
 }
 
-export function formatTravelTime(seconds: number): string {
+function formatTravelTime(seconds: number): string {
   const minutes = Math.max(1, Math.round(seconds / 60));
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;

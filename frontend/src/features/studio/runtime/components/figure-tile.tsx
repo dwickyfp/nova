@@ -30,12 +30,12 @@ function formatter(figure: Figure): Intl.NumberFormat {
 }
 
 /** The exact value, as shown in the tile's title. */
-export function exactFigure(figure: Figure): string {
+function exactFigure(figure: Figure): string {
   return figure.value === null ? "" : formatter(figure).format(figure.value);
 }
 
 /** Large figures read compact on a tile; the exact value stays in its title. */
-export function compactFigure(figure: Figure): string {
+function compactFigure(figure: Figure): string {
   if (figure.value === null) return "";
   if (Math.abs(figure.value) < 1_000_000 || figure.format === "percent") return exactFigure(figure);
   return new Intl.NumberFormat(undefined, {

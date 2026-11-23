@@ -29,6 +29,7 @@ import type { GeoMapProps } from "./schemas";
 import type { PlaceMapProps } from "../../intelligent-ui/place-map";
 import { cellOf } from "./spec-chart";
 import type { LayoutBlock } from "./block";
+import { chartPosition } from "./chart-position";
 import { FIGURE_GRID, FigureTile, type Figure } from "./figure-tile";
 
 type PageContext = {
@@ -46,21 +47,6 @@ const list = (value: unknown) => (Array.isArray(value) ? value : []);
 const number = (value: unknown) =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
 
-/** The chart's position on its page, read from its signed draft reference. */
-export function chartPosition(ref: unknown): number | null {
-  if (typeof ref !== "string") return null;
-  const [, payload] = ref.split(".");
-  if (!payload) return null;
-  try {
-    const padded = payload.replace(/-/g, "+").replace(/_/g, "/");
-    const value = JSON.parse(atob(padded + "=".repeat((4 - (padded.length % 4)) % 4))) as {
-      n?: unknown;
-    };
-    return typeof value.n === "number" && Number.isInteger(value.n) ? value.n : null;
-  } catch {
-    return null;
-  }
-}
 
 function Page({ props, renderNode }: { props: Props; renderNode: (value: unknown) => ReactNode }) {
   const streaming = useIsStreaming();
