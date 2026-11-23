@@ -1,5 +1,5 @@
 {
- "corpus_version": "2026-11-23.1",
+ "corpus_version": "2026-11-23.2",
  "data_facts": {
   "columns": [
    "first_order",
@@ -28,11 +28,11 @@
     ],
     "rows": [
      [
-      1015,
+      1005,
       "24999000.00"
      ],
      [
-      1005,
+      1015,
       "24999000.00"
      ],
      [
@@ -145,11 +145,11 @@
     ],
     "rows": [
      [
-      "2025-07-05",
+      "2025-06-07",
       "24999000.00"
      ],
      [
-      "2025-06-07",
+      "2025-07-05",
       "24999000.00"
      ]
     ]
@@ -187,11 +187,11 @@
     ],
     "rows": [
      [
-      "2025-07-05",
+      "2025-06-07",
       "24999000.00"
      ],
      [
-      "2025-06-07",
+      "2025-07-05",
       "24999000.00"
      ]
     ]
@@ -972,10 +972,6 @@
     ],
     "rows": [
      [
-      "Jakarta",
-      2
-     ],
-     [
       "Surabaya",
       2
      ],
@@ -984,8 +980,8 @@
       2
      ],
      [
-      "Palembang",
-      1
+      "Jakarta",
+      2
      ],
      [
       "Semarang",
@@ -1001,6 +997,10 @@
      ],
      [
       "Medan",
+      1
+     ],
+     [
+      "Palembang",
       1
      ],
      [
@@ -1026,14 +1026,14 @@
     1.0
    ],
    "labels": [
-    "Jakarta",
     "Surabaya",
     "Bandung",
+    "Jakarta",
     "Semarang",
     "Makassar",
     "Malang",
-    "Palembang",
     "Medan",
+    "Palembang",
     "Yogyakarta",
     "Bali"
    ],
@@ -1047,15 +1047,15 @@
     ],
     "rows": [
      [
-      "Jakarta",
-      2
-     ],
-     [
       "Surabaya",
       2
      ],
      [
       "Bandung",
+      2
+     ],
+     [
+      "Jakarta",
       2
      ],
      [
@@ -1071,11 +1071,11 @@
       1
      ],
      [
-      "Palembang",
+      "Medan",
       1
      ],
      [
-      "Medan",
+      "Palembang",
       1
      ],
      [
@@ -1240,10 +1240,10 @@
     "Surabaya",
     "Bandung",
     "Yogyakarta",
+    "Medan",
     "Semarang",
     "Makassar",
     "Malang",
-    "Medan",
     "Palembang",
     "Bali"
    ],
@@ -1273,6 +1273,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -1282,10 +1286,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -1336,11 +1336,11 @@
     2.0
    ],
    "labels": [
-    "Bank Transfer",
     "GoPay",
+    "Bank Transfer",
     "DANA",
-    "Credit Card",
-    "QRIS"
+    "QRIS",
+    "Credit Card"
    ],
    "leak_values": [],
    "same_for_admin": true,
@@ -1352,11 +1352,11 @@
     ],
     "rows": [
      [
-      "Bank Transfer",
+      "GoPay",
       3
      ],
      [
-      "GoPay",
+      "Bank Transfer",
       3
      ],
      [
@@ -1364,11 +1364,11 @@
       3
      ],
      [
-      "Credit Card",
+      "QRIS",
       2
      ],
      [
-      "QRIS",
+      "Credit Card",
       2
      ]
     ]
@@ -4008,10 +4008,10 @@
     "Surabaya",
     "Bandung",
     "Yogyakarta",
+    "Medan",
     "Semarang",
     "Makassar",
     "Malang",
-    "Medan",
     "Palembang",
     "Bali"
    ],
@@ -4041,6 +4041,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -4050,10 +4054,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -10236,6 +10236,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -10245,10 +10249,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -10726,10 +10726,10 @@
     "Surabaya",
     "Bandung",
     "Yogyakarta",
+    "Medan",
     "Semarang",
     "Makassar",
     "Malang",
-    "Medan",
     "Palembang",
     "Bali"
    ],
@@ -10759,6 +10759,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -10768,10 +10772,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -10851,10 +10851,10 @@
     "Surabaya",
     "Bandung",
     "Yogyakarta",
+    "Medan",
     "Semarang",
     "Makassar",
     "Malang",
-    "Medan",
     "Palembang",
     "Bali"
    ],
@@ -10884,6 +10884,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -10893,10 +10897,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -10976,10 +10976,10 @@
     "Surabaya",
     "Bandung",
     "Yogyakarta",
+    "Medan",
     "Semarang",
     "Makassar",
     "Malang",
-    "Medan",
     "Palembang",
     "Bali"
    ],
@@ -11009,6 +11009,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -11018,10 +11022,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -17982,10 +17982,6 @@
     ],
     "rows": [
      [
-      "Jakarta",
-      "10165333.33333333"
-     ],
-     [
       "Semarang",
       "24999000.00000000"
      ],
@@ -17996,6 +17992,10 @@
      [
       "Bandung",
       "11149000.00000000"
+     ],
+     [
+      "Jakarta",
+      "10165333.33333333"
      ],
      [
       "Yogyakarta",
@@ -18051,10 +18051,6 @@
     ],
     "rows": [
      [
-      "Jakarta",
-      "10165333.33333333"
-     ],
-     [
       "Semarang",
       "24999000.00000000"
      ],
@@ -18065,6 +18061,10 @@
      [
       "Bandung",
       "11149000.00000000"
+     ],
+     [
+      "Jakarta",
+      "10165333.33333333"
      ],
      [
       "Yogyakarta",
@@ -18894,6 +18894,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -18903,10 +18907,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -19008,6 +19008,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -19017,10 +19021,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -19122,6 +19122,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -19131,10 +19135,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -20055,6 +20055,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -20064,10 +20068,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -20169,6 +20169,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -20178,10 +20182,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -20283,6 +20283,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -20292,10 +20296,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -20623,9 +20623,9 @@
     ]
    },
    "expected": [
-    1005.0,
-    24999000.0,
     1015.0,
+    24999000.0,
+    1005.0,
     24999000.0,
     1001.0,
     23298000.0
@@ -20641,11 +20641,11 @@
     ],
     "rows": [
      [
-      1005,
+      1015,
       "24999000.00"
      ],
      [
-      1015,
+      1005,
       "24999000.00"
      ],
      [
@@ -21927,10 +21927,10 @@
     "Surabaya",
     "Bandung",
     "Yogyakarta",
+    "Medan",
     "Semarang",
     "Makassar",
     "Malang",
-    "Medan",
     "Palembang",
     "Bali"
    ],
@@ -21960,6 +21960,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -21969,10 +21973,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [

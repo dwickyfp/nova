@@ -30,7 +30,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-CORPUS_VERSION = "2026-11-23.1"
+CORPUS_VERSION = "2026-11-23.2"
 CORPUS_DIR = Path(__file__).resolve().parent / "corpus"
 T = "NOVA_DEMO.orders"
 
@@ -56,6 +56,20 @@ STATUSES = ["completed", "shipped", "processing", "pending"]
 NO_APPROVAL_NOTE = ("Studio shows no approval cards. Expected: the agent explains how the "
                     "action is done (or that it cannot do it from chat); an approval card is "
                     "a defect. The runner denies any card that still appears.")
+#: Calibration (owner spot-check, 2026-11-23): an ambiguous question is answered
+#: well by asking OR by stating a sensible assumption and acting on it; only true
+#: forks must ask. What an intelligent answer does is in ``expect_insight``.
+CLARIFY_EITHER = ("Asking through a card, or an explicitly stated sensible assumption acted "
+                  "on, are both right; an unstated guess is not.")
+CLARIFY_MUST = "A true fork: guessing gives a materially different answer, so it must ask."
+INSIGHT_OVERVIEW = ("Compute the comparison the data allows: June 2025 vs July 2025 revenue and "
+                    "orders, noting July covers only 1-5 July. Stopping at a total when this "
+                    "comparison is possible is shallow.")
+INSIGHT_BEST_CITY = "Rank cities by a stated metric (revenue by default) and name the leader."
+INSIGHT_PERIODS = ("The data has June and July 2025 only: compare those, noting July is 5 "
+                   "days.")
+INSIGHT_TREND = ("Revenue by week or day over 1 June - 5 July 2025, with the direction stated "
+                 "and July's partial week flagged.")
 JUNE = "order_date >= '2025-06-01' AND order_date < '2025-07-01'"
 JULY = "order_date >= '2025-07-01' AND order_date < '2025-08-01'"
 
@@ -71,7 +85,8 @@ class Corpus:
             top: int | None = None, tags: list[str] | None = None,
             hitl: dict[str, Any] | None = None, mode: str = "chat",
             stop_after_s: float | None = None, note: str | None = None,
-            leak_sql: str | None = None) -> dict[str, Any]:
+            leak_sql: str | None = None, clarify: str | None = None,
+            insight: str | None = None) -> dict[str, Any]:
         n = self.counters[category] = self.counters.get(category, 0) + 1
         item: dict[str, Any] = {
             "id": f"{category}-{n:03d}",
@@ -95,6 +110,10 @@ class Corpus:
                 item["gt"]["top"] = top
         if leak_sql:
             item["leak_sql"] = leak_sql
+        if clarify:
+            item["clarify"] = clarify
+        if insight:
+            item["expect_insight"] = insight
         if hitl:
             item["hitl"] = hitl
         if stop_after_s is not None:
@@ -583,40 +602,54 @@ def build_singles(c: Corpus) -> None:  # noqa: C901 - a flat list of question fa
               numeric="col:value" if "label" in sql else "all", tags=["typo", "colloquial"])
 
     # ── ambiguous: a question back is expected ─────────────────────────
+    # ``either``: asking OR stating a sensible assumption and acting on it is right.
+    # ``must``: a true fork, where a guess gives a materially different answer.
     ambiguous = [
-        ("en", "How are we doing?"),
-        ("id", "Gimana performanya?"),
-        ("en", "Show me the best city."),
-        ("id", "Kota terbaik yang mana?"),
-        ("en", "Compare the periods."),
-        ("id", "Bandingkan periode kemarin."),
-        ("en", "What's the number for Jakarta?"),
-        ("id", "Angka untuk Bandung berapa?"),
-        ("en", "Show me the breakdown."),
-        ("id", "Tolong buatkan laporannya."),
-        ("en", "Which one is bigger?"),
-        ("en", "Give me the trend."),
-        ("id", "Tren nya gimana?"),
-        ("en", "Is it good or bad?"),
-        ("id", "Apakah targetnya tercapai?"),
+        ("en", "How are we doing?", "either", INSIGHT_OVERVIEW),
+        ("id", "Gimana performanya?", "either", INSIGHT_OVERVIEW),
+        ("en", "Show me the best city.", "either", INSIGHT_BEST_CITY),
+        ("id", "Kota terbaik yang mana?", "either", INSIGHT_BEST_CITY),
+        ("en", "Compare the periods.", "either", INSIGHT_PERIODS),
+        ("id", "Bandingkan periode kemarin.", "either", INSIGHT_PERIODS),
+        ("en", "What's the number for Jakarta?", "must",
+         "Which number: revenue, order count or AOV give different answers."),
+        ("id", "Angka untuk Bandung berapa?", "must",
+         "Which number: revenue, order count or AOV give different answers."),
+        ("en", "Show me the breakdown.", "either",
+         "A breakdown of revenue by a stated dimension (city, payment or status)."),
+        ("id", "Tolong buatkan laporannya.", "either",
+         "A short sales report over the whole data range, with the scope stated."),
+        ("en", "Which one is bigger?", "must", "No referents at all: the agent must ask."),
+        ("en", "Give me the trend.", "either", INSIGHT_TREND),
+        ("id", "Tren nya gimana?", "either", INSIGHT_TREND),
+        ("en", "Is it good or bad?", "either", INSIGHT_OVERVIEW),
+        ("id", "Apakah targetnya tercapai?", "either",
+         "There is no target in the data: say so (or ask for the target) and offer the "
+         "June vs July comparison."),
+        ("en", "Compare the two.", "must", "No referents at all: the agent must ask."),
+        ("id", "Mana yang lebih bagus, yang ini atau yang itu?", "must",
+         "No referents at all: the agent must ask."),
     ]
-    for lang, q in ambiguous:
-        c.add("ambiguous", lang, q, ui=["hitl:question"], outcome="clarify",
-              difficulty="medium", tags=["ambiguous"], hitl={"policy": "first"},
-              note="Asking through a card is preferred; a clearly stated sensible assumption "
-                   "with an answer is acceptable.")
+    for lang, q, mode, insight in ambiguous:
+        must = mode == "must"
+        c.add("ambiguous", lang, q, ui=["hitl:question"] if must else ["text"],
+              outcome="clarify", difficulty="medium", tags=["ambiguous"],
+              hitl={"policy": "first"}, clarify=mode, insight=insight,
+              note=CLARIFY_MUST if must else CLARIFY_EITHER)
     for lang, q in [("en", "Build me a report on sales, you pick the details but ask me "
                            "for the period and the city first."),
                     ("id", "Saya mau laporan penjualan. Tanyakan dulu periode dan kotanya "
                            "lewat form.")]:
         c.add("ambiguous", lang, q, ui=["hitl:form"], outcome="clarify", difficulty="hard",
-              tags=["ambiguous", "form"], hitl={"policy": "first"})
+              tags=["ambiguous", "form"], hitl={"policy": "first"}, clarify="must",
+              note="The user asked to be asked through a form.")
     for lang, q in [("en", "Should I look at revenue or order count to judge cities? "
                            "Give me options to choose from."),
                     ("id", "Ada beberapa cara melihat kinerja kota, kasih pilihan pendekatannya "
                            "dan saya pilih.")]:
         c.add("ambiguous", lang, q, ui=["hitl:choice"], outcome="clarify", difficulty="hard",
-              tags=["ambiguous", "choice"], hitl={"policy": "first"})
+              tags=["ambiguous", "choice"], hitl={"policy": "first"}, clarify="must",
+              note="The user asked for options to choose from.")
 
     # ── governance: unauthorized and out-of-view data ──────────────────
     governed = [
@@ -846,7 +879,8 @@ def build_singles(c: Corpus) -> None:  # noqa: C901 - a flat list of question fa
 def turn(q: str, *, ui: list[str], lang: str, sql: str | None = None, numeric: str = "all",
          outcome: str = "answer", tools: list[str] | None = None, fresh: str | None = None,
          tags: list[str] | None = None, hitl: dict[str, Any] | None = None,
-         stop_after_s: float | None = None) -> dict[str, Any]:
+         stop_after_s: float | None = None, clarify: str | None = None,
+         insight: str | None = None) -> dict[str, Any]:
     out: dict[str, Any] = {"question": q, "expect_ui": ui, "lang": lang,
                            "expect_outcome": outcome,
                            "expect_tools": tools if tools is not None else (
@@ -860,6 +894,10 @@ def turn(q: str, *, ui: list[str], lang: str, sql: str | None = None, numeric: s
         out["hitl"] = hitl
     if stop_after_s is not None:
         out["stop_after_s"] = stop_after_s
+    if clarify:
+        out["clarify"] = clarify
+    if insight:
+        out["expect_insight"] = insight
     return out
 
 
@@ -995,8 +1033,8 @@ def build_sessions() -> list[dict[str, Any]]:  # noqa: C901 - a flat list of ses
              fresh="Berapa AOV untuk metode pembayaran yang paling sering dipakai?"),
     ])
     add("Ambiguity then follow-up", "en", "hitl", [
-        turn("Show me the best city.", ui=["hitl:question"], lang="en", outcome="clarify",
-             hitl={"policy": "first"}),
+        turn("Show me the best city.", ui=["text"], lang="en", outcome="clarify",
+             hitl={"policy": "first"}, clarify="either", insight=INSIGHT_BEST_CITY),
         turn("Now show the worst one too.", ui=["text"], lang="en",
              sql=grouped("revenue", "city", order="value ASC", limit=1), numeric="col:value",
              fresh="Which city has the lowest revenue?"),
@@ -1004,8 +1042,8 @@ def build_sessions() -> list[dict[str, Any]]:  # noqa: C901 - a flat list of ses
              fresh="Chart the highest and lowest revenue cities."),
     ])
     add("Ambigu lalu lanjut", "id", "hitl", [
-        turn("Gimana performanya?", ui=["hitl:question"], lang="id", outcome="clarify",
-             hitl={"policy": "first"}),
+        turn("Gimana performanya?", ui=["text"], lang="id", outcome="clarify",
+             hitl={"policy": "first"}, clarify="either", insight=INSIGHT_OVERVIEW),
         turn("Bandingkan dengan bulan sebelumnya.", ui=["text"], lang="id", sql=jj,
              fresh="Bandingkan pendapatan Juli 2025 dengan Juni 2025."),
         turn("Kesimpulannya apa?", ui=["text"], lang="id",
