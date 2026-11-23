@@ -157,9 +157,50 @@ wildcards (`ord*`, `sal?s`), exclusions, a name differing only in case, and
 recursive or unknown resource kinds. Any enabled mask in a linked Ranger tag
 service also counts, because Nova cannot resolve tags to tables. Without
 Ranger, or when its policies cannot be read, `CREATE STREAM` and stream reads
-fail with `STREAM_GOVERNANCE_UNSUPPORTED`. Creating a Stream needs
-`SELECT` on the source for your active role; reading it is checked again each
-time, and the engine checks your `SELECT` in the same statement that reads it.
+fail with `STREAM_GOVERNANCE_UNSUPPORTED`. Reading a Stream is checked again
+each time, and the engine checks your `SELECT` in the same statement that
+reads it.
+
+## Privileges and quotas
+
+`CREATE STREAM` needs, for your active role:
+
+| Privilege | Why |
+| --- | --- |
+| `SELECT` on the source | The Stream shows the source's rows. |
+| `CREATE TABLE` in the Stream's database | A Stream is a new name in that database, like a table. |
+| `ALTER` on the source, for the **first** Stream on a table only | Registering a source changes every writer of that table: writes go through capture (row and lock limits), `ALTER TABLE` and `INSERT OVERWRITE` are refused, and loads that bypass Nova block the source. That is an owner's change, the same class as `ALTER TABLE`. A Stream on a table that already has one changes nothing for its writers and needs only `SELECT`. |
+
+`ALTER` is the narrowest engine privilege that means "may change how this
+table works": `INSERT` would let any writer impose capture on a table it only
+loads, and `DROP` or database-level privileges are broader than needed.
+
+The engine decides both checks, as you with your active role, because Ranger
+evaluates them inside the patched FE. StarRocks has no privilege-test
+function, so Nova runs a statement the engine authorizes before it fails
+harmlessly: `ALTER TABLE <source> DROP ROLLUP <random name>` for `ALTER` (no
+such rollup), and `CREATE TABLE <db>.<random name> … replication_num = 0` for
+`CREATE TABLE` (zero replicas are refused). The random names start with
+`__nova_stream_check_`. An access error refuses with `STREAM_ACCESS_DENIED`;
+any other outcome is not proof, and the Stream is refused as unverified
+(also `STREAM_ACCESS_DENIED`). These statements appear in the engine's audit
+log under your name.
+
+Quotas, per owner role, refuse with `STREAM_QUOTA_EXCEEDED`:
+
+| Setting | Default | Counts |
+| --- | --- | --- |
+| `STREAM_MAX_STREAMS_PER_ROLE` | 100 | Live (`READY` or `STALE`) Streams the role owns |
+| `STREAM_MAX_SOURCES_PER_ROLE` | 20 | Distinct tables those Streams read |
+
+`CREATE OR REPLACE` of the role's own Stream does not count it twice. A
+Stream on a table the role's Streams already read does not use another
+source. Two creates by one role at the same moment are checked independently
+and can both pass.
+
+`CREATE STREAM` declares schema and security effects as well as metadata (it
+may create journal tables and Ranger policies), so read-only callers such as
+assistant tools and `READ ONLY` proxy transactions refuse it.
 
 Not supported: Streams on views, external catalogs or partitioned tables, and
 `AT`/`BEFORE`. Partitioned tables stay out because a captured commit can move

@@ -36,7 +36,7 @@ import logging
 import secrets
 import time
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from typing import Any
@@ -486,8 +486,20 @@ class SourceRegistry:
 
     # ── registration ────────────────────────────────────────────────────
 
-    async def register(self, database: str, table: str, principal: str) -> SourceRecord:
-        """Admit a table as a stream source, or return its current registration."""
+    async def register(
+        self,
+        database: str,
+        table: str,
+        principal: str,
+        *,
+        admit: Callable[[], Awaitable[None]] | None = None,
+    ) -> SourceRecord:
+        """Admit a table as a stream source, or return its current registration.
+
+        ``admit`` runs only when the table is not registered yet, before any
+        engine, Ranger or metadata change: it refuses callers who may not start
+        capturing the table.
+        """
         identity = await self.engine_identity(database, table)
         if identity is None:
             raise StreamError("STREAM_SOURCE_NOT_FOUND", f"Table {database}.{table} does not exist")
@@ -505,6 +517,8 @@ class SourceRegistry:
             if current.status == REGISTERING:
                 raise StreamError("STREAM_SOURCE_NOT_READY", "The source is being registered")
             return current
+        if admit is not None:
+            await admit()
         if model.upper() not in {"PRIMARY_KEYS", "PRIMARY_KEY"}:
             raise StreamError(
                 "STREAM_MODE_UNSUPPORTED_BY_SOURCE",

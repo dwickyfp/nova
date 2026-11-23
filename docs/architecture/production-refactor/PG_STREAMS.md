@@ -30,6 +30,18 @@ staying in StarRocks:
 No PG transaction claims to commit engine data. Recovery verifies engine
 evidence first, then records the matching control receipt here.
 
+## CREATE STREAM admission
+
+Before any registration, Ranger or metadata change, `StreamService.create`
+proves privileges in the engine on the caller's own session
+(`app/modules/streams/privileges.py`): `CREATE TABLE` in the Stream's
+database, and, only when `SourceRegistry.register` finds no live source for
+the table, `ALTER` on the source. Per-role quotas are computed from the
+current generations in `config_streams` (live Streams of the owner role and
+their distinct `source_id`s); no column records which role registered a
+source, so no schema change was needed. The check reads metadata without a
+lock, so two concurrent creates by one role can both pass.
+
 ## Access
 
 Stream statements run through the shared SQL executor, so every SQL path can

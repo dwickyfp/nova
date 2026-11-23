@@ -143,6 +143,13 @@ its CTE bodies quote or comment their text, and a statement that does not
 parse is not read-only. `tests/unit/test_read_only_differential.py` compares
 both classifiers over the grammar corpus and the functional SQL scenarios.
 
+Nova statements declare their real effects. `CREATE STREAM` declares
+`changes_schema` and `changes_security` besides `writes_metadata`, because the
+first Stream on a table creates journal tables and Ranger policies and changes
+how every write to that table runs; it is never read-only. Its executor proves
+`CREATE TABLE` in the Stream's database and, for a new source, `ALTER` on the
+table in the engine as the caller (see `docs/sql_docs/13-nova-streams.md`).
+
 `LogicalPlan` carries the statement and analysis. Lowering produces one of:
 
 - `EngineSqlPlan`: a safe SQL template, effects and unresolved stage descriptors.

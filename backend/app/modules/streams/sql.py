@@ -118,7 +118,7 @@ class StreamSql:
             )
 
         async def query(sql: str) -> tuple[list[str], list[list[Any]]]:
-            result = await self._as_caller(
+            result = await self.as_caller(
                 adapters, context, sql, settings.STREAM_WRITE_MAX_ROWS + 1
             )
             if result.error:
@@ -263,7 +263,7 @@ class StreamSql:
                 plan, context, sql_override=sql.replace(" WITH LABEL __NOVA_STREAM_LABEL__ ", " ")
             )
         target_db, target_table = intent.target[1] or (context.database or ""), intent.target[2]
-        explain = await self._as_caller(
+        explain = await self.as_caller(
             adapters, context, "EXPLAIN " + sql.replace("__NOVA_STREAM_LABEL__", "nova_explain"), 1
         )
         if explain.error:
@@ -283,7 +283,7 @@ class StreamSql:
                 outcome["error"] = exc
                 raise
 
-        login = await self._as_caller(adapters, context, "SELECT USER()", 1)
+        login = await self.as_caller(adapters, context, "SELECT USER()", 1)
         if login.error or not login.rows:
             raise StreamError("STREAM_CONSUMPTION_BLOCKED", "The session's login is unknown")
         # The engine records a load under the session's *login* account: under
@@ -386,7 +386,7 @@ class StreamSql:
         return anchor.stop.stop + 1
 
     @staticmethod
-    async def _as_caller(adapters: Any, context: Any, sql: str, max_rows: int) -> QueryResult:
+    async def as_caller(adapters: Any, context: Any, sql: str, max_rows: int) -> QueryResult:
         password = (
             "" if context.connection is not None else adapters._decrypt(context.encrypted_password)
         )

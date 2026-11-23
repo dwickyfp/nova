@@ -25,7 +25,7 @@ import logging
 import time
 import uuid
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any, TypeVar, cast
 
 from app.core.config import settings
@@ -39,6 +39,7 @@ from app.modules.streams.consumption import (
 from app.modules.streams.control import acting_as, caller_actor, stream_metadata
 from app.modules.streams.journal import ConsumptionJournal
 from app.modules.streams.namespace import StreamName
+from app.modules.streams.privileges import require_create_privilege, require_owner_privilege
 from app.modules.streams.reducer import (
     ACTION,
     IS_UPDATE,
@@ -82,11 +83,19 @@ def _stale_error(retention_days: int) -> StreamError:
     )
 
 
+#: Runs one statement on the caller's own engine session (active role set)
+#: and returns the engine's error text, or ``None`` when it succeeded.
+EngineProbe = Callable[[str], Awaitable[str | None]]
+
+
 @dataclass(frozen=True, slots=True)
 class StreamCaller:
     username: str
     role: str | None
     security_context_version: int = 1
+    #: The caller's engine session, for privilege checks the engine itself
+    #: decides (CREATE STREAM). Without it, those checks refuse.
+    engine: EngineProbe | None = field(default=None, compare=False, repr=False)
 
     def acting(self):  # noqa: ANN201 - a context manager binding the metadata actor
         """Record Stream control metadata as this caller while the block runs."""
@@ -225,8 +234,14 @@ class StreamService:
         if await self._table_exists(name.database, name.name):
             raise StreamError("STREAM_NAME_COLLISION", "A table or view occupies this name")
         await self.authorize_read(caller, source.database, source.name)
+        await require_create_privilege(caller, name.database)
+        await self._check_quota(caller, source, replacing)
+
+        async def admit_new_source() -> None:
+            await require_owner_privilege(caller, source.database, source.name)
+
         source_record = await source_registry.register(
-            source.database, source.name, caller.username
+            source.database, source.name, caller.username, admit=admit_new_source
         )
         await require_governance_supported(source.database, source.name)
         if show_initial_rows:
@@ -257,6 +272,40 @@ class StreamService:
             if previous is not None:
                 await source_registry.release_if_unused(previous)
         return published
+
+    async def _check_quota(
+        self, caller: StreamCaller, source: StreamName, replacing: StreamRecord | None
+    ) -> None:
+        """Refuse a stream beyond the role's stream or captured-source quota.
+
+        A role's sources are the distinct tables its live streams read. Replacing
+        one of the role's own streams does not count it twice. Concurrent
+        creates by one role are checked independently and can pass together.
+        """
+        rows = await self.repository.current_generations(statuses=(READY, STALE))
+        owned = [
+            row for row in rows
+            if str(row["owner_role"]) == caller.role
+            and (replacing is None or row["stream_id"] != replacing.stream_id)
+        ]
+        limit = settings.STREAM_MAX_STREAMS_PER_ROLE
+        if len(owned) >= limit:
+            raise StreamError(
+                "STREAM_QUOTA_EXCEEDED",
+                f"Role {caller.role} already owns {len(owned)} streams, the most allowed "
+                f"({limit}); drop a stream first",
+            )
+        sources = {str(row["source_id"]) for row in owned}
+        current = await source_registry.active_for_table(source.database, source.name)
+        if current is not None and current.status == READY and current.source_id in sources:
+            return
+        limit = settings.STREAM_MAX_SOURCES_PER_ROLE
+        if len(sources) >= limit:
+            raise StreamError(
+                "STREAM_QUOTA_EXCEEDED",
+                f"Role {caller.role}'s streams already read {len(sources)} tables, the most "
+                f"allowed ({limit}); drop the streams of a table first",
+            )
 
     async def _snapshot(self, source: SourceRecord, caller: StreamCaller) -> tuple[int, int | None]:
         """Journal the source's current rows as one snapshot commit for a new stream.
