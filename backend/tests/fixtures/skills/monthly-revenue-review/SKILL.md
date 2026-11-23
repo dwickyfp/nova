@@ -15,9 +15,11 @@ Use this playbook when the user asks for a monthly revenue review for a month
 
 ## Steps
 
-1. Compute revenue for the review month and the previous month from
-   `NOVA_DEMO.orders`. Count every order status except `cancelled`. Use this
-   SQL pattern, replacing the two months:
+1. Get revenue and order count for the review month and the previous month
+   from the NOVA_DEMO orders data. Query the governed sales data (the
+   `demo_sales` semantic view, revenue by order month) when it is available.
+   Revenue counts every order status except `cancelled`. This SQL pattern is
+   the definition; use it as written when explicit SQL is available:
 
    ```sql
    SELECT DATE_FORMAT(order_date, '%Y-%m') AS month,

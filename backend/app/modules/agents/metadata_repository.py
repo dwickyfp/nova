@@ -524,13 +524,9 @@ class AgentMetadataRepository:
             (owner_name or self.actor.principal, fields["source"], fields["name"]))
         if len(existing) > 1:
             raise MetadataConflict()
-        # MCP classification columns are written only when the caller names
-        # them (Discover); other registrations leave them at their defaults.
-        classification = {
-            key: fields[key]
-            for key in ("annotations", "read_only", "classification_source", "hint_changed")
-            if key in fields
-        }
+        # MCP annotations are written only when the caller names them
+        # (Discover); other registrations leave the column unchanged.
+        classification = {key: fields[key] for key in ("annotations",) if key in fields}
         if "annotations" in classification and classification["annotations"] is not None:
             classification["annotations"] = Jsonb(classification["annotations"])
         if existing:
@@ -566,17 +562,6 @@ class AgentMetadataRepository:
         )
         assert row is not None
         return row
-
-    async def set_tool_classification(
-        self, tool_id: str, read_only: bool, *, owner_name: str | None = None
-    ) -> dict[str, Any] | None:
-        """An administrator confirms a tool's read-only switch; it takes effect now."""
-        await self._bound()
-        return await self._one(
-            "UPDATE nova_meta.config_tools SET read_only=%s,classification_source='admin',"
-            "hint_changed=false,metadata_revision=metadata_revision+1 "
-            "WHERE tool_id=%s AND owner_name=%s AND source LIKE 'mcp:%%' RETURNING *",
-            (bool(read_only), tool_id, (owner_name or self.actor.principal)))
 
     async def set_tool_enabled(
         self, tool_id: str, enabled: bool, *, owner_name: str | None = None

@@ -415,7 +415,7 @@ describe("AgentConfigurationTab", () => {
     );
     await screen.getByRole("tab", { name: "Tools" }).click();
     await expect
-      .element(screen.getByText("External calls always require approval."))
+      .element(screen.getByText(/runs these tools without asking/))
       .toBeVisible();
     await screen.getByRole("checkbox", { name: /lookup_customer/ }).click();
     await screen.getByRole("button", { name: "Save", exact: true }).click();

@@ -43,7 +43,17 @@ def _external_error_text(parts: list[str]) -> str:
     return text.replace("</EXTERNAL_CONTENT>", "")
 
 
+def hinted_read_only(annotations: dict[str, Any] | None) -> bool:
+    """The server declares the tool read-only and not destructive."""
+    hints = annotations or {}
+    return hints.get("readOnlyHint") is True and hints.get("destructiveHint") is not True
+
+
 class McpToolRunner:
+    # A Studio agent runs every MCP tool without asking; the loop audits each
+    # call. The classification matters when nobody is present: a scheduled
+    # automation or research branch may call a tool its server declares
+    # read-only and not destructive (a lookup), never any other.
     requires_consent = True
     classification: ToolClassification = "destructive"
 
@@ -51,9 +61,7 @@ class McpToolRunner:
         self.server = server
         self.tool = tool
         self.name = "mcp_" + str(tool["tool_id"]).replace("-", "")
-        # Only an administrator-confirmed read-only switch lets a call run without
-        # the approval card; a server's own hint never does.
-        if tool.get("classification_source") == "admin" and tool.get("read_only") is True:
+        if hinted_read_only(tool.get("annotations")):
             self.classification = "read_only"
         # The model-facing name is opaque and unique; people read this label.
         self.display_name = (
@@ -72,7 +80,7 @@ class McpToolRunner:
 
     def preview(self, invocation: ToolInvocation) -> str:
         """What the approval card shows: the tool, its server, and the exact arguments."""
-        head = f"Call external tool {self.tool['name']} on {self.server['name']}"
+        head = f"External tool {self.tool['name']} on {self.server['name']}"
         args = invocation.arguments or {}
         if not args:
             return head
@@ -130,7 +138,8 @@ class McpToolRunner:
                 ) if safe else "External tool completed.",
                 data={"content": safe},
                 evidence={"source": "external_mcp", "server_id": self.server["server_id"]},
-                citations=[{"source": "external_mcp", "server": self.server.get("name"),
+                citations=[{"source": "external_mcp", "title": self.display_name,
+                            "server": self.server.get("name"),
                             "tool": self.tool.get("name")}] if safe else None,
                 metadata={"evidence_kind": "external"},
             )

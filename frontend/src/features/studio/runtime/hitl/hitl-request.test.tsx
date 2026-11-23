@@ -32,47 +32,28 @@ const automation = parseHitlRequest({
 })!;
 
 describe("approval", () => {
-  it("says plainly what the action does, why it asks and who it runs as", async () => {
+  // Studio agents act without asking. Approvals stored by earlier versions
+  // replay as past steps; nothing offers to answer them.
+  it("never offers to answer an approval, even on a live run", async () => {
     const screen = await render(<HitlRequest part={part(automation)} live onAnswer={vi.fn()} />);
-    const text = screen.container.textContent ?? "";
-    expect(text).toContain("Schedule the automation 'Weekly revenue' every Monday at 08:00");
-    expect(text).toContain("Changes data");
-    expect(text).toContain("Runs as marketing");
-    expect(text).toContain("needs your approval each time");
-    expect(text).not.toMatch(/Semantic request|SQL that will run/);
+    expect(screen.getByRole("button").query()).toBeNull();
+    expect(screen.container.textContent ?? "").not.toContain("Allow once");
   });
 
-  it("offers only Allow once and Deny", async () => {
-    for (const [label, action] of [["Allow once", "allow_once"], ["Deny", "deny"]] as const) {
-      const onAnswer = vi.fn().mockResolvedValue(undefined);
-      const screen = await render(<HitlRequest part={part(automation)} live onAnswer={onAnswer} />);
-      expect(screen.getByRole("button", { name: "Allow for this chat" }).query()).toBeNull();
-      expect(screen.getByRole("button", { name: "Edit then run" }).query()).toBeNull();
-      await screen.getByRole("button", { name: label }).click();
-      expect(onAnswer).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ requestId: "req-1" }), { action });
-      await screen.unmount();
-    }
+  it("replays a stored approval as a settled line with what it did", async () => {
+    const allowed = await render(
+      <HitlRequest
+        part={part(automation, { status: "allowed", summary: "You allowed this action", state: "done" })}
+        live={false}
+        onAnswer={vi.fn()}
+      />,
+    );
+    await allowed.getByRole("button", { name: /You allowed this action/ }).click();
+    expect(allowed.container.textContent).toContain("Schedule the automation 'Weekly revenue' every Monday at 08:00");
+    expect(allowed.getByRole("button", { name: "Allow once" }).query()).toBeNull();
   });
 
-  it("explains a role switch", async () => {
-    const request = parseHitlRequest({
-      kind: "approval", title: "Allow this change to your session?", classification: "session_change",
-      reason: "changes_role", role: "analyst", action: "Switch the active role to finance",
-    })!;
-    const screen = await render(<HitlRequest part={part(request)} live onAnswer={vi.fn()} />);
-    expect(screen.container.textContent).toContain("Switches your role");
-    expect(screen.container.textContent).toContain("switches the active role for this chat");
-  });
-
-  it("shows the server's refusal and keeps the request answerable", async () => {
-    const onAnswer = vi.fn().mockRejectedValueOnce(new Error("This request is no longer waiting."));
-    const screen = await render(<HitlRequest part={part(automation)} live onAnswer={onAnswer} />);
-    await screen.getByRole("button", { name: "Allow once" }).click();
-    await expect.element(screen.getByRole("alert")).toHaveTextContent("This request is no longer waiting.");
-    expect(screen.getByRole("button", { name: "Allow once" }).element()).toBeEnabled();
-  });
-
-  it("replays an approval stored by an earlier version as a past step, without buttons", async () => {
+  it("replays an approval stored by an older version as a past step", async () => {
     const stored = parseHitlRequest({
       kind: "approval", title: "Approve this data step?", classification: "read_only",
       reason: "asks_first", role: "marketing", preview_kind: "semantic",
@@ -82,17 +63,6 @@ describe("approval", () => {
     expect(stored).toMatchObject({ kind: "approval", legacy: true, action: "Revenue by order status" });
     const pending = await render(<HitlRequest part={part(stored)} live onAnswer={vi.fn()} />);
     expect(pending.getByRole("button").query()).toBeNull();
-    await pending.unmount();
-    const allowed = await render(
-      <HitlRequest
-        part={part(stored, { status: "allowed", summary: "You allowed this once", state: "done" })}
-        live={false}
-        onAnswer={vi.fn()}
-      />,
-    );
-    await allowed.getByRole("button", { name: /You allowed this once/ }).click();
-    expect(allowed.container.textContent).toContain("Revenue by order status");
-    expect(allowed.getByRole("button", { name: "Allow once" }).query()).toBeNull();
   });
 });
 
@@ -232,8 +202,9 @@ describe("settled and unreachable requests", () => {
 });
 
 describe("registry", () => {
-  it("has the four built-in kinds and accepts a new one", () => {
-    for (const kind of ["approval", "question", "form", "choice"]) expect(hitlKind(kind)).toBeDefined();
+  it("has the three built-in kinds, no approval, and accepts a new one", () => {
+    for (const kind of ["question", "form", "choice"]) expect(hitlKind(kind)).toBeDefined();
+    expect(hitlKind("approval")).toBeUndefined();
     registerHitlKind({
       kind: "question",
       label: "Question",

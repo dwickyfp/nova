@@ -139,7 +139,7 @@ _MCP_COLUMNS = (
 
 _TOOL_COLUMNS = (
     "tool_id, owner_name, name, description, source, input_schema, is_enabled, "
-    "created_at, updated_at, annotations, read_only, classification_source, hint_changed"
+    "created_at, updated_at, annotations"
 )
 
 
@@ -467,9 +467,6 @@ def _tool_row(row: list[Any]) -> dict:
         created_at,
         updated_at,
         annotations,
-        read_only,
-        classification_source,
-        hint_changed,
     ) = row
     return {
         "tool_id": tool_id,
@@ -482,9 +479,6 @@ def _tool_row(row: list[Any]) -> dict:
         "created_at": _iso(created_at),
         "updated_at": _iso(updated_at),
         "annotations": _as_json(annotations) or {},
-        "read_only": bool(read_only),
-        "classification_source": classification_source or "server_hint",
-        "hint_changed": bool(hint_changed),
     }
 
 
@@ -773,14 +767,6 @@ class AgentRepository:
             row = await store.get_tool(tool_id)
         return (_tool_row([row.get(key.strip()) for key in _TOOL_COLUMNS.split(",")])
                 if row and row["owner_name"] == owner_name else None)
-
-    async def set_tool_classification(
-        self, tool_id: str, *, owner_name: str, read_only: bool
-    ) -> dict | None:
-        async with agent_metadata(owner_name) as store:
-            row = await store.set_tool_classification(tool_id, read_only, owner_name=owner_name)
-        return (_tool_row([row.get(key.strip()) for key in _TOOL_COLUMNS.split(",")])
-                if row else None)
 
     async def set_tool_enabled(
         self, tool_id: str, *, owner_name: str, enabled: bool

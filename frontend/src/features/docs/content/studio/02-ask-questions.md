@@ -105,8 +105,8 @@ between the parts they came between, with their own summary line.
 
 ### When the role changes during an answer
 
-If the agent switches your active role while it answers (for example after you
-approve a role switch), a line reads "Role changed to *role*. Earlier messages
+If the agent switches your active role while it answers (for example because
+you asked it to work as another of your roles), a line reads "Role changed to *role*. Earlier messages
 are hidden because they belong to the previous role." Steps and text produced
 under the previous role are removed, and the answer continues below the line
 under the new role.
@@ -125,16 +125,42 @@ Under each answer:
 The token count next to the buttons (for example "13,189 tokens") is how much
 AI model work the answer used.
 
+## What the agent does on its own
+
+A Studio agent works without asking permission. When your question needs it,
+the agent runs its tools and takes actions itself: for example it calls an
+outside tool, schedules an automation, creates an agent or a semantic model,
+changes a Dataviz dashboard or a definition, or switches to another of your
+roles. Each step appears in the answer's steps as it happens.
+
+What stays in place:
+
+- The agent works as you, with your active role. It reads only what that role
+  may read, and every query goes through the same access policies, row filters
+  and masks as your own.
+- It never runs a statement that would change data from a question.
+- Only an administrator connects outside tools, and an administrator can turn
+  any tool off.
+- Every tool call is recorded in the audit log under your name and role, with
+  its inputs (passwords, tokens and keys are hidden).
+
+A scheduled automation runs with nobody there, so it only reads: it answers
+from data and can call an outside tool whose server says it only reads, but it
+never takes an action, calls any other outside tool, or schedules another
+automation.
+
+Answers from **Neva** work differently: Neva asks before an action that changes
+something. See [Write SQL in the SQL Workspace](/docs/sql/sql-workspace).
+
 ## When the agent asks you
 
-Sometimes the agent stops and asks you something before it continues. The
+Sometimes the agent needs you to say what you mean before it continues. The
 request appears in the answer, in the place where the agent stopped, and waits
 for you. Only you can answer it: other people, and you under another role or
 another sign-in, cannot.
 
 | Card | What it asks | How to answer |
 | --- | --- | --- |
-| **Approval needed** | Permission to take an action that changes something | **Allow once** or **Deny** |
 | **Question** | Which of a few things you mean | Click a suggested answer, or type in **Your answer** and press **Enter** |
 | **Details needed** | A few values, such as a period or a region | Fill in the fields and click **Continue** |
 | **Choose one** | Which of a few approaches to take | Pick a card (the agent may mark one **Suggested**) and click **Continue with this option** |
@@ -142,26 +168,12 @@ another sign-in, cannot.
 On a question, form or choice, **Skip, let the agent assume** lets the agent
 continue with its own assumption, which it states in the answer.
 
-### Approve an action
-
-Questions about your data run without asking. The agent reads only what your
-active role may read, so there is nothing to approve. Statements that would
-change data are never run from a question.
-
-An action that changes something always asks first: for example scheduling an
-automation, calling an outside tool, creating an agent or a semantic model,
-changing a Dataviz dashboard or a definition, or switching your role. The card
-says what the action does, the role it runs as, and why it asks.
-
-- **Allow once** takes this action.
-- **Deny** stops this action; the agent continues without it.
-
-Each approval covers one action. The next action asks again.
-
 ### After you answer
 
-The card closes to one line, such as "You chose: By month" or "You allowed this
-action". Click the line to see what was asked. The same line appears when you
+The card closes to one line, such as "You chose: By month". Click the line to
+see what was asked. Conversations from before agents acted on their own may
+show a closed approval line such as "You allowed this action"; it cannot be
+answered again. The same line appears when you
 open the conversation again from **History**.
 
 A request waits up to 10 minutes; after that it shows "The request expired".
@@ -169,10 +181,8 @@ Clicking **Stop** while a request is waiting closes it as "Stopped before you
 answered". An agent asks at most four times per answer, and never asks during
 scheduled automations, where nobody is there to answer.
 
-Approvals belong to the login and active role that requested them. After
-switching roles or signing in again, start a new request to approve an action. A
-pending request cannot be answered from another login, even for the same
-account.
+Requests belong to the login and active role that asked them. A pending
+request cannot be answered from another login, even for the same account.
 
 ## Limits and errors
 

@@ -2,9 +2,10 @@
 
 Q1  ACCOUNTADMIN-registered connectors may reach loopback and private networks;
     link-local (cloud metadata), multicast and reserved addresses stay blocked.
-Q2  Discover pre-fills a per-tool read-only switch from the server's hint; it
-    takes effect only after an administrator confirms it, and a changed hint
-    reverts a confirmed tool to approval.
+Q2  Superseded the same day: Studio agents run every tool without asking and
+    Neva has no MCP tools, so there is no per-tool read-only switch. Discover
+    records each tool's annotations; unattended runs may call a tool its
+    server declares read-only and not destructive, and nothing else.
 Q3  Write-only auth headers: encrypted at rest, only their names are returned,
     never logged, sent only to the registered endpoint (no redirects).
 """
@@ -43,8 +44,7 @@ SERVER = {
 TOOL = {
     "tool_id": "tool-1", "owner_name": "__nova__", "name": "get_store_targets",
     "description": "", "source": "mcp:server-1", "input_schema": {}, "is_enabled": True,
-    "annotations": {}, "read_only": False, "classification_source": "server_hint",
-    "hint_changed": False, "created_at": NOW, "updated_at": NOW,
+    "annotations": {}, "created_at": NOW, "updated_at": NOW,
 }
 
 
@@ -94,77 +94,53 @@ async def test_discover_against_cloud_metadata_is_refused():
         await mcp_client.list_tools({**SERVER, "endpoint": "http://169.254.169.254/mcp"})
 
 
-# ── Q2: read-only classification ──────────────────────────────────────
+# ── Q2: annotations are information ───────────────────────────────────
 
 READ_ONLY_HINT = {"readOnlyHint": True, "destructiveHint": False}
-ACTION_HINT = {"readOnlyHint": False}
 
 
-def test_discover_prefills_but_never_confirms():
-    first = studio_router._classification_after_discovery(None, READ_ONLY_HINT)
-    assert first == {"annotations": READ_ONLY_HINT, "read_only": True,
-                     "classification_source": "server_hint", "hint_changed": False}
-    destructive = {"readOnlyHint": True, "destructiveHint": True}
-    assert studio_router._classification_after_discovery(None, destructive)["read_only"] is False
-    assert studio_router._classification_after_discovery(None, {})["read_only"] is False
-
-
-def test_rediscovery_keeps_a_confirmed_tool_when_the_hint_is_unchanged():
-    confirmed = {**TOOL, "annotations": READ_ONLY_HINT, "read_only": True,
-                 "classification_source": "admin"}
-    assert studio_router._classification_after_discovery(confirmed, READ_ONLY_HINT) == {
-        "annotations": READ_ONLY_HINT,
-    }
-
-
-def test_changed_hint_reverts_a_confirmed_tool_to_approval_and_flags_it():
-    confirmed = {**TOOL, "annotations": READ_ONLY_HINT, "read_only": True,
-                 "classification_source": "admin"}
-    changed = studio_router._classification_after_discovery(confirmed, ACTION_HINT)
-    assert changed == {"annotations": ACTION_HINT, "read_only": False,
-                       "classification_source": "server_hint", "hint_changed": True}
-    # The flag stays on later discoveries until an administrator confirms again.
-    flagged = {**TOOL, **changed}
-    assert studio_router._classification_after_discovery(flagged, ACTION_HINT)["hint_changed"]
+async def test_discover_records_annotations_as_information(monkeypatch):
+    repository = studio_router.agent_repository
+    monkeypatch.setattr(repository, "get_mcp_server", AsyncMock(return_value=SERVER))
+    monkeypatch.setattr(repository, "update_mcp_server", AsyncMock(return_value=SERVER))
+    monkeypatch.setattr(repository, "list_tools", AsyncMock(return_value=[]))
+    upsert = AsyncMock()
+    monkeypatch.setattr(repository, "upsert_tool", upsert)
+    monkeypatch.setattr(studio_router, "write_audit_log", AsyncMock())
+    monkeypatch.setattr(mcp_client, "list_tools", AsyncMock(return_value=[
+        {"name": "get_store_targets", "description": "", "input_schema": {},
+         "annotations": READ_ONLY_HINT},
+    ]))
+    await studio_router.discover_mcp_server(
+        "server-1", {"username": "nova_admin", "active_role": "ACCOUNTADMIN"}
+    )
+    fields = upsert.await_args.kwargs["fields"]
+    assert fields["annotations"] == READ_ONLY_HINT
+    assert not {"read_only", "classification_source", "hint_changed"} & set(fields)
 
 
 @pytest.mark.parametrize(
-    ("fields", "classification"),
+    ("annotations", "classification"),
     [
-        ({"read_only": True, "classification_source": "server_hint"}, "destructive"),
-        ({"read_only": True, "classification_source": "admin"}, "read_only"),
-        ({"read_only": False, "classification_source": "admin"}, "destructive"),
-        ({"read_only": True, "classification_source": "server_hint", "hint_changed": True},
-         "destructive"),
+        ({}, "destructive"),
+        (READ_ONLY_HINT, "read_only"),
+        ({"readOnlyHint": True}, "read_only"),
+        ({"readOnlyHint": True, "destructiveHint": True}, "destructive"),
+        ({"readOnlyHint": False}, "destructive"),
+        ({"readOnlyHint": "true"}, "destructive"),
     ],
 )
-def test_only_a_confirmed_read_only_tool_runs_without_approval(fields, classification):
-    runner = McpToolRunner(SERVER, {**TOOL, **fields})
+def test_only_a_declared_read_only_lookup_counts_as_reading(annotations, classification):
+    runner = McpToolRunner(SERVER, {**TOOL, "annotations": annotations})
     assert runner.classification == classification
-    assert runner.requires_consent  # consent is still decided by the classification
-    assert ToolView(**{**TOOL, **fields}).runs_without_approval is (classification == "read_only")
+    view = ToolView(**{**TOOL, "annotations": annotations}).model_dump()
+    assert "runs_without_approval" not in view
 
 
-@pytest.mark.parametrize("active_role", ["ANALYST", "ACCOUNTADMIN"])
-def test_confirming_a_classification_needs_active_accountadmin(monkeypatch, active_role):
-    repository = studio_router.agent_repository
-    monkeypatch.setattr(repository, "get_tool", AsyncMock(
-        side_effect=lambda _, owner_name: TOOL if owner_name == "__nova__" else None,
-    ))
-    confirm = AsyncMock(return_value={**TOOL, "read_only": True, "classification_source": "admin"})
-    monkeypatch.setattr(repository, "set_tool_classification", confirm)
-    audit = AsyncMock()
-    monkeypatch.setattr(studio_router, "write_audit_log", audit)
-    with client_for(active_role) as client:
+def test_there_is_no_classification_endpoint():
+    with client_for("ACCOUNTADMIN") as client:
         response = client.patch("/tools/tool-1/classification", json={"read_only": True})
-    if active_role != "ACCOUNTADMIN":
-        assert response.status_code == 403
-        confirm.assert_not_awaited()
-        return
-    assert response.status_code == 200, response.text
-    assert response.json()["runs_without_approval"] is True
-    confirm.assert_awaited_once_with("tool-1", owner_name="__nova__", read_only=True)
-    assert audit.await_args.kwargs["action"] == "CONFIRM_READ_ONLY"
+    assert response.status_code in {404, 405}
 
 
 # ── Q3: write-only auth headers ───────────────────────────────────────

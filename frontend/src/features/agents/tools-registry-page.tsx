@@ -79,20 +79,6 @@ function ToolsList() {
     onError: (e: Error) => toast.error(e.message),
   })
 
-  const classify = useMutation({
-    mutationFn: ({ id, readOnly }: { id: string; readOnly: boolean }) =>
-      toolsApi.classify(id, readOnly),
-    onSuccess: (tool) => {
-      toast.success(
-        tool.runs_without_approval
-          ? `${tool.name} now runs without approval`
-          : `${tool.name} now asks for approval on each call`,
-      )
-      queryClient.invalidateQueries({ queryKey: ['tools'] })
-    },
-    onError: (e: Error) => toast.error(e.message),
-  })
-
   if (toolsQuery.isLoading) return <Skeleton className='mt-4 h-64 w-full' />
   if (toolsQuery.isError) return (
     <EmptyState variant='error' title='Could not load tools' description={toolsQuery.error.message}
@@ -127,14 +113,7 @@ function ToolsList() {
               </Badge>
             </div>
             <p className='mt-1 text-sm text-muted-foreground'>{tool.description}</p>
-            {tool.source.startsWith('mcp:') ? (
-              <ToolClassification
-                tool={tool}
-                canManage={user?.activeRole === 'ACCOUNTADMIN'}
-                pending={classify.isPending}
-                onConfirm={(readOnly) => classify.mutate({ id: tool.tool_id, readOnly })}
-              />
-            ) : null}
+            {tool.source.startsWith('mcp:') ? <ServerHints tool={tool} /> : null}
           </div>
           <div className='flex shrink-0 items-center gap-2'>
             <Switch
@@ -151,62 +130,22 @@ function ToolsList() {
 }
 
 /**
- * How an MCP tool is governed. A server's read-only hint only pre-fills the
- * switch; the tool runs without approval once an administrator confirms it.
+ * What the MCP server says about a tool. The hints are the server's own,
+ * unverified claims: shown so an administrator can decide whether to keep the
+ * tool on. They do not change how a call runs.
  */
-function ToolClassification({
-  tool,
-  canManage,
-  pending,
-  onConfirm,
-}: {
-  tool: Tool
-  canManage: boolean
-  pending: boolean
-  onConfirm: (readOnly: boolean) => void
-}) {
-  const confirmed = tool.classification_source === 'admin'
-  const readOnly = Boolean(tool.read_only)
+function ServerHints({ tool }: { tool: Tool }) {
+  const hints = tool.annotations ?? {}
   let label: string
-  let detail: string
-  if (confirmed && readOnly) {
-    label = 'Read-only'
-    detail = 'Confirmed by an administrator. Runs without approval.'
-  } else if (confirmed) {
-    label = 'Action'
-    detail = 'Confirmed by an administrator. Asks for approval on each call.'
-  } else if (tool.hint_changed) {
-    label = 'Needs review'
-    detail =
-      'The server changed how it describes this tool. It asks for approval on each call until an administrator confirms it again.'
-  } else if (readOnly) {
-    label = 'Read-only (not confirmed)'
-    detail = 'The server says this tool only reads. It asks for approval on each call until an administrator confirms it.'
-  } else {
-    label = 'Action (not confirmed)'
-    detail = 'The server does not say this tool is read-only. It asks for approval on each call.'
-  }
+  if (hints.destructiveHint === true) label = 'May delete or overwrite data'
+  else if (hints.readOnlyHint === true) label = 'Only reads'
+  else if (hints.readOnlyHint === false) label = 'Changes data'
+  else label = 'Not described'
   return (
-    <div className='mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm'>
-      <Badge variant={tool.hint_changed ? 'destructive' : confirmed && readOnly ? 'secondary' : 'outline'}>
-        {label}
-      </Badge>
-      <span className='text-muted-foreground'>{detail}</span>
-      {canManage ? (
-        <span className='flex gap-2'>
-          {!(confirmed && readOnly) ? (
-            <Button size='sm' variant='outline' disabled={pending} onClick={() => onConfirm(true)}>
-              Confirm read-only
-            </Button>
-          ) : null}
-          {!(confirmed && !readOnly) ? (
-            <Button size='sm' variant='outline' disabled={pending} onClick={() => onConfirm(false)}>
-              {confirmed ? 'Require approval' : 'Confirm as action'}
-            </Button>
-          ) : null}
-        </span>
-      ) : null}
-    </div>
+    <p className='mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground'>
+      <span>The server says:</span>
+      <Badge variant={hints.destructiveHint === true ? 'destructive' : 'outline'}>{label}</Badge>
+    </p>
   )
 }
 

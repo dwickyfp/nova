@@ -86,7 +86,7 @@ def test_runner_has_plain_label_and_preview_shows_arguments():
         ToolInvocation("c1", runner.name, {"amount": 250, "to_currency": "IDR"})
     )
     assert preview == (
-        'Call external tool fx_convert on Nova test tools with {"amount": 250, "to_currency": "IDR"}'
+        'External tool fx_convert on Nova test tools with {"amount": 250, "to_currency": "IDR"}'
     )
     hidden = runner.preview(ToolInvocation("c2", runner.name, {"api_key": "x"}))
     assert hidden.endswith("arguments that contain sensitive data") and '"x"' not in hidden
@@ -129,7 +129,10 @@ async def test_rediscovery_keeps_disabled_switch_and_disables_removed_tools(monk
         "server-1", {"username": "nova_admin", "active_role": "ACCOUNTADMIN"}
     )
     assert result.ok and result.tools_discovered == 2
-    enabled = {c.kwargs["fields"]["name"]: c.kwargs["fields"]["is_enabled"] for c in upsert.await_args_list}
+    enabled = {
+        c.kwargs["fields"]["name"]: c.kwargs["fields"]["is_enabled"]
+        for c in upsert.await_args_list
+    }
     assert enabled == {"fx_convert": False, "get_store_targets": True}
     disable.assert_awaited_once_with("tool-2", owner_name="__nova__", enabled=False)
 
@@ -145,3 +148,24 @@ def test_fixture_skill_packages_parse_as_the_upload_route_does():
     assert "get_store_targets" in fields["body"]
     with pytest.raises(ValueError, match="Add YAML frontmatter"):
         parse_skill_document((root / "broken-no-frontmatter" / "SKILL.md").read_text())
+
+
+async def test_successful_call_cites_the_tool_by_its_plain_name(monkeypatch):
+    """Before: the citation had no title, so the answer showed "external_mcp" twice."""
+    monkeypatch.setattr(mcp_client, "call_tool", AsyncMock(return_value={
+        "content": [{"type": "text", "text": '{"converted": 4000000.0}'}],
+    }))
+    runner = McpToolRunner(SERVER, TOOL)
+    outcome = await runner.run(ToolInvocation("c1", runner.name, {"amount": 250}), CONTEXT)
+    assert outcome.ok
+    assert outcome.citations and outcome.citations[0]["title"] == "Nova test tools: fx convert"
+
+
+def test_public_steps_name_tools_by_their_label():
+    """Before: the rail showed "Selected actions: mcp_<id>" and "Using mcp_<id>"."""
+    from app.modules.assistant.service import _tool_label
+
+    runner = McpToolRunner(SERVER, TOOL)
+    assert _tool_label(runner, runner.name) == "Nova test tools: fx convert"
+    assert _tool_label(None, "query_execute") == "query_execute"
+    assert _tool_label(SimpleNamespace(display_name="  "), "load_skill") == "load_skill"

@@ -39,9 +39,9 @@ type CanvasProps = {
   /** Without Interact access, charts do not filter, drill or open links on click. */
   interactive?: boolean
   selectedValueFor?: (widget: Widget) => string[] | null
-  /** Widgets Neva just changed; they carry a brief "Neva" marker. */
+  /** Widgets the assistant just changed; they carry a brief marker. */
   highlighted?: string[]
-  /** A change Neva proposed on this page: its pointer sits on the target. */
+  /** A change the assistant is making on this page: its pointer sits on the target. */
   neva?: { activity: NevaActivity; short: string } | null
   /** Links from a chart to other dashboards (drill-through). */
   linksFor?: (widget: Widget) => Interaction[]
@@ -185,7 +185,7 @@ function WidgetFrame({ widget, title, props, chart, download, canImage = false, 
           onClick={event => { event.stopPropagation(); drill.reset() }}>Reset</Button>}
       </div>
       <div className={cn('flex shrink-0 items-center gap-0.5', !props.editing && 'opacity-0 focus-within:opacity-100 group-hover/widget:opacity-100')}>
-        {props.onAskNeva && <Button variant='ghost' size='icon' className='size-7' aria-label={`Ask Neva about ${title || 'this widget'}`}
+        {props.onAskNeva && <Button variant='ghost' size='icon' className='size-7' aria-label={`Ask the assistant about ${title || 'this widget'}`}
           onClick={event => { event.stopPropagation(); props.onAskNeva?.(widget, chart) }}><Sparkles className='size-4' /></Button>}
         {download && <DropdownMenu>
           <DropdownMenuTrigger asChild><Button variant='ghost' size='icon' className='size-7' aria-label={`Download ${title || 'chart'}`}
@@ -212,7 +212,7 @@ function WidgetFrame({ widget, title, props, chart, download, canImage = false, 
     </div>}
     <div className='flex min-h-0 flex-1 flex-col'>{children}</div>
     {highlighted && <span role='status' className='pointer-events-none absolute top-1 right-1 flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground motion-safe:animate-in motion-safe:fade-in'>
-      <Sparkles className='size-3' aria-hidden />Changed by Neva
+      <Sparkles className='size-3' aria-hidden />Changed by the assistant
     </span>}
   </div>
 }
@@ -405,7 +405,7 @@ export function DashboardCanvas(props: CanvasProps) {
     </p>}
     {!widgets.length && <div className='m-1.5 flex flex-col items-center gap-2 rounded-lg border border-dashed px-6 py-12 text-center'>
       <p className='text-sm font-medium'>This page is empty</p>
-      <p className='max-w-sm text-sm text-muted-foreground'>{props.editing ? 'Add a chart, KPI or text from the toolbar, or ask Neva to build one for you.' : 'Nothing has been added to this page yet.'}</p>
+      <p className='max-w-sm text-sm text-muted-foreground'>{props.editing ? 'Add a chart, KPI or text from the toolbar, or ask the assistant to build one for you.' : 'Nothing has been added to this page yet.'}</p>
     </div>}
     <div className='relative'
       onDragOver={dropping ? onDragOver : undefined} onDrop={dropping ? onDrop : undefined}

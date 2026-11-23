@@ -52,7 +52,8 @@ class ScheduleAutomationTool:
         "Use only when the user asks for a recurring report or alert."
     )
     parameters = PARAMETERS
-    #: A persistent configuration change: always approved by the user.
+    #: A persistent configuration change. Studio makes it without asking (the
+    #: loop audits it); an unattended run can never schedule another automation.
     classification: ToolClassification = "destructive"
     requires_consent = True
 

@@ -26,7 +26,10 @@ Paths below are repository-relative; commands run from `backend/`.
   and per-tool bounds, including checkpoint/resume behavior. Do not reset
   consumed budgets on recovery or create a second provider retry loop.
 - New tools use the shared registry, established effect/read-only classification,
-  and fail-closed consent rules. Make agent-selectable tools available through
+  and fail-closed consent rules. Studio's interactive loop runs without the
+  approval gate (`approval_gate=False`) and audits every call as the caller;
+  Neva and unattended runs keep the gate. Classification still decides what an
+  unattended run may call. Make agent-selectable tools available through
   `backend/app/modules/agents/tool_catalog.py` as appropriate. Unknown effects
   or missing consent are not implicit permission.
 - Preserve authenticated caller context through tools. Read the

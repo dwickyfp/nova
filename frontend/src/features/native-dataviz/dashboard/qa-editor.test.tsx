@@ -1186,20 +1186,20 @@ describe('QA scale', { timeout: 90_000 }, () => {
 })
 
 
-// ---- Neva's pointer --------------------------------------------------------------------
+// ---- The assistant's pointer --------------------------------------------------------------------
 
 const neva = (detail: NativeDashboardActivity) => window.dispatchEvent(new CustomEvent(NATIVE_DASHBOARD_ACTIVITY, { detail }))
-const propose = (widget_ids: string[], state: 'waiting' | 'saving' = 'waiting', extra: Partial<NativeDashboardActivity> = {}) =>
-  neva({ kind: 'proposed', tool_call_id: 'call-1', dashboard_id: DASHBOARD, action: 'change', widget_ids, page_id: PAGE, state, ...extra } as NativeDashboardActivity)
+const propose = (widget_ids: string[], extra: Partial<NativeDashboardActivity> = {}) =>
+  neva({ kind: 'proposed', tool_call_id: 'call-1', dashboard_id: DASHBOARD, action: 'change', widget_ids, page_id: PAGE, state: 'saving', ...extra } as NativeDashboardActivity)
 const pointer = () => document.querySelector<HTMLElement>('[data-neva-pointer]')
 const nevaStatus = (screen: Awaited<ReturnType<typeof mount>>) => screen.getByTestId('neva-status').element().textContent
 const motion = (value: '' | 'reduce') => (cdp() as unknown as { send(method: string, params?: object): Promise<unknown> })
   .send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value }] })
 
-describe('QA Neva pointer', { timeout: 30_000 }, () => {
+describe('QA assistant pointer', { timeout: 30_000 }, () => {
   afterEach(async () => { await motion('') })
 
-  it('NDV-AGENT-013: the pointer sits on the widget the pending change touches and says where it is', async () => {
+  it('NDV-AGENT-013: the pointer sits on the widget the change touches and says where it is', async () => {
     setWidgets([
       chartWidget(KPI_WIDGET, KPI_CHART, { x: 0, y: 0, w: 3, h: 2 }),
       chartWidget(BAR_WIDGET, BAR_CHART, { x: 3, y: 2, w: 6, h: 4 }),
@@ -1207,7 +1207,7 @@ describe('QA Neva pointer', { timeout: 30_000 }, () => {
     const screen = await mount()
     await expect.element(screen.getByText('Revenue by region').first()).toBeVisible()
     // A change on another dashboard is not shown here.
-    propose([BAR_WIDGET], 'waiting', { dashboard_id: 'dddddddd-0000-4000-8000-0000000000ff' })
+    propose([BAR_WIDGET], { dashboard_id: 'dddddddd-0000-4000-8000-0000000000ff' })
     await wait(200)
     expect(pointer()).toBeNull()
     propose([BAR_WIDGET])
@@ -1221,24 +1221,24 @@ describe('QA Neva pointer', { timeout: 30_000 }, () => {
     expect(tip.right).toBeLessThanOrEqual(target.right)
     expect(tip.top + tip.height / 2).toBeGreaterThanOrEqual(target.top)
     expect(tip.top + tip.height / 2).toBeLessThan(target.top + 24)
-    expect(item(BAR_WIDGET).dataset.nevaTarget).toBe('waiting')
+    expect(item(BAR_WIDGET).dataset.nevaTarget).toBe('saving')
     expect(item(KPI_WIDGET).dataset.nevaTarget).toBeUndefined()
-    expect(pointer()!.textContent).toBe('Neva · Waiting for your approval')
+    // The assistant acts without asking: no approval wait, it is saving at once.
+    expect(pointer()!.textContent).toBe('Assistant · Saving…')
     expect(pointer()!.getAttribute('aria-hidden')).toBe('true')
-    expect(nevaStatus(screen)).toBe('Neva wants to change “Revenue by region”. It is waiting for your approval in the chat.')
-    // Approved, then saved: the label follows, and the pointer leaves after the save.
-    neva({ kind: 'status', tool_call_id: 'call-1', state: 'saving' })
-    await expect.poll(() => pointer()?.textContent).toBe('Neva · Saving…')
+    expect(nevaStatus(screen)).toBe('The assistant is saving: change “Revenue by region”.')
+    expect(screen.container.textContent).not.toContain('approval')
+    // Saved: the label follows, and the pointer leaves after the save.
     neva({ kind: 'status', tool_call_id: 'call-1', state: 'saved' })
-    await expect.poll(() => pointer()?.textContent).toBe('Neva · Saved')
-    expect(nevaStatus(screen)).toBe('Neva saved its change: change “Revenue by region”.')
+    await expect.poll(() => pointer()?.textContent).toBe('Assistant · Saved')
+    expect(nevaStatus(screen)).toBe('The assistant saved its change: change “Revenue by region”.')
     await expect.poll(() => pointer(), { timeout: 4000 }).toBeNull()
     // A new chart has no widget yet: the pointer goes below what is there.
-    propose([], 'waiting', { tool_call_id: 'call-2', action: 'add' } as Partial<NativeDashboardActivity>)
+    propose([], { tool_call_id: 'call-2', action: 'add' } as Partial<NativeDashboardActivity>)
     await expect.poll(() => pointer()?.dataset.arrived).toBe('true')
     await wait(800)
     expect(pointer()!.getBoundingClientRect().top).toBeGreaterThan(item(BAR_WIDGET).getBoundingClientRect().bottom - 16)
-    expect(nevaStatus(screen)).toBe('Neva wants to add a chart. It is waiting for your approval in the chat.')
+    expect(nevaStatus(screen)).toBe('The assistant is saving: add a chart.')
   })
 
   it('NDV-AGENT-014: a save that fails shows Not saved, never Saved, and changes nothing', async () => {
@@ -1246,25 +1246,24 @@ describe('QA Neva pointer', { timeout: 30_000 }, () => {
     await expect.element(screen.getByText('Units sold')).toBeVisible()
     const before = calls.length
     propose([KPI_WIDGET])
-    await expect.poll(() => pointer()?.textContent).toBe('Neva · Waiting for your approval')
-    neva({ kind: 'status', tool_call_id: 'call-1', state: 'saving' })
+    await expect.poll(() => pointer()?.textContent).toBe('Assistant · Saving…')
     neva({ kind: 'status', tool_call_id: 'call-1', state: 'failed' })
     await expect.poll(() => pointer()?.dataset.nevaPointer).toBe('failed')
-    expect(pointer()!.textContent).toBe('Neva · Not saved')
+    expect(pointer()!.textContent).toBe('Assistant · Not saved')
     expect(item(KPI_WIDGET).dataset.nevaTarget).toBe('failed')
-    expect(nevaStatus(screen)).toBe('Neva could not save its change (change “Units sold”). Nothing was changed.')
+    expect(nevaStatus(screen)).toBe('The assistant could not save its change (change “Units sold”). Nothing was changed.')
     // A late "saved" for the same call cannot turn a failure into a success.
     neva({ kind: 'status', tool_call_id: 'call-1', state: 'saved' })
     await wait(200)
-    expect(pointer()!.textContent).toBe('Neva · Not saved')
-    expect(screen.container.textContent).not.toContain('Neva · Saved')
-    // Nothing was written by the page for Neva's attempt.
+    expect(pointer()!.textContent).toBe('Assistant · Not saved')
+    expect(screen.container.textContent).not.toContain('Assistant · Saved')
+    // Nothing was written by the page for the assistant's attempt.
     expect(calls.slice(before).filter(call => call.method !== 'GET' && !call.url.endsWith('/query'))).toEqual([])
-    // A declined change says so too.
-    propose([KPI_WIDGET], 'waiting', { tool_call_id: 'call-2' })
+    // A stopped change says so too.
+    propose([KPI_WIDGET], { tool_call_id: 'call-2' })
     neva({ kind: 'status', tool_call_id: 'call-2', state: 'stopped' })
-    await expect.poll(() => pointer()?.textContent).toBe('Neva · Stopped')
-    expect(nevaStatus(screen)).toBe('Neva\u2019s change was not made (change “Units sold”). Nothing was changed.'.replace('\u2019', "'"))
+    await expect.poll(() => pointer()?.textContent).toBe('Assistant · Stopped')
+    expect(nevaStatus(screen)).toBe("The assistant's change was not made (change “Units sold”). Nothing was changed.")
   })
 
   it('NDV-AGENT-016 / NDV-A11Y-003: with reduced motion the pointer appears in place and its state is still announced', async () => {
@@ -1280,16 +1279,16 @@ describe('QA Neva pointer', { timeout: 30_000 }, () => {
     expect(pointer()!.style.opacity).toBe('')
     const target = item(KPI_WIDGET).getBoundingClientRect()
     expect(pointer()!.getBoundingClientRect().right).toBeLessThanOrEqual(target.right)
-    expect(nevaStatus(screen)).toContain('Neva wants to change “Units sold”')
+    expect(nevaStatus(screen)).toContain('The assistant is saving: change “Units sold”')
     expect(screen.getByTestId('neva-status').element().getAttribute('role')).toBe('status')
     // Without the preference the same pointer glides in from the side.
     await motion('')
-    propose([KPI_WIDGET], 'waiting', { tool_call_id: 'call-2' })
+    propose([KPI_WIDGET], { tool_call_id: 'call-2' })
     await expect.poll(() => pointer()?.dataset.arrived).toBe('true')
     expect(parseFloat(getComputedStyle(pointer()!).transitionDuration)).toBeGreaterThan(0)
   })
 
-  it('NDV-AGENT-017: typing next to the widget Neva points at keeps focus and every keystroke', async () => {
+  it('NDV-AGENT-017: typing next to the widget the assistant points at keeps focus and every keystroke', async () => {
     setWidgets([
       chartWidget(KPI_WIDGET, KPI_CHART, { x: 0, y: 0, w: 3, h: 2 }),
       chartWidget(BAR_WIDGET, BAR_CHART, { x: 3, y: 0, w: 6, h: 4 }),
@@ -1305,8 +1304,8 @@ describe('QA Neva pointer', { timeout: 30_000 }, () => {
     propose([BAR_WIDGET])
     neva({ kind: 'status', tool_call_id: 'call-1', state: 'saving' })
     await userEvent.keyboard(' sales')
-    await expect.poll(() => pointer()?.textContent).toBe('Neva · Saving…')
-    propose([KPI_WIDGET], 'waiting', { tool_call_id: 'call-2' })
+    await expect.poll(() => pointer()?.textContent).toBe('Assistant · Saving…')
+    propose([KPI_WIDGET], { tool_call_id: 'call-2' })
     await userEvent.keyboard(' review')
     expect(document.activeElement).toBe(field)
     expect(field.value).toBe('Quarterly sales review')

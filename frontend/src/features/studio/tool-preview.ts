@@ -18,5 +18,7 @@ export function isSqlPreview(preview: string): boolean {
   const body = preview.replace(/^(\s|\(|--[^\n]*\n|\/\*[\s\S]*?\*\/)+/, "");
   const start = body.match(/^[A-Za-z]+/)?.[0];
   if (!start || !SQL_LEADING_WORDS.has(start.toUpperCase())) return false;
+  // "Call ..." also opens plain sentences; SQL CALL names a routine and its arguments.
+  if (start.toUpperCase() === "CALL") return /^call\s+[\w.`"]+\s*\(/i.test(body);
   return !(/[.?!]\s*$/.test(body) && !SQL_STRUCTURE.test(body));
 }

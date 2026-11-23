@@ -99,7 +99,7 @@ def build_server(host: str, port: int) -> FastMCP:
 
     @server.tool(annotations=READ_ONLY)
     def get_store_targets(month: str) -> dict[str, Any]:
-        """Monthly revenue targets in IDR per store city. ``month`` is YYYY-MM."""
+        """Monthly revenue targets in IDR per store city. The month is YYYY-MM."""
         targets = STORE_TARGETS.get(month.strip())
         if targets is None:
             raise ValueError(f"No targets for {month!r}. Known months: 2025-06, 2025-07")
@@ -117,7 +117,7 @@ def build_server(host: str, port: int) -> FastMCP:
 
     @server.tool(annotations=READ_ONLY)
     async def slow_report(seconds: float = 30) -> str:
-        """Waits ``seconds`` (at most 120) before answering, for timeout and stop tests."""
+        """Waits the given number of seconds (at most 120), for timeout and stop tests."""
         await asyncio.sleep(max(0.0, min(float(seconds), 120.0)))
         return f"Slow report finished after {seconds} seconds."
 

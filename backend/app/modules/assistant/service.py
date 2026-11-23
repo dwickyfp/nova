@@ -471,7 +471,13 @@ class AssistantLoop:
         summarize_history: bool = False,
         spend_limit: int | None = None,
         guards: GuardChain | None = None,
+        approval_gate: bool = True,
     ) -> None:
+        #: Whether actions wait for the person's approval. Neva and unattended
+        #: runs keep the gate; a Studio agent is autonomous and acts without
+        #: asking, under the same role, Ranger policy and effects classifier.
+        #: The surface decides this; no setting changes it.
+        self._approval_gate = approval_gate
         #: Total tokens the turn may use; near it the loop composes its answer.
         self._spend_limit = spend_limit
         #: Platform guards always run; an agent adds its declarative rules.
@@ -1226,8 +1232,12 @@ class AssistantLoop:
             )))
             context.selected_tools = list(selected_tools)
         # The rail names the chosen tools in plain words; a turn that needs no
-        # tool says what was done instead of reporting an empty selection.
-        chosen = tool_phrases(selected_tools)
+        # tool says what was done instead of reporting an empty selection. An
+        # external (MCP) tool's name is an internal id, so it goes by its label.
+        chosen = tool_phrases(
+            _tool_label(self._registry.get(name), name) if name.startswith("mcp_") else name
+            for name in selected_tools
+        )
         yield _thinking_step(
             context,
             "plan",
@@ -2384,7 +2394,9 @@ class AssistantLoop:
             # The reasoning for this iteration is done: it produced a call. Close
             # the ``act`` row here, or a panel that keys liveness on the last
             # ``running`` step shows a spinner that never stops.
-            yield _thinking_step(context, "act", f"Using {invocation.tool_name}", status="done")
+            yield _thinking_step(
+                context, "act", f"Using {_tool_label(tool, invocation.tool_name)}", status="done"
+            )
 
             preview = "" if invocation.tool_name == "load_skill" else tool.preview(invocation)
             preview = await _consent_preview(tool, invocation, context, preview)
@@ -2505,7 +2517,9 @@ class AssistantLoop:
 
             from app.modules.assistant.tool_gate import needs_tool_consent, resolve_tool_consent
 
-            needs_prompt = needs_tool_consent(tool, classification, thread, user=context.user)
+            needs_prompt = self._approval_gate and needs_tool_consent(
+                tool, classification, thread, user=context.user
+            )
 
             # Register consent before publishing the card: a stream consumer can
             # await journal I/O before advancing this generator again.
@@ -2656,6 +2670,10 @@ class AssistantLoop:
                 governed_attempted = True
             if save_state is not None and classification != "read_only":
                 await save_state({"safe_to_resume": False})
+            if not self._approval_gate and classification != "read_only":
+                # An action runs without a person approving it: its intent is
+                # recorded, as the caller, before it can have an effect.
+                await _audit_tool_call(context, tool, invocation, classification, "STARTED")
             context.evidence_tables = evidence.business_tables
             prefetch = prefetched.pop(invocation.tool_call_id, None)
             if prefetch is not None:
@@ -2670,6 +2688,10 @@ class AssistantLoop:
                     ):
                         tool_task.cancel()
                         _finish_tool_step(context, "cancelled", None)
+                        if not self._approval_gate:
+                            await _audit_tool_call(
+                                context, tool, invocation, classification, "CANCELLED"
+                            )
                         yield events.tool_status(invocation.tool_call_id, "cancelled")
                         yield events.done(str(uuid4()), finish_reason="cancelled")
                         return
@@ -2677,6 +2699,11 @@ class AssistantLoop:
                     if remaining <= 0:
                         tool_task.cancel()
                         _finish_tool_step(context, "failed", "time budget exceeded")
+                        if not self._approval_gate:
+                            await _audit_tool_call(
+                                context, tool, invocation, classification, "TIMEOUT",
+                                error="time budget exceeded",
+                            )
                         yield events.tool_status(invocation.tool_call_id, "failed")
                         yield _timeout_frame(context)
                         yield events.done(str(uuid4()), finish_reason="timeout")
@@ -2709,6 +2736,11 @@ class AssistantLoop:
                 # frames before the terminal status.
                 while not progress_queue.empty():
                     yield _tool_progress_frame(context, invocation, progress_queue.get_nowait())
+                if not self._approval_gate:
+                    await _audit_tool_call(
+                        context, tool, invocation, classification,
+                        "SUCCESS" if outcome.ok else "FAILED", error=outcome.error,
+                    )
             finally:
                 context.tool_progress_sink = None
                 context.execution_time_sink = None
@@ -4972,6 +5004,66 @@ async def _guard_frames(
     if tool_call_id:
         payload["tool_call_id"] = tool_call_id
     return [events.format_sse("guard", payload)]
+
+
+def _secret_text(text: str) -> bool:
+    from app.modules.assistant.tools.redaction import is_credential_value
+
+    return is_credential_value(text) or _sensitive_quality_argument(text)
+
+
+def _audited_arguments(arguments: dict[str, Any]) -> str:
+    """A tool call's arguments for the audit record: secrets masked, size bounded."""
+    masked: dict[str, str] = {}
+    for key, value in _redacted_arguments(arguments).items():
+        masked[key] = "***" if value != "***" and _secret_text(value) else value
+    encoded = json.dumps(masked, ensure_ascii=False, sort_keys=True)
+    return encoded if len(encoded) <= 4000 else encoded[:3997] + "..."
+
+
+async def _audit_tool_call(
+    context: Any,
+    tool: Any,
+    invocation: Any,
+    classification: str,
+    status: str,
+    *,
+    error: str | None = None,
+) -> None:
+    """Record one autonomous tool call as the person whose turn made it.
+
+    Studio agents act without an approval card, so this record is what shows
+    who ran which tool, with which (redacted) arguments, under which role.
+    An audit outage is logged; it does not stop the turn.
+    """
+    from app.common.audit import write_audit_log
+
+    user = context.user or {}
+    detail = None
+    if error:
+        detail = "redacted" if _secret_text(error) else error[:300]
+    try:
+        await write_audit_log(
+            event_type="AGENT_TOOL_CALL",
+            user_name=str(user.get("username") or ""),
+            action=classification.upper(),
+            object_type="AGENT_TOOL",
+            object_name=_tool_label(tool, invocation.tool_name)[:200],
+            status=status,
+            sql_text=_audited_arguments(invocation.arguments or {}),
+            error_message=detail,
+            session_id=context.audit_session_id,
+            active_role=user.get("active_role") or context.role,
+            security_context_version=user.get("security_context_version"),
+        )
+    except Exception:  # noqa: BLE001 - an audit outage must not stop the turn
+        logger.warning("Tool call audit write failed for %s", invocation.tool_name, exc_info=True)
+
+
+def _tool_label(tool: Any, name: str) -> str:
+    """A tool's plain label for public steps; an opaque identifier never shows."""
+    label = getattr(tool, "display_name", None)
+    return label if isinstance(label, str) and label.strip() else name
 
 
 def _thinking_step(context: Any, phase: str, text: str, status: str = "running") -> str:

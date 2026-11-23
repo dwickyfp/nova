@@ -86,35 +86,19 @@ it.each(['tools', 'MCP servers'])('shows a recoverable error for %s instead of a
   await expect.element(screen.getByRole('alert')).not.toBeInTheDocument()
 })
 
-it('shows how an MCP tool is governed and lets the administrator confirm read-only', async () => {
-  const bodies: unknown[] = []
-  let confirmed = false
-  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
-    if (init?.method === 'PATCH' && String(input).endsWith('/classification')) {
-      bodies.push(JSON.parse(init.body as string))
-      confirmed = true
-      return response({ ...tool, read_only: true, classification_source: 'admin', runs_without_approval: true })
-    }
-    return response(String(input).endsWith('/tools')
-      ? { tools: [{ ...tool, annotations: { readOnlyHint: true }, read_only: true,
-          classification_source: confirmed ? 'admin' : 'server_hint', runs_without_approval: confirmed }] }
-      : { servers: [server] })
-  })
-  const screen = await setup('ACCOUNTADMIN')
-  await expect.element(screen.getByText('Read-only (not confirmed)')).toBeVisible()
-  await screen.getByRole('button', { name: 'Confirm read-only' }).click()
-  await vi.waitFor(() => expect(bodies).toEqual([{ read_only: true }]))
-  await expect.element(screen.getByText('Confirmed by an administrator. Runs without approval.')).toBeVisible()
-  await expect.element(screen.getByRole('button', { name: 'Require approval' })).toBeVisible()
-})
-
-it('flags a tool whose server hint changed and hides the controls from other roles', async () => {
+it('shows the hints the MCP server declares, as information only', async () => {
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
     response(String(input).endsWith('/tools')
-      ? { tools: [{ ...tool, read_only: false, classification_source: 'server_hint', hint_changed: true }] }
+      ? { tools: [
+          { ...tool, annotations: { readOnlyHint: true, destructiveHint: false } },
+          { ...tool, tool_id: 'tool-2', name: 'wipe_targets', annotations: { destructiveHint: true } },
+          { ...tool, tool_id: 'tool-3', name: 'plain_tool', annotations: {} },
+        ] }
       : { servers: [server] }))
-  const screen = await setup('ANALYST')
-  await expect.element(screen.getByText('Needs review')).toBeVisible()
+  const screen = await setup('ACCOUNTADMIN')
+  await expect.element(screen.getByText('Only reads')).toBeVisible()
+  await expect.element(screen.getByText('May delete or overwrite data')).toBeVisible()
+  await expect.element(screen.getByText('Not described')).toBeVisible()
   await expect.element(screen.getByRole('button', { name: 'Confirm read-only' })).not.toBeInTheDocument()
 })
 

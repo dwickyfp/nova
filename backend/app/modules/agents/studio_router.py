@@ -16,7 +16,6 @@ Studio's Settings/Capabilities.
   PATCH  /mcp-servers/{server_id}         → update
   DELETE /mcp-servers/{server_id}         → delete (and its tools)
   POST   /mcp-servers/{server_id}/discover→ connect and register tools
-  PATCH  /tools/{tool_id}/classification  → confirm an MCP tool as read-only or an action
 
 Every route requires ``get_current_user``. Personal tools are owner-scoped;
 platform MCP connectors are managed by the active ACCOUNTADMIN role.
@@ -65,7 +64,6 @@ from app.modules.agents.schemas import (
     McpServerView,
     SkillListResponse,
     SkillView,
-    ToolClassificationRequest,
     ToolCreateRequest,
     ToolListResponse,
     ToolToggleRequest,
@@ -327,30 +325,6 @@ async def toggle_tool(
     return ToolView(**updated)
 
 
-@router.patch("/tools/{tool_id}/classification", response_model=ToolView)
-async def classify_tool(
-    tool_id: str,
-    body: ToolClassificationRequest,
-    user: dict = Depends(get_current_user),
-):
-    """Confirm an MCP tool's read-only switch. Only a confirmed read-only tool auto-runs."""
-    tool = await _tool_for_mutation(tool_id, user)
-    if not tool["source"].startswith("mcp:"):
-        raise HTTPException(status_code=409, detail="Only MCP tools have a read-only switch.")
-    updated = await agent_repository.set_tool_classification(
-        tool_id, owner_name=tool["owner_name"], read_only=body.read_only
-    )
-    if updated is None:
-        raise HTTPException(status_code=404, detail="Tool not found")
-    await write_audit_log(
-        event_type="MCP_TOOL_CONFIG", user_name=user["username"],
-        action="CONFIRM_READ_ONLY" if body.read_only else "CONFIRM_ACTION",
-        object_type="MCP_TOOL", object_name=tool_id, status="SUCCESS",
-        session_id=user.get("session_id"), active_role=user.get("active_role"),
-    )
-    return ToolView(**updated)
-
-
 @router.delete("/tools/{tool_id}", status_code=204)
 async def delete_tool(tool_id: str, user: dict = Depends(get_current_user)):
     tool = await _tool_for_mutation(tool_id, user)
@@ -506,37 +480,6 @@ async def delete_mcp_server(server_id: str, user: dict = Depends(get_current_use
     return None
 
 
-def _classification_after_discovery(
-    current: dict | None, annotations: dict
-) -> dict[str, object]:
-    """How a Discover updates a tool's read-only switch.
-
-    The server's hint only pre-fills the switch; it never confirms it. A
-    confirmed tool keeps the administrator's decision while the hint is
-    unchanged. If the hint changes, the tool is flagged and needs approval
-    again until an administrator confirms it.
-    """
-    hinted = mcp_client.hinted_read_only(annotations)
-    if current is None:
-        return {
-            "annotations": annotations, "read_only": hinted,
-            "classification_source": "server_hint", "hint_changed": False,
-        }
-    previous = mcp_client.hinted_read_only(current.get("annotations") or {})
-    if current.get("classification_source") == "admin":
-        if previous == hinted:
-            return {"annotations": annotations}
-        return {
-            "annotations": annotations, "read_only": hinted,
-            "classification_source": "server_hint", "hint_changed": True,
-        }
-    return {
-        "annotations": annotations, "read_only": hinted,
-        # A flag stays until an administrator confirms the tool again.
-        "hint_changed": bool(current.get("hint_changed")),
-    }
-
-
 @router.post("/mcp-servers/{server_id}/discover", response_model=McpDiscoverResponse)
 async def discover_mcp_server(
     server_id: str,
@@ -544,8 +487,8 @@ async def discover_mcp_server(
 ):
     """Connect to the server and register the tools it exposes.
 
-    Discovery records tool metadata. Selected HTTP tools can subsequently run
-    with consent; Nova does not start stdio servers.
+    Discovery records each tool's description, schema and the server's
+    annotation hints (information only). Nova does not start stdio servers.
     """
     _require_connector_admin(user)
     owner = INTERNAL_CONNECTOR_OWNER
@@ -561,8 +504,9 @@ async def discover_mcp_server(
         return McpDiscoverResponse(ok=False, status="error", error=str(exc))
 
     source = f"mcp:{server_id}"
-    # Rediscovery refreshes descriptions and schemas but keeps an administrator's
-    # switch; a tool the server no longer offers is switched off, not left callable.
+    # Rediscovery refreshes descriptions, schemas and hints but keeps an
+    # administrator's on/off switch; a tool the server no longer offers is
+    # switched off, not left callable.
     known = {
         tool["name"]: tool
         for tool in await agent_repository.list_tools(owner_name=owner)
@@ -579,7 +523,7 @@ async def discover_mcp_server(
                 "source": source,
                 "input_schema": tool["input_schema"],
                 "is_enabled": True if current is None else bool(current["is_enabled"]),
-                **_classification_after_discovery(current, tool.get("annotations") or {}),
+                "annotations": tool.get("annotations") or {},
             },
         )
     for name, tool in known.items():

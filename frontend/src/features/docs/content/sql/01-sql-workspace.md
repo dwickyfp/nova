@@ -115,6 +115,9 @@ file, shows an approval card first. **Allow** takes that one action and
 **Deny** skips it. Each approval covers one action: the next action asks
 again, and an approval does not carry over to a new login.
 
+Agents in Nova Studio work differently: they act without asking. See
+[Ask a question](/docs/studio/ask-questions#what-the-agent-does-on-its-own).
+
 ## See a query plan
 
 Put `EXPLAIN` in front of a query to see how Nova will run it. The plan

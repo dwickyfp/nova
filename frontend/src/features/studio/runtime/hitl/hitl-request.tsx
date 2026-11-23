@@ -77,8 +77,9 @@ export function HitlRequest({
   const definition = hitlKind(part.kind);
   const request = part.request;
 
-  // A stored approval from an earlier version is a past step: never answerable.
-  const answerable = live && !(request?.kind === "approval" && request.legacy);
+  // Studio agents act without asking: an approval has no registered body, so
+  // one stored by an earlier version is shown as it was, never answerable.
+  const answerable = live && Boolean(definition);
 
   if (part.status === "pending" && answerable && request && definition) {
     const { Body, Icon } = definition;
@@ -93,24 +94,17 @@ export function HitlRequest({
         setBusy(false);
       }
     };
-    const destructive = request.kind === "approval" && request.classification === "destructive";
     const expiry = expiryText(part.expiresAt);
     return (
       <section
         aria-labelledby={titleId}
         data-testid="hitl-request"
         data-kind={part.kind}
-        className={cn(
-          "nova-chat-item rounded-xl border p-3 sm:p-4",
-          request.kind === "approval"
-            ? "border-warning/30 bg-warning/10 dark:border-warning/35 dark:bg-warning/15"
-            : "border-border bg-card",
-          destructive && "border-destructive/40 bg-destructive/5 dark:bg-destructive/10",
-        )}
+        className="nova-chat-item rounded-xl border border-border bg-card p-3 sm:p-4"
       >
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1.5 font-medium">
-            <Icon aria-hidden="true" className={cn("size-4", request.kind === "approval" ? "text-warning-strong" : "text-primary")} />
+            <Icon aria-hidden="true" className="size-4 text-primary" />
             {definition.label}
           </span>
           {expiry ? <span>{expiry}</span> : null}

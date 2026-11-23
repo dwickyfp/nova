@@ -77,14 +77,6 @@ def _annotations(raw: Any) -> dict[str, Any]:
     return kept
 
 
-def hinted_read_only(annotations: dict[str, Any]) -> bool:
-    """The server's own claim: read-only and not destructive. Untrusted until confirmed."""
-    return (
-        annotations.get("readOnlyHint") is True
-        and annotations.get("destructiveHint") is not True
-    )
-
-
 def _tool_from_mcp(raw: dict[str, Any]) -> dict[str, Any]:
     """Normalize one MCP tool descriptor into Nova's tool shape."""
     return {

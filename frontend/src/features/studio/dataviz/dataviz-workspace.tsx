@@ -39,7 +39,7 @@ function writePanel(value: { open: boolean; width: number }) {
 }
 
 /**
- * Studio's Dataviz tab: native dashboards, with Neva beside them.
+ * Studio's Dataviz tab: native dashboards, with the Dataviz assistant beside them.
  *
  * The workspace stays mounted while the Agent tab is shown, so an open
  * dashboard and its viewer state survive switching tabs.
@@ -84,7 +84,7 @@ export function DatavizWorkspace({
     nativeContext.current = context;
     setDashboardOpen(Boolean(context));
   }, []);
-  // Read fresh when a message is sent, so Neva always edits what is on screen.
+  // Read fresh when a message is sent, so the assistant always edits what is on screen.
   const turnContext = useCallback(
     (): DatavizTurnContext => ({
       dashboard_id: null,
@@ -206,7 +206,7 @@ export function DatavizWorkspace({
           >
             <header className="flex h-14 shrink-0 items-center gap-3 border-b pr-2 pl-4">
               <div className="min-w-0 flex-1">
-                <h2 className="truncate text-sm font-medium text-foreground">Neva</h2>
+                <h2 className="truncate text-sm font-medium text-foreground">Dataviz assistant</h2>
                 <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
                   <span
                     aria-hidden="true"

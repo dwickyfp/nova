@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, Field, computed_field, field_validator
+from pydantic import AfterValidator, BaseModel, Field, field_validator
 
 from app.modules.agents.harness import HarnessPolicy
 from app.modules.agents.resources import ResourceBindings
@@ -421,24 +421,11 @@ class ToolView(BaseModel):
     source: str
     input_schema: dict = Field(default_factory=dict)
     is_enabled: bool = True
-    #: MCP only: the server's annotation hints from the last Discover.
+    #: MCP only: the server's annotation hints from the last Discover. Shown
+    #: as information; they do not change how a call runs.
     annotations: dict = Field(default_factory=dict)
-    #: MCP only: the read-only switch, pre-filled from the server's hint.
-    read_only: bool = False
-    #: ``server_hint`` until an ACCOUNTADMIN confirms it (then ``admin``).
-    classification_source: Literal["server_hint", "admin"] = "server_hint"
-    #: The server's hint changed after confirmation; approval is required again.
-    hint_changed: bool = False
     created_at: UtcDatetime
     updated_at: UtcDatetime
-
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def runs_without_approval(self) -> bool:
-        """Only a confirmed read-only MCP tool skips the approval card."""
-        return self.source.startswith("mcp:") and self.read_only and (
-            self.classification_source == "admin"
-        )
 
 
 class ToolListResponse(BaseModel):
@@ -458,12 +445,6 @@ class ToolCreateRequest(BaseModel):
 
 class ToolToggleRequest(BaseModel):
     is_enabled: bool
-
-
-class ToolClassificationRequest(BaseModel):
-    """An administrator confirms whether an MCP tool is read-only."""
-
-    read_only: bool
 
 
 # ── Agent access roles ─────────────────────────────────────────

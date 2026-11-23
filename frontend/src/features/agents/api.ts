@@ -458,16 +458,8 @@ export type Tool = {
   source: string;
   input_schema: Record<string, unknown>;
   is_enabled: boolean;
-  /** MCP only: the server's annotation hints from the last Discover. */
+  /** MCP only: the server's annotation hints from the last Discover (information only). */
   annotations?: Record<string, unknown>;
-  /** MCP only: the read-only switch, pre-filled from the server's hint. */
-  read_only?: boolean;
-  /** `server_hint` until an ACCOUNTADMIN confirms it (`admin`). */
-  classification_source?: "server_hint" | "admin";
-  /** The server's hint changed after confirmation; approval is required again. */
-  hint_changed?: boolean;
-  /** Only a confirmed read-only MCP tool runs without the approval card. */
-  runs_without_approval?: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -565,10 +557,6 @@ export const toolsApi = {
     }),
   remove: (id: string) =>
     api.delete<void>(`/agents/tools/${encodeURIComponent(id)}`),
-  classify: (id: string, readOnly: boolean) =>
-    api.patch<Tool>(`/agents/tools/${encodeURIComponent(id)}/classification`, {
-      read_only: readOnly,
-    }),
 };
 
 export const mcpApi = {
