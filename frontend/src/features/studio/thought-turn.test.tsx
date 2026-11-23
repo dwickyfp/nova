@@ -130,3 +130,29 @@ describe("process rail", () => {
     await expect.element(toggle).not.toHaveTextContent(/Stopped/);
   });
 });
+
+describe("tool result detail", () => {
+  const description =
+    "Bar chart of the five customers with the highest total order value, in descending order.";
+
+  it("shows a chart's description once, not again in its result summary", async () => {
+    const chart: RailStep = {
+      id: "c", kind: "tool", label: "data_to_chart", text: "Built a chart", status: "done",
+      preview: description, detail: `chart: ${description} (bar)`,
+    };
+    await render(<ProcessRail steps={[chart]} running={false} defaultOpen />);
+    await page.getByRole("button", { name: "Built a chart", exact: true }).click();
+    await expect.element(page.getByText(description, { exact: true })).toBeVisible();
+    expect(document.body.textContent).not.toContain(`chart: ${description}`);
+  });
+
+  it("keeps a result summary that adds something", async () => {
+    const tool: RailStep = {
+      id: "f", kind: "tool", label: "forecast", text: "Forecast revenue", status: "done",
+      preview: "Forecast monthly revenue", detail: "12 months forecast, MAPE 4.1%",
+    };
+    await render(<ProcessRail steps={[tool]} running={false} defaultOpen />);
+    await page.getByRole("button", { name: "Forecast revenue", exact: true }).click();
+    await expect.element(page.getByText("12 months forecast, MAPE 4.1%")).toBeVisible();
+  });
+});

@@ -1047,7 +1047,7 @@ class AssistantLoop:
         # first token is still in flight. The plan is Nova's own frame — the
         # model is told to load a skill when one applies, then act and answer.
         yield events.plan(_initial_plan(self._registry))
-        yield _thinking_step(context, "plan", "Understanding the request and choosing a skill")
+        yield _thinking_step(context, "plan", _planning_status(context, self._registry))
 
         try:
             provider = await self._provider.resolve(provider_id=provider_id, model=model)
@@ -5189,6 +5189,35 @@ def _default_skill_prompt() -> str:
     from app.modules.assistant.skills import DEFAULT_SKILL_PROMPT
 
     return DEFAULT_SKILL_PROMPT
+
+
+def _planning_status(context: Any, registry: ToolRegistry) -> str:
+    """The planning row, naming what the planner weighs.
+
+    Planning is one model call that can take many seconds with a model that
+    reasons silently, so the row says what is being matched: the business views
+    the caller may use and how many skills the agent can choose from.
+    """
+    views: list[str] = []
+    if context.agent_scope is not None:
+        from app.modules.agents.tools.describe_agent import business_label
+
+        for record in context.authorized_semantic_models or []:
+            ir = record.get("_scoped_ir")
+            name = record.get("name") or getattr(ir, "name", None)
+            if name:
+                views.append(business_label(name))
+    skills = len(registry.discoverable_skills)
+    weighed = []
+    if views:
+        named = views[:2] + ([f"{len(views) - 2} more"] if len(views) > 2 else [])
+        shown = named[0] if len(named) == 1 else ", ".join(named[:-1]) + " and " + named[-1]
+        weighed.append(f"the {shown} data")
+    if skills:
+        weighed.append(f"{skills} skill{'' if skills == 1 else 's'}")
+    if not weighed:
+        return "Understanding the request and choosing a skill"
+    return "Understanding the request: weighing " + " and ".join(weighed)
 
 
 def _initial_plan(registry: ToolRegistry) -> list[dict[str, Any]]:

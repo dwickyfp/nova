@@ -38,6 +38,10 @@ SQL or table names.
 
 Steps appear in the order the agent takes them, as soon as each one starts:
 
+- **Understanding the request**: the first step names the data and the number
+  of skills the agent is choosing from, for example "Understanding the request:
+  weighing the Sales orders data and 6 skills". With some AI models this step
+  takes several seconds.
 - **What the agent is about to do**, in one sentence, before it runs a step.
   For example "I will compare revenue by region first." These sentences never
   contain figures. Figures come only in the checked answer.

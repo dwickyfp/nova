@@ -167,6 +167,7 @@ _TOOL_WORDS = {
     "query_execute": "a query",
     "query_mutate": "a change",
     "compute_metrics": "a calculation",
+    "diagnose_change": "a look at what changed",
     "ml_execute": "a model run",
     "ai_search": "AI search",
     "semantic_view_query": "the semantic view",

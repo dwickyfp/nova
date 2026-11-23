@@ -386,6 +386,18 @@ export function ProcessRail({
 }
 
 
+/**
+ * A tool's result summary, unless it only repeats what the row already shows
+ * (a chart's summary restates the description given as its preview).
+ */
+function distinctDetail(step: RailStep): string | undefined {
+  const detail = step.detail?.trim();
+  if (!detail || detail === step.text.trim()) return undefined;
+  const preview = step.preview?.trim();
+  if (preview && preview.length >= 12 && detail.includes(preview)) return undefined;
+  return step.detail;
+}
+
 function StepRow({ step, span, now }: {
   step: RailStep;
   span?: Span;
@@ -405,10 +417,7 @@ function StepRow({ step, span, now }: {
       ? step.body
       : undefined;
   const preview = reasoning && body ? reasoningPreview(body, live) : "";
-  const detail =
-    step.detail?.trim() && step.detail.trim() !== step.text.trim()
-      ? step.detail
-      : undefined;
+  const detail = distinctDetail(step);
   const hasDetail = Boolean(step.preview || body || detail);
 
   useEffect(() => {
