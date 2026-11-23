@@ -5,7 +5,7 @@ import {
   type SentFile,
   type TurnContext,
 } from "./stream-client";
-import { getThread, resetGrant, setGrant } from "./thread-client";
+import { getThread } from "./thread-client";
 import type { ToolCallDecision } from "./tool-call-card";
 import type { AssistantEvent } from "./types";
 import type { UiAction as UiBlockAction } from "@/features/studio/intelligent-ui/types";
@@ -19,16 +19,6 @@ import {
   formatAttachmentsForPrompt,
   type AttachedQuery,
 } from "./query-attach";
-
-/**
- * How the next read-only tool call is approved.
- *
- * ``ask`` is the default and shows an approval card; ``allow_read_only``
- * pre-grants the conversation so a read-only query runs without one. It never
- * covers a destructive statement — the backend's grant is read-only-only, and
- * the loop still consults the per-statement classification.
- */
-export type ApprovalMode = "ask" | "allow_read_only";
 
 export type UiAction = { method: string; path: string };
 
@@ -84,7 +74,6 @@ export type AssistantTurnOptions = {
 /** The parts of a conversation that must survive a binding switch. */
 export type AssistantTurnSnapshot = {
   threadId: string | null;
-  grantActive: boolean;
   olderCursor?: string | null;
 };
 
@@ -112,9 +101,6 @@ export function useAssistantTurn({
     null,
   );
   const [threadId, setThreadId] = useState<string | null>(null);
-  const [grantActive, setGrantActive] = useState(false);
-  const [resettingGrant, setResettingGrant] = useState(false);
-  const [settlingGrant, setSettlingGrant] = useState(false);
   const [loadingThread, setLoadingThread] = useState(false);
   const [olderCursor, setOlderCursor] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -172,12 +158,6 @@ export function useAssistantTurn({
                });
              }
             if (event.type === "tool_call") {
-              if (
-                event.payload.classification === "read_only" &&
-                event.payload.status === "pending"
-              ) {
-                setGrantActive(false);
-              }
               const action = uiActionFromPreview(
                 event.payload.tool_name,
                 event.payload.sql_preview,
@@ -193,10 +173,7 @@ export function useAssistantTurn({
                 uiActionsRef.current.delete(event.tool_call_id);
               }
             }
-            if (event.type === "role_changed") {
-              answer = "";
-              setGrantActive(false);
-            }
+            if (event.type === "role_changed") answer = "";
             if (event.type === "text_delta") answer += event.text;
             if (event.type === "done") answerMessageId = event.message_id;
             const status = STATUS_TEXT[event.type];
@@ -254,42 +231,6 @@ export function useAssistantTurn({
   }, []);
 
   /**
-   * Sets the conversation's approval mode, persisting the grant on the current
-   * thread. ``allow_read_only`` pre-grants read-only queries so the next turn
-   * runs without an approval card; ``ask`` clears the grant. The thread is
-   * created on demand, so the mode can be chosen before the first message.
-   *
-   * The local mode is only updated once the backend acknowledges it, so the
-   * selector cannot show "Always allow" while the engine would still prompt.
-   * An error leaves the mode unchanged and surfaces through ``onError``.
-   */
-  const setApprovalMode = useCallback(
-    async (mode: ApprovalMode) => {
-      if (settlingGrant) return;
-      const thread = threadId ?? (await ensureThread());
-      if (!thread) {
-        onError?.("Open or create a SQL file before changing approval mode");
-        return;
-      }
-      if (thread !== threadId) setThreadId(thread);
-      setSettlingGrant(true);
-      try {
-        const active = await setGrant(thread, mode === "allow_read_only");
-        setGrantActive(active);
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "The approval mode was not changed";
-        onError?.(message);
-      } finally {
-        setSettlingGrant(false);
-      }
-    },
-    [ensureThread, onError, settlingGrant, threadId],
-  );
-
-  /**
    * Switches the conversation to an existing thread: adopts its id, replaces
    * the transcript with the stored messages, and continues in it. Any in-flight
    * stream is aborted first, because the new transcript must not be appended to
@@ -314,7 +255,6 @@ export function useAssistantTurn({
         transcript.replace(restored);
         setOlderCursor(detail.next_cursor ?? null);
         setThreadId(detail.thread.thread_id);
-        setGrantActive(false);
       } catch (error) {
         const message =
           error instanceof Error
@@ -349,9 +289,7 @@ export function useAssistantTurn({
   }, [threadId, olderCursor, loadingOlder, streaming, loadingThread, onError]);
 
   /**
-   * Clears the conversation so the next message starts a fresh thread. The
-   * outgoing thread's read-only grant is revoked before the transcript is
-   * dropped, matching how a binding switch closes a conversation.
+   * Clears the conversation so the next message starts a fresh thread.
    */
   const startNewThread = useCallback(() => {
     historyRequestRef.current += 1;
@@ -363,17 +301,14 @@ export function useAssistantTurn({
     setStreaming(false);
     setStatusMessage(null);
     setDecidingToolCallId(null);
-    if (grantActive && threadId) void resetGrant(threadId);
-    setGrantActive(false);
     setThreadId(null);
     transcript.replace([]);
-  }, [grantActive, threadId, transcript]);
+  }, [transcript]);
 
   const decide = useCallback(
     async ({
       toolCallId,
       decision,
-      alwaysAllow,
       secureInput,
       uploadFile,
     }: ToolCallDecision) => {
@@ -387,14 +322,7 @@ export function useAssistantTurn({
       }
       setDecidingToolCallId(toolCallId);
       try {
-        const result = await decideToolCall(
-          toolCallId,
-          decision,
-          alwaysAllow,
-          secureInput,
-          uploadFile,
-        );
-        setGrantActive(result.grant_active);
+        await decideToolCall(toolCallId, decision, secureInput, uploadFile);
       } catch (error) {
         const message =
           error instanceof Error
@@ -409,26 +337,8 @@ export function useAssistantTurn({
     [canApproveUiAction, onError, transcript],
   );
 
-  const resetPermissions = useCallback(async () => {
-    if (!threadId || resettingGrant) return;
-    setResettingGrant(true);
-    try {
-      await resetGrant(threadId);
-      setGrantActive(false);
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "The conversation permissions were not reset";
-      transcript.applyEvent({ type: "error", code: "consent", message });
-      onError?.(message);
-    } finally {
-      setResettingGrant(false);
-    }
-  }, [onError, resettingGrant, threadId, transcript]);
-
   /**
-   * Reads the conversation's thread/grant binding so a caller that keeps one
+   * Reads the conversation's thread binding so a caller that keeps one
    * turn per binding identity can restore it after switching away and back.
    * Aborts any in-flight stream first: a snapshot must describe a settled
    * conversation, never one mid-turn.
@@ -436,8 +346,8 @@ export function useAssistantTurn({
   const snapshot = useCallback((): AssistantTurnSnapshot => {
     abortRef.current?.abort();
     abortRef.current = null;
-    return { threadId, grantActive, ...(olderCursor ? { olderCursor } : {}) };
-  }, [grantActive, threadId, olderCursor]);
+    return { threadId, ...(olderCursor ? { olderCursor } : {}) };
+  }, [threadId, olderCursor]);
 
   const restore = useCallback((snapshot: AssistantTurnSnapshot) => {
     historyRequestRef.current += 1;
@@ -447,7 +357,6 @@ export function useAssistantTurn({
     abortRef.current?.abort();
     abortRef.current = null;
     setThreadId(snapshot.threadId);
-    setGrantActive(snapshot.grantActive);
     setStreaming(false);
     setStatusMessage(null);
     setDecidingToolCallId(null);
@@ -459,15 +368,6 @@ export function useAssistantTurn({
     sendMessage,
     stop,
     decide,
-    grantActive,
-    // The selector's value is the grant itself, so it can never show a mode the
-    // backend would not honour: every path that changes the grant (a card's
-    // always-allow, reset, thread switch) moves the selector with it.
-    approvalMode: (grantActive ? "allow_read_only" : "ask") as ApprovalMode,
-    setApprovalMode,
-    settlingGrant,
-    resetPermissions,
-    resettingGrant,
     streaming,
     loadingThread,
     olderCursor,

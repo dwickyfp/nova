@@ -286,7 +286,7 @@ async def test_prefetch_and_cache_hits_do_not_double_count_dispatches(duplicate)
     frames = [frame async for frame in AssistantLoop(
         provider=provider, registry=registry, iterative=True,
     ).run(
-        thread=thread(read_only_grant=True), user_content="Find the available guidance.",
+        thread=thread(), user_content="Find the available guidance.",
         context=context, resolve_consent=AsyncMock(return_value=True),
     )]
     assert TurnResult(frames=frames).finish_reason == "stop"
@@ -405,7 +405,7 @@ async def test_token_allowance_composes_near_limit_and_stops_when_exhausted(limi
     frames = [frame async for frame in AssistantLoop(
         provider=provider, registry=registry, iterative=True, spend_limit=limit,
     ).run(
-        thread=thread(read_only_grant=True), user_content="Find the available guidance.",
+        thread=thread(), user_content="Find the available guidance.",
         context=context, resolve_consent=AsyncMock(return_value=True),
     )]
     assert len(tool.runs) == 1
@@ -447,7 +447,7 @@ async def test_planner_tokens_inside_a_tool_count_toward_composing_before_the_li
     frames = [frame async for frame in AssistantLoop(
         provider=provider, registry=registry, iterative=True, spend_limit=1000,
     ).run(
-        thread=thread(read_only_grant=True), user_content="Find the available guidance.",
+        thread=thread(), user_content="Find the available guidance.",
         context=context, resolve_consent=AsyncMock(return_value=True),
     )]
     assert len(tool.runs) == 1
@@ -486,7 +486,7 @@ async def test_a_turn_answers_when_another_slow_query_would_pass_its_deadline():
     frames = [frame async for frame in AssistantLoop(
         provider=provider, registry=registry, iterative=True, time_budget_seconds=120,
     ).run(
-        thread=thread(read_only_grant=True), user_content="Find the available guidance.",
+        thread=thread(), user_content="Find the available guidance.",
         context=LoopContext(user_name="alice", agent_id="agent"),
         resolve_consent=AsyncMock(return_value=True),
     )]

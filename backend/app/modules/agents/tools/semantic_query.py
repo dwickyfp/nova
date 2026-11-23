@@ -145,7 +145,7 @@ class SemanticQueryTool:
         "schema inspection. Returns verified rows and semantic evidence."
     )
     parameters = _PARAMETERS
-    #: Read-only only; the loop may auto-approve under an auto_read_only policy.
+    #: Read-only only, so it runs without a prompt; the role governs what it reads.
     classification: ToolClassification = "read_only"
     requires_consent = True
 
@@ -162,30 +162,6 @@ class SemanticQueryTool:
     def preview(self, invocation: ToolInvocation) -> str:
         question = _question_from(invocation)
         return f"semantic_query: {question}" if question else "semantic_query"
-
-    def approval_details(
-        self, invocation: ToolInvocation, context: Any = None,
-    ) -> dict[str, Any]:
-        """The approval card's semantic request: the view and the question.
-
-        SQL is compiled only after approval (planning may read field values as
-        the caller), so the card says so instead of showing a statement.
-        """
-        view = invocation.arguments.get("semantic_view")
-        view = view.strip() if isinstance(view, str) and view.strip() else None
-        if view is None and context is not None:
-            readable = readable_view_summaries(
-                getattr(context, "authorized_semantic_models", None) or []
-            )
-            if len(readable) == 1:
-                view = readable[0]["name"]
-        return {
-            "preview_kind": "semantic",
-            "preview": _question_from(invocation),
-            "semantic": {"question": _question_from(invocation), "view": view},
-            **({"objects": [view]} if view else {}),
-            "editable": {"argument": "question", "label": "Question", "max_length": 2000},
-        }
 
     async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
         outcome = await self._run(invocation, context)

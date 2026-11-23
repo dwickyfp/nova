@@ -57,7 +57,7 @@ async def test_text_only_action_executes_with_consent_and_composes_from_evidence
         )
     ]
     assert tool.runs == 1
-    assert prompts == [("query_execute", "read_only")]
+    assert prompts == []  # read-only: it runs without asking
     assert context.harness_mode == "strict"
     assert any('"finish_reason":"stop"' in frame.replace(" ", "") for frame in frames)
     assert any("The query returned one row." in frame for frame in frames)

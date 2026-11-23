@@ -98,8 +98,8 @@ const STREAM = v2Sse()([
 
 const CONSENT_STREAM = v2Sse()([
   'event: thinking\ndata: {"phase":"plan","text":"Understanding the request","status":"running"}\n\n',
-  'event: tool_call\ndata: {"tool_call_id":"c9","tool_name":"query_execute","sql_preview":"DROP TABLE sales.sku","classification":"destructive","status":"pending"}\n\n',
-  'event: input_required\ndata: {"request_id":"c9","tool_call_id":"c9","expires_at":"2026-11-23T10:05:00+00:00","request":{"kind":"approval","title":"Approve this change to data?","classification":"destructive","reason":"changes_data","role":"ANALYST","preview_kind":"sql","preview":"DROP TABLE sales.sku","allow_session":false}}\n\n',
+  'event: tool_call\ndata: {"tool_call_id":"c9","tool_name":"schedule_automation","sql_preview":"Schedule the automation Weekly revenue every Monday","classification":"destructive","status":"pending"}\n\n',
+  'event: input_required\ndata: {"request_id":"c9","tool_call_id":"c9","expires_at":"2026-11-23T10:05:00+00:00","request":{"kind":"approval","title":"Allow this action?","classification":"destructive","reason":"changes_data","role":"ANALYST","action":"Schedule the automation Weekly revenue every Monday"}}\n\n',
 ].join(""));
 
 /**
@@ -178,7 +178,7 @@ function pendingConsentResponse(signal: AbortSignal | null | undefined): Respons
 }
 
 function mockFetch(
-  mode: "read_only" | "ask_every_tool" = "read_only",
+  mode: "read_only" | "pending_action" = "read_only",
   extended = false,
 ) {
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
@@ -209,7 +209,7 @@ function mockFetch(
       return new Response(String(init?.body), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     if (url.includes("/threads") && url.includes("/messages")) {
-      return mode === "ask_every_tool" ? pendingConsentResponse(init?.signal) : sseResponse(STREAM);
+      return mode === "pending_action" ? pendingConsentResponse(init?.signal) : sseResponse(STREAM);
     }
     // GET one thread returns the thread plus its messages, each carrying the
     // trace the loop recorded.
@@ -252,16 +252,12 @@ function mockFetch(
 }
 
 function renderStudio(
-  mode: "read_only" | "ask_every_tool" = "read_only",
+  mode: "read_only" | "pending_action" = "read_only",
   extended = false,
   activeThreadId: string | null = null,
   sampleQuestions = AGENT.sample_questions,
 ) {
-  const baseAgent =
-    mode === "ask_every_tool"
-      ? { ...AGENT, policy: "ask_every_tool" as const }
-      : AGENT;
-  const agent = { ...baseAgent, sample_questions: sampleQuestions };
+  const agent = { ...AGENT, sample_questions: sampleQuestions };
   mockFetch(mode, extended);
   const client = createTestClient({
     defaultOptions: { queries: { retry: false } },
@@ -416,7 +412,7 @@ it("keeps a direct provider-format failure visible after reload without resubmit
 });
 
 it("shows a storage interruption beside the partial answer and removes consent", async () => {
-  const screen = await renderStudio("ask_every_tool");
+  const screen = await renderStudio("pending_action");
   const fetch = vi.mocked(globalThis.fetch);
   const fallback = fetch.getMockImplementation()!;
   let stream: ReadableStreamDefaultController<Uint8Array> | undefined;
@@ -428,8 +424,8 @@ it("shows a storage interruption beside the partial answer and removes consent",
           stream = controller;
           controller.enqueue(new TextEncoder().encode(sse(
             'event: text_delta\ndata: {"text":"Partial answer from the agent."}\n\n'
-            + 'event: tool_call\ndata: {"tool_call_id":"read","tool_name":"query_execute","sql_preview":"SELECT 42","classification":"read_only","status":"pending"}\n\n'
-            + 'event: input_required\ndata: {"request_id":"read","tool_call_id":"read","expires_at":"2026-11-23T10:05:00+00:00","request":{"kind":"approval","title":"Approve this data step?","classification":"read_only","reason":"asks_first","role":"ANALYST","preview_kind":"sql","preview":"SELECT 42","allow_session":true}}\n\n',
+            + 'event: tool_call\ndata: {"tool_call_id":"act","tool_name":"schedule_automation","sql_preview":"Schedule the automation Weekly revenue","classification":"destructive","status":"pending"}\n\n'
+            + 'event: input_required\ndata: {"request_id":"act","tool_call_id":"act","expires_at":"2026-11-23T10:05:00+00:00","request":{"kind":"approval","title":"Allow this action?","classification":"destructive","reason":"changes_data","role":"ANALYST","action":"Schedule the automation Weekly revenue"}}\n\n',
           )));
         },
       }), { headers: { "Content-Type": "text/event-stream" } });
@@ -1064,8 +1060,8 @@ describe("studio transcript click-through", () => {
     await expect.element(page.getByText("Omzet per SKU")).toBeVisible();
   });
 
-  it("asks for approval inline for an ask_every_tool agent and sends the decision to the run", async () => {
-    await renderStudio("ask_every_tool");
+  it("asks for approval inline for an action and sends the decision to the run", async () => {
+    await renderStudio("pending_action");
     await page
       .getByPlaceholder("Ask a question about your data")
       .fill("Top SKUs");

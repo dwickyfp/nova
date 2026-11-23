@@ -12,9 +12,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from app.modules.assistant import human_input
-from app.modules.assistant.consent import ConsentApproval, ConsentBroker
+from app.modules.assistant.consent import ConsentBroker
 from app.modules.assistant.human_input import (
     HumanAnswer,
     HumanInputError,
@@ -140,40 +141,23 @@ def test_form_answers_are_validated_field_by_field() -> None:
             validate_answer(request, {"values": values})
 
 
-def test_edited_invocation_only_touches_the_declared_argument() -> None:
-    class Tool:
-        def approval_details(self, invocation, context=None):
-            return {"editable": {"argument": "question", "max_length": 20}}
+def test_an_action_approval_says_what_the_action_does() -> None:
+    from app.modules.agents.tools.schedule_automation import ScheduleAutomationTool
 
-    call = ToolInvocation("c1", "semantic_query", {"question": "gross", "semantic_view": "v"},
-                          provider_call_id="p1")
-    edited = human_input.edited_invocation(Tool(), call, {"question": " net "})
-    assert edited.arguments == {"question": "net", "semantic_view": "v"}
-    assert edited.provider_call_id == "p1"
-    for bad in ({"semantic_view": "w"}, {"question": ""}, {"question": "x" * 21},
-                {"question": "a", "semantic_view": "b"}):
-        with pytest.raises(HumanInputError):
-            human_input.edited_invocation(Tool(), call, bad)
-    with pytest.raises(HumanInputError):
-        human_input.edited_invocation(object(), call, {"question": "net"})
-
-
-def test_semantic_approval_shows_the_request_not_sql() -> None:
-    from app.modules.agents.tools.semantic_query import SemanticQueryTool
-
-    tool = SemanticQueryTool.__new__(SemanticQueryTool)
-    call = ToolInvocation("c1", "semantic_query", {"question": "Revenue by status",
-                                                   "semantic_view": "Sales"})
+    tool = ScheduleAutomationTool()
+    call = ToolInvocation("c1", "schedule_automation", {
+        "title": "Weekly revenue", "schedule_kind": "cron", "schedule_expr": "0 8 * * 1",
+    })
     request = human_input.approval_request(
-        tool, call, classification="read_only", preview=tool.preview(call),
-        role="MARKETING", reason="asks_first",
+        tool, call, classification="destructive", preview=tool.preview(call),
+        role="MARKETING", reason=human_input.approval_reason("destructive"),
     )
-    assert request["preview_kind"] == "semantic"
-    assert request["preview"] == "Revenue by status"
-    assert request["semantic"] == {"question": "Revenue by status", "view": "Sales"}
-    assert request["objects"] == ["Sales"]
-    assert request["editable"]["argument"] == "question"
-    assert request["role"] == "MARKETING" and request["allow_session"] is True
+    assert request == {
+        "kind": "approval", "title": "Allow this action?", "classification": "destructive",
+        "reason": "changes_data", "role": "MARKETING",
+        "action": "Schedule 'Weekly revenue' (cron: 0 8 * * 1)",
+    }
+    assert human_input.approval_reason("session_change") == "changes_role"
 
 
 # ── the answer endpoint ────────────────────────────────────────────────────
@@ -271,35 +255,29 @@ async def test_invalid_answers_are_rejected_and_the_request_keeps_waiting(endpoi
 
 
 @pytest.mark.asyncio
-async def test_approvals_take_decisions_and_edits_and_allow_for_chat_is_read_only(
-    endpoint,
-) -> None:
+async def test_approvals_take_allow_once_or_deny_only(endpoint) -> None:
     agents, broker, user, thread = endpoint
-    future = broker.open("c1", thread_id=thread.thread_id, user=user, run_id="r1",
-                         classification="read_only")
-    await agents.answer_agent_input(
-        "a1", thread.thread_id, "r1", "c1",
-        HumanInputAnswerRequest(action="allow_once", edited_arguments={"sql": "SELECT 2"}),
+    allowed = broker.open("c1", thread_id=thread.thread_id, user=user, run_id="r1",
+                          classification="destructive")
+    result = await agents.answer_agent_input(
+        "a1", thread.thread_id, "r1", "c1", HumanInputAnswerRequest(action="allow_once"),
         user=user,
     )
-    approval = await future
-    assert isinstance(approval, ConsentApproval)
-    assert approval.edited_arguments == {"sql": "SELECT 2"}
+    assert result == {"request_id": "c1", "status": "allowed"}
+    assert await allowed is True
 
     broker.open("c2", thread_id=thread.thread_id, user=user, run_id="r1",
                 classification="destructive")
     with pytest.raises(HTTPException) as raised:
         await agents.answer_agent_input(
             "a1", thread.thread_id, "r1", "c2",
-            HumanInputAnswerRequest(action="allow_session"), user=user,
-        )
-    assert raised.value.status_code == 400
-    with pytest.raises(HTTPException) as raised:
-        await agents.answer_agent_input(
-            "a1", thread.thread_id, "r1", "c2",
             HumanInputAnswerRequest(action="answer", answer={"text": "yes"}), user=user,
         )
     assert raised.value.status_code == 422
+    with pytest.raises(ValidationError):
+        HumanInputAnswerRequest(action="allow_session")
+    with pytest.raises(ValidationError):
+        HumanInputAnswerRequest(action="allow_once", edited_arguments={"sql": "SELECT 2"})
     denied = broker.open("c3", thread_id=thread.thread_id, user=user, run_id="r1")
     await agents.answer_agent_input(
         "a1", thread.thread_id, "r1", "c3", HumanInputAnswerRequest(action="deny"), user=user,
@@ -322,3 +300,16 @@ def test_planning_spells_the_tool_name_the_loop_offers() -> None:
     from app.modules.assistant import planning
 
     assert planning.HUMAN_INPUT_TOOL == human_input.TOOL_NAME
+
+
+def test_a_badge_that_repeats_the_recommended_mark_is_dropped():
+    request = normalize_request({
+        "kind": "choice", "title": "Which plan?",
+        "options": [
+            {"id": "a", "title": "By region", "badges": ["Recommended", "Fast"]},
+            {"id": "b", "title": "By month", "badges": ["Suggested"]},
+        ],
+    })
+    first, second = request["options"]
+    assert first["badges"] == ["Fast"] and first["recommended"] is True
+    assert "badges" not in second and second["recommended"] is True

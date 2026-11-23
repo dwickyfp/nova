@@ -86,7 +86,7 @@ another sign-in, cannot.
 
 | Card | What it asks | How to answer |
 | --- | --- | --- |
-| **Approval needed** | Permission to run a data step | **Allow once**, **Allow for this chat**, **Edit then run** or **Deny** |
+| **Approval needed** | Permission to take an action that changes something | **Allow once** or **Deny** |
 | **Question** | Which of a few things you mean | Click a suggested answer, or type in **Your answer** and press **Enter** |
 | **Details needed** | A few values, such as a period or a region | Fill in the fields and click **Continue** |
 | **Choose one** | Which of a few approaches to take | Pick a card (the agent may mark one **Suggested**) and click **Continue with this option** |
@@ -94,35 +94,26 @@ another sign-in, cannot.
 On a question, form or choice, **Skip, let the agent assume** lets the agent
 continue with its own assumption, which it states in the answer.
 
-### Approve a data step
+### Approve an action
 
-An agent can be set to ask before each data step, and any step that changes
-data or switches your role always asks. The card shows:
+Questions about your data run without asking. The agent reads only what your
+active role may read, so there is nothing to approve. Statements that would
+change data are never run from a question.
 
-- **Semantic request**: the Semantic View and the question the agent will ask
-  it, for a step that reads through a Semantic View. Nova builds the SQL from
-  that view and runs it read-only. The exact SQL appears on the step after it
-  runs.
-- **SQL that will run**, for a step that runs SQL directly.
-- The class of step (for example **Read-only** or **Changes data**), the role
-  it runs as, the objects it uses, and why the agent asks.
+An action that changes something always asks first: for example scheduling an
+automation, calling an outside tool, creating an agent or a semantic model,
+changing a Dataviz dashboard or a definition, or switching your role. The card
+says what the action does, the role it runs as, and why it asks.
 
-Choose:
+- **Allow once** takes this action.
+- **Deny** stops this action; the agent continues without it.
 
-- **Allow once** runs this step.
-- **Allow for this chat** also lets later read-only steps in this chat run
-  without asking. It is not offered for steps that change data.
-- **Deny** stops this step; the agent continues without it.
-- **Edit then run** opens the request for editing. Change it and click **Run
-  edited request**, or **Cancel edit**. Nova checks the edited request again
-  against your role's access. If your role may not run it, or the edit turns a
-  read-only step into one that changes data, the step does not run and the card
-  shows "Nova refused the edited request" with the reason.
+Each approval covers one action. The next action asks again.
 
 ### After you answer
 
 The card closes to one line, such as "You chose: By month" or "You allowed this
-step". Click the line to see what was asked. The same line appears when you
+action". Click the line to see what was asked. The same line appears when you
 open the conversation again from **History**.
 
 A request waits up to 10 minutes; after that it shows "The request expired".
@@ -131,7 +122,7 @@ answered". An agent asks at most four times per answer, and never asks during
 scheduled automations, where nobody is there to answer.
 
 Approvals belong to the login and active role that requested them. After
-switching roles or signing in again, start a new request to approve a step. A
+switching roles or signing in again, start a new request to approve an action. A
 pending request cannot be answered from another login, even for the same
 account.
 

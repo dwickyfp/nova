@@ -37,7 +37,8 @@ export type Agent = {
   harness_mode?: "auto" | "fast" | "guided" | "strict";
   /** Loop limits: "analyst" leaves room to drill down after the first result. */
   budget_profile?: "fast" | "analyst" | "deep";
-  policy: "auto_read_only" | "ask_every_tool";
+  /** Data queries always run as the user's role without asking; only actions ask. */
+  policy: "auto_read_only";
   semantic_model_id: string | null;
   /** Legacy bindings retained for responses created before Semantic Views. */
   semantic_model_ids: string[];
@@ -282,19 +283,6 @@ export const agentsApi = {
     api.put<AgentThread>(
       `/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}`,
       { title },
-    ),
-  decideToolCall: (
-    agentId: string,
-    toolCallId: string,
-    decision: "allow_once" | "allow_session" | "deny",
-  ) =>
-    api.post<{
-      tool_call_id: string;
-      status: string;
-      grant_active: boolean;
-    }>(
-      `/agents/${encodeURIComponent(agentId)}/tool-calls/${encodeURIComponent(toolCallId)}/decision`,
-      { decision },
     ),
   /** Answer a human-in-the-loop request of a running turn (approval, question, form, choice). */
   answerInput: (

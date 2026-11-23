@@ -780,7 +780,7 @@ async def _consented(fixture, action, *, compensate=False, allow=True):
             f"/api/v1/agents/{fixture.agent['agent_id']}/tool-calls/{call_id}/decision",
             json={"decision": "allow_session"},
         )
-        assert permanent.status_code == 400, "Mutations cannot receive a session grant"
+        assert permanent.status_code == 422, "There is no conversation-wide grant"
         await fixture.primary.request(
             "POST",
             f"agents/{fixture.agent['agent_id']}/tool-calls/{call_id}/decision",

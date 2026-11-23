@@ -97,7 +97,7 @@ def _tool_call(call_id: str, name: str = "query_execute", args: dict | None = No
 
 
 class StubTool:
-    def __init__(self, classification: str = "read_only", ok: bool = True) -> None:
+    def __init__(self, classification: str = "destructive", ok: bool = True) -> None:
         self.name = "query_execute"
         self.classification = classification
         self.description = "run sql"
@@ -281,12 +281,11 @@ def test_thread_store_scopes_threads_to_owner():
 
 
 def test_consent_policy_only_covers_read_only():
-    policy = ConsentPolicy(always_allow_read_only=True)
+    policy = ConsentPolicy()
     assert policy.covers("read_only") is True
     assert policy.covers("destructive") is False
+    assert policy.covers("session_change") is False
     assert policy.covers("denied") is False
-
-    assert ConsentPolicy(always_allow_read_only=False).covers("read_only") is False
 
 
 def test_thread_state_is_not_persisted_anywhere():
@@ -746,7 +745,7 @@ async def test_loop_enforces_time_budget(monkeypatch):
 # ── Consent (E2b) ────────────────────────────────────────────────────────────
 
 
-async def test_read_only_grant_skips_the_approval_prompt():
+async def test_a_read_only_call_skips_the_approval_prompt():
     provider = FakeProvider(
         [
             {"role": "assistant", "content": "", "tool_calls": [_tool_call("c1")]},
@@ -757,7 +756,6 @@ async def test_read_only_grant_skips_the_approval_prompt():
     registry.register(StubTool(classification="read_only"))
     loop = AssistantLoop(provider=provider, registry=registry)
     thread = _thread()
-    thread.consent.always_allow_read_only = True
 
     asked = []
 
@@ -790,7 +788,6 @@ async def test_destructive_call_never_auto_approves_even_with_a_grant():
     registry.register(StubTool(classification="destructive"))
     loop = AssistantLoop(provider=provider, registry=registry)
     thread = _thread()
-    thread.consent.always_allow_read_only = True
 
     asked = []
 

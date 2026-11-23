@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.modules.assistant.read_grants import stamp
+from app.modules.assistant.consent import stamp
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import AssistantThread
 from app.modules.assistant.tools import ToolInvocation, ToolRegistry
@@ -114,9 +114,7 @@ async def test_role_switch_trajectory(monkeypatch, approved, granted):
         provider=provider, registry=registry, system_prompt="Execute requested SQL"
     )
     runtime = AssistantThread("thread", "alice", "Role test")
-    runtime.consent.always_allow_read_only = True
     ctx = context()
-    runtime.consent.granted_under = stamp(ctx.user)
     prompts = []
 
     async def consent(invocation, classification):
@@ -143,8 +141,8 @@ async def test_role_switch_trajectory(monkeypatch, approved, granted):
         assert "role_changed" in result.events
         assert result.finish_reason == "stop"
         assert "finance-secret" not in snapshots[2]
-        assert prompts == ["session_change", "read_only"]
-        assert not runtime.consent.always_allow_read_only
+        # Only the role switch asks; reads run under whichever role is active.
+        assert prompts == ["session_change"]
         switch.assert_awaited_once_with("session", "marketing")
         assert any(
             call.kwargs["sql"] == "USE ROLE marketing" and call.kwargs["status"] == "SUCCESS"

@@ -61,7 +61,6 @@ async def run(tool, *, iterative: bool):
                    "required_tools": ["semantic_query"], "ml_task": None},
     )
     thread = AssistantThread(thread_id="parallel", user_name="alice", title="Eval")
-    thread.consent.always_allow_read_only = True
 
     async def allow(_invocation, _classification):
         return True
@@ -133,7 +132,6 @@ def test_mission_or_active_ordered_hook_prevents_early_dispatch(mission, hook):
     loop = AssistantLoop(provider=ScriptedProvider([]), registry=registry, iterative=True)
     context = LoopContext(user_name="alice", mission_id=mission, business_result_hook=hook)
     thread = AssistantThread(thread_id="serial", user_name="alice", title="Eval")
-    thread.consent.always_allow_read_only = True
     assert loop._prefetch(two_calls()["tool_calls"][0], context, thread,
                           ("semantic_query",), {}, set()) is None
     assert not tool.runs

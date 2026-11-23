@@ -169,7 +169,6 @@ async def test_real_provider_uses_two_temporary_custom_sql_tools(app, monkeypatc
             user_name=username,
             title="Temporary custom SQL tool probe",
         )
-        thread.consent.always_allow_read_only = True
         consent_prompts = []
 
         async def consent(invocation, classification):

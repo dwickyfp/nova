@@ -178,7 +178,7 @@ async def test_a_second_metric_the_question_asks_for_is_still_required(world, mo
     assert '"finish_reason":"required_capability_incomplete"' in joined
 
 
-async def test_the_explain_tool_stays_behind_consent(world):
+async def test_the_explain_tool_is_read_only_and_never_asks(world):
     await bind(world, world.finance, "NetRevenue", "total_revenue", None)
     await world.release()
     registry = ToolRegistry()
@@ -187,12 +187,10 @@ async def test_the_explain_tool_stays_behind_consent(world):
         tool_call_frame("e1", name="ontology_explain", arguments={"concept": "Finance.NetRevenue"}),
         text_frame("Net revenue is defined by Finance."),
     ]
-    denied, _ = await run(ScriptedProvider(script=list(script)), registry, "define net revenue",
-                          consent=deny)
-    assert "Theofficialmeaningof" not in denied
-    assert "officialdefinitionoffinance.netrevenue" not in denied.lower()
+    # A resolver that would deny is never consulted: reading a definition is
+    # governed by the caller's role, not by an approval.
     allowed, context = await run(ScriptedProvider(script=list(script)), registry,
-                                 "define net revenue")
+                                 "define net revenue", consent=deny)
     assert "OfficialdefinitionofFinance.NetRevenue" in allowed
     assert context.ontology_release_id is not None
 

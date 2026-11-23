@@ -411,21 +411,20 @@ describe("studio transcript reducer", () => {
     expect(turn.steps[0].body).toBe("Understanding the request");
   });
 
-  it("raises an approval request for a pending tool call and collapses it when answered", () => {
+  it("raises an approval request for a pending action and collapses it when answered", () => {
     const live = session();
     const approval = {
-      kind: "approval", title: "Approve this data step?", classification: "read_only",
-      reason: "asks_first", role: "MARKETING", preview_kind: "sql",
-      preview: "SELECT count(*) FROM orders", allow_session: true,
+      kind: "approval", title: "Allow this action?", classification: "destructive",
+      reason: "changes_data", role: "MARKETING", action: "Schedule the automation Weekly revenue",
     };
     const pending = live.push(
       {
         type: "tool_call",
         payload: {
           tool_call_id: "c1",
-          tool_name: "query_execute",
-          sql_preview: "SELECT count(*) FROM orders",
-          classification: "read_only",
+          tool_name: "schedule_automation",
+          sql_preview: "Schedule the automation Weekly revenue",
+          classification: "destructive",
           status: "pending",
         },
       },
@@ -435,15 +434,15 @@ describe("studio transcript reducer", () => {
     expect(request).toMatchObject({ kind: "hitl", part: { requestId: "c1", status: "pending", kind: "approval" } });
 
     const resolved = live.push(
-      { type: "input_resolved", request_id: "c1", status: "allowed", summary: "You allowed this once" } as unknown as AssistantEvent,
+      { type: "input_resolved", request_id: "c1", status: "allowed", summary: "You allowed this action" } as unknown as AssistantEvent,
       { type: "tool_status", tool_call_id: "c1", status: "running" },
     );
     expect(resolved.run.parts.find((part) => part.type === "hitl_request")).toMatchObject({
       status: "allowed",
-      summary: "You allowed this once",
+      summary: "You allowed this action",
     });
     expect(resolved.steps[0].status).toBe("running");
-    expect(resolved.steps[0].preview).toBe("SELECT count(*) FROM orders");
+    expect(resolved.steps[0].preview).toBe("Schedule the automation Weekly revenue");
   });
 
   it("does not raise a card when a read-only call is auto-approved", () => {

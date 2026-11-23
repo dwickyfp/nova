@@ -80,7 +80,6 @@ async def run_agent_turn(
         guards=GuardChain.from_policy(registry.harness_policy),
     )
     thread = AssistantThread(thread_id=thread_id, user_name=user["username"], title=title)
-    thread.consent.always_allow_read_only = True
     text: list[str] = []
     finish = None
     async for frame in loop.run(

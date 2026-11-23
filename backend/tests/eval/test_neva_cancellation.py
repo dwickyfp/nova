@@ -37,7 +37,7 @@ async def test_cancel_during_silent_tool_releases_task():
         return [
             frame
             async for frame in loop.run(
-                thread=thread(read_only_grant=True),
+                thread=thread(),
                 user_content="SELECT 1",
                 context=context,
                 resolve_consent=allow,

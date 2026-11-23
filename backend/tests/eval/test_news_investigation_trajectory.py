@@ -74,20 +74,21 @@ async def test_the_mission_incident_is_read_by_reference(incident):
     assert incident.audits[-1]["action"] == "READ_INCIDENT"
 
 
-async def test_incident_tools_need_consent(incident):
+async def test_reading_an_incident_is_read_only_and_never_asks(incident):
+    # A resolver that would deny is never consulted; the read is still audited.
     joined, _ = await run(
         [
             # The harness swaps empty arguments for SQL, so name the Mission's incident.
             tool_call_frame(
                 "i1", name="incident_context", arguments={"incident_id": incident.incident_id}
             ),
-            text_frame("I could not open the incident without your permission."),
+            text_frame("No cause has been established."),
         ],
         incident_id=incident.incident_id,
         consent=deny,
     )
-    assert not [item for item in incident.audits if item["action"] == "READ_INCIDENT"]
-    assert '"finish_reason":"denied"' in joined
+    assert [item for item in incident.audits if item["action"] == "READ_INCIDENT"]
+    assert '"finish_reason":"stop"' in joined
 
 
 async def test_a_finding_with_invented_evidence_is_refused_and_not_stored(incident):

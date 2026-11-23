@@ -17,7 +17,6 @@ from dataclasses import dataclass
 from typing import IO, TYPE_CHECKING, Any, TypeAlias
 
 from app.core.exceptions import InvalidCredentialsError
-from app.modules.assistant.read_grants import stamp
 
 if TYPE_CHECKING:
     from app.modules.assistant.human_input import HumanAnswer
@@ -29,14 +28,31 @@ class ConsentApproval:
 
     secure_input: dict[str, str] | None = None
     upload: tuple[str, IO[bytes], str] | None = None
-    #: The user's edit of the call's one editable argument (Edit then run). The
-    #: loop applies it and classifies the edited call again; it is never trusted.
-    edited_arguments: dict[str, str] | None = None
-    #: ``allow_session`` was chosen; recorded for the journal summary.
-    allow_session: bool = False
 
 
 Decision: TypeAlias = "bool | None | ConsentApproval | HumanAnswer"
+
+
+def stamp(user: dict[str, Any]) -> dict[str, Any] | None:
+    """The login a pending request belongs to: principal, role, version, session.
+
+    A request cannot be answered across a login or active-role boundary.
+    """
+    from app.modules.access_control.security_context import SecurityContext
+
+    try:
+        security = SecurityContext.from_session(user)
+    except (TypeError, ValueError):
+        return None
+    session_id = security.session_id
+    if not isinstance(session_id, str) or not session_id.strip() or len(session_id) > 64:
+        return None
+    return {
+        "principal": security.principal,
+        "role": security.active_role,
+        "version": security.security_context_version,
+        "session_id": session_id,
+    }
 
 
 @dataclass
@@ -74,16 +90,14 @@ class ConsentBroker:
 
     The pending entry records the thread and the complete login identity:
 
-    * ``thread_id`` lets an ``allow_session`` decision set the grant on exactly
-      the conversation that asked — never on every thread the user owns (E2b).
+    * ``thread_id`` binds an answer to the conversation that asked.
     * The principal, login, active role and security version must all match. A caller who
       is not the thread's owner must not be able to approve or deny someone
       else's pending call (NOVA-70: the route previously resolved on
       ``tool_call_id`` alone, which is an IDOR — the id is model-supplied and
       not a secret).
-    * ``classification`` is the class the loop computed for the pending call, so
-      the decision route can validate an ``allow_session`` against it rather
-      than trusting the client (NOVA-122, spec §6.1).
+    * ``classification`` is the class the loop computed for the pending call;
+      the client's view of it is never trusted (NOVA-122, spec §6.1).
     """
 
     def __init__(self) -> None:

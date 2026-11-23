@@ -94,18 +94,25 @@ like any other part, and answered inline. There are four kinds:
 
 | Kind | Raised by | Answer |
 | --- | --- | --- |
-| `approval` | The shared tool gate, for a call that needs consent | `allow_once`, `allow_session` (read-only calls only), `deny`, or `allow_once` with `edited_arguments` |
+| `approval` | The shared tool gate, for a call that is not read-only | `allow_once` or `deny` |
 | `question` | The agent tool `request_human_input` | Choice chip or free text |
 | `form` | `request_id`, from a JSON Schema subset (text, select, date, date range, number, integer, toggle) | `values`, validated in the client and again by the server |
 | `choice` | `request_human_input` | `option_id` of 2–6 option cards |
 
-Consent is the `approval` kind. Its request carries the redacted preview
-(`preview_kind` `sql`, or `semantic` with the Semantic View and question for a
-Semantic View step), the affected objects, the classification, the active role
-and why approval is needed. Edit then run changes only the argument the tool
-declares editable. The server rebuilds the call, re-classifies it and checks
-policy; a denied or changed classification is refused (`input.resolved`
-`refused`) and the call does not run.
+Consent is the `approval` kind, and only actions reach it. A read-only call
+(semantic requests and read-only SQL) never asks: the caller's role, Ranger
+policy and the engine already govern what it reads, and timeouts, row limits
+and cost guards still apply. Statements the effects-based classifier marks
+`denied` are refused without a prompt. Every other call (`destructive` or
+`session_change`: automations, HTTP/MCP tools, agent and semantic model
+creation, ontology and Dataviz writes, role changes) asks each time. Its
+request carries the tool's redacted plain-language `action`, the
+classification, the active role and the `reason` (`changes_data` or
+`changes_role`). There is no conversation-wide grant and no editing of a
+waiting call. The agent `policy` field accepts only `auto_read_only`; a stored
+`ask_every_tool` reads as `auto_read_only`. Neva follows the same rule: its
+approval-mode setting and the thread grant endpoints are gone. Approvals
+stored by earlier versions replay as settled steps without controls.
 
 Answers go to `POST /api/v1/agents/{agent_id}/threads/{thread_id}/runs/{run_id}/inputs/{request_id}`.
 The waiting request is bound to the principal, role, security-context version

@@ -54,7 +54,6 @@ async def test_draft_repairs_syntax_without_consent_or_execution():
 async def test_write_requires_approval_even_with_read_only_grant():
     result = await run_scenario(Scenario(
         name="typed_write", content="Run the insert", tools=[TrackedWrite()],
-        read_only_grant=True,
         script=[tool_call_frame("write", name="query_mutate", arguments={"sql": "INSERT INTO t VALUES(1)"}),
                 text_frame("Insert completed.")],
     ))

@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
-import { userEvent } from "@vitest/browser/context";
+import { userEvent } from "vitest/browser";
 import type { HitlPart } from "../turn-reducer";
 import { formErrors, initialValues } from "./form-values";
 import { HitlRequest } from "./hitl-request";
 import { parseHitlRequest } from "./parse";
 import { hitlKind, registerHitlKind } from "./registry";
-import type { FormRequest, HitlRequestSpec } from "./types";
+import type { ChoiceRequest, FormRequest, HitlRequestSpec } from "./types";
 
 function part(request: HitlRequestSpec, extra: Partial<HitlPart> = {}): HitlPart {
   return {
@@ -22,80 +22,77 @@ function part(request: HitlRequestSpec, extra: Partial<HitlPart> = {}): HitlPart
   };
 }
 
-const semantic = parseHitlRequest({
+const automation = parseHitlRequest({
   kind: "approval",
-  title: "Approve this data step?",
-  classification: "read_only",
-  reason: "asks_first",
+  title: "Allow this action?",
+  classification: "destructive",
+  reason: "changes_data",
   role: "marketing",
-  preview_kind: "semantic",
-  preview: "Revenue by order status",
-  allow_session: true,
-  objects: ["Sales"],
-  semantic: { question: "Revenue by order status", view: "Sales" },
-  editable: { argument: "question", label: "Question", max_length: 2000 },
+  action: "Schedule the automation 'Weekly revenue' every Monday at 08:00",
 })!;
 
 describe("approval", () => {
-  it("labels a semantic request as one, says why it asks and never calls it SQL", async () => {
-    const screen = await render(<HitlRequest part={part(semantic)} live onAnswer={vi.fn()} />);
+  it("says plainly what the action does, why it asks and who it runs as", async () => {
+    const screen = await render(<HitlRequest part={part(automation)} live onAnswer={vi.fn()} />);
     const text = screen.container.textContent ?? "";
-    expect(text).toContain("Semantic request");
-    expect(text).toContain("Semantic View");
+    expect(text).toContain("Schedule the automation 'Weekly revenue' every Monday at 08:00");
+    expect(text).toContain("Changes data");
     expect(text).toContain("Runs as marketing");
-    expect(text).toContain("Read-only");
-    expect(text).toContain("This agent asks before each data step");
-    expect(text).toContain("The exact SQL appears on the step after it runs");
-    expect(text).not.toMatch(/\bSQL that will run\b/);
+    expect(text).toContain("needs your approval each time");
+    expect(text).not.toMatch(/Semantic request|SQL that will run/);
   });
 
-  it("sends Allow once, Allow for this chat and Deny", async () => {
-    for (const [label, action] of [
-      ["Allow once", "allow_once"],
-      ["Allow for this chat", "allow_session"],
-      ["Deny", "deny"],
-    ] as const) {
+  it("offers only Allow once and Deny", async () => {
+    for (const [label, action] of [["Allow once", "allow_once"], ["Deny", "deny"]] as const) {
       const onAnswer = vi.fn().mockResolvedValue(undefined);
-      const screen = await render(<HitlRequest part={part(semantic)} live onAnswer={onAnswer} />);
+      const screen = await render(<HitlRequest part={part(automation)} live onAnswer={onAnswer} />);
+      expect(screen.getByRole("button", { name: "Allow for this chat" }).query()).toBeNull();
+      expect(screen.getByRole("button", { name: "Edit then run" }).query()).toBeNull();
       await screen.getByRole("button", { name: label }).click();
       expect(onAnswer).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ requestId: "req-1" }), { action });
       await screen.unmount();
     }
   });
 
-  it("Edit then run sends only the edited argument, and only when it changed", async () => {
-    const onAnswer = vi.fn().mockResolvedValue(undefined);
-    const screen = await render(<HitlRequest part={part(semantic)} live onAnswer={onAnswer} />);
-    await screen.getByRole("button", { name: "Edit then run" }).click();
-    const run = screen.getByRole("button", { name: "Run edited request" });
-    expect(run.element()).toBeDisabled();
-    const editor = screen.getByLabelText("Edit the question");
-    await editor.fill("Net revenue by order status");
-    await run.click();
-    expect(onAnswer).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
-      action: "allow_once",
-      edited_arguments: { question: "Net revenue by order status" },
-    });
-  });
-
-  it("offers no chat-wide grant for a change to data and shows its SQL as code", async () => {
+  it("explains a role switch", async () => {
     const request = parseHitlRequest({
-      kind: "approval", title: "Approve this change to data?", classification: "destructive",
-      reason: "changes_data", role: "analyst", preview_kind: "sql",
-      preview: "DELETE FROM sales.orders WHERE id = 1", allow_session: false,
+      kind: "approval", title: "Allow this change to your session?", classification: "session_change",
+      reason: "changes_role", role: "analyst", action: "Switch the active role to finance",
     })!;
     const screen = await render(<HitlRequest part={part(request)} live onAnswer={vi.fn()} />);
-    expect(screen.getByRole("button", { name: "Allow for this chat" }).query()).toBeNull();
-    expect(screen.getByText("DELETE FROM sales.orders WHERE id = 1").element().closest("pre")).not.toBeNull();
-    expect(screen.container.textContent).toContain("Changes data");
+    expect(screen.container.textContent).toContain("Switches your role");
+    expect(screen.container.textContent).toContain("switches the active role for this chat");
   });
 
   it("shows the server's refusal and keeps the request answerable", async () => {
     const onAnswer = vi.fn().mockRejectedValueOnce(new Error("This request is no longer waiting."));
-    const screen = await render(<HitlRequest part={part(semantic)} live onAnswer={onAnswer} />);
+    const screen = await render(<HitlRequest part={part(automation)} live onAnswer={onAnswer} />);
     await screen.getByRole("button", { name: "Allow once" }).click();
     await expect.element(screen.getByRole("alert")).toHaveTextContent("This request is no longer waiting.");
     expect(screen.getByRole("button", { name: "Allow once" }).element()).toBeEnabled();
+  });
+
+  it("replays an approval stored by an earlier version as a past step, without buttons", async () => {
+    const stored = parseHitlRequest({
+      kind: "approval", title: "Approve this data step?", classification: "read_only",
+      reason: "asks_first", role: "marketing", preview_kind: "semantic",
+      preview: "Revenue by order status", allow_session: true,
+      semantic: { question: "Revenue by order status", view: "Sales" },
+    })!;
+    expect(stored).toMatchObject({ kind: "approval", legacy: true, action: "Revenue by order status" });
+    const pending = await render(<HitlRequest part={part(stored)} live onAnswer={vi.fn()} />);
+    expect(pending.getByRole("button").query()).toBeNull();
+    await pending.unmount();
+    const allowed = await render(
+      <HitlRequest
+        part={part(stored, { status: "allowed", summary: "You allowed this once", state: "done" })}
+        live={false}
+        onAnswer={vi.fn()}
+      />,
+    );
+    await allowed.getByRole("button", { name: /You allowed this once/ }).click();
+    expect(allowed.container.textContent).toContain("Revenue by order status");
+    expect(allowed.getByRole("button", { name: "Allow once" }).query()).toBeNull();
   });
 });
 
@@ -137,6 +134,18 @@ describe("choice", () => {
       { id: "channel", title: "By channel" },
     ],
   })!;
+
+  it("shows the suggested mark once, even when a badge repeats it", () => {
+    const parsed = parseHitlRequest({
+      kind: "choice", title: "Which plan?",
+      options: [
+        { id: "a", title: "A", badges: ["Recommended", "Trend"] },
+        { id: "b", title: "B", recommended: true, badges: ["suggested"] },
+      ],
+    }) as ChoiceRequest;
+    expect(parsed.options[0]).toMatchObject({ recommended: true, badges: ["Trend"] });
+    expect(parsed.options[1].badges).toBeUndefined();
+  });
 
   it("is a radio group that starts on the suggested option and moves with arrow keys", async () => {
     const onAnswer = vi.fn().mockResolvedValue(undefined);
@@ -219,21 +228,6 @@ describe("settled and unreachable requests", () => {
       <HitlRequest part={part(question, { status: "cancelled", state: "cancelled" })} live onAnswer={vi.fn()} />,
     );
     expect(stopped.container.textContent).toContain("Stopped before you answered");
-  });
-
-  it("shows why an edited request was refused", async () => {
-    const screen = await render(
-      <HitlRequest
-        part={part(semantic, {
-          status: "refused", summary: "Nova refused the edited request",
-          answer: { reason: "Nova policy does not allow the edited request." }, state: "done",
-        })}
-        live
-        onAnswer={vi.fn()}
-      />,
-    );
-    await screen.getByRole("button", { name: /Nova refused the edited request/ }).click();
-    expect(screen.container.textContent).toContain("Nova policy does not allow the edited request.");
   });
 });
 

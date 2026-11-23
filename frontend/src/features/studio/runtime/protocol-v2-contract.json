@@ -140,19 +140,11 @@
             "expires_at": "2026-11-23T10:05:00+00:00",
             "request": {
               "kind": "approval",
-              "title": "Approve this data step?",
-              "classification": "read_only",
-              "reason": "asks_first",
+              "title": "Allow this action?",
+              "classification": "destructive",
+              "reason": "changes_data",
               "role": "ANALYST",
-              "preview_kind": "sql",
-              "preview": "SELECT 1",
-              "allow_session": true,
-              "editable": {
-                "argument": "sql",
-                "label": "SQL",
-                "language": "sql",
-                "max_length": 20000
-              }
+              "action": "Schedule the automation 'Weekly revenue' every Monday at 08:00"
             }
           }
         },
@@ -161,7 +153,7 @@
           "data": {
             "request_id": "c2",
             "status": "allowed",
-            "summary": "You allowed this once"
+            "summary": "You allowed this action"
           }
         },
         {
@@ -555,19 +547,11 @@
             "kind": "approval",
             "request": {
               "kind": "approval",
-              "title": "Approve this data step?",
-              "classification": "read_only",
-              "reason": "asks_first",
+              "title": "Allow this action?",
+              "classification": "destructive",
+              "reason": "changes_data",
               "role": "ANALYST",
-              "preview_kind": "sql",
-              "preview": "SELECT 1",
-              "allow_session": true,
-              "editable": {
-                "argument": "sql",
-                "label": "SQL",
-                "language": "sql",
-                "max_length": 20000
-              }
+              "action": "Schedule the automation 'Weekly revenue' every Monday at 08:00"
             },
             "expires_at": "2026-11-23T10:05:00+00:00",
             "run_id": "run-a",
@@ -579,7 +563,7 @@
           "data": {
             "part_id": "run-a#5",
             "status": "allowed",
-            "summary": "You allowed this once",
+            "summary": "You allowed this action",
             "run_id": "run-a",
             "seq": 19
           }
@@ -1081,19 +1065,11 @@
             "expires_at": "2026-11-23T10:05:00+00:00",
             "request": {
               "kind": "approval",
-              "title": "Approve this data step?",
-              "classification": "read_only",
-              "reason": "asks_first",
+              "title": "Allow this action?",
+              "classification": "destructive",
+              "reason": "changes_data",
               "role": "ANALYST",
-              "preview_kind": "sql",
-              "preview": "SELECT 1",
-              "allow_session": true,
-              "editable": {
-                "argument": "sql",
-                "label": "SQL",
-                "language": "sql",
-                "max_length": 20000
-              }
+              "action": "Schedule the automation 'Weekly revenue' every Monday at 08:00"
             }
           }
         },
@@ -1226,19 +1202,11 @@
             "kind": "approval",
             "request": {
               "kind": "approval",
-              "title": "Approve this data step?",
-              "classification": "read_only",
-              "reason": "asks_first",
+              "title": "Allow this action?",
+              "classification": "destructive",
+              "reason": "changes_data",
               "role": "ANALYST",
-              "preview_kind": "sql",
-              "preview": "SELECT 1",
-              "allow_session": true,
-              "editable": {
-                "argument": "sql",
-                "label": "SQL",
-                "language": "sql",
-                "max_length": 20000
-              }
+              "action": "Schedule the automation 'Weekly revenue' every Monday at 08:00"
             },
             "expires_at": "2026-11-23T10:05:00+00:00",
             "run_id": "run-c",
@@ -1471,19 +1439,11 @@
             "expires_at": "2026-11-23T10:05:00+00:00",
             "request": {
               "kind": "approval",
-              "title": "Approve this data step?",
-              "classification": "read_only",
-              "reason": "asks_first",
+              "title": "Allow this action?",
+              "classification": "destructive",
+              "reason": "changes_data",
               "role": "ANALYST",
-              "preview_kind": "sql",
-              "preview": "SELECT 1",
-              "allow_session": true,
-              "editable": {
-                "argument": "sql",
-                "label": "SQL",
-                "language": "sql",
-                "max_length": 20000
-              }
+              "action": "Schedule the automation 'Weekly revenue' every Monday at 08:00"
             }
           }
         },
@@ -1491,30 +1451,15 @@
           "event": "input_resolved",
           "data": {
             "request_id": "c3",
-            "status": "edited",
-            "summary": "You edited the request and ran it",
-            "answer": {
-              "edited": {
-                "sql": "SELECT 2"
-              }
-            }
-          }
-        },
-        {
-          "event": "tool_call",
-          "data": {
-            "tool_call_id": "c3",
-            "tool_name": "query_execute",
-            "sql_preview": "SELECT 1",
-            "classification": "read_only",
-            "status": "running"
+            "status": "denied",
+            "summary": "You denied this action"
           }
         },
         {
           "event": "tool_status",
           "data": {
             "tool_call_id": "c3",
-            "status": "done"
+            "status": "denied"
           }
         },
         {
@@ -1786,19 +1731,11 @@
             "kind": "approval",
             "request": {
               "kind": "approval",
-              "title": "Approve this data step?",
-              "classification": "read_only",
-              "reason": "asks_first",
+              "title": "Allow this action?",
+              "classification": "destructive",
+              "reason": "changes_data",
               "role": "ANALYST",
-              "preview_kind": "sql",
-              "preview": "SELECT 1",
-              "allow_session": true,
-              "editable": {
-                "argument": "sql",
-                "label": "SQL",
-                "language": "sql",
-                "max_length": 20000
-              }
+              "action": "Schedule the automation 'Weekly revenue' every Monday at 08:00"
             },
             "expires_at": "2026-11-23T10:05:00+00:00",
             "run_id": "run-d",
@@ -1809,13 +1746,8 @@
           "event": "input.resolved",
           "data": {
             "part_id": "run-d#5",
-            "status": "edited",
-            "summary": "You edited the request and ran it",
-            "answer": {
-              "edited": {
-                "sql": "SELECT 2"
-              }
-            },
+            "status": "denied",
+            "summary": "You denied this action",
             "run_id": "run-d",
             "seq": 19
           }
@@ -1833,28 +1765,18 @@
           "event": "tool.status",
           "data": {
             "part_id": "run-d#4",
-            "status": "running",
-            "preview": "SELECT 1",
+            "status": "denied",
             "run_id": "run-d",
             "seq": 21
-          }
-        },
-        {
-          "event": "tool.status",
-          "data": {
-            "part_id": "run-d#4",
-            "status": "done",
-            "run_id": "run-d",
-            "seq": 22
           }
         },
         {
           "event": "part.end",
           "data": {
             "part_id": "run-d#4",
-            "state": "done",
+            "state": "cancelled",
             "run_id": "run-d",
-            "seq": 23
+            "seq": 22
           }
         },
         {
@@ -1865,7 +1787,7 @@
             "request_id": "h4",
             "kind": "question",
             "run_id": "run-d",
-            "seq": 24
+            "seq": 23
           }
         },
         {
@@ -1886,7 +1808,7 @@
             },
             "expires_at": "2026-11-23T10:10:00+00:00",
             "run_id": "run-d",
-            "seq": 25
+            "seq": 24
           }
         },
         {
@@ -1896,7 +1818,7 @@
             "status": "cancelled",
             "summary": "Stopped before you answered",
             "run_id": "run-d",
-            "seq": 26
+            "seq": 25
           }
         },
         {
@@ -1905,7 +1827,7 @@
             "part_id": "run-d#6",
             "state": "cancelled",
             "run_id": "run-d",
-            "seq": 27
+            "seq": 26
           }
         },
         {
@@ -1914,7 +1836,7 @@
             "message_id": "",
             "finish_reason": "cancelled",
             "run_id": "run-d",
-            "seq": 28
+            "seq": 27
           }
         }
       ]

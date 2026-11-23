@@ -36,7 +36,7 @@ async def test_latest_month_trajectory_uses_consent_and_completes(monkeypatch):
             resolve_consent=consent,
         )
     ]
-    assert consented == [("semantic_query", "read_only")], frames
+    assert consented == [], frames  # read-only: it runs without asking
     assert context.route["required_capabilities"] == ("semantic_query",)
     # One planning call inside the tool: the scripted turn planner wrote no plan.
     planner_provider.complete.assert_awaited_once()

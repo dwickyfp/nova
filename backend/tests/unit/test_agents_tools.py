@@ -360,10 +360,8 @@ def test_auto_read_only_policy_pre_grants_read_only_consent() -> None:
     from app.modules.assistant.state import ConsentPolicy
 
     policy = ConsentPolicy()
-    assert policy.covers("read_only") is False  # default: must prompt
-
-    # What the router does for an auto_read_only agent:
-    policy.always_allow_read_only = True
+    # Read-only runs without asking; the role governs what it reads.
     assert policy.covers("read_only") is True
-    # A destructive call is never covered, grant or not.
+    # Anything else asks every time.
     assert policy.covers("destructive") is False
+    assert policy.covers("session_change") is False

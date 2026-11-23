@@ -709,13 +709,13 @@ export function StudioChat({
     async (turn: TranscriptTurn, part: HitlPart, body: HitlAnswerBody) => {
       const runId = turn.run.runId;
       if (!agent || !threadId || !runId) throw new Error("This request is no longer waiting.");
-      try {
-        await agentsApi.answerInput(agent.agent_id, threadId, runId, part.requestId, body);
-      } catch (cause) {
-        const status = (cause as { status?: number } | null)?.status;
-        if (status === 404) throw new Error("This request is no longer waiting.", { cause });
-        throw cause instanceof Error ? cause : new Error("The answer could not be sent. Try again.", { cause });
-      }
+      const failure = await agentsApi
+        .answerInput(agent.agent_id, threadId, runId, part.requestId, body)
+        .then(() => null, (cause: unknown) => cause ?? new Error("The answer could not be sent. Try again."));
+      if (failure === null) return;
+      // A request the run no longer waits for (answered, expired or stopped).
+      if ((failure as { status?: number }).status === 404) throw new Error("This request is no longer waiting.");
+      throw failure instanceof Error ? failure : new Error("The answer could not be sent. Try again.");
     },
     [agent, threadId],
   );

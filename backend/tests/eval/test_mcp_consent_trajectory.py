@@ -2,6 +2,7 @@ import json
 from unittest.mock import AsyncMock
 
 import pytest
+from pydantic import ValidationError
 from fastapi import HTTPException
 
 from app.modules.agents import router
@@ -21,7 +22,6 @@ async def test_immediate_mcp_decision_is_scoped_and_precedes_external_effect(mon
     monkeypatch.setattr(router, "consent_broker", broker)
     monkeypatch.setattr(router, "_require_agent", AsyncMock())
     thread = thread_store.create(user_name="fixture-alice", title="Synthetic MCP")
-    thread.consent.always_allow_read_only = True
     tool = mcp_tool.McpToolRunner(
         {"server_id": "server", "name": "Arithmetic"},
         {"tool_id": "fixture", "name": "total", "input_schema": {
@@ -77,16 +77,12 @@ async def test_immediate_mcp_decision_is_scoped_and_precedes_external_effect(mon
                     )
                 assert stale.value.status_code == 404
                 external.assert_not_awaited()
-            with pytest.raises(HTTPException) as session:
-                await router.resolve_agent_tool_call(
-                    "agent", call_id, ConsentDecisionRequest(decision="allow_session"), user,
-                )
-            assert session.value.status_code == 400
+            with pytest.raises(ValidationError):
+                ConsentDecisionRequest(decision="allow_session")  # no chat-wide approval
             result = await router.resolve_agent_tool_call(
                 "agent", call_id, ConsentDecisionRequest(decision=decision), user,
             )
             assert result.status == ("approved" if decision == "allow_once" else "denied")
-            assert not result.grant_active
         result = TurnResult(frames=frames)
         assert result.finish_reason == ("stop" if decision == "allow_once" else "denied")
         assert external.await_count == (1 if decision == "allow_once" else 0)

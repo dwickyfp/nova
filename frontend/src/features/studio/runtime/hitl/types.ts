@@ -9,7 +9,10 @@
 
 export type HitlKind = "approval" | "question" | "form" | "choice";
 
-/** How a request settled; `pending` while it waits. */
+/**
+ * How a request settled; `pending` while it waits. `edited` and `refused` come
+ * only from conversations stored by an earlier version and replay as they were.
+ */
 export type HitlStatus =
   | "pending"
   | "answered"
@@ -21,21 +24,25 @@ export type HitlStatus =
   | "expired"
   | "cancelled";
 
+/**
+ * Approve one action that changes something (an automation, an outside tool,
+ * a write, a role switch). Data queries never ask.
+ */
 export type ApprovalRequest = {
   kind: "approval";
   title: string;
   classification: "read_only" | "session_change" | "destructive";
-  /** Why it waits: the agent asks first, it changes data, or it switches role. */
-  reason: "asks_first" | "changes_data" | "changes_role";
-  /** The role the step runs as. */
+  /** Why it waits: it changes something, or it switches the role. */
+  reason: "changes_data" | "changes_role";
+  /** The role the action runs as. */
   role: string;
-  previewKind: "sql" | "semantic" | "text";
-  /** Redacted SQL, the semantic question, or a description. */
-  preview: string;
-  allowSession: boolean;
-  objects?: string[];
-  semantic?: { question: string; view: string | null };
-  editable?: { argument: string; label: string; language?: "sql" | "text"; maxLength?: number };
+  /** What the action does, in plain words. */
+  action: string;
+  /**
+   * Stored by an earlier version that asked before data steps: it replays as
+   * a past step and never offers its buttons.
+   */
+  legacy?: boolean;
 };
 
 export type QuestionRequest = {
@@ -86,7 +93,7 @@ export type HitlRequestSpec = ApprovalRequest | QuestionRequest | FormRequest | 
 
 /** The body of an answer, as the endpoint takes it. */
 export type HitlAnswerBody =
-  | { action: "allow_once" | "allow_session"; edited_arguments?: Record<string, string> }
+  | { action: "allow_once" }
   | { action: "deny" }
   | { action: "decline" }
   | { action: "answer"; answer: Record<string, unknown> };

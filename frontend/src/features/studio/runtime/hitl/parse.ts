@@ -15,7 +15,6 @@ const STATUSES = new Set<HitlStatus>([
   "pending", "answered", "declined", "allowed", "denied", "edited", "refused", "expired", "cancelled",
 ]);
 const CLASSES = new Set(["read_only", "session_change", "destructive"]);
-const REASONS = new Set(["asks_first", "changes_data", "changes_role"]);
 
 function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
@@ -52,48 +51,39 @@ function field(value: unknown): FormField | null {
   };
 }
 
+/** Badges that only repeat the card's own "Suggested" mark. */
+const RECOMMENDED_BADGES = new Set(["recommended", "suggested", "best", "best option"]);
+
 function option(value: unknown): ChoiceOption | null {
   const data = record(value);
   if (!data || typeof data.id !== "string" || typeof data.title !== "string") return null;
+  const all = strings(data.badges);
+  const badges = all.filter((badge) => !RECOMMENDED_BADGES.has(badge.trim().toLowerCase()));
   return {
     id: data.id,
     title: data.title,
     ...(text(data.description) ? { description: text(data.description) } : {}),
-    ...(strings(data.badges).length ? { badges: strings(data.badges) } : {}),
-    ...(data.recommended === true ? { recommended: true } : {}),
+    ...(badges.length ? { badges } : {}),
+    ...(data.recommended === true || badges.length < all.length ? { recommended: true } : {}),
   };
 }
 
 function approval(data: Record<string, unknown>): ApprovalRequest | null {
   if (typeof data.classification !== "string" || !CLASSES.has(data.classification)) return null;
-  const semantic = record(data.semantic);
-  const editable = record(data.editable);
-  const kind = data.preview_kind;
+  const classification = data.classification as ApprovalRequest["classification"];
+  // Earlier versions asked before data steps and sent a preview instead of an
+  // action; such a stored request replays as a past step only.
+  const legacy = typeof data.action !== "string" || classification === "read_only";
   return {
     kind: "approval",
-    title: text(data.title) ?? "Approve this step?",
-    classification: data.classification as ApprovalRequest["classification"],
-    reason: typeof data.reason === "string" && REASONS.has(data.reason)
-      ? (data.reason as ApprovalRequest["reason"])
-      : "asks_first",
+    title: text(data.title) ?? "Allow this action?",
+    classification,
+    reason: data.reason === "changes_role" || (data.reason !== "changes_data" && classification === "session_change")
+      ? "changes_role"
+      : "changes_data",
     role: text(data.role) ?? "",
-    previewKind: kind === "sql" || kind === "semantic" ? kind : "text",
-    preview: text(data.preview) ?? "",
-    allowSession: data.allow_session === true,
-    ...(strings(data.objects).length ? { objects: strings(data.objects) } : {}),
-    ...(semantic && typeof semantic.question === "string"
-      ? { semantic: { question: semantic.question, view: text(semantic.view) ?? null } }
-      : {}),
-    ...(editable && typeof editable.argument === "string"
-      ? {
-          editable: {
-            argument: editable.argument,
-            label: text(editable.label) ?? editable.argument,
-            ...(editable.language === "sql" ? { language: "sql" as const } : { language: "text" as const }),
-            ...(num(editable.max_length) !== undefined ? { maxLength: num(editable.max_length) } : {}),
-          },
-        }
-      : {}),
+    action: text(data.action) ?? text(data.preview) ?? "",
+    ...(legacy ? { legacy: true } : {}),
   };
 }
 

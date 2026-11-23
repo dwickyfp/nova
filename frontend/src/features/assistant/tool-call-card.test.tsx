@@ -34,28 +34,7 @@ describe("ToolCallCard", () => {
     await expect.element(getByText("Awaiting approval")).toBeInTheDocument();
   });
 
-  it("offers allow, deny and always-allow for a read-only statement", async () => {
-    const onDecide = vi.fn();
-    const { getByRole, getByText } = await render(
-      <ToolCallCard
-        toolCall={readOnly}
-        toolCallId="tc-1"
-        onDecide={onDecide}
-      />,
-    );
-    await getByRole("checkbox").click();
-    await getByRole("button", { name: "Allow" }).click();
-    expect(onDecide).toHaveBeenCalledWith({
-      toolCallId: "tc-1",
-      decision: "approve",
-      alwaysAllow: true,
-    });
-    await expect
-      .element(getByText("Always allow read-only queries in this conversation"))
-      .toBeInTheDocument();
-  });
-
-  it("never offers always-allow for a destructive statement", async () => {
+  it("offers Allow and Deny for one call, never a conversation-wide grant", async () => {
     const onDecide = vi.fn();
     const { getByRole, container } = await render(
       <ToolCallCard
@@ -69,7 +48,6 @@ describe("ToolCallCard", () => {
     expect(onDecide).toHaveBeenCalledWith({
       toolCallId: "tc-1",
       decision: "approve",
-      alwaysAllow: false,
     });
   });
 
@@ -92,7 +70,6 @@ describe("ToolCallCard", () => {
     expect(onDecide).toHaveBeenCalledWith({
       toolCallId: "create-user",
       decision: "approve",
-      alwaysAllow: false,
       secureInput: { password: "private-marker" },
     });
     await expect.element(password).toHaveValue("");
@@ -120,7 +97,6 @@ describe("ToolCallCard", () => {
     expect(onDecide).toHaveBeenCalledWith({
       toolCallId: "stage-upload",
       decision: "approve",
-      alwaysAllow: false,
       uploadFile: file,
     });
   });
@@ -154,7 +130,6 @@ describe("ToolCallCard", () => {
     expect(onDecide).toHaveBeenCalledWith({
       toolCallId: "tc-1",
       decision: "deny",
-      alwaysAllow: false,
     });
   });
 

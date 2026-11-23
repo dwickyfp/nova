@@ -9,8 +9,8 @@ import type { HitlAnswerBody, HitlRequestSpec, HitlStatus } from "./types";
 const DEFAULT_SUMMARY: Record<Exclude<HitlStatus, "pending">, string> = {
   answered: "You answered",
   declined: "You skipped this question",
-  allowed: "You allowed this step",
-  denied: "You denied this step",
+  allowed: "You allowed this action",
+  denied: "You denied this action",
   edited: "You edited the request and ran it",
   refused: "Nova refused the edited request",
   expired: "The request expired",
@@ -41,12 +41,10 @@ function Details({ request, part }: { request: HitlRequestSpec; part: HitlPart }
       {"detail" in request && request.detail ? (
         <p className="mt-1 text-muted-foreground break-words">{request.detail}</p>
       ) : null}
-      {request.kind === "approval" ? (
-        <pre className="mt-2 max-h-40 overflow-auto text-xs whitespace-pre-wrap break-words">
-          <code className={request.previewKind === "sql" ? "font-mono" : undefined}>
-            {edited ? Object.values(edited).join("\n") : request.preview}
-          </code>
-        </pre>
+      {request.kind === "approval" && (edited || request.action) ? (
+        <p className="mt-2 text-muted-foreground whitespace-pre-wrap break-words">
+          {edited ? Object.values(edited).join("\n") : request.action}
+        </p>
       ) : null}
       {reason ? <p className="mt-2 text-destructive">{reason}</p> : null}
     </div>
@@ -79,7 +77,10 @@ export function HitlRequest({
   const definition = hitlKind(part.kind);
   const request = part.request;
 
-  if (part.status === "pending" && live && request && definition) {
+  // A stored approval from an earlier version is a past step: never answerable.
+  const answerable = live && !(request?.kind === "approval" && request.legacy);
+
+  if (part.status === "pending" && answerable && request && definition) {
     const { Body, Icon } = definition;
     const submit = async (body: HitlAnswerBody) => {
       if (busy) return;
@@ -151,7 +152,7 @@ export function HitlRequest({
   if (part.status === "pending") {
     // Waiting for the request itself (it follows its part on the stream), or a
     // replayed request whose run is gone: nothing can be answered here.
-    return live ? (
+    return answerable ? (
       <p className="nova-chat-item inline-flex items-center gap-1.5 text-sm text-muted-foreground" role="status">
         <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
         Preparing a question for you…

@@ -142,7 +142,6 @@ def test_critical_promotion_requires_complete_matching_revision():
 async def test_live_consent_never_inherits_read_grant_for_mutation():
     tool = type("Tool", (), {"requires_consent": True})()
     thread = AssistantThread("thread", "alice", "Test")
-    thread.consent.always_allow_read_only = True
     resolver = AsyncMock(return_value=False)
     invocation = ToolInvocation("call", "mutate", {})
     assert await resolve_tool_consent(tool, invocation, "read_only", thread, resolver)

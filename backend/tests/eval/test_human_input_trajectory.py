@@ -49,21 +49,15 @@ class RecordingProvider(ScriptedProvider):
 
 
 class SqlTool(EvalTool):
-    """Classifies like ``query_execute``: DROP is denied, USE ROLE switches role."""
+    """Classifies like ``query_execute``: a write is an action, USE ROLE switches role."""
 
     def classification_for(self, invocation: ToolInvocation) -> str:
         sql = str(invocation.arguments.get("sql") or "").upper()
-        if "DROP" in sql:
-            return "denied"
+        if sql.startswith(("DELETE", "INSERT", "UPDATE")):
+            return "destructive"
         if sql.startswith("USE ROLE"):
             return "session_change"
         return "read_only"
-
-    def approval_details(self, invocation: ToolInvocation, context: Any = None) -> dict:
-        return {
-            "preview_kind": "sql",
-            "editable": {"argument": "sql", "label": "SQL", "language": "sql"},
-        }
 
 
 def _registry(*tools: Any) -> ToolRegistry:
@@ -248,10 +242,42 @@ async def test_a_malformed_request_goes_back_to_the_model_without_asking() -> No
 
 
 @pytest.mark.asyncio
-async def test_approval_is_published_as_a_request_and_settles_with_the_decision() -> None:
+async def test_a_read_only_call_runs_without_an_approval() -> None:
     query = SqlTool("query_execute")
     provider = RecordingProvider(
-        [tool_call_frame("q1", sql="SELECT 1"), text_frame("No data was read.")],
+        [tool_call_frame("q1", sql="SELECT 1"), text_frame("One.")], turn_plan=PLAN,
+    )
+    asked: list[str] = []
+
+    async def consent(_invocation: ToolInvocation, classification: str) -> bool:
+        asked.append(classification)
+        return False
+
+    result = await _run(
+        AssistantLoop(provider=provider, registry=_registry(query), system_prompt="eval"),
+        consent=consent,
+    )
+    assert result.finish_reason == "stop"
+    assert asked == []
+    assert not _named(result, "input_required")
+    assert [run.arguments["sql"] for run in query.runs] == ["SELECT 1"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("sql", "classification", "reason", "title"),
+    [
+        ("DELETE FROM orders WHERE id = 1", "destructive", "changes_data", "Allow this action?"),
+        ("USE ROLE finance", "session_change", "changes_role",
+         "Allow this change to your session?"),
+    ],
+)
+async def test_an_action_is_published_as_an_approval_and_settles_with_the_decision(
+    sql: str, classification: str, reason: str, title: str,
+) -> None:
+    query = SqlTool("query_execute")
+    provider = RecordingProvider(
+        [tool_call_frame("q1", sql=sql), text_frame("Nothing changed.")],
         turn_plan=PLAN,
     )
 
@@ -267,70 +293,15 @@ async def test_approval_is_published_as_a_request_and_settles_with_the_decision(
     assert approval["kind"] == "approval"
     assert approval["tool_call_id"] == approval["request_id"]
     request = approval["request"]
-    assert request["preview_kind"] == "sql" and request["preview"] == "SELECT 1"
-    assert request["classification"] == "read_only" and request["reason"] == "asks_first"
-    assert request["allow_session"] is True
-    assert request["editable"]["argument"] == "sql"
+    assert request == {
+        "kind": "approval", "title": title, "classification": classification,
+        "reason": reason, "role": "", "action": sql,
+    }
     assert [r["status"] for r in _named(result, "input_resolved")] == ["denied"]
+    assert [r["summary"] for r in _named(result, "input_resolved")] == [
+        "You denied this action"
+    ]
     assert query.runs == []
-
-
-@pytest.mark.asyncio
-async def test_edit_then_run_runs_the_edited_call_and_tells_the_model() -> None:
-    query = SqlTool("query_execute")
-    provider = RecordingProvider(
-        [tool_call_frame("q1", sql="SELECT 1"), text_frame("Two.")], turn_plan=PLAN,
-    )
-
-    async def edit(_invocation: ToolInvocation, _classification: str) -> ConsentApproval:
-        return ConsentApproval(edited_arguments={"sql": "SELECT 2"})
-
-    result = await _run(
-        AssistantLoop(provider=provider, registry=_registry(query), system_prompt="eval"),
-        consent=edit,
-    )
-    assert result.finish_reason == "stop"
-    assert [run.arguments["sql"] for run in query.runs] == ["SELECT 2"]
-    resolved = _named(result, "input_resolved")
-    assert resolved[0]["status"] == "edited"
-    assert resolved[0]["answer"] == {"edited": {"sql": "SELECT 2"}}
-    # The card's call shows the statement that actually ran.
-    previews = [c["sql_preview"] for c in _named(result, "tool_call")]
-    assert previews == ["SELECT 1", "SELECT 2"]
-    envelope = next(r for r in _tool_results(provider) if "metadata" in r)
-    assert envelope["metadata"]["edited_by_user"] == {"sql": "SELECT 2"}
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("edited", "reason"),
-    [
-        ({"sql": "DROP TABLE orders"}, "does not allow"),
-        ({"sql": "USE ROLE finance"}, "different kind of action"),
-        ({"question": "something else"}, "cannot be edited"),
-    ],
-)
-async def test_an_edit_policy_refuses_never_runs(edited: dict[str, str], reason: str) -> None:
-    query = SqlTool("query_execute")
-    provider = RecordingProvider(
-        [tool_call_frame("q1", sql="SELECT 1"), text_frame("Nothing ran.")], turn_plan=PLAN,
-    )
-
-    async def edit(_invocation: ToolInvocation, _classification: str) -> ConsentApproval:
-        return ConsentApproval(edited_arguments=edited)
-
-    result = await _run(
-        AssistantLoop(provider=provider, registry=_registry(query), system_prompt="eval"),
-        consent=edit,
-    )
-    assert query.runs == []
-    resolved = _named(result, "input_resolved")
-    assert resolved[0]["status"] == "refused"
-    assert reason in resolved[0]["answer"]["reason"]
-    assert any(s["status"] == "denied" for s in _named(result, "tool_status"))
-    refused = next(r for r in _tool_results(provider) if r.get("error_class") == "EDIT_REFUSED")
-    assert "Nothing ran" in refused["safe_detail"]
-    assert result.finish_reason == "stop"
 
 
 @pytest.mark.asyncio
@@ -443,37 +414,3 @@ async def test_a_skipped_clarification_stays_a_clarification() -> None:
     result = TurnResult(frames=frames)
     assert [r["status"] for r in _named(result, "input_resolved")] == ["declined"]
     assert provider.tools_offered[-1] == [human_input.TOOL_NAME]
-
-
-@pytest.mark.asyncio
-async def test_an_edited_request_is_planned_again_not_run_from_the_original_plan() -> None:
-    """The turn planner's plan answered the original request, not the edited one."""
-    seen: list[Any] = []
-
-    class PlannedTool(SqlTool):
-        async def run(self, invocation: ToolInvocation, context: Any):
-            seen.append(getattr(context, "primary_plan", None))
-            return await super().run(invocation, context)
-
-    query = PlannedTool("query_execute")
-    provider = RecordingProvider(
-        [tool_call_frame("q1", sql="SELECT 1"), text_frame("Two.")], turn_plan=PLAN,
-    )
-
-    async def edit(_invocation: ToolInvocation, _classification: str) -> ConsentApproval:
-        return ConsentApproval(edited_arguments={"sql": "SELECT 2"})
-
-    context = LoopContext("eval")
-    context.primary_plan = {"plan": {"metrics": ["revenue"]}, "view": None}
-    frames = [
-        frame
-        async for frame in AssistantLoop(
-            provider=provider, registry=_registry(query), system_prompt="eval",
-        ).run(
-            thread=thread(), user_content="What was revenue last month?",
-            context=context, resolve_consent=edit,
-        )
-    ]
-    assert TurnResult(frames=frames).finish_reason == "stop"
-    assert [run.arguments["sql"] for run in query.runs] == ["SELECT 2"]
-    assert seen == [None]

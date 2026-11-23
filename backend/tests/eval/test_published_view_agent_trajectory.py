@@ -75,7 +75,7 @@ async def test_bound_published_view_trajectory_uses_consent_and_finishes(monkeyp
         )
     ]
 
-    assert consented == [("semantic_query", "read_only")]
+    assert consented == []  # read-only: it runs without asking
     assert [step["name"] for step in context.steps if step["kind"] == "tool"] == [
         "semantic_query"
     ]

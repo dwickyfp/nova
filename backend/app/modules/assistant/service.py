@@ -44,7 +44,7 @@ from app.modules.assistant.business_observation import (
     BusinessResultHookResult,
     provider_history_content,
 )
-from app.modules.assistant.consent import ConsentApproval
+from app.modules.assistant.consent import ConsentApproval, Decision
 from app.modules.assistant.context import (
     SUMMARY_INSTRUCTIONS,
     ContextManager,
@@ -86,7 +86,7 @@ from app.modules.assistant.provider_capabilities import (
 from app.modules.assistant.schemas import ToolCallView
 from app.modules.assistant.security import secured_thread, session_security
 from app.modules.assistant.state import AssistantThread
-from app.modules.assistant.tools import ToolInvocation, ToolOutcome, ToolRegistry, requires_consent
+from app.modules.assistant.tools import ToolInvocation, ToolOutcome, ToolRegistry
 from app.modules.assistant.tools.client_capability import SENT_PLAINLY
 from app.modules.assistant.workflow_provenance import workflow_provenance
 
@@ -226,8 +226,6 @@ class LoopContext:
     )
     #: Human-input requests made in this turn.
     human_requests: int = 0
-    #: Calls the user edited before approving them (redacted edit, by call id).
-    user_edited_calls: dict[str, dict[str, str]] = field(default_factory=dict)
     app_context: NevaAppContext | None = None
     secure_input: dict[str, str] | None = field(default=None, repr=False)
     file_upload: tuple[str, Any, str] | None = field(default=None, repr=False)
@@ -770,7 +768,7 @@ class AssistantLoop:
         user_content: str,
         context: LoopContext,
         resolve_consent: Callable[
-            [ToolInvocation, str], Awaitable[bool | None | ConsentApproval]
+            [ToolInvocation, str], Awaitable[Decision]
         ],
         cancelled: Callable[[], bool] = lambda: False,
         model: str | None = None,
@@ -864,7 +862,7 @@ class AssistantLoop:
         user_content: str,
         context: LoopContext,
         resolve_consent: Callable[
-            [ToolInvocation, str], Awaitable[bool | None | ConsentApproval]
+            [ToolInvocation, str], Awaitable[Decision]
         ],
         cancelled: Callable[[], bool] = lambda: False,
         model: str | None = None,
@@ -1301,14 +1299,13 @@ class AssistantLoop:
                 provider_capabilities, supports_tool_role_messages=False
             )
         if (
-            (selected_tools or route.intent == TurnIntent.CLARIFICATION)
-            and context.ask_human is not None
+            context.ask_human is not None
             and self._registry.get(human_input.TOOL_NAME) is not None
         ):
             # A person is on the other end of this run: the model may pause the
-            # turn to ask them, then go on with the answer. A turn planned as a
-            # clarification asks through the same card instead of ending on a
-            # question in the answer text.
+            # turn to ask them, then go on with the answer. A turn planned without
+            # data tools (a clarification, or options to choose from) asks through
+            # the same card instead of ending on a question in the answer text.
             selected_tools = (*selected_tools, human_input.TOOL_NAME)
         tool_schemas = self._tool_schemas(selected_tools, route=route)
         if context.prompt_telemetry is not None:
@@ -2309,14 +2306,14 @@ class AssistantLoop:
                     )
                 )
                 if (
-                    route.intent == TurnIntent.CLARIFICATION
+                    not route.needs_data
                     and context.agent_scope is not None
                     and asked.result.get("data", {}).get("status") == human_input.ANSWERED
                 ):
-                    # The turn was planned as a question back to the user. Now
-                    # that they answered, it goes on as the agent's governed data
-                    # turn (the same plan Studio falls back to), instead of
-                    # ending on the answer to its own question.
+                    # The turn was planned without data (a question back to the
+                    # user, or options to choose from). Now that they answered, it
+                    # goes on as the agent's governed data turn (the same plan
+                    # Studio falls back to), instead of ending on the answer.
                     answered_plan = _studio_fallback_plan(self._registry, context, user_content)
                     if (
                         answered_plan is not None
@@ -2494,7 +2491,7 @@ class AssistantLoop:
                 approval = human_input.approval_request(
                     tool, invocation, classification=classification, preview=preview,
                     role=str(context.role or ""),
-                    reason=human_input.approval_reason(classification), context=context,
+                    reason=human_input.approval_reason(classification),
                 )
             try:
                 yield events.tool_call(view)
@@ -2507,7 +2504,7 @@ class AssistantLoop:
                 activity = _dashboard_activity(tool, invocation, context)
                 if activity:
                     yield activity
-                allowed: bool | None | ConsentApproval = True
+                allowed: Decision = True
                 if pending_consent is not None:
                     allowed = await asyncio.wait_for(
                         resolve_tool_consent(
@@ -2537,11 +2534,9 @@ class AssistantLoop:
                     await asyncio.gather(pending_consent, return_exceptions=True)
                     deadline += _budget_time() - consent_started
 
-            edited: dict[str, str] | None = None
             if isinstance(allowed, ConsentApproval):
                 context.secure_input = allowed.secure_input
                 context.file_upload = allowed.upload
-                edited = allowed.edited_arguments
                 allowed = True
             if not isinstance(allowed, bool | None):
                 allowed = False  # only an approval answers an approval
@@ -2554,81 +2549,11 @@ class AssistantLoop:
                 yield events.tool_status(invocation.tool_call_id, "cancelled")
                 yield events.done(str(uuid4()), finish_reason="cancelled")
                 return
-            refusal: str | None = None
-            if allowed and edited:
-                # Edit then run: the edited call is classified again from scratch.
-                # It runs only when Nova policy allows it and its class is the one
-                # the user approved; anything else is refused, never trusted.
-                try:
-                    edited_call = human_input.edited_invocation(tool, invocation, edited)
-                    edited_class = invocation_classification(tool, edited_call)
-                except human_input.HumanInputError as exc:
-                    refusal = str(exc)
-                else:
-                    if edited_class == "denied":
-                        refusal = "Nova policy does not allow the edited request."
-                    elif edited_class != classification:
-                        refusal = (
-                            "The edited request is a different kind of action than the one "
-                            "approved. Ask for it again instead."
-                        )
-                    else:
-                        invocation = edited_call
-                        fingerprint = self._call_fingerprint(invocation)
-                        preview = tool.preview(invocation)
-                        view.sql_preview = preview
-                        context.user_edited_calls[invocation.tool_call_id] = {
-                            key: _safe_preview(value) for key, value in edited.items()
-                        }
-                        # The turn planner's plan was made for the original
-                        # request; the edited one is planned again by its tool.
-                        context.primary_plan = None
-                if refusal is not None:
-                    yield events.input_resolved(
-                        invocation.tool_call_id, human_input.REFUSED,
-                        human_input.approval_summary(human_input.REFUSED),
-                        answer={"reason": refusal},
-                    )
-                    allowed = False
-                else:
-                    yield events.input_resolved(
-                        invocation.tool_call_id, human_input.EDITED,
-                        human_input.approval_summary(human_input.EDITED),
-                        answer={"edited": context.user_edited_calls[invocation.tool_call_id]},
-                    )
-                    view.status = "running"
-                    yield events.tool_call(view)
-            elif approval is not None:
+            if approval is not None:
                 status = human_input.ALLOWED if allowed else human_input.DENIED
                 yield events.input_resolved(
-                    invocation.tool_call_id, status,
-                    human_input.approval_summary(
-                        status,
-                        allow_session=bool(allowed) and thread.consent.covers(
-                            classification, user=context.user,
-                        ),
-                    ),
+                    invocation.tool_call_id, status, human_input.approval_summary(status),
                 )
-            if refusal is not None:
-                view.status = "denied"
-                yield events.tool_status(invocation.tool_call_id, "denied")
-                messages.append(
-                    _tool_message(
-                        provider_capabilities.supports_tool_role_messages,
-                        invocation,
-                        {
-                            "ok": False,
-                            "error_class": "EDIT_REFUSED",
-                            "recoverable": True,
-                            "safe_detail": (
-                                f"The user edited this request before it ran and Nova refused "
-                                f"the edit: {refusal} Nothing ran. Tell the user plainly, and "
-                                "answer from what is already verified."
-                            ),
-                        },
-                    )
-                )
-                continue
             if not allowed:
                 context.quality_facts["policy_compliance"] = {
                     "consent_resolved": False, "denied": True, "classification": classification,
@@ -2990,7 +2915,6 @@ class AssistantLoop:
             if outcome.metadata.get("security_context_changed"):
                 security = session_security(context.user or {})
                 thread = secured_thread(thread, security)
-                thread.consent.always_allow_read_only = False
                 seen_calls.clear()
                 deferred_calls.clear()
                 pending_artifacts.clear()
@@ -3220,11 +3144,6 @@ class AssistantLoop:
                 **(envelope.get("metadata") or {}),
                 "artifact_note": artifact_note,
             }
-            if invocation.tool_call_id in context.user_edited_calls:
-                # The result answers the user's edited request, not the proposed one.
-                envelope["metadata"]["edited_by_user"] = context.user_edited_calls[
-                    invocation.tool_call_id
-                ]
             flagged = self._guards.inspect_result(
                 invocation.tool_name,
                 summary=outcome.summary,
@@ -3447,8 +3366,6 @@ class AssistantLoop:
 
         if invocation_classification(tool, invocation) != "read_only":
             return None
-        if requires_consent(tool) and not thread.consent.covers("read_only", user=context.user):
-            return None
         schema = getattr(tool, "parameters", None) or {}
         if validate_json_arguments(schema, invocation.arguments):
             return None
@@ -3545,13 +3462,6 @@ class AssistantLoop:
             arguments=arguments,
             provider_call_id=provider_id or str(uuid4()),
         )
-
-
-def _safe_preview(value: Any, limit: int = 4000) -> str:
-    """A user-edited argument as it may be published: redacted and bounded."""
-    from app.modules.assistant.tools.query_execute import _safe_redact
-
-    return _safe_redact(str(value))[:limit]
 
 
 @dataclass

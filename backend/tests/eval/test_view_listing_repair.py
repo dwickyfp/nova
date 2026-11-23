@@ -13,8 +13,7 @@ from tests.unit.test_assistant_stage_c import FakeResult
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("approved", [False, True])
-async def test_view_listing_repair_preserves_consent_and_user_identity(monkeypatch, approved):
+async def test_view_listing_repair_runs_read_only_as_the_user(monkeypatch):
     corrected = (
         "SELECT TABLE_NAME FROM information_schema.views "
         "WHERE TABLE_SCHEMA = 'NOVA_SALES' ORDER BY TABLE_NAME"
@@ -44,23 +43,19 @@ async def test_view_listing_repair_preserves_consent_and_user_identity(monkeypat
         "active_role": "ANALYST", "assigned_roles": ["ANALYST"],
         "session_id": "test-session", "security_context_version": 1,
     })
-    consent = AsyncMock(return_value=approved)
+    consent = AsyncMock(return_value=False)
     frames = [frame async for frame in AssistantLoop(provider=provider, registry=registry).run(
         thread=thread(), user_content="Daftar SQL view di NOVA_SALES", context=context,
         resolve_consent=consent,
     )]
     result = TurnResult(frames=frames)
     assert "test-encrypted-credential" not in "".join(frames)
-    if approved:
-        assert result.finish_reason == "stop", result.error_codes
-        assert "vw_customer_360" in "".join(frames)
-        execute.assert_awaited_once()
-        assert execute.call_args.kwargs["sql"] == corrected
-        assert execute.call_args.kwargs["username"] == "analyst"
-        assert execute.call_args.kwargs["role"] == "ANALYST"
-        assert execute.call_args.kwargs["confirm_destructive"] is False
-        assert consent.await_count == 2
-    else:
-        assert result.finish_reason == "denied"
-        execute.assert_not_awaited()
-        assert consent.await_count == 1
+    # Read-only: a resolver that would deny is never consulted.
+    assert result.finish_reason == "stop", result.error_codes
+    assert "vw_customer_360" in "".join(frames)
+    execute.assert_awaited_once()
+    assert execute.call_args.kwargs["sql"] == corrected
+    assert execute.call_args.kwargs["username"] == "analyst"
+    assert execute.call_args.kwargs["role"] == "ANALYST"
+    assert execute.call_args.kwargs["confirm_destructive"] is False
+    consent.assert_not_awaited()

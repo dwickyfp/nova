@@ -101,7 +101,6 @@ def scenario_delegates_to_query_execute() -> Scenario:
             text_frame("There are 42 orders."),
         ],
         tools=[_query_tool(summary="count = 42")],
-        read_only_grant=True,
         checks=[
             check("query ran", used_tool("query_execute")),
             check("read-only auto-approved (no prompt)", did_not_prompt()),
@@ -126,7 +125,6 @@ def scenario_numeric_claim_matches_query_result() -> Scenario:
                 table={"title": "Revenue", "columns": ["revenue"], "rows": [[100]]},
             )
         ],
-        read_only_grant=True,
         checks=[
             check("valid number shown", answer_contains("Revenue is 100")),
             check(
@@ -159,7 +157,6 @@ def scenario_unsupported_numeric_claim_is_withheld() -> Scenario:
                 table={"title": "Revenue", "columns": ["revenue"], "rows": [[100]]},
             )
         ],
-        read_only_grant=True,
         checks=[
             check("unsupported number withheld", lambda result: "900" not in result.text),
             check("result remains visible", lambda result: "table" in result.events),
@@ -232,7 +229,6 @@ def scenario_change_diagnosis_reconciles_after_data() -> Scenario:
                 },
             ),
         ],
-        read_only_grant=True,
         checks=[
             check("semantic query ran", used_tool("semantic_query")),
             check("diagnostic ran", used_tool("diagnose_change")),
@@ -263,7 +259,6 @@ def scenario_external_mcp_requires_explicit_consent() -> Scenario:
                 },
             )
         ],
-        read_only_grant=True,
         resolve_consent=allow,
         checks=[
             check("external call prompted", prompted_for("mcp_tool1")),
@@ -300,7 +295,6 @@ def scenario_web_search_cites_public_sources() -> Scenario:
         ],
         turn_plan={"intent": "direct_answer", "tools": ["web_search"],
                    "required_tools": ["web_search"], "ml_task": None},
-        read_only_grant=True,
         checks=[
             check("searched the web", used_tool("web_search")),
             check("read-only search needs no prompt", did_not_prompt()),
@@ -399,7 +393,6 @@ def scenario_destructive_tool_prompts() -> Scenario:
             text_frame("Done."),
         ],
         tools=[EvalTool("write_thing", classification="destructive", summary="created")],
-        read_only_grant=True,
         resolve_consent=allow,
         checks=[
             check("write ran", used_tool("write_thing")),
@@ -449,7 +442,6 @@ def scenario_role_access_requires_consent() -> Scenario:
                 summary="grant submitted",
             )
         ],
-        read_only_grant=True,
         checks=[
             check("typed role grant selected", used_tool("grant_role_access")),
             check("write still prompts", prompted_for("grant_role_access")),
@@ -459,13 +451,13 @@ def scenario_role_access_requires_consent() -> Scenario:
 
 
 def scenario_denied_call_continues() -> Scenario:
-    """A user-denied call is terminal and never receives an automatic retry."""
+    """A user-denied action is terminal and never receives an automatic retry."""
     return Scenario(
         name="denied_call_continues",
         script=[
-            tool_call_frame("c1", sql="SELECT secret FROM vault"),
+            tool_call_frame("c1", sql="DELETE FROM vault"),
         ],
-        tools=[_query_tool()],
+        tools=[EvalTool("query_execute", classification="destructive")],
         resolve_consent=deny,
         checks=[
             check("tool did not run", did_not_use_tool("query_execute")),
@@ -482,7 +474,6 @@ def scenario_failed_tool_terminates() -> Scenario:
         name="failed_tool_terminates",
         script=[tool_call_frame("c1", sql="SELECT * FROM forbidden")],
         tools=[tool],
-        read_only_grant=True,
         checks=[
             check("terminates with tool_failed", has_error_code("tool_failed")),
             check("finished with error", finished_with("error")),
@@ -538,7 +529,6 @@ def scenario_recoverable_semantic_error_repairs_once() -> Scenario:
             text_frame("Verified revenue is 42."),
         ],
         tools=[tool],
-        read_only_grant=True,
         checks=[
             check(
                 "exactly one repair call",
@@ -563,7 +553,6 @@ def scenario_iteration_cap() -> Scenario:
             tool_call_frame("c3", sql="SELECT 3"),
         ],
         tools=[_query_tool()],
-        read_only_grant=True,
         max_iterations=2,
         checks=[
             check("stopped at cap", has_error_code("iteration_cap")),
@@ -602,7 +591,6 @@ def scenario_credential_arguments_redacted() -> Scenario:
             text_frame("done"),
         ],
         tools=[tool],
-        read_only_grant=True,
         checks=[
             check(
                 "password argument masked",
@@ -635,7 +623,6 @@ def scenario_duplicate_call_is_not_rerun() -> Scenario:
             text_frame("Seven."),
         ],
         tools=[tool],
-        read_only_grant=True,
         checks=[
             check("tool ran once", _ran_once),
             check("finished", finished_with("stop")),
@@ -714,20 +701,19 @@ def scenario_context_overflow_stops_cleanly() -> Scenario:
     )
 
 
-def scenario_read_only_grant_auto_approves() -> Scenario:
-    """With a read-only grant, a read-only call runs without a prompt.
+def scenario_read_only_call_runs_without_asking() -> Scenario:
+    """A read-only call runs without a prompt: the caller's role governs it.
 
     The call is still announced, so the panel can show the statement it ran:
     transparency is not a side effect of the approval flow.
     """
     return Scenario(
-        name="read_only_grant_auto_approves",
+        name="read_only_call_runs_without_asking",
         script=[
             tool_call_frame("c1", sql="SELECT 1"),
             text_frame("Done."),
         ],
         tools=[_query_tool()],
-        read_only_grant=True,
         checks=[
             check("ran", used_tool("query_execute")),
             check("no prompt", did_not_prompt()),
@@ -776,11 +762,10 @@ def scenario_ai_search_is_bounded_and_requires_consent() -> Scenario:
                 },
             )
         ],
-        read_only_grant=False,
         resolve_consent=allow,
         checks=[
             check("selected AI Search", used_tool("ai_search")),
-            check("consent requested", prompted_for("ai_search")),
+            check("read-only, so no prompt", did_not_prompt()),
             check("finished", finished_with("stop")),
             check("no error", no_error()),
         ],
@@ -818,11 +803,10 @@ def scenario_semantic_view_query_requires_consent() -> Scenario:
                 data={"view_id": "view-1", "version": 1, "rows": [[42]]},
             )
         ],
-        read_only_grant=False,
         resolve_consent=allow,
         checks=[
             check("selected Semantic View", used_tool("semantic_view_query")),
-            check("consent requested", prompted_for("semantic_view_query")),
+            check("read-only, so no prompt", did_not_prompt()),
             check("finished", finished_with("stop")),
         ],
     )
@@ -858,11 +842,10 @@ def scenario_feature_lookup_requires_consent() -> Scenario:
                 data={"group": "customer", "version": 1, "values": {"orders_7d": 7}},
             )
         ],
-        read_only_grant=False,
         resolve_consent=allow,
         checks=[
             check("selected Feature Lookup", used_tool("feature_lookup")),
-            check("consent requested", prompted_for("feature_lookup")),
+            check("read-only, so no prompt", did_not_prompt()),
             check("finished", finished_with("stop")),
         ],
     )
@@ -911,7 +894,6 @@ def scenario_trace_is_recorded_for_replay() -> Scenario:
             text_frame("The top SKU is D. COKLAT 12."),
         ],
         tools=[_query_tool(summary="1 row", table=table)],
-        read_only_grant=True,
         checks=[
             check(
                 "selected capability is visible without private model text",
@@ -1030,7 +1012,6 @@ def scenario_observability_spans_are_recorded() -> Scenario:
                 trace_detail=semantic,
             )
         ],
-        read_only_grant=True,
         checks=[
             check("provider span has timing", _provider_span_has_timing),
             check("tool span has timing", _tool_span_has_timing),
@@ -1076,20 +1057,28 @@ def _semantic_snapshot_persisted(result) -> bool | str:
     return f"semantic trace missing: {detail}"
 
 
-def scenario_no_grant_prompts_every_call() -> Scenario:
-    """Without a grant, even a read-only call prompts."""
+def scenario_action_prompts_every_call() -> Scenario:
+    """An action asks even though read-only calls in the same turn never do."""
     return Scenario(
-        name="no_grant_prompts_every_call",
+        name="action_prompts_every_call",
+        content="Run the configured write workflow",
         script=[
             tool_call_frame("c1", sql="SELECT 1"),
+            tool_call_frame("c2", name="write_thing", sql="CREATE TABLE a (x int)"),
             text_frame("Done."),
         ],
-        tools=[_query_tool()],
-        read_only_grant=False,
+        tools=[_query_tool(), EvalTool("write_thing", classification="destructive",
+                                       summary="written")],
         resolve_consent=allow,
         checks=[
-            check("ran", used_tool("query_execute")),
-            check("prompted", prompted_for("query_execute")),
+            check("both ran", lambda result: {"query_execute", "write_thing"} <= set(
+                result.tool_runs
+            ) or f"ran {result.tool_runs}"),
+            check(
+                "only the action asked",
+                lambda result: [name for name, _cls in result.consent_prompts] == ["write_thing"]
+                or f"prompts {result.consent_prompts}",
+            ),
         ],
     )
 
@@ -1120,7 +1109,6 @@ def scenario_text_precedes_result_artifact() -> Scenario:
             text_frame("There are 42 orders."),
         ],
         tools=[_query_tool(summary="count = 42", table=table)],
-        read_only_grant=True,
         checks=[
             check("text block is authored first", _text_before_table),
             check("blocks carry stable indexes", _ordered_indexes_are_stable),
@@ -1139,7 +1127,6 @@ def scenario_artifact_can_precede_later_text() -> Scenario:
             text_frame("[[NOVA_ARTIFACT]]\nThis note intentionally follows the table."),
         ],
         tools=[_query_tool(summary="count = 42", table=table)],
-        read_only_grant=True,
         checks=[
             check("table is authored first", _table_before_text),
             check("layout marker never reaches the user", _marker_is_hidden),
@@ -1192,7 +1179,6 @@ def scenario_follow_up_chart_reuses_previous_table() -> Scenario:
             text_frame("Here is the bar chart."),
         ],
         tools=[chart_tool],
-        read_only_grant=True,
         checks=[
             check("chart tool ran", used_tool("data_to_chart")),
             check(
@@ -1241,7 +1227,6 @@ def scenario_generated_sql_is_visible_during_tool_run() -> Scenario:
         name="generated_sql_visible_during_tool_run",
         script=[tool_call_frame("c1", sql=sql), text_frame("Done.")],
         tools=[tool],
-        read_only_grant=True,
         checks=[
             check("SQL progress precedes completion", _sql_progress_precedes_completion),
             check(
@@ -1279,7 +1264,6 @@ def scenario_multiple_tool_calls_are_serialized() -> Scenario:
             text_frame("Both checks completed."),
         ],
         tools=[tool],
-        read_only_grant=True,
         checks=[
             check("both calls ran", _two_calls_ran),
             check("both calls were announced", _two_calls_announced),
@@ -1503,7 +1487,7 @@ def all_scenarios() -> list[Scenario]:
         scenario_denied_call_continues(),
         scenario_failed_tool_terminates(),
         scenario_recoverable_semantic_error_repairs_once(),
-        scenario_read_only_grant_auto_approves(),
+        scenario_read_only_call_runs_without_asking(),
         scenario_ai_search_is_bounded_and_requires_consent(),
         scenario_semantic_view_query_requires_consent(),
         scenario_feature_lookup_requires_consent(),
@@ -1511,7 +1495,7 @@ def all_scenarios() -> list[Scenario]:
         scenario_trace_is_recorded_for_replay(),
         scenario_skill_body_stays_out_of_transcript(),
         scenario_observability_spans_are_recorded(),
-        scenario_no_grant_prompts_every_call(),
+        scenario_action_prompts_every_call(),
         scenario_iteration_cap(),
         scenario_time_budget(),
         scenario_credential_arguments_redacted(),

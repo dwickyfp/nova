@@ -80,7 +80,6 @@ export {
   getThread,
   renameThread,
   deleteThread,
-  resetGrant,
   type ThreadView,
   type ThreadListResponse,
   type ThreadDetailResponse,

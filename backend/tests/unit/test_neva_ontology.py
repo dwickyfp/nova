@@ -56,7 +56,7 @@ def test_writing_sql_may_check_what_a_business_word_means():
 def test_a_glossary_change_asks_every_time_even_with_read_access_allowed(name):
     tool = build_neva_registry().get(name)
     assert requires_consent(tool)
-    assert not ConsentPolicy(always_allow_read_only=True).covers(tool.classification)
+    assert not ConsentPolicy().covers(tool.classification)
 
 
 def test_reads_are_read_only_and_names_stay_out_of_the_answer():

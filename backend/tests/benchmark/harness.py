@@ -214,7 +214,6 @@ async def deny(_inv: ToolInvocation, _cls: str) -> bool:
 
 def thread(
     *,
-    read_only_grant: bool = False,
     history_turns: int = 0,
 ) -> AssistantThread:
     """A thread with optional pre-existing history.
@@ -232,7 +231,6 @@ def thread(
         t.messages.append(
             AssistantMessage(message_id=f"a{i}", role="assistant", content=f"answer {i}")
         )
-    t.consent.always_allow_read_only = read_only_grant
     return t
 
 

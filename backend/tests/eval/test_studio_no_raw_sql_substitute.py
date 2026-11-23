@@ -28,7 +28,6 @@ async def run(*, studio: bool):
     if studio:
         context.agent_scope = {"agent": "Sales"}
     thread = AssistantThread(thread_id="scope", user_name="alice", title="Eval")
-    thread.consent.always_allow_read_only = True
     frames = [
         frame async for frame in AssistantLoop(provider=provider, registry=registry).run(
             thread=thread, user_content="Total payroll?", context=context,

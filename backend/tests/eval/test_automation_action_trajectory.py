@@ -61,7 +61,7 @@ async def test_automation_trajectory_requires_fresh_consent(
                 registry=registry,
                 system_prompt="test",
             ).run(
-                thread=AssistantThread("thread", "alice", "Business", consent=ConsentPolicy(True)),
+                thread=AssistantThread("thread", "alice", "Business", consent=ConsentPolicy()),
                 user_content="Schedule the reviewed automation.",
                 context=LoopContext("alice", user=USER, thread_id="thread"),
                 resolve_consent=consent,

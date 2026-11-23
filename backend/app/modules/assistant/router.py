@@ -19,9 +19,8 @@ The scoping is enforced in SQL (``repository.py``), so one user's history can
 never be returned to another.
 
 Threads and messages are persisted in ``NOVA_SYSTEM`` and survive a reload.
-The read-only always-allow grant is kept in Redis per user, login and thread
-(``read_grants.py``), stamped with the active role and security-context
-version. Each turn reloads the grant, including expiry and revocation.
+Read-only tools run without asking: the caller's active role decides what they
+may read. Any other action asks each time, through ``/tool-calls/{id}/decision``.
 """
 
 # ruff: noqa: B008 — `Depends(...)` in a default is FastAPI's dependency
@@ -43,11 +42,11 @@ from fastapi.responses import StreamingResponse
 from app.common.audit import write_audit_log
 from app.core.database import configured_timezone
 from app.core.deps import get_current_user
-from app.modules.assistant import events, neva_memory, read_grants, ui_access
+from app.modules.assistant import events, neva_memory, ui_access
 from app.modules.assistant.app_context import NevaApplicationEvent
 from app.modules.assistant.application_events import application_event_broker
 from app.modules.assistant.attachments import attachment_prompt
-from app.modules.assistant.consent import ConsentApproval, consent_broker
+from app.modules.assistant.consent import ConsentApproval, Decision, consent_broker
 from app.modules.assistant.history import history_repository
 from app.modules.assistant.plain_language import plain_frames
 from app.modules.assistant.provider import assistant_provider
@@ -59,7 +58,6 @@ from app.modules.assistant.schemas import (
     AttachmentView,
     ConsentDecisionRequest,
     ConsentDecisionResponse,
-    GrantRequest,
     MessageRequest,
     MessageView,
     ThreadCreateRequest,
@@ -444,10 +442,9 @@ async def delete_thread(
         thread_id, user_name=user["username"]
     ):
         raise HTTPException(status_code=404, detail="Thread not found")
-    # Drop the runtime entry too, so a lingering grant cannot outlive the thread.
+    # Drop the runtime entry too, so no pending state outlives the thread.
     thread_store.remove(thread_id, user_name=user["username"])
     application_event_broker.remove(thread_id, user["username"])
-    await read_grants.remember(user, thread_id, False)
     return None
 
 
@@ -527,55 +524,6 @@ async def forget_memory(memory_id: str, user: dict = Depends(get_current_user)):
     return None
 
 
-@router.delete("/threads/{thread_id}/grant", status_code=204)
-async def reset_grant(
-    thread_id: str,
-    user: dict = Depends(get_current_user),
-):
-    """Revoke the conversation's read-only always-allow grant (E2b)."""
-    await _require_thread(thread_id, user["username"])
-    runtime = thread_store.get(thread_id, user_name=user["username"])
-    if runtime is not None:
-        await read_grants.grant(runtime, user, thread_id, False)
-    else:
-        await read_grants.remember(user, thread_id, False)
-    return None
-
-
-@router.put("/threads/{thread_id}/grant")
-async def set_grant(
-    thread_id: str,
-    body: GrantRequest,
-    user: dict = Depends(get_current_user),
-):
-    """Set or clear the conversation's read-only always-allow grant.
-
-    The composer's approval-mode selector calls this before a turn so a
-    read-only query runs without a per-call approval card. This is the UI
-    presenting the grant up front, which is what NOVA-122 requires: the grant
-    is only ever the read-only policy (never a way to auto-approve a
-    destructive call), and the loop still consults the per-statement
-    classification before skipping a card. Setting ``false`` is equivalent to
-    the ``DELETE`` above.
-
-    Owner-scoped: a foreign or unknown thread answers 404, never 403.
-
-    The runtime entry is registered here (not only on the next turn) so the
-    grant takes effect even if the user sets the mode before the first message
-    of a fresh thread. Registering is idempotent — an existing entry is reused,
-    so a live grant is never reset by this call.
-    """
-    thread_row = await _require_thread(thread_id, user["username"])
-    runtime = thread_store.register(
-        thread_id=thread_id,
-        user_name=user["username"],
-        title=thread_row["title"],
-        workspace_file_id=thread_row.get("workspace_file_id"),
-    )
-    await read_grants.grant(runtime, user, thread_id, body.always_allow_read_only)
-    return {"grant_active": runtime.consent.covers("read_only", user=user)}
-
-
 @router.post("/threads/{thread_id}/messages")
 async def send_message(
     thread_id: str,
@@ -595,16 +543,13 @@ async def send_message(
     user_name = user["username"]
 
     # The runtime object the loop reads: history loaded from the database plus
-    # the process-local consent policy. Registered (not recreated) so a live
-    # always-allow grant survives across turns.
+    # the process-local consent policy.
     runtime = thread_store.register(
         thread_id=thread_id,
         user_name=user_name,
         title=thread_row["title"],
         workspace_file_id=thread_row.get("workspace_file_id"),
     )
-    # The read-only grant follows the caller's current role and session.
-    await read_grants.apply(runtime, user, thread_id)
     history = await assistant_repository.list_messages(thread_id, user_name=user_name)
     if thread_row.get("title") == "New conversation" and body.content.strip() and not any(
         row["role"] == "user" for row in history
@@ -697,7 +642,7 @@ async def send_message(
 
     def resolve_consent(
         invocation: ToolInvocation, classification: str
-    ) -> asyncio.Future[bool | None | ConsentApproval]:
+    ) -> asyncio.Future[Decision]:
         # Registration precedes publication so an immediate decision can resolve.
         approval_user = dict(context.user or user)
         future = consent_broker.open(
@@ -746,9 +691,6 @@ async def send_message(
             if persisted:
                 return
             persisted = True
-            if not runtime.consent.always_allow_read_only:
-                # A role switch during the turn took the grant back.
-                await read_grants.remember(user, thread_id, False)
             if body.content.strip() and reply_parts:
                 # Durable facts the person stated are kept for later turns,
                 # after the answer, so the reply is never slower for it.
@@ -862,23 +804,12 @@ async def resolve_tool_call(
     Without this, any authenticated user who learned a ``tool_call_id`` could
     approve another user's call (NOVA-70).
 
-    ``allow_session`` sets the conversation's read-only grant, and is accepted
-    only when the pending call was classified ``read_only`` (spec §6.1). On any
-    other class it answers 400 and sets nothing, so a direct API caller cannot
-    record a grant the UI never presented (NOVA-122). The grant itself still
-    only covers read-only statements — it is not a switch the client can use to
-    auto-approve a destructive call (E2b).
+    A decision covers this one call: there is no conversation-wide grant, and
+    read-only calls never wait for one.
     """
     owner = consent_broker.owner_of(tool_call_id, user=user)
     if owner is None or owner[1] != user["username"]:
         # Unknown id, already resolved, or someone else's pending call.
-        raise HTTPException(status_code=404, detail="Tool call not found")
-
-    thread_id, _owner_name = owner
-    # The broker already proved ownership; resolve only against the owner's own
-    # thread so the grant can never land on a foreign conversation.
-    thread = thread_store.get(thread_id, user_name=user["username"])
-    if thread is None:
         raise HTTPException(status_code=404, detail="Tool call not found")
 
     if body.decision == "deny":
@@ -890,7 +821,6 @@ async def resolve_tool_call(
         return ConsentDecisionResponse(
             tool_call_id=tool_call_id,
             status="denied" if resolved else "cancelled",
-            grant_active=thread.consent.covers("read_only", user=user),
         )
 
     secure_fields = consent_broker.secure_fields_of(tool_call_id) or ()
@@ -905,19 +835,6 @@ async def resolve_tool_call(
             raise HTTPException(status_code=400, detail="Invalid secure input")
     elif secure_fields and body.decision == "allow_once":
         raise HTTPException(status_code=400, detail="Secure input is required")
-    if body.decision == "allow_session":
-        # The grant only covers read-only statements (spec §6.1), and the UI
-        # only offers always-allow for a read-only call. Refuse a session grant
-        # on any other class rather than record consent the user's UI never
-        # presented (NOVA-122). The call itself is left pending: the client can
-        # still resolve it with allow_once or deny.
-        if consent_broker.classification_of(tool_call_id) != "read_only":
-            raise HTTPException(
-                status_code=400,
-                detail="allow_session is only valid for a read-only tool call",
-            )
-        await read_grants.grant(thread, user, thread_id, True)
-
     resolved = consent_broker.resolve(
         tool_call_id,
         ConsentApproval(body.secure_input) if body.secure_input is not None else True,
@@ -926,7 +843,6 @@ async def resolve_tool_call(
     return ConsentDecisionResponse(
         tool_call_id=tool_call_id,
         status="approved" if resolved else "cancelled",
-        grant_active=thread.consent.covers("read_only", user=user),
     )
 
 
@@ -942,9 +858,6 @@ async def resolve_upload_tool_call(
     """Approve one stage upload with browser-owned bytes outside the model context."""
     owner = consent_broker.owner_of(tool_call_id, user=user)
     if owner is None or owner[1] != user["username"]:
-        raise HTTPException(status_code=404, detail="Tool call not found")
-    thread = thread_store.get(owner[0], user_name=user["username"])
-    if thread is None:
         raise HTTPException(status_code=404, detail="Tool call not found")
     if not consent_broker.upload_required_of(tool_call_id):
         raise HTTPException(status_code=400, detail="A file is not valid for this action")
@@ -984,5 +897,4 @@ async def resolve_upload_tool_call(
     return ConsentDecisionResponse(
         tool_call_id=tool_call_id,
         status="approved",
-        grant_active=thread.consent.covers("read_only", user=user),
     )

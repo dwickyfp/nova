@@ -3,9 +3,9 @@
 One contract covers every kind of request a turn can make of the person who
 asked it:
 
-* ``approval`` — a proposed tool call waits for Allow once / Allow for this
-  chat / Deny, or for an edited request (Edit then run). The loop builds it from
-  the call; the model never asks for approval itself.
+* ``approval`` — a proposed action (a change to data or configuration, a role
+  or session change) waits for Allow once or Deny. Read-only calls never ask.
+  The loop builds it from the call; the model never asks for approval itself.
 * ``question`` — a clarifying question with suggested answers and/or free text.
 * ``form`` — a small form generated from a JSON Schema subset the model supplies.
 * ``choice`` — pick one of two to six described options.
@@ -19,7 +19,7 @@ request, for the run and conversation it belongs to, and it is validated again
 here: the browser's validation is a convenience, not a boundary.
 
 Nothing in a request or an answer carries credentials; the strings are bounded
-and the SQL a user edits is redacted before it is published.
+and an action's description is the tool's redacted preview.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
+from app.modules.assistant.schemas import ToolClassification
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome
 
 TOOL_NAME = "request_human_input"
@@ -60,8 +61,6 @@ EXPIRED = "expired"
 CANCELLED = "cancelled"
 ALLOWED = "allowed"
 DENIED = "denied"
-EDITED = "edited"
-REFUSED = "refused"
 
 _FIELD_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,39}$")
 _OPTION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$")
@@ -182,18 +181,29 @@ def _options(raw: Any) -> list[dict[str, Any]]:
         description = _text(item.get("description"), 400, name="option description")
         if description:
             option["description"] = description
+        recommended = item.get("recommended") is True
         badges = item.get("badges")
         if isinstance(badges, list):
-            option["badges"] = [
+            # The card marks the recommended option itself; a badge saying so
+            # again would show twice.
+            kept = [
                 _text(badge, 40, name="badge") for badge in badges[:MAX_BADGES]
                 if isinstance(badge, str) and badge.strip()
+                and badge.strip().lower() not in _RECOMMENDED_BADGES
             ]
-        if item.get("recommended") is True:
+            if kept:
+                option["badges"] = kept
+            if len(kept) < len([b for b in badges[:MAX_BADGES] if isinstance(b, str) and b.strip()]):
+                recommended = True
+        if recommended:
             option["recommended"] = True
         options.append(option)
     if len({item["id"] for item in options}) != len(options):
         raise HumanInputError("Option ids must be unique.")
     return options
+
+
+_RECOMMENDED_BADGES = frozenset({"recommended", "suggested", "best", "best option"})
 
 
 def normalize_request(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -458,7 +468,7 @@ class RequestHumanInputTool:
         "then continue the work with the answer."
     )
     parameters = _PARAMETERS
-    classification = "read_only"
+    classification: ToolClassification = "read_only"
     #: Asking the person is not an action on their data.
     requires_consent = False
 
@@ -478,21 +488,14 @@ request_human_input_tool = RequestHumanInputTool()
 
 # ── approvals ──────────────────────────────────────────────────────────────
 
-#: Why an approval is asked, by the loop's reason code.
-APPROVAL_REASONS = ("asks_first", "changes_data", "changes_role")
+#: Why an approval is asked, by the loop's reason code. Read-only calls never ask:
+#: the caller's role already governs what they read.
+APPROVAL_REASONS = ("changes_data", "changes_role")
 
 
 def approval_reason(classification: str) -> str:
-    """Why this call waits: it changes data, switches the role, or the agent asks first.
-
-    A read-only call reaches approval only when no grant for this chat covers it
-    — the agent's policy asks before data steps.
-    """
-    if classification == "destructive":
-        return "changes_data"
-    if classification == "session_change":
-        return "changes_role"
-    return "asks_first"
+    """Why this call waits: it switches the role or session, or it changes something."""
+    return "changes_role" if classification == "session_change" else "changes_data"
 
 
 def approval_request(
@@ -503,78 +506,30 @@ def approval_request(
     preview: str,
     role: str,
     reason: str,
-    context: Any = None,
 ) -> dict[str, Any]:
-    """The approval card for one proposed call: what runs, as whom, and why ask.
+    """The approval card for one proposed action: what it does, as whom, and why ask.
 
-    A tool describes its own request with ``approval_details(invocation)``
-    (``preview_kind``, ``objects``, ``editable``, ``semantic``); a tool without
-    it shows its preview as plain text. Nothing here reads data.
+    ``action`` is the tool's own plain description of this call (its redacted
+    preview, such as "Schedule 'Weekly revenue' (cron: 0 8 * * 1)"). Nothing
+    here reads data.
     """
-    details: dict[str, Any] = {}
-    describe = getattr(tool, "approval_details", None)
-    if callable(describe):
-        try:
-            details = dict(describe(invocation, context) or {})
-        except Exception:  # noqa: BLE001 - the plain preview still describes the call
-            details = {}
-    if details.get("preview_kind") == "semantic":
-        preview = str(details.get("preview") or preview)
-    request: dict[str, Any] = {
+    return {
         "kind": "approval",
-        "title": {
-            "destructive": "Approve this change to data?",
-            "session_change": "Approve switching your active role?",
-        }.get(classification, "Approve this data step?"),
+        "title": (
+            "Allow this change to your session?" if classification == "session_change"
+            else "Allow this action?"
+        ),
         "classification": classification,
         "reason": reason,
         "role": role,
-        "preview_kind": details.get("preview_kind") or "text",
-        "preview": preview,
-        "allow_session": classification == "read_only",
+        "action": preview,
     }
-    for key in ("objects", "semantic", "editable"):
-        if details.get(key):
-            request[key] = details[key]
-    return request
 
 
-def edited_invocation(
-    tool: Any, invocation: ToolInvocation, edited: dict[str, Any],
-) -> ToolInvocation:
-    """The call with the user's edit applied to the tool's one editable argument.
-
-    Raises:
-        HumanInputError: the tool has nothing editable, or the edit names
-            another argument or is empty.
-    """
-    describe = getattr(tool, "approval_details", None)
-    details = describe(invocation) if callable(describe) else {}
-    editable = (details or {}).get("editable") or {}
-    name = editable.get("argument")
-    if not name or set(edited) != {name}:
-        raise HumanInputError("This request cannot be edited that way.")
-    value = edited[name]
-    if not isinstance(value, str) or not value.strip():
-        raise HumanInputError("The edited request is empty.")
-    if len(value) > int(editable.get("max_length") or 20_000):
-        raise HumanInputError("The edited request is too long.")
-    return ToolInvocation(
-        tool_call_id=invocation.tool_call_id,
-        tool_name=invocation.tool_name,
-        arguments={**invocation.arguments, name: value.strip()},
-        **({"provider_call_id": invocation.provider_call_id}
-           if getattr(invocation, "provider_call_id", None) else {}),
-    )
-
-
-def approval_summary(status: str, *, allow_session: bool = False) -> str:
+def approval_summary(status: str) -> str:
     return {
-        ALLOWED: "You allowed this for the rest of the chat" if allow_session
-        else "You allowed this once",
-        DENIED: "You denied this step",
-        EDITED: "You edited the request and ran it",
-        REFUSED: "Nova refused the edited request",
+        ALLOWED: "You allowed this action",
+        DENIED: "You denied this action",
         EXPIRED: "The approval request expired",
         CANCELLED: "Stopped before you answered",
     }.get(status, "")

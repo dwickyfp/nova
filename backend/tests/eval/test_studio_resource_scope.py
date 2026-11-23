@@ -91,5 +91,5 @@ async def test_resource_scope_in_production_loop(monkeypatch, index, filters, al
         expected_error = "conflict with" if index == "sales_docs" else "not bound"
         assert expected_error in "".join(result.frames)
         assert result.finish_reason == "error"
-    consent.assert_awaited()
+    consent.assert_not_awaited()  # read-only: scope, not an approval, decides
     assert "sealed" not in "".join(result.frames)

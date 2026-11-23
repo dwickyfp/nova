@@ -1,12 +1,13 @@
-"""Runtime assistant state — consent grants keyed by thread.
+"""Runtime assistant state — the thread a turn reads and appends to.
 
 Threads and messages are **persisted** in the metadata store
 (``repository.py``), so a conversation survives a reload and is scoped per user
 by row security. This module holds the current turn's consent policy:
 
-* **Consent (E2b).** An explicit read-only grant belongs to one authenticated
-  login and conversation. ``read_grants`` reloads its Redis record before each
-  turn; agent policy may separately pre-approve read-only tools for that turn.
+* **Consent.** Read-only tools run without asking: the caller's active role
+  (Ranger and the patched engine) already decides what they may read. Every
+  other class (a change to data or configuration, a role or session change)
+  asks the user each time, and SQL that changes data is refused outright.
 
 ``AssistantThread`` is the runtime object the loop reads (history + consent) and
 the router appends to. The router builds one from the repository for a turn and
@@ -47,27 +48,14 @@ class AssistantMessage:
 
 @dataclass
 class ConsentPolicy:
-    """The conversation-scoped grant (E2b).
+    """Which calls run without asking: read-only ones, and nothing else.
 
-    ``always_allow_read_only`` is the only grant v1 can hold: it covers the
-    ``read_only`` class only. A destructive statement is never auto-approved,
-    grant or no grant — see :meth:`covers`.
+    There is no grant to give or take back: a read-only call is governed by the
+    caller's role, and a call of any other class asks every time.
     """
 
-    always_allow_read_only: bool = False
-    #: The principal, login, active role and version the grant was given under;
-    #: a turn under any other context does not inherit it.
-    granted_under: dict | None = None
-
     def covers(self, classification: ToolClassification, *, user: dict | None = None) -> bool:
-        if not self.always_allow_read_only or classification != "read_only":
-            return False
-        if user is not None:
-            from app.modules.assistant.read_grants import stamp
-
-            current = stamp(user)
-            return current is not None and current == self.granted_under
-        return True
+        return classification == "read_only"
 
 
 @dataclass

@@ -62,7 +62,7 @@ async def test_governed_health_survives_loop_replay_without_extra_model_call(
     )]
     assert provider.calls == 1
     assert_answer_with_window_probes(execute, context.user)
-    consent.assert_awaited_once()
+    consent.assert_not_awaited()  # read-only: the role governs it, nobody is asked
     assert usage.await_args.kwargs["active_role"] == "ANALYST"
     assert usage.await_args.kwargs["security_context_version"] == 3
     assert usage.await_args.kwargs["semantic_version"] == 2

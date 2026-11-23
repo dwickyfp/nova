@@ -77,7 +77,6 @@ def notebook_scenarios() -> list[Scenario]:
             name="neva_does_not_run_a_cell_the_person_declined",
             content="Run the revenue cell",
             tools=[denied_context, denied_run],
-            read_only_grant=True,
             turn_plan={
                 "intent": "ui_operation",
                 "tools": ["notebook_context", "notebook_run_cell"],
@@ -100,7 +99,6 @@ def notebook_scenarios() -> list[Scenario]:
             name="neva_explains_a_notebook_error_without_running_anything",
             content="Kenapa cell kedua error?",
             tools=[explain_context, explain_run],
-            read_only_grant=True,
             turn_plan={
                 "intent": "capability_help",
                 "tools": ["notebook_context"],
@@ -245,7 +243,6 @@ def _neva_scenarios() -> list[Scenario]:
             tools=[EvalTool("query_execute", summary="x" * 8000)],
             script=[tool_call_frame("data"), text_frame("should never run")],
             context_manager=ContextManager(token_budget=1000),
-            read_only_grant=True,
             checks=[
                 check("query ran", used_tool("query_execute")),
                 check("stopped before second call", lambda result: result.provider_calls == 1),
@@ -281,7 +278,6 @@ def _neva_scenarios() -> list[Scenario]:
             name="neva_schema_then_data_query",
             content="Tampilkan jumlah transaksi bulan ini",
             tools=[query],
-            read_only_grant=True,
             script=[
                 tool_call_frame("inspect", sql="SHOW TABLES"),
                 tool_call_frame("data", sql="SELECT count(*) FROM transactions"),
@@ -342,7 +338,7 @@ def _neva_scenarios() -> list[Scenario]:
             script=[tool_call_frame("data", sql="SELECT 1"), text_frame("Query selesai.")],
             checks=[
                 check("query ran", used_tool("query_execute")),
-                check("consent remains required", lambda result: len(result.consent_prompts) == 1),
+                check("read-only, so it runs without asking", did_not_prompt()),
                 check("complete", finished_with("stop")),
             ],
         ),

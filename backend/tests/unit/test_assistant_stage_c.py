@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pytest
 
-from app.modules.assistant.read_grants import stamp
+from app.modules.assistant.consent import stamp
 from app.modules.assistant.schemas import ToolCallView
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import AssistantThread
@@ -372,8 +372,8 @@ def test_write_clause_under_read_only_keyword_is_denied(sql):
 def test_zero_gap_into_stage_is_denied(sql):
     """``@`` is its own lexer token, so ``INTO@stage`` is the same clause.
 
-    Requiring whitespace classified the zero-gap spelling ``read_only`` and let
-    an ``allow_session`` grant auto-approve a data-egress write.
+    Requiring whitespace classified the zero-gap spelling ``read_only``, which
+    runs without asking, and let a data-egress write through.
     """
     assert tool_classification(sql) == "denied"
 
@@ -415,8 +415,6 @@ async def test_grant_never_auto_approves_zero_gap_into_stage():
     registry.register(tool)
     loop = AssistantLoop(provider=provider, registry=registry)
     thread = AssistantThread(thread_id="t1", user_name="alice", title="T")
-    thread.consent.always_allow_read_only = True
-    thread.consent.granted_under = stamp(_context().user)
 
     asked: list[str] = []
 
@@ -495,19 +493,18 @@ def test_outfile_guard_is_enforced_at_the_shared_pipeline():
     guard_user_statement("SELECT 'INTO OUTFILE' AS note", confirm_destructive=False)
 
 
-def test_read_only_grant_does_not_cover_into_outfile_classification():
-    """E2b: ``allow_session`` must never auto-approve an INTO OUTFILE payload.
+def test_into_outfile_is_never_classified_read_only():
+    """E2b: an INTO OUTFILE payload must never run without asking.
 
-    The grant only covers ``read_only``; the exploit worked because the payload
-    *was* misclassified as ``read_only``. Classifying it ``denied`` is what
-    makes :meth:`ConsentPolicy.covers` false and forces a per-statement prompt
-    (and a refusal at the tool).
+    Read-only statements run without a prompt; the exploit worked because the
+    payload *was* misclassified as ``read_only``. Classifying it ``denied`` is
+    what makes :meth:`ConsentPolicy.covers` false (and the tool refuses it).
     """
     from app.modules.assistant.state import ConsentPolicy
 
     classification = tool_classification("SELECT 1 INTO OUTFILE 's3://b/x' FORMAT AS CSV")
     assert classification == "denied"
-    assert ConsentPolicy(always_allow_read_only=True).covers(classification) is False
+    assert ConsentPolicy().covers(classification) is False
 
 
 # ── EXPLAIN classifies by its inner statement (NOVA-82) ─────────────────────
@@ -570,8 +567,6 @@ async def test_grant_never_auto_approves_explain_over_a_mutation():
     registry.register(tool)
     loop = AssistantLoop(provider=provider, registry=registry)
     thread = AssistantThread(thread_id="t1", user_name="alice", title="T")
-    thread.consent.always_allow_read_only = True
-    thread.consent.granted_under = stamp(_context().user)
 
     asked: list[str] = []
 
@@ -656,11 +651,11 @@ class RecordingTool:
         return ToolOutcome(ok=True, summary="ok")
 
 
-def _tool_call(call_id: str) -> dict:
+def _tool_call(call_id: str, sql: str = "SELECT 1") -> dict:
     return {
         "id": call_id,
         "type": "function",
-        "function": {"name": "query_execute", "arguments": json.dumps({"sql": "SELECT 1"})},
+        "function": {"name": "query_execute", "arguments": json.dumps({"sql": sql})},
     }
 
 
@@ -690,8 +685,6 @@ async def test_destructive_call_never_auto_approves_even_with_a_grant():
     registry.register(RecordingTool("destructive"))
     loop = AssistantLoop(provider=provider, registry=registry)
     thread = AssistantThread(thread_id="t1", user_name="alice", title="T")
-    thread.consent.always_allow_read_only = True
-    thread.consent.granted_under = stamp(_context().user)
 
     asked: list[str] = []
 
@@ -711,7 +704,7 @@ async def test_destructive_call_never_auto_approves_even_with_a_grant():
     assert asked == ["destructive"]
 
 
-async def test_read_only_call_is_covered_by_an_allow_session_grant():
+async def test_a_read_only_call_runs_without_asking():
     provider = FakeProvider(
         [
             {"role": "assistant", "content": "", "tool_calls": [_tool_call("c1")]},
@@ -722,8 +715,6 @@ async def test_read_only_call_is_covered_by_an_allow_session_grant():
     registry.register(RecordingTool("read_only"))
     loop = AssistantLoop(provider=provider, registry=registry)
     thread = AssistantThread(thread_id="t1", user_name="alice", title="T")
-    thread.consent.always_allow_read_only = True
-    thread.consent.granted_under = stamp(_context().user)
 
     asked: list[str] = []
 
@@ -753,10 +744,11 @@ async def test_deny_decision_blocks_execution(fakes):
     service, _audit = fakes
     tool = QueryExecuteTool()
     # The loop owns consent; the tool is only called when allowed. This asserts
-    # the loop does not call the tool on a deny.
+    # the loop does not call the tool on a deny. A read-only query never asks,
+    # so the denied call is a role change.
     provider = FakeProvider(
         [
-            {"role": "assistant", "content": "", "tool_calls": [_tool_call("c1")]},
+            {"role": "assistant", "content": "", "tool_calls": [_tool_call("c1", "USE ROLE analyst")]},
             {"role": "assistant", "content": "understood"},
         ]
     )
@@ -915,8 +907,6 @@ async def test_result_error_never_reaches_the_sse_frame(monkeypatch, fakes):
     registry.register(QueryExecuteTool())
     loop = AssistantLoop(provider=provider, registry=registry)
     thread = AssistantThread(thread_id="t1", user_name="alice", title="T")
-    thread.consent.always_allow_read_only = True
-    thread.consent.granted_under = stamp(_context().user)
 
     async def resolver(inv, cls):
         raise AssertionError("the read-only grant should have covered this call")
