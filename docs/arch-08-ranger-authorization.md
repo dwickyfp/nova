@@ -64,6 +64,17 @@ can make the analyzer report a column as nullable for a filtered viewer; that
 re-verification keeps the saved nullability when names, order and types match,
 and refuses every other difference as a stale schema.
 
+Listing follows Ranger's `_any` access: the FE shows a table in `SHOW TABLES`
+and the `information_schema` views when Ranger allows the active role any
+access to it. Ranger applies a deny item to `_any` only when the deny covers
+every access type of the service definition, so a deny of `select` alone
+hides a table's data but not its name from anyone with a wildcard grant
+(verified on the pinned FE and Ranger 2.8, 2026-11-23). The Streams journal
+guard `nova-managed/stream-journals` therefore denies every access type, read
+from the service definition, on `__nova_stream_*`; see
+[Nova Streams](sql_docs/13-nova-streams.md#journal-tables). This works the same
+for Nova SQL and a direct engine login, with no FE patch.
+
 ## Integration Points
 
 - Auth and proxy: explicit default role and optional `nova_role` connection attribute.

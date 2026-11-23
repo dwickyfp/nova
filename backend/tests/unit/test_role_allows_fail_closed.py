@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.modules.access_control.domain import AccessRequest
 from app.modules.access_control.service import AccessControlService
 from app.modules.streams.sources import journal_guard_policy
+from tests.unit.stream_metadata_fakes import STARROCKS_ACCESS_TYPES
 
 INSERT = AccessRequest("insert", "default_catalog", "sales", "orders")
 CREATE_TABLE = AccessRequest("create table", "default_catalog", "sales")
@@ -84,7 +85,7 @@ def test_unevaluated_policies_elsewhere_do_not_refuse():
 
 def test_stream_journal_guard_does_not_refuse_ordinary_tables(monkeypatch):
     monkeypatch.setattr(settings, "STREAM_WRITER_ROLE", "nova_stream_writer_role")
-    guard = journal_guard_policy().to_api()
+    guard = journal_guard_policy(STARROCKS_ACCESS_TYPES).to_api()
     assert _allows([guard, _policy()])
     journal = AccessRequest("insert", "default_catalog", "sales", "__nova_stream_changes_x")
     assert not _allows([guard, _policy()], request=journal)

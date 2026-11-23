@@ -263,6 +263,8 @@ above work again.
 Streams on views, external catalogs or partitioned tables are not supported.
 
 Nova keeps each table's change history in tables whose names start with
-`__nova_stream_`. Only Nova uses them: SQL that names one fails with
+`__nova_stream_`. Only Nova uses them: they do not appear in `SHOW TABLES` or
+`information_schema` (only the `ACCOUNTADMIN` role still sees them), and SQL
+that names one fails with
 `Tables named __nova_stream_… are managed by Nova Streams and cannot be used
 in SQL`. Read the changes through the stream instead.

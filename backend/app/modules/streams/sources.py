@@ -99,8 +99,12 @@ JOURNAL_PREFIX = "__nova_stream_"
 _WRITER_POLICY_PREFIX = "nova-managed/stream-writer/"
 #: One Ranger policy denies every journal and lineage table to everyone but the
 #: writer role (and ACCOUNTADMIN, whose privileges Nova never takes away).
+#: It denies every access type of the Ranger service definition: the FE lists
+#: a table in SHOW TABLES and information_schema when Ranger allows ``_any``
+#: access to it, and Ranger applies a deny to ``_any`` only when the deny
+#: covers every access type. Denying only data access would leave the names
+#: listed for anyone with a wildcard grant.
 JOURNAL_GUARD_POLICY = "nova-managed/stream-journals"
-_JOURNAL_GUARD_ACCESSES = ("select", "insert", "update", "delete")
 
 
 @dataclass(frozen=True, slots=True)
@@ -797,8 +801,39 @@ async def revoke_writer(record: SourceRecord) -> None:
             await ranger_client.delete_policy(int(policy["id"]))
 
 
-def journal_guard_policy() -> Any:
-    """The Ranger policy that keeps journal and lineage tables to the writer."""
+async def journal_guard_accesses() -> tuple[str, ...]:
+    """Every access type of the StarRocks Ranger service definition, sorted.
+
+    Read from Ranger so that a type added by a Ranger or plugin upgrade is
+    denied too (the maintenance pass then repairs the guard).
+    """
+    from app.integrations.ranger.client import ranger_client
+
+    service = await ranger_client.get_service(settings.RANGER_SERVICE_NAME)
+    definition = (
+        await ranger_client.get_service_definition(str(service.get("type") or "starrocks"))
+        if service else None
+    )
+    accesses = sorted({
+        str(item["name"]) for item in (definition or {}).get("accessTypes") or []
+        if item.get("name")
+    })
+    if "select" not in accesses:
+        raise StreamError(
+            "STREAM_GOVERNANCE_UNSUPPORTED",
+            "The Ranger service definition could not be read: the stream journals could "
+            "not be protected",
+        )
+    return tuple(accesses)
+
+
+def journal_guard_policy(access_types: tuple[str, ...]) -> Any:
+    """The Ranger policy that keeps journal and lineage tables to the writer.
+
+    ``access_types`` is every access type of the service definition
+    (:func:`journal_guard_accesses`), so the journals are also left out of
+    SHOW TABLES and information_schema for everyone else.
+    """
     from app.integrations.ranger.schemas import (
         RangerPolicy,
         RangerPolicyItem,
@@ -806,12 +841,12 @@ def journal_guard_policy() -> Any:
         RangerPolicyResource,
     )
 
-    accesses = [RangerPolicyItemAccess(type=access) for access in _JOURNAL_GUARD_ACCESSES]
+    accesses = [RangerPolicyItemAccess(type=access) for access in access_types]
     return RangerPolicy(
         service=settings.RANGER_SERVICE_NAME,
         name=JOURNAL_GUARD_POLICY,
         description="Managed by Nova. Stream journals hold every historical row image of "
-        "their source; only the stream writer reads or writes them.",
+        "their source; only the stream writer reads, writes or lists them.",
         resources={
             "catalog": RangerPolicyResource(values=["default_catalog"]),
             "database": RangerPolicyResource(values=["*"]),
@@ -868,7 +903,14 @@ async def ensure_journal_guard(policies: list[dict[str, Any]] | None = None) -> 
         )
     from app.integrations.ranger.client import ranger_client
 
-    wanted = journal_guard_policy()
+    try:
+        wanted = journal_guard_policy(await journal_guard_accesses())
+    except StreamError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - an unprotected journal is not created
+        raise StreamError(
+            "STREAM_GOVERNANCE_UNSUPPORTED", "The stream journals could not be protected"
+        ) from exc
     if policies is None:
         current = await ranger_client.get_policy(JOURNAL_GUARD_POLICY)
     else:

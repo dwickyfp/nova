@@ -26,7 +26,7 @@ from app.sql_frontend.errors import SemanticError
 from app.sql_frontend.internal_names import names_internal_relation
 from app.sql_frontend.parser import parse_statement
 from app.sql_frontend.planning.planner import SQLPlanner
-from tests.unit.stream_metadata_fakes import metadata_scope
+from tests.unit.stream_metadata_fakes import STARROCKS_ACCESS_TYPES, metadata_scope
 
 
 def _scope(live=None):
@@ -91,22 +91,65 @@ def ranger(monkeypatch):
     fake = AsyncMock()
     fake.get_policy = AsyncMock(return_value=None)
     fake.list_policies = AsyncMock(return_value=[])
-    for name in ("get_policy", "put_policy", "list_policies", "delete_policy"):
+    fake.get_service = AsyncMock(return_value={"name": "nova_starrocks", "type": "starrocks"})
+    fake.get_service_definition = AsyncMock(return_value={
+        "name": "starrocks",
+        "accessTypes": [{"name": name} for name in reversed(STARROCKS_ACCESS_TYPES)],
+    })
+    for name in ("get_policy", "put_policy", "list_policies", "delete_policy", "get_service",
+                 "get_service_definition"):
         monkeypatch.setattr(ranger_client, name, getattr(fake, name))
     return fake
 
 
 def test_guard_denies_everyone_but_the_writer_every_journal():
-    policy = journal_guard_policy().to_api()
+    policy = journal_guard_policy(STARROCKS_ACCESS_TYPES).to_api()
     assert policy["name"] == JOURNAL_GUARD_POLICY
     assert policy["resources"]["database"]["values"] == ["*"]
     assert policy["resources"]["table"]["values"] == ["__nova_stream_*"]
     deny, = policy["denyPolicyItems"]
     assert deny["groups"] == ["public"]
-    assert {a["type"] for a in deny["accesses"]} == {"select", "insert", "update", "delete"}
+    # Every access type, so Ranger also denies the FE's ``_any`` listing check.
+    assert {a["type"] for a in deny["accesses"]} == set(STARROCKS_ACCESS_TYPES)
     exception, = policy["denyExceptions"]
     assert set(exception["roles"]) == {settings.STREAM_WRITER_ROLE, "ACCOUNTADMIN"}
+    assert {a["type"] for a in exception["accesses"]} == set(STARROCKS_ACCESS_TYPES)
     assert not policy.get("policyItems")
+
+
+async def test_guard_denies_every_access_type_of_the_service_definition(ranger):
+    await ensure_journal_guard()
+    ranger.get_service_definition.assert_awaited_once_with("starrocks")
+    written = ranger.put_policy.await_args.args[0].to_api()
+    assert {a["type"] for a in written["denyPolicyItems"][0]["accesses"]} == set(
+        STARROCKS_ACCESS_TYPES
+    )
+
+
+async def test_guard_missing_an_access_type_is_repaired(ranger):
+    stored = journal_guard_policy(STARROCKS_ACCESS_TYPES).to_api()
+    # A data-only deny (the guard before journal names were hidden) is outdated.
+    stored["denyPolicyItems"][0]["accesses"] = [
+        {"type": t, "isAllowed": True} for t in ("select", "insert", "update", "delete")
+    ]
+    await ensure_journal_guard([stored])
+    ranger.put_policy.assert_awaited_once()
+
+
+@pytest.mark.parametrize("definition", [None, {"accessTypes": []}, {"accessTypes": [{"x": 1}]}])
+async def test_unreadable_service_definition_fails_closed(ranger, definition):
+    ranger.get_service_definition.return_value = definition
+    with pytest.raises(StreamError) as exc:
+        await ensure_journal_guard()
+    assert exc.value.code == "STREAM_GOVERNANCE_UNSUPPORTED"
+    ranger.put_policy.assert_not_awaited()
+
+
+async def test_ranger_error_reading_the_definition_fails_closed(ranger):
+    ranger.get_service.side_effect = RuntimeError("ranger down")
+    with pytest.raises(StreamError) as exc:
+        await ensure_journal_guard()
+    assert exc.value.code == "STREAM_GOVERNANCE_UNSUPPORTED"
 
 
 async def test_guard_is_created_when_missing(ranger):
@@ -116,7 +159,7 @@ async def test_guard_is_created_when_missing(ranger):
 
 
 async def test_guard_in_place_is_not_rewritten(ranger):
-    stored = journal_guard_policy().to_api()
+    stored = journal_guard_policy(STARROCKS_ACCESS_TYPES).to_api()
     stored.update(id=7, isEnabled=True, guid="g")
     stored["denyPolicyItems"][0].update(conditions=[], delegateAdmin=False, users=[])
     await ensure_journal_guard([stored])
@@ -132,7 +175,7 @@ async def test_guard_in_place_is_not_rewritten(ranger):
     lambda p: p.update(policyItems=[{"groups": ["public"], "accesses": [{"type": "select"}]}]),
 ])
 async def test_tampered_guard_is_repaired(ranger, tamper):
-    stored = journal_guard_policy().to_api()
+    stored = journal_guard_policy(STARROCKS_ACCESS_TYPES).to_api()
     tamper(stored)
     await ensure_journal_guard([stored])
     ranger.put_policy.assert_awaited_once()

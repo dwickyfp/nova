@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.modules.access_control.service import AccessControlService
 from app.modules.agents import access as agent_access
 from app.modules.streams.sources import journal_guard_policy
+from tests.unit.stream_metadata_fakes import STARROCKS_ACCESS_TYPES
 
 
 def _grant(database="NOVA_DEMO", table="*", access="select", role="marketing", **extra):
@@ -41,7 +42,7 @@ class _Ranger:
 @pytest.fixture
 def guard(monkeypatch):
     monkeypatch.setattr(settings, "STREAM_WRITER_ROLE", "nova_stream_writer_role")
-    return journal_guard_policy().to_api()
+    return journal_guard_policy(STARROCKS_ACCESS_TYPES).to_api()
 
 
 async def _preview(policies, resource):

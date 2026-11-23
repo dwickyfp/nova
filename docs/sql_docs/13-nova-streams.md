@@ -276,13 +276,22 @@ Each source keeps its change journal and lineage in two tables beside it,
 historical row image of the source, so only the writer may use them:
 
 * Before the first journal is created, Nova creates the Ranger policy
-  `nova-managed/stream-journals`. It denies `SELECT`, `INSERT`, `UPDATE` and
-  `DELETE` on `__nova_stream_*` in every database to the `public` group, with
-  exceptions for the writer role and `ACCOUNTADMIN`. A wildcard grant such as
-  `sales.*` therefore does not reach the journals. The scheduler's maintenance
-  pass recreates or repairs the policy for deployments that already have
-  sources. Without Ranger, or without `STREAM_WRITER_ROLE`, `CREATE STREAM`
-  fails instead of creating an unprotected journal.
+  `nova-managed/stream-journals`. It denies **every access type** of the
+  StarRocks Ranger service definition (read from Ranger, not a fixed list) on
+  `__nova_stream_*` in every database to the `public` group, with exceptions
+  for the writer role and `ACCOUNTADMIN`. A wildcard grant such as `sales.*`
+  therefore reaches neither the journals' rows nor their names: they are left
+  out of `SHOW TABLES`, `SHOW FULL TABLES` and the `information_schema` views,
+  through Nova SQL and on a direct engine login alike. (The FE lists a table
+  when Ranger allows `_any` access to it, and Ranger applies a deny to `_any`
+  only when it covers every access type; denying only `SELECT`, `INSERT`,
+  `UPDATE` and `DELETE` hid the rows but not the names.) `ACCOUNTADMIN` and the
+  writer still see them. The scheduler's maintenance pass recreates or repairs
+  the policy for deployments that already have sources, including a guard
+  written before it covered every type or missing a type a Ranger upgrade
+  added. Without Ranger, without `STREAM_WRITER_ROLE`, or when the service
+  definition cannot be read, `CREATE STREAM` fails instead of creating an
+  unprotected journal.
 * User SQL that names a `__nova_stream_*` table (in any position: `FROM`,
   `INSERT INTO`, `DROP TABLE`, `DESC`, a view or `CREATE TABLE … AS`) is
   refused by the SQL frontend before it reaches the engine.

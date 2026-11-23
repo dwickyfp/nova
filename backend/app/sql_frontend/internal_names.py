@@ -4,8 +4,10 @@ Each Stream source keeps its change journal and lineage in tables beside the
 source (``__nova_stream_changes_<id>``, ``__nova_stream_lineage_<id>``,
 see ``app.modules.streams.sources``). They hold every historical row image of
 the source, so only Nova's stream writer reads or writes them; Ranger denies
-everyone else, and the frontend refuses a statement that names one before it
-reaches the engine (a name in a table, column, alias or DDL position alike).
+everyone else every access type, which also keeps the names out of SHOW TABLES
+and information_schema, and the frontend refuses a statement that names one
+before it reaches the engine (a name in a table, column, alias or DDL position
+alike).
 """
 
 from __future__ import annotations
