@@ -32,9 +32,13 @@ class PersonalSkillLoader(LoadSkillTool):
             return ToolOutcome(ok=True, summary=definition.prompt_body())
         if definition is None:
             available = ", ".join(sorted(self.definitions)) or "none"
+            # Recoverable: the model picks a listed skill or goes on without
+            # one; a mistyped name must not end the person's turn.
             return ToolOutcome(
                 ok=False,
                 summary="",
                 error=f"Unknown skill {name!r}. Available skills: {available}.",
+                error_class="INVALID_TOOL_ARGUMENTS",
+                recoverable=True,
             )
         return await super().run(invocation, context)

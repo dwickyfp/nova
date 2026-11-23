@@ -70,10 +70,14 @@ class LoadSkillTool:
             body = skill_library.load(skill_name)
         except KeyError:
             available = ", ".join(skill_library.names())
+            # Recoverable: the model picks a listed skill or goes on without
+            # one; a mistyped name must not end the person's turn.
             return ToolOutcome(
                 ok=False,
                 summary="",
                 error=f"Unknown skill {skill_name!r}. Available skills: {available}.",
+                error_class="INVALID_TOOL_ARGUMENTS",
+                recoverable=True,
             )
         return ToolOutcome(ok=True, summary=body)
 
