@@ -55,6 +55,8 @@ export type PartStartFields =
       /** The Mission run that made the call, when it is not this run. */
       originRunId?: string;
       skillName?: string;
+      /** A plain label for a tool whose identifier is opaque (an MCP tool). */
+      displayName?: string;
       classification?: ToolCallView["classification"];
     }
   | { type: "guard"; decision: GuardDecision }
@@ -205,6 +207,9 @@ function partStart(data: Record<string, unknown>): PartStartFields | null {
             toolName: data.tool_name,
             ...(typeof data.origin_run_id === "string" ? { originRunId: data.origin_run_id } : {}),
             ...(typeof data.skill_name === "string" ? { skillName: data.skill_name } : {}),
+            ...(typeof data.display_name === "string" && data.display_name.trim()
+              ? { displayName: data.display_name.trim() }
+              : {}),
             ...(typeof data.classification === "string"
               ? { classification: data.classification as ToolCallView["classification"] }
               : {}),

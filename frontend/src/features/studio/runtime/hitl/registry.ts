@@ -5,11 +5,13 @@
  * cancelled states, the one-line summary, the expiry, Skip, errors). A kind
  * adds only its body: what is asked and how it is answered. A new kind is one
  * `registerHitlKind` call with a matching server request kind.
+ *
+ * Studio agents never ask for approval, so "approval" has no body: an approval
+ * stored by an earlier version replays as a settled line, never answerable.
  */
 import type { ComponentType } from "react";
 import type { LucideIcon } from "lucide-react";
-import { ListChecks, MessageCircleQuestion, ShieldQuestion, SlidersHorizontal } from "lucide-react";
-import { ApprovalBody } from "./approval-request";
+import { ListChecks, MessageCircleQuestion, SlidersHorizontal } from "lucide-react";
 import { ChoiceBody } from "./choice-request";
 import { FormBody } from "./form-request";
 import { QuestionBody } from "./question-request";
@@ -45,7 +47,6 @@ export function hitlKind(kind: string): HitlKindDefinition | undefined {
   return kinds.get(kind);
 }
 
-registerHitlKind({ kind: "approval", label: "Approval needed", Icon: ShieldQuestion, Body: ApprovalBody, skippable: false });
 registerHitlKind({ kind: "question", label: "Question", Icon: MessageCircleQuestion, Body: QuestionBody, skippable: true });
 registerHitlKind({ kind: "form", label: "Details needed", Icon: SlidersHorizontal, Body: FormBody, skippable: true });
 registerHitlKind({ kind: "choice", label: "Choose one", Icon: ListChecks, Body: ChoiceBody, skippable: true });

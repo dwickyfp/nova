@@ -8,8 +8,8 @@ description: Learn what the Dataviz tab in Nova Studio is, how it relates to BI,
 **Dataviz** is the dashboard workspace inside Nova Studio. It opens on Nova's
 own **native dashboards**: you add datasets, build charts and KPIs, arrange
 them on a 12-column canvas, add filters, and publish, all on governed Nova
-data. Next to it sits the **Dataviz assistant**, Neva, which can explain a
-dashboard and, with your approval, change it for you.
+data. Next to it sits the **Dataviz assistant**, which can explain a
+dashboard and change it for you.
 
 You can also open Dataviz from the Console menu item **Dataviz**.
 

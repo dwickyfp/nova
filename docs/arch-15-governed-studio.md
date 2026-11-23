@@ -154,31 +154,48 @@ stored.
 
 ### Human-in-the-loop requests
 
-A run can stop and ask the person who started it. Each request is a
-`hitl_request` part (`request_id`, `kind`, `tool_part_id?`) placed by `seq`
-like any other part, and answered inline. There are four kinds:
+A run can stop and ask the person who started it about intent. Each request
+is a `hitl_request` part (`request_id`, `kind`, `tool_part_id?`) placed by
+`seq` like any other part, and answered inline. Studio raises three kinds;
+`approval` exists only in stored history:
 
 | Kind | Raised by | Answer |
 | --- | --- | --- |
-| `approval` | The shared tool gate, for a call that is not read-only | `allow_once` or `deny` |
+| `approval` | Nothing in Studio since 2026-11-23 (see below); stored approvals replay as settled lines | — |
 | `question` | The agent tool `request_human_input` | Choice chip or free text |
 | `form` | `request_human_input`, with 1–8 typed fields (text, select, date, date range, number, integer, toggle); a JSON Schema object is also accepted | `values`, validated in the client and again by the server |
 | `choice` | `request_human_input` | `option_id` of 2–6 option cards |
 
-Consent is the `approval` kind, and only actions reach it. A read-only call
-(semantic requests and read-only SQL) never asks: the caller's role, Ranger
-policy and the engine already govern what it reads, and timeouts, row limits
-and cost guards still apply. Statements the effects-based classifier marks
-`denied` are refused without a prompt. Every other call (`destructive` or
-`session_change`: automations, HTTP/MCP tools, agent and semantic model
-creation, ontology and Dataviz writes, role changes) asks each time. Its
-request carries the tool's redacted plain-language `action`, the
-classification, the active role and the `reason` (`changes_data` or
-`changes_role`). There is no conversation-wide grant and no editing of a
-waiting call. The agent `policy` field accepts only `auto_read_only`; a stored
-`ask_every_tool` reads as `auto_read_only`. Neva follows the same rule: its
-approval-mode setting and the thread grant endpoints are gone. Approvals
-stored by earlier versions replay as settled steps without controls.
+**Studio is autonomous (owner decision, 2026-11-23).** The interactive Studio
+turn builds its `AssistantLoop` with `approval_gate=False`: no call, of any
+classification, emits an approval request. Automations, MCP tools, agent and
+semantic model creation, ontology and Dataviz writes and role changes run
+without asking. The surface decides this; there is no setting or flag. What
+still governs every call:
+
+- the caller's principal, active role and security-context version, with
+  Ranger policy, row filters and masks on all data;
+- the effects-based classifier: statements it marks `denied` (non-read-only
+  SQL from a question) are refused;
+- only an active ACCOUNTADMIN registers MCP servers and switches connected
+  tools on or off; per-tool enable/disable; timeouts and budgets;
+- an `AGENT_TOOL_CALL` audit record for every call, as the caller (user,
+  role, security version, conversation id), with redacted arguments. A call
+  that is not read-only also gets a `STARTED` record before it runs, so intent
+  is durable before the effect.
+
+Unattended agent turns (automations, Deep Research branches) keep the gate
+with `read_only_consent`: nobody can answer, so only `read_only` calls run. An
+MCP tool is `read_only` when its server declares `readOnlyHint: true` and not
+`destructiveHint: true`; every other MCP tool, every action and
+`schedule_automation` is refused there.
+
+Neva keeps the gate: an action that changes something waits for **Allow
+once** or **Deny** (`approval` with the redacted `action`, classification,
+active role and `reason`). There is no conversation-wide grant and no editing
+of a waiting call. The agent `policy` field accepts only `auto_read_only`; a
+stored `ask_every_tool` reads as `auto_read_only`. Approvals stored by earlier
+Studio versions replay as settled steps without controls.
 
 Answers go to `POST /api/v1/agents/{agent_id}/threads/{thread_id}/runs/{run_id}/inputs/{request_id}`.
 The waiting request is bound to the principal, role, security-context version
@@ -590,8 +607,9 @@ automation owner, requires agent ownership and the current execution binding,
 and delivers internally to Studio. External delivery is excluded.
 
 Preview validates the selected Decision revision and governed monitor scope.
-Execution requires current policy, authorized reviewer approval, and separate
-allow-once consent through the shared tool gate. Durable intent precedes mutation; lease/fence checks protect
+Execution requires current policy and authorized reviewer approval. From a
+Studio turn the dispatch runs without a second prompt (the loop audits it);
+the supervised HTTP operation keeps its allow-once consent. Durable intent precedes mutation; lease/fence checks protect
 writes. Same key/same input recovers the Action; changed input returns `409`.
 Uncertain dispatch becomes `verification_required`, or `compensation_required`
 for compensation, and cannot automatically dispatch again. Cancellation before

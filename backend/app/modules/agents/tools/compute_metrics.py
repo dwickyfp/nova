@@ -62,12 +62,14 @@ PARAMETERS: dict[str, Any] = {
         "compare_column": {
             "type": "string",
             "description": "Prior-period numeric column for contribution; the divisor "
-            "column for ratio.",
+            "column for ratio (in with_evidence_id when the divisor is one figure from "
+            "another result, such as a target).",
         },
         "with_evidence_id": {
             "type": "string",
             "description": "For combine: the second result, joined to evidence_id on the "
-            "label column both share (department, month, ...).",
+            "label column both share (department, month, ...). For ratio: a one-row "
+            "result holding the divisor in compare_column (revenue against a target).",
         },
         "periods": {
             "type": "integer",
@@ -488,6 +490,50 @@ def _compute(
     }
 
 
+def ratio_to_figure(
+    table: dict[str, Any], other: dict[str, Any], arguments: dict[str, Any],
+) -> dict[str, Any]:
+    """Each row's value divided by one figure from another result, with the
+    percentage (revenue against a target)."""
+    compare_column = str(arguments.get("compare_column") or "")
+    other_columns = [str(column) for column in other.get("columns") or []]
+    other_rows = list(other.get("rows") or [])
+    if len(other_rows) != 1 or compare_column not in other_columns:
+        raise ComputeError(
+            "ratio with with_evidence_id needs a one-row result holding compare_column: "
+            f"{other_columns}."
+        )
+    columns = [str(column) for column in table.get("columns") or []]
+    if compare_column in columns:
+        raise ComputeError(f"{compare_column!r} is in both results; divide within one result.")
+    figure = other_rows[0][other_columns.index(compare_column)]
+    widened = {
+        "columns": [*columns, compare_column],
+        "rows": [[*row, figure] for row in (table.get("rows") or [])],
+    }
+    result = compute(widened, {**arguments, "with_evidence_id": None})
+    ratio_index = len(result["columns"]) - 1
+    percent_name = f"{result['columns'][ratio_index]}_pct"
+    divisor = _decimal(figure, column=compare_column)
+    value_index = result["columns"].index(str(arguments.get("value_column")))
+    rows = [
+        [*row, None if row[ratio_index] is None or divisor == 0 else _round(
+            _decimal(row[value_index], column=str(arguments.get("value_column"))) / divisor * 100
+        )]
+        for row in result["rows"]
+    ]
+    source = str(other.get("source") or "")
+    return {
+        "columns": [*result["columns"], percent_name],
+        "rows": rows,
+        "summary": (
+            f"{result['columns'][ratio_index]} and {percent_name} for {len(rows)} row(s), "
+            f"divided by {compare_column}"
+            + (f" from {source}" if source else "") + "."
+        ),
+    }
+
+
 class ComputeMetricsTool:
     #: Model calls, if any, go through the in-process ``AssistantProviderClient``,
     #: so a measured attempt counts their tokens.
@@ -497,6 +543,8 @@ class ComputeMetricsTool:
         "Compute growth (pct_change), difference, share_of_total, sum/avg/min/max, rank, CAGR, "
         "contribution to change, or a ratio of two columns from a data result already returned "
         "in this conversation; combine joins two such results on the label column they share. "
+        "A ratio may divide by one figure from another result (with_evidence_id, a one-row "
+        "result such as a target from an external source); it also gives the percentage. "
         "Use it before stating any number that is not a result cell. It reads no new data."
     )
     parameters = PARAMETERS
@@ -534,7 +582,15 @@ class ComputeMetricsTool:
                 safe_detail="compute_metrics needs a data result from this conversation.",
             )
         try:
-            if args.get("operation") == "combine":
+            if args.get("operation") == "ratio" and args.get("with_evidence_id"):
+                other = tables.get(str(args.get("with_evidence_id") or ""))
+                if other is None:
+                    raise ComputeError(
+                        "ratio with_evidence_id must name a data result: "
+                        + ", ".join(list(tables)[-8:])
+                    )
+                result = ratio_to_figure(table, other, args)
+            elif args.get("operation") == "combine":
                 other = tables.get(str(args.get("with_evidence_id") or ""))
                 if other is None or not evidence_id:
                     raise ComputeError(

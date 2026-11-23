@@ -206,7 +206,7 @@ function toolText(part: Extract<TurnPart, { type: "tool" }>): string {
   if (part.unconfirmed) return "Result not confirmed";
   const progress = part.progress[part.progress.length - 1];
   if (part.status === "running" && progress) return progress.text;
-  return describeStatus(part.toolName, part.status, part.skillName);
+  return describeStatus(part.toolName, part.status, part.skillName, part.displayName);
 }
 
 /** The rail rows for work parts, in their order. */
@@ -257,6 +257,7 @@ export function stepsFromParts(parts: TurnPart[]): RailStep[] {
           kind: "tool",
           label: part.toolName,
           skillName: part.skillName,
+          displayName: part.displayName,
           text: toolText(part),
           status: part.status,
           preview: part.toolName === "load_skill" ? undefined : part.preview,
@@ -894,7 +895,13 @@ function nextLegacyArtifactIndex(content: OrderedContent[]): number {
 }
 
 /** A tool name turned into the line a reader understands. */
-export function describeTool(name: string, skillName?: string | null): string {
+export function describeTool(
+  name: string,
+  skillName?: string | null,
+  displayName?: string | null,
+): string {
+  // A connector tool's identifier is opaque; its plain label names it instead.
+  if (displayName && !KNOWN_TOOLS.has(name)) return `Used ${displayName}`;
   switch (name) {
     case "query_execute":
       return "Ran a SQL query";
@@ -982,9 +989,16 @@ const ACTIVITY: Record<string, string> = {
   native_dashboard_publish: "Publishing the dashboard",
 };
 
+const KNOWN_TOOLS = new Set(["load_skill", "semantic_search", ...Object.keys(ACTIVITY)]);
+
 /** What a step is doing, in present tense, without the tool's identifier. */
-function describeActivity(name: string, skillName?: string | null): string {
+function describeActivity(
+  name: string,
+  skillName?: string | null,
+  displayName?: string | null,
+): string {
   if (name === "load_skill") return skillName ? `Loading skill: ${skillName}` : "Loading a skill";
+  if (displayName && !KNOWN_TOOLS.has(name) && !AGENT_TOOLS[name]) return `Using ${displayName}`;
   const known = ACTIVITY[name] ?? AGENT_TOOLS[name]?.[1];
   if (known) return known;
   const words = name.replace(/^native_/, "").replace(/_/g, " ").trim();
@@ -995,9 +1009,10 @@ function describeStatus(
   name: string,
   status: string,
   skillName?: string | null,
+  displayName?: string | null,
 ): string {
   // Status lines never show the tool's identifier to the reader.
-  const activity = describeActivity(name, skillName);
+  const activity = describeActivity(name, skillName, displayName);
   const lower = activity.charAt(0).toLowerCase() + activity.slice(1);
   switch (status) {
     case "running":
@@ -1005,7 +1020,7 @@ function describeStatus(
       // Waiting for approval is not done yet.
       return activity;
     case "done":
-      return describeTool(name, skillName);
+      return describeTool(name, skillName, displayName);
     case "failed":
       return `Stopped: ${lower}`;
     case "denied":
@@ -1013,6 +1028,6 @@ function describeStatus(
     case "cancelled":
       return `Cancelled: ${lower}`;
     default:
-      return describeTool(name, skillName);
+      return describeTool(name, skillName, displayName);
   }
 }

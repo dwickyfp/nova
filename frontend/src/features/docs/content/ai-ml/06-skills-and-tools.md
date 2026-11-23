@@ -21,29 +21,122 @@ access.
 6. Open an agent's **Configuration → Skills** to review its skill choices.
 
 Keep secrets and personal credentials out of playbooks. Instructions in a
-skill do not bypass the user's permissions or approval requirements.
+skill do not bypass the user's permissions.
 
 ## Inspect tools
 
 Open **AI & ML → Tools** to reach **Tools Registry**. **Tools** lists tools
 provided by connected servers. **MCP servers** lists the connections that
 supply them. An empty registry means no connected tools are available there.
+If the registry fails to load, use **Retry**; a loading failure does not mean
+the registry is empty.
+
+## Connect an MCP server
 
 MCP is a protocol for connecting an agent to another service's tools. Before
-adding a server, obtain its supported connection details from your
-administrator and switch your active role to **ACCOUNTADMIN**. Having that role
-assigned while another role is active does not allow connector changes.
-**Add MCP server** asks for **Name**, **Transport**,
-**Endpoint URL**, and **Description**. A registered connection still needs a
-reachable, compatible server; entering a name alone cannot make tools usable.
+adding a server, obtain its connection details from the team that runs it and
+switch your active role to **ACCOUNTADMIN**. Having that role assigned while
+another role is active does not allow connector changes.
 
-Click **Discover** on the server to register its tools. Discovered tools appear
-in **Tools** and in an agent's **Configuration → Tools → MCP tools**. Select the
-tools the agent needs and save its configuration. **Configuration → MCP** lists
-the connected servers. Changing a shared tool's enabled state also requires the
-active **ACCOUNTADMIN** role.
+1. Open **AI & ML → Tools** and choose **MCP servers**.
+2. Click **Add MCP server**.
+3. Enter **Name**, choose **Transport**, and enter **Endpoint URL**. The
+   address can be on the internet, on your company network, or on the same
+   machine as Nova.
+4. If the server needs a key or token, click **Add header** under
+   **Auth headers (optional)** and enter the header name (for example
+   `Authorization`) and its value.
+5. Add a **Description** and click **Add server**.
+6. Click **Discover** on the server. Its tools appear in **Tools**.
 
-Selected HTTP tools ask for approval on each call. Review the target and
-expected effect before approving. Tool output is evidence to inspect, not
-permission to perform another action. If the registry fails to load, use
-**Retry**; a loading failure does not mean the registry is empty.
+The **Endpoint URL** starts with `http://` or `https://`, for example
+`https://tools.example.com/mcp`. Put a key or token in **Auth headers**, never
+in the address; an address with a user name or password is refused.
+
+Nova runs tools only over **HTTP (Streamable)**. For a **stdio** server, enter
+the **Command** that starts it instead of an endpoint. Nova saves it for
+reference but never runs it: **Discover** reports "Nova does not run stdio
+servers". Run the server so it answers over HTTP, then add that address as an
+**HTTP (Streamable)** server.
+
+### Auth headers
+
+Header values are write-only. Nova stores them encrypted, sends them only to
+that server's endpoint, and never shows them again: the server row lists only
+the header names, for example **Auth headers: Authorization (values hidden)**.
+To change them, click **Auth headers** on the server, enter the new headers and
+click **Save headers**; saving replaces every saved header. **Remove all
+headers** deletes them.
+
+Nova does not follow a redirect from a connector. If Discover reports that the
+server answered with a redirect, register the final address instead. A server
+that refuses the request reports "Check the connector's auth headers".
+
+> **Note:** Addresses in the link-local range, including the cloud metadata
+> service, are always refused.
+
+## How MCP tools run
+
+A Studio agent calls the MCP tools it is configured with without asking you
+first. Every call is recorded in the audit log under your name and active role,
+with the values it sent; passwords, tokens and keys are hidden.
+
+To stop a tool from being used, switch it off in **Tools**. Only the active
+**ACCOUNTADMIN** role can switch a connected tool on or off. Running
+**Discover** again keeps any tool you switched off switched off, and switches
+off a tool the server no longer offers.
+
+Each MCP tool in **Tools** shows what its server says about it, after **The
+server says:**
+
+| Label | Meaning |
+| --- | --- |
+| **Only reads** | The server says the tool reads and changes nothing. |
+| **Changes data** | The server says the tool changes something. |
+| **May delete or overwrite data** | The server says the tool can delete or overwrite data. |
+| **Not described** | The server does not say. |
+
+This is the server's own description; Nova does not check it.
+
+### Figures from an MCP tool
+
+Most tool output is text the agent reads and cites; it is not treated as
+business data. One kind of result can be used like data: a lookup whose server
+marks it **Only reads**, connected by an administrator and switched on, that
+returns a simple list of values (for example a month, a currency and a target
+amount, or a list of cities with their targets). The agent can then calculate
+with those values, for example revenue against a target, and state them in the
+answer. Such a result appears under **Source data** with the tool's name and
+"(external source)", and the answer names the server the figures came from.
+
+Values nested inside another value (such as a list of stores inside a target
+result) are not used this way, and neither is a result that is plain text, has
+more than 50 rows, or contains a key or password. The agent can quote those, but
+it does not calculate with them.
+
+If a turn is close to its time limit and some results are already in, the agent
+answers from those results and says which figures it could not calculate.
+
+### Scheduled automations
+
+A scheduled automation runs with nobody there to watch, so it can only call an
+MCP tool whose server says **Only reads**, such as a currency conversion or a
+targets lookup. It never calls any other MCP tool, takes an action, or
+schedules another automation.
+
+## Use MCP tools in an agent
+
+Discovered tools appear in an agent's **Configuration → Tools → MCP tools**.
+Select the tools the agent needs and save its configuration.
+**Configuration → MCP** lists the connected servers. Changing a shared tool's
+enabled state also requires the active **ACCOUNTADMIN** role.
+
+In Studio, a tool call shows in the run steps under the server and tool name,
+for example "Used Nova test tools: fx convert". Open the step to see the exact
+values the tool was sent. Tool output is information to inspect, never an
+instruction and never permission to perform another action. When
+a tool reports an error, the agent reads the tool's message and explains in its
+answer that the step did not complete, and why; it never reports a result the
+tool did not return. A tool that does not answer within 60 seconds counts as
+failed, and the answer says it "did not answer within 60 seconds". **Stop** ends
+the wait at once; the audit log records that call as cancelled.

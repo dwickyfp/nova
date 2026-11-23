@@ -26,12 +26,15 @@ platform MCP connectors are managed by the active ACCOUNTADMIN role.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import re
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.common.audit import write_audit_log
+from app.common.crypto import EncryptionError, encrypt
 from app.common.responses import SanitizingJSONResponse
 from app.core.deps import get_current_user
 from app.modules.agents import mcp_client, observability, tool_catalog
@@ -370,11 +373,77 @@ async def _audit_connector(
     )
 
 
+_MAX_AUTH_HEADERS = 8
+#: The stored-registration rule the metadata trigger enforces; checked here
+#: first so the administrator gets a plain message instead of a constraint error.
+_ENDPOINT_URL = re.compile(r"^https?://[^/@?#]+(/[^@]*)?$")
+
+
+def _check_registration(transport: str, endpoint: str | None, command: str | None) -> None:
+    """Refuse a registration the metadata store would reject, with a plain reason."""
+    if transport == "stdio":
+        if not (command or "").strip():
+            raise HTTPException(422, "Enter the command that starts the stdio server.")
+        return
+    if not _ENDPOINT_URL.fullmatch(endpoint or ""):
+        raise HTTPException(
+            422,
+            "Enter the endpoint as an http:// or https:// address, for example "
+            "https://tools.example.com/mcp. Put a key or token in Auth headers, "
+            "not in the address.",
+        )
+
+
+_HEADER_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,63}")
+#: Headers Nova sets itself for the MCP exchange; a connector cannot override them.
+_RESERVED_HEADERS = frozenset({
+    "accept", "connection", "content-length", "content-type", "cookie", "host",
+    "mcp-protocol-version", "mcp-session-id", "transfer-encoding", "upgrade",
+})
+
+
+def _encrypted_auth_headers(headers: dict[str, str]) -> dict[str, object]:
+    """Validate write-only auth headers and return the encrypted columns.
+
+    Messages name the rule, never a value. An encryption failure refuses the
+    request: a header is never stored in the clear.
+    """
+    if len(headers) > _MAX_AUTH_HEADERS:
+        raise HTTPException(422, f"Add at most {_MAX_AUTH_HEADERS} auth headers.")
+    seen: set[str] = set()
+    clean: dict[str, str] = {}
+    for name, value in headers.items():
+        name = name.strip()
+        if not _HEADER_NAME.fullmatch(name) or name.lower() in _RESERVED_HEADERS:
+            raise HTTPException(
+                422, "Use a header name of letters, numbers and hyphens that Nova does not set "
+                "itself (for example Authorization or X-Api-Key).",
+            )
+        if name.lower() in seen:
+            raise HTTPException(422, "Each auth header can be set once.")
+        if not value or len(value) > 4096 or any(c in value for c in "\r\n\x00"):
+            raise HTTPException(
+                422, f"The value of {name} must be 1 to 4096 characters on one line."
+            )
+        seen.add(name.lower())
+        clean[name] = value
+    if not clean:
+        return {"auth_headers": None, "auth_header_names": []}
+    try:
+        ciphertext = encrypt(json.dumps(clean))
+    except EncryptionError as exc:
+        raise HTTPException(503, "Auth headers cannot be stored securely right now.") from exc
+    return {"auth_headers": ciphertext, "auth_header_names": sorted(clean, key=str.lower)}
+
+
 @router.get("/mcp-servers", response_model=McpServerListResponse)
 async def list_mcp_servers(user: dict = Depends(get_current_user)):
     servers = await agent_repository.list_mcp_servers(owner_name=INTERNAL_CONNECTOR_OWNER)
     if user.get("active_role") != "ACCOUNTADMIN":
-        servers = [{**s, "endpoint": None, "command": None, "args": []} for s in servers]
+        servers = [
+            {**s, "endpoint": None, "command": None, "args": [], "auth_header_names": []}
+            for s in servers
+        ]
     views = [McpServerView(**s) for s in servers]
     return McpServerListResponse(servers=views, count=len(views))
 
@@ -385,8 +454,12 @@ async def create_mcp_server(
     user: dict = Depends(get_current_user),
 ):
     _require_connector_admin(user)
+    _check_registration(body.transport, body.endpoint, body.command)
+    fields = body.model_dump(exclude={"auth_headers"})
+    if body.auth_headers:
+        fields.update(_encrypted_auth_headers(body.auth_headers))
     created = await agent_repository.create_mcp_server(
-        owner_name=INTERNAL_CONNECTOR_OWNER, fields=body.model_dump()
+        owner_name=INTERNAL_CONNECTOR_OWNER, fields=fields
     )
     await _audit_connector(user, "CREATE", created["server_id"])
     return McpServerView(**created)
@@ -406,9 +479,17 @@ async def update_mcp_server(
     user: dict = Depends(get_current_user),
 ):
     _require_connector_admin(user)
-    await _require_server(server_id, INTERNAL_CONNECTOR_OWNER)
+    stored = await _require_server(server_id, INTERNAL_CONNECTOR_OWNER)
+    fields = body.model_dump(exclude_unset=True, exclude={"auth_headers"})
+    if {"transport", "endpoint", "command"} & fields.keys():
+        merged = {**stored, **fields}
+        _check_registration(
+            str(merged.get("transport") or "http"), merged.get("endpoint"), merged.get("command")
+        )
+    if body.auth_headers is not None:
+        fields.update(_encrypted_auth_headers(body.auth_headers))
     updated = await agent_repository.update_mcp_server(
-        server_id, owner_name=INTERNAL_CONNECTOR_OWNER, fields=body.model_dump(exclude_unset=True)
+        server_id, owner_name=INTERNAL_CONNECTOR_OWNER, fields=fields
     )
     if updated is None:
         raise HTTPException(status_code=404, detail="MCP server not found")
@@ -432,8 +513,8 @@ async def discover_mcp_server(
 ):
     """Connect to the server and register the tools it exposes.
 
-    Discovery records tool metadata. Selected HTTP tools can subsequently run
-    with consent; Nova does not start stdio servers.
+    Discovery records each tool's description, schema and the server's
+    annotation hints (information only). Nova does not start stdio servers.
     """
     _require_connector_admin(user)
     owner = INTERNAL_CONNECTOR_OWNER
@@ -448,17 +529,34 @@ async def discover_mcp_server(
         await _audit_connector(user, "DISCOVER", server_id, "FAILED")
         return McpDiscoverResponse(ok=False, status="error", error=str(exc))
 
+    source = f"mcp:{server_id}"
+    # Rediscovery refreshes descriptions, schemas and hints but keeps an
+    # administrator's on/off switch; a tool the server no longer offers is
+    # switched off, not left callable.
+    known = {
+        tool["name"]: tool
+        for tool in await agent_repository.list_tools(owner_name=owner)
+        if tool["source"] == source
+    }
+    offered = {tool["name"] for tool in discovered}
     for tool in discovered:
+        current = known.get(tool["name"])
         await agent_repository.upsert_tool(
             owner_name=owner,
             fields={
                 "name": tool["name"],
                 "description": tool["description"],
-                "source": f"mcp:{server_id}",
+                "source": source,
                 "input_schema": tool["input_schema"],
-                "is_enabled": True,
+                "is_enabled": True if current is None else bool(current["is_enabled"]),
+                "annotations": tool.get("annotations") or {},
             },
         )
+    for name, tool in known.items():
+        if name not in offered and tool["is_enabled"]:
+            await agent_repository.set_tool_enabled(
+                tool["tool_id"], owner_name=owner, enabled=False
+            )
     await agent_repository.update_mcp_server(
         server_id, owner_name=owner, fields={"last_status": "connected"}
     )

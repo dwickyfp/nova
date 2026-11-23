@@ -19,7 +19,8 @@ TOOL = {
     "source": "mcp:server-1", "is_enabled": True, "created_at": NOW, "updated_at": NOW,
 }
 MUTATIONS = [
-    ("POST", "/mcp-servers", {"name": "Synthetic fixture"}, "create_mcp_server", SERVER, 201),
+    ("POST", "/mcp-servers", {"name": "Synthetic fixture", "endpoint": "https://tools.example.com/mcp"},
+     "create_mcp_server", SERVER, 201),
     ("PATCH", "/mcp-servers/server-1", {"is_active": False}, "update_mcp_server", SERVER, 200),
     ("DELETE", "/mcp-servers/server-1", None, "delete_mcp_server", True, 204),
     ("POST", "/mcp-servers/server-1/discover", None, "update_mcp_server", SERVER, 200),
@@ -48,6 +49,7 @@ def test_platform_mutations_require_active_accountadmin(monkeypatch, operation, 
     monkeypatch.setattr(repository, "get_tool", AsyncMock(
         side_effect=lambda _, owner_name: TOOL if owner_name == "__nova__" else None,
     ))
+    monkeypatch.setattr(repository, "list_tools", AsyncMock(return_value=[]))
     monkeypatch.setattr(repository, operation_name, mutation)
     discover = AsyncMock(return_value=[])
     monkeypatch.setattr(studio_router.mcp_client, "list_tools", discover)

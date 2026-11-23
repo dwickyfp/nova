@@ -7,14 +7,15 @@ service credential and no second authorization path.
 
 * Reads (list, read, describe, query) are read-only and need no prompt.
 * Every change (add charts, update a chart, arrange widgets, filters, create,
-  attach a dataset, publish) is a ``session_change`` the user approves, like
-  the other Dataviz writes. Each commits one revision through revision CAS and
-  returns that receipt's revision; a conflict is re-read and retried once.
+  attach a dataset, publish) is a ``session_change``. A Studio agent makes it
+  without asking (the loop audits the call as the caller). Each commits one
+  revision through revision CAS and returns that receipt's revision; a
+  conflict is re-read and retried once.
 * Operation ids derive from the tool call, so a retried call finds its own
   receipt instead of applying the change twice. An outcome the service could
   not confirm is resolved by its receipt, never by sending it again.
 
-Results, errors and consent previews are written for the person using the
+Results, errors and change previews are written for the person using the
 dashboard: no internal names, addresses or status codes.
 """
 
@@ -96,7 +97,7 @@ MAX_WORKSPACES = 20
 MAX_CHART_READS = 24
 MAX_FIELDS = 80
 MAX_QUERY_ROWS = 200
-#: Bounds on an approval text: widgets listed by name, and charts read to name them.
+#: Bounds on a change preview: widgets listed by name, and charts read to name them.
 MAX_LISTED = 10
 MAX_PREVIEW_CHART_READS = 60
 NUMERIC = frozenset({"integer", "decimal", "float"})
@@ -1063,7 +1064,7 @@ def _outcome(summary: str, data: dict[str, Any], change: dict[str, Any]) -> Tool
     )
 
 
-# ── Naming widgets for approvals and results ─────────────────────────
+# ── Naming widgets for change previews and results ───────────────────
 
 _KIND_WORDS = {"chart": "chart", "text": "text box", "image": "image",
                "filter": "filter control", "spacer": "spacer"}
@@ -1152,7 +1153,7 @@ class _Tool:
         return "Read the dashboard"
 
     async def consent_preview(self, invocation: ToolInvocation, context: Any) -> str:
-        """The approval text, from the dashboard as it is now and checked like the change.
+        """The step text for a change, from the dashboard as it is now and checked like it.
 
         Read-only, as the caller. Without a readable dashboard it is ``preview``.
         """
@@ -1164,7 +1165,7 @@ class _Tool:
             args = _parse(self.args_model, invocation.arguments)
             return await self.describe(args, invocation, context, user) or plain
         except InvalidArguments:
-            # The approval card is for the reader; which argument failed goes to Neva.
+            # The step text is for the reader; which argument failed goes to the model.
             return f"{plain}. Some details of this change are missing, so it cannot be saved yet."
         except Refusal as exc:
             return f"{plain}. This cannot be saved as proposed: {exc}"
@@ -1174,10 +1175,10 @@ class _Tool:
     async def describe(
         self, args: Any, invocation: ToolInvocation, context: Any, user: dict[str, Any],
     ) -> str | None:
-        """A fuller approval text from the current dashboard; ``None`` keeps ``preview``."""
+        """A fuller change description from the current dashboard; ``None`` keeps ``preview``."""
         return None
 
-    #: What a change does, for the page's Neva pointer; read-only tools have none.
+    #: What a change does, for the page's assistant pointer; read-only tools have none.
     action: str | None = None
 
     def widgets(self, args: Any) -> list[UUID]:
@@ -1230,7 +1231,8 @@ class _Tool:
 
 class _Change(_Tool):
     classification: ToolClassification = "session_change"
-    #: Every native dashboard change is approved by the person first.
+    #: A change, never a pure read: it runs where a person is present (Studio,
+    #: which acts without asking) and is refused in unattended runs.
     requires_consent = True
 
 
@@ -1295,8 +1297,8 @@ def _title_words(text: str) -> frozenset[str]:
 
 
 #: The data and change steps a turn owes; a turn whose answer must be a
-#: question back (which dashboard, which page) owes none of them yet. Neva may
-#: still make the change once the person answers, after approval as always.
+#: question back (which dashboard, which page) owes none of them yet. The
+#: assistant may still make the change once the person answers.
 ASKING_SETTLES = frozenset({
     "semantic_query", "semantic_view_query", "diagnose_change", "native_dataset_query",
     "native_dashboard_read", "native_dataset_describe", "native_dashboard_add_charts",
@@ -1608,8 +1610,8 @@ class AddChartsTool(_Change):
         "left out), each placed in the first free spot of the page. Each chart: title, visual "
         "(bar, line, area, pie, kpi, table, scatter), the dataset (dataset_id, needed when the "
         "dashboard has several), dimensions and measures by field name (scatter uses x and y), "
-        "optional color, sort, orientation, stack, width (2-12 columns) and height. Needs the "
-        "user's approval. Returns the saved revision."
+        "optional color, sort, orientation, stack, width (2-12 columns) and height. "
+        "Returns the saved revision."
     )
     parameters = {
         "type": "object",
@@ -1736,7 +1738,7 @@ def _parts(chart: ChartDefinition, dataset: Dataset) -> list[str]:
 
 
 def _shows(chart: ChartDefinition, dataset: Dataset) -> str:
-    """'total Revenue and average Quantity by City' for an approval."""
+    """'total Revenue and average Quantity by City' for a change preview."""
     measures, groups = _encoded(chart)
     numbers = _parts(chart, dataset)[:len(measures)]
     grouping = _parts(chart, dataset)[len(measures):]
@@ -1758,7 +1760,7 @@ class UpdateChartTool(_Change):
         "Change one chart on a Dataviz dashboard, named by its widget_id from "
         "native_dashboard_read: its title, visual (bar, line, area, pie, kpi, table, scatter), "
         "dimensions, measures (field + aggregation), color, sort, orientation or stack. Only the "
-        "parts given change. Needs the user's approval. Returns the saved revision."
+        "parts given change. Returns the saved revision."
     )
     parameters = {
         "type": "object",
@@ -1888,7 +1890,7 @@ class ArrangeTool(_Change):
         "Move, resize or remove widgets on a Dataviz dashboard page. The grid has 12 columns: "
         "x is the column (0-11), y the row, w the width (2-12), h the height (2-48). Give only "
         "what changes for each widget_id from native_dashboard_read; widgets may not overlap. "
-        "Needs the user's approval. Returns the saved revision."
+        "Returns the saved revision."
     )
     parameters = {
         "type": "object",
@@ -2024,7 +2026,7 @@ class FiltersTool(_Change):
         "replaced) or replace them all (mode 'replace'; an empty list clears them). Each filter: "
         "title, field, kind (multi_value, single_value, date_range, number_range_slider, "
         "text_entry, boolean_switch), optional dataset_id, default values, and scope (global "
-        "or page). Needs the user's approval. Returns the saved revision."
+        "or page). Returns the saved revision."
     )
     parameters = {
         "type": "object",
@@ -2252,7 +2254,7 @@ class CreateDashboardTool(_Change):
         "Create a new Dataviz dashboard with one empty page, in the personal workspace unless "
         "a workspace_id from native_dashboard_list is given. Optionally attach an existing "
         "dataset (dataset_id) or a new dataset from a table (table: database, table, optional "
-        "columns). Needs the user's approval. Returns the new dashboard_id and revision."
+        "columns). Returns the new dashboard_id and revision."
     )
     parameters = {
         "type": "object",
@@ -2313,8 +2315,8 @@ class AttachDatasetTool(_Change):
     description = (
         "Attach a dataset to a Dataviz dashboard (the open one when dashboard_id is left out) "
         "so its charts can use it: an existing dataset_id from the same workspace, or a new "
-        "dataset from a table (table: database, table, optional columns). Needs the user's "
-        "approval. Returns the saved revision."
+        "dataset from a table (table: database, table, optional columns). "
+        "Returns the saved revision."
     )
     parameters = {
         "type": "object",
@@ -2363,7 +2365,7 @@ class PublishTool(_Change):
     args_model = PublishArgs
     description = (
         "Publish a Dataviz dashboard's current draft so everyone who can view it sees this "
-        "version. Only when the user asks to publish. Needs the user's approval. Refuses when "
+        "version. Only when the user asks to publish. Refuses when "
         "the draft changed since it was read."
     )
     parameters = {

@@ -27,4 +27,4 @@ see [Build a native dashboard](/docs/dataviz/native-dashboards).
 ## Limits
 
 - Charts and dashboards saved by the earlier BI tool are no longer available.
-  Rebuild them as native dashboards, or ask Neva in Dataviz to build one.
+  Rebuild them as native dashboards, or ask the Dataviz assistant to build one.

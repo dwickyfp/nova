@@ -234,7 +234,8 @@ are `dataviz_context`, `dataviz_chart_source` and `dataviz_query` (read-only;
 filters applied, and ranks contributions between two periods),
 `dataviz_list_results` and `dataviz_check_result` (resolver),
 `dataviz_plan_add` (no mutation; returns a diff and an expiring action token)
-and `dataviz_apply` (consent, `session_change`). There is no arbitrary
+and `dataviz_apply` (`session_change`; Studio applies it without a prompt and
+audits the call). There is no arbitrary
 Superset URL tool.
 
 Ontology linkage:
@@ -297,8 +298,7 @@ model).
 
 A change prepared in one turn is remembered for its conversation (Redis, the
 action's 15-minute TTL). The next turn's prompt names it, so a "yes" applies
-exactly it; consent is still asked, and the prompt shows the server's
-description. A verified apply settles the preparation steps the planner listed
+exactly it; the step shows the server's description. A verified apply settles the preparation steps the planner listed
 again.
 
 ### D7. Sharing (superseded by D8)

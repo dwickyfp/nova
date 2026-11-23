@@ -252,6 +252,12 @@ class EvidenceTracker:
             } or (
                 tool.startswith("custom_")
                 and evidence.metadata.get("execution_source") == "nova_sql_frontend"
+            ) or (
+                # A flat result of a declared read-only MCP lookup, labelled
+                # with its source (the runner decides; see mcp_tool).
+                tool.startswith("mcp_")
+                and evidence.metadata.get("evidence_kind") == "external_table"
+                and str(evidence.metadata.get("external_source") or "").startswith("external:")
             ))
             and table
         ):
@@ -280,6 +286,11 @@ class EvidenceTracker:
                     kept["scope"] = "data"
                 if kept:
                     stored["period"] = kept
+            if str(table.get("source") or "").startswith("external:"):
+                # Where these rows came from, shown with them as source data.
+                stored["source"] = str(table["source"])[:200]
+                if isinstance(table.get("title"), str):
+                    stored["title"] = table["title"][:200]
             if isinstance(table.get("sql"), str) and table["sql"].strip():
                 # The statement travels with its rows: a chart another participant
                 # builds from them can still be saved as a live view.

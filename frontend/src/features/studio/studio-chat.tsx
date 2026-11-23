@@ -228,8 +228,7 @@ export function StudioChat({
     directRunRef.current = run;
     if (stopRequestedRef.current) cancelActiveRun(run);
   }, [cancelActiveRun]);
-  const toolStatus = useRef(new Map<string, string>());
-  /** part id → tool call id, so status events reach Neva's dashboard pointer. */
+  /** part id → tool call id, so status events reach the dashboard pointer. */
   const toolParts = useRef(new Map<string, string>());
   const onTurnEvent = useCallback((turnId: string, event: StudioEvent) => {
     const aux = event.type === "aux" ? event.event : null;
@@ -242,23 +241,22 @@ export function StudioChat({
       );
     }
     if (aux?.type === "dashboard_changed") {
-      // Native dashboards reload the committed revision Neva just wrote.
+      // Native dashboards reload the committed revision the assistant just wrote.
       window.dispatchEvent(new CustomEvent(NATIVE_DASHBOARD_CHANGED, {
         detail: { dashboard_id: aux.dashboard_id, revision: aux.revision },
       }));
       activity({ kind: "status", tool_call_id: aux.tool_call_id, state: "saved" });
     }
-    // Neva's pointer on the dashboard follows the change it proposes, and
-    // whether that change was approved and saved.
+    // The assistant's pointer on the dashboard follows the change it makes and
+    // whether it was saved.
     if (event.type === "part.start" && event.part.type === "tool") {
       toolParts.current.set(event.partId, event.part.toolCallId);
-      toolStatus.current.set(event.part.toolCallId, "running");
     }
     if (aux?.type === "dashboard_activity") {
       activity({
         kind: "proposed", tool_call_id: aux.tool_call_id, dashboard_id: aux.dashboard_id,
         action: aux.action, widget_ids: aux.widget_ids, page_id: aux.page_id,
-        state: toolStatus.current.get(aux.tool_call_id) === "pending" ? "waiting" : "saving",
+        state: "saving",
       });
     }
     if (event.type === "tool.status") {
@@ -266,7 +264,6 @@ export function StudioChat({
       const state: NevaState | null = event.status === "running" || event.status === "approved" ? "saving"
         : event.status === "failed" ? "failed"
         : event.status === "denied" || event.status === "cancelled" ? "stopped" : null;
-      if (toolCallId) toolStatus.current.set(toolCallId, event.status);
       if (state && toolCallId) activity({ kind: "status", tool_call_id: toolCallId, state });
     }
     queueEvent(turnId, event);

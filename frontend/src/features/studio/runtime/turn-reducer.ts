@@ -61,6 +61,7 @@ export type ToolPart = PartBase & {
   /** The Mission run that made the call, when it is not this run. */
   originRunId?: string;
   skillName?: string;
+  displayName?: string;
   classification?: ToolCallView["classification"];
   status: ToolCallStatus;
   preview?: string;

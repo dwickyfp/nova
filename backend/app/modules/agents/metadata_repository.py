@@ -64,7 +64,10 @@ _AGENT_FIELDS = (
     *_AGENT_JSON,
 )
 _SKILL_FIELDS = ("name", "description", "body", "scope")
-_MCP_FIELDS = ("name", "description", "transport", "endpoint", "command", "args", "is_active")
+_MCP_FIELDS = (
+    "name", "description", "transport", "endpoint", "command", "args", "is_active",
+    "auth_headers", "auth_header_names",
+)
 _CUSTOM_TOOL_FIELDS = (
     "name", "description", "kind", "database_name", "function_name", "definition",
 )
@@ -430,9 +433,17 @@ class AgentMetadataRepository:
         unknown = set(fields) - set(_MCP_FIELDS)
         if unknown:
             raise ValueError(f"Unsupported MCP server fields: {sorted(unknown)}")
-        _screen(*fields.values())
-        return {key: Jsonb(value) if key == "args" and value is not None else value
-                for key, value in fields.items()}
+        # Auth headers arrive already encrypted (``enc:``); only the plaintext
+        # fields are screened for credential shapes.
+        _screen(*(value for key, value in fields.items() if key != "auth_headers"))
+        auth = fields.get("auth_headers")
+        if auth is not None and not str(auth).startswith("enc:"):
+            raise CredentialRefused()
+        return {
+            key: Jsonb(value)
+            if key in {"args", "auth_header_names"} and value is not None else value
+            for key, value in fields.items()
+        }
 
     async def create_mcp_server(
         self, fields: dict[str, Any], *, owner_name: str | None = None
@@ -513,22 +524,31 @@ class AgentMetadataRepository:
             (owner_name or self.actor.principal, fields["source"], fields["name"]))
         if len(existing) > 1:
             raise MetadataConflict()
+        # MCP annotations are written only when the caller names them
+        # (Discover); other registrations leave the column unchanged.
+        classification = {key: fields[key] for key in ("annotations",) if key in fields}
+        if "annotations" in classification and classification["annotations"] is not None:
+            classification["annotations"] = Jsonb(classification["annotations"])
         if existing:
             updated = await self._one(
                 "UPDATE nova_meta.config_tools SET description=%s,input_schema=%s,is_enabled=%s,"
-                "metadata_revision=metadata_revision+1 WHERE tool_id=%s RETURNING *",
+                + "".join(f"{key}=%s," for key in classification)
+                + "metadata_revision=metadata_revision+1 WHERE tool_id=%s RETURNING *",
                 (fields.get("description", ""), Jsonb(schema), bool(fields.get("is_enabled", True)),
-                 existing[0]["tool_id"]))
+                 *classification.values(), existing[0]["tool_id"]))
             if updated is None:
                 raise MetadataConflict()
             return updated
+        extra_columns = "".join(f",{key}" for key in classification)
         row = await self._one(
             "INSERT INTO nova_meta.config_tools (tool_id,owner_name,name,description,source,"
-            "input_schema,is_enabled) VALUES (%s,%s,%s,%s,%s,%s,%s) "
+            f"input_schema,is_enabled{extra_columns}) VALUES (%s,%s,%s,%s,%s,%s,%s"
+            + ",%s" * len(classification) + ") "
             "ON CONFLICT (owner_name,source,name) WHERE provenance='runtime' DO UPDATE SET "
             "description=EXCLUDED.description,input_schema=EXCLUDED.input_schema,"
-            "is_enabled=EXCLUDED.is_enabled,metadata_revision=config_tools.metadata_revision+1 "
-            "RETURNING *",
+            "is_enabled=EXCLUDED.is_enabled,"
+            + "".join(f"{key}=EXCLUDED.{key}," for key in classification)
+            + "metadata_revision=config_tools.metadata_revision+1 RETURNING *",
             (
                 str(uuid4()),
                 (owner_name or self.actor.principal),
@@ -537,6 +557,7 @@ class AgentMetadataRepository:
                 fields["source"],
                 Jsonb(schema),
                 bool(fields.get("is_enabled", True)),
+                *classification.values(),
             ),
         )
         assert row is not None

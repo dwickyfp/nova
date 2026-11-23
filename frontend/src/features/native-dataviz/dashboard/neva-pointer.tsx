@@ -3,7 +3,7 @@ import { CircleAlert, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { NevaAction, NevaState } from './events'
 
-/** A change Neva proposed on this dashboard and how far it got. */
+/** A change the Dataviz assistant makes on this dashboard and how far it got. */
 export type NevaActivity = {
   tool_call_id: string
   action: NevaAction
@@ -18,21 +18,20 @@ const DOING: Record<NevaAction, string> = {
 }
 
 const SHORT: Record<NevaState, string> = {
-  waiting: 'Waiting for your approval', saving: 'Saving…', saved: 'Saved', failed: 'Not saved', stopped: 'Stopped',
+  saving: 'Saving…', saved: 'Saved', failed: 'Not saved', stopped: 'Stopped',
 }
 
-/** What Neva is doing, as one sentence for screen readers and a short chip label. */
+/** What the assistant is doing, as one sentence for screen readers and a short chip label. */
 export function nevaWords(activity: NevaActivity, titleOf: (widgetId: string) => string | undefined) {
   const names = activity.widget_ids.map(id => titleOf(id)).filter((name): name is string => !!name)
   const target = ['change', 'move', 'remove', 'arrange'].includes(activity.action)
     ? `${DOING[activity.action]} ${names.length ? names.slice(0, 3).map(name => `“${name}”`).join(', ') + (names.length > 3 ? ` and ${names.length - 3} more` : '') : 'a widget'}`
     : DOING[activity.action]
   const sentence = {
-    waiting: `Neva wants to ${target}. It is waiting for your approval in the chat.`,
-    saving: `Neva is saving: ${target}.`,
-    saved: `Neva saved its change: ${target}.`,
-    failed: `Neva could not save its change (${target}). Nothing was changed.`,
-    stopped: `Neva's change was not made (${target}). Nothing was changed.`,
+    saving: `The assistant is saving: ${target}.`,
+    saved: `The assistant saved its change: ${target}.`,
+    failed: `The assistant could not save its change (${target}). Nothing was changed.`,
+    stopped: `The assistant's change was not made (${target}). Nothing was changed.`,
   }[activity.state]
   return { sentence, short: SHORT[activity.state] }
 }
@@ -42,7 +41,7 @@ function reducedMotion() {
 }
 
 /**
- * Neva's pointer on the canvas, at the widget its pending change touches.
+ * The assistant's pointer on the canvas, at the widget its change touches.
  * Decorative and never focusable: the editor announces the same state in a
  * status region, so typing and focus stay with the person.
  */
@@ -88,7 +87,7 @@ export function NevaPointer({ activity, host, short }: { activity: NevaActivity;
     <span className={cn('flex max-w-56 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] leading-4 font-medium shadow-sm',
       failed ? 'border border-border bg-background text-foreground' : 'bg-primary text-primary-foreground')}>
       {failed ? <CircleAlert className='size-3 shrink-0 text-destructive' aria-hidden /> : <Sparkles className='size-3 shrink-0' aria-hidden />}
-      <span className='truncate'>Neva · {short}</span>
+      <span className='truncate'>Assistant · {short}</span>
     </span>
     <svg viewBox='0 0 16 16' className='size-4 shrink-0 -rotate-90 drop-shadow-sm' aria-hidden>
       <path d='M2 1.5 13.5 7 8 8.5 5.5 14z' className={failed ? 'fill-muted-foreground' : 'fill-primary'} stroke='var(--background)' strokeWidth='1.2' strokeLinejoin='round' />

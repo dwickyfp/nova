@@ -6,6 +6,7 @@ asked it:
 * ``approval`` — a proposed action (a change to data or configuration, a role
   or session change) waits for Allow once or Deny. Read-only calls never ask.
   The loop builds it from the call; the model never asks for approval itself.
+  Only gated loops (Neva) ask; a Studio agent acts without asking.
 * ``question`` — a clarifying question with suggested answers and/or free text.
 * ``form`` — a small form generated from a JSON Schema subset the model supplies.
 * ``choice`` — pick one of two to six described options.
@@ -535,7 +536,7 @@ class RequestHumanInputTool:
         "inferred: an ambiguous metric (gross or net revenue), a missing period, a "
         "choice between analysis plans or matching data sources. Ask once, with "
         "concrete suggestions; never to confirm something already stated, and never "
-        "for permission to run a query (Nova asks for approval itself). When you "
+        "for permission to run a query or take an action. When you "
         "need the user's choice, ask with this tool rather than in your answer text, "
         "then continue the work with the answer."
     )

@@ -114,6 +114,36 @@ async def test_load_skill_tool_reports_unknown_name_with_the_catalog():
     outcome = await tool.run(invocation, context=None)
     assert not outcome.ok
     assert "create-table" in (outcome.error or "")
+    # Live B8 (2026-11-24): a guessed skill name ended the person's turn. The
+    # model reads the catalog and continues instead.
+    assert outcome.recoverable
+
+
+async def test_personal_loader_lets_the_turn_continue_after_an_unknown_name():
+    from app.modules.agents.tools.load_personal_skill import PersonalSkillLoader
+
+    tool = PersonalSkillLoader("alice", {})
+    invocation = ToolInvocation(
+        tool_call_id="c1", tool_name="load_skill", arguments={"name": "scope-boundary"}
+    )
+    outcome = await tool.run(invocation, context=None)
+    assert not outcome.ok and outcome.recoverable
+    assert "scope-boundary" in (outcome.error or "")
+    # The model is only offered names this agent can load.
+    assert tool.parameters["properties"]["name"].get("enum") is None
+    assert "scope-boundary" not in tool.description
+
+
+def test_personal_loader_schema_lists_only_the_agents_skills():
+    from app.modules.agents.tools.load_personal_skill import PersonalSkillLoader
+    from app.modules.assistant.intelligence import SkillDefinition
+
+    definition = SkillDefinition.__new__(SkillDefinition)
+    tool = PersonalSkillLoader("alice", {"monthly-revenue-review": definition})
+    assert tool.parameters["properties"]["name"]["enum"] == ["monthly-revenue-review"]
+    assert "monthly-revenue-review" in tool.description
+    assert "scope-boundary" not in str(tool.parameters) + tool.description
+    assert LoadSkillTool.parameters["properties"]["name"]["enum"] != ["monthly-revenue-review"]
 
 
 async def test_load_skill_tool_rejects_a_missing_name():

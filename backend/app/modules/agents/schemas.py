@@ -369,6 +369,8 @@ class McpServerView(BaseModel):
     args: list[str] = Field(default_factory=list)
     is_active: bool = True
     last_status: str | None = None
+    #: Names of the auth headers that are set. Values are write-only.
+    auth_header_names: list[str] = Field(default_factory=list)
     created_at: UtcDatetime
     updated_at: UtcDatetime
 
@@ -386,6 +388,8 @@ class McpServerCreateRequest(BaseModel):
     command: str | None = Field(default=None, max_length=1024)
     args: list[str] = Field(default_factory=list)
     is_active: bool = True
+    #: Write-only auth headers (for example ``Authorization``), stored encrypted.
+    auth_headers: dict[str, str] | None = None
 
 
 class McpServerUpdateRequest(BaseModel):
@@ -396,6 +400,8 @@ class McpServerUpdateRequest(BaseModel):
     command: str | None = Field(default=None, max_length=1024)
     args: list[str] | None = None
     is_active: bool | None = None
+    #: Replaces every saved auth header; ``{}`` removes them. Omit to keep them.
+    auth_headers: dict[str, str] | None = None
 
 
 class McpDiscoverResponse(BaseModel):
@@ -415,6 +421,9 @@ class ToolView(BaseModel):
     source: str
     input_schema: dict = Field(default_factory=dict)
     is_enabled: bool = True
+    #: MCP only: the server's annotation hints from the last Discover. Shown
+    #: as information; they do not change how a call runs.
+    annotations: dict = Field(default_factory=dict)
     created_at: UtcDatetime
     updated_at: UtcDatetime
 

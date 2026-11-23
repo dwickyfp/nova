@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
+import { toast } from 'sonner'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useAuthStore } from '@/stores/auth-store'
 import { signInNavigation } from '@/lib/api-client'
@@ -84,4 +85,81 @@ it.each(['tools', 'MCP servers'])('shows a recoverable error for %s instead of a
   await screen.getByRole('button', { name: 'Retry', exact: true }).click()
   await expect.element(screen.getByText(tab === 'tools' ? 'fixture_total' : 'Fixture', { exact: true })).toBeVisible()
   await expect.element(screen.getByRole('alert')).not.toBeInTheDocument()
+})
+
+it('shows the hints the MCP server declares, as information only', async () => {
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+    response(String(input).endsWith('/tools')
+      ? { tools: [
+          { ...tool, annotations: { readOnlyHint: true, destructiveHint: false } },
+          { ...tool, tool_id: 'tool-2', name: 'wipe_targets', annotations: { destructiveHint: true } },
+          { ...tool, tool_id: 'tool-3', name: 'plain_tool', annotations: {} },
+        ] }
+      : { servers: [server] }))
+  const screen = await setup('ACCOUNTADMIN')
+  await expect.element(screen.getByText('Only reads')).toBeVisible()
+  await expect.element(screen.getByText('May delete or overwrite data')).toBeVisible()
+  await expect.element(screen.getByText('Not described')).toBeVisible()
+  await expect.element(screen.getByRole('button', { name: 'Confirm read-only' })).not.toBeInTheDocument()
+})
+
+it('sends auth headers write-only and shows only their names', async () => {
+  const created: Record<string, unknown>[] = []
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    if (init?.method === 'POST' && String(input).endsWith('/mcp-servers')) {
+      created.push(JSON.parse(init.body as string))
+      return response({ ...server, server_id: 'server-2', auth_header_names: ['Authorization'] }, 201)
+    }
+    return response(String(input).endsWith('/tools') ? { tools: [] }
+      : { servers: created.length ? [{ ...server, endpoint: 'http://127.0.0.1:8299/mcp', auth_header_names: ['Authorization'] }] : [] })
+  })
+  const screen = await setup('ACCOUNTADMIN')
+  await screen.getByRole('tab', { name: 'MCP servers' }).click()
+  await screen.getByRole('button', { name: 'Add MCP server' }).first().click()
+  await screen.getByLabelText('Name').fill('Targets')
+  await screen.getByLabelText('Endpoint URL').fill('http://127.0.0.1:8299/mcp')
+  await screen.getByRole('button', { name: 'Add header' }).click()
+  await screen.getByLabelText('Header 1 name').fill('Authorization')
+  const value = screen.getByLabelText('Header 1 value')
+  await expect.element(value).toHaveAttribute('type', 'password')
+  await value.fill('Bearer fixture-secret')
+  await screen.getByRole('button', { name: 'Add server' }).click()
+  await vi.waitFor(() => expect(created).toHaveLength(1))
+  expect(created[0].auth_headers).toEqual({ Authorization: 'Bearer fixture-secret' })
+  await expect.element(screen.getByText('Auth headers: Authorization (values hidden)')).toBeVisible()
+  expect(document.body.textContent).not.toContain('fixture-secret')
+})
+
+it('saves a stdio server with its command and shows a refusal in plain words', async () => {
+  const created: Record<string, unknown>[] = []
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    if (init?.method === 'POST' && String(input).endsWith('/mcp-servers')) {
+      const body = JSON.parse(init.body as string)
+      created.push(body)
+      if (body.transport !== 'stdio') {
+        return response({ detail: 'Enter the endpoint as an http:// or https:// address, for example https://tools.example.com/mcp.' }, 422)
+      }
+      return response({ ...server, server_id: 'server-3', transport: 'stdio', command: body.command }, 201)
+    }
+    return response(String(input).endsWith('/tools') ? { tools: [] } : { servers: [] })
+  })
+  const refused = vi.spyOn(toast, 'error')
+  const screen = await setup('ACCOUNTADMIN')
+  await screen.getByRole('tab', { name: 'MCP servers' }).click()
+  await screen.getByRole('button', { name: 'Add MCP server' }).first().click()
+  await screen.getByLabelText('Name').fill('Local tools')
+  await expect.element(screen.getByRole('button', { name: 'Add server' })).toBeDisabled()
+  await screen.getByLabelText('Endpoint URL').fill('uv run tools.py')
+  await screen.getByRole('button', { name: 'Add server' }).click()
+  await vi.waitFor(() =>
+    expect(refused).toHaveBeenCalledWith(expect.stringContaining('Enter the endpoint as an http:// or https:// address')))
+
+  await screen.getByRole('combobox').click()
+  await screen.getByRole('option', { name: 'stdio (not executed)' }).click()
+  await expect.element(screen.getByLabelText('Endpoint URL')).not.toBeInTheDocument()
+  await screen.getByLabelText('Command').fill('uv run tools.py --transport stdio')
+  await screen.getByRole('button', { name: 'Add server' }).click()
+  await vi.waitFor(() => expect(created).toHaveLength(2))
+  expect(created[1]).toMatchObject({ transport: 'stdio', endpoint: null, command: 'uv run tools.py --transport stdio' })
+  expect(created[1]).not.toHaveProperty('auth_headers')
 })

@@ -381,7 +381,7 @@ function ToolsConfig({
         <section className="space-y-2">
           <div>
             <h3 className="text-sm font-medium">MCP tools</h3>
-            <p className="text-xs text-muted-foreground">External calls always require approval.</p>
+            <p className="text-xs text-muted-foreground">The agent runs these tools without asking. Each call is recorded in the audit log.</p>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
             {mcpTools.map((tool) => {

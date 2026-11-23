@@ -2417,6 +2417,10 @@ async def send_agent_message(
         summarize_history=True,
         spend_limit=limits.spend_tokens,
         guards=GuardChain.from_policy(registry.harness_policy),
+        # A Studio agent is autonomous: it never asks to run a tool. The role,
+        # Ranger, the effects classifier and the per-call audit still apply;
+        # questions about intent still go to the person (``ask_human``).
+        approval_gate=False,
     )
 
     def resolve_consent(

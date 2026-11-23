@@ -89,7 +89,7 @@ export class TestStudioEncoder {
     const [origin, toolCallId] = JSON.parse(key) as [string, string];
     const fields: Record<string, unknown> = { tool_call_id: toolCallId, tool_name: str(view.tool_name, "tool") };
     if (origin !== this.runId) fields.origin_run_id = origin;
-    for (const name of ["skill_name", "classification"]) if (view[name]) fields[name] = view[name];
+    for (const name of ["skill_name", "display_name", "classification"]) if (view[name]) fields[name] = view[name];
     const [partId, frame] = this.start("tool", fields);
     this.tools.set(key, partId);
     frames.push(frame);

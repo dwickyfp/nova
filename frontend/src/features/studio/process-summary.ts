@@ -15,7 +15,7 @@ export function processSummary(steps: RailStep[], running: boolean): string {
   for (const step of steps) {
     const verb =
       step.kind === "tool"
-        ? lowerFirst(describeTool(step.label))
+        ? lowerFirst(describeTool(step.label, undefined, step.displayName))
         : step.kind === "consent"
           ? "asked for approval"
           : step.kind === "note"

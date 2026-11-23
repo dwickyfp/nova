@@ -21,7 +21,7 @@ import "@/styles/index.css";
  * The Studio transcript driven end to end against a scripted SSE stream.
  *
  * The unit tests cover the reducer; this covers the wiring: a real send, the
- * rail opening and collapsing, the SQL disclosure, an approval request answered,
+ * rail opening and collapsing, the SQL disclosure, a question answered,
  * and the reconsider pass. Every assertion is a control that has to actually do
  * something, so a silent regression in the event plumbing fails here.
  */
@@ -96,10 +96,11 @@ const STREAM = v2Sse()([
   'event: done\ndata: {"message_id":"m1","finish_reason":"stop"}\n\n',
 ].join(""));
 
+// Studio agents act without asking; they still ask about intent.
 const CONSENT_STREAM = v2Sse()([
   'event: thinking\ndata: {"phase":"plan","text":"Understanding the request","status":"running"}\n\n',
-  'event: tool_call\ndata: {"tool_call_id":"c9","tool_name":"schedule_automation","sql_preview":"Schedule the automation Weekly revenue every Monday","classification":"destructive","status":"pending"}\n\n',
-  'event: input_required\ndata: {"request_id":"c9","tool_call_id":"c9","expires_at":"2026-11-23T10:05:00+00:00","request":{"kind":"approval","title":"Allow this action?","classification":"destructive","reason":"changes_data","role":"ANALYST","action":"Schedule the automation Weekly revenue every Monday"}}\n\n',
+  'event: tool_call\ndata: {"tool_call_id":"c9","tool_name":"request_human_input","sql_preview":"","classification":"read_only","status":"running"}\n\n',
+  'event: input_required\ndata: {"request_id":"c9","tool_call_id":"c9","expires_at":"2026-11-23T10:05:00+00:00","request":{"kind":"question","title":"Gross or net revenue?","choices":["Gross revenue","Net revenue"],"allow_free_text":true}}\n\n',
 ].join(""));
 
 /**
@@ -424,8 +425,8 @@ it("shows a storage interruption beside the partial answer and removes consent",
           stream = controller;
           controller.enqueue(new TextEncoder().encode(sse(
             'event: text_delta\ndata: {"text":"Partial answer from the agent."}\n\n'
-            + 'event: tool_call\ndata: {"tool_call_id":"act","tool_name":"schedule_automation","sql_preview":"Schedule the automation Weekly revenue","classification":"destructive","status":"pending"}\n\n'
-            + 'event: input_required\ndata: {"request_id":"act","tool_call_id":"act","expires_at":"2026-11-23T10:05:00+00:00","request":{"kind":"approval","title":"Allow this action?","classification":"destructive","reason":"changes_data","role":"ANALYST","action":"Schedule the automation Weekly revenue"}}\n\n',
+            + 'event: tool_call\ndata: {"tool_call_id":"act","tool_name":"request_human_input","sql_preview":"","classification":"read_only","status":"running"}\n\n'
+            + 'event: input_required\ndata: {"request_id":"act","tool_call_id":"act","expires_at":"2026-11-23T10:05:00+00:00","request":{"kind":"question","title":"Gross or net revenue?","choices":["Gross revenue","Net revenue"],"allow_free_text":true}}\n\n',
           )));
         },
       }), { headers: { "Content-Type": "text/event-stream" } });
@@ -434,7 +435,7 @@ it("shows a storage interruption beside the partial answer and removes consent",
   });
   await screen.getByRole("textbox", { name: "Message Nova" }).fill("Read the synthetic result");
   await screen.getByRole("button", { name: "Send", exact: true }).click();
-  await expect.element(screen.getByRole("button", { name: "Allow once" })).toBeVisible();
+  await expect.element(screen.getByRole("button", { name: "Net revenue" })).toBeVisible();
   stream!.enqueue(new TextEncoder().encode(sse(
     'event: error\ndata: {"code":"run_persistence_unavailable","message":"The run stopped because its progress could not be saved."}\n\n'
     + 'event: done\ndata: {"message_id":"","finish_reason":"interrupted"}\n\n',
@@ -442,8 +443,8 @@ it("shows a storage interruption beside the partial answer and removes consent",
   stream!.close();
   await expect.element(screen.getByText("Partial answer from the agent.")).toBeVisible();
   await expect.element(screen.getByText("The run stopped because its progress could not be saved.")).toBeVisible();
-  await expect.element(screen.getByRole("button", { name: "Allow once" })).not.toBeInTheDocument();
-  // The approval the run was waiting on stays in place, closed.
+  await expect.element(screen.getByRole("button", { name: "Net revenue" })).not.toBeInTheDocument();
+  // The question the run was waiting on stays in place, closed.
   await expect.element(screen.getByText("Stopped before you answered")).toBeVisible();
   await expect.element(screen.getByRole("button", { name: "Stop", exact: true })).not.toBeInTheDocument();
   expect(fetch.mock.calls.filter(([url]) => String(url).includes("/inputs/"))).toHaveLength(0);
@@ -1057,27 +1058,26 @@ describe("studio transcript click-through", () => {
     await expect.element(page.getByText("Omzet per SKU")).toBeVisible();
   });
 
-  it("asks for approval inline for an action and sends the decision to the run", async () => {
+  it("asks a question inline and sends the answer to the run", async () => {
     await renderStudio("pending_action");
     await page
       .getByPlaceholder("Ask a question about your data")
       .fill("Top SKUs");
     await page.getByRole("button", { name: "Send" }).click();
 
-    const allow = page.getByRole("button", { name: "Allow once" });
-    await expect.element(allow).toBeVisible();
-    await allow.click();
+    const net = page.getByRole("button", { name: "Net revenue" });
+    await expect.element(net).toBeVisible();
+    await net.click();
 
-    // The card waits for the run to confirm; the decision went to this run.
+    // The card waits for the run to confirm; the answer went to this run.
     await expect.element(page.getByText("Sending your answer…")).toBeVisible();
-    await expect.element(page.getByText("Changes data", { exact: true })).toBeVisible();
-    await expect.element(page.getByRole("button", { name: "Allow for this chat" })).not.toBeInTheDocument();
+    await expect.element(page.getByRole("button", { name: "Allow once" })).not.toBeInTheDocument();
     await expect.element(page.getByText("The agent run ended before completion")).not.toBeInTheDocument();
-    const decisions = vi.mocked(globalThis.fetch).mock.calls.filter(([url]) =>
+    const answers = vi.mocked(globalThis.fetch).mock.calls.filter(([url]) =>
       String(url).endsWith("/threads/t1/runs/run-1/inputs/c9"),
     );
-    expect(decisions).toHaveLength(1);
-    expect(JSON.parse(String(decisions[0][1]?.body))).toEqual({ action: "allow_once" });
+    expect(answers).toHaveLength(1);
+    expect(JSON.parse(String(answers[0][1]?.body))).toEqual({ action: "answer", answer: { text: "Net revenue" } });
   });
 
   it("keeps the composer controls keyboard reachable", async () => {

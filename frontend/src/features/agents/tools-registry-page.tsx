@@ -29,7 +29,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { mcpApi, toolsApi } from './api'
+import { mcpApi, toolsApi, type McpServer, type Tool } from './api'
 
 export function ToolsRegistryPage() {
   const [tab, setTab] = useState('tools')
@@ -113,6 +113,7 @@ function ToolsList() {
               </Badge>
             </div>
             <p className='mt-1 text-sm text-muted-foreground'>{tool.description}</p>
+            {tool.source.startsWith('mcp:') ? <ServerHints tool={tool} /> : null}
           </div>
           <div className='flex shrink-0 items-center gap-2'>
             <Switch
@@ -128,6 +129,89 @@ function ToolsList() {
   )
 }
 
+/**
+ * What the MCP server says about a tool. The hints are the server's own,
+ * unverified claims: shown so an administrator can decide whether to keep the
+ * tool on. They do not change how a call runs.
+ */
+function ServerHints({ tool }: { tool: Tool }) {
+  const hints = tool.annotations ?? {}
+  let label: string
+  if (hints.destructiveHint === true) label = 'May delete or overwrite data'
+  else if (hints.readOnlyHint === true) label = 'Only reads'
+  else if (hints.readOnlyHint === false) label = 'Changes data'
+  else label = 'Not described'
+  return (
+    <p className='mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground'>
+      <span>The server says:</span>
+      <Badge variant={hints.destructiveHint === true ? 'destructive' : 'outline'}>{label}</Badge>
+    </p>
+  )
+}
+
+type HeaderRow = { name: string; value: string }
+
+function headerMap(rows: HeaderRow[]): Record<string, string> {
+  return Object.fromEntries(
+    rows.filter((row) => row.name.trim()).map((row) => [row.name.trim(), row.value]),
+  )
+}
+
+/** Write-only header entry. Saved values are never read back. */
+function AuthHeaderFields({
+  rows,
+  onChange,
+}: {
+  rows: HeaderRow[]
+  onChange: (rows: HeaderRow[]) => void
+}) {
+  return (
+    <div className='space-y-2'>
+      {rows.map((row, index) => (
+        <div key={index} className='flex gap-2'>
+          <Input
+            aria-label={`Header ${index + 1} name`}
+            placeholder='Authorization'
+            value={row.name}
+            onChange={(e) =>
+              onChange(rows.map((r, i) => (i === index ? { ...r, name: e.target.value } : r)))
+            }
+            className='w-2/5'
+          />
+          <Input
+            aria-label={`Header ${index + 1} value`}
+            type='password'
+            autoComplete='off'
+            placeholder='Value'
+            value={row.value}
+            onChange={(e) =>
+              onChange(rows.map((r, i) => (i === index ? { ...r, value: e.target.value } : r)))
+            }
+          />
+          <Button
+            size='icon'
+            variant='ghost'
+            aria-label={`Remove header ${index + 1}`}
+            onClick={() => onChange(rows.filter((_, i) => i !== index))}
+          >
+            <Trash2 className='size-4' />
+          </Button>
+        </div>
+      ))}
+      {rows.length < 8 ? (
+        <Button
+          size='sm'
+          variant='outline'
+          onClick={() => onChange([...rows, { name: '', value: '' }])}
+        >
+          <Plus className='size-3.5' />
+          Add header
+        </Button>
+      ) : null}
+    </div>
+  )
+}
+
 function McpServers() {
   const queryClient = useQueryClient()
   const canManage = useAuthStore((state) => state.auth.user?.activeRole === 'ACCOUNTADMIN')
@@ -137,7 +221,11 @@ function McpServers() {
     description: '',
     transport: 'http' as 'http' | 'sse' | 'stdio',
     endpoint: '',
+    command: '',
   })
+  const [headers, setHeaders] = useState<HeaderRow[]>([])
+  const [editing, setEditing] = useState<McpServer | null>(null)
+  const [replacement, setReplacement] = useState<HeaderRow[]>([])
 
   const serversQuery = useQuery({
     queryKey: ['mcp-servers'],
@@ -150,12 +238,18 @@ function McpServers() {
         name: draft.name.trim(),
         description: draft.description.trim(),
         transport: draft.transport,
-        endpoint: draft.endpoint.trim() || null,
+        ...(draft.transport === 'stdio'
+          ? { endpoint: null, command: draft.command.trim() }
+          : { endpoint: draft.endpoint.trim() || null }),
+        ...(draft.transport !== 'stdio' && Object.keys(headerMap(headers)).length
+          ? { auth_headers: headerMap(headers) }
+          : {}),
       }),
     onSuccess: () => {
       toast.success('MCP server added')
       setOpen(false)
-      setDraft({ name: '', description: '', transport: 'http', endpoint: '' })
+      setDraft({ name: '', description: '', transport: 'http', endpoint: '', command: '' })
+      setHeaders([])
       queryClient.invalidateQueries({ queryKey: ['mcp-servers'] })
     },
     onError: (e: Error) => toast.error(e.message),
@@ -170,6 +264,20 @@ function McpServers() {
       } else {
         toast.error(result.error || 'Discovery failed')
       }
+      queryClient.invalidateQueries({ queryKey: ['mcp-servers'] })
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const saveHeaders = useMutation({
+    mutationFn: ({ id, values }: { id: string; values: Record<string, string> }) =>
+      mcpApi.update(id, { auth_headers: values }),
+    onSuccess: (server) => {
+      toast.success(
+        server.auth_header_names?.length ? 'Auth headers saved' : 'Auth headers removed',
+      )
+      setEditing(null)
+      setReplacement([])
       queryClient.invalidateQueries({ queryKey: ['mcp-servers'] })
     },
     onError: (e: Error) => toast.error(e.message),
@@ -231,8 +339,25 @@ function McpServers() {
                 <p className='mt-1 truncate text-sm text-muted-foreground'>
                   {canManage ? server.endpoint || server.command || server.description : server.description}
                 </p>
+                {canManage && server.auth_header_names?.length ? (
+                  <p className='mt-1 text-xs text-muted-foreground'>
+                    Auth headers: {server.auth_header_names.join(', ')} (values hidden)
+                  </p>
+                ) : null}
               </div>
               {canManage ? <div className='flex shrink-0 items-center gap-1'>
+                {server.transport !== 'stdio' ? (
+                  <Button
+                    size='sm'
+                    variant='ghost'
+                    onClick={() => {
+                      setEditing(server)
+                      setReplacement([{ name: '', value: '' }])
+                    }}
+                  >
+                    Auth headers
+                  </Button>
+                ) : null}
                 <Button
                   size='sm'
                   variant='outline'
@@ -295,16 +420,36 @@ function McpServers() {
                 </p>
               ) : null}
             </div>
-            <div className='space-y-2'>
-              <Label htmlFor='mcp-endpoint'>Endpoint URL</Label>
-              <Input
-                id='mcp-endpoint'
-                value={draft.endpoint}
-                onChange={(e) => setDraft((d) => ({ ...d, endpoint: e.target.value }))}
-                placeholder='https://tools.example.com/mcp'
-                disabled={draft.transport === 'stdio'}
-              />
-            </div>
+            {draft.transport === 'stdio' ? (
+              <div className='space-y-2'>
+                <Label htmlFor='mcp-command'>Command</Label>
+                <Input
+                  id='mcp-command'
+                  value={draft.command}
+                  onChange={(e) => setDraft((d) => ({ ...d, command: e.target.value }))}
+                  placeholder='npx -y @example/mcp-server'
+                />
+              </div>
+            ) : (
+              <div className='space-y-2'>
+                <Label htmlFor='mcp-endpoint'>Endpoint URL</Label>
+                <Input
+                  id='mcp-endpoint'
+                  value={draft.endpoint}
+                  onChange={(e) => setDraft((d) => ({ ...d, endpoint: e.target.value }))}
+                  placeholder='https://tools.example.com/mcp'
+                />
+              </div>
+            )}
+            {draft.transport !== 'stdio' ? (
+              <div className='space-y-2'>
+                <Label>Auth headers (optional)</Label>
+                <p className='text-xs text-muted-foreground'>
+                  Sent only to this endpoint. Values are stored encrypted and never shown again.
+                </p>
+                <AuthHeaderFields rows={headers} onChange={setHeaders} />
+              </div>
+            ) : null}
             <div className='space-y-2'>
               <Label htmlFor='mcp-desc'>Description</Label>
               <Input
@@ -319,10 +464,55 @@ function McpServers() {
               Cancel
             </Button>
             <Button
-              disabled={!draft.name.trim() || create.isPending}
+              disabled={
+                !draft.name.trim() ||
+                !(draft.transport === 'stdio' ? draft.command.trim() : draft.endpoint.trim()) ||
+                create.isPending
+              }
               onClick={() => create.mutate()}
             >
               Add server
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={editing !== null}
+        onOpenChange={(value) => {
+          if (!value) setEditing(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Auth headers for {editing?.name}</DialogTitle>
+          </DialogHeader>
+          <div className='space-y-3'>
+            <p className='text-sm text-muted-foreground'>
+              {editing?.auth_header_names?.length
+                ? `Saved: ${editing.auth_header_names.join(', ')}. Saved values are never shown. Saving replaces every saved header.`
+                : 'No headers are saved. Values are stored encrypted and sent only to this endpoint.'}
+            </p>
+            <AuthHeaderFields rows={replacement} onChange={setReplacement} />
+          </div>
+          <DialogFooter>
+            {editing?.auth_header_names?.length ? (
+              <Button
+                variant='outline'
+                disabled={saveHeaders.isPending}
+                onClick={() => editing && saveHeaders.mutate({ id: editing.server_id, values: {} })}
+              >
+                Remove all headers
+              </Button>
+            ) : null}
+            <Button
+              disabled={saveHeaders.isPending || Object.keys(headerMap(replacement)).length === 0}
+              onClick={() =>
+                editing &&
+                saveHeaders.mutate({ id: editing.server_id, values: headerMap(replacement) })
+              }
+            >
+              Save headers
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -62,7 +62,7 @@ type Props = {
   dashboardId: string
   workspaceId: string
   onBack: () => void
-  /** Bumped by the host when Neva reports a committed change. */
+  /** Bumped by the host when the assistant reports a committed change. */
   refreshToken?: number
   onContextChange?: (context: NativeDashboardContext | null) => void
   onAskNeva?: (prompt: string) => void
@@ -235,10 +235,10 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
     return result.data.definition as DashboardDefinition
   }, [snapshot])
 
-  // Changes by Neva or another editor arrive as committed document events.
+  // Changes by the assistant or another editor arrive as committed document events.
   useEffect(() => { if (refreshToken) void reload() }, [refreshToken])
   const [nevaChanged, setNevaChanged] = useState<string[]>([])
-  // Neva's pointer: the change it proposes here, until it is saved or dropped.
+  // The assistant's pointer: the change it makes here, until it is saved or dropped.
   const [neva, setNeva] = useState<NevaActivity | null>(null)
   useEffect(() => {
     const listener = (event: Event) => {
@@ -270,7 +270,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
   }, [neva, definition, client, epoch, editing])
   const nevaShown = neva && nevaText ? { activity: neva, short: nevaText.short } : null
   useEffect(() => {
-    if (!neva || neva.state === 'waiting' || neva.state === 'saving') return
+    if (!neva || neva.state === 'saving') return
     const timer = window.setTimeout(() => setNeva(current => current?.tool_call_id === neva.tool_call_id ? null : current),
       neva.state === 'saved' ? 2500 : 8000)
     return () => window.clearTimeout(timer)
@@ -286,7 +286,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
       if (detail?.dashboard_id?.toLowerCase() === dashboardId.toLowerCase() && detail.revision !== revisionRef.current) {
         const before = definitionRef.current
         void reload().then(after => {
-          // Point at what Neva changed: new widgets and widgets whose content or place moved.
+          // Point at what the assistant changed: new widgets and widgets whose content or place moved.
           if (!before || !after) return
           const previous = new Map(before.pages.flatMap(item => item.widgets ?? []).map(widget => [widget.widget_id, JSON.stringify(widget)]))
           setNevaChanged(after.pages.flatMap(item => item.widgets ?? [])
@@ -702,7 +702,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
   const label = '@max-3xl/editor:sr-only'
   return <div className='@container/editor flex min-h-0 min-w-0 flex-1 flex-col bg-background'>
     <p role='status' className='sr-only'>{announcement}</p>
-    <p role='status' aria-label='Neva' data-testid='neva-status' className='sr-only'>{nevaText?.sentence ?? ''}</p>
+    <p role='status' aria-label='Assistant' data-testid='neva-status' className='sr-only'>{nevaText?.sentence ?? ''}</p>
     <header className={cn('flex h-14 shrink-0 items-center gap-3 border-b', compact ? 'px-3' : 'pr-4 pl-2')}>
       {!compact && <Button variant='ghost' size='icon' className='size-9 shrink-0' aria-label='Back to dashboards' onClick={onBack}><ArrowLeft /></Button>}
       <div className='flex min-w-0 flex-1 flex-col justify-center'>
@@ -725,9 +725,9 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
       </div>
       <div className='flex shrink-0 items-center gap-1.5'>
         <PresenceAvatars others={presence.others} more={presence.more} />
-        {onAskNeva && <Button variant='ghost' size='sm' className='h-9 @max-md/editor:hidden' aria-label='Ask Neva'
+        {onAskNeva && <Button variant='ghost' size='sm' className='h-9 @max-md/editor:hidden' aria-label='Ask the assistant'
           onClick={() => onAskNeva(`Help me improve the dashboard \u201c${definition.title}\u201d.`)}>
-          <Sparkles /><span className={label}>Ask Neva</span>
+          <Sparkles /><span className={label}>Ask the assistant</span>
         </Button>}
         {canExport && tab === 'canvas' && <DropdownMenu>
           <Tooltip><TooltipTrigger asChild><DropdownMenuTrigger asChild>

@@ -1,6 +1,6 @@
 ---
 title: Build a native dashboard
-description: Create a dashboard, add a dataset, build charts and filters, arrange them, publish, and work on it with Neva.
+description: Create a dashboard, add a dataset, build charts and filters, arrange them, publish, and work on it with the Dataviz assistant.
 ---
 
 ## What it is
@@ -320,7 +320,7 @@ shown exactly as written and never change the dashboard or its data.
 ## See who else is here
 
 When other people have the same dashboard open, their initials appear in the
-header next to **Ask Neva**. A dot on an avatar means that person is editing;
+header next to **Ask the assistant**. A dot on an avatar means that person is editing;
 point at an avatar to see their name. On the page you are looking at, each
 person's pointer moves across the canvas with their name beside it.
 
@@ -403,38 +403,40 @@ role's access again: if the dashboard is no longer shared with the role
 including **Export**, the run saves nothing. Only people with the same role, or
 an administrator, can remove a schedule.
 
-## Work with Neva
+## Work with the Dataviz assistant
 
-- Click **Ask Neva**, or the sparkle icon on a widget, to ask about the
-  dashboard. You can also type in the **Assistant** panel, for example:
+- Click **Ask the assistant**, or the sparkle icon on a widget, to ask about
+  the dashboard. You can also type in the **Assistant** panel, for example:
 
   ```text
   Add a line chart of total revenue per month to this dashboard.
   ```
 
-- Neva reads the dashboard and its datasets and checks the numbers with your
-  role. Before it changes anything, it shows the change and asks you to
-  **Allow once** or **Deny**.
-- Neva sees the filters and chart selections you have applied. When it gives
-  you numbers, it uses the same filters, or says which one it left out.
-- When Neva proposes changing a chart, the approval says what the chart will
-  show afterwards, for example *It will show total Revenue by City instead of
-  total Revenue and average Quantity by City*, and names anything the chart
-  would no longer show. Neva cannot change a calculation or a saved metric;
-  change those yourself in the chart editor.
-- While a change waits for your approval, a **Neva** pointer sits on the widget
-  it would change, labelled **Waiting for your approval**. It then shows
-  **Saving…** and **Saved**, or **Not saved** when the save failed; nothing
-  changes on the dashboard unless it was saved. The pointer never takes your
-  keyboard focus, and with reduced motion it appears in place instead of
-  moving across the page.
-- When Neva saves a change, the canvas reloads the new revision on its own, and
-  the widgets it changed are marked **Changed by Neva** for a few seconds. A
-  rearrangement of many widgets is saved as one version.
-- In a new chat, Neva opens the dashboard beside the chat, or one you name, at
-  its latest version, checked with your current role. If several dashboards
-  match the name, it lists them and asks which one you mean. If the page you
-  were on was removed meanwhile, Neva says so and asks which page to use.
+- The assistant reads the dashboard and its datasets and checks the numbers
+  with your role. It makes the change you ask for without asking first, as
+  you, and saves it as a new version. See
+  [Ask the Dataviz assistant](/docs/dataviz/dataviz-assistant).
+- The assistant sees the filters and chart selections you have applied. When it
+  gives you numbers, it uses the same filters, or says which one it left out.
+- When the assistant changes a chart, its step says what the chart shows
+  afterwards, for example *It will show total Revenue by City instead of total
+  Revenue and average Quantity by City*, and names anything the chart no longer
+  shows. The assistant cannot change a calculation or a saved metric; change
+  those yourself in the chart editor.
+- While a change is being saved, an **Assistant** pointer sits on the widget it
+  changes, labelled **Saving…**. It then shows **Saved**, or **Not saved** when
+  the save failed; nothing changes on the dashboard unless it was saved. The
+  pointer never takes your keyboard focus, and with reduced motion it appears
+  in place instead of moving across the page.
+- When the assistant saves a change, the canvas reloads the new revision on its
+  own, and the widgets it changed are marked **Changed by the assistant** for a
+  few seconds. A rearrangement of many widgets is saved as one version, listed
+  under **Version history**.
+- In a new chat, the assistant opens the dashboard beside the chat, or one you
+  name, at its latest version, checked with your current role. If several
+  dashboards match the name, it lists them and asks which one you mean. If the
+  page you were on was removed meanwhile, it says so and asks which page to
+  use.
 
 ## Limits and errors
 
@@ -448,7 +450,7 @@ an administrator, can remove a schedule.
   when a selection or filter uses a field that changed. If you can edit
   the dashboard, open the **Data** tab to review the dataset; otherwise ask
   someone who can.
-- "Someone else changed this dashboard" means another person or Neva saved
+- "Someone else changed this dashboard" means another person or the assistant saved
   first. The latest version is loaded; make your change again.
 - If the connection drops while a change is saving, Nova checks whether the
   change was saved before deciding what to show. A saved change stays on the

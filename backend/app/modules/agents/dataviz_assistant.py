@@ -13,8 +13,8 @@ caller, not from an agent grant:
   (``semantic_view_service.get_active_for_agent``); Ranger decides the rows;
 * its tools are fixed: governed semantic queries, change diagnosis, metrics,
   inline charts, the ontology, and the native dashboard tools that read and
-  change Dataviz dashboards as the caller (every change is approved by the
-  user and committed as a new revision).
+  change Dataviz dashboards as the caller (every change is made without
+  asking, audited, and committed as a new revision).
 
 Its instructions ask for answers that cover what, who, when, where, why and
 how wherever the data supports it, and say plainly when a part cannot be

@@ -48,6 +48,8 @@ class ToolCallView(BaseModel):
     tool_call_id: str
     tool_name: str
     skill_name: str | None = None
+    #: A plain label for a tool whose identifier is opaque (an MCP connector tool).
+    display_name: str | None = None
     sql_preview: str = ""
     classification: ToolClassification = "read_only"
     status: ToolStatus = "pending"

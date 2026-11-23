@@ -227,11 +227,21 @@ def is_percent_column(column: str, table: dict[str, Any] | None = None) -> bool:
     return bool(set(str(column).casefold().split("_")) & _PERCENT_IDENTIFIERS)
 
 
-def _row_labels(row: list[Any] | tuple[Any, ...]) -> frozenset[str]:
+#: Columns whose text is a unit ("IDR", "kg"), not the name of a row: "IDR 29,298,000"
+#: states an amount in rupiah, it does not point at the row that holds "IDR".
+_UNIT_LABEL_COLUMNS = frozenset({"currency", "currency_code", "unit", "units", "uom"})
+
+
+def _row_labels(
+    row: list[Any] | tuple[Any, ...], columns: list[str] | None = None,
+) -> frozenset[str]:
     return frozenset(
-        str(cell).strip().casefold() for cell in row
+        str(cell).strip().casefold()
+        for index, cell in enumerate(row)
         if isinstance(cell, str) and _number(cell) is None and _percent_cell(cell) is None
         and 1 < len(cell.strip()) <= 80
+        and not (columns and index < len(columns)
+                 and columns[index].casefold() in _UNIT_LABEL_COLUMNS)
     )
 
 
@@ -252,7 +262,7 @@ def _cells(tables: dict[str, dict[str, Any]]) -> list[_Cell]:
         for row in (table.get("rows") or [])[:200]:
             if not isinstance(row, (list, tuple)):
                 continue
-            labels = _row_labels(row)
+            labels = _row_labels(row, columns)
             for column, cell in zip(columns, row, strict=False):
                 explicit = _percent_cell(cell)
                 if explicit is not None:
@@ -466,7 +476,7 @@ def _derivations(tables: dict[str, dict[str, Any]]) -> list[_Derived]:
                 row for row in (table.get("rows") or [])[:_DERIVE_ROWS]
                 if isinstance(row, (list, tuple))
             ]
-            labels = [_row_labels(row) for row in rows]
+            labels = [_row_labels(row, columns) for row in rows]
             shared = frozenset.intersection(*labels) if labels else frozenset()
             numeric: dict[str, list[Decimal]] = {}
             for index, column in enumerate(columns[:_DERIVE_COLUMNS * 2]):

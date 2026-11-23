@@ -54,6 +54,8 @@ export type RailStep = {
   label: string;
   /** Name of a loaded skill, when this is a skill tool row. */
   skillName?: string;
+  /** A plain label for a tool whose identifier is opaque (an MCP tool). */
+  displayName?: string;
   /** The line the user reads. */
   text: string;
   status: ToolCallStatus | "running" | "done";

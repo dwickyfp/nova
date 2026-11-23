@@ -7,7 +7,7 @@ description: Understand drafts, publications, permissions and change receipts in
 
 Nova stores dataset, chart and dashboard definitions with a history of their
 changes. The [native dashboard editor](/docs/dataviz/native-dashboards) in
-Dataviz and Neva both use these records; integrations can use them too.
+Dataviz and the Dataviz assistant both use these records; integrations can use them too.
 Dashboards from the earlier BI tool were not converted.
 
 ## Table and view datasets

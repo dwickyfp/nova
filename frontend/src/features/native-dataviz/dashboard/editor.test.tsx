@@ -253,7 +253,7 @@ describe('native dashboard editor', () => {
     revision = 7
     window.dispatchEvent(new CustomEvent(NATIVE_DASHBOARD_CHANGED, { detail: { dashboard_id: DASHBOARD, revision: 7 } }))
     await expect.element(screen.getByText('Neva wrote this')).toBeVisible()
-    await expect.element(screen.getByText('Changed by Neva')).toBeVisible()
+    await expect.element(screen.getByText('Changed by the assistant')).toBeVisible()
     expect(screen.container.querySelectorAll('[role="status"]').length).toBeGreaterThan(0)
   })
 
