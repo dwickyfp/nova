@@ -1840,6 +1840,414 @@
           }
         }
       ]
+    },
+    {
+      "name": "live model reasoning, narration and a verified answer, interleaved",
+      "run_id": "run-e",
+      "role": "ANALYST",
+      "v1": [
+        {
+          "event": "thinking",
+          "data": {
+            "phase": "act",
+            "text": "Choosing the next action",
+            "status": "running"
+          }
+        },
+        {
+          "event": "model_reasoning",
+          "data": {
+            "text": "The question asks for the top customers, ",
+            "status": "running"
+          }
+        },
+        {
+          "event": "model_reasoning",
+          "data": {
+            "text": "so the orders view answers it.",
+            "status": "running"
+          }
+        },
+        {
+          "event": "model_reasoning",
+          "data": {
+            "text": "",
+            "status": "done"
+          }
+        },
+        {
+          "event": "narration",
+          "data": {
+            "text": "I will read the orders view first."
+          }
+        },
+        {
+          "event": "thinking",
+          "data": {
+            "phase": "act",
+            "text": "Using the semantic view",
+            "status": "done"
+          }
+        },
+        {
+          "event": "tool_call",
+          "data": {
+            "tool_call_id": "c1",
+            "tool_name": "query_execute",
+            "sql_preview": "SELECT 1",
+            "classification": "read_only",
+            "status": "running"
+          }
+        },
+        {
+          "event": "tool_status",
+          "data": {
+            "tool_call_id": "c1",
+            "status": "done"
+          }
+        },
+        {
+          "event": "thinking",
+          "data": {
+            "phase": "compose",
+            "text": "Composing from verified evidence",
+            "status": "running"
+          }
+        },
+        {
+          "event": "model_reasoning",
+          "data": {
+            "text": "Three customers lead.",
+            "status": "running"
+          }
+        },
+        {
+          "event": "model_reasoning",
+          "data": {
+            "text": "",
+            "status": "done"
+          }
+        },
+        {
+          "event": "thinking",
+          "data": {
+            "phase": "answer",
+            "text": "Writing the answer",
+            "status": "done"
+          }
+        },
+        {
+          "event": "text_delta",
+          "data": {
+            "text": "Acme leads with 120 orders. ",
+            "content_index": 0,
+            "content_id": "run-e:0",
+            "verification": "verified"
+          }
+        },
+        {
+          "event": "text_delta",
+          "data": {
+            "text": "Globex follows.",
+            "content_index": 0,
+            "content_id": "run-e:0",
+            "verification": "verified"
+          }
+        },
+        {
+          "event": "content_block_done",
+          "data": {
+            "content_index": 0,
+            "content_id": "run-e:0"
+          }
+        },
+        {
+          "event": "done",
+          "data": {
+            "message_id": "m4",
+            "finish_reason": "stop"
+          }
+        }
+      ],
+      "v2": [
+        {
+          "event": "run.started",
+          "data": {
+            "protocol_version": 2,
+            "role": "ANALYST",
+            "run_id": "run-e",
+            "seq": 0
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-e#0",
+            "type": "reasoning",
+            "source": "nova",
+            "phase": "act",
+            "text": "Choosing the next action",
+            "run_id": "run-e",
+            "seq": 1
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-e#0",
+            "state": "done",
+            "run_id": "run-e",
+            "seq": 2
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-e#1",
+            "type": "reasoning",
+            "source": "model",
+            "text": "",
+            "run_id": "run-e",
+            "seq": 3
+          }
+        },
+        {
+          "event": "part.delta",
+          "data": {
+            "part_id": "run-e#1",
+            "text": "The question asks for the top customers, ",
+            "run_id": "run-e",
+            "seq": 4
+          }
+        },
+        {
+          "event": "part.delta",
+          "data": {
+            "part_id": "run-e#1",
+            "text": "so the orders view answers it.",
+            "run_id": "run-e",
+            "seq": 5
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-e#1",
+            "state": "done",
+            "run_id": "run-e",
+            "seq": 6
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-e#2",
+            "type": "reasoning",
+            "source": "narration",
+            "text": "",
+            "run_id": "run-e",
+            "seq": 7
+          }
+        },
+        {
+          "event": "part.delta",
+          "data": {
+            "part_id": "run-e#2",
+            "text": "I will read the orders view first.",
+            "run_id": "run-e",
+            "seq": 8
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-e#2",
+            "state": "done",
+            "run_id": "run-e",
+            "seq": 9
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-e#3",
+            "type": "reasoning",
+            "source": "nova",
+            "phase": "act",
+            "text": "Using the semantic view",
+            "run_id": "run-e",
+            "seq": 10
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-e#3",
+            "state": "done",
+            "run_id": "run-e",
+            "seq": 11
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-e#4",
+            "type": "tool",
+            "tool_call_id": "c1",
+            "tool_name": "query_execute",
+            "classification": "read_only",
+            "run_id": "run-e",
+            "seq": 12
+          }
+        },
+        {
+          "event": "tool.status",
+          "data": {
+            "part_id": "run-e#4",
+            "status": "running",
+            "preview": "SELECT 1",
+            "run_id": "run-e",
+            "seq": 13
+          }
+        },
+        {
+          "event": "tool.status",
+          "data": {
+            "part_id": "run-e#4",
+            "status": "done",
+            "run_id": "run-e",
+            "seq": 14
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-e#4",
+            "state": "done",
+            "run_id": "run-e",
+            "seq": 15
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-e#5",
+            "type": "reasoning",
+            "source": "nova",
+            "phase": "compose",
+            "text": "Composing from verified evidence",
+            "run_id": "run-e",
+            "seq": 16
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-e#5",
+            "state": "done",
+            "run_id": "run-e",
+            "seq": 17
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-e#6",
+            "type": "reasoning",
+            "source": "model",
+            "text": "",
+            "run_id": "run-e",
+            "seq": 18
+          }
+        },
+        {
+          "event": "part.delta",
+          "data": {
+            "part_id": "run-e#6",
+            "text": "Three customers lead.",
+            "run_id": "run-e",
+            "seq": 19
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-e#6",
+            "state": "done",
+            "run_id": "run-e",
+            "seq": 20
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-e#7",
+            "type": "reasoning",
+            "source": "nova",
+            "phase": "answer",
+            "text": "Writing the answer",
+            "run_id": "run-e",
+            "seq": 21
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-e#7",
+            "state": "done",
+            "run_id": "run-e",
+            "seq": 22
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-e#8",
+            "type": "text",
+            "content_index": 0,
+            "content_id": "run-e:0",
+            "verification": "verified",
+            "run_id": "run-e",
+            "seq": 23
+          }
+        },
+        {
+          "event": "part.delta",
+          "data": {
+            "part_id": "run-e#8",
+            "text": "Acme leads with 120 orders. ",
+            "run_id": "run-e",
+            "seq": 24
+          }
+        },
+        {
+          "event": "part.delta",
+          "data": {
+            "part_id": "run-e#8",
+            "text": "Globex follows.",
+            "run_id": "run-e",
+            "seq": 25
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-e#8",
+            "state": "done",
+            "run_id": "run-e",
+            "seq": 26
+          }
+        },
+        {
+          "event": "run.finished",
+          "data": {
+            "message_id": "m4",
+            "finish_reason": "stop",
+            "run_id": "run-e",
+            "seq": 27
+          }
+        }
+      ]
     }
   ]
 }

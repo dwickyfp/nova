@@ -197,6 +197,33 @@ CASES: list[dict[str, Any]] = [
             _f("done", message_id="", finish_reason="cancelled"),
         ],
     },
+    {
+        "name": "live model reasoning, narration and a verified answer, interleaved",
+        "run_id": "run-e",
+        "role": "ANALYST",
+        "v1": [
+            _f("thinking", phase="act", text="Choosing the next action", status="running"),
+            _f("model_reasoning", text="The question asks for the top customers, ",
+               status="running"),
+            _f("model_reasoning", text="so the orders view answers it.", status="running"),
+            _f("model_reasoning", text="", status="done"),
+            _f("narration", text="I will read the orders view first."),
+            _f("thinking", phase="act", text="Using the semantic view", status="done"),
+            _call("c1", "running"),
+            _f("tool_status", tool_call_id="c1", status="done"),
+            _f("thinking", phase="compose", text="Composing from verified evidence",
+               status="running"),
+            _f("model_reasoning", text="Three customers lead.", status="running"),
+            _f("model_reasoning", text="", status="done"),
+            _f("thinking", phase="answer", text="Writing the answer", status="done"),
+            _f("text_delta", text="Acme leads with 120 orders. ", content_index=0,
+               content_id="run-e:0", verification="verified"),
+            _f("text_delta", text="Globex follows.", content_index=0, content_id="run-e:0",
+               verification="verified"),
+            _f("content_block_done", content_index=0, content_id="run-e:0"),
+            _f("done", message_id="m4", finish_reason="stop"),
+        ],
+    },
 ]
 
 
@@ -417,6 +444,44 @@ def test_hidden_part_types_leave_the_journal_with_all_their_events() -> None:
     assert "Adjust" not in text and '"type": "ui"' not in text
     assert len(hidden["events"]) == len(step["events"]) - 3  # start, delta, end
     assert without_part_types({"kind": "tool"}, {"ui"}) == {"kind": "tool"}
+
+
+def test_model_reasoning_streams_as_its_own_part_between_tools_and_answer() -> None:
+    records = encode_case(CASES[3])
+    parts = {
+        r["data"]["part_id"]: r["data"] for r in records if r["event"] == "part.start"
+    }
+    order = [(data["type"], data.get("source")) for data in parts.values()]
+    assert order == [
+        ("reasoning", "nova"), ("reasoning", "model"), ("reasoning", "narration"),
+        ("reasoning", "nova"), ("tool", None), ("reasoning", "nova"), ("reasoning", "model"),
+        ("reasoning", "nova"), ("text", None),
+    ]
+    model = [part_id for part_id, data in parts.items() if data.get("source") == "model"]
+    deltas = [
+        r["data"]["text"] for r in records
+        if r["event"] == "part.delta" and r["data"]["part_id"] == model[0]
+    ]
+    assert "".join(deltas) == (
+        "The question asks for the top customers, so the orders view answers it."
+    )
+    # The reasoning part closes when its model call ends, before the next activity.
+    ends = [r["data"]["part_id"] for r in records if r["event"] == "part.end"]
+    assert ends.index(model[0]) < ends.index(
+        next(pid for pid, data in parts.items() if data.get("source") == "narration")
+    )
+    text = next(data for data in parts.values() if data["type"] == "text")
+    assert text["verification"] == "verified"
+
+
+def test_model_reasoning_without_text_opens_nothing() -> None:
+    encoder = StudioStreamEncoder("run")
+    assert encoder.translate(
+        'event: model_reasoning\ndata: {"text":"","status":"running"}\n\n'
+    ) == []
+    assert encoder.translate(
+        'event: model_reasoning\ndata: {"text":"","status":"done"}\n\n'
+    ) == []
 
 
 def test_unknown_and_v1_only_frames_are_never_passed_on_unnumbered() -> None:

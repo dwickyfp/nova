@@ -9,6 +9,11 @@ Wire format: ``event: <name>\\ndata: <json>\\n\\n``. Payloads are JSON objects.
  * ``text_delta``  — ``{"text": "..."}``
  * ``thinking``    — ``{"phase", "text", "status"}`` live agentic step
  * ``plan``        — ``{"steps": [{"id", "text", "status"}]}`` the task plan
+ * ``model_reasoning`` — ``{"text", "status"}`` a fragment of the provider's
+   reasoning summary for the current model call, redacted; ``status:"done"``
+   closes it. Providers that send no reasoning produce none.
+ * ``narration``   — ``{"text"}`` what the model said before it called a tool,
+   redacted and without figures (those are only stated in a verified answer)
  * ``tool_call``   — a ``ToolCallView`` with ``status:"pending"``
  * ``tool_progress`` — a live, redacted stage inside one tool execution
  * ``tool_status`` — ``{"tool_call_id", "status"}``
@@ -21,8 +26,11 @@ Wire format: ``event: <name>\\ndata: <json>\\n\\n``. Payloads are JSON objects.
 
 ``thinking`` and ``plan`` make the agentic work transparent: the client shows the
 plan the assistant adopted, then a running commentary of the steps it takes
-(loading a skill, running a query). They carry **no** model chain-of-thought —
-only Nova's own phase labels and short, redacted status lines.
+(loading a skill, running a query). They carry only Nova's own phase labels and
+short, redacted status lines. ``model_reasoning`` carries the reasoning summary
+a provider chooses to stream, passed through the same credential screen as the
+answer; it is shown as activity, is never evidence, and is never sent back to
+the model.
 
 Consent is **not** carried on this stream: the client resolves a pending call
 with a separate HTTP request, and the server then emits ``tool_status`` on the
@@ -131,8 +139,13 @@ def text_delta(
     *,
     content_index: int | None = None,
     content_id: str | None = None,
+    verification: str | None = None,
 ) -> str:
     """A text fragment in the ordered response stream.
+
+    ``verification`` is ``"verified"`` when every figure in the answer was
+    checked against the turn's results, or ``"adjusted"`` when unsupported
+    figures were removed or replaced before the text was sent.
 
     ``content_index`` is the authored position in the final response, not the
     time at which the bytes became available.  Older callers may omit the
@@ -140,6 +153,8 @@ def text_delta(
     """
     payload: dict[str, Any] = {"text": text}
     _with_content_position(payload, content_index, content_id)
+    if verification is not None:
+        payload["verification"] = verification
     return format_sse(EVENT_TEXT_DELTA, payload)
 
 
@@ -155,6 +170,20 @@ def thinking(phase: str, text: str, status: str = "running") -> str:
     thought.
     """
     return format_sse(EVENT_THINKING, {"phase": phase, "text": text, "status": status})
+
+
+EVENT_MODEL_REASONING = "model_reasoning"
+EVENT_NARRATION = "narration"
+
+
+def model_reasoning(text: str, status: str = "running") -> str:
+    """A redacted fragment of the provider's reasoning summary, or its end."""
+    return format_sse(EVENT_MODEL_REASONING, {"text": text, "status": status})
+
+
+def narration(text: str) -> str:
+    """What the model said before calling a tool, redacted and without figures."""
+    return format_sse(EVENT_NARRATION, {"text": text})
 
 
 def plan(steps: list[dict[str, Any]]) -> str:

@@ -23,6 +23,7 @@ import type { StudioEvent } from "./protocol";
 type Case = { name: string; run_id: string; role: string; v1: V1Frame[]; v2: V2Record[] };
 const cases = contract.cases as unknown as Case[];
 const [answerCase, roleCase, interruptedCase] = cases;
+const reasoningCase = cases.find((entry) => entry.name.startsWith("live model reasoning"))!;
 
 function live(events: StudioEvent[], id = "t"): TranscriptTurn {
   return events.reduce(
@@ -153,7 +154,12 @@ describe("turn reducer", () => {
   });
 
   it("produces the same turn live and from the stored journal", () => {
-    for (const [item, outcome] of [[answerCase, "stop"], [roleCase, "stop"], [interruptedCase, "interrupted"]] as const) {
+    for (const [item, outcome] of [
+      [answerCase, "stop"],
+      [roleCase, "stop"],
+      [interruptedCase, "interrupted"],
+      [reasoningCase, "stop"],
+    ] as const) {
       const streamed = live(parsedEvents(item.v2));
       const reopened = replayed(storedMessage(item, outcome));
       expect(view(reopened), item.name).toEqual(view(streamed));
@@ -191,6 +197,38 @@ describe("turn reducer", () => {
     expect(turn.error).toBe("Progress could not be saved.");
     expect(turn.state).toBe("error");
     expect(turn.content.find((item) => item.type === "ui")?.complete).toBe(false);
+  });
+
+  it("interleaves model reasoning and narration with tools, and keeps the answer's verified state", () => {
+    const turn = live(parsedEvents(reasoningCase.v2));
+    const reasoning = turn.run.parts.flatMap((part) => (part.type === "reasoning" ? [[part.source, part.text]] : []));
+    expect(reasoning).toEqual([
+      ["nova", "Choosing the next action"],
+      ["model", "The question asks for the top customers, so the orders view answers it."],
+      ["narration", "I will read the orders view first."],
+      ["nova", "Using the semantic view"],
+      ["nova", "Composing from verified evidence"],
+      ["model", "Three customers lead."],
+      ["nova", "Writing the answer"],
+    ]);
+    // Reasoning sits between the tool and the answer, not above the whole turn.
+    expect(turnSegments(turn.run.parts).map((segment) => segment.kind)).toEqual(["work", "content"]);
+    const rows = turn.steps.map((step) => [step.label, step.text]);
+    expect(rows).toContainEqual(["model", "Model reasoning"]);
+    expect(rows).toContainEqual(["narration", "I will read the orders view first."]);
+    expect(turn.steps.find((step) => step.label === "model")?.body).toBe(
+      "The question asks for the top customers, so the orders view answers it.",
+    );
+    expect(turn.content).toMatchObject([{ type: "text", verification: "verified", complete: true }]);
+    expect(turn.answer).toBe("Acme leads with 120 orders. Globex follows.");
+  });
+
+  it("shows a reasoning part as it grows, whether it came in one piece or many", () => {
+    const events = parsedEvents(reasoningCase.v2);
+    const modelStart = events.findIndex((event) => event.type === "part.start" && event.part.type === "reasoning" && event.part.source === "model");
+    const mid = reduceEvents(events.slice(0, modelStart + 2));
+    const part = mid.parts[mid.parts.length - 1];
+    expect(part).toMatchObject({ type: "reasoning", source: "model", state: "streaming", text: "The question asks for the top customers, " });
   });
 
   it("keeps a Mission run's call apart from this run's call with the same id", () => {

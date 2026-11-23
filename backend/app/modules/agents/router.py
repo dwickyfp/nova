@@ -460,6 +460,10 @@ async def _generate_thread_title(
     return _clean_title(message.get("content") or "", question)
 
 
+#: How long the end of a first turn waits for its thread title.
+THREAD_TITLE_WAIT_SECONDS = 10.0
+
+
 def _text_from_frame(frame: str) -> str:
     """Extract ``text`` from a ``text_delta`` SSE frame for the transcript."""
     import json
@@ -2289,17 +2293,23 @@ async def send_agent_message(
     # The first question names the conversation. A thread created as "New chat"
     # and never renamed is unfindable in a history list. The agent's model
     # summarizes the question into a concise title; if the call is unavailable,
-    # the bounded question itself is the honest fallback.
+    # the bounded question itself is the honest fallback. The title is written
+    # while the turn runs, so its model call does not delay the first activity,
+    # and it is settled before the turn ends.
+    title_task: asyncio.Task[None] | None = None
     if not any(row["role"] == "user" for row in history):
-        try:
-            title = await _generate_thread_title(
-                body.content or attachments[0]["name"],
-                provider_id=agent.get("model_provider_id"),
-                model=agent.get("model_name"),
-            )
-            await assistant_repository.rename_thread(thread_id, title, user_name=user_name)
-        except Exception:  # noqa: BLE001 - a title is not worth failing a turn
-            logger.warning("Could not set the thread title")
+        async def name_thread() -> None:
+            try:
+                title = await _generate_thread_title(
+                    body.content or attachments[0]["name"],
+                    provider_id=agent.get("model_provider_id"),
+                    model=agent.get("model_name"),
+                )
+                await assistant_repository.rename_thread(thread_id, title, user_name=user_name)
+            except Exception:  # noqa: BLE001 - a title is not worth failing a turn
+                logger.warning("Could not set the thread title")
+
+        title_task = asyncio.create_task(name_thread())
 
     context = LoopContext(
         user_name=user_name,
@@ -2482,6 +2492,8 @@ async def send_agent_message(
             done_frame = events.done(reply_message_id, finish_reason="cancelled")
         except GeneratorExit:
             finish_reason = interruption_reason or "cancelled"
+            if title_task is not None:
+                title_task.cancel()
             raise
         except Exception:  # noqa: BLE001 - never leak an internal trace
             finish_reason = "error"
@@ -2539,6 +2551,13 @@ async def send_agent_message(
                 except Exception as exc:
                     logger.warning("Could not persist the agent reply (%s)", type(exc).__name__)
                     raise RuntimeError("Agent reply persistence failed") from None
+        if title_task is not None:
+            # The conversation list reads the title once the turn ends.
+            try:
+                async with asyncio.timeout(THREAD_TITLE_WAIT_SECONDS):
+                    await asyncio.shield(title_task)
+            except TimeoutError:
+                title_task.cancel()
         if done_frame is not None:
             for encoded in encoder.translate(done_frame):
                 yield encoded

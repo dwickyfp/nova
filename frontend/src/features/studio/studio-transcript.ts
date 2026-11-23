@@ -18,6 +18,7 @@ import {
   type ToolEvidence,
 } from "./evidence-health";
 import { parseStudioRecord, PROTOCOL_VERSION, type StudioEvent } from "./runtime/protocol";
+import { MODEL_REASONING_LABEL } from "./rail-model";
 import {
   emptyRunState,
   isContentPart,
@@ -54,6 +55,8 @@ export type OrderedContent =
       type: "text";
       text: string;
       complete: boolean;
+      /** Sent after its figures were checked against the turn's results. */
+      verification?: import("./runtime/protocol").TextVerification;
     }
   | {
       id: string;
@@ -199,6 +202,19 @@ export function stepsFromParts(parts: TurnPart[]): RailStep[] {
         steps.push(part.step);
         break;
       case "reasoning":
+        if (part.source === "model" || part.source === "narration") {
+          // The model's own words: its reasoning summary under one label with a
+          // preview, or its narration before a tool as the row's text.
+          steps.push({
+            id: part.id,
+            kind: "thinking",
+            label: part.source,
+            text: part.source === "model" ? MODEL_REASONING_LABEL : part.text,
+            status: part.state === "streaming" ? "running" : "done",
+            body: part.text,
+          });
+          break;
+        }
         steps.push(
           part.phase === "plan" && part.planSteps !== undefined
             ? {
@@ -250,7 +266,14 @@ export function contentFromParts(parts: TurnPart[]): OrderedContent[] {
     const index = content.length;
     switch (part.type) {
       case "text":
-        content.push({ id, index, type: "text", text: part.text, complete: part.state !== "streaming" });
+        content.push({
+          id,
+          index,
+          type: "text",
+          text: part.text,
+          complete: part.state !== "streaming",
+          ...(part.verification ? { verification: part.verification } : {}),
+        });
         break;
       case "ui":
         // An interactive block counts as complete only when its program was sealed.

@@ -1,3 +1,5 @@
+import { useMemo } from "react";
+import { ShieldCheck } from "lucide-react";
 import { DashboardArtifactCard } from "@/features/viz/dashboard-artifact-card";
 import { Markdown } from "@/features/assistant/markdown";
 import type { TurnContext } from "@/features/assistant/stream-client";
@@ -6,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { CitationList, ResultChart } from "./result-cards";
 import { ResultTable } from "./result-table";
 import { TextShimmer } from "./text-shimmer";
+import { StreamingMarkdown } from "./streaming-markdown";
 import type { OrderedContent, TranscriptTurn } from "./studio-chat";
 import { AddToDatavizButton } from "./dataviz/add-to-dataviz";
 import type { DatavizLocator } from "./dataviz/api";
@@ -76,9 +79,9 @@ export function TurnContent({
     ...uiCalls,
     ...ordered.flatMap((item) => (item.type === "chart" ? drawnFrom(item.block) : [])),
   ]);
-  const representedTables = ordered.flatMap((item) =>
-    item.type === "table" ? [item.block] : [],
-  );
+  // Stable while the tables are unchanged, so finished Markdown blocks stay memoised.
+  const tableKey = ordered.flatMap((item) => (item.type === "table" ? [item.id] : [])).join("|");
+  const representedTables = useMemo(() => ordered.flatMap((item) => (item.type === "table" ? [item.block] : [])), [tableKey]);
   const locate = (contentId: string): DatavizLocator | null =>
     datavizThreadId && turn.messageId && turn.state === "done"
       ? { thread_id: datavizThreadId, message_id: turn.messageId, content_id: contentId }
@@ -153,16 +156,17 @@ export function TurnContent({
         >
           {item.type === "text" ? (
             <div className="nova-chat-item min-w-0 max-w-3xl text-sm">
-              <Markdown
+              <StreamingMarkdown
+                text={item.text}
+                animate={running}
                 offline
                 runContext={runContext}
                 representedTables={representedTables}
-              >
-                {item.text}
-              </Markdown>
+              />
               {running && !item.complete && itemIndex === ordered.length - 1 ? (
                 <TextShimmer className="mt-1">Writing</TextShimmer>
               ) : null}
+              {item.verification ? <VerifiedNote state={item.verification} /> : null}
             </div>
           ) : item.type === "dashboard" ? (
             <DashboardArtifactCard block={item.block} />
@@ -210,6 +214,18 @@ export function TurnContent({
         </SelectableOutput>
       ))}
     </div>
+  );
+}
+
+/** The answer was sent after its figures were checked against the turn's results. */
+function VerifiedNote({ state }: { state: "verified" | "adjusted" }) {
+  return (
+    <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="answer-verified">
+      <ShieldCheck aria-hidden="true" className="size-3.5 shrink-0" />
+      {state === "verified"
+        ? "Figures checked against the results"
+        : "Figures checked against the results; unsupported ones were left out"}
+    </p>
   );
 }
 

@@ -317,7 +317,8 @@ describe("one table per query result", () => {
     pending.state = "streaming";
     pending.content[0].complete = false;
     const screen = await render(<TurnContent turn={pending} running />);
-    expect(screen.container.querySelectorAll("table")).toHaveLength(1);
+    // Text watched as it streams is revealed progressively.
+    await expect.poll(() => screen.container.querySelectorAll("table").length).toBe(1);
     await expect
       .element(screen.getByRole("textbox", { name: "Filter rows" }))
       .not.toBeInTheDocument();

@@ -27,10 +27,17 @@ Event                  Payload
 ``ping``               ``{}``
 =====================  =====================================================
 
-Part types are ``reasoning`` (``source: "nova"`` phase labels in this
-protocol; provider reasoning is not read), ``text``, ``tool``, ``guard``,
-``hitl_request`` and the authored content blocks ``table``, ``chart``,
-``citation``, ``dashboard`` and ``ui``.
+Part types are ``reasoning``, ``text``, ``tool``, ``guard``, ``hitl_request``
+and the authored content blocks ``table``, ``chart``, ``citation``,
+``dashboard`` and ``ui``.
+
+A ``reasoning`` part has a ``source``: ``nova`` for Nova's own phase labels,
+``model`` for the provider's reasoning summary (opened with empty text, grown
+by ``part.delta`` while the model call runs, sealed when it ends; none for a
+provider that sends no reasoning) and ``narration`` for what the model said
+before calling a tool. A ``text`` part may carry ``verification``
+(``verified`` or ``adjusted``): the answer text is sent only after its figures
+were checked against the turn's results.
 
 A ``hitl_request`` part is the turn asking its user (``kind`` approval,
 question, form or choice). It opens where the request was made, is followed by
@@ -82,6 +89,7 @@ V1_ONLY = frozenset({
     events.EVENT_CHART, events.EVENT_CITATION, "ui", "ui_delta", "dashboard", "guard",
     "role_changed", "evidence_health", "evidence_envelope",
     events.EVENT_INPUT_REQUIRED, events.EVENT_INPUT_RESOLVED,
+    events.EVENT_MODEL_REASONING, events.EVENT_NARRATION,
 })
 
 #: Frames that mark a durable boundary: the route flushes its journal batch.
@@ -169,6 +177,7 @@ class StudioStreamEncoder:
         self._inputs: dict[tuple[str, str], str] = {}
         self._open: dict[str, str] = {}  # part_id -> type, in opening order
         self._reasoning: tuple[str, str, str] | None = None  # part_id, phase, text
+        self._model: str | None = None  # the open provider reasoning part
         self._plan: str | None = None
         self._plan_text = ""
         self.started = False
@@ -251,6 +260,10 @@ class StudioStreamEncoder:
             return [self._frame(name, body)]
         if name == events.EVENT_THINKING:
             return self._thinking(body)
+        if name == events.EVENT_MODEL_REASONING:
+            return self._model_reasoning(body)
+        if name == events.EVENT_NARRATION:
+            return self._narration(body)
         if name == events.EVENT_PLAN:
             return self._plan_frames(body)
         if name == events.EVENT_TOOL_CALL:
@@ -311,6 +324,7 @@ class StudioStreamEncoder:
             "error" if reason in {"error", "interrupted"} else "done"
         )
         self._reasoning = None
+        self._model = None
         frames: list[str] = []
         waiting = {
             part_id for key, part_id in self._tools.items()
@@ -368,6 +382,29 @@ class StudioStreamEncoder:
         else:
             self._reasoning = (part_id, phase, text)
         return frames
+
+    def _model_reasoning(self, body: dict[str, Any]) -> list[str]:
+        text = str(body.get("text") or "")
+        if str(body.get("status") or "running") == "done":
+            part_id, self._model = self._model, None
+            return [self._end(part_id)] if part_id is not None and part_id in self._open else []
+        if not text:
+            return []
+        frames: list[str] = []
+        if self._model is None or self._model not in self._open:
+            frames.extend(self._close_reasoning())
+            self._model, opened = self._start("reasoning", source="model", text="")
+            frames.append(opened)
+        frames.append(self._delta(self._model, text))
+        return frames
+
+    def _narration(self, body: dict[str, Any]) -> list[str]:
+        text = str(body.get("text") or "")
+        if not text:
+            return []
+        frames = self._close_reasoning()
+        part_id, opened = self._start("reasoning", source="narration", text="")
+        return [*frames, opened, self._delta(part_id, text), self._end(part_id)]
 
     def _plan_frames(self, body: dict[str, Any]) -> list[str]:
         raw = body.get("steps")
@@ -481,6 +518,8 @@ class StudioStreamEncoder:
         if part_id is None or part_id not in self._open:
             frames.extend(self._close_reasoning())
             fields = _position(body)
+            if body.get("verification") in {"verified", "adjusted"}:
+                fields["verification"] = body["verification"]
             part_id, opened = self._start("text", **fields)
             self._content[content_id] = part_id
             frames.append(opened)
@@ -560,6 +599,7 @@ class StudioStreamEncoder:
             self._end(part_id, "cancelled") for part_id in list(self._open)
         ]
         self._reasoning = None
+        self._model = None
         self._plan = None
         self._tools.clear()
         self._tool_state.clear()

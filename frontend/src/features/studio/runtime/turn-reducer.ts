@@ -22,7 +22,7 @@ import type { DashboardArtifactBlock } from "@/features/viz/types";
 import type { UiBlock } from "../intelligent-ui/types";
 import type { RailStep } from "../thought-turn";
 import type { HitlKind, HitlRequestSpec, HitlStatus } from "./hitl/types";
-import type { PartEndState, StudioEvent } from "./protocol";
+import type { PartEndState, ReasoningSource, StudioEvent, TextVerification } from "./protocol";
 
 export type PartState = "streaming" | PartEndState;
 
@@ -36,14 +36,21 @@ type PartBase = {
 
 export type ReasoningPart = PartBase & {
   type: "reasoning";
-  /** `nova` = Nova's own phase label; `model` = provider reasoning summary. */
-  source: "nova" | "model";
+  /** `nova` = Nova's own phase label; `model` = provider reasoning summary; `narration` = the model's words before a tool. */
+  source: ReasoningSource;
   phase?: ThinkingPhase;
   text: string;
   planSteps?: number;
 };
 
-export type TextPart = PartBase & { type: "text"; text: string; contentIndex?: number; contentId?: string };
+export type TextPart = PartBase & {
+  type: "text";
+  text: string;
+  contentIndex?: number;
+  contentId?: string;
+  /** Set when the answer was sent after its figures were checked. */
+  verification?: TextVerification;
+};
 
 export type ToolPart = PartBase & {
   type: "tool";

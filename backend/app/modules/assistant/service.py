@@ -87,6 +87,7 @@ from app.modules.assistant.provider_capabilities import (
 from app.modules.assistant.schemas import ToolCallView
 from app.modules.assistant.security import secured_thread, session_security
 from app.modules.assistant.state import AssistantThread
+from app.modules.assistant.stream_guard import LiveReasoning
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome, ToolRegistry
 from app.modules.assistant.tools.client_capability import SENT_PLAINLY
 from app.modules.assistant.workflow_provenance import workflow_provenance
@@ -1480,13 +1481,12 @@ class AssistantLoop:
             )
 
             # Buffer the model's text for this iteration and only emit it once we
-            # know whether a tool call follows. A model often narrates before it
-            # acts ("The top customers are...", then a tool call, then it repeats
-            # itself in the final answer). Streaming the narration would duplicate
-            # it in the transcript, so provisional text is held back: it is
-            # released as the answer only when the iteration makes no tool call,
-            # and otherwise dropped (its content is superseded by the final
-            # answer). The final assembled message drives the branch below.
+            # know whether a tool call follows. Until then it may be the answer,
+            # and an answer is shown only after its figures were verified. When a
+            # tool call follows, the text is narration: it is shown as activity
+            # without figures, so nothing unverified or later repeated in the
+            # answer reaches the screen. The provider's reasoning summary is not
+            # an answer and streams live, redacted, as it arrives.
             message: dict[str, Any] | None = None
             buffered_text: list[str] = []
             provider_step: dict[str, Any] | None = None
@@ -1584,12 +1584,25 @@ class AssistantLoop:
 
                     # A model call ends with the turn's own time budget, so a slow
                     # provider cannot keep the person waiting past it.
+                    live_reasoning = LiveReasoning()
                     async with asyncio.timeout(max(1.0, deadline - _budget_time())):
                         async for kind, payload in measured_provider.stream(**stream_kwargs):
                             if kind == "delta":
                                 buffered_text.append(payload)
-                            else:
+                                if live_reasoning.started_or_pending and not live_reasoning.closed:
+                                    # Text follows the reasoning: the summary is complete.
+                                    for frame in await _close_live_reasoning(
+                                        context, live_reasoning
+                                    ):
+                                        yield frame
+                            elif kind == "reasoning":
+                                piece = live_reasoning.feed(payload)
+                                if piece:
+                                    yield events.model_reasoning(piece)
+                            elif kind == "message":
                                 message = payload
+                    for frame in await _close_live_reasoning(context, live_reasoning):
+                        yield frame
                 except TimeoutError:
                     _finish_step(context, provider_step, "failed", "time budget exceeded")
                     yield _timeout_frame(context)
@@ -1968,6 +1981,7 @@ class AssistantLoop:
                     answer_text = say("loop.consent_declined", language)
                 elif guard_blocked and route.needs_data and not evidence.items:
                     answer_text = say("loop.guard_blocked", language, reason=guard_reason)
+                verification: str | None = None
                 if route.needs_data and answer_tables:
                     from app.modules.assistant.answer_contract import finalize_verified_answer
 
@@ -2085,6 +2099,11 @@ class AssistantLoop:
                         }
                     answer_text = verified_answer.text
                     answer_text = _named_sources_plainly(answer_text, evidence, language)
+                    # The answer is sent only now, after its figures were checked;
+                    # unsupported ones were removed or replaced above.
+                    verification = "adjusted" if (
+                        answer_check.unsupported or answer_check.unsupported_hypotheses
+                    ) else "verified"
                 context.quality_facts["task_completeness"] = {
                     "completed": not denials,
                     "required_capabilities": sorted(required_capabilities),
@@ -2175,7 +2194,7 @@ class AssistantLoop:
                     answer_text,
                     pending_artifacts,
                     context,
-                    text_chunks=buffered_text if answer_text == "".join(buffered_text) else None,
+                    verification=verification,
                 ):
                     yield frame
                 pending_artifacts.clear()
@@ -2196,16 +2215,12 @@ class AssistantLoop:
                 return
 
             # A tool call follows, so any text so far is intermediate narration.
-            # Surface it as a short plan note (truncated) rather than as answer
-            # text, so it is visible but never duplicated.
+            # It is shown as activity, not as answer text; figures are left out
+            # because only the verified answer states numbers.
             narration = "".join(buffered_text).strip()
             if narration and provider_capabilities.supports_tools:
-                yield _thinking_step(
-                    context,
-                    "act",
-                    _summarise_narration(narration),
-                    status="done",
-                )
+                for frame in await _narration_frames(context, narration):
+                    yield frame
 
             # Serialize: handle exactly one tool call per iteration. The spec
             # requires per-turn serialization; the loop shape makes that true
@@ -4415,14 +4430,16 @@ def _ordered_output_frames(
     artifacts: list[PendingArtifact],
     context: LoopContext,
     *,
-    text_chunks: list[str] | None = None,
+    verification: str | None = None,
 ) -> list[str]:
     """Encode one authored response as ordered, sealed content blocks.
 
     The marker consumes artifacts in production order. Any artifacts the model
     did not place are appended after prose, which is the safe default for data
     answers. Every emitted block is also written to the persisted trace with
-    the same index, so live rendering and replay cannot disagree.
+    the same index, so live rendering and replay cannot disagree. Prose goes
+    out in sentence-sized pieces (``_answer_pieces``) carrying its
+    ``verification`` state, so the client shows the checked answer as it reads.
     """
     items = _compose_output_items(answer_text, artifacts)
     frames: list[str] = []
@@ -4433,18 +4450,11 @@ def _ordered_output_frames(
         if kind == "text":
             text = str(item.get("text") or "")
             if text:
-                chunks = (
-                    text_chunks
-                    if len(items) == 1
-                    and not artifacts
-                    and ARTIFACT_MARKER not in answer_text
-                    and text_chunks
-                    else [text]
-                )
-                for chunk in chunks:
-                    frames.append(
-                        events.text_delta(chunk, content_index=index, content_id=content_id)
-                    )
+                for chunk in _answer_pieces(text):
+                    frames.append(events.text_delta(
+                        chunk, content_index=index, content_id=content_id,
+                        verification=verification,
+                    ))
             _record_step(
                 context,
                 {
@@ -4605,7 +4615,14 @@ def _pending_trace(artifacts: list[PendingArtifact]) -> list[dict[str, Any]]:
 
 #: Narration shown when a model talks before a tool call. Bounded so a long
 #: preamble cannot push everything else out of the activity strip.
-_NARRATION_MAX_CHARS = 160
+_NARRATION_MAX_CHARS = 600
+#: A sentence (or line) of narration; one that states a figure is left out.
+_NARRATION_SENTENCE = re.compile(r"[^.!?\n]*(?:[.!?]+|\n|$)")
+_FIGURE = re.compile(r"\d")
+#: The verified answer goes out in pieces of about this size, at sentence or
+#: line ends, so the client can show it progressively.
+_ANSWER_PIECE_CHARS = 120
+_ANSWER_PIECE_END = re.compile(r"(?<=[.!?:;])\s+|\n+")
 
 
 def _context_note(stats: dict[str, Any]) -> str:
@@ -4706,11 +4723,70 @@ def _latest_thread_result(thread: AssistantThread) -> dict[str, Any] | None:
     return None
 
 
-def _summarise_narration(text: str) -> str:
-    collapsed = " ".join(text.split())
+def _narration_without_figures(text: str) -> str:
+    """Narration as shown: sentences stating a figure left out, then bounded.
+
+    Before a tool call a model often states what it expects ("Revenue was
+    about 1.2M") or repeats a result it will state again in the answer. Only
+    the verified answer may show a number, so such sentences are dropped.
+    """
+    kept = [
+        sentence.strip() for sentence in _NARRATION_SENTENCE.findall(text)
+        if sentence.strip() and not _FIGURE.search(sentence)
+    ]
+    collapsed = " ".join(" ".join(kept).split())
     if len(collapsed) <= _NARRATION_MAX_CHARS:
         return collapsed
     return collapsed[: _NARRATION_MAX_CHARS - 1].rstrip() + "…"
+
+
+async def _narration_frames(context: LoopContext, narration: str) -> list[str]:
+    """The frames that show one iteration's narration, redacted and recorded."""
+    text, redaction = GuardChain.screen_answer(_narration_without_figures(narration))
+    if not text:
+        return []
+    frames = await _guard_frames(context, redaction) if redaction is not None else []
+    _record_step(context, {"kind": "narration", "text": text, "status": "done"})
+    frames.append(events.narration(text))
+    return frames
+
+
+async def _close_live_reasoning(context: LoopContext, live: LiveReasoning) -> list[str]:
+    """End one model call's reasoning part: its last piece, close, record."""
+    if live.closed:
+        return []
+    live.closed = True
+    frames: list[str] = []
+    tail = live.close()
+    if tail:
+        frames.append(events.model_reasoning(tail))
+    if not live.started:
+        return frames
+    frames.append(events.model_reasoning("", status="done"))
+    if live.guard_event is not None:
+        frames.extend(await _guard_frames(context, live.guard_event))
+    # The trace keeps what was shown, for review. Conversation history is built
+    # from answers and tool references only, so reasoning never returns to the
+    # model on a later turn.
+    _record_step(context, {"kind": "model_reasoning", "text": live.text, "status": "done"})
+    return frames
+
+
+def _answer_pieces(text: str) -> list[str]:
+    """Split a verified answer at sentence or line ends into display pieces.
+
+    Joined, the pieces are exactly ``text``. Short sentences are kept together
+    so the stream carries a few dozen events, not one per word.
+    """
+    pieces: list[str] = []
+    start = 0
+    for match in _ANSWER_PIECE_END.finditer(text):
+        if match.end() - start >= _ANSWER_PIECE_CHARS:
+            pieces.append(text[start:match.end()])
+            start = match.end()
+    if start < len(text):
+        pieces.append(text[start:])
+    return pieces
 
 
 #: Keys whose values are credentials, not data. A tool argument with one of

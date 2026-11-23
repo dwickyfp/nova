@@ -532,19 +532,22 @@ async def test_loop_announces_a_skill_load_as_its_own_step():
     assert "observe" not in phases
 
 
-async def test_loop_forwards_each_streamed_fragment_as_its_own_delta():
-    """A streamed answer must surface fragment-by-fragment, not as one blob.
+async def test_loop_sends_the_finished_answer_in_sentence_pieces():
+    """A finished answer surfaces in pieces the panel can show progressively.
 
-    The provider emits three deltas then the assembled message; the loop has to
-    forward all three before ``done`` for the panel to render progressively.
+    The answer is only sent once the loop finished checking it, so it does not
+    follow the provider's fragments; it goes out in pieces that end at a
+    sentence, and joined they are exactly the answer.
     """
+    sentence = "The orders view lists every order with its customer and amount. "
+    answer = (sentence * 6).strip()
 
     class FragmentingProvider(FakeProvider):
         async def stream(self, *, messages, tools=None, provider=None):
             self.calls.append({"messages": messages, "tools": tools})
-            for fragment in ("Hel", "lo ", "world"):
-                yield ("delta", fragment)
-            yield ("message", {"role": "assistant", "content": "Hello world"})
+            for index in range(0, len(answer), 7):
+                yield ("delta", answer[index:index + 7])
+            yield ("message", {"role": "assistant", "content": answer})
 
     loop = AssistantLoop(provider=FragmentingProvider([]), registry=ToolRegistry())
     frames = await _collect(
@@ -556,10 +559,11 @@ async def test_loop_forwards_each_streamed_fragment_as_its_own_delta():
         )
     )
 
-    deltas = [f for f in frames if _frame_event(f) == "text_delta"]
-    assert len(deltas) == 3
+    deltas = [_frame_data(f)["text"] for f in frames if _frame_event(f) == "text_delta"]
+    assert 1 < len(deltas) < 6
+    assert all(piece.rstrip().endswith(".") for piece in deltas)
     assert _frame_event(frames[-1]) == "done"
-    assert "".join(_frame_data(f)["text"] for f in deltas) == "Hello world"
+    assert "".join(deltas) == answer
 
 
 # ── NOVA-69: exactly one user message per turn ───────────────────────────────

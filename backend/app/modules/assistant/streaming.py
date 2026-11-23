@@ -7,6 +7,13 @@ fragmented across chunks and keyed by ``index`` (not id — the id only appears 
 the first fragment). This module folds those chunks into the same assistant
 message shape the non-streaming path returns, so the loop treats both alike.
 
+Some providers also stream a reasoning summary next to the text. It arrives as
+``delta.reasoning_content`` (DeepSeek, vLLM, Qwen, LiteLLM's Anthropic
+thinking), ``delta.reasoning`` (OpenRouter, Ollama, newer vLLM) or
+``delta.reasoning_details`` (OpenRouter's typed list). ``feed`` returns it
+separately from the text. It is never folded into the assembled message, so
+reasoning does not go back to the model on a later call.
+
 Kept free of any HTTP or credential concern: it consumes already-decoded lines
 and has no access to the API key.
 """
@@ -27,16 +34,68 @@ class _ToolCallAccumulator:
     arguments: str = ""
 
 
+#: Reasoning kept from one provider call. Longer summaries are cut here, so a
+#: model that thinks at length cannot grow the stored run journal without bound.
+MAX_REASONING_CHARS = 16_000
+
+
+@dataclass(frozen=True)
+class StreamDelta:
+    """What one chunk adds: answer text and reasoning summary text."""
+
+    text: str = ""
+    reasoning: str = ""
+
+
+def _detail_text(detail: Any) -> str:
+    if not isinstance(detail, dict) or detail.get("type") == "reasoning.encrypted":
+        return ""
+    for key in ("text", "summary", "thinking"):
+        value = detail.get(key)
+        if isinstance(value, str):
+            return value
+    return ""
+
+
+def reasoning_text(delta: dict[str, Any]) -> str:
+    """The reasoning summary a chunk's ``delta`` carries, or ``""``.
+
+    The first populated field wins: OpenRouter sends the same text both as
+    ``reasoning`` and as ``reasoning_details``, and LiteLLM sends Anthropic
+    thinking both as ``reasoning_content`` and as ``thinking_blocks``. Encrypted
+    reasoning is opaque and never shown.
+    """
+    for key in ("reasoning_content", "reasoning", "thinking"):
+        value = delta.get(key)
+        if isinstance(value, str) and value:
+            return value
+        if isinstance(value, dict):
+            text = _detail_text(value)
+            if text:
+                return text
+    for key in ("reasoning_details", "thinking_blocks"):
+        details = delta.get(key)
+        if isinstance(details, list):
+            text = "".join(_detail_text(detail) for detail in details)
+            if text:
+                return text
+    return ""
+
+
 @dataclass
 class StreamAccumulator:
     """Folds streamed deltas into a final assistant message.
 
-    ``feed`` consumes one ``data:`` payload and returns the text fragment to emit
-    now (possibly empty). ``message`` returns the assembled OpenAI-style message
-    once the stream is done.
+    ``feed`` consumes one ``data:`` payload and returns what to emit now: a text
+    fragment and a reasoning fragment, either possibly empty. ``message``
+    returns the assembled OpenAI-style message once the stream is done; it holds
+    the text and tool calls, never the reasoning.
     """
 
     content: str = ""
+    #: Reasoning characters received, counted against ``MAX_REASONING_CHARS``.
+    reasoning_chars: int = 0
+    reasoning_truncated: bool = False
     finish_reason: str | None = None
     tool_calls: dict[int, _ToolCallAccumulator] = field(default_factory=dict)
     #: Token usage, when the provider reports it. OpenAI-compatible providers
@@ -45,7 +104,7 @@ class StreamAccumulator:
     #: Studio Observability can total tokens per turn without a second call.
     usage: dict[str, Any] | None = None
 
-    def feed(self, payload: dict[str, Any]) -> str:
+    def feed(self, payload: dict[str, Any]) -> StreamDelta:
         # Usage may arrive on the final chunk, which sometimes carries no
         # choices. Capture it before the choices check.
         usage = payload.get("usage")
@@ -54,10 +113,10 @@ class StreamAccumulator:
 
         choices = payload.get("choices")
         if not isinstance(choices, list) or not choices:
-            return ""
+            return StreamDelta()
         choice = choices[0]
         if not isinstance(choice, dict):
-            return ""
+            return StreamDelta()
 
         finish = choice.get("finish_reason")
         if isinstance(finish, str):
@@ -65,7 +124,7 @@ class StreamAccumulator:
 
         delta = choice.get("delta")
         if not isinstance(delta, dict):
-            return ""
+            return StreamDelta()
 
         text = delta.get("content")
         if isinstance(text, str) and text:
@@ -74,7 +133,21 @@ class StreamAccumulator:
         tool_calls = delta.get("tool_calls")
         if isinstance(tool_calls, list):
             self._accumulate_tool_calls(tool_calls)
-        return text if isinstance(text, str) else ""
+        return StreamDelta(
+            text=text if isinstance(text, str) else "",
+            reasoning=self._bounded_reasoning(reasoning_text(delta)),
+        )
+
+    def _bounded_reasoning(self, text: str) -> str:
+        room = MAX_REASONING_CHARS - self.reasoning_chars
+        if not text or room <= 0:
+            self.reasoning_truncated = self.reasoning_truncated or bool(text)
+            return ""
+        if len(text) > room:
+            self.reasoning_truncated = True
+            text = text[:room]
+        self.reasoning_chars += len(text)
+        return text
 
     def _accumulate_tool_calls(self, tool_calls: list[Any]) -> None:
         for entry in tool_calls:
