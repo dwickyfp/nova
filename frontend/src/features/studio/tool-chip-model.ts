@@ -68,6 +68,11 @@ function humanise(name: string): string {
   return words ? words.replace(/^\w/, (c) => c.toUpperCase()) : "Tool";
 }
 
+/** "get store targets" → "Get store targets"; a name with capitals ("NDVI") is kept. */
+function sentenceCase(name: string): string {
+  return /^[a-z]/.test(name) ? name[0].toUpperCase() + name.slice(1) : name;
+}
+
 const INPUT_LIMIT = 600;
 const RESULT_LIMIT = 400;
 
@@ -105,7 +110,7 @@ export function classifyTool(
     const label = displayName || "Connected tool";
     const split = label.indexOf(":");
     return split > 0
-      ? { kind: "mcp", name: label.slice(split + 1).trim(), source: label.slice(0, split).trim() }
+      ? { kind: "mcp", name: sentenceCase(label.slice(split + 1).trim()), source: label.slice(0, split).trim() }
       : { kind: "mcp", name: label, source: "Connector" };
   }
   const plain = CHIP_NAMES[toolName] ?? humanise(toolName);

@@ -32,14 +32,14 @@ describe("tool chip model", () => {
   it("keeps one chip per distinct tool with its call count and worst status", () => {
     const { chips } = toolChips(STEPS);
     expect(chips.map((chip) => [chip.name, chip.source, chip.calls.length, chip.status])).toEqual([
-      ["fx convert", "Nova test tools", 2, "error"],
+      ["Fx convert", "Nova test tools", 2, "error"],
       ["View query", "Semantic view", 1, "success"],
       ["Sales playbook", "Skill", 1, "success"],
     ]);
   });
 
   it("names each kind and never shows an opaque identifier", () => {
-    expect(classifyTool("mcp_abcdef0123", undefined, "Weather: forecast")).toEqual({ kind: "mcp", name: "forecast", source: "Weather" });
+    expect(classifyTool("mcp_abcdef0123", undefined, "Weather: forecast")).toEqual({ kind: "mcp", name: "Forecast", source: "Weather" });
     expect(classifyTool("data_to_chart").kind).toBe("chart");
     expect(classifyTool("web_search").kind).toBe("web");
     expect(classifyTool("inspect_role_access")).toEqual({ kind: "other", name: "Inspect role access", source: "Nova" });
@@ -105,7 +105,7 @@ describe("tool chip model", () => {
 describe("ToolChips", () => {
   it("renders one button per tool with a count and toggles one detail at a time", async () => {
     await render(<ToolChips steps={STEPS} />);
-    const fx = page.getByRole("button", { name: /fx convert, Nova test tools, 2 calls, failed/ });
+    const fx = page.getByRole("button", { name: /Fx convert, Nova test tools, 2 calls, failed/ });
     const view = page.getByRole("button", { name: /View query/ });
     await expect.element(fx).toHaveAttribute("aria-expanded", "false");
     await expect.element(fx).not.toHaveAttribute("aria-controls");
@@ -113,7 +113,7 @@ describe("ToolChips", () => {
 
     await fx.click();
     await expect.element(fx).toHaveAttribute("aria-expanded", "true");
-    const region = page.getByRole("region", { name: "fx convert calls" });
+    const region = page.getByRole("region", { name: "Fx convert calls" });
     await expect.element(region).toBeVisible();
     expect(fx.element().getAttribute("aria-controls")).toBe(region.element().id);
     expect(region.element().textContent).toContain("[redacted]");
