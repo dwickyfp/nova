@@ -821,12 +821,6 @@ BUILTIN_FUNCTIONS: dict[str, list[dict]] = {
             "description": "Generates a series of numbers from start to stop.",
         },
         {
-            "name": "FILES",
-            "signature": "FILES('path', format, ...)",
-            "return_type": "Table",
-            "description": "Reads external files (S3, HDFS, local) as a table.",
-        },
-        {
             "name": "TVF_QUERY",
             "signature": "Query external sources as tables",
             "return_type": "Table",

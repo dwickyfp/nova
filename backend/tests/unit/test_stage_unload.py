@@ -266,11 +266,14 @@ def test_duplicate_options_and_missing_path_are_refused():
         ast_builders.build(parse_statement("INSERT INTO FILES('format'='csv') SELECT 1"))
 
 
-def test_reading_native_files_is_unchanged():
-    statement = ast_builders.build(parse_statement(
-        "SELECT * FROM FILES('path'='s3://bucket/x.parquet', 'format'='parquet')"
-    ))
-    assert not isinstance(statement, StageAwareStatement)
+def test_reading_native_files_is_refused():
+    """Files are read through a stage; an unload's INSERT INTO FILES is separate."""
+    from app.sql_frontend.errors import SemanticError
+
+    with pytest.raises(SemanticError, match=r"Reading with FILES\(\) is not available"):
+        ast_builders.build(parse_statement(
+            "SELECT * FROM FILES('path'='s3://bucket/x.parquet', 'format'='parquet')"
+        ))
 
 
 # ── Confirmation ─────────────────────────────────────────────────────────────

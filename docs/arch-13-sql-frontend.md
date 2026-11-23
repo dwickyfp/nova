@@ -245,7 +245,20 @@ so repeated stage names, joins and different scoped connections stay independent
 The existing translator and injector handle FILES(), LIST, COPY and stage
 exports. Secret resolution occurs at execution, immediately before preparation
 and engine submission. Responses and audit SQL use the redacted form.
-Native FILES() reads are preserved.
+
+Native file reads (`app/sql_frontend/file_reads.py`): a `FILES(...)` relation or
+`DESC FILES(...)` written in user SQL is refused while building the AST, for
+every statement, consumer and nesting (joins, CTEs, subqueries, INSERT/CTAS,
+views, EXPLAIN, task bodies). `FILES()` makes the engine connect to whatever
+its properties name, such as an internal `aws.s3.endpoint`, an `hdfs://` host
+or the backend's instance credentials, so it would bypass stage governance and
+allow server-side requests to internal hosts. There is no registry of approved
+endpoints to match against outside stages, so the narrowest rule is that
+files are read through `@stage`, whose runtime authorizes the active role
+before any secret is resolved. Pipes keep their validated
+`FILES("path" = "@stage/...")` source (the pipe validator and planner, not
+this check), and `INSERT INTO FILES` remains an unload validated as below.
+The `FILES()` calls the translator generates at execution are not re-parsed.
 
 Unload (`app/sql_frontend/unload.py`): `INSERT INTO FILES(...)`,
 `SELECT ... INTO OUTFILE` and `EXPORT TABLE` write only to a stage path written

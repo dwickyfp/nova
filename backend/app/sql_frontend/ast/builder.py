@@ -15,6 +15,7 @@ from app.sql_frontend.ast.statements import (
     MLPredictStatement,
     NativeStatement,
     ParameterizedQueryStatement,
+    PipeStatement,
     QuerySchemaStatement,
     SecurityStatement,
     StageAwareStatement,
@@ -43,6 +44,16 @@ class AstBuilderRegistry:
         self._builders[context_name] = builder
 
     def build(self, parsed: ParsedStatement) -> Statement:
+        statement = self._build(parsed)
+        if not isinstance(statement, PipeStatement):
+            # A pipe's FILES() source is a validated stage path; anywhere else
+            # FILES() would make the engine read an arbitrary location.
+            from app.sql_frontend.file_reads import refuse_native_file_reads
+
+            refuse_native_file_reads(parsed)
+        return statement
+
+    def _build(self, parsed: ParsedStatement) -> Statement:
         schema_explains = [
             node
             for node in _walk_nodes(parsed.statement_context)

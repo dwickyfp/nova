@@ -370,9 +370,10 @@ class TestDoubleQuotedAssignmentIsRedacted:
     def test_double_quoted_form_is_redacted_end_to_end(self, explain_client):
         """The reported shape, through the real response path."""
         client, repo = explain_client
+        # Writing FILES() is refused, so the literal pair sits in a predicate.
         sql = (
-            'SELECT * FROM FILES("path"="s3://stages/x.csv", '
-            f'"aws.s3.access_key"="{ACCESS_KEY}", "aws.s3.secret_key"="{SECRET_KEY}")'
+            'SELECT 1 FROM stages_x WHERE "aws.s3.access_key"="'
+            f'{ACCESS_KEY}" AND "aws.s3.secret_key"="{SECRET_KEY}"'
         )
         payload = client.post(EXPLAIN_ENDPOINT, json={"sql": sql}).json()
 

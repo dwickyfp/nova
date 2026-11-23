@@ -64,8 +64,9 @@ def test_non_read_and_nested_forms_never_fall_through_to_engine(sql):
     ],
 )
 async def test_schema_inspection_cannot_trigger_external_or_unbounded_work(inner):
-    statement = ast_builders.build(parse_statement("EXPLAIN SCHEMA " + inner))
+    # Refused while building (a FILES() read) or while planning (the rest).
     with pytest.raises(SemanticError):
+        statement = ast_builders.build(parse_statement("EXPLAIN SCHEMA " + inner))
         await SQLPlanner().plan(statement, PlanningContext())
 
 

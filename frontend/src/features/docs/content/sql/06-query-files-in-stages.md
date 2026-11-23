@@ -132,6 +132,12 @@ SELECT * FROM @docs_qa_sql_files/stock.tsv;
 - A comment written directly after a stage path, such as
   `@stage/x.csv/* note */`, is refused with `A comment starts directly after a
   stage path`. Put a space before the comment.
+- Read files only through a stage. Writing the `FILES(...)` table function
+  yourself, with a storage address, an endpoint or keys, fails with
+  `Reading with FILES() is not available: read files through a stage, ...`.
+  Use `SELECT * FROM @stage/folder/file.csv` instead; the stage supplies the
+  location and the credentials, and your active role needs access to it.
+  [Pipes](/docs/sql/pipes) keep their `FILES("path" = "@stage/...")` form.
 - `No files were found matching the pattern(s) or path(s): '@stage/...'` means
   the file or folder does not exist. Check the name with `LIST`.
 - To write query results into a stage instead of reading from it, see

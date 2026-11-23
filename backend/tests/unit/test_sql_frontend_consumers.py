@@ -165,7 +165,8 @@ async def test_task_body_with_explicit_credentials_cannot_be_persisted():
         "CREATE TASK t AS INSERT INTO sink SELECT * FROM FILES("
         "'path'='s3://b/x', 'format'='csv', 'aws.s3.secret_key'='private')"
     )
-    with pytest.raises(ValueError, match="persist credentials"):
+    # The body's FILES() read is refused outright, before anything is planned.
+    with pytest.raises(ValueError, match=r"Reading with FILES\(\) is not available"):
         await SQLPlanner().plan(ast_builders.build(parse_statement(sql)), PlanningContext())
 
 
