@@ -238,3 +238,62 @@ def test_only_external_tools_that_ran_and_failed_get_the_failure_answer():
     assert not _external_failures_only(["mcp_fixture"], set())
     assert not _external_failures_only(["semantic_query"], {"semantic_query"})
     assert not _external_failures_only([], set())
+
+
+@pytest.mark.asyncio
+async def test_a_turn_near_its_time_limit_answers_from_verified_results(monkeypatch):
+    """Live 2026-11-24 (B8): a calculation the agent could not do sent it back to
+    query after query until "The assistant turn exceeded its time budget." With
+    results in hand and little time left, it now answers and says what it did not
+    calculate."""
+    import app.modules.assistant.service as service
+
+    clock = [0.0]
+    monkeypatch.setattr(service, "_budget_time", lambda: clock[0])
+    monkeypatch.setattr("app.common.audit.write_audit_log", AsyncMock(return_value="q"))
+
+    class SlowQuery(EvalTool):
+        async def run(self, invocation, context):
+            clock[0] += 160  # most of a 180-second turn
+            return await super().run(invocation, context)
+
+    query = SlowQuery("query_execute", table={
+        "columns": ["month", "revenue"], "rows": [["2025-07", 29298000]],
+    })
+    registry = ToolRegistry()
+    registry.register(query)
+
+    class Recording(ScriptedProvider):
+        seen: list[list[dict[str, Any]]] = []
+
+        async def stream(self, *, messages, tools=None, provider=None):
+            self.seen.append(list(messages))
+            async for frame in super().stream(messages=messages, tools=tools, provider=provider):
+                yield frame
+
+    provider = Recording([
+        tool_call_frame("q1", name="query_execute", arguments={"sql": "SELECT 1"}),
+        tool_call_frame("q2", name="query_execute", arguments={"sql": "SELECT 2"}),
+        text_frame("Revenue for July 2025 was 29,298,000; attainment was not calculated."),
+    ])
+    thread = thread_store.create(user_name=USER["username"], title="Synthetic Studio")
+    context = LoopContext(USER["username"], user=dict(USER), role=USER["active_role"],
+                          thread_id=thread.thread_id)
+    try:
+        frames = [
+            frame async for frame in AssistantLoop(
+                provider=provider, registry=registry, system_prompt="eval",
+                time_budget_seconds=180, approval_gate=False,
+            ).run(thread=thread, user_content="Monthly review", context=context,
+                  resolve_consent=AsyncMock(return_value=False))
+        ]
+    finally:
+        thread_store.remove(thread.thread_id, user_name=USER["username"])
+    result = TurnResult(frames=frames)
+
+    assert result.finish_reason != "timeout"
+    assert len(query.runs) == 1
+    assert any(
+        "Time is nearly up" in str(message.get("content"))
+        for messages in provider.seen for message in messages
+    )

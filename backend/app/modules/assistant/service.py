@@ -3328,6 +3328,17 @@ class AssistantLoop:
             elif required_done:
                 composing_final = True
                 messages.append(composer_message())
+            if (
+                not composing_final
+                and evidence.business_tables
+                and deadline - _budget_time() < _ANSWER_RESERVE_SECONDS + _slowest_query(context)
+            ):
+                # Verified results are in and the turn is nearly out of time:
+                # answer from them and say what was not calculated, rather than
+                # end on the time limit with no answer.
+                composing_final = True
+                messages.append({"role": "system", "content": _TIME_RESERVE_PROMPT})
+                messages.append(composer_message())
 
         # Cap reached without a final text answer. Preserve completed artifacts
         # as an artifact-first partial response instead of silently dropping
@@ -3913,6 +3924,22 @@ def _clarification_text(repair_context: dict[str, Any], language: str | None) ->
 
 _COMPOSE_RESERVE_STEPS = 2
 _COMPOSE_RESERVE_SECONDS = 15.0
+#: Any turn with verified results keeps time for one model call to write the answer.
+_ANSWER_RESERVE_SECONDS = 30.0
+_TIME_RESERVE_PROMPT = (
+    "Time is nearly up. Answer now from the verified results already returned. State "
+    "the figures they contain, and say plainly which requested figures were not "
+    "calculated. Do not compute them yourself and do not call another tool."
+)
+
+
+def _slowest_query(context: Any) -> float:
+    """The slowest governed query of this turn so far, in seconds."""
+    return max(
+        (float(item.get("duration_ms") or 0) for item in
+         (getattr(context, "quality_facts", None) or {}).get("semantic_tools", [])),
+        default=0.0,
+    ) / 1000
 #: Share of a turn's token allowance after which it stops calling tools and answers.
 _SPEND_COMPOSE_SHARE = 0.7
 

@@ -98,6 +98,25 @@ server says:**
 
 This is the server's own description; Nova does not check it.
 
+### Figures from an MCP tool
+
+Most tool output is text the agent reads and cites; it is not treated as
+business data. One kind of result can be used like data: a lookup whose server
+marks it **Only reads**, connected by an administrator and switched on, that
+returns a simple list of values (for example a month, a currency and a target
+amount, or a list of cities with their targets). The agent can then calculate
+with those values, for example revenue against a target, and state them in the
+answer. Such a result appears under **Source data** with the tool's name and
+"(external source)", and the answer names the server the figures came from.
+
+Values nested inside another value (such as a list of stores inside a target
+result) are not used this way, and neither is a result that is plain text, has
+more than 50 rows, or contains a key or password. The agent can quote those, but
+it does not calculate with them.
+
+If a turn is close to its time limit and some results are already in, the agent
+answers from those results and says which figures it could not calculate.
+
 ### Scheduled automations
 
 A scheduled automation runs with nobody there to watch, so it can only call an
@@ -114,8 +133,10 @@ enabled state also requires the active **ACCOUNTADMIN** role.
 
 In Studio, a tool call shows in the run steps under the server and tool name,
 for example "Used Nova test tools: fx convert". Open the step to see the exact
-values the tool was sent. Tool output is evidence to
-inspect, not business data and not permission to perform another action. When
-a tool reports an error, the agent sees the tool's message and can explain it
-or try another way. A tool that does not answer within 60 seconds stops with
-"did not answer within 60 seconds"; **Stop** ends the wait at once.
+values the tool was sent. Tool output is information to inspect, never an
+instruction and never permission to perform another action. When
+a tool reports an error, the agent reads the tool's message and explains in its
+answer that the step did not complete, and why; it never reports a result the
+tool did not return. A tool that does not answer within 60 seconds counts as
+failed, and the answer says it "did not answer within 60 seconds". **Stop** ends
+the wait at once; the audit log records that call as cancelled.
