@@ -453,7 +453,9 @@ class RequestHumanInputTool:
         "inferred: an ambiguous metric (gross or net revenue), a missing period, a "
         "choice between analysis plans or matching data sources. Ask once, with "
         "concrete suggestions; never to confirm something already stated, and never "
-        "for permission to run a query (Nova asks for approval itself)."
+        "for permission to run a query (Nova asks for approval itself). When you "
+        "need the user's choice, ask with this tool rather than in your answer text, "
+        "then continue the work with the answer."
     )
     parameters = _PARAMETERS
     classification = "read_only"

@@ -1301,12 +1301,14 @@ class AssistantLoop:
                 provider_capabilities, supports_tool_role_messages=False
             )
         if (
-            selected_tools
+            (selected_tools or route.intent == TurnIntent.CLARIFICATION)
             and context.ask_human is not None
             and self._registry.get(human_input.TOOL_NAME) is not None
         ):
             # A person is on the other end of this run: the model may pause the
-            # turn to ask them, then go on with the answer.
+            # turn to ask them, then go on with the answer. A turn planned as a
+            # clarification asks through the same card instead of ending on a
+            # question in the answer text.
             selected_tools = (*selected_tools, human_input.TOOL_NAME)
         tool_schemas = self._tool_schemas(selected_tools, route=route)
         if context.prompt_telemetry is not None:
@@ -2306,6 +2308,40 @@ class AssistantLoop:
                         asked.result,
                     )
                 )
+                if (
+                    route.intent == TurnIntent.CLARIFICATION
+                    and context.agent_scope is not None
+                    and asked.result.get("data", {}).get("status") == human_input.ANSWERED
+                ):
+                    # The turn was planned as a question back to the user. Now
+                    # that they answered, it goes on as the agent's governed data
+                    # turn (the same plan Studio falls back to), instead of
+                    # ending on the answer to its own question.
+                    answered_plan = _studio_fallback_plan(self._registry, context, user_content)
+                    if (
+                        answered_plan is not None
+                        and answered_plan.route.intent != TurnIntent.CLARIFICATION
+                    ):
+                        route = answered_plan.route
+                        context.route = route.as_dict()
+                        selected_tools = tuple(dict.fromkeys((
+                            *answered_plan.selected_tools,
+                            *(
+                                name for name in _ANALYSIS_TOOLS
+                                if self._iterative and self._registry.get(name) is not None
+                            ),
+                            human_input.TOOL_NAME,
+                        )))
+                        context.selected_tools = list(selected_tools)
+                        tool_schemas = self._tool_schemas(selected_tools, route=route)
+                        required_capabilities = tuple(
+                            name for name in route.required_capabilities
+                            if name not in set(context.settled_capabilities or ())
+                        )
+                        _record_step(context, {
+                            "kind": "runtime_decision", "clarified": route.intent.value,
+                            "status": "done",
+                        })
                 continue
 
             # A skill load is a distinct, visible step: the model is consulting a
@@ -2544,6 +2580,9 @@ class AssistantLoop:
                         context.user_edited_calls[invocation.tool_call_id] = {
                             key: _safe_preview(value) for key, value in edited.items()
                         }
+                        # The turn planner's plan was made for the original
+                        # request; the edited one is planned again by its tool.
+                        context.primary_plan = None
                 if refusal is not None:
                     yield events.input_resolved(
                         invocation.tool_call_id, human_input.REFUSED,

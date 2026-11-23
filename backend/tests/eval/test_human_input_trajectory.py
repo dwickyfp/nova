@@ -357,3 +357,123 @@ async def test_requests_per_turn_are_bounded(monkeypatch: pytest.MonkeyPatch) ->
     assert len(_named(result, "input_required")) == 1
     limited = [r for r in _tool_results(provider) if r.get("error_class") == "HUMAN_INPUT_LIMIT"]
     assert len(limited) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_clarification_turn_asks_with_the_card_and_then_runs_the_data_step() -> None:
+    from app.modules.assistant.tools import ToolOutcome
+    from tests.benchmark.studio_accuracy.model import bench_model
+
+    semantic = EvalTool(
+        "semantic_query",
+        parameters={"type": "object", "properties": {"question": {"type": "string"}},
+                    "required": ["question"]},
+        outcomes=[ToolOutcome(
+            ok=True, summary="1 row",
+            table={"columns": ["net_revenue"], "rows": [[10]]},
+            data={"semantic_plan": {"metrics": ["net_revenue"]}, "sql": "SELECT 1"},
+        )],
+    )
+    provider = RecordingProvider(
+        [
+            tool_call_frame("ask", name=human_input.TOOL_NAME, arguments=QUESTION),
+            tool_call_frame("s1", name="semantic_query", arguments={"question": "Net revenue"}),
+            text_frame("Net revenue was 10."),
+        ],
+        turn_plan={"intent": "clarification", "tools": [], "required_tools": [], "ml_task": None},
+    )
+
+    async def ask(_request_id: str, request: dict[str, Any]) -> HumanAnswer:
+        return human_input.validate_answer(request, {"text": "Net revenue"})
+
+    context = LoopContext("alice")
+    context.ask_human = ask
+    context.agent_scope = {"agent": "Sales"}
+    context.authorized_semantic_models = [{"_scoped_ir": bench_model()}]
+
+    async def allow(_invocation: ToolInvocation, _classification: str) -> bool:
+        return True
+
+    frames = [
+        frame
+        async for frame in AssistantLoop(
+            provider=provider, registry=_registry(semantic), system_prompt="eval",
+        ).run(
+            thread=thread(), user_content="Show me revenue, gross or net?",
+            context=context, resolve_consent=allow,
+        )
+    ]
+    result = TurnResult(frames=frames)
+    # Only the card is offered while the turn is a question back to the user...
+    assert provider.tools_offered[0] == [human_input.TOOL_NAME]
+    assert _named(result, "input_resolved")[0]["status"] == "answered"
+    # ...and once answered the same turn runs the governed data step.
+    assert "semantic_query" in provider.tools_offered[1]
+    assert len(semantic.runs) == 1
+    assert result.finish_reason == "stop"
+    assert any(step.get("clarified") == "semantic_analytics" for step in context.steps or [])
+
+
+@pytest.mark.asyncio
+async def test_a_skipped_clarification_stays_a_clarification() -> None:
+    provider = RecordingProvider(
+        [
+            tool_call_frame("ask", name=human_input.TOOL_NAME, arguments=QUESTION),
+            text_frame("Tell me whether you mean gross or net revenue."),
+        ],
+        turn_plan={"intent": "clarification", "tools": [], "required_tools": [], "ml_task": None},
+    )
+
+    async def ask(_request_id: str, _request: dict[str, Any]) -> HumanAnswer:
+        return human_input.declined()
+
+    async def allow(_invocation: ToolInvocation, _classification: str) -> bool:
+        return True
+
+    context = LoopContext("alice")
+    context.ask_human = ask
+    context.agent_scope = {"agent": "Sales"}
+    frames = [
+        frame
+        async for frame in AssistantLoop(
+            provider=provider, registry=_registry(EvalTool("semantic_query")),
+            system_prompt="eval",
+        ).run(thread=thread(), user_content="Revenue?", context=context, resolve_consent=allow)
+    ]
+    result = TurnResult(frames=frames)
+    assert [r["status"] for r in _named(result, "input_resolved")] == ["declined"]
+    assert provider.tools_offered[-1] == [human_input.TOOL_NAME]
+
+
+@pytest.mark.asyncio
+async def test_an_edited_request_is_planned_again_not_run_from_the_original_plan() -> None:
+    """The turn planner's plan answered the original request, not the edited one."""
+    seen: list[Any] = []
+
+    class PlannedTool(SqlTool):
+        async def run(self, invocation: ToolInvocation, context: Any):
+            seen.append(getattr(context, "primary_plan", None))
+            return await super().run(invocation, context)
+
+    query = PlannedTool("query_execute")
+    provider = RecordingProvider(
+        [tool_call_frame("q1", sql="SELECT 1"), text_frame("Two.")], turn_plan=PLAN,
+    )
+
+    async def edit(_invocation: ToolInvocation, _classification: str) -> ConsentApproval:
+        return ConsentApproval(edited_arguments={"sql": "SELECT 2"})
+
+    context = LoopContext("eval")
+    context.primary_plan = {"plan": {"metrics": ["revenue"]}, "view": None}
+    frames = [
+        frame
+        async for frame in AssistantLoop(
+            provider=provider, registry=_registry(query), system_prompt="eval",
+        ).run(
+            thread=thread(), user_content="What was revenue last month?",
+            context=context, resolve_consent=edit,
+        )
+    ]
+    assert TurnResult(frames=frames).finish_reason == "stop"
+    assert [run.arguments["sql"] for run in query.runs] == ["SELECT 2"]
+    assert seen == [None]

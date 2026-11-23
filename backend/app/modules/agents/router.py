@@ -2106,7 +2106,8 @@ async def _business_terms_note(text: str, user: dict, views: list[str]) -> str:
     return (
         "\n\n## Business terms with more than one meaning in this agent's business\n"
         + "\n".join(lines)
-        + "\nAsk the user which one they mean, naming the choices, before any query. "
+        + "\nAsk the user which one they mean, naming the choices, before any query "
+        "(with request_human_input when it is available). "
         "Do not pick one and do not say you will check."
     )
 
