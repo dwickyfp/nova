@@ -118,6 +118,20 @@ MySQL clients have no confirmation exchange, so the proxy submits the statement 
 confirmed: the statement the client sent is the explicit request, as with any MySQL
 server. The guard, engine authorization and audit still apply.
 
+Read-only callers ask `app/sql_frontend/read_only.py`: a statement is read-only
+when it parses, builds and analyzes, and its preflight effects read data and
+change nothing (`external_io` from a stage read is still a read; any mutating
+effect, including `exports_data`, is not). Assistant tools, semantic views,
+agent artifacts and custom SQL tools use it through
+`app/modules/assistant/tools/policy.py`, and so do the MySQL proxy's emulated
+`START TRANSACTION READ ONLY` and prepare-time column description. The policy's
+keyword rules are an extra deny layer only: they still refuse `EXPLAIN` over a
+mutation, Nova DDL and statements the assistant has no use for, but a keyword
+scan never makes a statement read-only. `WITH ... DELETE` is a delete however
+its CTE bodies quote or comment their text, and a statement that does not
+parse is not read-only. `tests/unit/test_read_only_differential.py` compares
+both classifiers over the grammar corpus and the functional SQL scenarios.
+
 `LogicalPlan` carries the statement and analysis. Lowering produces one of:
 
 - `EngineSqlPlan`: a safe SQL template, effects and unresolved stage descriptors.

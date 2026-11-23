@@ -134,6 +134,26 @@ def validate_custom_tool_definition(tool: dict[str, Any]) -> list[str]:
     return errors
 
 
+def _neutral_placeholders(statement: str, definition: dict[str, Any]) -> str:
+    """``statement`` with every code placeholder filled for classification.
+
+    The read-only decision parses SQL, and ``{{name}}`` is not SQL. A value
+    slot becomes ``NULL`` and an identifier slot a plain identifier: the same
+    kinds of token a call substitutes, so the template is classified as the
+    statement shape it can produce. A call is classified again after its real
+    substitution.
+    """
+    parts: list[str] = []
+    cursor = 0
+    for match in _code_placeholders(statement):
+        parts.append(statement[cursor : match.start()])
+        kind = _parameter_type(definition, match.group(1))
+        parts.append("nova_parameter" if kind == "identifier" else "NULL")
+        cursor = match.end()
+    parts.append(statement[cursor:])
+    return "".join(parts)
+
+
 def _code_placeholders(sql: str) -> list[re.Match[str]]:
     matches: list[re.Match[str]] = []
     state = "code"
@@ -386,8 +406,11 @@ class CustomToolRunner:
     def _classify_definition(self) -> ToolClassification:
         if self.tool.get("kind") == "function":
             return "read_only"
-        statements = (self.tool.get("definition") or {}).get("statements") or []
-        sql = ";\n".join(item for item in statements if isinstance(item, str))
+        definition = self.tool.get("definition") or {}
+        statements = definition.get("statements") or []
+        sql = ";\n".join(
+            _neutral_placeholders(item, definition) for item in statements if isinstance(item, str)
+        )
         return self._classify_sql(sql)
 
     @staticmethod
