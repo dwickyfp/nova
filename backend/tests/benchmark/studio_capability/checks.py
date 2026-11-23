@@ -90,9 +90,11 @@ def detect_outcome(view: TurnView, transport_error: str | None) -> str:
     return "answer"
 
 
-def outcome_matches(expected: str, detected: str) -> bool:
+def outcome_matches(expected: str, detected: str, clarify: str | None = None) -> bool:
     if expected == detected:
         return True
+    if expected == "clarify" and clarify == "must":
+        return False  # a true fork: answering on a guess is wrong
     pairs = {("refuse", "limitation"), ("limitation", "refuse"), ("limitation", "answer"),
              ("clarify", "answer"), ("approval", "limitation"), ("approval", "refuse")}
     # A limitation stated alongside a partial answer, or a sensible assumption made
@@ -146,7 +148,8 @@ def check(unit: dict[str, Any], gt: dict[str, Any] | None, view: TurnView, *,
     result: dict[str, Any] = {
         "outcome": outcome,
         "expected_outcome": expected_outcome,
-        "outcome_ok": outcome_matches(expected_outcome, outcome),
+        "outcome_ok": outcome_matches(expected_outcome, outcome, unit.get("clarify")),
+        "clarify_mode": unit.get("clarify"),
         "elements": sorted(view.elements()),
         "tools": view.tools,
         "tool_failures": [name for name, state in view.tool_states()
@@ -223,8 +226,10 @@ def _scores(result: dict[str, Any], expected_outcome: str, has_numbers: bool) ->
                               else 2 if recall > 0 else (1 if has_numbers else 2))
     elif expected_outcome in {"refuse", "limitation", "approval", "cancelled"}:
         scores["accuracy"] = 5 if result["outcome_ok"] else 2
-    ui = result["ui_recall"]
-    if ui is not None:
+    # A missing card is judged through the outcome (and intelligence), not the UI floor.
+    shown = [ok for name, ok in result["ui_expected"].items() if not name.startswith("hitl:")]
+    if shown:
+        ui = sum(shown) / len(shown)
         scores["ui_floor"] = 1 if ui == 0 else 3 if ui < 1 else None
     if result["approval_card_shown"]:
         scores["ui_floor"] = min(scores.get("ui_floor") or 2, 2)

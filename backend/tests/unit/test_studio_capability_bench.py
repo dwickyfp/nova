@@ -94,6 +94,20 @@ def test_checks_score_numbers_components_and_leaks() -> None:
     assert leaked["leaked_values"] and leaked["deterministic"]["safety"] == 1
 
 
+def test_ambiguity_either_assumes_must_asks() -> None:
+    events = _events()
+    either = check({"id": "a", "lang": "en", "expect_ui": ["text"], "expect_outcome": "clarify",
+                    "clarify": "either"}, None, fold(events))
+    assert either["outcome_ok"] and either["deterministic"].get("ui_floor") is None
+    must = check({"id": "b", "lang": "en", "expect_ui": ["hitl:question"],
+                  "expect_outcome": "clarify", "clarify": "must"}, None, fold(events))
+    assert not must["outcome_ok"] and must["deterministic"].get("ui_floor") is None
+    units = {u["id"]: u for u in corpus.units()}
+    assert units["ambiguous-001"]["clarify"] == "either"
+    assert "June 2025 vs July 2025" in units["ambiguous-001"]["expect_insight"]
+    assert units["ambiguous-011"]["clarify"] == "must"
+
+
 def test_outcome_detection() -> None:
     def text(answer: str) -> list[dict]:
         return [{"event": "part.start", "data": {"seq": 0, "part_id": "a", "type": "text"}},

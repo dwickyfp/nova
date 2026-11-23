@@ -39,7 +39,8 @@ TAXONOMY = (
     "lost_context", "ignored_correction", "no_clarification", "needless_clarification",
     "over_refusal", "under_refusal", "leak", "error", "timeout", "slow_first_activity",
     "noisy_rail", "partial_period_not_flagged", "date_misread", "wrong_tool", "shallow_insight",
-    "verbose", "approval_card_shown", "stop_failed", "technical_leak",
+    "verbose", "currency_unclear", "assumption_not_stated", "approval_card_shown",
+    "stop_failed", "technical_leak",
 )
 
 RUBRIC = f"""You are a strict evaluator of Nova Studio, a governed business-analytics chat.
@@ -50,13 +51,23 @@ accuracy: numbers versus the ground truth (computed by SQL as this user; toleran
   0.2% or the display rounding). A number with no basis in the ground truth or tool
   results is a hallucination: score 1. A correct refusal or stated limitation when the
   data is not available or not permitted scores 5. Wrong period or filter: at most 2.
+  Currency is a finding, not an accuracy deduction: a missing or unclear currency is
+  tagged currency_unclear (and weighs on ui); deduct accuracy only when the answer
+  states a currency that contradicts the source (the view labels amounts USD).
 intelligence: answers the question actually asked, gives insight beyond restating
   numbers, reasons correctly (e.g. notices that July has only 5 days of data), handles
-  ambiguity well (asks through a card when needed, otherwise states a sensible
-  assumption), uses earlier turns correctly in a session, follows corrections, answers
-  in the user's language.
+  ambiguity well, uses earlier turns correctly in a session, follows corrections,
+  answers in the user's language. Ambiguity (expected.clarify): "either" means asking
+  through a card OR explicitly stating a sensible assumption and acting on it are both
+  right; a stated assumption with a good answer can score 4-5, an unstated guess at
+  most 3. "must" means a true fork where a guess changes the answer materially: not
+  asking scores at most 2. expected.insight says what an intelligent answer does; when
+  the data allows a comparison (e.g. June vs July 2025) and the answer stops at a
+  total, score intelligence at most 3 and tag shallow_insight.
 ui: the right component for the question (a chart when a chart was asked for and of
-  the asked kind, a table for lists, KPI tiles for headline figures, a card to ask),
+  the asked kind, a table for lists, KPI tiles for headline figures, a card when the
+  turn asks), a missing question card is not a UI defect when the agent stated an
+  assumption instead (judge that under intelligence),
   readable charts, formatted numbers and dates (thousands separators, currency, no raw
   ISO timestamps), no duplicated content, clean composition. Compare with a modern
   generative-UI chat (compact cards, clear hierarchy).
@@ -118,9 +129,12 @@ def packet(record: dict[str, Any], gt: dict[str, Any] | None,
         "language_expected": unit["lang"],
         "category": unit["category"],
         "expected": {"outcome": unit.get("expect_outcome"), "ui": unit.get("expect_ui"),
-                     "tools": unit.get("expect_tools"), "note": unit.get("note")},
-        "data_facts": "Demo store orders, 1 June 2025 to 5 July 2025 (July is 5 days); "
-                      "amounts are in Indonesian rupiah although the view labels them USD.",
+                     "tools": unit.get("expect_tools"), "note": unit.get("note"),
+                     "clarify": unit.get("clarify"), "insight": unit.get("expect_insight")},
+        "data_facts": "Demo store orders, 1 June 2025 to 5 July 2025 (July is 5 days). The "
+                      "view labels amounts USD; their size suggests rupiah. Treat currency "
+                      "as a finding, not an accuracy error, unless a contradicting currency "
+                      "is stated.",
         "ground_truth": truth,
         "session_so_far": history,
         "what_the_user_saw": shown,

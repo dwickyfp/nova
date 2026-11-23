@@ -13,7 +13,7 @@ committed.
 
 | File | Content |
 | --- | --- |
-| `corpus/questions.jsonl` | 314 single questions, 42% Indonesian |
+| `corpus/questions.jsonl` | 316 single questions, 42% Indonesian |
 | `corpus/sessions.jsonl` | 35 sessions of 3–6 turns (124 turns); most turns carry a `fresh` twin |
 | `corpus/ground_truth.json` | Each ground-truth SQL run as the administrator and as the user |
 
@@ -74,6 +74,15 @@ and Indonesian notation, `juta`/`miliar`/`M`/`B` suffixes, display rounding),
 expected components, outcome (answer, clarify, refuse/limitation, approval,
 cancelled, error), tools, failed tools, duplicated paragraphs or blocks, empty
 activity rows, answer language and leak markers.
+
+Ambiguous questions carry `clarify`: `either` (asking through a card, or an
+explicitly stated sensible assumption acted on, are both right) or `must` (a
+true fork where a guess changes the answer materially). `expect_insight` says
+what an intelligent answer does, for example comparing June with July 2025
+for "How are we doing?" rather than stopping at a total. A missing card never
+lowers the UI floor; it counts through the outcome and intelligence. Currency
+is a finding (`currency_unclear`), not an accuracy deduction, unless the answer
+states a currency that contradicts the source.
 
 The LLM judge (`judge.py`) then scores five dimensions from 1 to 5 with a
 justification and failure tags from a fixed taxonomy, optionally from the

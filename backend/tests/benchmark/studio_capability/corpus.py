@@ -75,6 +75,9 @@ def validate(directory: Path = CORPUS_DIR) -> list[str]:
             problems.append(f"{uid}: language must be en or id")
         if not str(unit.get("question") or "").strip():
             problems.append(f"{uid}: empty question")
+        if unit.get("expect_outcome") == "clarify" and unit.get("clarify") not in {"either",
+                                                                                   "must"}:
+            problems.append(f"{uid}: a clarify unit says whether it must ask or may assume")
         gt = unit.get("gt")
         if gt:
             numeric = str(gt.get("numeric", "all"))
