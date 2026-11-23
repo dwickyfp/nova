@@ -17,6 +17,7 @@ import {
   FileText,
   ImageIcon,
   RefreshCcw,
+  RotateCcw,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -85,6 +86,9 @@ export type StudioHandoff = { threadId: string; missionId: string; prompt: strin
 const STOP_GRACE_MS = 3000;
 
 type ActiveRun = { agentId: string; threadId: string; runId: string };
+
+/** What a sent turn needs to be sent again exactly: its text, files and UI action. */
+type TurnRequest = { content: string; attachments: PendingAttachment[]; uiAction?: UiAction };
 
 let turnSeq = 0;
 function nextTurnId(): string {
@@ -183,6 +187,8 @@ export function StudioChat({
   const [streaming, setStreaming] = useState(false);
   const directRunRef = useRef<ActiveRun | null>(null);
   const stopRequestedRef = useRef(false);
+  // File contents are not kept on the transcript; Retry re-sends them from here.
+  const turnRequestsRef = useRef(new Map<string, TurnRequest>());
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [loadingThread, setLoadingThread] = useState(false);
   const [extended, setExtended] = useState(false);
@@ -289,6 +295,7 @@ export function StudioChat({
     followOutputRef.current = true;
     setThreadId(null);
     setTurns([]);
+    turnRequestsRef.current.clear();
     historyRequestRef.current += 1;
     storedMessagesRef.current = [];
     setOlderCursor(null);
@@ -390,6 +397,7 @@ export function StudioChat({
     followOutputRef.current = true;
     setThreadId(null);
     setTurns([]);
+    turnRequestsRef.current.clear();
     historyRequestRef.current += 1;
     storedMessagesRef.current = [];
     setOlderCursor(null);
@@ -533,9 +541,11 @@ export function StudioChat({
   );
 
   const send = useCallback(
-    async (override?: string, uiAction?: UiAction) => {
-      const content = (override ?? input).trim();
-      const pending = attachments;
+    async (override?: string, uiAction?: UiAction, retry?: TurnRequest) => {
+      // A retry re-sends an earlier request and leaves the composer's draft alone.
+      const content = (retry?.content ?? override ?? input).trim();
+      const pending = retry ? retry.attachments : attachments;
+      uiAction = retry ? retry.uiAction : uiAction;
       if (openingConversation || (!content && !pending.length) || streaming || readingFiles || abortRef.current || !agent) return;
       try { await flushUiStates(); } catch (error) { toast.error((error as Error).message); return; }
       if (abortRef.current) return;
@@ -545,6 +555,7 @@ export function StudioChat({
       // Sending is a request to see the reply, wherever the reader had scrolled.
       followOutputRef.current = true;
       const turnId = nextTurnId();
+      turnRequestsRef.current.set(turnId, { content, attachments: pending, uiAction });
       setTurns((prev) => [
         ...prev,
         {
@@ -561,8 +572,10 @@ export function StudioChat({
           state: "streaming",
         },
       ]);
-      setInput("");
-      setAttachments([]);
+      if (!retry) {
+        setInput("");
+        setAttachments([]);
+      }
       setStreaming(true);
       stopRequestedRef.current = false;
       setDeepenTarget(null);
@@ -594,7 +607,7 @@ export function StudioChat({
         });
       } catch (error) {
         if ((error as Error).name !== "AbortError" && !controller.signal.aborted) {
-          if (!accepted) {
+          if (!accepted && !retry) {
             setInput((current) => current || content);
             setAttachments((current) => current.length ? current : pending);
           }
@@ -727,7 +740,9 @@ export function StudioChat({
    */
   const deepen = useCallback(
     async (turn: TranscriptTurn) => {
-      if (!agent || !threadId || !turn.answer || streaming) return;
+      if (!agent || !threadId || streaming) return;
+      // A failed reconsider pass can be retried; otherwise there must be an answer to reconsider.
+      if (turn.origin !== "reconsider" && !turn.answer) return;
       setDeepenTarget(turn.id);
       const prompt =
         "Reconsider your previous answer. Work through the reasoning step by step, " +
@@ -781,6 +796,26 @@ export function StudioChat({
     },
     [agent, abortRef, currentRole, flushEvents, onTurnEvent, registerRun, streaming, threadId],
   );
+
+  /** The request a failed or stopped turn can be sent again with, if it can be. */
+  const retryRequest = (turn: TranscriptTurn): TurnRequest | null => {
+    const saved = turnRequestsRef.current.get(turn.id);
+    if (saved) return saved;
+    // A reopened turn kept its text but not its files; without them it is not the same request.
+    return turn.question && !turn.attachments?.length
+      ? { content: turn.question, attachments: [] }
+      : null;
+  };
+  const retry = useCallback((turn: TranscriptTurn) => {
+    if (turn.origin === "reconsider") return void deepen(turn);
+    const request = retryRequest(turn);
+    if (request) void send(undefined, undefined, request);
+  }, [deepen, send]);
+  const retryRef = useRef(retry);
+  useLayoutEffect(() => {
+    retryRef.current = retry;
+  }, [retry]);
+  const retryFromTurn = useCallback((turn: TranscriptTurn) => retryRef.current(turn), []);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -909,6 +944,13 @@ export function StudioChat({
                     deepening={deepenTarget === turn.id}
                     onDeepen={deepen}
                     reconsiderDisabled={streaming}
+                    onRetry={
+                      index === turns.length - 1 && !streaming &&
+                      (turn.state === "error" || turn.state === "cancelled") &&
+                      (turn.origin === "reconsider" || retryRequest(turn))
+                        ? retryFromTurn
+                        : undefined
+                    }
                     onFeedback={saveFeedback}
                     onDecide={decide}
                     onReviewSkill={creatingSkill ? setSkillDraft : undefined}
@@ -980,6 +1022,7 @@ const TurnView = memo(function TurnView({
   deepening,
   onDeepen,
   reconsiderDisabled,
+  onRetry,
   onFeedback,
   onDecide,
   onReviewSkill,
@@ -993,6 +1036,8 @@ const TurnView = memo(function TurnView({
   deepening: boolean;
   onDeepen: (turn: TranscriptTurn) => Promise<void>;
   reconsiderDisabled: boolean;
+  /** Send the same request again as a new turn; set only for the latest failed or stopped turn. */
+  onRetry?: (turn: TranscriptTurn) => void;
   onFeedback: (turn: TranscriptTurn, feedback: AnswerFeedback) => Promise<void>;
   onDecide: (
     turnId: string,
@@ -1086,6 +1131,14 @@ const TurnView = memo(function TurnView({
       ) : null}
       {!turn.error && turn.state === "error" ? (
         <StopNotice text="The run did not finish. Review its activity before retrying." />
+      ) : null}
+      {onRetry ? (
+        <div className="nova-chat-item">
+          <Button type="button" variant="outline" size="sm" onClick={() => onRetry(turn)}>
+            <RotateCcw aria-hidden="true" />
+            Retry
+          </Button>
+        </div>
       ) : null}
 
       {!running && (turn.answer || turn.content.length > 0) ? (

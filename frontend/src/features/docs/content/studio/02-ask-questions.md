@@ -29,6 +29,8 @@ SQL or table names.
    instead.
 5. Wait for the answer. While the agent works, a **Working** line shows each
    step and how long it has taken. Click **Stop** (the square button) to cancel.
+   Stop also cancels a **Reconsider this answer** pass. A stopped answer shows
+   "Stopped before the answer finished."
 
 ## Read the answer
 
@@ -68,6 +70,13 @@ switching roles or signing in again, start a new request to approve a tool. A
 pending approval cannot be accepted from another login, even for the same account.
 
 ## Limits and errors
+
+- When the latest question failed or you stopped it, click **Retry** under it
+  to send the same question, with the same attached files, again as a new
+  message. The failed attempt stays in the conversation. A question reopened
+  from **History** that had attached files does not offer **Retry**, because
+  the files are not kept; attach them again and ask. Check the results of any
+  actions before retrying.
 
 - One agent answers each question. Studio does not hand a question from one
   agent to another.
