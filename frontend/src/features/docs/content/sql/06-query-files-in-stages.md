@@ -21,6 +21,11 @@ name:
 
 To create a stage and upload files, see [Stages](/docs/data/stages).
 
+> **Warning:** Nova no longer runs queries that read files with the
+> `FILES(...)` table function, such as
+> `SELECT * FROM FILES("path" = "<storage address>", ...)`. Read the files through a
+> stage instead. See [Moving from FILES()](#moving-from-files).
+
 ## Before you start
 
 - The stage must exist, and your active role needs access to its database.
@@ -118,6 +123,36 @@ Nova picks the format from the file's extension:
 SELECT * FROM @docs_qa_sql_files/prices.parquet;
 SELECT * FROM @docs_qa_sql_files/stock.tsv;
 ```
+
+## Moving from FILES()
+
+Earlier versions of Nova let you read files with the `FILES(...)` table
+function and a storage address, endpoint or keys. Nova now refuses those
+queries in every form: on their own, in a join or subquery, in `INSERT`,
+`CREATE TABLE ... AS`, a view, `EXPLAIN`, `DESC FILES(...)` and task bodies.
+The error is:
+
+```text
+Reading with FILES() is not available: read files through a stage, for example SELECT * FROM @stage/folder/file.csv, or load them with COPY INTO or a pipe
+```
+
+To move a query:
+
+1. Ask your administrator for a stage that points at the folder, or use an
+   existing one. See [Stages](/docs/data/stages).
+2. Replace `FILES(...)` with the stage path. Nova picks the format from the
+   file extension, and the stage supplies the location and credentials.
+
+| Before | After |
+| --- | --- |
+| `SELECT * FROM FILES("path" = "<storage address>/orders/a.csv", "format" = "csv", ...)` | `SELECT * FROM @landing/orders/a.csv` |
+| `INSERT INTO orders SELECT * FROM FILES(...)` | `INSERT INTO orders SELECT * FROM @landing/orders/a.csv`, or [`COPY INTO`](/docs/sql/load-data-from-files) |
+| A scheduled load from `FILES(...)` | A [pipe](/docs/sql/pipes) with `FILES("path" = "@landing/orders/*.csv", ...)` |
+
+These still work: [pipes](/docs/sql/pipes) keep their
+`FILES("path" = "@stage/...")` source, and
+[`INSERT INTO FILES(...)`](/docs/sql/unload-data-to-stages) still writes
+query results to a stage folder.
 
 ## Limits and errors
 
