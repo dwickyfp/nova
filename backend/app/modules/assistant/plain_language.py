@@ -154,7 +154,7 @@ def find_technical_leaks(text: str) -> list[Leak]:
 
 #: What each internal tool did, in words a maintainer uses.
 _TOOL_WORDS = {
-    "load_skill": "a Nova guide",
+    "load_skill": "a skill",
     "search_knowledge": "Nova's guides",
     "catalog_search": "the data catalog",
     "list_semantic_views": "the list of Semantic Views",

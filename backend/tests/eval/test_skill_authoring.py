@@ -78,7 +78,9 @@ async def test_private_skill_load_trajectory_preserves_owner_and_consent_boundar
             resolve_consent=consent,
         )
     ]
-    assert any("load_skill" in frame for frame in frames)
+    assert any(
+        frame.startswith("event: thinking\n") and "Chose a skill" in frame for frame in frames
+    )
     assert any('"finish_reason":"stop"' in frame.replace(" ", "") for frame in frames)
     invocation = ToolInvocation(
         tool_call_id="cross-user", tool_name="load_skill", arguments={"name": "weekly-review"}
