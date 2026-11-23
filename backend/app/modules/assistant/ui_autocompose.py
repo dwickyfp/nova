@@ -307,10 +307,18 @@ _CALL = re.compile(r"(?<![@\w])([A-Z]\w*)\(")
 _LAYOUT = frozenset({"Col", "Row", "Stack"})
 
 
+def program_nodes(program: str) -> set[str]:
+    """The component nodes a program lays out, without its layout containers."""
+    return set(_CALL.findall(program or "")) - _LAYOUT
+
+
+#: Nodes that only carry prose, which belongs in the answer text.
+TEXT_NODES = frozenset({"Caption", "Text", "Markdown", "Heading", "Label", "Divider"})
+
+
 def charts_only(program: str) -> bool:
     """The program only lays out ``Chart`` nodes."""
-    calls = set(_CALL.findall(program or "")) - _LAYOUT
-    return calls == {"Chart"}
+    return program_nodes(program) == {"Chart"}
 
 
 def metric_tiles(tables: dict[str, dict[str, Any]]) -> dict[str, Any] | None:

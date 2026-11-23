@@ -178,3 +178,35 @@ def test_result_columns_read_as_field_labels():
     assert field_label("orders.total_amount") == "Total amount"
     assert field_label("revenue") == "Revenue"
     assert field_label("Revenue (IDR)") == "Revenue (IDR)"
+
+
+def test_a_program_that_repeats_native_key_figures_is_dropped():
+    from app.modules.assistant.service import _key_figures
+
+    tiles = PendingArtifact("component", {"name": "KpiTiles", "props": {"items": [
+        {"label": "Revenue", "value": 1, "format": "number", "aggregation": "value",
+         "evidence_id": "evidence_1", "column": "revenue"}]}}, "call-1")
+    program = ('root = Col([Row([revenue, orders])])\n'
+               'revenue = Kpi(sales, "revenue", "Total revenue", 0)\n'
+               'orders = Kpi(sales, "order_count", "Number of orders", 0)\n'
+               'sales = @Evidence("evidence_1")')
+    ui = PendingArtifact("ui", {"program": program,
+                                "provenance": {"evidence_ids": ["evidence_1"]}})
+    assert _key_figures([tiles, ui], _evidence({"evidence_1": TOTALS})) == [tiles]
+    # Figures of another result are kept.
+    other = PendingArtifact("ui", {"program": program,
+                                   "provenance": {"evidence_ids": ["evidence_2"]}})
+    assert _key_figures([tiles, other], _evidence({})) == [tiles, other]
+
+
+def test_a_view_of_prose_alone_is_dropped():
+    from app.modules.assistant.service import _key_figures
+
+    note = PendingArtifact("ui", {"program": 'root = Col([Caption("No currency is given.")])',
+                                  "provenance": {"evidence_ids": []}})
+    assert _key_figures([note], _evidence({})) == []
+    empty = PendingArtifact("ui", {"program": "root = Col([])", "provenance": {}})
+    assert _key_figures([empty], _evidence({})) == []
+    form = PendingArtifact("ui", {"program": 'root = Col([Caption("Rate"), Slider("r", 0, 9)])',
+                                  "provenance": {"evidence_ids": []}})
+    assert _key_figures([form], _evidence({})) == [form]

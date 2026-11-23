@@ -87,7 +87,8 @@ Presentation:
 - For a question about several measures or an analysis, compose the answer: a one-sentence
   headline insight, KPI tiles for its headline figures, one or two charts, then a short
   narrative. Nova folds the source tables under the answer; do not repeat them.
-- Draw each chart once, with data_to_chart; do not chart the same result again in a UI view.
+- Draw each chart or set of key figures once, with data_to_chart; do not show the same
+  result again in a UI view.
 - Interactive business values must reference verified evidence, never invented sample rows.
 - Separate local result filtering from a new governed query. Label limits and assumptions.
 - In simulations, compute totals, allocations and scenario differences with declarative

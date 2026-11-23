@@ -5174,21 +5174,38 @@ def _key_figures(
     """Key figures as ``KpiTiles``, from the verified rows, never a one-line table.
 
     A model program that only tabulates one row of measures becomes tiles in
-    its place, and one that only repeats charts already drawn as native
-    charts is dropped. When charts are drawn but no tiles are, one-row metric
-    results get tiles too, so the answer leads with its figures.
+    its place; one that only repeats charts or figures already drawn as native
+    components, or that holds only prose, is dropped. When charts are drawn but no tiles are,
+    one-row metric results get tiles too, so the answer leads with its figures.
     """
-    from app.modules.assistant.ui_autocompose import charts_only, key_figures, metric_tiles
+    from app.modules.assistant.ui_autocompose import (
+        TEXT_NODES,
+        key_figures,
+        metric_tiles,
+        program_nodes,
+    )
 
     tables = evidence.business_tables
-    charted = {str((item.payload.get("source") or {}).get("evidence_id") or "")
-               for item in artifacts
-               if item.kind == "component" and item.payload.get("name") == "DatavizChart"}
+    components = [item.payload for item in artifacts if item.kind == "component"]
+    # The results each kind of node already shows natively.
+    shown = {
+        "Chart": {str((payload.get("source") or {}).get("evidence_id") or "")
+                  for payload in components if payload.get("name") == "DatavizChart"},
+        "Kpi": {str(tile.get("evidence_id") or "")
+                for payload in components if payload.get("name") == "KpiTiles"
+                for tile in (payload.get("props") or {}).get("items") or []},
+    }
     ordered = []
     for item in artifacts:
         program = str(item.payload.get("program") or "") if item.kind == "ui" else ""
         bound = set((item.payload.get("provenance") or {}).get("evidence_ids") or [])
-        if program and bound and bound <= charted and charts_only(program):
+        nodes = program_nodes(program)
+        if bound and len(nodes) == 1 and bound <= shown.get(next(iter(nodes)), set()):
+            continue
+        # An empty view, or prose alone ("the result does not specify a
+        # currency"), says nothing the answer text cannot, and would read as
+        # an assumption.
+        if program and not bound and nodes <= TEXT_NODES:
             continue
         tiles = key_figures(program, tables) if program else None
         ordered.append(PendingArtifact("component", tiles) if tiles else item)
