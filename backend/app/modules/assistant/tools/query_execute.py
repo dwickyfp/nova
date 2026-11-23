@@ -158,6 +158,20 @@ class QueryExecuteTool:
         self._classification = self.classification_for(invocation)
         return _safe_redact(sql)
 
+    def approval_details(
+        self, invocation: ToolInvocation, context: Any = None,
+    ) -> dict[str, Any]:
+        """The approval card shows the statement itself; Edit then run edits it.
+
+        An edited statement is classified again by the loop and parsed again at
+        execution, exactly like the proposed one.
+        """
+        return {
+            "preview_kind": "sql",
+            "editable": {"argument": "sql", "label": "SQL", "language": "sql",
+                         "max_length": 20_000},
+        }
+
     def classification_for(self, invocation: ToolInvocation) -> ToolClassification:
         sql = _sql_from(invocation)
         try:

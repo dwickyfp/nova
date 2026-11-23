@@ -1605,7 +1605,6 @@ function emptyTranscript(message: ThreadTurn): TranscriptTurn {
     steps: [],
     answer: message.content,
     content: [],
-    pendingConsent: null,
     blocks: { tables: [], charts: [], citations: [] },
     state: "done",
     run: emptyRunState("done"),

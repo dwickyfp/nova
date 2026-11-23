@@ -297,6 +297,20 @@ class ConsentDecisionRequest(BaseModel):
     secure_input: dict[str, str] | None = None
 
 
+class HumanInputAnswerRequest(BaseModel):
+    """The answer to one human-in-the-loop request.
+
+    ``action`` is ``allow_once`` / ``allow_session`` / ``deny`` for an approval
+    (``edited_arguments`` with an allow runs the user's edit of the call's one
+    editable argument, classified again), and ``answer`` / ``decline`` for a
+    question, form or choice. ``answer`` is validated against the request.
+    """
+
+    action: Literal["allow_once", "allow_session", "deny", "answer", "decline"]
+    answer: dict[str, Any] | None = None
+    edited_arguments: dict[str, str] | None = Field(default=None, max_length=1)
+
+
 class ConsentDecisionResponse(BaseModel):
     tool_call_id: str
     status: ToolStatus

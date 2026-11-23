@@ -33,7 +33,8 @@ import {
   type DatavizTurnContext,
 } from "@/features/agents/api";
 import { ProcessRail, StopNotice, type RailStep } from "./thought-turn";
-import { ConsentCard } from "./consent-card";
+import { HitlRequest } from "./runtime/hitl/hitl-request";
+import type { HitlAnswerBody } from "./runtime/hitl/types";
 import { TurnContent } from "./turn-content";
 import { flushUiStates } from './intelligent-ui/state';
 import type { UiAction } from './intelligent-ui/types';
@@ -67,7 +68,6 @@ import {
 } from "@/features/native-dataviz/dashboard/events";
 import {
   contentFromParts,
-  decideToolCall,
   newTurn,
   patchTurn,
   replayThread,
@@ -76,11 +76,10 @@ import {
   stepsFromParts,
   syncTurn,
   turnSegments,
-  type PendingCall,
   type StudioEvent,
   type TranscriptTurn,
 } from "./studio-transcript";
-import { emptyRunState } from "./runtime/turn-reducer";
+import { emptyRunState, type HitlPart } from "./runtime/turn-reducer";
 
 function activity(detail: NativeDashboardActivity) {
   window.dispatchEvent(new CustomEvent(NATIVE_DASHBOARD_ACTIVITY, { detail }));
@@ -250,7 +249,6 @@ export function StudioChat({
       toolParts.current.set(event.partId, event.part.toolCallId);
       toolStatus.current.set(event.part.toolCallId, "running");
     }
-    if (event.type === "consent.required") toolStatus.current.set(event.call.tool_call_id, "pending");
     if (aux?.type === "dashboard_activity") {
       activity({
         kind: "proposed", tool_call_id: aux.tool_call_id, dashboard_id: aux.dashboard_id,
@@ -702,29 +700,24 @@ export function StudioChat({
   }, [cancelActiveRun]);
 
   /**
-   * Send the user's decision on a tool call, then clear the card. The closing
-   * `tool_status` frame arrives on the still-open turn stream, so the rail
-   * updates itself; this only needs to unblock the turn.
+   * Answer a human-in-the-loop request (an approval, a question, a form or a
+   * choice). The request settles from the server's `input.resolved` on the
+   * still-open turn stream, so the card collapses when the run has the answer,
+   * not when this request returns.
    */
-  const decide = useCallback(
-    async (
-      turnId: string,
-      call: PendingCall,
-      decision: "allow_once" | "allow_session" | "deny",
-    ) => {
-      if (!agent) return;
-      await agentsApi.decideToolCall(
-        agent.agent_id,
-        call.tool_call_id,
-        decision,
-      );
-      setTurns((prev) =>
-        patchTurn(prev, turnId, (turn) =>
-          decideToolCall(turn, call.tool_call_id, decision === "deny" ? "denied" : "approved"),
-        ),
-      );
+  const answer = useCallback(
+    async (turn: TranscriptTurn, part: HitlPart, body: HitlAnswerBody) => {
+      const runId = turn.run.runId;
+      if (!agent || !threadId || !runId) throw new Error("This request is no longer waiting.");
+      try {
+        await agentsApi.answerInput(agent.agent_id, threadId, runId, part.requestId, body);
+      } catch (cause) {
+        const status = (cause as { status?: number } | null)?.status;
+        if (status === 404) throw new Error("This request is no longer waiting.", { cause });
+        throw cause instanceof Error ? cause : new Error("The answer could not be sent. Try again.", { cause });
+      }
     },
-    [agent],
+    [agent, threadId],
   );
 
   /**
@@ -939,7 +932,7 @@ export function StudioChat({
                         : undefined
                     }
                     onFeedback={saveFeedback}
-                    onDecide={decide}
+                    onAnswer={answer}
                     onReviewSkill={creatingSkill ? setSkillDraft : undefined}
                   />
                 ))}
@@ -1032,7 +1025,7 @@ const TurnView = memo(function TurnView({
   reconsiderDisabled,
   onRetry,
   onFeedback,
-  onDecide,
+  onAnswer,
   onReviewSkill,
   uiContext,
 }: {
@@ -1047,11 +1040,7 @@ const TurnView = memo(function TurnView({
   /** Send the same request again as a new turn; set only for the latest failed or stopped turn. */
   onRetry?: (turn: TranscriptTurn) => void;
   onFeedback: (turn: TranscriptTurn, feedback: AnswerFeedback) => Promise<void>;
-  onDecide: (
-    turnId: string,
-    call: PendingCall,
-    decision: "allow_once" | "allow_session" | "deny",
-  ) => Promise<void>;
+  onAnswer: (turn: TranscriptTurn, part: HitlPart, body: HitlAnswerBody) => Promise<void>;
   onReviewSkill?: (document: string) => void;
   uiContext?: { agentId: string; threadId: string; onAction: (message: string, action: UiAction) => Promise<void> };
 }) {
@@ -1101,6 +1090,13 @@ const TurnView = memo(function TurnView({
       {segments.map((segment, index) =>
         segment.kind === "role_change" ? (
           <RoleChangeNotice key={segment.id} role={segment.activeRole} />
+        ) : segment.kind === "hitl" ? (
+          <HitlRequest
+            key={segment.id}
+            part={segment.part}
+            live={running}
+            onAnswer={(part, body) => onAnswer(turn, part, body)}
+          />
         ) : segment.kind === "work" ? (
           <ProcessRail
             key={segment.id}
@@ -1122,14 +1118,6 @@ const TurnView = memo(function TurnView({
       )}
       {starting ? <ProcessRail steps={STARTING} running revealKey={turn.revealKey} /> : null}
 
-      {turn.pendingConsent ? (
-        <ConsentCard
-          call={turn.pendingConsent}
-          onDecide={(decision) =>
-            onDecide(turn.id, turn.pendingConsent as PendingCall, decision)
-          }
-        />
-      ) : null}
 
       {draft ? (
         <div>

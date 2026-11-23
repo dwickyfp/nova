@@ -1,4 +1,5 @@
 import { api, apiBase, authHeaders } from "@/lib/api-client";
+import type { HitlAnswerBody } from "@/features/studio/runtime/hitl/types";
 import { useAuthStore } from "@/stores/auth-store";
 import { readSseFrames } from "@/features/assistant/events";
 import type { WorkflowProvenance } from "@/features/assistant/types";
@@ -294,6 +295,18 @@ export const agentsApi = {
     }>(
       `/agents/${encodeURIComponent(agentId)}/tool-calls/${encodeURIComponent(toolCallId)}/decision`,
       { decision },
+    ),
+  /** Answer a human-in-the-loop request of a running turn (approval, question, form, choice). */
+  answerInput: (
+    agentId: string,
+    threadId: string,
+    runId: string,
+    requestId: string,
+    body: HitlAnswerBody,
+  ) =>
+    api.post<{ request_id: string; status: string }>(
+      `/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}/runs/${encodeURIComponent(runId)}/inputs/${encodeURIComponent(requestId)}`,
+      body,
     ),
 };
 

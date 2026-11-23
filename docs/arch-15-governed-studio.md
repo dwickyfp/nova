@@ -49,7 +49,8 @@ monotonic `seq`; part ids are `<run_id>#<n>` in production order (content blocks
 | `part.end` | `part_id`, `state` (`done`, `error`, `cancelled`), `final?` | Seals a part |
 | `tool.status` | `part_id`, `status`, `preview?`, `progress?`, `detail?`, `evidence?` | A tool call's progress and result summary |
 | `tool.evidence` | `part_id`, `kind`, `payload`, `workflow?` | Evidence Health or envelope for a call |
-| `consent.required` | `part_id`, `classification`, `tool_call`, `preview?` | A call waits for the user's decision |
+| `input.required` | `part_id`, `request_id`, `kind`, `request`, `expires_at` | The run waits for a person; opens a `hitl_request` part |
+| `input.resolved` | `part_id`, `status`, `summary`, `answer?` | How the request ended; seals its part |
 | `role.changed` | `active_role` | Work under the previous role is withdrawn; earlier turns stay hidden |
 | `run.finished` | `message_id`, `finish_reason`, `usage?`, `source?` | Terminal event; seals parts left open |
 | `run.error` | `code`, `message` | A failure the turn reports |
@@ -82,8 +83,45 @@ content and role-change separators in `seq` order. Turns stored before v2 have
 no journal; they replay read-only from their recorded steps. The encoder and the
 client's test mirror are both checked against
 [`protocol-v2-contract.json`](../frontend/src/features/studio/runtime/protocol-v2-contract.json).
-Not in this protocol yet: model text before numeric verification, provider
-reasoning, and a component registry.
+Not in this protocol yet: model text before numeric verification and provider
+reasoning.
+
+### Human-in-the-loop requests
+
+A run can stop and ask the person who started it. Each request is a
+`hitl_request` part (`request_id`, `kind`, `tool_part_id?`) placed by `seq`
+like any other part, and answered inline. There are four kinds:
+
+| Kind | Raised by | Answer |
+| --- | --- | --- |
+| `approval` | The shared tool gate, for a call that needs consent | `allow_once`, `allow_session` (read-only calls only), `deny`, or `allow_once` with `edited_arguments` |
+| `question` | The agent tool `request_human_input` | Choice chip or free text |
+| `form` | `request_id`, from a JSON Schema subset (text, select, date, date range, number, integer, toggle) | `values`, validated in the client and again by the server |
+| `choice` | `request_human_input` | `option_id` of 2–6 option cards |
+
+Consent is the `approval` kind. Its request carries the redacted preview
+(`preview_kind` `sql`, or `semantic` with the Semantic View and question for a
+Semantic View step), the affected objects, the classification, the active role
+and why approval is needed. Edit then run changes only the argument the tool
+declares editable. The server rebuilds the call, re-classifies it and checks
+policy; a denied or changed classification is refused (`input.resolved`
+`refused`) and the call does not run.
+
+Answers go to `POST /api/v1/agents/{agent_id}/threads/{thread_id}/runs/{run_id}/inputs/{request_id}`.
+The waiting request is bound to the principal, role, security-context version
+and session of the turn owner, plus the run and thread; any other caller gets
+404, as does a second answer. An answer the request cannot accept gets 422.
+Every answer writes an audit row (`<kind>:<status>`).
+
+A request waits at most 10 minutes (`expired`); Stop cancels it (`cancelled`).
+An agent can ask at most 4 times per turn, and only when a person is watching
+the run; automations get `TOOL_NOT_ALLOWED`. The waiting time does not count
+against the turn's time budget. `request_human_input` is never offered to the
+turn planner. Both events are journal boundaries, so replay shows the settled
+request as its one-line summary; a replayed pending request offers no controls.
+
+The client renders requests through a kind registry
+([`hitl/registry.ts`](../frontend/src/features/studio/runtime/hitl/registry.ts)).
 
 The Smart coordinator and its agent worker were removed on 2026-11-07. Existing
 Smart automations are switched off once at startup, and old Smart chats no

@@ -37,8 +37,10 @@ def test_registry_is_a_structural_tool_selection() -> None:
     registry = build_registry(agent)
     # compute_metrics comes with any tool that returns a result table: it reads
     # only results that tool already authorized.
+    # request_human_input is always present; the loop offers it only while a
+    # person is watching the run.
     assert set(registry.names()) == {
-        "load_skill", "semantic_query", "compute_metrics", "schedule_automation",
+        "load_skill", "semantic_query", "compute_metrics", "schedule_automation", "request_human_input",
     }
     assert "compute_metrics" not in build_registry({"default_tools": ["load_skill"]}).names()
     # An unselected tool is not merely hidden; it cannot be fetched.
@@ -49,7 +51,7 @@ def test_registry_is_a_structural_tool_selection() -> None:
 def test_registry_ignores_unknown_tool_names() -> None:
     agent = {"default_tools": ["load_skill", "not_a_tool"]}
     registry = build_registry(agent)
-    assert set(registry.names()) == {"load_skill"}
+    assert set(registry.names()) == {"load_skill", "request_human_input"}
 
 
 def test_prompt_always_includes_the_core_contract() -> None:

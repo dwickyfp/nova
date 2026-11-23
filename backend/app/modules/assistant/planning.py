@@ -157,6 +157,10 @@ def _output_instructions(schema: dict[str, Any]) -> str:
     return "\n".join(rules)
 
 
+#: ``human_input.TOOL_NAME``; spelled here to keep planning free of that import.
+HUMAN_INPUT_TOOL = "request_human_input"
+
+
 def validate_turn_plan(
     value: Any,
     available_tools: set[str],
@@ -182,8 +186,10 @@ def validate_turn_plan(
         raise TurnPlanningError("The provider returned an invalid skill plan.")
     if any(not isinstance(name, str) for name in [*raw_tools, *raw_required]):
         raise TurnPlanningError("The provider returned an invalid tool name.")
-    tools = tuple(dict.fromkeys(raw_tools))
-    required = tuple(dict.fromkeys(raw_required))
+    # Asking the user is the loop's, never a planned capability: a plan that
+    # names it keeps the rest of its tools.
+    tools = tuple(dict.fromkeys(name for name in raw_tools if name != HUMAN_INPUT_TOOL))
+    required = tuple(dict.fromkeys(name for name in raw_required if name != HUMAN_INPUT_TOOL))
     skills = tuple(dict.fromkeys(raw_skills))
     if len(skills) > 2 or not set(skills) <= (available_skills or set()):
         raise TurnPlanningError("The provider selected an unavailable skill.")
@@ -474,7 +480,12 @@ async def plan_turn(
     agent_scope: dict[str, Any] | None = None,
     semantic_context: dict[str, Any] | None = None,
 ) -> TurnPlan:
-    available = registry.names()
+    # Asking the user is not a capability to plan: the loop offers it to the
+    # model on its own when a person is on the other end of the run.
+    available = [
+        name for name in registry.names()
+        if not getattr(registry.get(name), "human_input", False)
+    ]
     skill_names = set(registry.discoverable_skills)
     scripted_plan = getattr(provider_client, "plan_turn", None)
     if callable(scripted_plan):

@@ -140,7 +140,7 @@ async def test_insert_then_select_tools_run_in_one_agent_turn(monkeypatch) -> No
     }
     registry = build_registry(agent)
     await add_custom_tools(registry, agent)
-    assert registry.names() == ["load_skill", insert.name, select.name]
+    assert registry.names() == ["load_skill", "request_human_input", insert.name, select.name]
     provider = ScriptedProvider(
         script=[
             tool_call_frame("i", name=insert.name, arguments={"value": "abc"}),

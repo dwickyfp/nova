@@ -92,8 +92,8 @@ describe("turn reducer", () => {
     const turn = live(parsedEvents(answerCase.v2));
     const seqs = turn.run.parts.map((part) => part.seq);
     expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
-    expect(turnSegments(turn.run.parts).map((segment) => segment.kind)).toEqual(["work", "content"]);
-    expect(turn.content.map((item) => item.id)).toEqual(["content-0", "content-1", "content-2", "run-a#10"]);
+    expect(turnSegments(turn.run.parts).map((segment) => segment.kind)).toEqual(["work", "hitl", "work", "content"]);
+    expect(turn.content.map((item) => item.id)).toEqual(["content-0", "content-1", "content-2", "run-a#11"]);
     expect(turn.answer).toBe("Revenue rose 12%.");
     expect(turn.state).toBe("done");
     expect(turn.suggestions).toEqual(["Break it down by region"]);
@@ -139,7 +139,11 @@ describe("turn reducer", () => {
       ["c1", "failed", "Result not confirmed"],
       ["c2", "cancelled", expect.any(String)],
     ]);
-    expect(turn.pendingConsent).toBeNull();
+    // The approval it was waiting on can no longer be given.
+    expect(turn.run.parts.find((part) => part.type === "hitl_request")).toMatchObject({
+      status: "cancelled",
+      state: "cancelled",
+    });
     expect(turn.error).toBe("Progress could not be saved.");
     expect(turn.state).toBe("error");
     expect(turn.content.find((item) => item.type === "ui")?.complete).toBe(false);

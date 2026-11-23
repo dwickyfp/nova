@@ -19,7 +19,8 @@ Event                  Payload
 ``part.end``           ``{part_id, state, final?}`` seals one part
 ``tool.status``        ``{part_id, status, preview?, progress?, detail?}``
 ``tool.evidence``      ``{part_id, kind, tool_name?, payload, workflow?}``
-``consent.required``   ``{part_id, classification, preview?, tool_call}``
+``input.required``     ``{part_id, request_id, kind, request, expires_at}``
+``input.resolved``     ``{part_id, status, summary, answer?}``
 ``role.changed``       ``{active_role}``
 ``run.finished``       ``{message_id, finish_reason, usage?, source?}``
 ``run.error``          ``{code, message}``
@@ -27,9 +28,14 @@ Event                  Payload
 =====================  =====================================================
 
 Part types are ``reasoning`` (``source: "nova"`` phase labels in this
-protocol; provider reasoning is not read), ``text``, ``tool``, ``guard`` and the
-authored content blocks ``table``, ``chart``, ``citation``, ``dashboard`` and
-``ui``. Side-effect events (``suggestions``, ``mission_updated``,
+protocol; provider reasoning is not read), ``text``, ``tool``, ``guard``,
+``hitl_request`` and the authored content blocks ``table``, ``chart``,
+``citation``, ``dashboard`` and ``ui``.
+
+A ``hitl_request`` part is the turn asking its user (``kind`` approval,
+question, form or choice). It opens where the request was made, is followed by
+``input.required`` with the request, and seals after ``input.resolved``. An
+approval part names the ``tool`` part it decides (``tool_part_id``). Side-effect events (``suggestions``, ``mission_updated``,
 ``mission_continuation``, ``dashboard_changed``, ``dashboard_activity``,
 ``client_action``, ``execution_time_context``, ``business_result``) keep their
 established payloads and are numbered in the same sequence.
@@ -53,7 +59,8 @@ PART_DELTA = "part.delta"
 PART_END = "part.end"
 TOOL_STATUS = "tool.status"
 TOOL_EVIDENCE = "tool.evidence"
-CONSENT_REQUIRED = "consent.required"
+INPUT_REQUIRED = "input.required"
+INPUT_RESOLVED = "input.resolved"
 ROLE_CHANGED = "role.changed"
 RUN_FINISHED = "run.finished"
 RUN_ERROR = "run.error"
@@ -73,11 +80,12 @@ V1_ONLY = frozenset({
     events.EVENT_CONTENT_BLOCK_DONE, events.EVENT_DONE, events.EVENT_ERROR, events.EVENT_TABLE,
     events.EVENT_CHART, events.EVENT_CITATION, "ui", "ui_delta", "dashboard", "guard",
     "role_changed", "evidence_health", "evidence_envelope",
+    events.EVENT_INPUT_REQUIRED, events.EVENT_INPUT_RESOLVED,
 })
 
 #: Frames that mark a durable boundary: the route flushes its journal batch.
 FLUSH_EVENTS = frozenset({
-    CONSENT_REQUIRED, TOOL_STATUS, ROLE_CHANGED, RUN_ERROR, RUN_FINISHED,
+    INPUT_REQUIRED, INPUT_RESOLVED, TOOL_STATUS, ROLE_CHANGED, RUN_ERROR, RUN_FINISHED,
     "execution_time_context",
 })
 
@@ -156,6 +164,8 @@ class StudioStreamEncoder:
         self._tools: dict[tuple[str, str], str] = {}
         self._tool_state: dict[tuple[str, str], str] = {}
         self._content: dict[str, str] = {}
+        # Human-input parts by (originating run, request id).
+        self._inputs: dict[tuple[str, str], str] = {}
         self._open: dict[str, str] = {}  # part_id -> type, in opening order
         self._reasoning: tuple[str, str, str] | None = None  # part_id, phase, text
         self._plan: str | None = None
@@ -270,6 +280,10 @@ class StudioStreamEncoder:
             if name == "ui_delta":
                 return [self._delta(target, body.get("text"))]
             return [self._end(target)]
+        if name == events.EVENT_INPUT_REQUIRED:
+            return self._input_required(origin, body)
+        if name == events.EVENT_INPUT_RESOLVED:
+            return self._input_resolved(origin, body)
         if name == "role_changed":
             return self._role_changed(body)
         if name == events.EVENT_ERROR:
@@ -306,6 +320,15 @@ class StudioStreamEncoder:
             # made every block final, an interactive program whose own close
             # frame was lost included; the renderer still validates it.
             if part_type == "tool" and part_id in waiting:
+                frames.append(self._end(part_id, "cancelled"))
+            elif part_type == "hitl_request":
+                # Still waiting when the run ended: nobody can answer it now.
+                status = "expired" if reason == "consent_timeout" else "cancelled"
+                frames.append(self._frame(INPUT_RESOLVED, {
+                    "part_id": part_id, "status": status,
+                    "summary": "The request expired" if status == "expired"
+                    else "Stopped before you answered",
+                }))
                 frames.append(self._end(part_id, "cancelled"))
             else:
                 frames.append(self._end(part_id, state))
@@ -369,15 +392,13 @@ class StudioStreamEncoder:
         status = str(view.get("status") or "running")
         preview = view.get("sql_preview") or None
         if status == "pending":
-            payload: dict[str, Any] = {
-                "part_id": part_id,
-                "classification": view.get("classification"),
-                "tool_call": view,
-            }
+            # The call waits for approval; the request itself follows as a
+            # ``hitl_request`` part (``input_required``).
+            self._tool_state[key] = status
+            payload: dict[str, Any] = {"part_id": part_id, "status": status}
             if preview:
                 payload["preview"] = preview
-            self._tool_state[key] = status
-            frames.append(self._frame(CONSENT_REQUIRED, payload))
+            frames.append(self._frame(TOOL_STATUS, payload))
             return frames
         frames.extend(self._tool_status(key, status, preview=preview))
         return frames
@@ -484,6 +505,45 @@ class StudioStreamEncoder:
         frames.append(opened)
         return frames
 
+    def _input_required(self, origin: str, body: dict[str, Any]) -> list[str]:
+        request_id = str(body.get("request_id") or "")
+        request = body.get("request")
+        if not request_id or not isinstance(request, dict) or (origin, request_id) in self._inputs:
+            return []
+        frames = self._close_reasoning()
+        fields: dict[str, Any] = {"request_id": request_id, "kind": str(request.get("kind") or "")}
+        tool_call_id = body.get("tool_call_id")
+        if tool_call_id:
+            tool_part = self._tools.get((origin, str(tool_call_id)))
+            if tool_part is not None:
+                fields["tool_part_id"] = tool_part
+        part_id, opened = self._start("hitl_request", **fields)
+        self._inputs[(origin, request_id)] = part_id
+        frames.append(opened)
+        frames.append(self._frame(INPUT_REQUIRED, {
+            "part_id": part_id,
+            "request_id": request_id,
+            "kind": fields["kind"],
+            "request": request,
+            "expires_at": str(body.get("expires_at") or ""),
+        }))
+        return frames
+
+    def _input_resolved(self, origin: str, body: dict[str, Any]) -> list[str]:
+        part_id = self._inputs.get((origin, str(body.get("request_id") or "")))
+        if part_id is None or part_id not in self._open:
+            return []
+        status = str(body.get("status") or "cancelled")
+        payload: dict[str, Any] = {
+            "part_id": part_id, "status": status, "summary": str(body.get("summary") or ""),
+        }
+        if isinstance(body.get("answer"), dict):
+            payload["answer"] = body["answer"]
+        return [
+            self._frame(INPUT_RESOLVED, payload),
+            self._end(part_id, "cancelled" if status in {"cancelled", "expired"} else "done"),
+        ]
+
     def _role_changed(self, body: dict[str, Any]) -> list[str]:
         # Work done under the previous role is discarded by the loop; its parts
         # are closed so nothing from that role keeps streaming.
@@ -495,6 +555,7 @@ class StudioStreamEncoder:
         self._tools.clear()
         self._tool_state.clear()
         self._content.clear()
+        self._inputs.clear()
         role = str(body.get("active_role") or "")
         frames.append(self._frame(ROLE_CHANGED, {"active_role": role}))
         return frames

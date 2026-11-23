@@ -132,6 +132,39 @@
           }
         },
         {
+          "event": "input_required",
+          "data": {
+            "request_id": "c2",
+            "kind": "approval",
+            "tool_call_id": "c2",
+            "expires_at": "2026-11-23T10:05:00+00:00",
+            "request": {
+              "kind": "approval",
+              "title": "Approve this data step?",
+              "classification": "read_only",
+              "reason": "asks_first",
+              "role": "ANALYST",
+              "preview_kind": "sql",
+              "preview": "SELECT 1",
+              "allow_session": true,
+              "editable": {
+                "argument": "sql",
+                "label": "SQL",
+                "language": "sql",
+                "max_length": 20000
+              }
+            }
+          }
+        },
+        {
+          "event": "input_resolved",
+          "data": {
+            "request_id": "c2",
+            "status": "allowed",
+            "summary": "You allowed this once"
+          }
+        },
+        {
           "event": "tool_status",
           "data": {
             "tool_call_id": "c2",
@@ -493,20 +526,71 @@
           }
         },
         {
-          "event": "consent.required",
+          "event": "tool.status",
           "data": {
             "part_id": "run-a#4",
-            "classification": "read_only",
-            "tool_call": {
-              "tool_call_id": "c2",
-              "tool_name": "query_execute",
-              "sql_preview": "SELECT 1",
-              "classification": "read_only",
-              "status": "pending"
-            },
+            "status": "pending",
             "preview": "SELECT 1",
             "run_id": "run-a",
             "seq": 16
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-a#5",
+            "type": "hitl_request",
+            "request_id": "c2",
+            "kind": "approval",
+            "tool_part_id": "run-a#4",
+            "run_id": "run-a",
+            "seq": 17
+          }
+        },
+        {
+          "event": "input.required",
+          "data": {
+            "part_id": "run-a#5",
+            "request_id": "c2",
+            "kind": "approval",
+            "request": {
+              "kind": "approval",
+              "title": "Approve this data step?",
+              "classification": "read_only",
+              "reason": "asks_first",
+              "role": "ANALYST",
+              "preview_kind": "sql",
+              "preview": "SELECT 1",
+              "allow_session": true,
+              "editable": {
+                "argument": "sql",
+                "label": "SQL",
+                "language": "sql",
+                "max_length": 20000
+              }
+            },
+            "expires_at": "2026-11-23T10:05:00+00:00",
+            "run_id": "run-a",
+            "seq": 18
+          }
+        },
+        {
+          "event": "input.resolved",
+          "data": {
+            "part_id": "run-a#5",
+            "status": "allowed",
+            "summary": "You allowed this once",
+            "run_id": "run-a",
+            "seq": 19
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-a#5",
+            "state": "done",
+            "run_id": "run-a",
+            "seq": 20
           }
         },
         {
@@ -515,63 +599,63 @@
             "part_id": "run-a#4",
             "status": "running",
             "run_id": "run-a",
-            "seq": 17
-          }
-        },
-        {
-          "event": "tool.status",
-          "data": {
-            "part_id": "run-a#4",
-            "status": "done",
-            "run_id": "run-a",
-            "seq": 18
-          }
-        },
-        {
-          "event": "part.end",
-          "data": {
-            "part_id": "run-a#4",
-            "state": "done",
-            "run_id": "run-a",
-            "seq": 19
-          }
-        },
-        {
-          "event": "part.start",
-          "data": {
-            "part_id": "run-a#5",
-            "type": "tool",
-            "tool_call_id": "c1",
-            "tool_name": "query_execute",
-            "origin_run_id": "mission-run",
-            "classification": "read_only",
-            "run_id": "run-a",
-            "seq": 20
-          }
-        },
-        {
-          "event": "tool.status",
-          "data": {
-            "part_id": "run-a#5",
-            "status": "done",
-            "preview": "SELECT 1",
-            "run_id": "run-a",
             "seq": 21
           }
         },
         {
-          "event": "part.end",
+          "event": "tool.status",
           "data": {
-            "part_id": "run-a#5",
-            "state": "done",
+            "part_id": "run-a#4",
+            "status": "done",
             "run_id": "run-a",
             "seq": 22
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-a#4",
+            "state": "done",
+            "run_id": "run-a",
+            "seq": 23
           }
         },
         {
           "event": "part.start",
           "data": {
             "part_id": "run-a#6",
+            "type": "tool",
+            "tool_call_id": "c1",
+            "tool_name": "query_execute",
+            "origin_run_id": "mission-run",
+            "classification": "read_only",
+            "run_id": "run-a",
+            "seq": 24
+          }
+        },
+        {
+          "event": "tool.status",
+          "data": {
+            "part_id": "run-a#6",
+            "status": "done",
+            "preview": "SELECT 1",
+            "run_id": "run-a",
+            "seq": 25
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-a#6",
+            "state": "done",
+            "run_id": "run-a",
+            "seq": 26
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-a#7",
             "type": "guard",
             "decision": {
               "rule_id": "credential-in-answer",
@@ -581,44 +665,6 @@
               "message": "A credential-shaped value was removed.",
               "source": "platform"
             },
-            "run_id": "run-a",
-            "seq": 23
-          }
-        },
-        {
-          "event": "part.end",
-          "data": {
-            "part_id": "run-a#6",
-            "state": "done",
-            "run_id": "run-a",
-            "seq": 24
-          }
-        },
-        {
-          "event": "part.start",
-          "data": {
-            "part_id": "run-a#7",
-            "type": "text",
-            "content_index": 0,
-            "content_id": "content-0",
-            "run_id": "run-a",
-            "seq": 25
-          }
-        },
-        {
-          "event": "part.delta",
-          "data": {
-            "part_id": "run-a#7",
-            "text": "Revenue rose ",
-            "run_id": "run-a",
-            "seq": 26
-          }
-        },
-        {
-          "event": "part.delta",
-          "data": {
-            "part_id": "run-a#7",
-            "text": "12%.",
             "run_id": "run-a",
             "seq": 27
           }
@@ -636,6 +682,44 @@
           "event": "part.start",
           "data": {
             "part_id": "run-a#8",
+            "type": "text",
+            "content_index": 0,
+            "content_id": "content-0",
+            "run_id": "run-a",
+            "seq": 29
+          }
+        },
+        {
+          "event": "part.delta",
+          "data": {
+            "part_id": "run-a#8",
+            "text": "Revenue rose ",
+            "run_id": "run-a",
+            "seq": 30
+          }
+        },
+        {
+          "event": "part.delta",
+          "data": {
+            "part_id": "run-a#8",
+            "text": "12%.",
+            "run_id": "run-a",
+            "seq": 31
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-a#8",
+            "state": "done",
+            "run_id": "run-a",
+            "seq": 32
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-a#9",
             "type": "table",
             "block": {
               "title": "Revenue",
@@ -653,22 +737,22 @@
             "content_index": 1,
             "content_id": "content-1",
             "run_id": "run-a",
-            "seq": 29
+            "seq": 33
           }
         },
         {
           "event": "part.end",
           "data": {
-            "part_id": "run-a#8",
+            "part_id": "run-a#9",
             "state": "done",
             "run_id": "run-a",
-            "seq": 30
+            "seq": 34
           }
         },
         {
           "event": "part.start",
           "data": {
-            "part_id": "run-a#9",
+            "part_id": "run-a#10",
             "type": "ui",
             "block": {
               "catalog_version": "1",
@@ -686,47 +770,47 @@
             "content_index": 2,
             "content_id": "content-2",
             "run_id": "run-a",
-            "seq": 31
+            "seq": 35
           }
         },
         {
           "event": "part.delta",
           "data": {
-            "part_id": "run-a#9",
+            "part_id": "run-a#10",
             "text": "root = Col([Text(\"Adjust\")])",
             "run_id": "run-a",
-            "seq": 32
+            "seq": 36
           }
         },
         {
           "event": "part.end",
           "data": {
-            "part_id": "run-a#9",
+            "part_id": "run-a#10",
             "state": "done",
             "run_id": "run-a",
-            "seq": 33
+            "seq": 37
           }
         },
         {
           "event": "part.start",
           "data": {
-            "part_id": "run-a#10",
+            "part_id": "run-a#11",
             "type": "chart",
             "block": {
               "tool_call_id": "c1",
               "chart_spec": "{\"mark\":\"bar\"}"
             },
             "run_id": "run-a",
-            "seq": 34
+            "seq": 38
           }
         },
         {
           "event": "part.end",
           "data": {
-            "part_id": "run-a#10",
+            "part_id": "run-a#11",
             "state": "done",
             "run_id": "run-a",
-            "seq": 35
+            "seq": 39
           }
         },
         {
@@ -736,14 +820,14 @@
               "Break it down by region"
             ],
             "run_id": "run-a",
-            "seq": 36
+            "seq": 40
           }
         },
         {
           "event": "ping",
           "data": {
             "run_id": "run-a",
-            "seq": 37
+            "seq": 41
           }
         },
         {
@@ -757,7 +841,7 @@
               "total_tokens": 15
             },
             "run_id": "run-a",
-            "seq": 38
+            "seq": 42
           }
         }
       ]
@@ -989,6 +1073,31 @@
           }
         },
         {
+          "event": "input_required",
+          "data": {
+            "request_id": "c2",
+            "kind": "approval",
+            "tool_call_id": "c2",
+            "expires_at": "2026-11-23T10:05:00+00:00",
+            "request": {
+              "kind": "approval",
+              "title": "Approve this data step?",
+              "classification": "read_only",
+              "reason": "asks_first",
+              "role": "ANALYST",
+              "preview_kind": "sql",
+              "preview": "SELECT 1",
+              "allow_session": true,
+              "editable": {
+                "argument": "sql",
+                "label": "SQL",
+                "language": "sql",
+                "max_length": 20000
+              }
+            }
+          }
+        },
+        {
           "event": "ui",
           "data": {
             "payload": {
@@ -1088,17 +1197,10 @@
           }
         },
         {
-          "event": "consent.required",
+          "event": "tool.status",
           "data": {
             "part_id": "run-c#2",
-            "classification": "read_only",
-            "tool_call": {
-              "tool_call_id": "c2",
-              "tool_name": "query_execute",
-              "sql_preview": "SELECT 1",
-              "classification": "read_only",
-              "status": "pending"
-            },
+            "status": "pending",
             "preview": "SELECT 1",
             "run_id": "run-c",
             "seq": 6
@@ -1108,6 +1210,45 @@
           "event": "part.start",
           "data": {
             "part_id": "run-c#3",
+            "type": "hitl_request",
+            "request_id": "c2",
+            "kind": "approval",
+            "tool_part_id": "run-c#2",
+            "run_id": "run-c",
+            "seq": 7
+          }
+        },
+        {
+          "event": "input.required",
+          "data": {
+            "part_id": "run-c#3",
+            "request_id": "c2",
+            "kind": "approval",
+            "request": {
+              "kind": "approval",
+              "title": "Approve this data step?",
+              "classification": "read_only",
+              "reason": "asks_first",
+              "role": "ANALYST",
+              "preview_kind": "sql",
+              "preview": "SELECT 1",
+              "allow_session": true,
+              "editable": {
+                "argument": "sql",
+                "label": "SQL",
+                "language": "sql",
+                "max_length": 20000
+              }
+            },
+            "expires_at": "2026-11-23T10:05:00+00:00",
+            "run_id": "run-c",
+            "seq": 8
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-c#4",
             "type": "ui",
             "block": {
               "catalog_version": "1",
@@ -1125,7 +1266,7 @@
             "content_index": 1,
             "content_id": "content-1",
             "run_id": "run-c",
-            "seq": 7
+            "seq": 9
           }
         },
         {
@@ -1134,7 +1275,7 @@
             "code": "run_persistence_unavailable",
             "message": "Progress could not be saved.",
             "run_id": "run-c",
-            "seq": 8
+            "seq": 10
           }
         },
         {
@@ -1143,7 +1284,7 @@
             "part_id": "run-c#0",
             "state": "error",
             "run_id": "run-c",
-            "seq": 9
+            "seq": 11
           }
         },
         {
@@ -1152,7 +1293,7 @@
             "part_id": "run-c#1",
             "state": "error",
             "run_id": "run-c",
-            "seq": 10
+            "seq": 12
           }
         },
         {
@@ -1161,16 +1302,35 @@
             "part_id": "run-c#2",
             "state": "cancelled",
             "run_id": "run-c",
-            "seq": 11
+            "seq": 13
+          }
+        },
+        {
+          "event": "input.resolved",
+          "data": {
+            "part_id": "run-c#3",
+            "status": "cancelled",
+            "summary": "Stopped before you answered",
+            "run_id": "run-c",
+            "seq": 14
           }
         },
         {
           "event": "part.end",
           "data": {
             "part_id": "run-c#3",
+            "state": "cancelled",
+            "run_id": "run-c",
+            "seq": 15
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-c#4",
             "state": "error",
             "run_id": "run-c",
-            "seq": 12
+            "seq": 16
           }
         },
         {
@@ -1179,7 +1339,582 @@
             "message_id": "",
             "finish_reason": "interrupted",
             "run_id": "run-c",
+            "seq": 17
+          }
+        }
+      ]
+    },
+    {
+      "name": "human in the loop: question, choice, form, edit then run, stopped",
+      "run_id": "run-d",
+      "role": "MARKETING",
+      "v1": [
+        {
+          "event": "thinking",
+          "data": {
+            "phase": "act",
+            "text": "Choosing the metric",
+            "status": "running"
+          }
+        },
+        {
+          "event": "input_required",
+          "data": {
+            "request_id": "h1",
+            "kind": "question",
+            "expires_at": "2026-11-23T10:10:00+00:00",
+            "request": {
+              "kind": "question",
+              "title": "Gross or net revenue?",
+              "detail": "Net excludes refunds.",
+              "choices": [
+                "Gross revenue",
+                "Net revenue"
+              ],
+              "allow_free_text": true
+            }
+          }
+        },
+        {
+          "event": "input_resolved",
+          "data": {
+            "request_id": "h1",
+            "status": "answered",
+            "summary": "You answered: Net revenue",
+            "answer": {
+              "text": "Net revenue"
+            }
+          }
+        },
+        {
+          "event": "input_required",
+          "data": {
+            "request_id": "h2",
+            "kind": "choice",
+            "expires_at": "2026-11-23T10:10:00+00:00",
+            "request": {
+              "kind": "choice",
+              "title": "How should I break it down?",
+              "options": [
+                {
+                  "id": "region",
+                  "title": "By region",
+                  "description": "Revenue per region"
+                },
+                {
+                  "id": "month",
+                  "title": "By month",
+                  "recommended": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "event": "input_resolved",
+          "data": {
+            "request_id": "h2",
+            "status": "answered",
+            "summary": "You chose: By region",
+            "answer": {
+              "option_id": "region",
+              "title": "By region"
+            }
+          }
+        },
+        {
+          "event": "input_required",
+          "data": {
+            "request_id": "h3",
+            "kind": "form",
+            "expires_at": "2026-11-23T10:10:00+00:00",
+            "request": {
+              "kind": "form",
+              "title": "Which period?",
+              "fields": [
+                {
+                  "name": "period",
+                  "title": "Period",
+                  "widget": "date_range"
+                }
+              ],
+              "required": [
+                "period"
+              ]
+            }
+          }
+        },
+        {
+          "event": "input_resolved",
+          "data": {
+            "request_id": "h3",
+            "status": "declined",
+            "summary": "You skipped this question"
+          }
+        },
+        {
+          "event": "tool_call",
+          "data": {
+            "tool_call_id": "c3",
+            "tool_name": "query_execute",
+            "sql_preview": "SELECT 1",
+            "classification": "read_only",
+            "status": "pending"
+          }
+        },
+        {
+          "event": "input_required",
+          "data": {
+            "request_id": "c3",
+            "kind": "approval",
+            "tool_call_id": "c3",
+            "expires_at": "2026-11-23T10:05:00+00:00",
+            "request": {
+              "kind": "approval",
+              "title": "Approve this data step?",
+              "classification": "read_only",
+              "reason": "asks_first",
+              "role": "ANALYST",
+              "preview_kind": "sql",
+              "preview": "SELECT 1",
+              "allow_session": true,
+              "editable": {
+                "argument": "sql",
+                "label": "SQL",
+                "language": "sql",
+                "max_length": 20000
+              }
+            }
+          }
+        },
+        {
+          "event": "input_resolved",
+          "data": {
+            "request_id": "c3",
+            "status": "edited",
+            "summary": "You edited the request and ran it",
+            "answer": {
+              "edited": {
+                "sql": "SELECT 2"
+              }
+            }
+          }
+        },
+        {
+          "event": "tool_call",
+          "data": {
+            "tool_call_id": "c3",
+            "tool_name": "query_execute",
+            "sql_preview": "SELECT 1",
+            "classification": "read_only",
+            "status": "running"
+          }
+        },
+        {
+          "event": "tool_status",
+          "data": {
+            "tool_call_id": "c3",
+            "status": "done"
+          }
+        },
+        {
+          "event": "input_required",
+          "data": {
+            "request_id": "h4",
+            "kind": "question",
+            "expires_at": "2026-11-23T10:10:00+00:00",
+            "request": {
+              "kind": "question",
+              "title": "Gross or net revenue?",
+              "detail": "Net excludes refunds.",
+              "choices": [
+                "Gross revenue",
+                "Net revenue"
+              ],
+              "allow_free_text": true
+            }
+          }
+        },
+        {
+          "event": "done",
+          "data": {
+            "message_id": "",
+            "finish_reason": "cancelled"
+          }
+        }
+      ],
+      "v2": [
+        {
+          "event": "run.started",
+          "data": {
+            "protocol_version": 2,
+            "role": "MARKETING",
+            "run_id": "run-d",
+            "seq": 0
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-d#0",
+            "type": "reasoning",
+            "source": "nova",
+            "phase": "act",
+            "text": "Choosing the metric",
+            "run_id": "run-d",
+            "seq": 1
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-d#0",
+            "state": "done",
+            "run_id": "run-d",
+            "seq": 2
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-d#1",
+            "type": "hitl_request",
+            "request_id": "h1",
+            "kind": "question",
+            "run_id": "run-d",
+            "seq": 3
+          }
+        },
+        {
+          "event": "input.required",
+          "data": {
+            "part_id": "run-d#1",
+            "request_id": "h1",
+            "kind": "question",
+            "request": {
+              "kind": "question",
+              "title": "Gross or net revenue?",
+              "detail": "Net excludes refunds.",
+              "choices": [
+                "Gross revenue",
+                "Net revenue"
+              ],
+              "allow_free_text": true
+            },
+            "expires_at": "2026-11-23T10:10:00+00:00",
+            "run_id": "run-d",
+            "seq": 4
+          }
+        },
+        {
+          "event": "input.resolved",
+          "data": {
+            "part_id": "run-d#1",
+            "status": "answered",
+            "summary": "You answered: Net revenue",
+            "answer": {
+              "text": "Net revenue"
+            },
+            "run_id": "run-d",
+            "seq": 5
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-d#1",
+            "state": "done",
+            "run_id": "run-d",
+            "seq": 6
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-d#2",
+            "type": "hitl_request",
+            "request_id": "h2",
+            "kind": "choice",
+            "run_id": "run-d",
+            "seq": 7
+          }
+        },
+        {
+          "event": "input.required",
+          "data": {
+            "part_id": "run-d#2",
+            "request_id": "h2",
+            "kind": "choice",
+            "request": {
+              "kind": "choice",
+              "title": "How should I break it down?",
+              "options": [
+                {
+                  "id": "region",
+                  "title": "By region",
+                  "description": "Revenue per region"
+                },
+                {
+                  "id": "month",
+                  "title": "By month",
+                  "recommended": true
+                }
+              ]
+            },
+            "expires_at": "2026-11-23T10:10:00+00:00",
+            "run_id": "run-d",
+            "seq": 8
+          }
+        },
+        {
+          "event": "input.resolved",
+          "data": {
+            "part_id": "run-d#2",
+            "status": "answered",
+            "summary": "You chose: By region",
+            "answer": {
+              "option_id": "region",
+              "title": "By region"
+            },
+            "run_id": "run-d",
+            "seq": 9
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-d#2",
+            "state": "done",
+            "run_id": "run-d",
+            "seq": 10
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-d#3",
+            "type": "hitl_request",
+            "request_id": "h3",
+            "kind": "form",
+            "run_id": "run-d",
+            "seq": 11
+          }
+        },
+        {
+          "event": "input.required",
+          "data": {
+            "part_id": "run-d#3",
+            "request_id": "h3",
+            "kind": "form",
+            "request": {
+              "kind": "form",
+              "title": "Which period?",
+              "fields": [
+                {
+                  "name": "period",
+                  "title": "Period",
+                  "widget": "date_range"
+                }
+              ],
+              "required": [
+                "period"
+              ]
+            },
+            "expires_at": "2026-11-23T10:10:00+00:00",
+            "run_id": "run-d",
+            "seq": 12
+          }
+        },
+        {
+          "event": "input.resolved",
+          "data": {
+            "part_id": "run-d#3",
+            "status": "declined",
+            "summary": "You skipped this question",
+            "run_id": "run-d",
             "seq": 13
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-d#3",
+            "state": "done",
+            "run_id": "run-d",
+            "seq": 14
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-d#4",
+            "type": "tool",
+            "tool_call_id": "c3",
+            "tool_name": "query_execute",
+            "classification": "read_only",
+            "run_id": "run-d",
+            "seq": 15
+          }
+        },
+        {
+          "event": "tool.status",
+          "data": {
+            "part_id": "run-d#4",
+            "status": "pending",
+            "preview": "SELECT 1",
+            "run_id": "run-d",
+            "seq": 16
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-d#5",
+            "type": "hitl_request",
+            "request_id": "c3",
+            "kind": "approval",
+            "tool_part_id": "run-d#4",
+            "run_id": "run-d",
+            "seq": 17
+          }
+        },
+        {
+          "event": "input.required",
+          "data": {
+            "part_id": "run-d#5",
+            "request_id": "c3",
+            "kind": "approval",
+            "request": {
+              "kind": "approval",
+              "title": "Approve this data step?",
+              "classification": "read_only",
+              "reason": "asks_first",
+              "role": "ANALYST",
+              "preview_kind": "sql",
+              "preview": "SELECT 1",
+              "allow_session": true,
+              "editable": {
+                "argument": "sql",
+                "label": "SQL",
+                "language": "sql",
+                "max_length": 20000
+              }
+            },
+            "expires_at": "2026-11-23T10:05:00+00:00",
+            "run_id": "run-d",
+            "seq": 18
+          }
+        },
+        {
+          "event": "input.resolved",
+          "data": {
+            "part_id": "run-d#5",
+            "status": "edited",
+            "summary": "You edited the request and ran it",
+            "answer": {
+              "edited": {
+                "sql": "SELECT 2"
+              }
+            },
+            "run_id": "run-d",
+            "seq": 19
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-d#5",
+            "state": "done",
+            "run_id": "run-d",
+            "seq": 20
+          }
+        },
+        {
+          "event": "tool.status",
+          "data": {
+            "part_id": "run-d#4",
+            "status": "running",
+            "preview": "SELECT 1",
+            "run_id": "run-d",
+            "seq": 21
+          }
+        },
+        {
+          "event": "tool.status",
+          "data": {
+            "part_id": "run-d#4",
+            "status": "done",
+            "run_id": "run-d",
+            "seq": 22
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-d#4",
+            "state": "done",
+            "run_id": "run-d",
+            "seq": 23
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-d#6",
+            "type": "hitl_request",
+            "request_id": "h4",
+            "kind": "question",
+            "run_id": "run-d",
+            "seq": 24
+          }
+        },
+        {
+          "event": "input.required",
+          "data": {
+            "part_id": "run-d#6",
+            "request_id": "h4",
+            "kind": "question",
+            "request": {
+              "kind": "question",
+              "title": "Gross or net revenue?",
+              "detail": "Net excludes refunds.",
+              "choices": [
+                "Gross revenue",
+                "Net revenue"
+              ],
+              "allow_free_text": true
+            },
+            "expires_at": "2026-11-23T10:10:00+00:00",
+            "run_id": "run-d",
+            "seq": 25
+          }
+        },
+        {
+          "event": "input.resolved",
+          "data": {
+            "part_id": "run-d#6",
+            "status": "cancelled",
+            "summary": "Stopped before you answered",
+            "run_id": "run-d",
+            "seq": 26
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-d#6",
+            "state": "cancelled",
+            "run_id": "run-d",
+            "seq": 27
+          }
+        },
+        {
+          "event": "run.finished",
+          "data": {
+            "message_id": "",
+            "finish_reason": "cancelled",
+            "run_id": "run-d",
+            "seq": 28
           }
         }
       ]

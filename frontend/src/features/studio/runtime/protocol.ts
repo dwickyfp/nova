@@ -23,6 +23,8 @@ import type {
 import type { GuardDecision } from "@/features/agents/api";
 import type { DashboardArtifactBlock } from "@/features/viz/types";
 import type { UiBlock } from "../intelligent-ui/types";
+import { hitlStatus, parseHitlRequest } from "./hitl/parse";
+import type { HitlKind, HitlRequestSpec, HitlStatus } from "./hitl/types";
 
 export const PROTOCOL_VERSION = 2;
 
@@ -41,6 +43,14 @@ export type PartStartFields =
       classification?: ToolCallView["classification"];
     }
   | { type: "guard"; decision: GuardDecision }
+  | {
+      type: "hitl_request";
+      /** The server's id for the request; answers are posted to it. */
+      requestId: string;
+      kind: HitlKind;
+      /** The tool part an approval decides. */
+      toolPartId?: string;
+    }
   | { type: "table"; block: TableBlock & { tool_call_id?: string }; contentIndex?: number; contentId?: string }
   | { type: "chart"; block: ChartBlock; contentIndex?: number; contentId?: string }
   | { type: "citation"; block: CitationBlock; contentIndex?: number; contentId?: string }
@@ -70,9 +80,19 @@ export type StudioEvent = Envelope &
         event: Extract<AssistantEvent, { type: "evidence_health" | "evidence_envelope" }>;
       }
     | {
-        type: "consent.required";
+        type: "input.required";
         partId: string;
-        call: ToolCallView & { tool_call_id: string };
+        requestId: string;
+        request: HitlRequestSpec;
+        /** ISO time after which the server stops waiting. */
+        expiresAt?: string;
+      }
+    | {
+        type: "input.resolved";
+        partId: string;
+        status: Exclude<HitlStatus, "pending">;
+        summary: string;
+        answer?: Record<string, unknown>;
       }
     | { type: "role.changed"; activeRole: string }
     | {
@@ -99,8 +119,9 @@ const AUX = new Set([
 ]);
 
 const PART_TYPES = new Set([
-  "reasoning", "text", "tool", "guard", "table", "chart", "citation", "dashboard", "ui",
+  "reasoning", "text", "tool", "guard", "hitl_request", "table", "chart", "citation", "dashboard", "ui",
 ]);
+const HITL_KINDS = new Set(["approval", "question", "form", "choice"]);
 
 const END_STATES = new Set(["done", "error", "cancelled"]);
 
@@ -152,6 +173,15 @@ function partStart(data: Record<string, unknown>): PartStartFields | null {
             ...(typeof data.classification === "string"
               ? { classification: data.classification as ToolCallView["classification"] }
               : {}),
+          }
+        : null;
+    case "hitl_request":
+      return typeof data.request_id === "string" && typeof data.kind === "string" && HITL_KINDS.has(data.kind)
+        ? {
+            type,
+            requestId: data.request_id,
+            kind: data.kind as HitlKind,
+            ...(typeof data.tool_part_id === "string" ? { toolPartId: data.tool_part_id } : {}),
           }
         : null;
     case "guard": {
@@ -267,9 +297,32 @@ export function parseStudioRecord(name: string, data: Record<string, unknown>): 
       const event = kind ? nested(kind, data) : null;
       return partId && event ? { ...envelope, type: name, partId, event } : null;
     }
-    case "consent.required": {
-      const call = nested("tool_call", data.tool_call);
-      return partId && call ? { ...envelope, type: name, partId, call: call.payload } : null;
+    case "input.required": {
+      const request = parseHitlRequest(data.request);
+      return partId && request && typeof data.request_id === "string"
+        ? {
+            ...envelope,
+            type: name,
+            partId,
+            requestId: data.request_id,
+            request,
+            ...(typeof data.expires_at === "string" && data.expires_at ? { expiresAt: data.expires_at } : {}),
+          }
+        : null;
+    }
+    case "input.resolved": {
+      const status = hitlStatus(data.status);
+      const answer = record(data.answer);
+      return partId && status && status !== "pending"
+        ? {
+            ...envelope,
+            type: name,
+            partId,
+            status,
+            summary: typeof data.summary === "string" ? data.summary : "",
+            ...(answer ? { answer } : {}),
+          }
+        : null;
     }
     case "role.changed":
       return typeof data.active_role === "string"

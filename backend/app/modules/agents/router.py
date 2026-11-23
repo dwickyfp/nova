@@ -126,6 +126,7 @@ from app.modules.assistant.schemas import (
     AttachmentView,
     ConsentDecisionRequest,
     ConsentDecisionResponse,
+    HumanInputAnswerRequest,
     MessageFeedbackRequest,
     MessageView,
     ThreadCreateRequest,
@@ -2419,9 +2420,23 @@ async def send_agent_message(
             thread_id=thread_id,
             user=approval_user,
             classification=classification,
+            run_id=run_id,
         )
 
         return future
+
+    def ask_human(request_id: str, request: dict) -> asyncio.Future:
+        # The same broker as approvals: only this login, role and security
+        # version may answer, and only for this run and conversation.
+        return consent_broker.open(
+            request_id,
+            thread_id=thread_id,
+            user=dict(context.user or user),
+            run_id=run_id,
+            request=request,
+        )
+
+    context.ask_human = ask_human
 
     interruption_reason: str | None = None
     # Protocol v2 (ordered parts): one encoder per run, shared by the turn and
@@ -2726,6 +2741,80 @@ async def send_agent_message(
             "X-Nova-Run-ID": run_id,
         },
     )
+
+
+@router.post("/{agent_id}/threads/{thread_id}/runs/{run_id}/inputs/{request_id}")
+async def answer_agent_input(
+    agent_id: str,
+    thread_id: str,
+    run_id: str,
+    request_id: str,
+    body: HumanInputAnswerRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Answer one human-in-the-loop request of a running turn.
+
+    Approvals take ``allow_once`` / ``allow_session`` / ``deny`` (and
+    ``edited_arguments`` with an allow, for Edit then run); questions, forms and
+    choices take ``answer`` with an ``answer`` payload, or ``decline``. The
+    request must still be pending for this run and conversation, under the
+    caller's login, active role and security-context version; anything else is
+    a 404 that does not reveal whether the request exists.
+    """
+    from app.modules.assistant import human_input
+    from app.modules.assistant.consent import ConsentApproval
+
+    await _require_agent(agent_id, user, platform=True)
+    await _require_agent_thread(thread_id, agent_id, user["username"])
+    request = consent_broker.request_for(
+        request_id, user=user, run_id=run_id, thread_id=thread_id,
+    )
+    runtime = thread_store.get(thread_id, user_name=user["username"])
+    if request is None or runtime is None:
+        raise HTTPException(status_code=404, detail="This request is no longer waiting")
+
+    kind = request.get("kind")
+    approval_actions = {"allow_once", "allow_session", "deny"}
+    if (kind == "approval") != (body.action in approval_actions):
+        raise HTTPException(status_code=422, detail="That answer does not fit this request")
+
+    decision: object
+    status: str
+    if kind == "approval":
+        classification = request.get("classification")
+        if body.action == "deny":
+            decision, status = False, human_input.DENIED
+        else:
+            if body.action == "allow_session":
+                if classification != "read_only":
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Allow for this chat is only available for a read-only step",
+                    )
+                await read_grants.grant(runtime, user, thread_id, True)
+            decision = ConsentApproval(
+                edited_arguments=body.edited_arguments or None,
+                allow_session=body.action == "allow_session",
+            )
+            status = human_input.EDITED if body.edited_arguments else human_input.ALLOWED
+    elif body.action == "decline":
+        decision = human_input.declined()
+        status = decision.status
+    else:
+        try:
+            decision = human_input.validate_answer(request, body.answer)
+        except human_input.HumanInputError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        status = decision.status
+    if not consent_broker.resolve(request_id, decision, user=user):
+        raise HTTPException(status_code=404, detail="This request is no longer waiting")
+    await write_audit_log(
+        event_type="AGENT_RUN", user_name=user["username"], action="HUMAN_INPUT",
+        object_type="AGENT_RUN", object_name=run_id, status="SUCCESS",
+        active_role=session_security(user).active_role, session_id=user.get("session_id"),
+        decision=f"{kind}:{status}",
+    )
+    return {"request_id": request_id, "status": status}
 
 
 @router.post("/{agent_id}/tool-calls/{tool_call_id}/decision")

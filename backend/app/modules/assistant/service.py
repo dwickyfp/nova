@@ -36,7 +36,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.core.database import configured_timezone
-from app.modules.assistant import events
+from app.modules.assistant import events, human_input
 from app.modules.assistant.answer_contract import CLAIMS_INSTRUCTION, split_claims
 from app.modules.assistant.app_context import NevaAppContext, resolve_app_references
 from app.modules.assistant.attachments import provider_user_content
@@ -217,6 +217,17 @@ class LoopContext:
     #: aliases above (reading and changing it). Set by the router only.
     dashboard_tools: tuple[str, ...] = ()
     user: dict[str, Any] | None = None
+    #: Human in the loop: ask the turn's own user and await the answer (a
+    #: ``HumanAnswer``, or ``None`` when the run stopped). Set by a route that
+    #: has a person on the other end; without it ``request_human_input`` is not
+    #: offered (automations, Missions' nested runs, evaluations).
+    ask_human: Callable[[str, dict[str, Any]], Awaitable[Any]] | None = field(
+        default=None, repr=False
+    )
+    #: Human-input requests made in this turn.
+    human_requests: int = 0
+    #: Calls the user edited before approving them (redacted edit, by call id).
+    user_edited_calls: dict[str, dict[str, str]] = field(default_factory=dict)
     app_context: NevaAppContext | None = None
     secure_input: dict[str, str] | None = field(default=None, repr=False)
     file_upload: tuple[str, Any, str] | None = field(default=None, repr=False)
@@ -1289,6 +1300,14 @@ class AssistantLoop:
             provider_capabilities = replace(
                 provider_capabilities, supports_tool_role_messages=False
             )
+        if (
+            selected_tools
+            and context.ask_human is not None
+            and self._registry.get(human_input.TOOL_NAME) is not None
+        ):
+            # A person is on the other end of this run: the model may pause the
+            # turn to ask them, then go on with the answer.
+            selected_tools = (*selected_tools, human_input.TOOL_NAME)
         tool_schemas = self._tool_schemas(selected_tools, route=route)
         if context.prompt_telemetry is not None:
             context.prompt_telemetry["tool_schema_tokens"] = (
@@ -2212,7 +2231,7 @@ class AssistantLoop:
             wrong_strict_step = (
                 context.harness_mode == "strict"
                 and next_capability is not None
-                and invocation.tool_name != next_capability
+                and invocation.tool_name not in {next_capability, human_input.TOOL_NAME}
             )
             if tool is None or invocation.tool_name not in selected_tools or wrong_strict_step:
                 if not repairs.take("tool_not_allowed"):
@@ -2266,6 +2285,25 @@ class AssistantLoop:
                                 "schema": effective_schema,
                             },
                         },
+                    )
+                )
+                continue
+
+            if getattr(tool, "human_input", False):
+                # The turn pauses for its user; the answer is this call's result.
+                asked = _HumanOutcome()
+                async for frame in _ask_human(invocation, context, asked):
+                    yield frame
+                deadline += asked.waited
+                if asked.stop_reason is not None:
+                    _transition(context, TurnState.FAILED)
+                    yield events.done(str(uuid4()), finish_reason=asked.stop_reason)
+                    return
+                messages.append(
+                    _tool_message(
+                        provider_capabilities.supports_tool_role_messages,
+                        invocation,
+                        asked.result,
                     )
                 )
                 continue
@@ -2415,8 +2453,21 @@ class AssistantLoop:
                 asyncio.ensure_future(resolve_consent(invocation, classification))
                 if needs_prompt else None
             )
+            approval: dict[str, Any] | None = None
+            if needs_prompt:
+                approval = human_input.approval_request(
+                    tool, invocation, classification=classification, preview=preview,
+                    role=str(context.role or ""),
+                    reason=human_input.approval_reason(classification), context=context,
+                )
             try:
                 yield events.tool_call(view)
+                if approval is not None:
+                    yield events.input_required(
+                        invocation.tool_call_id, approval,
+                        expires_at=_expires_at(CONSENT_TIMEOUT_SECONDS),
+                        tool_call_id=invocation.tool_call_id,
+                    )
                 activity = _dashboard_activity(tool, invocation, context)
                 if activity:
                     yield activity
@@ -2435,6 +2486,10 @@ class AssistantLoop:
                         timeout=CONSENT_TIMEOUT_SECONDS,
                     )
             except TimeoutError:
+                yield events.input_resolved(
+                    invocation.tool_call_id, human_input.EXPIRED,
+                    human_input.approval_summary(human_input.EXPIRED),
+                )
                 yield events.tool_status(invocation.tool_call_id, "cancelled")
                 yield events.error("consent_timeout", "The approval request expired.")
                 yield events.done(str(uuid4()), finish_reason="consent_timeout")
@@ -2446,14 +2501,95 @@ class AssistantLoop:
                     await asyncio.gather(pending_consent, return_exceptions=True)
                     deadline += _budget_time() - consent_started
 
+            edited: dict[str, str] | None = None
             if isinstance(allowed, ConsentApproval):
                 context.secure_input = allowed.secure_input
                 context.file_upload = allowed.upload
+                edited = allowed.edited_arguments
                 allowed = True
+            if not isinstance(allowed, bool | None):
+                allowed = False  # only an approval answers an approval
             if allowed is None:
+                if approval is not None:
+                    yield events.input_resolved(
+                        invocation.tool_call_id, human_input.CANCELLED,
+                        human_input.approval_summary(human_input.CANCELLED),
+                    )
                 yield events.tool_status(invocation.tool_call_id, "cancelled")
                 yield events.done(str(uuid4()), finish_reason="cancelled")
                 return
+            refusal: str | None = None
+            if allowed and edited:
+                # Edit then run: the edited call is classified again from scratch.
+                # It runs only when Nova policy allows it and its class is the one
+                # the user approved; anything else is refused, never trusted.
+                try:
+                    edited_call = human_input.edited_invocation(tool, invocation, edited)
+                    edited_class = invocation_classification(tool, edited_call)
+                except human_input.HumanInputError as exc:
+                    refusal = str(exc)
+                else:
+                    if edited_class == "denied":
+                        refusal = "Nova policy does not allow the edited request."
+                    elif edited_class != classification:
+                        refusal = (
+                            "The edited request is a different kind of action than the one "
+                            "approved. Ask for it again instead."
+                        )
+                    else:
+                        invocation = edited_call
+                        fingerprint = self._call_fingerprint(invocation)
+                        preview = tool.preview(invocation)
+                        view.sql_preview = preview
+                        context.user_edited_calls[invocation.tool_call_id] = {
+                            key: _safe_preview(value) for key, value in edited.items()
+                        }
+                if refusal is not None:
+                    yield events.input_resolved(
+                        invocation.tool_call_id, human_input.REFUSED,
+                        human_input.approval_summary(human_input.REFUSED),
+                        answer={"reason": refusal},
+                    )
+                    allowed = False
+                else:
+                    yield events.input_resolved(
+                        invocation.tool_call_id, human_input.EDITED,
+                        human_input.approval_summary(human_input.EDITED),
+                        answer={"edited": context.user_edited_calls[invocation.tool_call_id]},
+                    )
+                    view.status = "running"
+                    yield events.tool_call(view)
+            elif approval is not None:
+                status = human_input.ALLOWED if allowed else human_input.DENIED
+                yield events.input_resolved(
+                    invocation.tool_call_id, status,
+                    human_input.approval_summary(
+                        status,
+                        allow_session=bool(allowed) and thread.consent.covers(
+                            classification, user=context.user,
+                        ),
+                    ),
+                )
+            if refusal is not None:
+                view.status = "denied"
+                yield events.tool_status(invocation.tool_call_id, "denied")
+                messages.append(
+                    _tool_message(
+                        provider_capabilities.supports_tool_role_messages,
+                        invocation,
+                        {
+                            "ok": False,
+                            "error_class": "EDIT_REFUSED",
+                            "recoverable": True,
+                            "safe_detail": (
+                                f"The user edited this request before it ran and Nova refused "
+                                f"the edit: {refusal} Nothing ran. Tell the user plainly, and "
+                                "answer from what is already verified."
+                            ),
+                        },
+                    )
+                )
+                continue
             if not allowed:
                 context.quality_facts["policy_compliance"] = {
                     "consent_resolved": False, "denied": True, "classification": classification,
@@ -3045,6 +3181,11 @@ class AssistantLoop:
                 **(envelope.get("metadata") or {}),
                 "artifact_note": artifact_note,
             }
+            if invocation.tool_call_id in context.user_edited_calls:
+                # The result answers the user's edited request, not the proposed one.
+                envelope["metadata"]["edited_by_user"] = context.user_edited_calls[
+                    invocation.tool_call_id
+                ]
             flagged = self._guards.inspect_result(
                 invocation.tool_name,
                 summary=outcome.summary,
@@ -3365,6 +3506,94 @@ class AssistantLoop:
             arguments=arguments,
             provider_call_id=provider_id or str(uuid4()),
         )
+
+
+def _safe_preview(value: Any, limit: int = 4000) -> str:
+    """A user-edited argument as it may be published: redacted and bounded."""
+    from app.modules.assistant.tools.query_execute import _safe_redact
+
+    return _safe_redact(str(value))[:limit]
+
+
+@dataclass
+class _HumanOutcome:
+    """What one human-input request left behind for the loop."""
+
+    result: dict[str, Any] = field(default_factory=dict)
+    stop_reason: str | None = None
+    waited: float = 0.0
+
+
+def _expires_at(seconds: float) -> str:
+    from datetime import timedelta
+
+    return (datetime.now(UTC) + timedelta(seconds=seconds)).isoformat(timespec="seconds")
+
+
+async def _ask_human(
+    invocation: ToolInvocation, context: LoopContext, outcome: _HumanOutcome,
+) -> AsyncGenerator[str, None]:
+    """Publish one question, form or choice, wait for the answer, publish how it settled.
+
+    The wait does not count against the turn's time budget (as for consent). A
+    request the model cannot phrase validly is returned to it for repair; one
+    beyond the per-turn limit is refused without asking.
+    """
+    def refuse(error_class: str, detail: str) -> None:
+        outcome.result = {
+            "ok": False, "tool": human_input.TOOL_NAME, "error_class": error_class,
+            "recoverable": True, "safe_detail": detail,
+        }
+
+    if context.ask_human is None:
+        refuse("HUMAN_INPUT_UNAVAILABLE", "No one can answer in this run. Continue without "
+               "asking and state any assumption you make.")
+        return
+    if context.human_requests >= human_input.MAX_REQUESTS_PER_TURN:
+        refuse("HUMAN_INPUT_LIMIT", "You already asked enough in this turn. Continue with "
+               "what the user said and state any assumption you make.")
+        return
+    try:
+        request = human_input.normalize_request(invocation.arguments)
+    except human_input.HumanInputError as exc:
+        refuse("INVALID_HUMAN_INPUT", str(exc))
+        return
+    context.human_requests += 1
+    request_id = invocation.tool_call_id
+    started = _budget_time()
+    pending = asyncio.ensure_future(context.ask_human(request_id, request))
+    yield events.input_required(
+        request_id, request, expires_at=_expires_at(human_input.INPUT_TIMEOUT_SECONDS),
+    )
+    answer: Any = None
+    try:
+        answer = await asyncio.wait_for(pending, timeout=human_input.INPUT_TIMEOUT_SECONDS)
+    except TimeoutError:
+        status = human_input.EXPIRED
+        yield events.input_resolved(request_id, status, "No answer arrived in time")
+        outcome.result = human_input.tool_result(status, None)
+        return
+    finally:
+        if not pending.done():
+            pending.cancel()
+        await asyncio.gather(pending, return_exceptions=True)
+        outcome.waited = _budget_time() - started
+    if not isinstance(answer, human_input.HumanAnswer):
+        # The run stopped (Stop, disconnect with cancel, shutdown) while it waited.
+        yield events.input_resolved(
+            request_id, human_input.CANCELLED, "Stopped before you answered",
+        )
+        outcome.stop_reason = "cancelled"
+        return
+    _record_step(context, {
+        "kind": "human_input", "request_id": request_id, "request_kind": request["kind"],
+        "status": "done", "outcome": answer.status,
+    })
+    yield events.input_resolved(
+        request_id, answer.status, answer.summary,
+        answer=answer.value if answer.status == human_input.ANSWERED else None,
+    )
+    outcome.result = human_input.tool_result(answer.status, answer)
 
 
 def _tool_message(

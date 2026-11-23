@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type TranscriptTurn } from "./studio-chat";
-import { applyStudioEvent, MAX_UI_PROGRAM_BYTES, newTurn, replayThread, settleStream } from "./studio-transcript";
+import { applyStudioEvent, MAX_UI_PROGRAM_BYTES, newTurn, replayThread, settleStream, turnSegments } from "./studio-transcript";
 import { liveEncoder } from "./runtime/v2-test-encoder";
 
 import { visibleContent } from "./turn-content-order";
@@ -411,8 +411,13 @@ describe("studio transcript reducer", () => {
     expect(turn.steps[0].body).toBe("Understanding the request");
   });
 
-  it("raises a consent card for a pending tool call and clears it on status", () => {
+  it("raises an approval request for a pending tool call and collapses it when answered", () => {
     const live = session();
+    const approval = {
+      kind: "approval", title: "Approve this data step?", classification: "read_only",
+      reason: "asks_first", role: "MARKETING", preview_kind: "sql",
+      preview: "SELECT count(*) FROM orders", allow_session: true,
+    };
     const pending = live.push(
       {
         type: "tool_call",
@@ -424,11 +429,19 @@ describe("studio transcript reducer", () => {
           status: "pending",
         },
       },
+      { type: "input_required", request_id: "c1", tool_call_id: "c1", request: approval } as unknown as AssistantEvent,
     );
-    expect(pending.pendingConsent?.tool_call_id).toBe("c1");
+    const request = turnSegments(pending.run.parts).find((segment) => segment.kind === "hitl");
+    expect(request).toMatchObject({ kind: "hitl", part: { requestId: "c1", status: "pending", kind: "approval" } });
 
-    const resolved = live.push({ type: "tool_status", tool_call_id: "c1", status: "running" });
-    expect(resolved.pendingConsent).toBeNull();
+    const resolved = live.push(
+      { type: "input_resolved", request_id: "c1", status: "allowed", summary: "You allowed this once" } as unknown as AssistantEvent,
+      { type: "tool_status", tool_call_id: "c1", status: "running" },
+    );
+    expect(resolved.run.parts.find((part) => part.type === "hitl_request")).toMatchObject({
+      status: "allowed",
+      summary: "You allowed this once",
+    });
     expect(resolved.steps[0].status).toBe("running");
     expect(resolved.steps[0].preview).toBe("SELECT count(*) FROM orders");
   });
@@ -446,7 +459,7 @@ describe("studio transcript reducer", () => {
         },
       },
     ]);
-    expect(turn.pendingConsent).toBeNull();
+    expect(turn.run.parts.some((part) => part.type === "hitl_request")).toBe(false);
     expect(turn.steps).toHaveLength(1);
   });
 
@@ -572,7 +585,6 @@ describe("studio transcript reducer", () => {
       expect(turn.error).toBe("Progress could not be saved.");
       expect(turn.state).toBe("error");
       expect(turn.stopReason).toBe("interrupted");
-      expect(turn.pendingConsent).toBeNull();
       expect(turn.steps[0].status).toBe(status === "pending" ? "cancelled" : "failed");
       if (status === "running") expect(turn.steps[0].text).toBe("Result not confirmed");
     },
