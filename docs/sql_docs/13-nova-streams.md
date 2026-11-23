@@ -43,7 +43,22 @@ How capture works, and the engine evidence behind it, is in
 
 Names: with session database `analytics`, `s`, `analytics.s` and
 `analytics.default.s` are the same Stream. A Stream cannot share a name with a
-table or view.
+table or view, compared case-insensitively, in either direction:
+
+* `CREATE STREAM` refuses a name a table, view or materialized view already
+  has (`STREAM_NAME_COLLISION`).
+* Through Nova, `CREATE [TEMPORARY] TABLE` (also `… AS SELECT` and `… LIKE`),
+  `CREATE [OR REPLACE] VIEW`, `CREATE MATERIALIZED VIEW`, `RECOVER TABLE` and
+  `ALTER TABLE | MATERIALIZED VIEW … RENAME` onto a Stream's name are refused
+  with `STREAM_NAME_COLLISION` before they reach the engine.
+* An object created outside Nova (a direct engine login, a native task) can
+  still take a Stream's name. A statement that names it is then refused with
+  `STREAM_NAME_AMBIGUOUS` until one of the two is renamed or dropped. Nova does
+  not prefer either: preferring the Stream would let an `INSERT … SELECT`
+  written for the table consume the Stream, and preferring the table would
+  feed a consuming task the whole table on every run.
+  `SYSTEM$STREAM_HAS_DATA('name')` names a Stream explicitly and is
+  unaffected.
 
 ## Rows and metadata
 

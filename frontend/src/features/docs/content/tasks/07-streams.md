@@ -248,6 +248,8 @@ above work again.
 | --- | --- |
 | `Streams need a Primary Key table: row lineage and before images come from the primary key` | The source is not a Primary Key table. |
 | `A table or view occupies this name` | A stream cannot have the same name as a table or view. |
+| `A stream named … exists; a table, view or materialized view cannot take its name` | `CREATE TABLE`, `CREATE VIEW`, `CREATE MATERIALIZED VIEW`, `RECOVER TABLE` or a rename would give a table a stream's name. Choose another name, or drop the stream first. |
+| `… is both a stream and a table or view; rename or drop one of them` | A table with the stream's name was created outside Nova. Nova will not guess which one you mean, so any query that names it, including one that would consume the stream, is refused until one of them is renamed or dropped. |
 | `Only a role with ALTER on … can start capturing its changes` | The table has no stream yet, and your active role cannot alter it. Ask the table's owner to create the first stream. |
 | `Creating a stream in … needs the CREATE TABLE privilege there` | Your active role cannot create objects in that database. Create the stream in a database where it can, or ask an administrator. |
 | `Role … already owns … streams, the most allowed` | Your role reached its stream limit. Drop a stream you no longer use. |

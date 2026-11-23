@@ -176,7 +176,7 @@ def service(monkeypatch):
         current=AsyncMock(return_value=None),
         current_generations=AsyncMock(return_value=[]),
     )
-    monkeypatch.setattr(svc, "_table_exists", AsyncMock(return_value=False))
+    monkeypatch.setattr(svc, "engine_object_exists", AsyncMock(return_value=False))
     monkeypatch.setattr(svc, "authorize_read", AsyncMock())
     registry = SimpleNamespace(
         active_for_table=AsyncMock(return_value=None),

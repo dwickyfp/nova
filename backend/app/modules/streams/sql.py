@@ -32,6 +32,17 @@ from app.modules.streams.sources import source_registry
 
 _SOURCE_DDL = {"AlterTableStatementContext": "ALTER TABLE"}
 _TRUNCATE = "TruncateTableStatementContext"
+#: Statements that put a new table, view or materialized view name in a
+#: database: they may not take a Stream's name.
+_CREATES_NAME = frozenset({
+    "CreateTableStatementContext",
+    "CreateTableAsSelectStatementContext",
+    "CreateTableLikeStatementContext",
+    "CreateViewStatementContext",
+    "CreateMaterializedViewStatementContext",
+    "RecoverTableStatementContext",
+})
+_RENAMES = frozenset({"AlterTableStatementContext", "AlterMaterializedViewStatementContext"})
 
 
 class StreamSql:
@@ -63,6 +74,10 @@ class StreamSql:
         statement = context.statements[plan.source_key]
         parsed = statement.parsed
         root = type(parsed.statement_context).__name__
+        if root in _CREATES_NAME or root in _RENAMES:
+            refusal = await self._shadowing(parsed, root, context.database)
+            if refusal is not None:
+                return refusal
         captured = await source_registry.captured_tables()
         intent = plan.transaction_intent
         if captured:
@@ -95,6 +110,8 @@ class StreamSql:
             context.username, context.role, int(context.security_context_version or 1)
         )
         try:
+            if streams:
+                await self._refuse_shadowed(streams)
             if writes_source:
                 if streams or functions:
                     raise StreamError(
@@ -353,6 +370,79 @@ class StreamSql:
             if (name.database.lower(), name.name.lower()) in names:
                 found.append((name, node))
         return found
+
+    @staticmethod
+    async def _refuse_shadowed(streams: list[tuple[StreamName, Any]]) -> None:
+        """Refuse a name that is both a Stream and an engine table or view.
+
+        Nova refuses to create such a table, but one made outside Nova (a
+        direct engine login, a native task) can still appear. Neither reading
+        the table nor the Stream is safe to choose silently: picking the
+        Stream could consume it from an ``INSERT … SELECT`` meant for the
+        table, and picking the table could feed a consuming task the whole
+        table on every run. The statement is refused until one is renamed.
+        """
+        for name in {name for name, _node in streams}:
+            if await stream_service.engine_object_exists(name.database, name.name):
+                raise StreamError(
+                    "STREAM_NAME_AMBIGUOUS",
+                    f"{name.database}.{name.name} is both a stream and a table or view; "
+                    "rename or drop one of them",
+                )
+
+    async def _shadowing(self, parsed: Any, root: str, database: str | None):
+        """Refuse a CREATE or RENAME that would give a table a Stream's name.
+
+        Otherwise a later ``FROM name`` would be ambiguous: reads would fail
+        and an ``INSERT … SELECT FROM name`` could consume the Stream.
+        """
+        names = await self._stream_names()
+        if not names:
+            return None
+        target = self._created_name(parsed, root, database)
+        if target is None or target not in names:
+            return None
+        return self._error(
+            parsed,
+            "STREAM_NAME_COLLISION",
+            f"A stream named {target[0]}.{target[1]} exists; a table, view or materialized "
+            "view cannot take its name. Choose another name or drop the stream first",
+        )
+
+    @staticmethod
+    def _created_name(parsed: Any, root: str, database: str | None) -> tuple[str, str] | None:
+        """``(database, name)`` lowercased that the statement creates or renames to."""
+        from app.sql_frontend.antlr_utils import walk_nodes
+        from app.sql_frontend.streams import name_parts
+
+        node = parsed.statement_context
+        if root in _RENAMES:
+            renames = [
+                child for child in walk_nodes(node)
+                if type(child).__name__ == "TableRenameClauseContext"
+            ]
+            if not renames:
+                return None
+            source = node.qualifiedName()
+            if isinstance(source, list):
+                source = source[0] if source else None
+            if source is None:
+                return None
+            parts = name_parts(source)
+            new_name = name_parts(renames[-1])[-1]
+            parts = (*parts[:-1], new_name)
+        else:
+            target = getattr(node, "mvName", None) or node.qualifiedName()
+            if isinstance(target, list):
+                target = target[0] if target else None
+            if target is None:
+                return None
+            parts = name_parts(target)
+        if len(parts) == 3 and parts[0].casefold() != "default_catalog":
+            return None
+        if len(parts) == 1:
+            return (database.lower(), parts[0].lower()) if database else None
+        return parts[-2].lower(), parts[-1].lower()
 
     @staticmethod
     def _ddl_target(parsed: Any, database: str | None) -> tuple[str, str] | None:

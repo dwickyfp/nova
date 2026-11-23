@@ -231,7 +231,7 @@ class StreamService:
                     "Stream already exists"
                     + (" with a different source or mode" if if_not_exists else ""),
                 )
-        if await self._table_exists(name.database, name.name):
+        if await self.engine_object_exists(name.database, name.name):
             raise StreamError("STREAM_NAME_COLLISION", "A table or view occupies this name")
         await self.authorize_read(caller, source.database, source.name)
         await require_create_privilege(caller, name.database)
@@ -403,10 +403,16 @@ class StreamService:
             await source_registry.release_if_unused(source)
         return dropped
 
-    async def _table_exists(self, database: str, table: str) -> bool:
+    async def engine_object_exists(self, database: str, name: str) -> bool:
+        """Whether a table, view or materialized view has this name in the engine.
+
+        Compared case-insensitively, as Stream names are: a name that differs
+        only in case still collides.
+        """
         result = await self._execute(
-            "SELECT 1 FROM information_schema.tables WHERE TABLE_SCHEMA=%s AND TABLE_NAME=%s",
-            (database, table),
+            "SELECT 1 FROM information_schema.tables WHERE LOWER(TABLE_SCHEMA)=LOWER(%s) "
+            "AND LOWER(TABLE_NAME)=LOWER(%s) LIMIT 1",
+            (database, name),
         )
         return bool(result["rows"])
 
