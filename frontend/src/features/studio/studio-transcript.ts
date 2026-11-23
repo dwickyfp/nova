@@ -924,7 +924,7 @@ const ACTIVITY: Record<string, string> = {
 };
 
 /** What a step is doing, in present tense, without the tool's identifier. */
-export function describeActivity(name: string, skillName?: string | null): string {
+function describeActivity(name: string, skillName?: string | null): string {
   if (name === "load_skill") return skillName ? `Loading skill: ${skillName}` : "Loading a skill";
   const known = ACTIVITY[name] ?? AGENT_TOOLS[name]?.[1];
   if (known) return known;
