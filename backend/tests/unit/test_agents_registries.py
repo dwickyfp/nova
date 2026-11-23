@@ -116,7 +116,13 @@ def test_mcp_tool_normalization() -> None:
         "name": "get_weather",
         "description": "d",
         "input_schema": {"type": "object"},
+        "annotations": {},
     }
+    hinted = mcp_client._tool_from_mcp({
+        "name": "fx",
+        "annotations": {"readOnlyHint": True, "destructiveHint": "yes", "title": " FX "},
+    })
+    assert hinted["annotations"] == {"readOnlyHint": True, "title": "FX"}
 
 
 def test_mcp_client_never_imports_a_process_runner() -> None:
