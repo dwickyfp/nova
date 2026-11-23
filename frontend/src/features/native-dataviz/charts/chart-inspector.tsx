@@ -205,6 +205,12 @@ type InspectorProps = {
   error?: string
   onSave: (chart: ChartDefinition) => void
   onClose: () => void
+  /**
+   * Edit a chart that is not saved yet (a Studio answer's draft): its fields
+   * come from the caller and its preview reads through the draft's governed
+   * query. The dataset cannot be changed.
+   */
+  draft?: { fields: DatasetField[]; draftRef: string; saveLabel: string }
 }
 
 /** Configure and style one native chart; the preview runs the same governed query as the canvas. */
@@ -215,7 +221,11 @@ export function ChartInspector(props: InspectorProps) {
       ? { id: props.datasets.find(item => item.title !== null)!.dataset_id, revision: props.datasets.find(item => item.title !== null)!.revision }
       : null
   const [dataset, setDataset] = useState(initialDataset)
-  const definition = useDatasetDefinition(dataset?.id, dataset?.revision)
+  const definition = useDatasetDefinition(props.draft ? undefined : dataset?.id, dataset?.revision)
+  if (props.draft && dataset) return <InspectorShell {...props} title='Edit chart'>
+    <Builder key={`${dataset.id}:${dataset.revision}`} {...props} fields={props.draft.fields}
+      dataset={dataset} onDataset={setDataset} />
+  </InspectorShell>
   if (!dataset) return <InspectorShell {...props} title='Chart'>
     <p className='p-4 text-sm text-muted-foreground'>Add a dataset in the Data tab before building a chart.</p>
   </InspectorShell>
@@ -237,7 +247,7 @@ function InspectorShell({ title, onClose, children }: InspectorProps & { title: 
   </aside>
 }
 
-function Builder({ datasets, chart, initialVisual, saving, error, onSave, fields, dataset, onDataset }: InspectorProps & {
+function Builder({ datasets, chart, initialVisual, saving, error, onSave, fields, dataset, onDataset, draft }: InspectorProps & {
   fields: DatasetField[]; dataset: { id: string; revision: number }; onDataset: (value: { id: string; revision: number }) => void
 }) {
   const [state, setState] = useState<BuilderState>(() => chart && chart.dataset_id === dataset.id
@@ -268,7 +278,7 @@ function Builder({ datasets, chart, initialVisual, saving, error, onSave, fields
   return <>
     <div className='h-52 shrink-0 border-b p-4'>
       <div className='flex size-full min-h-0 flex-col rounded-md border bg-background p-2'>
-        {preview ? <NativeChart chart={preview} draft /> : <p className='m-auto text-sm text-muted-foreground'>{gap}</p>}
+        {preview ? <NativeChart chart={preview} draft draftRef={draft?.draftRef} /> : <p className='m-auto text-sm text-muted-foreground'>{gap}</p>}
       </div>
     </div>
     <Tabs defaultValue='configure' className='flex min-h-0 flex-1 flex-col gap-0'>
@@ -282,7 +292,7 @@ function Builder({ datasets, chart, initialVisual, saving, error, onSave, fields
           <Input id={titleId} value={state.title} maxLength={256} placeholder='Revenue by region' className='h-9'
             onChange={event => set({ title: event.target.value })} />
         </div>
-        <Section title='Dataset'>
+        {!draft && <Section title='Dataset'>
           <Select value={`${dataset.id}:${dataset.revision}`} onValueChange={value => {
             const [id, revision] = value.split(':')
             onDataset({ id, revision: Number(revision) })
@@ -291,7 +301,7 @@ function Builder({ datasets, chart, initialVisual, saving, error, onSave, fields
             <SelectContent>{datasets.filter(item => item.title !== null).map(item =>
               <SelectItem key={item.dataset_id} value={`${item.dataset_id}:${item.revision}`}>{item.title}</SelectItem>)}</SelectContent>
           </Select>
-        </Section>
+        </Section>}
         <Section title='Visualization'>
           <div role='radiogroup' aria-label='Visualization type' className='grid grid-cols-4 gap-1.5'>
             {VISUALS.map(item => {
@@ -438,7 +448,7 @@ function Builder({ datasets, chart, initialVisual, saving, error, onSave, fields
     <footer className='flex min-h-14 shrink-0 flex-wrap items-center justify-end gap-2 border-t px-4 py-2.5'>
       {(error || gap) && <p role={error ? 'alert' : 'status'} className={cn('me-auto text-sm', error ? 'text-destructive' : 'text-muted-foreground')}>{error ?? gap}</p>}
       <Button disabled={Boolean(gap) || saving || (state.number.kind === 'currency' && state.number.currency.length !== 3)}
-        onClick={() => onSave(toChart(state))}>{saving ? 'Saving…' : chart ? 'Save chart' : 'Add to dashboard'}</Button>
+        onClick={() => onSave(toChart(state))}>{saving ? 'Saving…' : draft ? draft.saveLabel : chart ? 'Save chart' : 'Add to dashboard'}</Button>
     </footer>
   </>
 }

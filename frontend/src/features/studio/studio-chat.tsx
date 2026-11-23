@@ -67,6 +67,7 @@ import {
   type NevaState,
 } from "@/features/native-dataviz/dashboard/events";
 import {
+  applyToTurn,
   contentFromParts,
   newTurn,
   patchTurn,
@@ -79,7 +80,11 @@ import {
   type StudioEvent,
   type TranscriptTurn,
 } from "./studio-transcript";
-import { emptyRunState, type HitlPart } from "./runtime/turn-reducer";
+import { emptyRunState, type ArtifactPart, type HitlPart } from "./runtime/turn-reducer";
+import { parseStudioRecord } from "./runtime/protocol";
+import type { ArtifactEventRecord } from "./runtime/artifacts/api";
+import { ArtifactProvider, ArtifactSidePanel, SaveSuggestion } from "./runtime/artifacts/artifact-views";
+import { artifactScope } from "./runtime/artifacts/scope";
 
 function activity(detail: NativeDashboardActivity) {
   window.dispatchEvent(new CustomEvent(NATIVE_DASHBOARD_ACTIVITY, { detail }));
@@ -821,6 +826,26 @@ export function StudioChat({
     setTurns((prev) => patchTurn(prev, turn.id, (current) => ({ ...current, feedback: result.feedback })));
   }, [agent, threadId]);
 
+  // The chart draft open in the artifact panel, by turn and part.
+  const [artifactOpen, setArtifactOpen] = useState<{ turnId: string; partId: string } | null>(null);
+  const openArtifact = useCallback((turnId: string, partId: string) => setArtifactOpen({ turnId, partId }), []);
+  const applyArtifactEvent = useCallback((turnId: string, record: ArtifactEventRecord) => {
+    const event = parseStudioRecord(record.event, record.data);
+    if (!event) return;
+    // A later event of a finished turn: never applied at or below what the turn has seen.
+    setTurns((current) => patchTurn(current, turnId, (turn) =>
+      applyToTurn(turn, { ...event, seq: Math.max(event.seq, turn.run.lastSeq + 1) })));
+  }, []);
+  const artifactTurn = artifactOpen ? turns.find((turn) => turn.id === artifactOpen.turnId) : undefined;
+  const artifactPart = artifactTurn?.run.parts.find(
+    (part): part is ArtifactPart => part.id === artifactOpen?.partId && part.type === "artifact_preview",
+  ) ?? null;
+  const panelScope = useMemo(() => artifactScope(artifactTurn?.run.parts ?? [], {
+    ready: true,
+    open: (partId) => artifactTurn && openArtifact(artifactTurn.id, partId),
+    apply: (record) => artifactTurn && applyArtifactEvent(artifactTurn.id, record),
+  }), [artifactTurn, openArtifact, applyArtifactEvent]);
+
   const researchable = Boolean(
     agent && agent.agent_id !== SKILL_AUTHOR_ID && !streaming,
   );
@@ -939,6 +964,8 @@ export function StudioChat({
                     onFeedback={saveFeedback}
                     onAnswer={answer}
                     onReviewSkill={creatingSkill ? setSkillDraft : undefined}
+                    onArtifactEvent={applyArtifactEvent}
+                    onOpenArtifact={openArtifact}
                   />
                 ))}
               </div>
@@ -946,6 +973,7 @@ export function StudioChat({
           </div>
         </div>
 
+        <ArtifactSidePanel part={artifactPart} scope={panelScope} onClose={() => setArtifactOpen(null)} />
         <div
           data-testid="studio-composer"
           className={cn(
@@ -1033,8 +1061,14 @@ const TurnView = memo(function TurnView({
   onAnswer,
   onReviewSkill,
   uiContext,
+  onArtifactEvent,
+  onOpenArtifact,
 }: {
   turn: TranscriptTurn;
+  /** Apply an event a chart edit or save returned to this turn. */
+  onArtifactEvent: (turnId: string, record: ArtifactEventRecord) => void;
+  /** Open a chart draft of this turn in the artifact panel. */
+  onOpenArtifact: (turnId: string, partId: string) => void;
   /** Ask a follow-up; set only for the latest finished turn. */
   onAsk?: (question: string) => void;
   agent: Agent;
@@ -1060,6 +1094,15 @@ const TurnView = memo(function TurnView({
   const runContext = useMemo(
     () => ({ database: agent.database_name ?? undefined }),
     [agent.database_name],
+  );
+  const stored = Boolean(turn.messageId) && turn.state === "done";
+  const artifacts = useMemo(
+    () => artifactScope(turn.run.parts, {
+      ready: stored,
+      open: (partId) => onOpenArtifact(turn.id, partId),
+      apply: (record) => onArtifactEvent(turn.id, record),
+    }),
+    [turn.run.parts, turn.id, stored, onOpenArtifact, onArtifactEvent],
   );
 
   return (
@@ -1092,8 +1135,11 @@ const TurnView = memo(function TurnView({
         </div>
       )}
 
+      <ArtifactProvider value={artifacts}>
       {segments.map((segment, index) =>
-        segment.kind === "role_change" ? (
+        segment.kind === "save" ? (
+          <SaveSuggestion key={segment.id} part={segment.part} scope={artifacts} />
+        ) : segment.kind === "role_change" ? (
           <RoleChangeNotice key={segment.id} role={segment.activeRole} />
         ) : segment.kind === "hitl" ? (
           <HitlRequest
@@ -1122,6 +1168,7 @@ const TurnView = memo(function TurnView({
           />
         ),
       )}
+      </ArtifactProvider>
       {starting ? <ProcessRail steps={STARTING} running revealKey={turn.revealKey} /> : null}
 
 

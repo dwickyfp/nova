@@ -214,8 +214,12 @@ def _run_id(events: list[dict[str, Any]]) -> str | None:
 
 
 def numbered(journal: list[dict[str, Any]], log: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The log as journal events, numbered after the journal's last event."""
-    base = _last_seq(journal)
+    """The log as journal events, numbered after the turn's terminal event.
+
+    The stored journal ends before ``run.finished``, which the live stream
+    numbered right after it; later events start one past that.
+    """
+    base = _last_seq(journal) + 1
     run_id = _run_id(journal)
     return [
         {"event": item["event"], "data": {
@@ -387,6 +391,31 @@ async def capability(ref: str, user: dict[str, Any]) -> dict[str, Any]:
     return {**result.public(), "saved": state.saved, "revision": state.revision}
 
 
+async def state(ref: str, user: dict[str, Any]) -> dict[str, Any]:
+    """What the artifact panel needs: the latest revision, its fields, capability and receipt.
+
+    Fields are the statement's output columns as the caller may see them now;
+    no rows are read.
+    """
+    try:
+        draft, _journal, _revision, _log, current = await _draft_and_state(ref, user)
+    except DraftError as error:
+        if error.status_code == 409:
+            return {**other_context().public(), "saved": None, "draft": None, "fields": [],
+                    "revision": 0}
+        raise
+    try:
+        dataset = await _draft_dataset(user, draft)
+    except DraftError:
+        return {**cannot_read(user).public(), "saved": current.saved, "draft": current.draft,
+                "fields": [], "revision": current.revision}
+    return {
+        "capability": "can_save", "reason_code": "OK", "message": CAN_SAVE_MESSAGE,
+        "saved": current.saved, "draft": current.draft, "revision": current.revision,
+        "fields": [field.model_dump(mode="json") for field in dataset.fields],
+    }
+
+
 # ── Saving ───────────────────────────────────────────────────────────
 
 
@@ -550,9 +579,9 @@ async def publish_draft(
 
 
 async def _documents_workspace(user: dict[str, Any], dashboard_id: UUID) -> str:
-    from .document_service import native_document_service
+    from .studio_publish import _documents
 
-    return str(await native_document_service.workspace_of(user, dashboard_id))
+    return str(await _documents().workspace_of(user, dashboard_id))
 
 
 async def _audit(user: dict[str, Any], draft: ResolvedDraft | None, action: str,

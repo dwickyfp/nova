@@ -2312,6 +2312,180 @@
           }
         }
       ]
+    },
+    {
+      "name": "a chart draft with its save suggestion",
+      "run_id": "run-f",
+      "role": "ANALYST",
+      "v1": [
+        {
+          "event": "text_delta",
+          "data": {
+            "text": "Units by brand.",
+            "content_index": 0,
+            "content_id": "run-f:0"
+          }
+        },
+        {
+          "event": "content_block_done",
+          "data": {
+            "content_id": "run-f:0"
+          }
+        },
+        {
+          "event": "artifact_draft",
+          "data": {
+            "draft": {
+              "draft_ref": "dr1.eyJjIjoicnVuLWY6MSIsInQiOiJ0MSJ9.c2lnbmF0dXJl",
+              "kind": "dataviz_chart",
+              "title": "Units by brand",
+              "revision": 1,
+              "content_id": "run-f:1",
+              "chart": {
+                "schema_version": 2,
+                "chart_id": "99999999-9999-4999-8999-999999999999",
+                "title": "Units by brand",
+                "dataset_id": "88888888-8888-4888-8888-888888888888",
+                "dataset_revision": 1,
+                "visual": "bar",
+                "encoding": {
+                  "kind": "cartesian",
+                  "dimensions": [
+                    {
+                      "field_id": "brand"
+                    }
+                  ],
+                  "measures": [
+                    {
+                      "field_id": "units",
+                      "aggregation": "sum"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "event": "save_suggested",
+          "data": {
+            "draft_refs": [
+              "dr1.eyJjIjoicnVuLWY6MSIsInQiOiJ0MSJ9.c2lnbmF0dXJl"
+            ],
+            "capability": "can_save",
+            "reason_code": "OK",
+            "message": "Save this chart to a Dataviz dashboard to keep it."
+          }
+        },
+        {
+          "event": "done",
+          "data": {
+            "message_id": "m-e",
+            "finish_reason": "stop"
+          }
+        }
+      ],
+      "v2": [
+        {
+          "event": "run.started",
+          "data": {
+            "protocol_version": 2,
+            "role": "ANALYST",
+            "run_id": "run-f",
+            "seq": 0
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-f#0",
+            "type": "text",
+            "content_index": 0,
+            "content_id": "run-f:0",
+            "run_id": "run-f",
+            "seq": 1
+          }
+        },
+        {
+          "event": "part.delta",
+          "data": {
+            "part_id": "run-f#0",
+            "text": "Units by brand.",
+            "run_id": "run-f",
+            "seq": 2
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-f#0",
+            "state": "done",
+            "run_id": "run-f",
+            "seq": 3
+          }
+        },
+        {
+          "event": "artifact.draft",
+          "data": {
+            "part_id": "run-f#1",
+            "draft": {
+              "draft_ref": "dr1.eyJjIjoicnVuLWY6MSIsInQiOiJ0MSJ9.c2lnbmF0dXJl",
+              "kind": "dataviz_chart",
+              "title": "Units by brand",
+              "revision": 1,
+              "content_id": "run-f:1",
+              "chart": {
+                "schema_version": 2,
+                "chart_id": "99999999-9999-4999-8999-999999999999",
+                "title": "Units by brand",
+                "dataset_id": "88888888-8888-4888-8888-888888888888",
+                "dataset_revision": 1,
+                "visual": "bar",
+                "encoding": {
+                  "kind": "cartesian",
+                  "dimensions": [
+                    {
+                      "field_id": "brand"
+                    }
+                  ],
+                  "measures": [
+                    {
+                      "field_id": "units",
+                      "aggregation": "sum"
+                    }
+                  ]
+                }
+              }
+            },
+            "run_id": "run-f",
+            "seq": 4
+          }
+        },
+        {
+          "event": "save.suggested",
+          "data": {
+            "part_id": "run-f#2",
+            "draft_ref": "dr1.eyJjIjoicnVuLWY6MSIsInQiOiJ0MSJ9.c2lnbmF0dXJl",
+            "draft_refs": [
+              "dr1.eyJjIjoicnVuLWY6MSIsInQiOiJ0MSJ9.c2lnbmF0dXJl"
+            ],
+            "capability": "can_save",
+            "reason_code": "OK",
+            "message": "Save this chart to a Dataviz dashboard to keep it.",
+            "run_id": "run-f",
+            "seq": 5
+          }
+        },
+        {
+          "event": "run.finished",
+          "data": {
+            "message_id": "m-e",
+            "finish_reason": "stop",
+            "run_id": "run-f",
+            "seq": 6
+          }
+        }
+      ]
     }
   ]
 }

@@ -170,6 +170,18 @@ async def query_draft(
     return await studio_drafts.query(ref, user, body)
 
 
+@router.get("/drafts/{ref}", response_class=SanitizingJSONResponse)
+async def draft_state(
+    user: CurrentUser,
+    ref: str = Path(min_length=8, max_length=1024, pattern=_REF),
+) -> dict[str, Any]:
+    """A chart draft's latest revision, its fields, capability and save receipt (no rows)."""
+    try:
+        return await studio_artifacts.state(ref, user)
+    except DraftError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
 @router.get("/drafts/{ref}/capability", response_class=SanitizingJSONResponse)
 async def draft_capability(
     user: CurrentUser,

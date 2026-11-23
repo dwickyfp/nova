@@ -138,7 +138,9 @@ export const TOOLS = {
       "Show a verified data result as a native Dataviz chart or as headline KPI tiles. " +
       "Name the visual and the exact result columns (x, y); Nova reads every value from the " +
       "result and binds the chart to its governed query. Call it after a query, or for a " +
-      "follow-up about the preceding result. Do not call it before a data result exists.",
+      "follow-up about the preceding result. Do not call it before a data result exists. " +
+      "The chart stays a draft in the answer: the person may edit it and decide to save it to " +
+      "a dashboard. You cannot save it, so never say it was saved.",
     schema: dataToChartArgs,
   },
 } as const;

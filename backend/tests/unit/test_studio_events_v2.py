@@ -60,6 +60,18 @@ UI_PAYLOAD = {
 }
 
 
+DRAFT = {
+    "draft_ref": "dr1.eyJjIjoicnVuLWY6MSIsInQiOiJ0MSJ9.c2lnbmF0dXJl", "kind": "dataviz_chart",
+    "title": "Units by brand", "revision": 1, "content_id": "run-f:1",
+    "chart": {
+        "schema_version": 2, "chart_id": "99999999-9999-4999-8999-999999999999",
+        "title": "Units by brand", "dataset_id": "88888888-8888-4888-8888-888888888888",
+        "dataset_revision": 1, "visual": "bar",
+        "encoding": {"kind": "cartesian", "dimensions": [{"field_id": "brand"}],
+                     "measures": [{"field_id": "units", "aggregation": "sum"}]},
+    },
+}
+
 APPROVAL = {
     "kind": "approval", "title": "Allow this action?", "classification": "destructive",
     "reason": "changes_data", "role": "ANALYST",
@@ -228,6 +240,19 @@ CASES: list[dict[str, Any]] = [
                verification="verified"),
             _f("content_block_done", content_index=0, content_id="run-e:0"),
             _f("done", message_id="m4", finish_reason="stop"),
+        ],
+    },
+    {
+        "name": "a chart draft with its save suggestion",
+        "run_id": "run-f",
+        "role": "ANALYST",
+        "v1": [
+            _f("text_delta", text="Units by brand.", content_index=0, content_id="run-f:0"),
+            _f("content_block_done", content_id="run-f:0"),
+            _f("artifact_draft", draft=DRAFT),
+            _f("save_suggested", draft_refs=[DRAFT["draft_ref"]], capability="can_save",
+               reason_code="OK", message="Save this chart to a Dataviz dashboard to keep it."),
+            _f("done", message_id="m-e", finish_reason="stop"),
         ],
     },
 ]
@@ -527,6 +552,30 @@ def test_human_input_parts_sit_where_asked_and_record_how_they_settled() -> None
     )
     assert names.index("input.resolved") < records.index(denied)
     assert "input.required" in events_v2.FLUSH_EVENTS
+
+
+def test_a_chart_draft_and_its_suggestion_are_parts_of_their_own():
+    records = encode_case(CASES[-1])
+    names = _events(records)
+    draft = records[names.index("artifact.draft")]["data"]
+    suggestion = records[names.index("save.suggested")]["data"]
+    assert draft["draft"] == DRAFT and draft["part_id"].startswith("run-f#")
+    assert suggestion["draft_refs"] == [DRAFT["draft_ref"]]
+    assert suggestion["capability"] == "can_save" and suggestion["part_id"] != draft["part_id"]
+    assert names.index("artifact.draft") < names.index("save.suggested") < names.index(
+        "run.finished")
+    # Neither carries rows or a statement.
+    assert "rows" not in json.dumps(records) and "SELECT" not in json.dumps(records)
+
+
+def test_a_malformed_draft_or_suggestion_is_dropped():
+    encoder = StudioStreamEncoder("r")
+    encoder.start(role="ANALYST")
+    assert encoder.translate(_v1_frame({"event": "artifact_draft", "data": {"draft": {}}})) == []
+    assert encoder.translate(_v1_frame({"event": "save_suggested", "data": {
+        "draft_refs": ["x"], "capability": "can_publish_anything"}})) == []
+    assert encoder.translate(_v1_frame({"event": "save_suggested", "data": {
+        "draft_refs": [], "capability": "can_save"}})) == []
 
 
 if __name__ == "__main__":

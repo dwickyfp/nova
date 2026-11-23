@@ -155,6 +155,23 @@ export class TestStudioEncoder {
         return this.inputResolved(key(b.request_id), b);
       case "role_changed":
         return this.roleChanged(b);
+      case "artifact_draft": {
+        const draft = b.draft;
+        if (!draft || typeof draft !== "object" || typeof (draft as Record<string, unknown>).draft_ref !== "string") return [];
+        return [...this.closeReasoning(), { event: "artifact.draft", data: { part_id: this.partId(), draft } }];
+      }
+      case "save_suggested": {
+        const refs = (Array.isArray(b.draft_refs) ? b.draft_refs : []).filter((ref): ref is string => typeof ref === "string");
+        if (!refs.length || (b.capability !== "can_save" && b.capability !== "role_cannot_author")) return [];
+        const frames = this.closeReasoning();
+        return [...frames, {
+          event: "save.suggested",
+          data: {
+            part_id: this.partId(), draft_ref: refs[0], draft_refs: refs, capability: b.capability,
+            reason_code: str(b.reason_code), message: str(b.message),
+          },
+        }];
+      }
       case "error":
         return [{ event: "run.error", data: { code: str(b.code, "error"), message: str(b.message) } }];
       case "done":
