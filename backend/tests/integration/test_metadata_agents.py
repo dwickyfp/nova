@@ -82,6 +82,12 @@ def frame(sequence, text="step"):
     return "data: " + json.dumps({"sequence": sequence, "type": "delta", "text": text}) + "\n\n"
 
 
+def v2_frame(run_id, seq, text="step"):
+    """A Studio protocol v2 frame: the run sequence is ``seq`` beside ``run_id``."""
+    payload = {"run_id": run_id, "seq": seq, "part_id": f"{run_id}#0", "delta": text}
+    return "event: part.delta\ndata: " + json.dumps(payload) + "\n\n"
+
+
 async def create_agent(agents, **fields):
     async with agents.transaction() as (repo, _):
         return await repo.create_agent({"name": "Sales analyst", "default_skills": ["forecast"],
@@ -348,6 +354,23 @@ async def test_event_batches_and_their_high_water_commit_together(agents):
     frames = await agents.admin("SELECT frame FROM nova_meta.config_agent_run_events "
                                 "WHERE run_id='run-1' ORDER BY sequence")
     assert [f["frame"] for f in frames] == [frame(0), frame(1), frame(2)]
+
+
+async def test_protocol_v2_frames_are_stored_by_their_seq(agents):
+    async with agents.transaction("agent") as (repo, _):
+        await repo.start_run("run-v2", "agent-1", "thread-1")
+        assert await repo.append_events(
+            "run-v2", [v2_frame("run-v2", 0), v2_frame("run-v2", 1)], generation=1) == 1
+    # The guard still compares the stored sequence with the one inside the frame.
+    with pytest.raises(MetadataIntegrityViolation):
+        async with agents.transaction("agent") as (_, conn):
+            await conn.execute("INSERT INTO nova_meta.config_agent_run_events (run_id,sequence,"
+                               "frame,claim_generation) VALUES ('run-v2',2,%s,1)",
+                               (v2_frame("run-v2", 3),))
+    async with agents.transaction("agent", read_only=True) as (repo, _):
+        history = await repo.history("run-v2")
+        assert history["frames"] == [v2_frame("run-v2", 0), v2_frame("run-v2", 1)]
+        assert history["last_sequence"] == 1
 
 
 async def test_concurrent_batches_publish_one_contiguous_journal(agents):

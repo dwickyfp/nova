@@ -96,7 +96,7 @@ async def test_mission_update_is_saved_before_delivery_and_terminal_completion(
         async with asyncio.timeout(1):
             async for frame in response.body_iterator:
                 if frame.startswith("event: mission_updated\n") or (
-                    not storage_fault and frame.startswith("event: done\n")
+                    not storage_fault and frame.startswith("event: run.finished\n")
                 ):
                     assert frame in persisted
                 frames.append(frame)
@@ -105,14 +105,19 @@ async def test_mission_update_is_saved_before_delivery_and_terminal_completion(
         assert "synthetic-mission-storage-secret" not in "".join(frames) + caplog.text
         assert frames == persisted
         payloads = [json.loads(frame.split("data: ", 1)[1]) for frame in frames]
-        sequences = [payload["sequence"] for payload in payloads]
+        sequences = [payload["seq"] for payload in payloads]
         assert sequences == sorted(set(sequences))
-        assert frames[-1].startswith("event: done\n")
-        assert sum(frame.startswith("event: done\n") for frame in frames) == 1
+        assert frames[0].startswith("event: run.started\n")
+        assert frames[-1].startswith("event: run.finished\n")
+        assert sum(frame.startswith("event: run.finished\n") for frame in frames) == 1
         if storage_fault:
             assert not effects
             assert payloads[-1]["finish_reason"] == "interrupted"
-            assert payloads[-2]["code"] == "run_persistence_unavailable"
+            errors = [
+                payload for frame, payload in zip(frames, payloads, strict=True)
+                if frame.startswith("event: run.error\n")
+            ]
+            assert [error["code"] for error in errors] == ["run_persistence_unavailable"]
             assert not any(frame.startswith("event: mission_updated\n") for frame in frames)
             assert finish.await_args.args[1] == "interrupted"
         else:

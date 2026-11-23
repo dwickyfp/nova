@@ -178,8 +178,10 @@ def visible_message(row: dict, user: dict | None) -> tuple[str, list]:
         isinstance(item, dict) and item.get("kind") == "ui" for item in steps
     ) else {}
     if not (bool(current) and same_ui_context(stamp, current)):
+        from app.modules.assistant.events_v2 import without_part_types
+
         steps = [
-            item for item in steps
+            without_part_types(item, {"ui"}) for item in steps
             if not (isinstance(item, dict) and item.get("kind") == "ui")
         ]
     content = row.get("content") or ""

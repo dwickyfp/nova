@@ -2141,6 +2141,9 @@ class AssistantLoop:
                     buffered_text = [answer_text]
                     for frame in await _guard_frames(context, redaction):
                         yield frame
+                # The answer step closes the activity before the answer itself, so an
+                # ordered transcript shows no separate step after the text.
+                yield _thinking_step(context, "answer", "Writing the answer", status="done")
                 for frame in _ordered_output_frames(
                     answer_text,
                     pending_artifacts,
@@ -2150,7 +2153,6 @@ class AssistantLoop:
                     yield frame
                 pending_artifacts.clear()
                 context.pending_output = []
-                yield _thinking_step(context, "answer", "Writing the answer", status="done")
                 follow_ups = _follow_up_suggestions(context, user_content)
                 if follow_ups:
                     yield events.suggestions(follow_ups)

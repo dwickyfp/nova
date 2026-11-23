@@ -1,0 +1,1188 @@
+{
+  "protocol_version": 2,
+  "cases": [
+    {
+      "name": "answer with tools, consent, content and a nested Mission call",
+      "run_id": "run-a",
+      "role": "ANALYST",
+      "v1": [
+        {
+          "event": "plan",
+          "data": {
+            "steps": [
+              {
+                "id": "u",
+                "text": "Understand the request",
+                "status": "running"
+              }
+            ]
+          }
+        },
+        {
+          "event": "thinking",
+          "data": {
+            "phase": "act",
+            "text": "Reasoning about the next step",
+            "status": "running"
+          }
+        },
+        {
+          "event": "thinking",
+          "data": {
+            "phase": "act",
+            "text": "Reading the orders table",
+            "status": "running"
+          }
+        },
+        {
+          "event": "tool_call",
+          "data": {
+            "tool_call_id": "c1",
+            "tool_name": "query_execute",
+            "sql_preview": "SELECT 1",
+            "classification": "read_only",
+            "status": "running"
+          }
+        },
+        {
+          "event": "tool_progress",
+          "data": {
+            "tool_call_id": "c1",
+            "stage": "query_started",
+            "text": "Running the query"
+          }
+        },
+        {
+          "event": "tool_status",
+          "data": {
+            "tool_call_id": "c1",
+            "status": "done"
+          }
+        },
+        {
+          "event": "tool_detail",
+          "data": {
+            "tool_call_id": "c1",
+            "text": "1 row returned"
+          }
+        },
+        {
+          "event": "evidence_health",
+          "data": {
+            "tool_call_id": "c1",
+            "tool_name": "query_execute",
+            "payload": {
+              "schema_version": 1,
+              "rule_version": "evidence-health-v1",
+              "assessed_at": "2026-10-03T10:00:00Z",
+              "label": "limited",
+              "facts": {
+                "semantic_grounding": "published",
+                "semantic_view_id": "sales",
+                "semantic_version": 2,
+                "semantic_fingerprint": "fp",
+                "plan_source": "compiled",
+                "verified_query_hit": false,
+                "verified_query_id": null,
+                "execution_status": "success",
+                "coverage": "truncated",
+                "semantic_ambiguity": "none",
+                "source_agreement": "unknown",
+                "causal_strength": "association",
+                "unsupported_numeric_claims": false,
+                "data_as_of": null,
+                "max_age_seconds": null,
+                "evidence_refs": [
+                  "e1"
+                ]
+              },
+              "data_freshness": {
+                "status": "unknown",
+                "data_as_of": null,
+                "age_seconds": null,
+                "max_age_seconds": null
+              },
+              "reasons": [
+                "coverage_truncated",
+                "freshness_unknown"
+              ],
+              "unknown_signals": [
+                "source_agreement",
+                "data_freshness"
+              ]
+            }
+          }
+        },
+        {
+          "event": "thinking",
+          "data": {
+            "phase": "observe",
+            "text": "Reading the result",
+            "status": "done"
+          }
+        },
+        {
+          "event": "tool_call",
+          "data": {
+            "tool_call_id": "c2",
+            "tool_name": "query_execute",
+            "sql_preview": "SELECT 1",
+            "classification": "read_only",
+            "status": "pending"
+          }
+        },
+        {
+          "event": "tool_status",
+          "data": {
+            "tool_call_id": "c2",
+            "status": "running"
+          }
+        },
+        {
+          "event": "tool_status",
+          "data": {
+            "tool_call_id": "c2",
+            "status": "done"
+          }
+        },
+        {
+          "event": "tool_call",
+          "data": {
+            "tool_call_id": "c1",
+            "tool_name": "query_execute",
+            "sql_preview": "SELECT 1",
+            "classification": "read_only",
+            "status": "done",
+            "run_id": "mission-run"
+          }
+        },
+        {
+          "event": "guard",
+          "data": {
+            "rule_id": "credential-in-answer",
+            "stage": "answer",
+            "action": "redacted",
+            "tool_name": "",
+            "message": "A credential-shaped value was removed.",
+            "source": "platform"
+          }
+        },
+        {
+          "event": "text_delta",
+          "data": {
+            "text": "Revenue rose ",
+            "content_index": 0,
+            "content_id": "content-0"
+          }
+        },
+        {
+          "event": "text_delta",
+          "data": {
+            "text": "12%.",
+            "content_index": 0,
+            "content_id": "content-0"
+          }
+        },
+        {
+          "event": "content_block_done",
+          "data": {
+            "content_index": 0,
+            "content_id": "content-0"
+          }
+        },
+        {
+          "event": "table",
+          "data": {
+            "title": "Revenue",
+            "columns": [
+              "month",
+              "revenue"
+            ],
+            "rows": [
+              [
+                "2026-10",
+                12
+              ]
+            ],
+            "content_index": 1,
+            "content_id": "content-1"
+          }
+        },
+        {
+          "event": "content_block_done",
+          "data": {
+            "content_index": 1,
+            "content_id": "content-1"
+          }
+        },
+        {
+          "event": "ui",
+          "data": {
+            "payload": {
+              "catalog_version": "1",
+              "program_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "fallback": "Adjust assumptions.",
+              "state_defaults": {},
+              "evidence": {},
+              "actions": [],
+              "provenance": {
+                "evidence_ids": [],
+                "scope": "user_simulation",
+                "assumption": true
+              }
+            },
+            "content_index": 2,
+            "content_id": "content-2"
+          }
+        },
+        {
+          "event": "ui_delta",
+          "data": {
+            "text": "root = Col([Text(\"Adjust\")])",
+            "content_index": 2,
+            "content_id": "content-2"
+          }
+        },
+        {
+          "event": "content_block_done",
+          "data": {
+            "content_index": 2,
+            "content_id": "content-2"
+          }
+        },
+        {
+          "event": "chart",
+          "data": {
+            "tool_call_id": "c1",
+            "chart_spec": "{\"mark\":\"bar\"}"
+          }
+        },
+        {
+          "event": "suggestions",
+          "data": {
+            "suggestions": [
+              "Break it down by region"
+            ]
+          }
+        },
+        {
+          "event": "ping",
+          "data": {}
+        },
+        {
+          "event": "done",
+          "data": {
+            "message_id": "m1",
+            "finish_reason": "stop",
+            "usage": {
+              "prompt_tokens": 10,
+              "completion_tokens": 5,
+              "total_tokens": 15
+            }
+          }
+        }
+      ],
+      "v2": [
+        {
+          "event": "run.started",
+          "data": {
+            "protocol_version": 2,
+            "role": "ANALYST",
+            "run_id": "run-a",
+            "seq": 0
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-a#0",
+            "type": "reasoning",
+            "source": "nova",
+            "phase": "plan",
+            "text": "1. Understand the request",
+            "plan_steps": 1,
+            "run_id": "run-a",
+            "seq": 1
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-a#0",
+            "state": "done",
+            "run_id": "run-a",
+            "seq": 2
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-a#1",
+            "type": "reasoning",
+            "source": "nova",
+            "phase": "act",
+            "text": "Reasoning about the next step",
+            "run_id": "run-a",
+            "seq": 3
+          }
+        },
+        {
+          "event": "part.delta",
+          "data": {
+            "part_id": "run-a#1",
+            "text": "Reading the orders table",
+            "replace": true,
+            "run_id": "run-a",
+            "seq": 4
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-a#1",
+            "state": "done",
+            "run_id": "run-a",
+            "seq": 5
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-a#2",
+            "type": "tool",
+            "tool_call_id": "c1",
+            "tool_name": "query_execute",
+            "classification": "read_only",
+            "run_id": "run-a",
+            "seq": 6
+          }
+        },
+        {
+          "event": "tool.status",
+          "data": {
+            "part_id": "run-a#2",
+            "status": "running",
+            "preview": "SELECT 1",
+            "run_id": "run-a",
+            "seq": 7
+          }
+        },
+        {
+          "event": "tool.status",
+          "data": {
+            "part_id": "run-a#2",
+            "status": "running",
+            "progress": {
+              "stage": "query_started",
+              "text": "Running the query"
+            },
+            "run_id": "run-a",
+            "seq": 8
+          }
+        },
+        {
+          "event": "tool.status",
+          "data": {
+            "part_id": "run-a#2",
+            "status": "done",
+            "run_id": "run-a",
+            "seq": 9
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-a#2",
+            "state": "done",
+            "run_id": "run-a",
+            "seq": 10
+          }
+        },
+        {
+          "event": "tool.status",
+          "data": {
+            "part_id": "run-a#2",
+            "status": "done",
+            "detail": "1 row returned",
+            "run_id": "run-a",
+            "seq": 11
+          }
+        },
+        {
+          "event": "tool.evidence",
+          "data": {
+            "part_id": "run-a#2",
+            "kind": "health",
+            "tool_name": "query_execute",
+            "payload": {
+              "schema_version": 1,
+              "rule_version": "evidence-health-v1",
+              "assessed_at": "2026-10-03T10:00:00Z",
+              "label": "limited",
+              "facts": {
+                "semantic_grounding": "published",
+                "semantic_view_id": "sales",
+                "semantic_version": 2,
+                "semantic_fingerprint": "fp",
+                "plan_source": "compiled",
+                "verified_query_hit": false,
+                "verified_query_id": null,
+                "execution_status": "success",
+                "coverage": "truncated",
+                "semantic_ambiguity": "none",
+                "source_agreement": "unknown",
+                "causal_strength": "association",
+                "unsupported_numeric_claims": false,
+                "data_as_of": null,
+                "max_age_seconds": null,
+                "evidence_refs": [
+                  "e1"
+                ]
+              },
+              "data_freshness": {
+                "status": "unknown",
+                "data_as_of": null,
+                "age_seconds": null,
+                "max_age_seconds": null
+              },
+              "reasons": [
+                "coverage_truncated",
+                "freshness_unknown"
+              ],
+              "unknown_signals": [
+                "source_agreement",
+                "data_freshness"
+              ]
+            },
+            "tool_call_id": "c1",
+            "run_id": "run-a",
+            "seq": 12
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-a#3",
+            "type": "reasoning",
+            "source": "nova",
+            "phase": "observe",
+            "text": "Reading the result",
+            "run_id": "run-a",
+            "seq": 13
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-a#3",
+            "state": "done",
+            "run_id": "run-a",
+            "seq": 14
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-a#4",
+            "type": "tool",
+            "tool_call_id": "c2",
+            "tool_name": "query_execute",
+            "classification": "read_only",
+            "run_id": "run-a",
+            "seq": 15
+          }
+        },
+        {
+          "event": "consent.required",
+          "data": {
+            "part_id": "run-a#4",
+            "classification": "read_only",
+            "tool_call": {
+              "tool_call_id": "c2",
+              "tool_name": "query_execute",
+              "sql_preview": "SELECT 1",
+              "classification": "read_only",
+              "status": "pending"
+            },
+            "preview": "SELECT 1",
+            "run_id": "run-a",
+            "seq": 16
+          }
+        },
+        {
+          "event": "tool.status",
+          "data": {
+            "part_id": "run-a#4",
+            "status": "running",
+            "run_id": "run-a",
+            "seq": 17
+          }
+        },
+        {
+          "event": "tool.status",
+          "data": {
+            "part_id": "run-a#4",
+            "status": "done",
+            "run_id": "run-a",
+            "seq": 18
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-a#4",
+            "state": "done",
+            "run_id": "run-a",
+            "seq": 19
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-a#5",
+            "type": "tool",
+            "tool_call_id": "c1",
+            "tool_name": "query_execute",
+            "origin_run_id": "mission-run",
+            "classification": "read_only",
+            "run_id": "run-a",
+            "seq": 20
+          }
+        },
+        {
+          "event": "tool.status",
+          "data": {
+            "part_id": "run-a#5",
+            "status": "done",
+            "preview": "SELECT 1",
+            "run_id": "run-a",
+            "seq": 21
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-a#5",
+            "state": "done",
+            "run_id": "run-a",
+            "seq": 22
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-a#6",
+            "type": "guard",
+            "decision": {
+              "rule_id": "credential-in-answer",
+              "stage": "answer",
+              "action": "redacted",
+              "tool_name": "",
+              "message": "A credential-shaped value was removed.",
+              "source": "platform"
+            },
+            "run_id": "run-a",
+            "seq": 23
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-a#6",
+            "state": "done",
+            "run_id": "run-a",
+            "seq": 24
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-a#7",
+            "type": "text",
+            "content_index": 0,
+            "content_id": "content-0",
+            "run_id": "run-a",
+            "seq": 25
+          }
+        },
+        {
+          "event": "part.delta",
+          "data": {
+            "part_id": "run-a#7",
+            "text": "Revenue rose ",
+            "run_id": "run-a",
+            "seq": 26
+          }
+        },
+        {
+          "event": "part.delta",
+          "data": {
+            "part_id": "run-a#7",
+            "text": "12%.",
+            "run_id": "run-a",
+            "seq": 27
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-a#7",
+            "state": "done",
+            "run_id": "run-a",
+            "seq": 28
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-a#8",
+            "type": "table",
+            "block": {
+              "title": "Revenue",
+              "columns": [
+                "month",
+                "revenue"
+              ],
+              "rows": [
+                [
+                  "2026-10",
+                  12
+                ]
+              ]
+            },
+            "content_index": 1,
+            "content_id": "content-1",
+            "run_id": "run-a",
+            "seq": 29
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-a#8",
+            "state": "done",
+            "run_id": "run-a",
+            "seq": 30
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-a#9",
+            "type": "ui",
+            "block": {
+              "catalog_version": "1",
+              "program_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "fallback": "Adjust assumptions.",
+              "state_defaults": {},
+              "evidence": {},
+              "actions": [],
+              "provenance": {
+                "evidence_ids": [],
+                "scope": "user_simulation",
+                "assumption": true
+              }
+            },
+            "content_index": 2,
+            "content_id": "content-2",
+            "run_id": "run-a",
+            "seq": 31
+          }
+        },
+        {
+          "event": "part.delta",
+          "data": {
+            "part_id": "run-a#9",
+            "text": "root = Col([Text(\"Adjust\")])",
+            "run_id": "run-a",
+            "seq": 32
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-a#9",
+            "state": "done",
+            "run_id": "run-a",
+            "seq": 33
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-a#10",
+            "type": "chart",
+            "block": {
+              "tool_call_id": "c1",
+              "chart_spec": "{\"mark\":\"bar\"}"
+            },
+            "run_id": "run-a",
+            "seq": 34
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-a#10",
+            "state": "done",
+            "run_id": "run-a",
+            "seq": 35
+          }
+        },
+        {
+          "event": "suggestions",
+          "data": {
+            "suggestions": [
+              "Break it down by region"
+            ],
+            "run_id": "run-a",
+            "seq": 36
+          }
+        },
+        {
+          "event": "ping",
+          "data": {
+            "run_id": "run-a",
+            "seq": 37
+          }
+        },
+        {
+          "event": "run.finished",
+          "data": {
+            "message_id": "m1",
+            "finish_reason": "stop",
+            "usage": {
+              "prompt_tokens": 10,
+              "completion_tokens": 5,
+              "total_tokens": 15
+            },
+            "run_id": "run-a",
+            "seq": 38
+          }
+        }
+      ]
+    },
+    {
+      "name": "role change mid-turn",
+      "run_id": "run-b",
+      "role": "FINANCE",
+      "v1": [
+        {
+          "event": "thinking",
+          "data": {
+            "phase": "act",
+            "text": "Reading finance data",
+            "status": "running"
+          }
+        },
+        {
+          "event": "tool_call",
+          "data": {
+            "tool_call_id": "c1",
+            "tool_name": "query_execute",
+            "sql_preview": "SELECT 1",
+            "classification": "read_only",
+            "status": "running"
+          }
+        },
+        {
+          "event": "text_delta",
+          "data": {
+            "text": "finance-secret",
+            "content_index": 0,
+            "content_id": "content-0"
+          }
+        },
+        {
+          "event": "role_changed",
+          "data": {
+            "active_role": "MARKETING",
+            "security_context_version": 2
+          }
+        },
+        {
+          "event": "text_delta",
+          "data": {
+            "text": "Marketing answer.",
+            "content_index": 0,
+            "content_id": "content-0"
+          }
+        },
+        {
+          "event": "done",
+          "data": {
+            "message_id": "m2",
+            "finish_reason": "stop"
+          }
+        }
+      ],
+      "v2": [
+        {
+          "event": "run.started",
+          "data": {
+            "protocol_version": 2,
+            "role": "FINANCE",
+            "run_id": "run-b",
+            "seq": 0
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-b#0",
+            "type": "reasoning",
+            "source": "nova",
+            "phase": "act",
+            "text": "Reading finance data",
+            "run_id": "run-b",
+            "seq": 1
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-b#0",
+            "state": "done",
+            "run_id": "run-b",
+            "seq": 2
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-b#1",
+            "type": "tool",
+            "tool_call_id": "c1",
+            "tool_name": "query_execute",
+            "classification": "read_only",
+            "run_id": "run-b",
+            "seq": 3
+          }
+        },
+        {
+          "event": "tool.status",
+          "data": {
+            "part_id": "run-b#1",
+            "status": "running",
+            "preview": "SELECT 1",
+            "run_id": "run-b",
+            "seq": 4
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-b#2",
+            "type": "text",
+            "content_index": 0,
+            "content_id": "content-0",
+            "run_id": "run-b",
+            "seq": 5
+          }
+        },
+        {
+          "event": "part.delta",
+          "data": {
+            "part_id": "run-b#2",
+            "text": "finance-secret",
+            "run_id": "run-b",
+            "seq": 6
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-b#1",
+            "state": "cancelled",
+            "run_id": "run-b",
+            "seq": 7
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-b#2",
+            "state": "cancelled",
+            "run_id": "run-b",
+            "seq": 8
+          }
+        },
+        {
+          "event": "role.changed",
+          "data": {
+            "active_role": "MARKETING",
+            "run_id": "run-b",
+            "seq": 9
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-b#3",
+            "type": "text",
+            "content_index": 0,
+            "content_id": "content-0",
+            "run_id": "run-b",
+            "seq": 10
+          }
+        },
+        {
+          "event": "part.delta",
+          "data": {
+            "part_id": "run-b#3",
+            "text": "Marketing answer.",
+            "run_id": "run-b",
+            "seq": 11
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-b#3",
+            "state": "done",
+            "run_id": "run-b",
+            "seq": 12
+          }
+        },
+        {
+          "event": "run.finished",
+          "data": {
+            "message_id": "m2",
+            "finish_reason": "stop",
+            "run_id": "run-b",
+            "seq": 13
+          }
+        }
+      ]
+    },
+    {
+      "name": "interrupted with a waiting and a running call",
+      "run_id": "run-c",
+      "role": "ANALYST",
+      "v1": [
+        {
+          "event": "text_delta",
+          "data": {
+            "text": "Partial answer",
+            "content_index": 0,
+            "content_id": "content-0"
+          }
+        },
+        {
+          "event": "tool_call",
+          "data": {
+            "tool_call_id": "c1",
+            "tool_name": "query_execute",
+            "sql_preview": "SELECT 1",
+            "classification": "read_only",
+            "status": "running"
+          }
+        },
+        {
+          "event": "tool_call",
+          "data": {
+            "tool_call_id": "c2",
+            "tool_name": "query_execute",
+            "sql_preview": "SELECT 1",
+            "classification": "read_only",
+            "status": "pending"
+          }
+        },
+        {
+          "event": "ui",
+          "data": {
+            "payload": {
+              "catalog_version": "1",
+              "program_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "fallback": "Adjust assumptions.",
+              "state_defaults": {},
+              "evidence": {},
+              "actions": [],
+              "provenance": {
+                "evidence_ids": [],
+                "scope": "user_simulation",
+                "assumption": true
+              }
+            },
+            "content_index": 1,
+            "content_id": "content-1"
+          }
+        },
+        {
+          "event": "error",
+          "data": {
+            "code": "run_persistence_unavailable",
+            "message": "Progress could not be saved."
+          }
+        },
+        {
+          "event": "done",
+          "data": {
+            "message_id": "",
+            "finish_reason": "interrupted"
+          }
+        }
+      ],
+      "v2": [
+        {
+          "event": "run.started",
+          "data": {
+            "protocol_version": 2,
+            "role": "ANALYST",
+            "run_id": "run-c",
+            "seq": 0
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-c#0",
+            "type": "text",
+            "content_index": 0,
+            "content_id": "content-0",
+            "run_id": "run-c",
+            "seq": 1
+          }
+        },
+        {
+          "event": "part.delta",
+          "data": {
+            "part_id": "run-c#0",
+            "text": "Partial answer",
+            "run_id": "run-c",
+            "seq": 2
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-c#1",
+            "type": "tool",
+            "tool_call_id": "c1",
+            "tool_name": "query_execute",
+            "classification": "read_only",
+            "run_id": "run-c",
+            "seq": 3
+          }
+        },
+        {
+          "event": "tool.status",
+          "data": {
+            "part_id": "run-c#1",
+            "status": "running",
+            "preview": "SELECT 1",
+            "run_id": "run-c",
+            "seq": 4
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-c#2",
+            "type": "tool",
+            "tool_call_id": "c2",
+            "tool_name": "query_execute",
+            "classification": "read_only",
+            "run_id": "run-c",
+            "seq": 5
+          }
+        },
+        {
+          "event": "consent.required",
+          "data": {
+            "part_id": "run-c#2",
+            "classification": "read_only",
+            "tool_call": {
+              "tool_call_id": "c2",
+              "tool_name": "query_execute",
+              "sql_preview": "SELECT 1",
+              "classification": "read_only",
+              "status": "pending"
+            },
+            "preview": "SELECT 1",
+            "run_id": "run-c",
+            "seq": 6
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-c#3",
+            "type": "ui",
+            "block": {
+              "catalog_version": "1",
+              "program_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "fallback": "Adjust assumptions.",
+              "state_defaults": {},
+              "evidence": {},
+              "actions": [],
+              "provenance": {
+                "evidence_ids": [],
+                "scope": "user_simulation",
+                "assumption": true
+              }
+            },
+            "content_index": 1,
+            "content_id": "content-1",
+            "run_id": "run-c",
+            "seq": 7
+          }
+        },
+        {
+          "event": "run.error",
+          "data": {
+            "code": "run_persistence_unavailable",
+            "message": "Progress could not be saved.",
+            "run_id": "run-c",
+            "seq": 8
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-c#0",
+            "state": "error",
+            "run_id": "run-c",
+            "seq": 9
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-c#1",
+            "state": "error",
+            "run_id": "run-c",
+            "seq": 10
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-c#2",
+            "state": "cancelled",
+            "run_id": "run-c",
+            "seq": 11
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-c#3",
+            "state": "error",
+            "run_id": "run-c",
+            "seq": 12
+          }
+        },
+        {
+          "event": "run.finished",
+          "data": {
+            "message_id": "",
+            "finish_reason": "interrupted",
+            "run_id": "run-c",
+            "seq": 13
+          }
+        }
+      ]
+    }
+  ]
+}

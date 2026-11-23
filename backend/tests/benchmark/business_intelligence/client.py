@@ -95,7 +95,10 @@ class StudioClient:
                 elif not line and data:
                     events.append({"event": event_name, "data": json.loads("\n".join(data))})
                     data, event_name = [], "message"
-        done = [event["data"] for event in events if event["event"] == "done"]
+        # Studio streams protocol v2 (``run.finished``); v1 surfaces end with ``done``.
+        done = [
+            event["data"] for event in events if event["event"] in {"run.finished", "done"}
+        ]
         if len(done) != 1:
             raise RuntimeError("Studio did not persist exactly one completed turn")
         detail = await self.request("GET", f"agents/{agent_id}/threads/{thread_id}")

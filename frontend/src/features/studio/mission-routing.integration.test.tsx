@@ -6,6 +6,7 @@ import { agentsApi, studioApi, type Agent } from "@/features/agents/api";
 import { StudioChat } from "./studio-chat";
 import { workflowApi, type Mission } from "./workflow-api";
 import "@/styles/index.css";
+import { v2Sse } from "./runtime/v2-test-encoder";
 
 const mission: Mission = {
   mission_id: "revenue", thread_id: "routing-thread", objective: "Revenue decline", work_intent: "INVESTIGATE",
@@ -22,7 +23,7 @@ const agent: Agent = {
 };
 let client: QueryClient;
 function accepted() {
-  return new Response('event: done\ndata: {"message_id":"answer","finish_reason":"stop"}\n\n', {
+  return new Response(v2Sse()('event: done\ndata: {"message_id":"answer","finish_reason":"stop"}\n\n'), {
     headers: { "Content-Type": "text/event-stream" },
   });
 }

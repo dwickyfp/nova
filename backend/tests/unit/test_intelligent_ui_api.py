@@ -83,12 +83,29 @@ def test_history_projection_keeps_ui_only_in_its_original_security_context(chang
              "session_id": "another-device", **changed}
     row = {"message_id": "message", "role": "assistant", "content": "Markdown fallback.",
            "created_at": datetime.now(), "security_context": stamp,
-           "steps": [{"kind": "ui", "program": CALCULATOR, "evidence": {"x": []}},
+           "steps": [{"kind": "event_journal", "protocol_version": 2, "events": [
+                         {"event": "run.started", "data": {"seq": 0, "role": "analyst"}},
+                         {"event": "part.start", "data": {"seq": 1, "part_id": "r:0", "type": "ui",
+                                                          "block": {"fallback": "f"}}},
+                         {"event": "part.delta", "data": {"seq": 2, "part_id": "r:0",
+                                                          "text": CALCULATOR}},
+                         {"event": "part.end",
+                          "data": {"seq": 3, "part_id": "r:0", "state": "done"}},
+                         {"event": "part.start",
+                          "data": {"seq": 4, "part_id": "r:1", "type": "text"}},
+                     ]},
+                     {"kind": "ui", "program": CALCULATOR, "evidence": {"x": []}},
                      {"kind": "answer"}]}
     projection = router._message_view(row, USER)
     assert any(step.get("kind") == "ui" for step in projection.steps) == visible
     assert projection.content == "Markdown fallback."
     assert {"kind": "answer"} in projection.steps
+    # The stored v2 journal hides the interactive block with the step that carries it.
+    assert projection.protocol_version == 2
+    journal = projection.steps[0]["events"]
+    assert any(entry["data"].get("text") == CALCULATOR for entry in journal) == visible
+    assert [entry["event"] for entry in journal][-1] == "part.start"
+    assert len(journal) == (5 if visible else 2)
 
 
 @pytest.fixture

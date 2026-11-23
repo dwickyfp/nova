@@ -78,6 +78,9 @@ class MessageView(BaseModel):
     model_name: str | None = None
     feedback: Literal["like", "dislike"] | None = None
     attachments: list[AttachmentView] = Field(default_factory=list)
+    #: Stream protocol the turn was recorded with. ``2`` turns carry their
+    #: delivered event journal in ``steps``; ``1`` turns replay from steps.
+    protocol_version: int = 1
 
     @field_validator("created_at")
     @classmethod

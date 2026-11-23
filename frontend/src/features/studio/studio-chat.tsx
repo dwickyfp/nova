@@ -23,7 +23,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import type { AssistantEvent } from "@/features/assistant/types";
 import {
   agentsApi,
   streamAgentTurn,
@@ -66,7 +65,22 @@ import {
   type NativeDashboardActivity,
   type NevaState,
 } from "@/features/native-dataviz/dashboard/events";
-import { patchTurn, replayThread, settleTurn, type PendingCall, type TranscriptTurn } from "./studio-transcript";
+import {
+  contentFromParts,
+  decideToolCall,
+  newTurn,
+  patchTurn,
+  replayThread,
+  settleStream,
+  settleTurn,
+  stepsFromParts,
+  syncTurn,
+  turnSegments,
+  type PendingCall,
+  type StudioEvent,
+  type TranscriptTurn,
+} from "./studio-transcript";
+import { emptyRunState } from "./runtime/turn-reducer";
 
 function activity(detail: NativeDashboardActivity) {
   window.dispatchEvent(new CustomEvent(NATIVE_DASHBOARD_ACTIVITY, { detail }));
@@ -211,37 +225,46 @@ export function StudioChat({
     if (stopRequestedRef.current) cancelActiveRun(run);
   }, [cancelActiveRun]);
   const toolStatus = useRef(new Map<string, string>());
-  const onTurnEvent = useCallback((turnId: string, event: AssistantEvent) => {
-    const workflow = event as unknown as { type: string; mission?: Mission };
-    if (workflow.type === "mission_updated" && workflow.mission) {
+  /** part id → tool call id, so status events reach Neva's dashboard pointer. */
+  const toolParts = useRef(new Map<string, string>());
+  const onTurnEvent = useCallback((turnId: string, event: StudioEvent) => {
+    const aux = event.type === "aux" ? event.event : null;
+    const workflow = aux as unknown as { type: string; mission?: Mission } | null;
+    if (workflow?.type === "mission_updated" && workflow.mission) {
       const mission = workflow.mission;
       queryClient.setQueryData<{ missions: Mission[] }>(
         ["studio", "workflow", useAuthStore.getState().securityEpoch, mission.thread_id],
         (current) => mergeMissionProjection(current, mission, mission.thread_id),
       );
     }
-    if (event.type === "dashboard_changed") {
+    if (aux?.type === "dashboard_changed") {
       // Native dashboards reload the committed revision Neva just wrote.
       window.dispatchEvent(new CustomEvent(NATIVE_DASHBOARD_CHANGED, {
-        detail: { dashboard_id: event.dashboard_id, revision: event.revision },
+        detail: { dashboard_id: aux.dashboard_id, revision: aux.revision },
       }));
-      activity({ kind: "status", tool_call_id: event.tool_call_id, state: "saved" });
+      activity({ kind: "status", tool_call_id: aux.tool_call_id, state: "saved" });
     }
     // Neva's pointer on the dashboard follows the change it proposes, and
     // whether that change was approved and saved.
-    if (event.type === "tool_call") toolStatus.current.set(event.payload.tool_call_id, event.payload.status);
-    if (event.type === "dashboard_activity") {
+    if (event.type === "part.start" && event.part.type === "tool") {
+      toolParts.current.set(event.partId, event.part.toolCallId);
+      toolStatus.current.set(event.part.toolCallId, "running");
+    }
+    if (event.type === "consent.required") toolStatus.current.set(event.call.tool_call_id, "pending");
+    if (aux?.type === "dashboard_activity") {
       activity({
-        kind: "proposed", tool_call_id: event.tool_call_id, dashboard_id: event.dashboard_id,
-        action: event.action, widget_ids: event.widget_ids, page_id: event.page_id,
-        state: toolStatus.current.get(event.tool_call_id) === "pending" ? "waiting" : "saving",
+        kind: "proposed", tool_call_id: aux.tool_call_id, dashboard_id: aux.dashboard_id,
+        action: aux.action, widget_ids: aux.widget_ids, page_id: aux.page_id,
+        state: toolStatus.current.get(aux.tool_call_id) === "pending" ? "waiting" : "saving",
       });
     }
-    if (event.type === "tool_status") {
+    if (event.type === "tool.status") {
+      const toolCallId = toolParts.current.get(event.partId);
       const state: NevaState | null = event.status === "running" || event.status === "approved" ? "saving"
         : event.status === "failed" ? "failed"
         : event.status === "denied" || event.status === "cancelled" ? "stopped" : null;
-      if (state) activity({ kind: "status", tool_call_id: event.tool_call_id, state });
+      if (toolCallId) toolStatus.current.set(toolCallId, event.status);
+      if (state && toolCallId) activity({ kind: "status", tool_call_id: toolCallId, state });
     }
     queueEvent(turnId, event);
   }, [queryClient, queueEvent]);
@@ -352,19 +375,18 @@ export function StudioChat({
           directRunRef.current = { agentId: agent.agent_id, threadId: activeThreadId, runId: active.run_id };
           stopRequestedRef.current = false;
           setStreaming(true);
-          setTurns((current) => patchTurn(current, unfinished.id, (turn) => ({ ...turn, state: "streaming" })));
+          // The resumed stream replays the run from its first event into a fresh turn.
+          setTurns((current) => patchTurn(current, unfinished.id, (turn) => syncTurn({ ...turn, run: emptyRunState(), protocolVersion: 2 })));
           void resumeAgentTurn(agent.agent_id, activeThreadId, active.run_id, {
             signal: controller.signal,
             onEvent: (event) => onTurnEvent(unfinished.id, event),
           }).catch((error) => {
             if (!controller.signal.aborted)
-              setTurns((current) => patchTurn(current, unfinished.id, (turn) => ({
-                ...turn, state: "error", error: (error as Error).message,
-              })));
+              setTurns((current) => patchTurn(current, unfinished.id, (turn) => settleTurn(turn, "error", (error as Error).message)));
           }).finally(() => {
             if (abortRef.current !== controller) return;
             flushEvents();
-            setTurns((current) => settleTurn(current, unfinished.id, stopRequestedRef.current));
+            setTurns((current) => settleStream(current, unfinished.id, stopRequestedRef.current));
             setStreaming(false);
             directRunRef.current = null;
             abortRef.current = null;
@@ -558,19 +580,13 @@ export function StudioChat({
       turnRequestsRef.current.set(turnId, { content, attachments: pending, uiAction });
       setTurns((prev) => [
         ...prev,
-        {
+        newTurn({
           id: turnId,
           question: content,
           questionCreatedAt: new Date().toISOString(),
           attachments: pending.map(({ name, sizeBytes, mediaType }) => ({ name, sizeBytes, mediaType })),
           model: agent.model_name ?? undefined,
-          steps: [],
-          answer: "",
-          content: [],
-          pendingConsent: null,
-          blocks: { tables: [], charts: [], citations: [] },
-          state: "streaming",
-        },
+        }),
       ]);
       if (!retry) {
         setInput("");
@@ -603,7 +619,7 @@ export function StudioChat({
             setFollowUpMissionId((current) => current === followUpMissionId ? undefined : current);
           },
           onRunId: (runId) => registerRun({ agentId: agent.agent_id, threadId: thread, runId }),
-          onEvent: (event: AssistantEvent) => onTurnEvent(turnId, event),
+          onEvent: (event) => onTurnEvent(turnId, event),
         });
       } catch (error) {
         if ((error as Error).name !== "AbortError" && !controller.signal.aborted) {
@@ -612,16 +628,12 @@ export function StudioChat({
             setAttachments((current) => current.length ? current : pending);
           }
           setTurns((prev) =>
-            patchTurn(prev, turnId, (turn) => ({
-              ...turn,
-              state: "error",
-              error: (error as Error).message,
-            })),
+            patchTurn(prev, turnId, (turn) => settleTurn(turn, "error", (error as Error).message)),
           );
         }
       } finally {
         flushEvents();
-        setTurns((prev) => settleTurn(prev, turnId, stopRequestedRef.current));
+        setTurns((prev) => settleStream(prev, turnId, stopRequestedRef.current));
         setStreaming(false);
         directRunRef.current = null;
         abortRef.current = null;
@@ -707,24 +719,9 @@ export function StudioChat({
         decision,
       );
       setTurns((prev) =>
-        patchTurn(prev, turnId, (turn) => ({
-          ...turn,
-          pendingConsent: null,
-          revealKey: (turn.revealKey ?? 0) + 1,
-          steps: [
-            ...turn.steps,
-            {
-              id: `${call.tool_call_id}-decision`,
-              kind: "consent",
-              label: decision === "deny" ? "denied" : "approved",
-              text:
-                decision === "deny"
-                  ? `Denied ${call.tool_name}`
-                  : `Approved ${call.tool_name}`,
-              status: decision === "deny" ? "denied" : "done",
-            },
-          ],
-        })),
+        patchTurn(prev, turnId, (turn) =>
+          decideToolCall(turn, call.tool_call_id, decision === "deny" ? "denied" : "approved"),
+        ),
       );
     },
     [agent],
@@ -755,18 +752,12 @@ export function StudioChat({
       const deepenTurnId = nextTurnId();
       setTurns((prev) => [
         ...prev,
-        {
+        newTurn({
           id: deepenTurnId,
           question: "Reconsider the previous answer, step by step.",
           origin: "reconsider",
           model: agent.model_name ?? undefined,
-          steps: [],
-          answer: "",
-          content: [],
-          pendingConsent: null,
-          blocks: { tables: [], charts: [], citations: [] },
-          state: "streaming",
-        },
+        }),
       ]);
       try {
         await streamAgentTurn(agent.agent_id, threadId, prompt, {
@@ -778,16 +769,12 @@ export function StudioChat({
       } catch (error) {
         if ((error as Error).name !== "AbortError" && !controller.signal.aborted) {
           setTurns((prev) =>
-            patchTurn(prev, deepenTurnId, (t) => ({
-              ...t,
-              state: "error",
-              error: (error as Error).message,
-            })),
+            patchTurn(prev, deepenTurnId, (t) => settleTurn(t, "error", (error as Error).message)),
           );
         }
       } finally {
         flushEvents();
-        setTurns((prev) => settleTurn(prev, deepenTurnId, stopRequestedRef.current));
+        setTurns((prev) => settleStream(prev, deepenTurnId, stopRequestedRef.current));
         setStreaming(false);
         setDeepenTarget(null);
         directRunRef.current = null;
@@ -1014,6 +1001,27 @@ export function StudioChat({
   );
 }
 
+const STARTING: RailStep[] = [
+  { id: "starting", kind: "thinking", label: "plan", text: "Starting the agent…", status: "running" },
+];
+
+/**
+ * Shown where the role changed mid-turn. Work done under the previous role is
+ * withdrawn, and earlier messages stay hidden because they belong to it.
+ */
+function RoleChangeNotice({ role }: { role: string }) {
+  return (
+    <div role="status" className="nova-chat-item flex items-center gap-3 text-xs text-muted-foreground">
+      <span aria-hidden="true" className="h-px flex-1 bg-border" />
+      <span className="max-w-[80%] text-center">
+        Role changed to <span className="font-medium text-foreground">{role}</span>. Earlier messages
+        are hidden because they belong to the previous role.
+      </span>
+      <span aria-hidden="true" className="h-px flex-1 bg-border" />
+    </div>
+  );
+}
+
 const TurnView = memo(function TurnView({
   turn,
   onAsk,
@@ -1048,9 +1056,9 @@ const TurnView = memo(function TurnView({
   uiContext?: { agentId: string; threadId: string; onAction: (message: string, action: UiAction) => Promise<void> };
 }) {
   const running = turn.state === "streaming";
-  const visibleSteps: RailStep[] = running && turn.steps.length === 0 && !turn.answer && turn.content.length === 0
-    ? [{ id: "starting", kind: "thinking", label: "plan", text: "Starting the agent…", status: "running" }]
-    : turn.steps;
+  const segments = useMemo(() => turnSegments(turn.run.parts), [turn.run.parts]);
+  const lastWork = segments.reduce((found, segment, index) => (segment.kind === "work" ? index : found), -1);
+  const starting = running && segments.every((segment) => segment.kind === "role_change");
   const draft =
     onReviewSkill && turn.state === "done"
       ? extractSkillDraft(turn.answer)
@@ -1090,7 +1098,29 @@ const TurnView = memo(function TurnView({
         </div>
       )}
 
-      <ProcessRail steps={visibleSteps} running={running} revealKey={turn.revealKey} />
+      {segments.map((segment, index) =>
+        segment.kind === "role_change" ? (
+          <RoleChangeNotice key={segment.id} role={segment.activeRole} />
+        ) : segment.kind === "work" ? (
+          <ProcessRail
+            key={segment.id}
+            steps={stepsFromParts(segment.parts)}
+            running={running && index === lastWork}
+            revealKey={turn.revealKey}
+          />
+        ) : (
+          <TurnContent
+            key={segment.id}
+            turn={turn}
+            content={contentFromParts(segment.parts)}
+            uiContext={uiContext}
+            runContext={runContext}
+            running={running}
+            datavizThreadId={uiContext?.threadId ?? null}
+          />
+        ),
+      )}
+      {starting ? <ProcessRail steps={STARTING} running revealKey={turn.revealKey} /> : null}
 
       {turn.pendingConsent ? (
         <ConsentCard
@@ -1101,13 +1131,6 @@ const TurnView = memo(function TurnView({
         />
       ) : null}
 
-      <TurnContent
-        turn={turn}
-        uiContext={uiContext}
-        runContext={runContext}
-        running={running}
-        datavizThreadId={uiContext?.threadId ?? null}
-      />
       {draft ? (
         <div>
           <Button variant="outline" onClick={() => onReviewSkill?.(draft)}>

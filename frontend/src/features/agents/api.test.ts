@@ -74,12 +74,13 @@ describe("agent run reconnect", () => {
   it("restores a run after reload using only GET and preserves large cursors", async () => {
     fetchMock.mockReset();
     fetchMock.mockResolvedValueOnce(sseResponse(
-      'event: text_delta\ndata: {"run_id":"run","sequence":"9999999999999999","text":"Recovered"}\n\n'
-      + 'event: done\ndata: {"run_id":"run","sequence":"10000000000000000","message_id":"m","finish_reason":"stop"}\n\n',
+      'event: part.start\ndata: {"run_id":"run","seq":9007199254740989,"part_id":"run:0","type":"text"}\n\n'
+      + 'event: part.delta\ndata: {"run_id":"run","seq":9007199254740990,"part_id":"run:0","text":"Recovered"}\n\n'
+      + 'event: run.finished\ndata: {"run_id":"run","seq":9007199254740991,"message_id":"m","finish_reason":"stop"}\n\n',
     ));
     const seen: string[] = [];
     await resumeAgentTurn("sales", "thread", "run", { onEvent: (event) => seen.push(event.type) });
-    expect(seen).toEqual(["text_delta", "done"]);
+    expect(seen).toEqual(["part.start", "part.delta", "run.finished"]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(requestedUrl()).toContain("/runs/run/events?after=-1");
     expect(fetchMock.mock.calls[0][1].method).toBeUndefined();
@@ -92,21 +93,24 @@ describe("agent run reconnect", () => {
   });
 
   it("replays missing frames without reposting the user message", async () => {
-    const frame = (type: string, sequence: number, payload: Record<string, unknown>) =>
-      `event: ${type}\ndata: ${JSON.stringify({ run_id: "run-1", sequence, ...payload })}\n\n`;
+    const frame = (type: string, seq: number, payload: Record<string, unknown>) =>
+      `event: ${type}\ndata: ${JSON.stringify({ run_id: "run-1", seq, ...payload })}\n\n`;
+    const started = frame("run.started", 0, { protocol_version: 2, role: "ANALYST" });
     fetchMock.mockReset();
     fetchMock
-      .mockResolvedValueOnce(sseResponse(frame("plan", 0, { steps: [] }), "run-1"))
+      .mockResolvedValueOnce(sseResponse(started, "run-1"))
       .mockResolvedValueOnce(sseResponse(
-        frame("plan", 0, { steps: [] })
-        + frame("text_delta", 1, { text: "Done" })
-        + frame("done", 2, { message_id: "m1", finish_reason: "stop" }),
+        started
+        + frame("part.start", 1, { part_id: "run-1:0", type: "text" })
+        + frame("part.delta", 2, { part_id: "run-1:0", text: "Done" })
+        + frame("run.finished", 3, { message_id: "m1", finish_reason: "stop" }),
       ));
     const seen: string[] = [];
     await streamAgentTurn("sales", "thread-1", "Question", {
       onEvent: (event) => seen.push(event.type),
     });
-    expect(seen).toEqual(["plan", "text_delta", "done"]);
+    // The replayed run.started is already delivered and is not handed on twice.
+    expect(seen).toEqual(["run.started", "part.start", "part.delta", "run.finished"]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[0][1].method).toBe("POST");
     expect(requestedUrl(1)).toContain("/runs/run-1/events?after=0");

@@ -42,13 +42,38 @@ async def test_completed_run_without_remaining_events_reports_unavailable_histor
         return [frame async for frame in response.body_iterator]
 
     frames = await asyncio.wait_for(collect(), timeout=0.25)
-    assert [frame.splitlines()[0] for frame in frames] == ["event: error", "event: done"]
+    # Nothing saved: the run is a protocol v2 run, so the terminal frames are v2.
+    names = [frame.splitlines()[0] for frame in frames]
+    assert names == ["event: run.error", "event: run.finished"]
     payloads = [json.loads(frame.split("data: ", 1)[1]) for frame in frames]
     assert payloads[0]["code"] == "run_history_unavailable"
-    assert payloads[0]["sequence"] == after + 1
+    assert payloads[0]["seq"] == after + 1
     assert payloads[1]["finish_reason"] == "error"
-    assert payloads[1]["sequence"] == after + 2
-    read.assert_awaited_once()
+    assert payloads[1]["seq"] == after + 2
+    # One page read, then one probe of the run's first frame for its protocol.
+    assert read.await_count == 2
+    assert read.await_args_list[-1].args == ("run", -1)
+
+
+async def test_v2_run_replays_v2_terminal_frames(monkeypatch, authorized_replay):
+    monkeypatch.setattr(router.run_journal, "get", AsyncMock(return_value={
+        "status": "interrupted", "last_sequence": 1,
+    }))
+    started = 'event: run.started\ndata: {"run_id":"run","seq":0,"protocol_version":2}\n\n'
+    part = 'event: part.start\ndata: {"run_id":"run","seq":1,"part_id":"run:0","type":"text"}\n\n'
+    read = AsyncMock(side_effect=[[started, part], []])
+    monkeypatch.setattr(router.run_journal, "events_after", read)
+    response = await router.replay_agent_run(
+        "sales", "thread", "run", -1,
+        {"username": "alice", "active_role": "analyst", "roles": ["analyst"]},
+    )
+    async with asyncio.timeout(0.25):
+        frames = [frame async for frame in response.body_iterator]
+    assert frames[:2] == [started, part]
+    assert [frame.splitlines()[0] for frame in frames[2:]] == [
+        "event: run.error", "event: run.finished",
+    ]
+    assert [json.loads(frame.split("data: ", 1)[1])["seq"] for frame in frames[2:]] == [2, 3]
 
 
 @pytest.mark.parametrize("complete", [False, True])

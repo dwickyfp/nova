@@ -9,7 +9,9 @@ Every question you send starts or continues a **conversation** (also called a
 chat). Nova keeps your conversations so you can come back to an answer, its
 charts, and the steps behind it later. Only you see your conversations.
 Saved result data preserves decimal precision and dates when you reopen a
-conversation.
+conversation. A reopened answer shows its steps and answer parts in the same
+order as when it was written. Answers saved by earlier versions of Nova show all
+their steps above the answer.
 
 ## Find a past conversation
 

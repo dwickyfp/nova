@@ -150,7 +150,14 @@ async def test_stream_persists_the_terminal_message_id_before_sending_done(monke
     frames = []
     async for frame in response.body_iterator:
         frames.append(frame)
-        if frame.startswith("event: done"):
+        if frame.startswith("event: run.finished"):
             assert append.call_args.kwargs["role"] == "assistant"
             assert append.call_args.kwargs["message_id"] == "persisted-answer"
-    assert any(frame.startswith("event: done") for frame in frames)
+            journal = append.call_args.kwargs["steps"][0]
+            assert journal["kind"] == "event_journal"
+            assert journal["protocol_version"] == 2
+            # Everything delivered before the terminal event, in order.
+            assert [entry["event"] for entry in journal["events"]] == [
+                "run.started", "part.start", "part.delta",
+            ]
+    assert any(frame.startswith("event: run.finished") for frame in frames)

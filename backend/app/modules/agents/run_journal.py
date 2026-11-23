@@ -11,7 +11,6 @@ batch and the run's high-water mark commit in one transaction.
 
 from __future__ import annotations
 
-import json
 import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -24,11 +23,9 @@ from app.modules.agents.metadata_repository import AgentMetadataRepository
 
 
 def _frame_sequence(frame: str) -> int:
-    try:
-        payload = json.loads(frame.split("data: ", 1)[1])
-        return int(payload["sequence"])
-    except (IndexError, KeyError, TypeError, ValueError) as exc:
-        raise ValueError("The run event has no sequence.") from exc
+    from app.modules.assistant.events_v2 import frame_sequence
+
+    return frame_sequence(frame)
 
 
 def _naive(value: Any) -> Any:

@@ -1,9 +1,11 @@
+import { emptyRunState } from "./runtime/turn-reducer";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { userEvent } from "vitest/browser";
 import type { AssistantEvent, TableBlock } from "@/features/assistant/types";
 import { type OrderedContent, type TranscriptTurn } from "./studio-chat";
-import { applyEvent, replayThread, settleTurn } from "./studio-transcript";
+import { applyStudioEvent, replayThread, settleStream } from "./studio-transcript";
+import { liveEncoder } from "./runtime/v2-test-encoder";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TurnContent } from "./turn-content";
@@ -59,6 +61,8 @@ function turn(answer: string, result = table): TranscriptTurn {
     pendingConsent: null,
     blocks: { tables: [], charts: [], citations: [] },
     state: "done",
+    run: emptyRunState("done"),
+    protocolVersion: 1,
   };
 }
 
@@ -108,8 +112,9 @@ describe("one table per query result", () => {
     start.state = "streaming";
     start.content = [];
     const events = [
+      // Streamed events pass the stream parser, which requires a real digest.
       { type: "ui", content_index: 0, content_id: "run-1:0", payload: {
-        catalog_version: UI_CATALOG_VERSION, program_sha256: "test",
+        catalog_version: UI_CATALOG_VERSION, program_sha256: "a".repeat(64),
         fallback: "Retail is ahead of web.", evidence: {}, state_defaults: {}, actions: [],
         provenance: { evidence_ids: [], scope: "user_simulation", assumption: true },
       } },
@@ -117,11 +122,11 @@ describe("one table per query result", () => {
         text: 'root = Col([Text("Interactive summary")])' },
       { type: "done", message_id: "", finish_reason: "stop" },
     ] satisfies AssistantEvent[];
-    const ended = settleTurn(
-      events.reduce((turns, event) => applyEvent(turns, start.id, event), [start]),
-      start.id,
-      false,
-    )[0];
+    const feed = liveEncoder();
+    let turns: TranscriptTurn[] = [{ ...start, run: emptyRunState(), protocolVersion: 2 }];
+    for (const event of events)
+      for (const v2 of feed(event)) turns = applyStudioEvent(turns, start.id, v2);
+    const ended = settleStream(turns, start.id, false)[0];
     const screen = await render(withQueries(<TurnContent turn={ended} />));
     await expect.element(screen.getByText("Interactive summary")).toBeVisible();
     expect(screen.getByText("Retail is ahead of web.").query()).toBeNull();

@@ -51,6 +51,18 @@ semantic_query, and more · 7 steps". Click it to open every step: the plan,
 each tool the agent called, and, for data queries, the **SQL** that ran. Use
 **Copy** to copy that SQL into a worksheet.
 
+Steps and answer parts appear in the order the agent produced them. When the
+agent writes part of the answer and then runs more steps, those steps appear
+between the parts they came between, with their own summary line.
+
+### When the role changes during an answer
+
+If the agent switches your active role while it answers (for example after you
+approve a role switch), a line reads "Role changed to *role*. Earlier messages
+are hidden because they belong to the previous role." Steps and text produced
+under the previous role are removed, and the answer continues below the line
+under the new role.
+
 ### Answer buttons
 
 Under each answer:
