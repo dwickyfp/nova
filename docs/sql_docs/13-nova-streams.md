@@ -43,7 +43,22 @@ How capture works, and the engine evidence behind it, is in
 
 Names: with session database `analytics`, `s`, `analytics.s` and
 `analytics.default.s` are the same Stream. A Stream cannot share a name with a
-table or view.
+table or view, compared case-insensitively, in either direction:
+
+* `CREATE STREAM` refuses a name a table, view or materialized view already
+  has (`STREAM_NAME_COLLISION`).
+* Through Nova, `CREATE [TEMPORARY] TABLE` (also `… AS SELECT` and `… LIKE`),
+  `CREATE [OR REPLACE] VIEW`, `CREATE MATERIALIZED VIEW`, `RECOVER TABLE` and
+  `ALTER TABLE | MATERIALIZED VIEW … RENAME` onto a Stream's name are refused
+  with `STREAM_NAME_COLLISION` before they reach the engine.
+* An object created outside Nova (a direct engine login, a native task) can
+  still take a Stream's name. A statement that names it is then refused with
+  `STREAM_NAME_AMBIGUOUS` until one of the two is renamed or dropped. Nova does
+  not prefer either: preferring the Stream would let an `INSERT … SELECT`
+  written for the table consume the Stream, and preferring the table would
+  feed a consuming task the whole table on every run.
+  `SYSTEM$STREAM_HAS_DATA('name')` names a Stream explicitly and is
+  unaffected.
 
 ## Rows and metadata
 
@@ -157,9 +172,50 @@ wildcards (`ord*`, `sal?s`), exclusions, a name differing only in case, and
 recursive or unknown resource kinds. Any enabled mask in a linked Ranger tag
 service also counts, because Nova cannot resolve tags to tables. Without
 Ranger, or when its policies cannot be read, `CREATE STREAM` and stream reads
-fail with `STREAM_GOVERNANCE_UNSUPPORTED`. Creating a Stream needs
-`SELECT` on the source for your active role; reading it is checked again each
-time, and the engine checks your `SELECT` in the same statement that reads it.
+fail with `STREAM_GOVERNANCE_UNSUPPORTED`. Reading a Stream is checked again
+each time, and the engine checks your `SELECT` in the same statement that
+reads it.
+
+## Privileges and quotas
+
+`CREATE STREAM` needs, for your active role:
+
+| Privilege | Why |
+| --- | --- |
+| `SELECT` on the source | The Stream shows the source's rows. |
+| `CREATE TABLE` in the Stream's database | A Stream is a new name in that database, like a table. |
+| `ALTER` on the source, for the **first** Stream on a table only | Registering a source changes every writer of that table: writes go through capture (row and lock limits), `ALTER TABLE` and `INSERT OVERWRITE` are refused, and loads that bypass Nova block the source. That is an owner's change, the same class as `ALTER TABLE`. A Stream on a table that already has one changes nothing for its writers and needs only `SELECT`. |
+
+`ALTER` is the narrowest engine privilege that means "may change how this
+table works": `INSERT` would let any writer impose capture on a table it only
+loads, and `DROP` or database-level privileges are broader than needed.
+
+The engine decides both checks, as you with your active role, because Ranger
+evaluates them inside the patched FE. StarRocks has no privilege-test
+function, so Nova runs a statement the engine authorizes before it fails
+harmlessly: `ALTER TABLE <source> DROP ROLLUP <random name>` for `ALTER` (no
+such rollup), and `CREATE TABLE <db>.<random name> … replication_num = 0` for
+`CREATE TABLE` (zero replicas are refused). The random names start with
+`__nova_stream_check_`. An access error refuses with `STREAM_ACCESS_DENIED`;
+any other outcome is not proof, and the Stream is refused as unverified
+(also `STREAM_ACCESS_DENIED`). These statements appear in the engine's audit
+log under your name.
+
+Quotas, per owner role, refuse with `STREAM_QUOTA_EXCEEDED`:
+
+| Setting | Default | Counts |
+| --- | --- | --- |
+| `STREAM_MAX_STREAMS_PER_ROLE` | 100 | Live (`READY` or `STALE`) Streams the role owns |
+| `STREAM_MAX_SOURCES_PER_ROLE` | 20 | Distinct tables those Streams read |
+
+`CREATE OR REPLACE` of the role's own Stream does not count it twice. A
+Stream on a table the role's Streams already read does not use another
+source. Two creates by one role at the same moment are checked independently
+and can both pass.
+
+`CREATE STREAM` declares schema and security effects as well as metadata (it
+may create journal tables and Ranger policies), so read-only callers such as
+assistant tools and `READ ONLY` proxy transactions refuse it.
 
 Not supported: Streams on views, external catalogs or partitioned tables, and
 `AT`/`BEFORE`. Partitioned tables stay out because a captured commit can move
@@ -220,13 +276,22 @@ Each source keeps its change journal and lineage in two tables beside it,
 historical row image of the source, so only the writer may use them:
 
 * Before the first journal is created, Nova creates the Ranger policy
-  `nova-managed/stream-journals`. It denies `SELECT`, `INSERT`, `UPDATE` and
-  `DELETE` on `__nova_stream_*` in every database to the `public` group, with
-  exceptions for the writer role and `ACCOUNTADMIN`. A wildcard grant such as
-  `sales.*` therefore does not reach the journals. The scheduler's maintenance
-  pass recreates or repairs the policy for deployments that already have
-  sources. Without Ranger, or without `STREAM_WRITER_ROLE`, `CREATE STREAM`
-  fails instead of creating an unprotected journal.
+  `nova-managed/stream-journals`. It denies **every access type** of the
+  StarRocks Ranger service definition (read from Ranger, not a fixed list) on
+  `__nova_stream_*` in every database to the `public` group, with exceptions
+  for the writer role and `ACCOUNTADMIN`. A wildcard grant such as `sales.*`
+  therefore reaches neither the journals' rows nor their names: they are left
+  out of `SHOW TABLES`, `SHOW FULL TABLES` and the `information_schema` views,
+  through Nova SQL and on a direct engine login alike. (The FE lists a table
+  when Ranger allows `_any` access to it, and Ranger applies a deny to `_any`
+  only when it covers every access type; denying only `SELECT`, `INSERT`,
+  `UPDATE` and `DELETE` hid the rows but not the names.) `ACCOUNTADMIN` and the
+  writer still see them. The scheduler's maintenance pass recreates or repairs
+  the policy for deployments that already have sources, including a guard
+  written before it covered every type or missing a type a Ranger upgrade
+  added. Without Ranger, without `STREAM_WRITER_ROLE`, or when the service
+  definition cannot be read, `CREATE STREAM` fails instead of creating an
+  unprotected journal.
 * User SQL that names a `__nova_stream_*` table (in any position: `FROM`,
   `INSERT INTO`, `DROP TABLE`, `DESC`, a view or `CREATE TABLE … AS`) is
   refused by the SQL frontend before it reaches the engine.

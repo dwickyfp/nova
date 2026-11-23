@@ -27,7 +27,15 @@ them.
   date-times. It cannot have a row filter or masking policy, including one
   written for a name pattern that matches it (such as `ord*`) or a
   tag-based mask.
-- Your active role needs `SELECT` on the source.
+- Your active role needs `SELECT` on the source and `CREATE TABLE` in the
+  database where the stream is created.
+- The **first** stream on a table also needs `ALTER` on that table, because
+  it changes how every write to the table works (see
+  [Which writes are captured](#which-writes-are-captured)). If you can only
+  read the table, ask its owner to create the first stream. Once a table has
+  a stream, other roles can add their own streams with `SELECT` alone.
+- Each role can own up to 100 streams, reading up to 20 different tables.
+  Your administrator may set other limits.
 - Select the database in your worksheet. In the examples the source is
   `orders`, a Primary Key table with `order_id`, `customer`, `amount` and
   `status`.
@@ -240,6 +248,13 @@ above work again.
 | --- | --- |
 | `Streams need a Primary Key table: row lineage and before images come from the primary key` | The source is not a Primary Key table. |
 | `A table or view occupies this name` | A stream cannot have the same name as a table or view. |
+| `A stream named … exists; a table, view or materialized view cannot take its name` | `CREATE TABLE`, `CREATE VIEW`, `CREATE MATERIALIZED VIEW`, `RECOVER TABLE` or a rename would give a table a stream's name. Choose another name, or drop the stream first. |
+| `… is both a stream and a table or view; rename or drop one of them` | A table with the stream's name was created outside Nova. Nova will not guess which one you mean, so any query that names it, including one that would consume the stream, is refused until one of them is renamed or dropped. |
+| `Only a role with ALTER on … can start capturing its changes` | The table has no stream yet, and your active role cannot alter it. Ask the table's owner to create the first stream. |
+| `Creating a stream in … needs the CREATE TABLE privilege there` | Your active role cannot create objects in that database. Create the stream in a database where it can, or ask an administrator. |
+| `Role … already owns … streams, the most allowed` | Your role reached its stream limit. Drop a stream you no longer use. |
+| `Role …'s streams already read … tables, the most allowed` | Your role's streams already watch as many tables as allowed. Drop the streams of a table, or add the stream to a table your role already watches. |
+| `Your … privilege could not be verified, so the stream was not created` | Nova could not confirm your privileges with the database. Try again; if it keeps happening, ask an administrator. |
 | `Stream already exists with a different source or mode` | `CREATE STREAM IF NOT EXISTS` found a stream with that name on another table or in another mode. |
 | `Use either OR REPLACE or IF NOT EXISTS, not both` | Pick one. |
 | `The source has a row filter or masking policy; a stream would expose historical values those policies cannot govern` | A row filter or masking policy could apply to the table. Ask an administrator, or use another table. |
@@ -248,6 +263,8 @@ above work again.
 Streams on views, external catalogs or partitioned tables are not supported.
 
 Nova keeps each table's change history in tables whose names start with
-`__nova_stream_`. Only Nova uses them: SQL that names one fails with
+`__nova_stream_`. Only Nova uses them: they do not appear in `SHOW TABLES` or
+`information_schema` (only the `ACCOUNTADMIN` role still sees them), and SQL
+that names one fails with
 `Tables named __nova_stream_… are managed by Nova Streams and cannot be used
 in SQL`. Read the changes through the stream instead.

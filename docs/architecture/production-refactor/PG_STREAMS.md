@@ -19,8 +19,9 @@ staying in StarRocks:
 - the per-source journal (`__nova_stream_changes_*`) and lineage
   (`__nova_stream_lineage_*`) tables, which must commit with the source/target
   data in the engine transaction and are written only through `writer_conn`.
-  Ranger's `nova-managed/stream-journals` deny policy keeps them from every
-  other principal except `ACCOUNTADMIN`, the SQL frontend refuses user SQL
+  Ranger's `nova-managed/stream-journals` deny policy (every access type, so
+  their names are not listed either) keeps them from every other principal
+  except `ACCOUNTADMIN`, the SQL frontend refuses user SQL
   naming `__nova_stream_*`, and a `DROPPED` source's journal tables and writer
   policy are removed (see `docs/sql_docs/13-nova-streams.md`);
 - engine observations: `SourceRegistry.engine_identity`, `partition_versions`,
@@ -29,6 +30,18 @@ staying in StarRocks:
 
 No PG transaction claims to commit engine data. Recovery verifies engine
 evidence first, then records the matching control receipt here.
+
+## CREATE STREAM admission
+
+Before any registration, Ranger or metadata change, `StreamService.create`
+proves privileges in the engine on the caller's own session
+(`app/modules/streams/privileges.py`): `CREATE TABLE` in the Stream's
+database, and, only when `SourceRegistry.register` finds no live source for
+the table, `ALTER` on the source. Per-role quotas are computed from the
+current generations in `config_streams` (live Streams of the owner role and
+their distinct `source_id`s); no column records which role registered a
+source, so no schema change was needed. The check reads metadata without a
+lock, so two concurrent creates by one role can both pass.
 
 ## Access
 

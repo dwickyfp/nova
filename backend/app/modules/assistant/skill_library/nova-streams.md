@@ -101,7 +101,11 @@ DROP STREAM IF EXISTS analytics.orders_stream;
 - A source must be an internal, unpartitioned table with a primary key and
   simple column types (numbers, decimals, booleans, text, dates, datetimes).
   It must have no row filter or masking policy, and the user's role needs SELECT
-  on it.
+  on it and CREATE TABLE in the Stream's database.
+- The first Stream on a table also needs ALTER on that table, because it changes
+  the behaviour of every write to the table. A user who can only read the table should
+  ask its owner to create the first Stream; later Streams on the table need only
+  SELECT. Each role has a limit on its Streams and on the tables they read.
 - While a table has Streams, Nova records every change made through Nova to that
   table: worksheets, Neva, tasks and the SQL proxy. Supported writes are full-row
   `INSERT`, `UPDATE … SET … WHERE …`, `DELETE … WHERE …`, `MERGE INTO` and

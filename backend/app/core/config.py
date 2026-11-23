@@ -384,6 +384,11 @@ class Settings(BaseSettings):
     #: How often the scheduler marks stale streams, trims consumed journal rows
     #: and refreshes the stream gauges.
     STREAM_MAINTENANCE_INTERVAL_SECONDS: int = Field(default=300, ge=30, le=86_400)
+    #: Most live streams one role may own, and most distinct tables those
+    #: streams may keep under change capture. CREATE STREAM beyond either is
+    #: refused with STREAM_QUOTA_EXCEEDED.
+    STREAM_MAX_STREAMS_PER_ROLE: int = Field(default=100, ge=1, le=10_000)
+    STREAM_MAX_SOURCES_PER_ROLE: int = Field(default=20, ge=1, le=1_000)
     #: Longest a ``LANGUAGE PYTHON`` task runs (package installs included)
     #: before it is stopped and its node fails. The task's sandbox uses the
     #: notebook runtime image and resources above.

@@ -490,8 +490,13 @@ class FeatureAdapters:
         if not isinstance(payload, StreamPayload):
             raise SemanticError("Stream statement must have a stream payload")
         source = context.statements[payload.source_key].parsed
+
+        async def engine(sql: str) -> str | None:
+            # A privilege proof on the caller's own session; never through Nova SQL.
+            return (await stream_sql.as_caller(self, context, sql, 1)).error
+
         caller = StreamCaller(context.username, context.role,
-                              int(context.security_context_version or 1))
+                              int(context.security_context_version or 1), engine)
         start = time.monotonic()
         try:
             columns: list[str]

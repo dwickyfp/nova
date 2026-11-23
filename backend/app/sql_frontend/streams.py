@@ -71,9 +71,19 @@ def build_stream_statement(parsed) -> StreamStatement:
 
 
 def stream_effects(statement: StreamStatement) -> PlanEffects:
+    """What a Stream statement does, for confirmation and read-only callers.
+
+    CREATE STREAM is more than metadata: on a table's first stream it creates
+    journal tables beside the source (``changes_schema``), adds Ranger policies
+    for the stream writer (``changes_security``) and sends every later write of
+    the table through capture. ``SHOW_INITIAL_ROWS`` also reads the source.
+    """
+    creating = statement.operation == "create"
     return PlanEffects(
-        reads_data=statement.operation not in {"create", "drop"},
+        reads_data=statement.operation != "drop",
         writes_metadata=statement.operation in {"create", "drop"},
+        changes_schema=creating,
+        changes_security=creating,
         drops_objects=statement.operation == "drop",
     )
 
