@@ -108,6 +108,11 @@ Nova captures every write to a source that goes through Nova (worksheets,
 Neva, the MySQL proxy, tasks, notebooks over the proxy): the change and its
 before/after images are committed in one engine transaction by the stream
 writer account, after your role's permission for that write is checked.
+Because the writer account, not your session, commits the change, that check
+fails closed: if a Ranger policy that could cover the table uses
+`allowExceptions`, `isDenyAllElse`, a non-zero `policyPriority`, a name
+pattern other than `*` or an exclusion, the write is refused with
+`STREAM_ACCESS_DENIED` even when Ranger itself might allow it.
 
 * Supported: `INSERT INTO t VALUES …` / `SELECT …` (all columns, in order or
   listed), `UPDATE t SET … [WHERE …]`, `DELETE FROM t [WHERE …]`,
