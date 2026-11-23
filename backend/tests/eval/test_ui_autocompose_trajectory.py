@@ -202,7 +202,11 @@ async def test_a_plain_data_answer_gets_a_ranking_on_the_same_stream(monkeypatch
     # No provider call is added, and the view travels on the frames a map already uses.
     assert provider.calls == 2
     map_frames, _, _ = await _map_run()
-    assert _events(frames) <= _events(map_frames)
+    # Besides a map's frames, a chart draft is announced as an artifact with
+    # at most one save suggestion (it is never saved by the turn).
+    artifacts = {"artifact_draft", "save_suggested"}
+    assert "artifact_draft" in _events(frames)
+    assert _events(frames) - artifacts <= _events(map_frames)
     plain, _, _ = await _run(
         [dict(item) for item in script], registry, intelligent_ui=False, plan=MAP_PLAN,
     )

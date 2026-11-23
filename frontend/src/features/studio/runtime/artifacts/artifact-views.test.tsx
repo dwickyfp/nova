@@ -90,7 +90,7 @@ describe("save suggestion", () => {
     const screen = await render(<SaveSuggestion part={suggestion({ saved: { [REF]: saved } })} scope={scope()} />);
     expect(screen.container.textContent).toContain("Saved in Brand review");
     expect(screen.getByRole("button", { name: "Save to dashboard…" }).query()).toBeNull();
-    await screen.getByRole("button", { name: "Open" }).click();
+    await screen.getByRole("button", { name: "Open dashboard Brand review" }).click();
     expect(opened).toHaveBeenCalledWith(saved);
   });
 

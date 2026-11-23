@@ -97,8 +97,10 @@ def cannot_read(user: dict[str, Any]) -> AuthoringCapability:
 def other_context() -> AuthoringCapability:
     return AuthoringCapability(
         "role_cannot_author", "ROLE_CHANGED",
-        "This chart was made under another role or sign-in. Switch back to that role, or "
-        "ask again under your current role, to save it.",
+        # A role switch starts a new security context, so switching back does
+        # not make the chart editable again: only a new answer does.
+        "This chart was made under another role or sign-in. Ask the question again "
+        "under your current role to edit or save it.",
     )
 
 

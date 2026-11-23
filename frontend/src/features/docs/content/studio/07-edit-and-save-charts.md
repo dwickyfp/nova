@@ -23,7 +23,7 @@ answer's query, as you and under your current role, each time it is shown.
 
 ## Open and edit a chart
 
-1. In the answer, click the chart, or click **Open** at its top right. The
+1. In the answer, click the chart, or click **Edit** at its top right. The
    chart opens in a panel beside the conversation.
 2. Change what you need: the chart type, the fields on each axis, the
    measures, filters, sorting and title. The preview updates as you go.
@@ -60,9 +60,9 @@ sees only the rows their own role allows.
 - "Your active role … cannot read the data behind this chart, so it cannot be
   saved to a dashboard" means your current role may not read the chart's
   data. Switch to a role that can, and ask the question again.
-- "This chart was made under another role or session" means you switched
-  roles after the answer. Ask again under your current role to edit or save
-  it.
+- "This chart was made under another role or sign-in" means you switched roles
+  or signed in again after the answer. Switching back does not help: ask the
+  question again under your current role to edit or save the chart.
 - If someone else changed the same chart or dashboard at the same moment, the
   message asks you to try again.
 - Tables, key figures and maps in an answer are kept with

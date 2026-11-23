@@ -34,6 +34,7 @@ function SavedLink({ saved }: { saved: ArtifactSaved }) {
       <button
         type="button"
         className="shrink-0 rounded-sm font-medium text-foreground underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        aria-label={`Open dashboard ${saved.dashboard_title || ""}`.trim()}
         onClick={(event) => {
           event.stopPropagation();
           open(saved);
@@ -47,7 +48,7 @@ function SavedLink({ saved }: { saved: ArtifactSaved }) {
 
 /**
  * A draft chart in the answer: the same native chart as a dashboard, with an
- * edit state. Clicking it opens the artifact panel.
+ * edit state. Clicking it, or **Edit**, opens the artifact panel.
  */
 export function ArtifactPreviewCard({ part, scope }: { part: ArtifactPart; scope: ArtifactScope }) {
   const { draft } = part;
@@ -68,7 +69,7 @@ export function ArtifactPreviewCard({ part, scope }: { part: ArtifactPart; scope
         }}
       >
         <PanelRight aria-hidden="true" className="size-3.5" />
-        Open
+        Edit
       </Button>
     </div>
   );
@@ -113,7 +114,7 @@ export function SaveSuggestion({ part, scope }: { part: SaveSuggestionPart; scop
       {unsaved.length ? (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <LayoutDashboard aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-          <span className="min-w-0 flex-1">{part.message}</span>
+          <span className="min-w-48 flex-1">{part.message}</span>
           {unsaved.map((artifact) => (
             <Button
               key={artifact.id}
@@ -218,7 +219,7 @@ function PanelBody({ part, scope }: { part: ArtifactPart; scope: ArtifactScope }
         <div className="flex min-h-8 flex-wrap items-center gap-2 pt-1">
           {part.saved ? <SavedLink saved={part.saved} /> : null}
           {capability === "can_save" ? (
-            <Button type="button" size="sm" className="ms-auto" onClick={() => setSaveOpen(true)}>
+            <Button type="button" size="sm" variant="outline" onClick={() => setSaveOpen(true)}>
               <LayoutDashboard aria-hidden="true" />
               Save to dashboard…
             </Button>

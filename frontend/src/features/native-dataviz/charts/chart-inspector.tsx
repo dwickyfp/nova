@@ -237,12 +237,13 @@ export function ChartInspector(props: InspectorProps) {
   </InspectorShell>
 }
 
-function InspectorShell({ title, onClose, children }: InspectorProps & { title: string; children: React.ReactNode }) {
+function InspectorShell({ title, onClose, draft, children }: InspectorProps & { title: string; children: React.ReactNode }) {
   return <aside aria-label='Chart inspector' className='flex h-full min-h-0 w-full min-w-0 flex-col bg-card'>
-    <header className='flex h-12 shrink-0 items-center justify-between gap-2 border-b pr-2 pl-4'>
+    {/* A draft is edited inside a panel that has its own title and close button. */}
+    {!draft && <header className='flex h-12 shrink-0 items-center justify-between gap-2 border-b pr-2 pl-4'>
       <h3 className='truncate text-sm font-medium'>{title}</h3>
       <Button variant='ghost' size='icon' className='size-8 text-muted-foreground hover:text-foreground' aria-label='Close inspector' onClick={onClose}><X /></Button>
-    </header>
+    </header>}
     {children}
   </aside>
 }
