@@ -66,6 +66,71 @@ function turn(answer: string, result = table): TranscriptTurn {
 }
 
 describe("one table per query result", () => {
+  it("folds a table under the chart drawn from the same query", async () => {
+    const original = turn("Revenue by month.", { ...table, tool_call_id: "call-1" });
+    original.content.push({
+      id: "chart", index: 2, type: "chart", complete: true,
+      block: { tool_call_id: "call-1", chart_spec: '{"title":"Revenue by month","mark":"bar"}' },
+    });
+    const screen = await render(withQueries(<TurnContent turn={original} />));
+    await expect.element(screen.getByText("Source data (1 table)", { exact: true })).toBeVisible();
+    expect(screen.container.querySelector("details")?.open).toBe(false);
+  });
+
+  it("folds a table under a chart tool that drew its result", async () => {
+    const original = turn("Revenue by month.", { ...table, tool_call_id: "call-1" });
+    original.content.push({
+      id: "chart", index: 2, type: "chart", complete: true,
+      block: {
+        tool_call_id: "chart-call", source_tool_call_id: "call-1",
+        chart_spec: '{"title":"Revenue by month","mark":"bar"}',
+      },
+    });
+    const screen = await render(withQueries(<TurnContent turn={original} />));
+    await expect.element(screen.getByText("Source data (1 table)", { exact: true })).toBeVisible();
+  });
+
+  it("keeps a table of a different query in view beside a chart", async () => {
+    const original = turn("Revenue by month.", { ...table, tool_call_id: "call-1" });
+    original.content.push({
+      id: "chart", index: 2, type: "chart", complete: true,
+      block: { tool_call_id: "call-2", chart_spec: '{"title":"Orders","mark":"bar"}' },
+    });
+    const screen = await render(withQueries(<TurnContent turn={original} />));
+    await expect.element(screen.getByRole("textbox", { name: "Filter rows" })).toBeVisible();
+    // The chart's title renders, so its absence in the next case is meaningful.
+    await expect.element(screen.getByText("Orders", { exact: true })).toBeVisible();
+    expect(screen.getByText("Source data (1 table)", { exact: true }).query()).toBeNull();
+  });
+
+  it("leaves out a tool chart that an interactive answer already draws", async () => {
+    const original = turn("Revenue by month.", { ...table, tool_call_id: "call-1" });
+    original.content.push(
+      {
+        id: "ui", index: 2, type: "ui", complete: true,
+        block: {
+          catalog_version: UI_CATALOG_VERSION, program_sha256: "test",
+          program: 'root = Col([Text("Interactive summary")])',
+          fallback: "Useful fallback.", evidence: {}, state_defaults: {}, actions: [],
+          provenance: {
+            evidence_ids: [], scope: "user_simulation", assumption: true,
+            tool_calls: { e1: "call-1" },
+          },
+        },
+      },
+      {
+        id: "chart", index: 3, type: "chart", complete: true,
+        block: {
+          tool_call_id: "chart-call", source_tool_call_id: "call-1",
+          chart_spec: '{"title":"Duplicate chart","mark":"bar"}',
+        },
+      },
+    );
+    const screen = await render(withQueries(<TurnContent turn={original} />));
+    await expect.element(screen.getByText("Interactive summary")).toBeVisible();
+    expect(screen.container.textContent).not.toContain("Duplicate chart");
+  });
+
   it.each([
     ["done", UI_CATALOG_VERSION, true],
     ["error", UI_CATALOG_VERSION, false],
@@ -175,7 +240,7 @@ describe("one table per query result", () => {
       await expect.element(screen.getByText("1 / 2 rows")).toBeVisible();
       await screen.getByRole("textbox", { name: "Filter rows" }).fill("");
       await screen
-        .getByRole("button", { name: "order_count", exact: true })
+        .getByRole("button", { name: "Order count", exact: true })
         .click();
       expect(
         screen.container.querySelector('[aria-sort="ascending"]'),

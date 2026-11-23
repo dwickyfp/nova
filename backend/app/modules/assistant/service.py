@@ -74,6 +74,7 @@ from app.modules.assistant.intelligence import (
 )
 from app.modules.assistant.measurements import AttemptMeasurements, measurement_scope
 from app.modules.assistant.messages import say
+from app.modules.assistant.plain_language import tool_phrases
 from app.modules.assistant.planning import TurnPlan, TurnPlanningError, plan_turn
 from app.modules.assistant.provider import (
     AssistantProviderClient,
@@ -1223,13 +1224,13 @@ class AssistantLoop:
                 ),
             )))
             context.selected_tools = list(selected_tools)
-        selected_actions = ", ".join(selected_tools[:5])
-        if len(selected_tools) > 5:
-            selected_actions += f" and {len(selected_tools) - 5} more"
+        # The rail names the chosen tools in plain words; a turn that needs no
+        # tool says what was done instead of reporting an empty selection.
+        chosen = tool_phrases(selected_tools)
         yield _thinking_step(
             context,
             "plan",
-            f"Selected actions: {selected_actions}" if selected_actions else "No tools selected",
+            f"Chose {chosen}" if chosen else "Understood the request",
             status="done",
         )
         window_capabilities = getattr(provider, "capabilities", CONSERVATIVE_OPENAI_COMPATIBLE)
@@ -2994,6 +2995,9 @@ class AssistantLoop:
                     value = outcome.chart.get(key)
                     if isinstance(value, dict):
                         chart_payload[key] = value
+                drawn_from = _chart_source(pending_artifacts, invocation.tool_call_id)
+                if drawn_from:
+                    chart_payload["source_tool_call_id"] = drawn_from
                 pending_artifacts.append(
                     PendingArtifact(
                         kind="chart",
@@ -4394,6 +4398,18 @@ def _content_id(run_id: str, index: int) -> str:
     return f"{hashlib.sha256(run_id.encode()).hexdigest()[:32]}:{index}"
 
 
+def _chart_source(artifacts: list[PendingArtifact], chart_call: str | None) -> str | None:
+    """The query call whose result a separate chart tool drew, if any.
+
+    A chart tool draws the latest result of the turn, so the client can fold
+    that result's table under the chart instead of repeating it above.
+    """
+    for item in reversed(artifacts):
+        if item.kind == "table" and item.tool_call_id:
+            return item.tool_call_id if item.tool_call_id != chart_call else None
+    return None
+
+
 def _ordered_output_frames(
     answer_text: str,
     artifacts: list[PendingArtifact],
@@ -4464,12 +4480,15 @@ def _ordered_output_frames(
             chart_spec = str(item["payload"].get("chart_spec") or "")
             viz_spec = item["payload"].get("viz_spec")
             presmodel = item["payload"].get("presmodel")
+            source = item["payload"].get("source_tool_call_id")
+            source = source if isinstance(source, str) and source else None
             frames.append(
                 events.chart(
                     tool_call_id,
                     chart_spec,
                     viz_spec=viz_spec if isinstance(viz_spec, dict) else None,
                     presmodel=presmodel if isinstance(presmodel, dict) else None,
+                    source_tool_call_id=source,
                     content_index=index,
                     content_id=content_id,
                 )
@@ -4482,6 +4501,7 @@ def _ordered_output_frames(
                     "content_id": content_id,
                     "tool_call_id": tool_call_id,
                     "chart_spec": chart_spec,
+                    **({"source_tool_call_id": source} if source else {}),
                     **(
                         {"viz_spec": viz_spec}
                         if isinstance(viz_spec, dict) else {}

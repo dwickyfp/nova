@@ -72,6 +72,8 @@ export type ChartBlock = {
    *  chart came from the viz engine; the Vega spec remains the fallback. */
   viz_spec?: Record<string, unknown> | null;
   presmodel?: import("../viz/types").PresModel | null;
+  /** The query call whose result a separate chart tool drew. */
+  source_tool_call_id?: string;
 };
 
 /** A source reference from semantic search. */

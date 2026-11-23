@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { TableBlock } from "@/features/assistant/types";
+import { columnLabel, formatResultValue } from "./result-format";
 
 /**
  * The one result grid in Studio: answers, interactive tables, artifacts and
@@ -19,6 +20,8 @@ import type { TableBlock } from "@/features/assistant/types";
  * them interrogate it without leaving the conversation. The footer states the
  * engine's row cap only when the result reports it was capped: a complete
  * result must not look partial, and a capped one must not look complete.
+ * Cells read as amounts and dates (`result-format`); sorting, filtering and
+ * the CSV keep the values the engine returned.
  */
 
 const ENGINE_CAP_NOTE =
@@ -70,8 +73,12 @@ export const ResultTable = memo(function ResultTable({
     if (needle) {
       out = out.filter((row) =>
         row.some(
-          (cell) =>
-            cell !== null && String(cell).toLowerCase().includes(needle),
+          (cell, column) =>
+            cell !== null &&
+            (String(cell).toLowerCase().includes(needle) ||
+              formatResultValue(cell, block.columns[column])
+                .toLowerCase()
+                .includes(needle)),
         ),
       );
     }
@@ -82,7 +89,7 @@ export const ResultTable = memo(function ResultTable({
       out = [...out].sort((a, b) => sign * compareCells(a[column], b[column]));
     }
     return out;
-  }, [block.rows, query, sort]);
+  }, [block.columns, block.rows, query, sort]);
 
   const toggleSort = (column: number) => {
     setSort((current) => {
@@ -177,6 +184,7 @@ export const ResultTable = memo(function ResultTable({
                 >
                   <button
                     type="button"
+                    title={column}
                     onClick={() => toggleSort(i)}
                     className={cn(
                       "flex w-full items-center gap-1.5 whitespace-nowrap px-3 py-2 transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:outline-none",
@@ -185,7 +193,7 @@ export const ResultTable = memo(function ResultTable({
                         : "text-left",
                     )}
                   >
-                    {column}
+                    {columnLabel(column)}
                     {sort?.column === i && sort.dir === "desc" ? (
                       <ArrowDown aria-hidden="true" className="size-3 shrink-0" />
                     ) : (
@@ -221,7 +229,7 @@ export const ResultTable = memo(function ResultTable({
                     {cell === null ? (
                       <span className="text-muted-foreground">null</span>
                     ) : (
-                      String(cell)
+                      formatResultValue(cell, block.columns[cellIndex])
                     )}
                   </td>
                 ))}

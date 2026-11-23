@@ -40,6 +40,11 @@ describe("tool preview", () => {
     expect(isSqlPreview("Propose a change to a business definition for steward review")).toBe(false);
     expect(isSqlPreview("semantic_query: Berapa omzet per region?")).toBe(false);
     expect(isSqlPreview("Look up approved business definitions")).toBe(false);
+    // Leading words that are also English: a request is not a statement.
+    expect(isSqlPreview("Show revenue by order status.")).toBe(false);
+    expect(isSqlPreview("Use last month's numbers?")).toBe(false);
+    expect(isSqlPreview("SHOW TABLES")).toBe(true);
+    expect(isSqlPreview("show grants for role analyst;")).toBe(true);
   });
 
   it("shows a tool sentence as text without a SQL label", async () => {

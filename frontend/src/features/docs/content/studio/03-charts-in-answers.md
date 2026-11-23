@@ -34,9 +34,9 @@ finishes; you do not need to reload the page.
 - Open the step summary at the top of the answer to see the SQL that produced
   the rows.
 
-The note "Within these verified result rows" under a chart means that any
-sorting or filtering in the view used only the rows already returned; it does
-not fetch new data.
+An interactive answer with filters or inputs says so under the view: they use
+only the rows already returned and do not fetch new data, and values you enter
+are assumptions. A view without filters or inputs shows no note.
 
 ## Keep a chart
 

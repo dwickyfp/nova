@@ -323,6 +323,16 @@ describe("parseAssistantEvent structured blocks (Phase 12)", () => {
     });
   });
 
+  it("keeps the query a chart tool drew from", () => {
+    const event = parseAssistantEvent(
+      "chart",
+      JSON.stringify({ tool_call_id: "chart-1", chart_spec: "{}", source_tool_call_id: "query-1" }),
+    );
+    expect(event).toMatchObject({
+      payload: { tool_call_id: "chart-1", source_tool_call_id: "query-1" },
+    });
+  });
+
   it("rejects a chart block missing the spec", () => {
     expect(
       parseAssistantEvent("chart", JSON.stringify({ tool_call_id: "x" })),

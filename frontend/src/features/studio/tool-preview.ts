@@ -6,10 +6,17 @@ const SQL_LEADING_WORDS = new Set([
   "VALUES", "WITH",
 ]);
 
-/** Whether a tool preview is a SQL statement rather than a sentence. */
+/** Symbols a statement has and an English request does not. */
+const SQL_STRUCTURE = /[*=;(`]/;
+
+/**
+ * Whether a tool preview is a SQL statement rather than a sentence. Several
+ * leading words are also English ("Show revenue by order status."), so a
+ * preview that ends like a sentence and has no statement structure is prose.
+ */
 export function isSqlPreview(preview: string): boolean {
-  const start = preview
-    .replace(/^(\s|\(|--[^\n]*\n|\/\*[\s\S]*?\*\/)+/, "")
-    .match(/^[A-Za-z]+/)?.[0];
-  return start ? SQL_LEADING_WORDS.has(start.toUpperCase()) : false;
+  const body = preview.replace(/^(\s|\(|--[^\n]*\n|\/\*[\s\S]*?\*\/)+/, "");
+  const start = body.match(/^[A-Za-z]+/)?.[0];
+  if (!start || !SQL_LEADING_WORDS.has(start.toUpperCase())) return false;
+  return !(/[.?!]\s*$/.test(body) && !SQL_STRUCTURE.test(body));
 }

@@ -690,6 +690,9 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
               chart_spec: step.chart_spec,
               viz_spec: step.viz_spec ?? null,
               presmodel: step.presmodel ?? null,
+              ...(step.source_tool_call_id
+                ? { source_tool_call_id: step.source_tool_call_id }
+                : {}),
             };
             open.blocks.charts.push({ id, block });
             open.content.push({
@@ -869,11 +872,36 @@ export function describeTool(name: string, skillName?: string | null): string {
       return "Added a dataset to the dashboard";
     case "native_dashboard_publish":
       return "Published the dashboard";
-    default:
+    default: {
+      const known = AGENT_TOOLS[name];
+      if (known) return known[0];
       // Never show an internal identifier: "inspect_role_access" → "Inspect role access".
       return name ? `${name.replace(/^native_/, "").replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase())}` : "Used a tool";
+    }
   }
 }
+
+/** Agent tools, as [done, in progress], in the words the rail and approval card use. */
+const AGENT_TOOLS: Record<string, [string, string]> = {
+  semantic_view_query: ["Queried the semantic view", "Querying the semantic view"],
+  diagnose_change: ["Diagnosed the change", "Diagnosing the change"],
+  decision_lab: ["Analyzed drivers and trends", "Analyzing drivers and trends"],
+  context_graph: ["Looked up the business context", "Looking up the business context"],
+  analysis_workspace: ["Ran an analysis", "Running an analysis"],
+  analyze_documents: ["Counted document themes", "Counting document themes"],
+  execute_business_action: ["Ran a business action", "Running a business action"],
+  incident_context: ["Read the incident", "Reading the incident"],
+  investigation_update: ["Posted an investigation finding", "Posting an investigation finding"],
+  schedule_automation: ["Scheduled a question", "Scheduling a question"],
+  ai_search: ["Searched the documents", "Searching the documents"],
+  catalog_search: ["Searched the data catalog", "Searching the data catalog"],
+  web_search: ["Searched the web", "Searching the web"],
+  feature_lookup: ["Looked up features", "Looking up features"],
+  ml_execute: ["Ran a model", "Running a model"],
+  ontology_resolve: ["Checked the business glossary", "Checking the business glossary"],
+  ontology_explain: ["Checked the business glossary", "Checking the business glossary"],
+  knowledge_propose: ["Proposed a glossary change", "Proposing a glossary change"],
+};
 
 const ACTIVITY: Record<string, string> = {
   query_execute: "Running a SQL query",
@@ -896,9 +924,9 @@ const ACTIVITY: Record<string, string> = {
 };
 
 /** What a step is doing, in present tense, without the tool's identifier. */
-function describeActivity(name: string, skillName?: string | null): string {
+export function describeActivity(name: string, skillName?: string | null): string {
   if (name === "load_skill") return skillName ? `Loading skill: ${skillName}` : "Loading a skill";
-  const known = ACTIVITY[name];
+  const known = ACTIVITY[name] ?? AGENT_TOOLS[name]?.[1];
   if (known) return known;
   const words = name.replace(/^native_/, "").replace(/_/g, " ").trim();
   return words ? `Running: ${words}` : "Using a tool";
