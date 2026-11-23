@@ -27,11 +27,33 @@ SQL or table names.
    question.
 4. Press **Enter** to send. Press **Shift+Enter** if you want a new line
    instead.
-5. Wait for the answer. While the agent works, a **Working** line shows each
-   step and how long it has taken. Click **Stop** (the square button) to cancel.
-   Stop also cancels a **Reconsider this answer** pass. A stopped answer shows
-   "Stopped before the answer finished.", and its step summary starts with
-   "Stopped" and a grey square instead of a green check.
+5. Watch the agent work. While it works, a **Working** line shows each step
+   and how long it has taken, and new steps appear as they happen. Click
+   **Stop** (the square button) to cancel. Stop also cancels a **Reconsider
+   this answer** pass. A stopped answer shows "Stopped before the answer
+   finished.", and its step summary starts with "Stopped" and a grey square
+   instead of a green check.
+
+### What appears while the agent works
+
+Steps appear in the order the agent takes them, as soon as each one starts:
+
+- **What the agent is about to do**, in one sentence, before it runs a step.
+  For example "I will compare revenue by region first." These sentences never
+  contain figures. Figures come only in the checked answer.
+- **Model reasoning**: some AI models write a short summary of their thinking.
+  When the model sends one, it appears as a **Model reasoning** step with the
+  latest words shown under the label. It folds away when the answer is done;
+  click it to read it in full. Models that do not send a summary show no such
+  step. The summary is for you to read: the agent does not reuse it in later
+  answers, and credentials and keys are removed from it before it is shown.
+- **Each tool call**, such as a query, with its own status.
+
+The answer text appears only after its figures were checked against the
+results the agent received, so a number you see in an answer never changes
+afterwards. A short note under the answer says "Figures checked against the
+results". When a figure could not be found in the results, it is left out and
+the note adds "unsupported ones were left out".
 
 ## Use a command
 
