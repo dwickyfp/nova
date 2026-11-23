@@ -14,7 +14,6 @@ from typing import Any
 import pytest
 
 from app.modules.assistant import human_input
-from app.modules.assistant.consent import ConsentApproval
 from app.modules.assistant.human_input import HumanAnswer, request_human_input_tool
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.tools import ToolInvocation, ToolRegistry

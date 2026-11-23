@@ -193,7 +193,8 @@ def _options(raw: Any) -> list[dict[str, Any]]:
             ]
             if kept:
                 option["badges"] = kept
-            if len(kept) < len([b for b in badges[:MAX_BADGES] if isinstance(b, str) and b.strip()]):
+            given = [b for b in badges[:MAX_BADGES] if isinstance(b, str) and b.strip()]
+            if len(kept) < len(given):
                 recommended = True
         if recommended:
             option["recommended"] = True

@@ -29,7 +29,6 @@ from pathlib import Path
 
 import pytest
 
-from app.modules.assistant.consent import stamp
 from app.modules.assistant.schemas import ToolCallView
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import AssistantThread
@@ -748,7 +747,10 @@ async def test_deny_decision_blocks_execution(fakes):
     # so the denied call is a role change.
     provider = FakeProvider(
         [
-            {"role": "assistant", "content": "", "tool_calls": [_tool_call("c1", "USE ROLE analyst")]},
+            {
+                "role": "assistant", "content": "",
+                "tool_calls": [_tool_call("c1", "USE ROLE analyst")],
+            },
             {"role": "assistant", "content": "understood"},
         ]
     )

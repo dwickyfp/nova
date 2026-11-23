@@ -2,8 +2,8 @@ import json
 from unittest.mock import AsyncMock
 
 import pytest
-from pydantic import ValidationError
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from app.modules.agents import router
 from app.modules.agents.tools import mcp_tool

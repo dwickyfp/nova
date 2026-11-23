@@ -9,7 +9,6 @@ from app.modules.agents.tools.custom_tool import (
     CustomToolRunner,
     validate_custom_tool_definition,
 )
-from app.modules.assistant.consent import stamp
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import AssistantThread
 from app.modules.assistant.tools import ToolInvocation, ToolRegistry

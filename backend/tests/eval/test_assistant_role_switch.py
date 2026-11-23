@@ -3,7 +3,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.modules.assistant.consent import stamp
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import AssistantThread
 from app.modules.assistant.tools import ToolInvocation, ToolRegistry

@@ -40,7 +40,8 @@ def test_registry_is_a_structural_tool_selection() -> None:
     # request_human_input is always present; the loop offers it only while a
     # person is watching the run.
     assert set(registry.names()) == {
-        "load_skill", "semantic_query", "compute_metrics", "schedule_automation", "request_human_input",
+        "load_skill", "semantic_query", "compute_metrics", "schedule_automation",
+        "request_human_input",
     }
     assert "compute_metrics" not in build_registry({"default_tools": ["load_skill"]}).names()
     # An unselected tool is not merely hidden; it cannot be fetched.
