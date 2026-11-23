@@ -200,6 +200,7 @@ _TOOL_WORDS = {
     "context_graph": "the business context",
     "decision_lab": "a driver and trend analysis",
     "diagnose_change": "a change diagnosis",
+    "request_human_input": "a question for you",
     "execute_business_action": "a business action",
     "incident_context": "the incident details",
     "investigation_update": "an investigation finding",
