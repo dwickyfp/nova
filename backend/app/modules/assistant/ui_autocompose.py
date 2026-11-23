@@ -25,7 +25,7 @@ from decimal import Decimal
 from typing import Any
 
 from app.modules.assistant.intelligent_ui import UiValidationError, block_dict, parse_program
-from app.modules.assistant.ui_components import ComponentError, validate_props
+from app.modules.assistant.ui_components import ComponentError, field_label, validate_props
 
 #: An artifact for the answer: ``("ui", block)`` or ``("component", payload)``.
 Artifact = tuple[str, dict[str, Any]]
@@ -91,8 +91,7 @@ def _column(table: dict[str, Any], name: str) -> list[Any]:
 
 
 def _label(name: str) -> str:
-    text = name.replace("_", " ").strip()
-    return text[:1].upper() + text[1:] if text else name
+    return field_label(name)
 
 
 def _coordinate(names: list[str], aliases: tuple[str, ...]) -> str | None:
@@ -328,13 +327,12 @@ def key_figures(program: str, tables: dict[str, dict[str, Any]]) -> dict[str, An
     stay under Source data. Any other program is left as written.
     """
     match = _LONE_TABLE.match(program or "")
-    table = tables.get(match.group(1)) if match else None
-    if table is None:
+    evidence_id = match.group(1) if match else ""
+    table = tables.get(evidence_id)
+    columns = kpi_columns(table) if table is not None else []
+    if table is None or not columns:
         return None
-    columns = kpi_columns(table)
-    if not columns:
-        return None
-    return kpi_component([(match.group(1), column, table) for column in columns])
+    return kpi_component([(evidence_id, column, table) for column in columns])
 
 
 def chart_plan(table: dict[str, Any]) -> tuple[dict[str, Any], str] | None:

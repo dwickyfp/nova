@@ -166,3 +166,15 @@ def test_a_program_that_repeats_native_charts_is_dropped():
     assert _key_figures([*charts, ui], _evidence(tables)) == charts
     # A program charting a result no native chart shows is kept.
     assert _key_figures([charts[0], ui], _evidence(tables)) == [charts[0], ui]
+
+
+def test_result_columns_read_as_field_labels():
+    from app.modules.assistant.ui_components import field_label
+
+    assert field_label("sum_revenue") == "Total revenue"
+    assert field_label("avg_order_value") == "Average order value"
+    assert field_label("order_count") == "Order count"
+    assert field_label("customer_id") == "Customer ID"
+    assert field_label("orders.total_amount") == "Total amount"
+    assert field_label("revenue") == "Revenue"
+    assert field_label("Revenue (IDR)") == "Revenue (IDR)"

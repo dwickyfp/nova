@@ -42,6 +42,7 @@ from app.modules.assistant.tools import (
 )
 from app.modules.assistant.ui_components import (
     ComponentError,
+    field_label,
     tool_description,
     tool_parameters,
     validate_props,
@@ -217,7 +218,7 @@ class DataToChartTool:
             if value is not None and not _numeric(values) and aggregation != "count":
                 return ToolOutcome(ok=False, summary="", error=f"{name!r} is not a number column.")
             items.append({
-                "label": _words(name), "value": value, "format": "number",
+                "label": field_label(name), "value": value, "format": "number",
                 "decimals": 0 if all(_whole(item) for item in numbers if item is not None) else 2,
                 "aggregation": aggregation, "evidence_id": evidence_id or "latest", "column": name,
             })
@@ -456,11 +457,6 @@ def _numeric(values: list[Any]) -> bool:
 
 def _whole(value: float) -> bool:
     return float(value).is_integer()
-
-
-def _words(name: str) -> str:
-    text = str(name).rsplit(".", 1)[-1].replace("_", " ").strip()
-    return (text[:1].upper() + text[1:]) if text else str(name)
 
 
 #: Words that ask for a chart type, by the ShowMe chart they mean.

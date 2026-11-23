@@ -290,33 +290,25 @@ def test_sse_chart_frame_shape_matches_cortex() -> None:
 
 
 def test_a_chart_tool_names_the_query_it_drew() -> None:
-    import json
-
-    from app.modules.assistant.service import (
-        LoopContext,
-        PendingArtifact,
-        _chart_source,
-        _ordered_output_frames,
-    )
+    # A native chart records the query call whose result it drew, so that
+    # result's table folds under it as source data, live and on replay.
+    from app.modules.assistant.service import LoopContext, PendingArtifact, _ordered_output_frames
 
     table = PendingArtifact(
         "table", {"title": "rev", "columns": ["m"], "rows": [["Jun"]]}, "query-1"
     )
-    assert _chart_source([table], "chart-1") == "query-1"
-    assert _chart_source([table], "query-1") is None
-    assert _chart_source([], "chart-1") is None
-
-    chart = PendingArtifact(
-        "chart", {"chart_spec": "{}", "source_tool_call_id": "query-1"}, "chart-1"
-    )
+    chart = PendingArtifact("component", {
+        "name": "KpiTiles",
+        "props": {"items": [{"label": "Revenue", "value": 1, "format": "number",
+                             "aggregation": "value", "evidence_id": "e1", "column": "m"}]},
+        "source": {"tool_call_id": "query-1", "evidence_id": "e1"},
+    }, "chart-1")
     context = LoopContext(user_name="alice", steps=[])
-    frames = _ordered_output_frames("Revenue by month.", [table, chart], context)
-    frame = next(frame for frame in frames if frame.startswith("event: chart\n"))
-    payload = json.loads(frame.split("data: ", 1)[1])
-    assert payload["tool_call_id"] == "chart-1"
-    assert payload["source_tool_call_id"] == "query-1"
-    step = next(step for step in context.steps if step.get("kind") == "chart")
-    assert step["source_tool_call_id"] == "query-1"
+    _ordered_output_frames("Revenue by month.", [table, chart], context)
+    step = next(step for step in context.steps if step.get("kind") == "component")
+    assert step["tool_call_id"] == "chart-1"
+    assert step["source"]["tool_call_id"] == "query-1"
+    # Stored legacy chart frames still replay without a source.
     assert '"source_tool_call_id"' not in events.chart("call-1", "{}")
 
 

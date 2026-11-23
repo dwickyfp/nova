@@ -86,3 +86,24 @@ def component(name: str, props: dict[str, Any]) -> dict[str, Any]:
     """A validated registry component payload."""
     return {"component": name, "version": component_version(name),
             "props": validate_props(name, props)}
+
+
+#: Aggregate prefixes an engine column name may carry, read as words.
+_AGGREGATE_WORDS = {"sum": "Total", "total": "Total", "avg": "Average", "average": "Average",
+                    "mean": "Average", "min": "Minimum", "max": "Maximum",
+                    "cnt": "Number of", "count": "Number of"}
+_ACRONYMS = frozenset({"id", "ids", "sku", "url", "kpi", "gmv", "aov", "roi", "vat", "nik", "npwp"})
+
+
+def field_label(name: str) -> str:
+    """A result column as words: ``sum_revenue`` is "Total revenue", ``customer_id``
+    "Customer ID". A name that is not snake_case is returned as written."""
+    raw = str(name).rsplit(".", 1)[-1].strip()
+    words = [word for word in raw.split("_") if word]
+    if not words or raw != raw.lower():
+        return raw or str(name)
+    lead = _AGGREGATE_WORDS.get(words[0]) if len(words) > 1 else None
+    rest = [word.upper() if word in _ACRONYMS else word for word in words[1 if lead else 0:]]
+    text = " ".join([lead, *rest] if lead else rest)
+    return text[:1].upper() + text[1:]
+
