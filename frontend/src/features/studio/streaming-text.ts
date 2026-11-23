@@ -4,9 +4,23 @@ import { useEffect, useRef, useState } from "react";
  * Helpers for text that grows while it streams; see `StreamingMarkdown`.
  */
 
-/** Reveal speed: a share of the backlog per frame, with a floor in characters. */
-const SHARE_PER_FRAME = 0.08;
-const MIN_PER_FRAME = 2;
+/**
+ * Reveal speed, by elapsed time rather than frames so a slow or throttled
+ * page catches up instead of falling behind. The backlog shrinks with a time
+ * constant of `REVEAL_TAU_MS` (a 1,000-character burst is shown in about
+ * half a second), and never slower than `MIN_CHARS_PER_SECOND`.
+ */
+const REVEAL_TAU_MS = 120;
+const MIN_CHARS_PER_SECOND = 400;
+
+/** Characters to reveal after `elapsed` ms with `backlog` still hidden. */
+export function revealStep(backlog: number, elapsed: number): number {
+  if (backlog <= 0) return 0;
+  const dt = Math.max(0, elapsed);
+  const share = Math.ceil(backlog * (1 - Math.exp(-dt / REVEAL_TAU_MS)));
+  const floor = Math.ceil((MIN_CHARS_PER_SECOND * dt) / 1000);
+  return Math.min(backlog, Math.max(1, share, floor));
+}
 
 function prefersReducedMotion(): boolean {
   return typeof window !== "undefined" && typeof window.matchMedia === "function"
@@ -29,6 +43,8 @@ export function useSmoothText(text: string, animate: boolean): string {
   const [count, setCount] = useState(() => (animate && !prefersReducedMotion() ? 0 : text.length));
   const target = useRef(text);
   const previous = useRef(text);
+  // The count the reveal loop works from; React may apply state later.
+  const shown = useRef(count);
 
   // Text that was replaced rather than extended restarts from what still matches.
   if (previous.current !== text) {
@@ -37,7 +53,10 @@ export function useSmoothText(text: string, animate: boolean): string {
     if (!text.startsWith(before.slice(0, Math.min(count, before.length)))) {
       let same = 0;
       while (same < Math.min(count, text.length) && before[same] === text[same]) same += 1;
-      if (same !== count) setCount(same);
+      if (same !== count) {
+        shown.current = same;
+        setCount(same);
+      }
     }
   }
   target.current = text;
@@ -46,20 +65,22 @@ export function useSmoothText(text: string, animate: boolean): string {
   useEffect(() => {
     if (!behind) return;
     if (prefersReducedMotion()) {
+      shown.current = target.current.length;
       setCount(target.current.length);
       return;
     }
     let frame = 0;
-    const step = () => {
-      let more = false;
-      setCount((current) => {
-        const goal = target.current.length;
-        if (current >= goal) return current;
-        const next = Math.min(goal, current + Math.max(MIN_PER_FRAME, Math.ceil((goal - current) * SHARE_PER_FRAME)));
-        more = next < goal;
-        return next;
-      });
-      if (more) frame = window.requestAnimationFrame(step);
+    let last = performance.now();
+    const step = (now: number) => {
+      const elapsed = now - last;
+      last = now;
+      const goal = target.current.length;
+      const current = shown.current;
+      if (current >= goal) return;
+      const next = current + revealStep(goal - current, elapsed);
+      shown.current = next;
+      setCount(next);
+      if (next < goal) frame = window.requestAnimationFrame(step);
     };
     frame = window.requestAnimationFrame(step);
     return () => window.cancelAnimationFrame(frame);
