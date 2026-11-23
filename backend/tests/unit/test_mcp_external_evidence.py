@@ -141,3 +141,38 @@ async def test_the_source_label_survives_a_reload_of_the_turn(monkeypatch):
     assert stored["source"] == "external:Nova test tools/get_store_targets"
     assert stored["title"] == "Nova test tools: get store targets (external source)"
     assert replayed.items[0].metadata["external_source"] == stored["source"]
+
+
+def _review_tables() -> dict[str, dict]:
+    ratio = {
+        "columns": ["order_date", "revenue", "total_target", "revenue_per_total_target",
+                    "revenue_per_total_target_pct"],
+        "rows": [["2025-06-01 00:00:00", "145886000.0000", "30000000.0000", "4.8629", "486.2867"],
+                 ["2025-07-01 00:00:00", "29298000.0000", "30000000.0000", "0.9766", "97.6600"]],
+    }
+    return {
+        "revenue": {"columns": ["revenue"], "rows": [["29298000.00"]], "units": {"revenue": "USD"}},
+        "target": {"columns": ["month", "currency", "total_target"],
+                   "rows": [["2025-07", "IDR", 30000000]],
+                   "source": "external:Nova test tools/get_store_targets"},
+        "ratio": ratio,
+    }
+
+
+@pytest.mark.parametrize("answer", [
+    # Live B8 (2026-11-24): "IDR" from the target's currency column was read as a
+    # row name, so every amount written after it was refused.
+    "July 2025 revenue was IDR 29,298,000 against a target of IDR 30,000,000.",
+    "Revenue was 29,298,000 (IDR); attainment 97.7%.",
+])
+def test_a_currency_code_is_not_read_as_a_row_name(answer):
+    check = check_numeric_answer(answer, question="monthly review", tables=_review_tables())
+    assert check.accepted, check.unsupported
+
+
+def test_a_figure_beside_a_real_row_name_is_still_bound_to_that_row():
+    check = check_numeric_answer(
+        "In 2025-07 the target was IDR 145,886,000.", question="monthly review",
+        tables=_review_tables(),
+    )
+    assert not check.accepted
