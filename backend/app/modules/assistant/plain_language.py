@@ -366,6 +366,8 @@ _TOOL_PREFIX = re.compile(
 _READABLE_FIELDS = {
     "error": ("message",),
     "thinking": ("text",),
+    "model_reasoning": ("text",),
+    "narration": ("text",),
     "tool_progress": ("text",),
     "tool_detail": ("text",),
     "tool_call": ("result_summary", "error"),
@@ -405,6 +407,7 @@ def plain_frames():  # noqa: ANN201 - returns a small stateful filter
             text,
             content_index=position.get("content_index"),  # type: ignore[arg-type]
             content_id=position.get("content_id"),  # type: ignore[arg-type]
+            verification=position.get("verification"),  # type: ignore[arg-type]
         )
 
     def flush() -> list[str]:
@@ -415,7 +418,8 @@ def plain_frames():  # noqa: ANN201 - returns a small stateful filter
         name, data = parse(frame)
         if name == events.EVENT_TEXT_DELTA and data is not None:
             incoming = {
-                key: data[key] for key in ("content_index", "content_id") if key in data
+                key: data[key]
+                for key in ("content_index", "content_id", "verification") if key in data
             }
             out: list[str] = []
             if position and incoming and incoming != position:

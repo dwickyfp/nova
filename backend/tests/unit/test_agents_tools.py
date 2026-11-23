@@ -369,15 +369,19 @@ def test_grounding_marks_computed_fields_and_plain_columns() -> None:
     assert "COMPUTED" not in city_line
 
 
-def test_pre_tool_narration_is_bounded() -> None:
-    # A model that narrates before a tool call must not have that text repeated
-    # in the final answer. The loop reduces it to a bounded one-line note.
-    from app.modules.assistant.service import _summarise_narration
+def test_pre_tool_narration_is_bounded_and_states_no_figures() -> None:
+    # Narration before a tool call is shown as activity. Only the verified
+    # answer states numbers, so a sentence with a figure is left out.
+    from app.modules.assistant.service import _narration_without_figures
 
-    assert _summarise_narration("  The   answer\n is 42  ") == "The answer is 42"
-    long = "word " * 100
-    summarised = _summarise_narration(long)
-    assert len(summarised) <= 160
+    assert _narration_without_figures("  The   answer\n is coming  ") == "The answer is coming"
+    assert _narration_without_figures(
+        "Revenue was about 1.2M last year. I will check the orders view first."
+    ) == "I will check the orders view first."
+    assert _narration_without_figures("Top 5 customers coming up.") == ""
+    long = "word " * 200
+    summarised = _narration_without_figures(long)
+    assert len(summarised) <= 600
     assert summarised.endswith("…")
 
 

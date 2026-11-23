@@ -52,6 +52,7 @@ export class TestStudioEncoder {
   private inputs = new Map<string, string>();
   private open = new Map<string, string>();
   private reasoning: [string, string, string] | null = null;
+  private model: string | null = null;
   private plan: string | null = null;
   private planText = "";
   private finished = false;
@@ -107,6 +108,15 @@ export class TestStudioEncoder {
     switch (name) {
       case "thinking":
         return this.thinking(b);
+      case "model_reasoning":
+        return this.modelReasoning(b);
+      case "narration": {
+        const text = str(b.text);
+        if (!text) return [];
+        const frames = this.closeReasoning();
+        const [partId, opened] = this.start("reasoning", { source: "narration", text: "" });
+        return [...frames, opened, { event: "part.delta", data: { part_id: partId, text } }, this.end(partId)];
+      }
       case "plan":
         return this.planFrames(b);
       case "tool_call":
@@ -160,6 +170,7 @@ export class TestStudioEncoder {
     const reason = str(done.finish_reason, "stop");
     const state = reason === "cancelled" ? "cancelled" : reason === "error" || reason === "interrupted" ? "error" : "done";
     this.reasoning = null;
+    this.model = null;
     const frames: V2Record[] = [];
     const waiting = new Set(
       [...this.tools.entries()].filter(([call]) => this.toolState.get(call) === "pending").map(([, partId]) => partId),
@@ -182,6 +193,25 @@ export class TestStudioEncoder {
     const payload: Record<string, unknown> = { message_id: str(done.message_id), finish_reason: reason };
     for (const key of ["usage", "source"]) if (done[key]) payload[key] = done[key];
     frames.push({ event: "run.finished", data: payload });
+    return frames;
+  }
+
+  private modelReasoning(b: Record<string, unknown>): V2Record[] {
+    const text = str(b.text);
+    if (str(b.status, "running") === "done") {
+      const partId = this.model;
+      this.model = null;
+      return partId && this.open.has(partId) ? [this.end(partId)] : [];
+    }
+    if (!text) return [];
+    const frames: V2Record[] = [];
+    if (!this.model || !this.open.has(this.model)) {
+      frames.push(...this.closeReasoning());
+      const [partId, opened] = this.start("reasoning", { source: "model", text: "" });
+      this.model = partId;
+      frames.push(opened);
+    }
+    frames.push({ event: "part.delta", data: { part_id: this.model, text } });
     return frames;
   }
 
@@ -305,7 +335,9 @@ export class TestStudioEncoder {
     const frames: V2Record[] = [];
     if (!partId || !this.open.has(partId)) {
       frames.push(...this.closeReasoning());
-      const [id, opened] = this.start("text", position(b));
+      const fields = position(b);
+      if (b.verification === "verified" || b.verification === "adjusted") fields.verification = b.verification;
+      const [id, opened] = this.start("text", fields);
       partId = id;
       this.content.set(contentId, partId);
       frames.push(opened);
@@ -373,6 +405,7 @@ export class TestStudioEncoder {
   private roleChanged(b: Record<string, unknown>): V2Record[] {
     const frames = [...this.open.keys()].map((partId) => this.end(partId, "cancelled"));
     this.reasoning = null;
+    this.model = null;
     this.plan = null;
     this.tools.clear();
     this.toolState.clear();

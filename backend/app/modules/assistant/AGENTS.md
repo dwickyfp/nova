@@ -13,7 +13,11 @@ Paths below are repository-relative; commands run from `backend/`.
   Studio orchestration belongs in the sibling agents module; do not fork a loop
   for a new mode, tool, or domain.
 - Keep provider behavior behind existing provider/capability interfaces. A
-  provider's private reasoning is not public activity, an artifact, or evidence.
+  provider's reasoning is not an artifact or evidence. A reasoning summary the
+  provider returns may be shown live as a bounded, redacted `model_reasoning`
+  activity (`stream_guard.py`); it is never stored in message content or sent
+  back to the model. Narration before a tool call carries no figures, and
+  answer text is published only after numeric verification.
   Publish bounded redacted intent, actions, results, and verified answers.
 - Use `ContextManager` for finite context: retain the system/recent window,
   clear stale tool payloads, and bound earlier-turn notes. Do not replay an

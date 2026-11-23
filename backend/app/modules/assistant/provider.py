@@ -550,7 +550,9 @@ class AssistantProviderClient:
     ) -> AsyncIterator[tuple[str, Any]]:
         """One streaming chat-completions call.
 
-        Yields ``("delta", text)`` for each content fragment as it arrives, then
+        Yields ``("delta", text)`` for each content fragment as it arrives and
+        ``("reasoning", text)`` for each fragment of a reasoning summary the
+        provider streams (none for providers that send no reasoning), then
         exactly one ``("message", dict)`` with the assembled assistant message
         (the same shape ``complete`` returns). Tool calls are accumulated from
         their fragmented deltas and only surfaced in that final message, because
@@ -602,10 +604,13 @@ class AssistantProviderClient:
                         payload = parse_sse_data_line(line)
                         if payload is None:
                             continue
-                        text = accumulator.feed(payload)
-                        if text:
+                        delta = accumulator.feed(payload)
+                        if delta.reasoning:
                             emitted_delta = True
-                            yield ("delta", text)
+                            yield ("reasoning", delta.reasoning)
+                        if delta.text:
+                            emitted_delta = True
+                            yield ("delta", delta.text)
             except BlockedEndpointError as exc:
                 measured = current_measurements()
                 if measured is not None:

@@ -861,6 +861,11 @@ export function StudioChat({
           ref={scrollRef}
           className={cn(
             "flex min-h-0 w-full flex-1 flex-col overflow-y-auto",
+            // Rows scrolled up fade out before they reach the floating workspace
+            // tabs instead of showing through around them. The first row sits
+            // below the fade (`pt-16`), so nothing at the top is hidden.
+            variant !== "panel" &&
+              "[mask-image:linear-gradient(to_bottom,transparent_2.75rem,black_4rem)]",
           )}
           onScroll={onTranscriptScroll}
         >

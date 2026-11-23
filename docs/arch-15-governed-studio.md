@@ -44,7 +44,7 @@ monotonic `seq`; part ids are `<run_id>#<n>` in production order (content blocks
 | Event | Payload | Meaning |
 | --- | --- | --- |
 | `run.started` | `protocol_version`, `role` | First event of every run |
-| `part.start` | `part_id`, `type`, type fields | Opens a part: `reasoning` (`source: "nova"`, `phase`), `text`, `tool`, `guard`, `table`, `chart`, `citation`, `dashboard`, `ui` |
+| `part.start` | `part_id`, `type`, type fields | Opens a part: `reasoning` (`source`: `nova` with `phase`, `model`, or `narration`), `text` (`verification?`: `verified`, `adjusted`), `tool`, `guard`, `table`, `chart`, `citation`, `dashboard`, `ui` |
 | `part.delta` | `part_id`, `text`, `replace?` | Appends to (or replaces) a part's text or interactive program |
 | `part.end` | `part_id`, `state` (`done`, `error`, `cancelled`), `final?` | Seals a part |
 | `tool.status` | `part_id`, `status`, `preview?`, `progress?`, `detail?`, `evidence?` | A tool call's progress and result summary |
@@ -83,8 +83,21 @@ content and role-change separators in `seq` order. Turns stored before v2 have
 no journal; they replay read-only from their recorded steps. The encoder and the
 client's test mirror are both checked against
 [`protocol-v2-contract.json`](../frontend/src/features/studio/runtime/protocol-v2-contract.json).
-Not in this protocol yet: model text before numeric verification and provider
-reasoning.
+Reasoning parts have three sources. `nova` parts are Nova's own phase labels.
+A `model` part is the provider's reasoning summary (`reasoning_content`,
+`reasoning`, `reasoning_details` or thinking blocks, read by
+[`streaming.py`](../backend/app/modules/assistant/streaming.py)); it streams while
+the model call runs and closes when content starts or the call ends. A
+`narration` part is the model's text before a tool call, bounded and with any
+sentence holding a figure dropped. Both are screened fragment by fragment by
+[`StreamingRedactor`](../backend/app/modules/assistant/stream_guard.py), which
+holds back a 64-character tail and never releases part of a credential match.
+Reasoning is never written to message content and never sent back to the model.
+
+Answer text is not streamed before numeric verification. Once the loop has
+verified the answer, it is sent in sentence pieces on a `text` part carrying
+`verification`; the client reveals growing text at reading pace and memoises
+finished Markdown blocks so nothing above the growing block reflows.
 
 ### Human-in-the-loop requests
 

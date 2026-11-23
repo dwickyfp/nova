@@ -30,9 +30,21 @@ export const PROTOCOL_VERSION = 2;
 
 type Envelope = { run_id?: string; seq: number };
 
+/**
+ * Who wrote a reasoning part: `nova` = Nova's own phase label, `model` = the
+ * provider's reasoning summary (streams while the model call runs),
+ * `narration` = what the model said before calling a tool.
+ */
+export type ReasoningSource = "nova" | "model" | "narration";
+
+/** The answer text was sent after its figures were checked (`adjusted`: some were removed). */
+export type TextVerification = "verified" | "adjusted";
+
+const SOURCES = new Set<ReasoningSource>(["nova", "model", "narration"]);
+
 export type PartStartFields =
-  | { type: "reasoning"; source: "nova" | "model"; phase?: ThinkingPhase; text: string; planSteps?: number }
-  | { type: "text"; contentIndex?: number; contentId?: string }
+  | { type: "reasoning"; source: ReasoningSource; phase?: ThinkingPhase; text: string; planSteps?: number }
+  | { type: "text"; contentIndex?: number; contentId?: string; verification?: TextVerification }
   | {
       type: "tool";
       toolCallId: string;
@@ -154,14 +166,20 @@ function partStart(data: Record<string, unknown>): PartStartFields | null {
       return typeof data.text === "string"
         ? {
             type,
-            source: data.source === "model" ? "model" : "nova",
+            source: SOURCES.has(data.source as ReasoningSource) ? (data.source as ReasoningSource) : "nova",
             text: data.text,
             ...(typeof data.phase === "string" ? { phase: data.phase as ThinkingPhase } : {}),
             ...(typeof data.plan_steps === "number" ? { planSteps: data.plan_steps } : {}),
           }
         : null;
     case "text":
-      return { type, ...position(data) };
+      return {
+        type,
+        ...position(data),
+        ...(data.verification === "verified" || data.verification === "adjusted"
+          ? { verification: data.verification }
+          : {}),
+      };
     case "tool":
       return typeof data.tool_call_id === "string" && typeof data.tool_name === "string"
         ? {

@@ -10,6 +10,7 @@ import {
   CircleAlert,
   Copy,
   Database,
+  Lightbulb,
   MessageSquareText,
   Route,
   Search,
@@ -26,7 +27,8 @@ import {
 } from "@/components/ui/collapsible";
 import type { ThinkingPhase, ToolCallStatus } from "@/features/assistant/types";
 import { TextShimmer } from "./text-shimmer";
-import { formatSpan, isFailedStatus, isLiveStatus, isStoppedStatus, recordedSpan } from "./rail-model";
+import { StreamingMarkdown } from "./streaming-markdown";
+import { formatSpan, isFailedStatus, isLiveStatus, isStoppedStatus, reasoningPreview, recordedSpan } from "./rail-model";
 
 /**
  * The agentic process, rendered as one collapsible run per turn.
@@ -36,7 +38,10 @@ import { formatSpan, isFailedStatus, isLiveStatus, isStoppedStatus, recordedSpan
  * answer stays the thing a reader sees first.
  *
  * Every row is a real event Nova recorded. There is no invented chain-of-
- * thought: `thinking` frames carry phase labels and redacted status lines.
+ * thought: `thinking` frames carry phase labels and redacted status lines. A
+ * provider that streams a reasoning summary gets its own "Model reasoning" row
+ * (label `model`), and what the model said before calling a tool is a
+ * narration row (label `narration`); both are redacted by the server.
  * Durations are only shown when Nova measured them, either while this view
  * watched the step run or from the times the run journal recorded.
  */
@@ -86,6 +91,8 @@ function stepIcon(step: RailStep): LucideIcon {
   if (step.kind === "consent") return ShieldQuestion;
   if (step.kind === "tool") return TOOL_ICON[step.label] ?? Database;
   if (step.kind === "note") return step.label === "guard" ? ShieldAlert : CircleAlert;
+  if (step.label === "model") return Lightbulb;
+  if (step.label === "narration") return MessageSquareText;
   return PHASE_ICON[step.label as ThinkingPhase] ?? Route;
 }
 
@@ -379,6 +386,18 @@ export function ProcessRail({
 }
 
 
+/**
+ * A tool's result summary, unless it only repeats what the row already shows
+ * (a chart's summary restates the description given as its preview).
+ */
+function distinctDetail(step: RailStep): string | undefined {
+  const detail = step.detail?.trim();
+  if (!detail || detail === step.text.trim()) return undefined;
+  const preview = step.preview?.trim();
+  if (preview && preview.length >= 12 && detail.includes(preview)) return undefined;
+  return step.detail;
+}
+
 function StepRow({ step, span, now }: {
   step: RailStep;
   span?: Span;
@@ -392,24 +411,35 @@ function StepRow({ step, span, now }: {
   const duration = spanLabel(span, now);
   // Rows with a statement or result can be opened for more detail.
   const [open, setOpen] = useState(false);
+  const reasoning = step.label === "model";
   const body =
     step.body?.trim() && step.body.trim() !== step.text.trim()
       ? step.body
       : undefined;
-  const detail =
-    step.detail?.trim() && step.detail.trim() !== step.text.trim()
-      ? step.detail
-      : undefined;
+  const preview = reasoning && body ? reasoningPreview(body, live) : "";
+  const detail = distinctDetail(step);
   const hasDetail = Boolean(step.preview || body || detail);
 
   useEffect(() => {
     if (step.kind === "tool" && live && step.preview) setOpen(true);
   }, [live, step.kind, step.preview]);
 
-  const words = live ? (
-    <TextShimmer className="min-w-0 truncate">{text}</TextShimmer>
+  const label = live ? (
+    <TextShimmer className={cn("min-w-0 truncate", reasoning && "shrink-0")}>{text}</TextShimmer>
   ) : (
-    <span className={cn("min-w-0 truncate", failed ? "text-destructive" : "text-muted-foreground")}>{text}</span>
+    <span className={cn("min-w-0 truncate", reasoning && "shrink-0", failed ? "text-destructive" : "text-muted-foreground")}>{text}</span>
+  );
+  // A reasoning row stays one line: its label, then a preview of the summary
+  // (the newest words while it streams). The full text opens below.
+  const words = preview ? (
+    <span className="flex min-w-0 items-baseline gap-2">
+      {label}
+      <span className="min-w-0 truncate text-xs text-muted-foreground" data-testid="reasoning-preview">
+        {preview}
+      </span>
+    </span>
+  ) : (
+    label
   );
   const meta = duration ? (
     <span className="ml-auto shrink-0 pl-2 font-mono text-xs tabular-nums text-muted-foreground">{duration}</span>
@@ -448,7 +478,16 @@ function StepRow({ step, span, now }: {
           <div className="mt-1 mb-2 ml-6 min-w-0 space-y-2">
             {step.preview ? <ToolPreview preview={step.preview} /> : null}
             {detail ? <ReasoningBody text={detail} /> : null}
-            {body ? <ReasoningBody text={body} /> : null}
+            {body && reasoning ? (
+              <StreamingMarkdown
+                text={body}
+                animate={live}
+                offline
+                className="border-l border-border pl-3 text-sm leading-relaxed text-muted-foreground"
+              />
+            ) : body ? (
+              <ReasoningBody text={body} />
+            ) : null}
           </div>
         </CollapsibleContent>
       ) : null}
