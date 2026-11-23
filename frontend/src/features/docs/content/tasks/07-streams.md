@@ -24,7 +24,9 @@ them.
   destination tables used below.
 - The source must be a **Primary Key** table that is not partitioned, with
   simple column types: numbers, decimals, true/false, text, dates and
-  date-times. It cannot have a row filter or masking policy.
+  date-times. It cannot have a row filter or masking policy, including one
+  written for a name pattern that matches it (such as `ord*`) or a
+  tag-based mask.
 - Your active role needs `SELECT` on the source.
 - Select the database in your worksheet. In the examples the source is
   `orders`, a Primary Key table with `order_id`, `customer`, `amount` and
@@ -239,6 +241,7 @@ above work again.
 | `A table or view occupies this name` | A stream cannot have the same name as a table or view. |
 | `Stream already exists with a different source or mode` | `CREATE STREAM IF NOT EXISTS` found a stream with that name on another table or in another mode. |
 | `Use either OR REPLACE or IF NOT EXISTS, not both` | Pick one. |
+| `The source has a row filter or masking policy; a stream would expose historical values those policies cannot govern` | A row filter or masking policy could apply to the table. Ask an administrator, or use another table. |
 | `Streams can be read by SELECT and INSERT` | Another kind of statement, such as `CREATE TABLE ... AS SELECT`, tried to read a stream. |
 
 Streams on views, external catalogs or partitioned tables are not supported.

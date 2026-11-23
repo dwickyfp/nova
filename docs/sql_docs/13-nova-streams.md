@@ -139,7 +139,13 @@ An internal, **unpartitioned Primary Key** table whose columns are integer,
 `LARGEINT`, `DECIMAL`, `FLOAT`/`DOUBLE`, `BOOLEAN`, `CHAR`/`VARCHAR`/`STRING`,
 `DATE` or `DATETIME`, with **no Ranger row filter or masking policy**. A Stream
 shows historical (deleted, overwritten) values, which such policies cannot be
-shown to govern, so Nova refuses rather than guess. Creating a Stream needs
+shown to govern, so Nova refuses rather than guess. The check fails closed: a
+filter or mask counts when its resources *could* cover the table, including
+wildcards (`ord*`, `sal?s`), exclusions, a name differing only in case, and
+recursive or unknown resource kinds. Any enabled mask in a linked Ranger tag
+service also counts, because Nova cannot resolve tags to tables. Without
+Ranger, or when its policies cannot be read, `CREATE STREAM` and stream reads
+fail with `STREAM_GOVERNANCE_UNSUPPORTED`. Creating a Stream needs
 `SELECT` on the source for your active role; reading it is checked again each
 time, and the engine checks your `SELECT` in the same statement that reads it.
 

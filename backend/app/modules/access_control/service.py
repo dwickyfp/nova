@@ -901,6 +901,44 @@ class AccessControlService:
                 return False
         return True
 
+    @staticmethod
+    def resource_may_cover(policy: dict, catalog: str, database: str, table: str) -> bool:
+        """Whether a policy's resources could cover ``catalog.database.table``.
+
+        Conservative: anything this check cannot evaluate exactly counts as
+        covering the table (unknown resource kinds, empty or recursive
+        resources, character classes, glob exclusions). Names compare without
+        regard to case and Ranger wildcards (``*``, ``?``) are expanded, so a
+        caller refusing on "covered" fails closed. Conditions and validity
+        schedules only narrow a policy, so they never make it miss.
+        """
+        resources = policy.get("resources") or {}
+        if not resources or set(resources) - {"catalog", "database", "table", "column"}:
+            return True
+        for key, expected in (("catalog", catalog), ("database", database), ("table", table)):
+            resource = resources.get(key)
+            if resource is None:
+                continue
+            values = [str(value) for value in resource.get("values") or []]
+            if not values or resource.get("isRecursive"):
+                continue
+            name = expected.casefold()
+            if resource.get("isExcludes"):
+                if any(any(c in value for c in "*?[]") for value in values):
+                    continue
+                if name in {value.casefold() for value in values}:
+                    return False
+                continue
+            if not any(
+                value == "*"
+                or "[" in value
+                or "]" in value
+                or fnmatch.fnmatchcase(name, value.casefold())
+                for value in values
+            ):
+                return False
+        return True
+
     @classmethod
     def _object_access_comparison_supported(
         cls,

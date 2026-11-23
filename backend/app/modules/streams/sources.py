@@ -656,18 +656,34 @@ class SourceRegistry:
 
 
 async def require_governance_supported(database: str, table: str) -> None:
-    """Refuse sources with Ranger row filters or masks.
+    """Refuse sources that a Ranger row filter or mask could cover.
 
-    A stream returns historical before images (deleted and overwritten rows);
-    a filter or mask evaluated on current rows cannot be shown to govern them.
+    A stream returns historical before images (deleted and overwritten rows),
+    and its rows are read by the writer account, not the caller; a filter or
+    mask evaluated on current rows for the caller cannot be shown to govern
+    them. The check fails closed: without Ranger, when policies cannot be
+    read, and for any filter or mask whose resources could cover the source
+    (wildcards, exclusions, case differences, recursive or unknown resources,
+    see ``AccessControlService.resource_may_cover``) or that comes from a tag
+    service, whose tags Nova cannot resolve to tables.
     """
     if not settings.RANGER_PASSWORD:
-        return
+        raise StreamError(
+            "STREAM_GOVERNANCE_UNSUPPORTED",
+            "Streams need Ranger to prove the source has no row filter or masking policy",
+        )
     from app.integrations.ranger.client import ranger_client
     from app.modules.access_control.service import AccessControlService
 
     try:
         policies = await ranger_client.list_policies()
+        service = await ranger_client.get_service(settings.RANGER_SERVICE_NAME)
+        if not service:
+            raise LookupError("the Ranger service is missing")
+        tag_service = str(service.get("tagService") or "")
+        tag_policies = (
+            await ranger_client.list_policies(service_name=tag_service) if tag_service else []
+        )
     except Exception as exc:  # noqa: BLE001 - unknown governance is not "none"
         raise StreamError(
             "STREAM_GOVERNANCE_UNSUPPORTED", "Data policies could not be read for the source"
@@ -677,13 +693,24 @@ async def require_governance_supported(database: str, table: str) -> None:
             policy.get("service", settings.RANGER_SERVICE_NAME) == settings.RANGER_SERVICE_NAME
             and policy.get("isEnabled", True)
             and int(policy.get("policyType", 0)) in {1, 2}
-            and AccessControlService._resource_matches(policy, "default_catalog", database, table)
+            and AccessControlService.resource_may_cover(
+                policy, "default_catalog", database, table
+            )
         ):
             raise StreamError(
                 "STREAM_GOVERNANCE_UNSUPPORTED",
                 "The source has a row filter or masking policy; a stream would expose "
                 "historical values those policies cannot govern",
             )
+    if any(
+        policy.get("isEnabled", True) and int(policy.get("policyType", 0)) in {1, 2}
+        for policy in tag_policies
+    ):
+        raise StreamError(
+            "STREAM_GOVERNANCE_UNSUPPORTED",
+            "Tag-based masking policies may cover the source; streams cannot prove they "
+            "govern its historical values",
+        )
 
 
 async def grant_writer(record: SourceRecord) -> None:
