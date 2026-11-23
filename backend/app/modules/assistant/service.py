@@ -5367,7 +5367,25 @@ async def _autocompose_artifacts(
             _record_step(context, {"kind": "runtime_decision",
                                    "ui_fallback": f"autocompose_{reason}", "status": "done"})
         ordered.extend(PendingArtifact(kind, payload) for kind, payload in built)
-    return _key_figures(ordered, evidence)
+    ordered = _key_figures(ordered, evidence)
+    calls = {step["evidence_id"]: step["tool_call_id"] for step in context.steps or []
+             if step.get("kind") == "tool" and step.get("evidence_id") and step.get("tool_call_id")}
+    for item in ordered:
+        if item.kind == "ui":
+            # Every page records the query behind each result it binds.
+            provenance = item.payload.setdefault("provenance", {})
+            provenance["tool_calls"] = {key: calls[key] for key in
+                                        provenance.get("evidence_ids") or [] if key in calls}
+            # A result another participant fetched has no tool call here; the
+            # statement it carries is its source.
+            statements = {
+                key: str(evidence.tables[key]["sql"])
+                for key in provenance.get("evidence_ids") or []
+                if key not in calls and (evidence.tables.get(key) or {}).get("sql")
+            }
+            if statements:
+                provenance["statements"] = statements
+    return ordered
 
 
 def _key_figures(
