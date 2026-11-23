@@ -150,7 +150,56 @@ def _field(name: str, schema: Any) -> dict[str, Any]:
     return out
 
 
+#: The field types the tool lists, and the JSON Schema each one stands for.
+_LISTED_TYPES: dict[str, dict[str, Any]] = {
+    "text": {"type": "string"},
+    "select": {"type": "string"},
+    "date": {"type": "string", "format": "date"},
+    "date_range": {"type": "object", "format": "date-range"},
+    "number": {"type": "number"},
+    "integer": {"type": "integer"},
+    "toggle": {"type": "boolean"},
+}
+
+
+def _listed_fields(items: list[Any]) -> dict[str, Any]:
+    """A form given as a list of fields, as the tool asks for it, as JSON Schema.
+
+    Providers that enforce strict tool schemas cannot fill a free-form object,
+    so the tool describes fields as a typed list. Unused optional keys may
+    arrive empty or null.
+    """
+    properties: dict[str, Any] = {}
+    required: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            raise HumanInputError("Each field must be an object with a name and a type.")
+        name = str(item.get("name") or "")
+        kind = item.get("type")
+        if kind not in _LISTED_TYPES:
+            raise HumanInputError(
+                f"Field {name or '?'} type must be one of {', '.join(_LISTED_TYPES)}."
+            )
+        spec: dict[str, Any] = dict(_LISTED_TYPES[str(kind)])
+        for key in ("title", "description"):
+            if isinstance(item.get(key), str) and item[key].strip():
+                spec[key] = item[key]
+        if kind == "select":
+            spec["enum"] = item.get("values") or []
+        for bound in ("minimum", "maximum"):
+            if isinstance(item.get(bound), (int, float)) and not isinstance(item[bound], bool):
+                spec[bound] = item[bound]
+        if name in properties:
+            raise HumanInputError(f"Field {name} appears twice.")
+        properties[name] = spec
+        if item.get("required") is True:
+            required.append(name)
+    return {"type": "object", "properties": properties, "required": required}
+
+
 def _form_fields(schema: Any) -> tuple[list[dict[str, Any]], list[str]]:
+    if isinstance(schema, list):
+        schema = _listed_fields(schema)
     if not isinstance(schema, dict) or schema.get("type", "object") != "object":
         raise HumanInputError("fields must be a JSON Schema object with properties.")
     properties = schema.get("properties")
@@ -205,6 +254,17 @@ def _options(raw: Any) -> list[dict[str, Any]]:
 
 
 _RECOMMENDED_BADGES = frozenset({"recommended", "suggested", "best", "best option"})
+
+#: Told to the model whenever a person can answer during the run.
+ASK_INSTRUCTION = (
+    "The user can answer you during this run through request_human_input. "
+    "Whenever you would ask the user something or offer options for them to pick "
+    "from, call request_human_input instead of writing the question or the "
+    "options in your answer: kind question with 2-4 suggested answers, kind "
+    "choice for options to pick, or kind form for a few values. Then continue "
+    "the work with their answer. Never end your answer with a question or a "
+    "list of options for the user to reply to."
+)
 
 
 def normalize_request(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -418,13 +478,24 @@ _PARAMETERS: dict[str, Any] = {
             "description": "question: whether the user may type their own answer (default true).",
         },
         "fields": {
-            "type": "object",
-            "description": (
-                "form: a JSON Schema object. properties (1-8) may be string (with enum for "
-                "a list of known values, or format date), number, integer (minimum, "
-                "maximum), boolean, or {\"type\": \"object\", \"format\": \"date-range\"}; "
-                "each with a title. List required field names in required."
-            ),
+            "type": "array",
+            "description": "form: 1-8 fields, in the order the user fills them in.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "A short identifier."},
+                    "title": {"type": "string", "description": "The label the user sees."},
+                    "type": {"type": "string", "enum": list(_LISTED_TYPES)},
+                    "values": {
+                        "type": "array", "items": {"type": "string"},
+                        "description": "select: the values to choose from.",
+                    },
+                    "minimum": {"type": "number"},
+                    "maximum": {"type": "number"},
+                    "required": {"type": "boolean"},
+                },
+                "required": ["name", "title", "type"],
+            },
         },
         "submit_label": {"type": "string", "description": "form: the submit button label."},
         "options": {

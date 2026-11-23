@@ -1274,6 +1274,14 @@ class AssistantLoop:
                 len(messages),
             )
             messages.insert(leading, {"role": "system", "content": CLAIMS_INSTRUCTION})
+        if context.ask_human is not None and self._registry.get(human_input.TOOL_NAME) is not None:
+            # Without this the model tends to end the turn on a question in its
+            # answer text, which the user can only answer by retyping it.
+            leading = next(
+                (index for index, item in enumerate(messages) if item.get("role") != "system"),
+                len(messages),
+            )
+            messages.insert(leading, {"role": "system", "content": human_input.ASK_INSTRUCTION})
         if (
             self._summarize_history
             and self._dropped_lines
@@ -3505,6 +3513,12 @@ async def _ask_human(
     try:
         request = human_input.normalize_request(invocation.arguments)
     except human_input.HumanInputError as exc:
+        # The reason and the argument shapes only: never the user-facing text.
+        logger.warning(
+            "request_human_input rejected: %s (kind=%r, argument types=%s)",
+            exc, invocation.arguments.get("kind"),
+            {key: type(value).__name__ for key, value in invocation.arguments.items()},
+        )
         refuse("INVALID_HUMAN_INPUT", str(exc))
         return
     context.human_requests += 1

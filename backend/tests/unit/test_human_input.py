@@ -313,3 +313,39 @@ def test_a_badge_that_repeats_the_recommended_mark_is_dropped():
     first, second = request["options"]
     assert first["badges"] == ["Fast"] and first["recommended"] is True
     assert "badges" not in second and second["recommended"] is True
+
+
+def test_a_form_given_as_a_field_list_reads_like_its_json_schema():
+    # Providers with strict tool schemas fill every optional key, with nulls or
+    # empty lists where the field does not use it.
+    request = normalize_request({
+        "kind": "form", "title": "Which period and how many cities?",
+        "choices": [], "options": [], "allow_free_text": True,
+        "fields": [
+            {"name": "period", "title": "Period", "type": "date_range",
+             "values": [], "minimum": None, "maximum": None, "required": True},
+            {"name": "top", "title": "Top cities", "type": "integer",
+             "values": [], "minimum": 1, "maximum": 20, "required": False},
+            {"name": "metric", "title": "Rank by", "type": "select",
+             "values": ["Revenue", "Orders"], "minimum": None, "maximum": None,
+             "required": True},
+        ],
+    })
+    assert [(f["name"], f["widget"]) for f in request["fields"]] == [
+        ("period", "date_range"), ("top", "integer"), ("metric", "select"),
+    ]
+    assert request["fields"][1]["minimum"] == 1 and request["fields"][1]["maximum"] == 20
+    assert request["fields"][2]["values"] == ["Revenue", "Orders"]
+    assert request["required"] == ["period", "metric"]
+
+
+@pytest.mark.parametrize("fields, message", [
+    ([], "1 to 8"),
+    ([{"name": "x", "title": "X", "type": "file"}], "type must be one of"),
+    ([{"name": "x", "title": "X", "type": "select", "values": []}], "values"),
+    ([{"name": "x", "title": "X", "type": "text"}, {"name": "x", "title": "Y", "type": "text"}],
+     "appears twice"),
+])
+def test_a_field_list_the_card_cannot_show_is_returned_for_repair(fields, message):
+    with pytest.raises(human_input.HumanInputError, match=message):
+        normalize_request({"kind": "form", "title": "T", "fields": fields})
