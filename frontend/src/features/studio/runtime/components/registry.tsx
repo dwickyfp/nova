@@ -13,6 +13,7 @@ import type { DatavizLocator } from "../../dataviz/api";
 import { MapFieldContext, useLocalMapField } from "../../intelligent-ui/map-state";
 import { UiRuntimeContext } from "../../intelligent-ui/runtime-context";
 import type { ComponentBlock } from "./block";
+import { FigureTile } from "./figure-tile";
 import type { DatavizChartProps, GeoMapProps, KpiTilesProps } from "./schemas";
 
 const GeoMapView = lazy(() => import("../../intelligent-ui/geo-map"));
@@ -82,59 +83,20 @@ export function DatavizChart({
   );
 }
 
-function kpiFormat(item: KpiTilesProps["items"][number]): Intl.NumberFormat {
-  const options: Intl.NumberFormatOptions = {
-    maximumFractionDigits: item.decimals ?? 2,
-    minimumFractionDigits: item.decimals !== undefined ? Math.min(item.decimals, 2) : 0,
-  };
-  if (item.format === "currency" && item.currency) {
-    Object.assign(options, { style: "currency", currency: item.currency });
-  }
-  if (item.format === "percent") options.style = "percent";
-  return new Intl.NumberFormat(undefined, options);
-}
-
-/** Large figures read compact on a tile; the exact value stays in its title. */
-function compact(value: number, item: KpiTilesProps["items"][number]): string {
-  if (Math.abs(value) < 1_000_000 || item.format === "percent") return kpiFormat(item).format(value);
-  return new Intl.NumberFormat(undefined, {
-    notation: "compact",
-    maximumFractionDigits: 1,
-    ...(item.format === "currency" && item.currency
-      ? { style: "currency", currency: item.currency }
-      : {}),
-  }).format(value);
-}
-
 export function KpiTiles({ props }: { props: KpiTilesProps }) {
   return (
     <section className="nova-chat-item min-w-0" aria-label={props.title || "Key figures"} data-component="KpiTiles">
       {props.title ? <h3 className="mb-2 text-sm font-medium">{props.title}</h3> : null}
       <dl className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 lg:grid-cols-3">
         {props.items.map((item) => (
-          <div
-            key={`${item.evidence_id}:${item.column}`}
-            className="min-w-0 rounded-xl border bg-card px-4 py-3"
-          >
-            <dt className="truncate text-sm text-muted-foreground">{item.label}</dt>
-            <dd
-              className="mt-1 truncate text-2xl font-semibold tabular-nums"
-              title={item.value === null ? undefined : kpiFormat(item).format(item.value)}
-            >
-              {item.value === null ? (
-                <span className="text-muted-foreground">No value</span>
-              ) : (
-                compact(item.value, item)
-              )}
-            </dd>
-          </div>
+          <FigureTile key={`${item.evidence_id}:${item.column}`} figure={item} />
         ))}
       </dl>
     </section>
   );
 }
 
-const MAP_RUNTIME = { readOnly: false, markAction: () => {} };
+const MAP_RUNTIME = { readOnly: false };
 
 export function GeoMap({ props }: { props: GeoMapProps }) {
   const p = useMemo(
@@ -145,6 +107,7 @@ export function GeoMap({ props }: { props: GeoMapProps }) {
       latitude: props.latitude,
       geometry: props.geometry,
       label: props.label,
+      options: props.options,
     }),
     [props],
   );

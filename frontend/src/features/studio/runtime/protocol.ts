@@ -22,7 +22,7 @@ import type {
 } from "@/features/assistant/types";
 import type { GuardDecision } from "@/features/agents/api";
 import type { DashboardArtifactBlock } from "@/features/viz/types";
-import type { UiBlock } from "../intelligent-ui/types";
+import type { UiBlock } from "./components/block";
 import { hitlStatus, parseHitlRequest } from "./hitl/parse";
 import { parseCapability, parseDraft, parseSaved } from "./artifacts/parse";
 import type { ArtifactDraft, ArtifactSaved, SaveCapability } from "./artifacts/types";

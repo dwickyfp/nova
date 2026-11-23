@@ -6,7 +6,6 @@ import { liveEncoder } from "./runtime/v2-test-encoder";
 import { visibleContent } from "./turn-content-order";
 import type { AssistantEvent } from "@/features/assistant/types";
 import { parseAssistantEvent } from "@/features/assistant/events";
-import { validateProgram } from "./intelligent-ui/validator";
 
 /**
  * The Studio transcript reducer.
@@ -53,20 +52,12 @@ const thinking = (
 describe("studio transcript reducer", () => {
   it("seals UI with its close frame or the run's end and restores the same ordered program", () => {
     const program =
-      'root = Col([Text("Adjust assumptions"),Input($n,"Units")])\n$n=5';
-    const parsed = validateProgram(program);
+      'root = Page([header, scenario])\nheader = Header("Adjust assumptions")\n$n = 5\nscenario = Controls("Inputs", [Slider("Units", $n, 0, 10)])\n';
     const payload = {
-      catalog_version: parsed.catalog_version,
-      program_sha256: "a".repeat(64),
+      catalog_version: "nova-layout-1",
       fallback: "Adjust assumptions.",
-      state_defaults: parsed.state,
-      evidence: {},
-      actions: [],
-      provenance: {
-        evidence_ids: [],
-        scope: "user_simulation",
-        assumption: true,
-      },
+      state_defaults: {},
+      provenance: { evidence_ids: [], scope: "verified_result_rows", composer: "model" as const },
     };
     const meta = parseAssistantEvent(
       "ui",
@@ -99,6 +90,13 @@ describe("studio transcript reducer", () => {
     expect(closedByRun.content[0].complete).toBe(true);
     const sealedUi = closedByRun.content[0];
     expect(sealedUi.type === "ui" && sealedUi.block.program).toBe(program);
+    // A page that turned out not to be the answer is emptied in place.
+    const retracted = run([
+      meta,
+      chunk,
+      { type: "ui_delta", content_index: 1, content_id: "content-1", text: "", replace: true },
+    ]);
+    expect(retracted.content[0].type === "ui" && retracted.content[0].block.program).toBe("");
     const restored = replayThread([
       {
         message_id: "reply",
@@ -132,13 +130,10 @@ describe("studio transcript reducer", () => {
       content_index: 0,
       content_id: "run-1:0",
       payload: {
-        catalog_version: "nova-openui-3",
-        program_sha256: "a".repeat(64),
+        catalog_version: "nova-layout-1",
         fallback: "The written answer.",
         state_defaults: {},
-        evidence: {},
-        actions: [],
-        provenance: { evidence_ids: [], scope: "user_simulation", assumption: true },
+        provenance: { evidence_ids: [], scope: "verified_result_rows" },
       },
     };
     const chunk = (text: string): AssistantEvent =>

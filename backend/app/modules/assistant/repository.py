@@ -12,7 +12,6 @@ No credential column exists here: a thread holds titles and message text only.
 
 from __future__ import annotations
 
-import hashlib
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -95,78 +94,6 @@ class AssistantRepository:
 
     async def ensure_schema(self) -> None:
         """PostgreSQL migrations own this schema; nothing is created at startup."""
-
-    # ── Interactive UI state ───────────────────────────────────
-
-    async def ui_source(self, thread_id: str, message_id: str, content_id: str, *,
-                        user_name: str, security_context: dict) -> dict | None:
-        async with _store(user_name, read_only=True) as store:
-            row = await store.get_message(thread_id, message_id)
-        if row is None:
-            return None
-        from app.modules.assistant.security import same_ui_context
-
-        if row["role"] != "assistant" or not same_ui_context(
-            _security_or_none(row["security_context"]), security_context
-        ):
-            return None
-        blocks = [step for step in _steps_or_empty(row["steps"]) if isinstance(step, dict)
-                  and step.get("kind") == "ui" and step.get("content_id") == content_id]
-        return blocks[0] if len(blocks) == 1 else None
-
-    @staticmethod
-    def _state_id(thread_id: str, message_id: str, content_id: str, *, user_name: str,
-                  security_context: dict, block: dict) -> str:
-        return hashlib.sha256(_dump([
-            user_name, thread_id, message_id, content_id, security_context["active_role"],
-            block["program_sha256"],
-        ]).encode()).hexdigest()
-
-    @staticmethod
-    def _state_view(row: dict | None, block: dict) -> dict:
-        from app.modules.assistant.intelligent_ui import validate_state
-
-        if row is None or row["program_sha256"] != block["program_sha256"]:
-            return {"revision": 0, "state": block["state_defaults"],
-                    "program_sha256": block["program_sha256"]}
-        validate_state(row["state"], block["state_defaults"])
-        return {"revision": int(row["revision"]), "state": row["state"],
-                "program_sha256": row["program_sha256"]}
-
-    async def get_ui_state(self, thread_id: str, message_id: str, content_id: str, *,
-                           user_name: str, security_context: dict, block: dict) -> dict:
-        # State follows the user's active role, like the answer it belongs to.
-        state_id = self._state_id(thread_id, message_id, content_id, user_name=user_name,
-                                  security_context=security_context, block=block)
-        async with _store(user_name, read_only=True) as store:
-            row = await store.get_ui_state(state_id)
-        return self._state_view(row, block)
-
-    async def put_ui_state(self, thread_id: str, message_id: str, content_id: str, *,
-                           user_name: str, security_context: dict, block: dict,
-                           revision: int, state: dict) -> dict:
-        from app.modules.assistant.intelligent_ui import validate_state
-
-        validate_state(state, block["state_defaults"])
-        state_id = self._state_id(thread_id, message_id, content_id, user_name=user_name,
-                                  security_context=security_context, block=block)
-        try:
-            async with _store(user_name) as store:
-                saved = await store.put_ui_state(
-                    state_id, thread_id=thread_id, message_id=message_id,
-                    content_id=content_id, program_sha256=block["program_sha256"],
-                    state=state, expected_revision=revision,
-                )
-        except MetadataConflict:
-            raise HTTPException(
-                409, "UI state changed on another device; reload saved state"
-            ) from None
-        return {"revision": int(saved["revision"]), "state": saved["state"],
-                "program_sha256": saved["program_sha256"]}
-
-    async def ui_action_seen(self, thread_id: str, operation_id: str, *, user_name: str) -> bool:
-        async with _store(user_name, read_only=True) as store:
-            return await store.ui_action_seen(thread_id, operation_id)
 
     # ── Learning ───────────────────────────────────────────────
 

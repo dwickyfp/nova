@@ -230,7 +230,7 @@ class AssistantMetadataRepository:
         return row is not None
 
     async def delete_thread(self, thread_id: str) -> bool:
-        """Remove the caller's thread with its messages and interactive state."""
+        """Remove the caller's thread with its messages and its saved chart history."""
         await self._bound()
         for table in ("config_assistant_ui_state", "config_assistant_messages"):
             await self.connection.execute(
@@ -369,17 +369,6 @@ class AssistantMetadataRepository:
             "LIMIT 2",
             (thread_id, self.actor.principal, Jsonb([{"content_id": content_id}])),
         )
-
-    async def ui_action_seen(self, thread_id: str, operation_id: str) -> bool:
-        """Whether an interactive action with this operation id is already a turn."""
-        await self._bound()
-        row = await self._one(
-            "SELECT 1 AS seen FROM nova_meta.config_assistant_messages WHERE user_name=%s "
-            "AND thread_id=%s AND role='user' AND jsonb_typeof(steps)='array' "
-            "AND steps->0->>'operation_id'=%s LIMIT 1",
-            (self.actor.principal, thread_id, operation_id),
-        )
-        return row is not None
 
     async def set_feedback(self, thread_id: str, message_id: str, feedback: str | None) -> bool:
         await self._bound()

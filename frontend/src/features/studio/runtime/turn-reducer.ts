@@ -19,7 +19,7 @@ import type {
 } from "@/features/assistant/types";
 import type { GuardDecision } from "@/features/agents/api";
 import type { DashboardArtifactBlock } from "@/features/viz/types";
-import type { UiBlock } from "../intelligent-ui/types";
+import type { UiBlock } from "./components/block";
 import type { RailStep } from "../thought-turn";
 import type { HitlKind, HitlRequestSpec, HitlStatus } from "./hitl/types";
 import type { ComponentBlock } from "./components/block";

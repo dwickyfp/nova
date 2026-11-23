@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { geoBounds, geoFeatures, geometryPositions, MAX_GEO_FEATURES, parseGeometry } from "./geometry";
-import { validateProgram } from "./validator";
 
 describe("business geometry", () => {
   it("accepts explicit engine geometry without swapping coordinates", () => {
@@ -49,16 +48,5 @@ describe("business geometry", () => {
     const { collection } = geoFeatures([{ x: 179, y: -2 }, { x: -179, y: 3 }], { longitude: "x", latitude: "y" });
     expect(geoBounds(collection.features)).toEqual([[179, -2], [181, 3]]);
     expect(geoBounds([])).toBeNull();
-  });
-
-  it("requires governed evidence even outside a business question", () => {
-    expect(() => validateProgram('root=GeoMap([{longitude:106,latitude:-6}],"longitude","latitude")')).toThrow();
-    const result = validateProgram(
-      '$selected=-1\nroot=Col([GeoMap(@Evidence("r"),"longitude","latitude",null,"branch","Branches",$selected)])',
-      { r: [{ longitude: 106, latitude: -6, branch: "A" }] },
-      true,
-    );
-    expect(result.evidence_ids).toEqual(["r"]);
-    expect(result.state).toEqual({ $selected: -1 });
   });
 });

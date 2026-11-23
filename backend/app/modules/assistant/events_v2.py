@@ -215,8 +215,11 @@ class StudioStreamEncoder:
         self._open[part_id] = part_type
         return part_id, self._frame(PART_START, {"part_id": part_id, "type": part_type, **fields})
 
-    def _delta(self, part_id: str, text: Any) -> str:
-        return self._frame(PART_DELTA, {"part_id": part_id, "text": str(text or "")})
+    def _delta(self, part_id: str, text: Any, *, replace: bool = False) -> str:
+        payload: dict[str, Any] = {"part_id": part_id, "text": str(text or "")}
+        if replace:
+            payload["replace"] = True
+        return self._frame(PART_DELTA, payload)
 
     def _end(self, part_id: str, state: str = "done", final: Any = None) -> str:
         self._open.pop(part_id, None)
@@ -308,7 +311,8 @@ class StudioStreamEncoder:
             if target is None or target not in self._open:
                 return []
             if name == "ui_delta":
-                return [self._delta(target, body.get("text"))]
+                # ``replace`` empties a page that turned out not to be the answer.
+                return [self._delta(target, body.get("text"), replace=bool(body.get("replace")))]
             return [self._end(target)]
         if name == events.EVENT_INPUT_REQUIRED:
             return self._input_required(origin, body)

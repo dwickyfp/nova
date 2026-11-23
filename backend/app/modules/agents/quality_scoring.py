@@ -24,7 +24,6 @@ SCORERS = frozenset(
         "action_verification",
         "ui_validity",
         "ui_evidence",
-        "ui_action_success",
         "guard_compliance",
         "latency",
         "efficiency",
@@ -55,7 +54,6 @@ FAILURES = {
     "action_verification": "ACTION_VERIFICATION_FAILED",
     "ui_validity": "INVALID_UI",
     "ui_evidence": "UNGROUNDED_UI",
-    "ui_action_success": "UI_ACTION_INCOMPLETE",
     "guard_compliance": "GUARD_EXPECTATION_UNMET",
     "latency": "TOO_SLOW",
     "efficiency": "INEFFICIENT_EXECUTION",
@@ -222,7 +220,6 @@ def _score_assertion(assertion: Assertion, trace: dict) -> Score:
         "action_verification",
         "ui_validity",
         "ui_evidence",
-        "ui_action_success",
     }:
         if _recorded(expected, actual):
             passed = _subset(expected, actual)

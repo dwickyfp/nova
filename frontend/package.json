@@ -19,9 +19,6 @@
     "test:browser": "vitest",
     "test:coverage": "vitest run --coverage --browser.headless",
     "test:browser:install": "playwright install chromium --with-deps",
-    "ui:bundle": "node scripts/build-ui-validator.mjs",
-    "ui:check": "node scripts/build-ui-validator.mjs --check",
-    "ui:verify": "node scripts/verify-intelligent-ui.mjs",
     "components:bundle": "node scripts/build-component-schemas.mjs",
     "components:check": "node scripts/build-component-schemas.mjs --check"
   },

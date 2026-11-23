@@ -96,7 +96,7 @@ async def test_a_charted_answer_gets_no_extra_visual_or_provider_call(monkeypatc
     assert not _payloads(frames, "ui") and len(_payloads(frames, "component")) == 1
     chart = _components(frames, "DatavizChart")[0]["props"]
     assert chart["chart"]["visual"] == "bar" and chart["draft_ref"].startswith("dr1.")
-    assert "OPTIONAL_UI_CATALOG" in context.ui_prompt
+    assert "<PAGE_LAYOUT>" in context.ui_prompt
     assert '"finish_reason":"stop"' in "".join(frames).replace(" ", "")
     _, _, plain_provider = await _run(
         [dict(item) for item in CHART_SCRIPT], _chart_registry(),
@@ -140,15 +140,18 @@ async def test_a_charted_located_result_still_gets_its_map(monkeypatch) -> None:
     assert len(_components(frames, "GeoMap")) == 1
 
 
-async def test_a_rejected_program_on_a_located_result_still_shows_its_map() -> None:
+async def test_a_rejected_page_on_a_located_result_still_shows_its_map() -> None:
     invalid = 'Two outlets are listed.\n```openui\nroot = Col([Unknown("x")])\n```'
     registry = ToolRegistry()
     registry.register(TableQuery(OUTLETS))
-    frames, context, _ = await _run(
+    frames, context, provider = await _run(
         [tool_call_frame("q-1", name="query_execute", arguments={"sql": "SELECT 1"}),
-         text_frame(invalid), text_frame(invalid)],
+         text_frame(invalid)],
         registry, intelligent_ui=True, plan=MAP_PLAN,
     )
+    # An invalid page costs no repair call: the answer keeps its text and gets its map.
+    assert provider.calls == 2
+    assert "Two outlets are listed." in "".join(frames)
     assert len(_components(frames, "GeoMap")) == 1 and not _payloads(frames, "ui")
     assert any(step.get("ui_fallback") == "validation_failed" for step in context.steps)
     assert "Only text is available" not in "".join(frames)

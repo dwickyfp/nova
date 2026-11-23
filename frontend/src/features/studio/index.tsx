@@ -14,7 +14,6 @@ import { StudioArtifacts } from "./studio-artifacts";
 import { StudioCapabilities } from "./studio-capabilities";
 import { StudioIntelligence } from "./studio-intelligence";
 import { NewspaperPage } from "./news/newspaper-page";
-import { flushUiStates } from "./intelligent-ui/state";
 import { CREATE_SKILL_COMMAND, SKILL_AUTHOR_ID } from "./skill-document";
 import { pickDefaultAgent, rememberLastAgent } from "./default-agent";
 import { DatavizWorkspace } from "./dataviz/dataviz-workspace";
@@ -171,7 +170,6 @@ function StudioAppContent() {
   ]);
 
   const selectAgent = async (id: string) => {
-    try { await flushUiStates(); } catch (error) { toast.error((error as Error).message); return false; }
 
     setMobileSidebarOpen(false);
     setInitialPrompt("");
@@ -185,7 +183,6 @@ function StudioAppContent() {
   };
 
   const selectThread = async (id: string) => {
-    try { await flushUiStates(); } catch (error) { toast.error((error as Error).message); return; }
 
     const owner = threadAgentId(id);
     if (!owner) return;
@@ -200,7 +197,6 @@ function StudioAppContent() {
   };
 
   const startNewChat = async () => {
-    try { await flushUiStates(); } catch (error) { toast.error((error as Error).message); return; }
 
     setMobileSidebarOpen(false);
     setInitialPrompt("");
@@ -285,7 +281,6 @@ function StudioAppContent() {
         <StudioSidebar
           view={view}
           onView={async (nextView) => {
-            try { await flushUiStates(); } catch (error) { toast.error((error as Error).message); return; }
 
             setMobileSidebarOpen(false);
             navigate({

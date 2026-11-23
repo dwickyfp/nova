@@ -143,7 +143,10 @@ export class TestStudioEncoder {
       case "ui_delta": {
         const partId = this.content.get(str(b.content_id));
         if (!partId || !this.open.has(partId)) return [];
-        return [{ event: "part.delta", data: { part_id: partId, text: str(b.text) } }];
+        return [{
+          event: "part.delta",
+          data: { part_id: partId, text: str(b.text), ...(b.replace === true ? { replace: true } : {}) },
+        }];
       }
       case "content_block_done": {
         const partId = this.content.get(str(b.content_id));

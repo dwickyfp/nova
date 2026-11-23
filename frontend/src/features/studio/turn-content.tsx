@@ -13,13 +13,11 @@ import type { OrderedContent, TranscriptTurn } from "./studio-chat";
 import { AddToDatavizButton } from "./dataviz/add-to-dataviz";
 import type { DatavizLocator } from "./dataviz/api";
 import { visibleContent } from "./turn-content-order";
-import { IntelligentUi } from "./intelligent-ui/renderer";
-import type { UiAction } from "./intelligent-ui/types";
-import { UI_CATALOG_VERSION } from "./intelligent-ui/catalog";
 import { ComponentView } from "./runtime/components/registry";
 import type { ComponentBlock } from "./runtime/components/block";
 import { ArtifactPreviewCard } from "./runtime/artifacts/artifact-views";
 import { useArtifact } from "./runtime/artifacts/scope";
+import { LayoutView } from "./runtime/components/layout-view";
 
 /**
  * The canonical renderer for an agent turn's authored output.
@@ -35,7 +33,6 @@ export function TurnContent({
   selectedContentId,
   onSelectContent,
   datavizThreadId,
-  uiContext,
   content,
 }: {
   turn: TranscriptTurn;
@@ -53,36 +50,19 @@ export function TurnContent({
    * **Add to Dataviz** when Nova's server allows it; nothing otherwise.
    */
   datavizThreadId?: string | null;
-  uiContext?: {
-    agentId: string;
-    threadId: string;
-    onAction: (message: string, action: UiAction) => Promise<void>;
-  };
 }) {
-  // One request, one visual: a tool chart of a result an interactive answer
-  // already draws is left out, and a table is folded under the chart drawn
-  // from it ("Source data") instead of repeating its numbers above it.
-  // Studio passes one content segment at a time; a run composes its content
-  // at the end, so a table and the chart drawn from it share a segment.
-  const all = content ?? visibleContent(turn.content);
-  const uiCalls = new Set(
-    all.flatMap((item) =>
-      item.type === "ui" && item.complete
-        ? Object.values(item.block.provenance.tool_calls ?? {})
-        : [],
-    ),
-  );
+  // One request, one visual: a table is folded under the chart drawn from it
+  // ("Source data") instead of repeating its numbers above it. Studio passes
+  // one content segment at a time; a run composes its content at the end, so
+  // a table and the chart drawn from it share a segment.
+  const ordered = content ?? visibleContent(turn.content);
   // A chart tool's block names its own call; `source_tool_call_id` names the
   // query whose result it drew.
   const drawnFrom = (block: ChartBlock) =>
     block.source_tool_call_id ? [block.tool_call_id, block.source_tool_call_id] : [block.tool_call_id];
-  const ordered = all.filter(
-    (item) => !(item.type === "chart" && drawnFrom(item.block).some((id) => uiCalls.has(id))),
+  const chartedCalls = new Set(
+    ordered.flatMap((item) => (item.type === "chart" ? drawnFrom(item.block) : [])),
   );
-  const chartedCalls = new Set([
-    ...uiCalls,
-    ...ordered.flatMap((item) => (item.type === "chart" ? drawnFrom(item.block) : [])),
-  ]);
   // Stable while the tables are unchanged, so finished Markdown blocks stay memoised.
   const tableKey = ordered.flatMap((item) => (item.type === "table" ? [item.id] : [])).join("|");
   const representedTables = useMemo(() => ordered.flatMap((item) => (item.type === "table" ? [item.block] : [])), [tableKey]);
@@ -90,12 +70,9 @@ export function TurnContent({
     datavizThreadId && turn.messageId && turn.state === "done"
       ? { thread_id: datavizThreadId, message_id: turn.messageId, content_id: contentId }
       : null;
-  // Once charts, figures or an interactive view show the answer, its tables
-  // are the source data behind them: folded below, one click away.
-  const foldAll = ordered.some(
-    (item) => item.type === "component" || (item.type === "ui" && item.complete &&
-      item.block.catalog_version === UI_CATALOG_VERSION),
-  );
+  // Once charts, figures or a page show the answer, its tables are the
+  // source data behind them: folded below, one click away.
+  const foldAll = ordered.some((item) => item.type === "component" || item.type === "ui");
   const folded = (item: OrderedContent): boolean =>
     turn.state === "done" && item.type === "table" &&
     (foldAll || (!!item.block.tool_call_id && chartedCalls.has(item.block.tool_call_id)));
@@ -186,29 +163,17 @@ export function TurnContent({
                 </p>
                 <Markdown offline>{item.block.fallback}</Markdown>
               </div>
-            ) : turn.state === "cancelled" ||
-            turn.state === "error" ||
-            (turn.state === "done" && !item.complete) ? (
-              <Markdown offline>{item.block.fallback}</Markdown>
             ) : (
-              <IntelligentUi
+              // Live and replayed pages render through the same streaming parser.
+              <LayoutView
                 block={item.block}
-                complete={item.complete}
-                source={
-                  uiContext && turn.messageId
-                    ? {
-                        agentId: uiContext.agentId,
-                        threadId: uiContext.threadId,
-                        messageId: turn.messageId,
-                        contentId: item.id,
-                      }
-                    : undefined
-                }
-                onAction={uiContext?.onAction}
+                program={item.block.program}
+                streaming={!item.complete && turn.state === "streaming"}
+                ready={stored}
                 dataviz={
                   datavizThreadId && turn.messageId && turn.state === "done"
-                    ? { threadId: datavizThreadId, messageId: turn.messageId, contentId: item.id }
-                    : undefined
+                    ? { thread_id: datavizThreadId, message_id: turn.messageId, content_id: item.id }
+                    : null
                 }
               />
             )

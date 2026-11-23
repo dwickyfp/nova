@@ -65,9 +65,6 @@ from app.modules.assistant.schemas import (
     ThreadListResponse,
     ThreadUpdateRequest,
     ThreadView,
-    UiMapMetricInput,
-    UiMediaInput,
-    UiStateInput,
 )
 from app.modules.assistant.security import observation_context, session_security
 from app.modules.assistant.service import AssistantLoop, LoopContext
@@ -448,42 +445,6 @@ async def delete_thread(
     return None
 
 
-@router.get("/threads/{thread_id}/messages/{message_id}/ui-state/{content_id}")
-async def get_ui_state(thread_id: str, message_id: str, content_id: str,
-                       user: dict = Depends(get_current_user)):
-    """State of an interactive answer block in the caller's own conversation."""
-    await _require_thread(thread_id, user["username"])
-    return await ui_access.get_state(thread_id, message_id, content_id, user)
-
-
-@router.put("/threads/{thread_id}/messages/{message_id}/ui-state/{content_id}")
-async def put_ui_state(thread_id: str, message_id: str, content_id: str, body: UiStateInput,
-                       user: dict = Depends(get_current_user)):
-    await _require_thread(thread_id, user["username"])
-    return await ui_access.put_state(
-        thread_id, message_id, content_id, user, program_sha256=body.program_sha256,
-        revision=body.revision, state=body.state,
-    )
-
-
-@router.post("/threads/{thread_id}/messages/{message_id}/ui-state/{content_id}/media")
-async def get_ui_media(thread_id: str, message_id: str, content_id: str, body: UiMediaInput,
-                       user: dict = Depends(get_current_user)):
-    await _require_thread(thread_id, user["username"])
-    return await ui_access.media(
-        thread_id, message_id, content_id, user, media_type=body.type, props=body.props,
-    )
-
-
-@router.post("/threads/{thread_id}/messages/{message_id}/ui-state/{content_id}/map-metric")
-async def record_map_metric(thread_id: str, message_id: str, content_id: str,
-                            body: UiMapMetricInput, user: dict = Depends(get_current_user)):
-    await _require_thread(thread_id, user["username"])
-    return await ui_access.map_metric(
-        thread_id, message_id, content_id, user, event=body.event, elapsed_ms=body.elapsed_ms,
-    )
-
-
 @router.get("/memories")
 async def list_memories(user: dict = Depends(get_current_user)):
     """What Neva remembers for the caller under the active role."""
@@ -579,17 +540,10 @@ async def send_message(
     # Store the user's message before the stream starts, so a disconnect still
     # leaves a coherent transcript.
     attachments = body.prepared_attachments
-    ui_trace: list[dict] = []
-    if body.ui_action is not None:
-        # A button or form of an earlier answer: accepted once, as user input.
-        body.content, ui_step = await ui_access.accept_action(
-            thread_id, body.ui_action, body.content, user,
-        )
-        ui_trace.append(ui_step)
     prompt = attachment_prompt(body.content, attachments)
     await assistant_repository.append_message(
         thread_id, user_name=user_name, role="user", content=body.content,
-        security_context=stamp, attachments=attachments, steps=ui_trace,
+        security_context=stamp, attachments=attachments,
     )
     if attachments:
         await write_audit_log(
@@ -620,10 +574,6 @@ async def send_message(
         user_name=user_name,
         # Interactive answers (tables, charts, forms) as in Studio.
         intelligent_ui=True,
-        ui_action_accepted=body.ui_action is not None,
-        ui_private_context=bool(body.ui_action) or any(
-            step.get("kind") == "ui_action" for row in history for step in row.get("steps") or []
-        ),
         execution_timezone=configured_timezone(),
         database=body.database or (app_domain.database if app_domain else None),
         schema_name=body.schema_name or (app_domain.schema_name if app_domain else None),

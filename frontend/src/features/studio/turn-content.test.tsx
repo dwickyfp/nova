@@ -18,7 +18,6 @@ vi.mock("./dataviz/api", async (importOriginal) => ({
 const withQueries = (ui: React.ReactNode) => (
   <QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>
 );
-import { UI_CATALOG_VERSION } from "./intelligent-ui/catalog";
 
 const table: TableBlock = {
   title: "Channels in 2025",
@@ -65,6 +64,13 @@ function turn(answer: string, result = table): TranscriptTurn {
   };
 }
 
+const PAGE = {
+  catalog_version: "nova-layout-1",
+  fallback: "Useful fallback.",
+  state_defaults: {},
+  provenance: { evidence_ids: [], scope: "verified_result_rows", composer: "model" as const },
+};
+
 describe("one table per query result", () => {
   it("folds a table under the chart drawn from the same query", async () => {
     const original = turn("Revenue by month.", { ...table, tool_call_id: "call-1" });
@@ -103,49 +109,30 @@ describe("one table per query result", () => {
     expect(screen.getByText("Source data (1 table)", { exact: true }).query()).toBeNull();
   });
 
-  it("leaves out a tool chart that an interactive answer already draws", async () => {
+  it("draws a page answer with its title and figures", async () => {
     const original = turn("Revenue by month.", { ...table, tool_call_id: "call-1" });
-    original.content.push(
-      {
-        id: "ui", index: 2, type: "ui", complete: true,
-        block: {
-          catalog_version: UI_CATALOG_VERSION, program_sha256: "test",
-          program: 'root = Col([Text("Interactive summary")])',
-          fallback: "Useful fallback.", evidence: {}, state_defaults: {}, actions: [],
-          provenance: {
-            evidence_ids: [], scope: "user_simulation", assumption: true,
-            tool_calls: { e1: "call-1" },
-          },
-        },
+    original.content.push({
+      id: "ui", index: 2, type: "ui", complete: true,
+      block: {
+        ...PAGE,
+        program: 'root = Page([h, k])\nh = Header("Revenue overview", "June and July")\n'
+          + 'k = KpiTiles([Metric("Revenue", 1500, "number", 0.25, "vs. June")])',
       },
-      {
-        id: "chart", index: 3, type: "chart", complete: true,
-        block: {
-          tool_call_id: "chart-call", source_tool_call_id: "call-1",
-          chart_spec: '{"title":"Duplicate chart","mark":"bar"}',
-        },
-      },
-    );
+    });
     const screen = await render(withQueries(<TurnContent turn={original} />));
-    await expect.element(screen.getByText("Interactive summary")).toBeVisible();
-    expect(screen.container.textContent).not.toContain("Duplicate chart");
+    await expect.element(screen.getByRole("heading", { name: "Revenue overview" })).toBeVisible();
+    await expect.element(screen.getByText("vs. June")).toBeVisible();
   });
 
   it.each([
-    ["done", UI_CATALOG_VERSION, true],
-    ["error", UI_CATALOG_VERSION, false],
-    ["done", "unknown-catalog", false],
-  ] as const)("keeps source tables accessible with %s / %s", async (state, version, folded) => {
+    ["done", true],
+    ["error", false],
+  ] as const)("keeps source tables accessible when the turn is %s", async (state, folded) => {
     const original = turn("Retail leads.");
     original.state = state;
     original.content.push({
       id: "ui", index: 2, type: "ui", complete: true,
-      block: {
-        catalog_version: version, program_sha256: "test",
-        program: 'root = Col([Text("Interactive summary")])',
-        fallback: "Useful fallback.", evidence: {}, state_defaults: {}, actions: [],
-        provenance: { evidence_ids: [], scope: "user_simulation", assumption: true },
-      },
+      block: { ...PAGE, program: 'root = Page([t])\nt = Text("Interactive summary")' },
     });
     original.messageId = "message-1";
     dataviz.check.mockResolvedValue({ results: [
@@ -178,12 +165,10 @@ describe("one table per query result", () => {
     const events = [
       // Streamed events pass the stream parser, which requires a real digest.
       { type: "ui", content_index: 0, content_id: "run-1:0", payload: {
-        catalog_version: UI_CATALOG_VERSION, program_sha256: "a".repeat(64),
-        fallback: "Retail is ahead of web.", evidence: {}, state_defaults: {}, actions: [],
-        provenance: { evidence_ids: [], scope: "user_simulation", assumption: true },
+        ...PAGE, fallback: "Retail is ahead of web.",
       } },
       { type: "ui_delta", content_index: 0, content_id: "run-1:0",
-        text: 'root = Col([Text("Interactive summary")])' },
+        text: 'root = Page([t])\nt = Text("Interactive summary")\n' },
       { type: "done", message_id: "", finish_reason: "stop" },
     ] satisfies AssistantEvent[];
     const feed = liveEncoder();
@@ -200,11 +185,7 @@ describe("one table per query result", () => {
     const message = turn("Retail leads.");
     message.content.push({
       id: "ui", index: 2, type: "ui", complete: true, tooLarge: true,
-      block: {
-        catalog_version: UI_CATALOG_VERSION, program_sha256: "test", program: "",
-        fallback: "Retail is ahead of web.", evidence: {}, state_defaults: {}, actions: [],
-        provenance: { evidence_ids: [], scope: "user_simulation", assumption: true },
-      },
+      block: { ...PAGE, program: "", fallback: "Retail is ahead of web." },
     });
     const screen = await render(withQueries(<TurnContent turn={message} />));
     await expect.element(screen.getByText(

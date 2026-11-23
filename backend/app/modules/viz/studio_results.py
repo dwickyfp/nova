@@ -456,8 +456,22 @@ async def resolve(locator: Locator, user: dict[str, Any]) -> ResolvedPreview:
             provenance_issue=issue,
         )
 
-    # An interactive answer: one node of its program.
     wanted = locator.node or {}
+    if wanted.get("component") == "DatavizChart":
+        # A native chart on an answer page, by its position among the page's charts.
+        position = wanted.get("position")
+        charts = block.get("charts") if kind == "ui" else None
+        if (isinstance(position, bool) or not isinstance(position, int)
+                or not isinstance(charts, list) or not 0 <= position < len(charts)
+                or not isinstance(charts[position], dict)):
+            raise PreviewError("That chart could not be found in the answer.")
+        chart = charts[position]
+        return _native_component(locator, {
+            "component": "DatavizChart", "props": {"title": chart.get("title")},
+            "source": chart.get("source"), "plan": chart.get("plan"),
+        }, steps, agent_id)
+
+    # An interactive answer from a retired catalog: one node of its program.
     evidence_id = _string(wanted.get("evidence_id"))
     provenance = block.get("provenance") or {}
     if not evidence_id or evidence_id not in (provenance.get("evidence_ids") or []):

@@ -1,6 +1,6 @@
 ---
 title: Charts in answers
-description: Read the charts and tables an agent draws in its answers, see the data behind them, and keep a chart.
+description: Read the charts, overview pages and what-if controls an agent draws in its answers, see the data behind them, and keep a chart.
 ---
 
 ## What it is
@@ -22,6 +22,39 @@ A data answer is laid out like a short report:
 3. The charts.
 4. A short explanation of what the charts show.
 5. **Source data**, folded, with the tables the answer used.
+
+## Overview pages
+
+Ask for an overview, a dashboard, a comparison of several figures or a
+what-if, and the answer is laid out as a page instead of a paragraph. For
+example:
+
+```text
+Give me a sales overview for June and July 2025, with a what-if slider for revenue.
+```
+
+The page builds up while the agent writes it: the title and a one-line
+summary appear first, then each section as soon as it is ready. A page can
+hold:
+
+- a title and a short summary of what it shows;
+- key figures, each with its change (for example **+12.4%** in green, or a
+  red figure for a drop) and a short note such as "vs. June";
+- charts, the same live charts as everywhere else in Studio;
+- tables of the returned rows;
+- a short explanation;
+- what-if controls: sliders, choices and switches.
+
+A single figure or a short list is still answered in a sentence, not a page.
+
+## What-if controls
+
+Moving a slider or picking an option recalculates the scenario figures on the
+page straight away. The controls only recalculate figures already on the
+page. They do not run a new query, and nothing you set is sent to the agent or
+saved: when you reopen the conversation, the controls start again from the
+values the agent chose. Scenario figures are assumptions, and the page labels
+them as scenarios. The figures read from your data do not move.
 
 ## Ask for a chart
 
@@ -48,10 +81,6 @@ the page.
 - Open the step summary at the top of the answer to see the SQL that produced
   the rows.
 
-An interactive answer with filters or inputs says so under the view: they use
-only the rows already returned and do not fetch new data, and values you enter
-are assumptions. A view without filters or inputs shows no note.
-
 ## Keep a chart
 
 A chart in an answer stays in the conversation, so you can come back to it
@@ -68,8 +97,13 @@ Tables use **Add to Dataviz**; see
   under another role or session. Ask again under your current role to see
   it." Ask the question again under the new role.
 - Only you can see the charts in your own conversations.
-- Charts in conversations from before this change still show as they were
-  drawn.
+- Interactive answers from earlier versions of Studio show their figures,
+  charts and tables as a page, marked "An earlier interactive answer, shown
+  read-only." Their old buttons, forms and saved inputs are no longer
+  available.
+- Every figure on a page comes from the returned rows. If the agent writes a
+  figure the rows do not support, that part of the page is left out and the
+  rest still shows.
 
 - **Add to Dataviz** appears only on charts and tables that Nova can rebuild
   exactly in Dataviz. Maps, and views that combine or recalculate rows, do not
@@ -77,6 +111,6 @@ Tables use **Add to Dataviz**; see
 - A chart shows at most the rows the query returned. Ask a narrower question
   if you need more detail.
 - "This interactive answer is too large to show. Here is the written answer."
-  means the interactive view was bigger than Studio can display, so the
-  written answer is shown in its place. Ask for fewer charts or a narrower
-  result to get an interactive view.
+  means the page was bigger than Studio can display, so the written answer is
+  shown in its place. Ask for fewer charts or a narrower result to get a
+  page.

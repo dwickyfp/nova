@@ -8,7 +8,6 @@ import {
 import { getThread } from "./thread-client";
 import type { ToolCallDecision } from "./tool-call-card";
 import type { AssistantEvent } from "./types";
-import type { UiAction as UiBlockAction } from "@/features/studio/intelligent-ui/types";
 import {
   restoredMessage,
   useAssistantTranscript,
@@ -115,7 +114,6 @@ export function useAssistantTurn({
       message: string,
       attachments: AttachedQuery[] = [],
       files: SentFile[] = [],
-      uiAction?: UiBlockAction,
     ) => {
       if (streaming) return;
       const thread = threadId ?? (await ensureThread());
@@ -149,7 +147,6 @@ export function useAssistantTurn({
            providerId: context?.providerId,
            appContext: turnAppContext,
            files,
-           uiAction,
            onEvent: (event) => {
              transcript.applyEvent(event);
              if (event.type === "client_action") {

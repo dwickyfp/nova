@@ -1,9 +1,11 @@
-import { useContext, useState } from "react";
-import { useStateField } from "@openuidev/react-lang";
-import { UiRuntimeContext } from "./runtime-context";
-import { NodeDatavizAction } from "./artifact-button";
-import { DataTable } from "./components";
+/**
+ * A simple chart of a stored chart's rows (see `spec-chart.ts`), with its data
+ * one click away. Loaded on demand: most turns hold no stored Vega chart.
+ */
+import { useState, type ReactNode } from "react";
 import { ChartFrame } from "@/features/viz/chart-frame";
+import { ResultTable } from "../../result-table";
+import { cellOf, type SpecChart } from "./spec-chart";
 import {
   Area,
   AreaChart,
@@ -22,23 +24,26 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-type Props = Record<string, unknown>;
-const str = (p: Props, key: string) => String(p[key] ?? "");
+type Row = Record<string, unknown>;
 // Business totals run to billions; a full number does not fit the axis gutter
 // and loses its leading digits, so axis ticks read compactly (1.5B).
 const compact = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
 const axisTick = (value: unknown) =>
   typeof value === "number" && Number.isFinite(value) ? compact.format(value) : String(value);
-export default function DataChart({ p }: { p: Props }) {
+export default function SpecChartView({
+  plan: p,
+  action,
+}: {
+  plan: Extract<SpecChart, { kind: "chart" }>;
+  /** The header action, such as Add to Dataviz. */
+  action?: ReactNode;
+}) {
   const [hiddenSeries, setHiddenSeries] = useState<string[]>([]);
   const [showData, setShowData] = useState(false);
-  const selected = useStateField("selected", p.selected);
-  const { readOnly } = useContext(UiRuntimeContext);
-  const data = Array.isArray(p.data) ? (p.data as Props[]) : [];
-  const x = str(p, "x"),
-    y = str(p, "y");
-  const series =
-    Array.isArray(p.series) && p.series.length ? p.series.map(String) : [y];
+  const data: Row[] = p.rows;
+  const x = p.x;
+  const series = p.series;
+  const y = series[0] ?? "";
   const color = (i: number) => `var(--chart-${(i % 8) + 1})`;
   const chartProps = {
     data,
@@ -71,26 +76,17 @@ export default function DataChart({ p }: { p: Props }) {
     </>
   );
   return (
-    <section className="min-w-0" aria-label={str(p, "title") || "Chart"}>
+    <section className="min-w-0 rounded-xl border bg-card p-4" aria-label={p.title || "Chart"}>
       <div className="mb-2 flex min-h-7 items-center gap-2">
-        <p className="min-w-0 flex-1 text-sm font-medium">{str(p, "title")}</p>
-        <NodeDatavizAction
-          data={p.data}
-          target={{
-            component: "Chart",
-            x: typeof p.x === "string" ? p.x : undefined,
-            y: typeof p.y === "string" ? p.y : undefined,
-            type: typeof p.type === "string" ? p.type : undefined,
-            title: typeof p.title === "string" ? p.title : undefined,
-          }}
-        />
+        <p className="min-w-0 flex-1 truncate text-sm font-medium">{p.title || "Chart"}</p>
+        {action}
       </div>
       {series.length > 1 && !["pie", "donut", "scatter"].includes(String(p.type)) ? (
         <fieldset className="mb-2 flex flex-wrap gap-x-4 gap-y-1">
           <legend className="sr-only">Chart series</legend>
           {series.map((key, i) => (
             <label key={key} className="flex min-h-11 items-center gap-2 text-sm">
-              <input type="checkbox" checked={!hiddenSeries.includes(key)} disabled={readOnly}
+              <input type="checkbox" checked={!hiddenSeries.includes(key)}
                 onChange={() => setHiddenSeries((current) => current.includes(key)
                   ? current.filter((item) => item !== key) : [...current, key])} />
               <span aria-hidden="true" className="size-3 rounded-sm border border-foreground" style={{ background: color(i) }} />
@@ -201,18 +197,8 @@ export default function DataChart({ p }: { p: Props }) {
             )}
           </ChartFrame>
       ) : (
-        <p className="text-sm text-muted-foreground">
-          No rows match these filters.
-        </p>
+        <p className="text-sm text-muted-foreground">This chart has no rows.</p>
       )}
-      {p.selected !== undefined && data.length ? <label className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-        Select a result
-        <select aria-label="Select chart result" className="min-h-11 rounded-md border border-input bg-background px-2" disabled={readOnly}
-          value={typeof selected.value === "number" ? selected.value : -1} onChange={(event) => selected.setValue(Number(event.target.value))}>
-          <option value={-1}>Choose a row</option>
-          {data.map((row, index) => <option key={index} value={index}>{String(row[x] ?? index + 1)}</option>)}
-        </select>
-      </label> : null}
       <details
         className="mt-2"
         onToggle={(event) => setShowData(event.currentTarget.open)}
@@ -222,7 +208,15 @@ export default function DataChart({ p }: { p: Props }) {
         </summary>
         {/* The grid is built on request, not for every chart in a long thread. */}
         {showData ? (
-          <DataTable p={{ data, columns: [x, ...series], title: "Chart data", datavizAction: false }} />
+          <ResultTable
+            block={{
+              title: "Chart data",
+              columns: [x, ...series],
+              rows: data.map((row) => [x, ...series].map((column) => cellOf(row[column]))),
+            }}
+            note={null}
+            heading={false}
+          />
         ) : null}
       </details>
     </section>
