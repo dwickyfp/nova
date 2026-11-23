@@ -48,6 +48,7 @@ def test_platform_mutations_require_active_accountadmin(monkeypatch, operation, 
     monkeypatch.setattr(repository, "get_tool", AsyncMock(
         side_effect=lambda _, owner_name: TOOL if owner_name == "__nova__" else None,
     ))
+    monkeypatch.setattr(repository, "list_tools", AsyncMock(return_value=[]))
     monkeypatch.setattr(repository, operation_name, mutation)
     discover = AsyncMock(return_value=[])
     monkeypatch.setattr(studio_router.mcp_client, "list_tools", discover)

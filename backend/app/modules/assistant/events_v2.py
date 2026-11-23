@@ -234,7 +234,7 @@ class StudioStreamEncoder:
         }
         if origin != self.run_id:
             fields["origin_run_id"] = origin
-        for name in ("skill_name", "classification"):
+        for name in ("skill_name", "display_name", "classification"):
             if view.get(name):
                 fields[name] = view[name]
         part_id, frame = self._start("tool", **fields)

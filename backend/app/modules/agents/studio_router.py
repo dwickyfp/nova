@@ -448,17 +448,32 @@ async def discover_mcp_server(
         await _audit_connector(user, "DISCOVER", server_id, "FAILED")
         return McpDiscoverResponse(ok=False, status="error", error=str(exc))
 
+    source = f"mcp:{server_id}"
+    # Rediscovery refreshes descriptions and schemas but keeps an administrator's
+    # switch; a tool the server no longer offers is switched off, not left callable.
+    known = {
+        tool["name"]: tool
+        for tool in await agent_repository.list_tools(owner_name=owner)
+        if tool["source"] == source
+    }
+    offered = {tool["name"] for tool in discovered}
     for tool in discovered:
+        current = known.get(tool["name"])
         await agent_repository.upsert_tool(
             owner_name=owner,
             fields={
                 "name": tool["name"],
                 "description": tool["description"],
-                "source": f"mcp:{server_id}",
+                "source": source,
                 "input_schema": tool["input_schema"],
-                "is_enabled": True,
+                "is_enabled": True if current is None else bool(current["is_enabled"]),
             },
         )
+    for name, tool in known.items():
+        if name not in offered and tool["is_enabled"]:
+            await agent_repository.set_tool_enabled(
+                tool["tool_id"], owner_name=owner, enabled=False
+            )
     await agent_repository.update_mcp_server(
         server_id, owner_name=owner, fields={"last_status": "connected"}
     )

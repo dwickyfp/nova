@@ -271,7 +271,7 @@ def _is_loopback_host(host: str) -> bool:
 
 def guarded_async_client(
     *,
-    timeout: float = 15.0,
+    timeout: float | httpx.Timeout = 15.0,
     allow_private_network: bool = False,
     loopback_host: str | None = None,
 ) -> httpx.AsyncClient:

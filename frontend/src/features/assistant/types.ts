@@ -20,6 +20,7 @@ export type ToolClassification =
 export type ToolCallView = {
   tool_name: string;
   skill_name?: string | null;
+  display_name?: string | null;
   /** Redacted SQL only. The backend guarantees this before the event is sent. */
   sql_preview: string;
   classification: ToolClassification;

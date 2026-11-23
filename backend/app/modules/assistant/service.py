@@ -2399,6 +2399,7 @@ class AssistantLoop:
                     if invocation.tool_name == "load_skill"
                     else None
                 ),
+                display_name=getattr(tool, "display_name", None),
                 sql_preview=preview,
                 classification=classification,
                 status="pending",

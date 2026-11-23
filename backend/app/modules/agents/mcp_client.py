@@ -37,6 +37,10 @@ MCP_PROTOCOL_VERSION = "2025-06-18"
 #: One discovery call must not hang a request.
 _TIMEOUT_SECONDS = 15.0
 
+#: A tool call may do real work (a report, a lookup); it gets longer to answer
+#: than discovery, still bounded. The turn's own budget and Stop still apply.
+_CALL_TIMEOUT = httpx.Timeout(60.0, connect=_TIMEOUT_SECONDS)
+
 #: A tools/list response is metadata; a huge body is a misbehaving server.
 _MAX_BODY_BYTES = 2_000_000
 
@@ -162,7 +166,7 @@ async def call_tool(
         "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
     }
     try:
-        async with guarded_async_client(timeout=_TIMEOUT_SECONDS) as client:
+        async with guarded_async_client(timeout=_CALL_TIMEOUT) as client:
             await _handshake(client, endpoint, headers)
             response = await client.post(
                 endpoint, headers=headers,
@@ -172,6 +176,8 @@ async def call_tool(
             payload = _read_rpc(response)
     except BlockedEndpointError as exc:
         raise McpError("The server endpoint is not allowed.") from exc
+    except httpx.TimeoutException as exc:
+        raise McpError("The server did not answer within 60 seconds.") from exc
     except httpx.HTTPError as exc:
         raise McpError(f"Could not reach the server: {type(exc).__name__}") from exc
     result = payload.get("result")
@@ -213,6 +219,7 @@ def _read_rpc(response: httpx.Response) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise McpError("The server returned an unexpected response shape.")
     if "error" in parsed:
-        message = str(parsed["error"].get("message") or "unknown error")
+        error = parsed["error"] if isinstance(parsed["error"], dict) else {}
+        message = " ".join(str(error.get("message") or "unknown error").split())[:300]
         raise McpError(f"The server reported an error: {message}")
     return parsed
