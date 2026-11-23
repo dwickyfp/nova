@@ -13,7 +13,7 @@ import type { DatavizLocator } from "../../dataviz/api";
 import { MapFieldContext, useLocalMapField } from "../../intelligent-ui/map-state";
 import { UiRuntimeContext } from "../../intelligent-ui/runtime-context";
 import type { ComponentBlock } from "./block";
-import { FigureTile } from "./figure-tile";
+import { FIGURE_GRID, FigureTile } from "./figure-tile";
 import type { DatavizChartProps, GeoMapProps, KpiTilesProps } from "./schemas";
 
 const GeoMapView = lazy(() => import("../../intelligent-ui/geo-map"));
@@ -87,7 +87,7 @@ export function KpiTiles({ props }: { props: KpiTilesProps }) {
   return (
     <section className="nova-chat-item min-w-0" aria-label={props.title || "Key figures"} data-component="KpiTiles">
       {props.title ? <h3 className="mb-2 text-sm font-medium">{props.title}</h3> : null}
-      <dl className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 lg:grid-cols-3">
+      <dl className={FIGURE_GRID}>
         {props.items.map((item) => (
           <FigureTile key={`${item.evidence_id}:${item.column}`} figure={item} />
         ))}

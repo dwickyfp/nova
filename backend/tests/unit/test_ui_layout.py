@@ -220,12 +220,16 @@ def test_an_answer_from_a_retired_catalog_replays_as_a_read_only_page():
         'b2 = ResultTable("Rows", ["month", "revenue"], [["2025-06", 10], ["2025-07", 12]])',
     ]
     journal = {"kind": "event_journal", "events": [
-        {"event": "part.start", "data": {"part_id": "p1", "type": "ui", "content_id": "c1",
+        {"event": "part.start", "data": {"run_id": "r", "seq": 7, "part_id": "p1", "type": "ui",
+                                         "content_id": "c1",
                                          "block": {**{k: v for k, v in LEGACY.items()
                                                       if k not in {"kind", "program"}}}}},
-        {"event": "part.delta", "data": {"part_id": "p1", "text": "root = Col("}},
-        {"event": "part.delta", "data": {"part_id": "p1", "text": "[...])"}},
-        {"event": "part.end", "data": {"part_id": "p1", "state": "done"}},
+        {"event": "part.delta", "data": {"run_id": "r", "seq": 8, "part_id": "p1",
+                                         "text": "root = Col("}},
+        {"event": "part.delta", "data": {"run_id": "r", "seq": 9, "part_id": "p1",
+                                         "text": "[...])"}},
+        {"event": "part.end", "data": {"run_id": "r", "seq": 10, "part_id": "p1",
+                                       "state": "done"}},
     ]}
     step, migrated = migrate_steps([LEGACY, journal])
     assert step["catalog_version"] == ul.CATALOG and step["provenance"]["legacy"] is True
@@ -236,7 +240,9 @@ def test_an_answer_from_a_retired_catalog_replays_as_a_read_only_page():
     assert start["data"]["block"]["catalog_version"] == ul.CATALOG
     assert "source" not in start["data"]["block"]["charts"][0]
     assert "evidence" not in start["data"]["block"]
-    assert delta["data"] == {"part_id": "p1", "text": step["program"]}
+    assert start["data"]["block"]["provenance"]["legacy"] is True
+    # The browser orders records by their sequence: the replacement keeps it.
+    assert delta["data"] == {"run_id": "r", "seq": 8, "part_id": "p1", "text": step["program"]}
     assert end["event"] == "part.end"
     # A page in the current catalog is left as it is.
     current = {"kind": "ui", "catalog_version": ul.CATALOG, "program": "root = Page([])"}

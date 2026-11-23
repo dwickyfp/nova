@@ -132,7 +132,9 @@ def migrate_steps(steps: list[Any]) -> list[Any]:
 def _migrate_journal(step: Any, programs: dict[str, str]) -> Any:
     if not (isinstance(step, dict) and step.get("kind") == "event_journal"):
         return step
-    legacy: set[str] = set()
+    # part id -> its replacement program, until the part's first delta.
+    pending: dict[str, str] = {}
+    replaced: set[str] = set()
     events: list[Any] = []
     for entry in step.get("events") or []:
         data = entry.get("data") if isinstance(entry, dict) else None
@@ -144,16 +146,23 @@ def _migrate_journal(step: Any, programs: dict[str, str]) -> Any:
             block: dict[str, Any] = raw if isinstance(raw, dict) else {}
             program = programs.get(str(data.get("content_id") or ""))
             if block.get("catalog_version") in LEGACY_CATALOGS and program is not None:
-                legacy.add(part_id)
+                pending[part_id] = program
                 visible = {key: value for key, value in block.items()
                            if key not in {"evidence", "actions", "program_sha256"}}
+                provenance = block.get("provenance")
                 visible |= {"catalog_version": CATALOG, "state_defaults": {},
-                            "charts": _visible_charts(block.get("charts"))}
+                            "charts": _visible_charts(block.get("charts")),
+                            "provenance": {**(provenance if isinstance(provenance, dict) else {}),
+                                           "legacy": True}}
                 events.append({**entry, "data": {**data, "block": visible}})
-                events.append({"event": PART_DELTA, "data": {"part_id": data.get("part_id"),
-                                                             "text": program}})
                 continue
-        if entry.get("event") == PART_DELTA and part_id in legacy:
+        if entry.get("event") == PART_DELTA and part_id in pending:
+            # The first delta keeps its envelope (run id, sequence), which the
+            # browser needs to order the record, and carries the whole program.
+            events.append({**entry, "data": {**data, "text": pending.pop(part_id)}})
+            replaced.add(part_id)
+            continue
+        if entry.get("event") == PART_DELTA and part_id in replaced:
             continue
         events.append(entry)
     return {**step, "events": events}

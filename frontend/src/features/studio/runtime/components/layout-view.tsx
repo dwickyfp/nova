@@ -26,7 +26,7 @@ import { LAYOUT_COMPONENTS, LAYOUT_ROOT, type LayoutComponentName } from "./layo
 import { DatavizChart } from "./registry";
 import { cellOf } from "./spec-chart";
 import type { LayoutBlock } from "./block";
-import { FigureTile, type Figure } from "./figure-tile";
+import { FIGURE_GRID, FigureTile, type Figure } from "./figure-tile";
 
 type PageContext = {
   /** The turn is stored, so draft charts can read their governed rows. */
@@ -130,7 +130,7 @@ function KpiTiles({ props, renderNode }: { props: Props; renderNode: (value: unk
   return (
     <section className="min-w-0" aria-label={title || "Key figures"} data-component="KpiTiles">
       {title ? <h3 className="mb-2 text-sm font-medium">{title}</h3> : null}
-      <dl className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 lg:grid-cols-3">
+      <dl className={FIGURE_GRID}>
         {renderNode(props.items)}
       </dl>
     </section>
@@ -206,7 +206,12 @@ function Controls({ props, renderNode }: { props: Props; renderNode: (value: unk
       <h3 id={id} className="text-sm font-semibold">
         {text(props.title)}
       </h3>
-      <div className="mt-3 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
+      <div
+        className={cn(
+          "mt-3 grid min-w-0 grid-cols-1 gap-4",
+          list(props.children).filter(Boolean).length > 1 && "sm:grid-cols-2",
+        )}
+      >
         {renderNode(props.children)}
       </div>
       {text(props.note) ? (

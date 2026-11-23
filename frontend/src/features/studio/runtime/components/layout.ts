@@ -177,18 +177,21 @@ const RULES = [
   "Every figure comes from a verified result: write @Value(\"result-id\", \"column\", \"sum\") or a statement holding one, never a number you typed. Derived figures (differences, shares, scenarios) are arithmetic over those values and $variables, e.g. scenario = base * (1 + $uplift / 100). Use exact result ids and column names.",
   "Charts are Chart(\"result-id\", \"line\", \"month\", \"revenue\", \"Revenue by month\"): name the visual and exact result columns. Each chart draws one verified result; do not chart a scenario.",
   "Metric(label, value, format, delta, badge): delta is a fraction computed from verified values, e.g. (jul - jun) / jun. badge is a few words such as \"6 months\". Use format \"currency\" with a currency code only when the data states one; otherwise use \"number\". Do not remark on a missing currency.",
+  "Comparing periods or groups: show the latest period's figures once, each with its delta against the earlier one and a badge such as \"vs. June\", rather than one row of tiles per period. Chart the full series beside them.",
   "What-if: declare each control's state with a literal default ($uplift = 10), put Slider/Segmented/Toggle nodes in a Controls panel above the figures they change, and label scenario values as scenarios. Controls only recompute values already on the page; they never fetch data.",
   "Keep it to one Header, at most four sections, at most six KPI tiles per row and at most three charts. Text blocks are one to three sentences and state only figures shown on the page.",
 ];
 
 const EXAMPLE = [
-  "root = Page([header, scenario, kpis, trend, summary])",
+  "root = Page([header, kpis, trend, scenario, outcome, summary])",
   'header = Header("Sales overview", "Revenue for June and July 2025, with a revenue what-if.")',
+  'jun = @Value("evidence_1", "revenue", "value", {month: "2025-06"})',
+  'jul = @Value("evidence_1", "revenue", "value", {month: "2025-07"})',
+  'kpis = KpiTiles([Metric("July revenue", jul, "number", (jul - jun) / jun, "vs. June"), Metric("Orders", @Value("evidence_1", "orders", "value", {month: "2025-07"}), "number", null, "July")])',
+  'trend = Section("Trend", [Chart("evidence_1", "line", "month", "revenue", "Revenue by month")])',
   "$uplift = 10",
   'scenario = Controls("What-if scenario", [Slider("Revenue change", $uplift, -30, 50, 5, "percent")], "The change applies to every order; order volume stays constant.")',
-  'base = @Value("evidence_1", "revenue", "sum")',
-  'kpis = KpiTiles([Metric("Baseline revenue", base), Metric("Scenario revenue", base * (1 + $uplift / 100), "number", $uplift / 100, "vs. baseline"), Metric("Orders", @Value("evidence_1", "orders", "sum"), "number", null, "Held constant")])',
-  'trend = Section("Trend", [Chart("evidence_1", "line", "month", "revenue", "Revenue by month")])',
+  'outcome = KpiTiles([Metric("Scenario July revenue", jul * (1 + $uplift / 100), "number", $uplift / 100, "Scenario")])',
   'summary = Text("One or two sentences on what the figures show, naming only figures on the page.")',
 ].join("\n");
 

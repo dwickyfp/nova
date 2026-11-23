@@ -47,6 +47,14 @@ export function compactFigure(figure: Figure): string {
   }).format(figure.value);
 }
 
+/**
+ * Tile columns follow the space the tiles get, not the window: at most three
+ * per row and never narrower than 9rem, so tiles in a half-width row wrap
+ * instead of cutting their figures short, and a lone tile keeps its size.
+ */
+export const FIGURE_GRID =
+  "grid gap-3 grid-cols-[repeat(auto-fill,minmax(max(min(100%,9rem),calc((100%_-_1.5rem)/3)),1fr))]";
+
 const change = new Intl.NumberFormat(undefined, {
   style: "percent",
   maximumFractionDigits: 1,
@@ -57,7 +65,9 @@ export function FigureTile({ figure }: { figure: Figure }) {
   const delta = typeof figure.delta === "number" && Number.isFinite(figure.delta) ? figure.delta : null;
   return (
     <div className="min-w-0 rounded-xl border bg-card px-4 py-3" data-figure>
-      <dt className="truncate text-sm text-muted-foreground">{figure.label}</dt>
+      <dt className="line-clamp-2 text-sm text-muted-foreground" title={figure.label}>
+        {figure.label}
+      </dt>
       <dd
         className="mt-1 truncate text-2xl font-semibold tabular-nums"
         title={figure.value === null ? undefined : exactFigure(figure)}
