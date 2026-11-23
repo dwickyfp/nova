@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/collapsible";
 import type { ThinkingPhase, ToolCallStatus } from "@/features/assistant/types";
 import { TextShimmer } from "./text-shimmer";
-import { formatSpan, isFailedStatus, isLiveStatus, recordedSpan } from "./rail-model";
+import { formatSpan, isFailedStatus, isLiveStatus, isStoppedStatus, recordedSpan } from "./rail-model";
 
 /**
  * The agentic process, rendered as one collapsible run per turn.
@@ -147,13 +147,14 @@ function spanLabel(span: Span | undefined, now: number, recorded?: number): stri
   return ms !== undefined && ms >= MIN_SPAN_MS ? formatSpan(ms) : undefined;
 }
 
-type MarkState = "running" | "live" | "done" | "failed";
+type MarkState = "running" | "live" | "done" | "failed" | "stopped";
 
 /**
  * The status mark, Nova's signature on the rail: a ring whose arc turns while
  * a step works and which fills into a check when it finishes. `strong` marks a
  * result (a whole run) in the success colour; ordinary steps
- * settle into a quiet check. `settle` plays the fill once, only for a step the
+ * settle into a quiet check. A stopped run or step shows a neutral square:
+ * the user ended it, so it is neither a success nor a failure. `settle` plays the fill once, only for a step the
  * reader watched finish.
  */
 function StatusMark({ state, strong = false, settle = false }: { state: MarkState; strong?: boolean; settle?: boolean }) {
@@ -171,6 +172,25 @@ function StatusMark({ state, strong = false, settle = false }: { state: MarkStat
     return (
       <span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center">
         <span className="nova-live-dot relative size-2 rounded-full bg-primary" />
+      </span>
+    );
+  }
+  if (state === "stopped") {
+    return (
+      <span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center">
+        <svg viewBox="0 0 16 16" data-mark="stopped" className="size-4 text-muted-foreground">
+          {strong ? <circle cx="8" cy="8" r="7" fill="currentColor" /> : null}
+          <rect
+            x="5.5"
+            y="5.5"
+            width="5"
+            height="5"
+            rx="1"
+            fill={strong ? "var(--background)" : "none"}
+            stroke={strong ? "none" : "currentColor"}
+            strokeWidth="1.5"
+          />
+        </svg>
       </span>
     );
   }
@@ -206,6 +226,7 @@ function StatusMark({ state, strong = false, settle = false }: { state: MarkStat
 
 function stepMark(step: RailStep): MarkState {
   if (isLiveStatus(step.status)) return "running";
+  if (isStoppedStatus(step.status)) return "stopped";
   return isFailedStatus(step.status) ? "failed" : "done";
 }
 
@@ -222,11 +243,14 @@ export function ProcessRail({
   defaultOpen = false,
   /** Bumped by the parent to force the rail open, e.g. after a decision. */
   revealKey = 0,
+  /** The user stopped the turn this work belongs to. */
+  stopped = false,
 }: {
   steps: RailStep[];
   running: boolean;
   defaultOpen?: boolean;
   revealKey?: number;
+  stopped?: boolean;
 }) {
   // A live run opens so the work is visible while it happens; a replayed one
   // starts as its summary line.
@@ -278,6 +302,7 @@ export function ProcessRail({
   if (!steps.length) return null;
 
   const failed = steps.some((step) => isFailedStatus(step.status));
+  const halted = !running && !failed && (stopped || steps.some((step) => isStoppedStatus(step.status)));
   const runSpan = spans.get(RUN_KEY);
   const recordedRun = recordedSpan(steps.find((step) => step.at)?.at, [...steps].reverse().find((step) => step.at)?.at);
   const duration = spanLabel(runSpan, now, running ? undefined : recordedRun);
@@ -301,7 +326,7 @@ export function ProcessRail({
         className="group flex min-h-9 w-full min-w-0 items-center gap-2 rounded-md py-1.5 text-left text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       >
         <StatusMark
-          state={running ? "live" : failed ? "failed" : "done"}
+          state={running ? "live" : failed ? "failed" : halted ? "stopped" : "done"}
           strong
           settle={runSpan?.end !== undefined}
         />
@@ -315,6 +340,7 @@ export function ProcessRail({
             <TextShimmer className="truncate">{processSummary(steps, running)}</TextShimmer>
           ) : (
             <>
+              {halted ? <span className="shrink-0 text-foreground">Stopped</span> : null}
               <span className={cn("truncate", failed && "text-destructive")}>
                 {processSummary(steps, running)}
               </span>

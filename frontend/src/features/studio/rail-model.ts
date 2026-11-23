@@ -5,7 +5,12 @@ export function isLiveStatus(status: RailStep["status"]): boolean {
 }
 
 export function isFailedStatus(status: RailStep["status"]): boolean {
-  return status === "failed" || status === "denied" || status === "cancelled";
+  return status === "failed" || status === "denied";
+}
+
+/** A step the user stopped is neither a failure nor a success. */
+export function isStoppedStatus(status: RailStep["status"]): boolean {
+  return status === "cancelled";
 }
 
 /** Milliseconds between two recorded event times, when both parse. */

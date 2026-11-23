@@ -30,7 +30,8 @@ SQL or table names.
 5. Wait for the answer. While the agent works, a **Working** line shows each
    step and how long it has taken. Click **Stop** (the square button) to cancel.
    Stop also cancels a **Reconsider this answer** pass. A stopped answer shows
-   "Stopped before the answer finished."
+   "Stopped before the answer finished.", and its step summary starts with
+   "Stopped" and a grey square instead of a green check.
 
 ## Use a command
 
