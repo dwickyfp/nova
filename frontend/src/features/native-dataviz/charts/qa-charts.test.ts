@@ -237,3 +237,33 @@ describe('NDV-CHART-009 pie with more values than slices', () => {
     expect(remainderOf(top3, undefined)).toBeNull()
   })
 })
+
+describe('Studio answer charts: numeric identifiers', () => {
+  it('draws one band per customer id and a value axis sized by the plotted series', () => {
+    // Top customers by revenue keyed by a numeric customer_id: each id is a band,
+    // not a point on a 0-24 linear scale, and nothing is stacked or summed.
+    const top = chart('bar', {
+      kind: 'cartesian', dimensions: [{ field_id: 'customer_id' }],
+      measures: [{ field_id: 'revenue', aggregation: 'sum' }],
+    })
+    const i = (value: string) => ({ type: 'integer' as const, value })
+    const data = result([dim('d0', 'customer_id', 'integer'), meas('m0', 'revenue')], [
+      [i('7'), d('31500000')], [i('12'), d('28000000')], [i('24'), d('27400000')],
+      [i('3'), d('26100000')], [i('18'), d('25900000')],
+    ] as Row[])
+    const option = buildChartOption(top, data, tokens, null, 560) as Option
+
+    const category = option.xAxis as Axis
+    expect(category.type).toBe('category')
+    expect(category.data).toEqual(['7', '12', '24', '3', '18'])
+    const value = (option.yAxis as Axis[])[0] as Axis & { max?: unknown; min?: unknown }
+    expect(value.type).toBe('value')
+    // No fixed bound: ECharts rounds the domain up from the plotted maximum.
+    expect(value.max).toBeUndefined()
+    expect(value.min).toBeUndefined()
+    expect(option.series).toHaveLength(1)
+    expect(option.series[0].type).toBe('bar')
+    expect(option.series[0].stack).toBeUndefined()
+    expect(Math.max(...option.series[0].data.map(Number))).toBe(31_500_000)
+  })
+})

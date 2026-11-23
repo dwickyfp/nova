@@ -308,7 +308,8 @@ def _native_component(
 ) -> ResolvedPreview:
     """A native ``DatavizChart`` drawn in the answer, with the plan it was drawn from."""
     plan = block.get("plan")
-    source = block.get("source") if isinstance(block.get("source"), dict) else {}
+    raw_source, raw_props = block.get("source"), block.get("props")
+    source: dict[str, Any] = raw_source if isinstance(raw_source, dict) else {}
     if block.get("component") != "DatavizChart" or not isinstance(plan, dict):
         raise PreviewError("Only charts in an answer can be added to Dataviz.")
     producer = _producer(steps, tool_call_id=_string(source.get("tool_call_id")))
@@ -323,7 +324,7 @@ def _native_component(
         issue, sql, origin = "The chart's recorded source differs from its query.", None, "none"
     table = next((step for step in steps if step.get("kind") == "table" and producer
                   and step.get("tool_call_id") == producer.get("tool_call_id")), None)
-    props = block.get("props") if isinstance(block.get("props"), dict) else {}
+    props: dict[str, Any] = raw_props if isinstance(raw_props, dict) else {}
     return ResolvedPreview(
         locator=locator,
         render_kind="chart",

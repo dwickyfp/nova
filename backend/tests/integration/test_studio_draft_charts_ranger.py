@@ -28,6 +28,7 @@ from app.common.nova_system import init_nova_system
 from app.core.config import settings
 from app.core.database import db
 from app.core.metadata_actor import acting_as
+from app.core.metadata_process import close_process_metadata, open_process_metadata
 from app.core.redis import session_store
 from app.core.security import decode_token
 from app.integrations.ranger.client import RangerClient
@@ -42,8 +43,9 @@ from app.modules.assistant.tools import ToolInvocation
 from app.modules.viz.studio_drafts import DraftLocator, sign
 from tests.benchmark.business_intelligence.client import StudioClient
 
+# Runs against the deployment's own metadata store and patched FE, like the
+# other opt-in Ranger acceptance checks; threads it writes are deleted again.
 pytestmark = [
-    pytest.mark.engine,
     pytest.mark.skipif(
         os.getenv("NOVA_STUDIO_DRAFT_CHARTS_RANGER_ACCEPTANCE") != "1",
         reason="Creates users, roles and Ranger policies on a patched FE; opt in explicitly",
@@ -59,13 +61,21 @@ async def _session(client: StudioClient) -> dict[str, Any]:
     return {**(await session_store.get(sid)), "session_id": sid}
 
 
-async def _record_chart(user: dict[str, Any], sql: str, x: str) -> tuple[str, dict[str, Any]]:
-    """Build the chart as ``user`` and record it as the loop does; return its ref."""
-    actor = SecurityContext.from_session(user)
+CREATED: list[tuple[SecurityContext, str]] = []
+
+
+async def _thread(actor: SecurityContext) -> str:
     with acting_as(actor):
         thread = await assistant_repository.create_thread(
             user_name=actor.principal, title="Draft charts")
-    thread_id = thread["thread_id"]
+    CREATED.append((actor, thread["thread_id"]))
+    return thread["thread_id"]
+
+
+async def _record_chart(user: dict[str, Any], sql: str, x: str) -> tuple[str, dict[str, Any]]:
+    """Build the chart as ``user`` and record it as the loop does; return its ref."""
+    actor = SecurityContext.from_session(user)
+    thread_id = await _thread(actor)
     producer = {"kind": "tool", "name": "query_execute", "tool_call_id": "q-1",
                 "status": "done", "preview": sql}
     context = SimpleNamespace(
@@ -114,6 +124,9 @@ def _values(response: httpx.Response) -> dict[Any, float]:
 
 
 async def test_draft_charts_read_as_the_viewer_under_ranger():
+    # Open control metadata the way the web process does at startup: its own
+    # workload login at the released schema revision and epoch.
+    metadata = await open_process_metadata("web")
     await db.init_system_pool()
     await session_store.init()
     await init_nova_system()
@@ -162,7 +175,7 @@ async def test_draft_charts_read_as_the_viewer_under_ranger():
              "resources": {**table, "column": {"values": ["customer"]}},
              "dataMaskPolicyItems": [{
                  "roles": [analyst], "accesses": [{"type": "select", "isAllowed": True}],
-                 "dataMaskInfo": {"dataMaskType": "MASK_NULL"}}]},
+                 "dataMaskInfo": {"dataMaskType": "MASK_HASH"}}]},
         ):
             policies.append(await ranger.put_policy(RangerPolicy.model_validate(
                 {"service": settings.RANGER_SERVICE_NAME, **policy})))
@@ -183,16 +196,24 @@ async def test_draft_charts_read_as_the_viewer_under_ranger():
         alice_user, admin_user = await _session(alice), await _session(admin)
 
         # Ranger syncs new policies to the FE after a delay; wait for the filter.
-        async with asyncio.timeout(120):
-            while True:
-                try:
-                    by_region_ref, by_region = await _record_chart(alice_user, sql, "region")
-                    filtered = await _read(alice, by_region_ref, by_region)
-                    if filtered.status_code == 200 and set(_values(filtered)) == {"Jakarta"}:
-                        break
-                except AssertionError:
-                    pass
-                await asyncio.sleep(2)
+        last = "no response"
+        try:
+            async with asyncio.timeout(120):
+                while True:
+                    try:
+                        by_region_ref, by_region = await _record_chart(alice_user, sql, "region")
+                    except AssertionError as refused:  # access not yet synced to the FE
+                        last = str(refused).splitlines()[0]
+                    else:
+                        filtered = await _read(alice, by_region_ref, by_region)
+                        last = f"{filtered.status_code} {filtered.text[:300]}"
+                        if filtered.status_code == 200 and {
+                            (row[0] or {}).get("value") for row in filtered.json()["rows"]
+                        } == {"Jakarta"}:
+                            break
+                    await asyncio.sleep(2)
+        except TimeoutError:
+            pytest.fail(f"The row filter never applied; last draft read: {last}")
 
         # Row filter: alice sees only Jakarta; the admin role sees every region.
         assert _values(filtered) == {"Jakarta": 150.0}
@@ -202,7 +223,10 @@ async def test_draft_charts_read_as_the_viewer_under_ranger():
 
         # Column mask: alice's customer names are hidden; the admin's are not.
         by_customer_ref, by_customer = await _record_chart(alice_user, sql, "customer")
-        assert set(_values(await _read(alice, by_customer_ref, by_customer))) == {None}
+        # A type-preserving mask: MASK_NULL types the column NULL_TYPE, which the
+        # SQL frontend does not inspect, so the chart would be refused outright.
+        masked = set(_values(await _read(alice, by_customer_ref, by_customer)))
+        assert len(masked) == 2 and not masked & {"Andi", "Budi", "Citra", "Dewi"}
         admin_customer_ref, admin_customer = await _record_chart(admin_user, sql, "customer")
         assert set(_values(await _read(admin, admin_customer_ref, admin_customer))) == {
             "Andi", "Budi", "Citra", "Dewi"}
@@ -215,14 +239,13 @@ async def test_draft_charts_read_as_the_viewer_under_ranger():
         # A role without SELECT is refused by the engine, not by a cached result.
         blind_user = await _session(blind_client)
         actor = SecurityContext.from_session(blind_user)
-        with acting_as(actor):
-            thread = await assistant_repository.create_thread(user_name=actor.principal)
+        blind_thread = await _thread(actor)
         content_id = "run-blind:1"
-        blind_ref = sign(DraftLocator(thread["thread_id"], content_id), actor.principal)
+        blind_ref = sign(DraftLocator(blind_thread, content_id), actor.principal)
         recorded = _record_source(sql)
         with acting_as(actor):
             await assistant_repository.append_message(
-                thread["thread_id"], user_name=actor.principal, role="assistant",
+                blind_thread, user_name=actor.principal, role="assistant",
                 content="Revenue.", steps=[
                     {"kind": "tool", "name": "query_execute", "tool_call_id": "q-1",
                      "status": "done", "preview": sql},
@@ -267,6 +290,11 @@ async def test_draft_charts_read_as_the_viewer_under_ranger():
             except Exception as exc:  # noqa: BLE001 - every cleanup step runs
                 errors.append(type(exc).__name__)
 
+        for owner, thread_id in CREATED:
+            with acting_as(owner):
+                await clean(assistant_repository.delete_thread(
+                    thread_id, user_name=owner.principal))
+        CREATED.clear()
         for client in clients:
             token = client.http.headers.get("Authorization", "").removeprefix("Bearer ")
             if token:
@@ -286,6 +314,7 @@ async def test_draft_charts_read_as_the_viewer_under_ranger():
             errors.append(type(exc).__name__)
         await clean(session_store.close())
         await clean(db.close_system_pool())
+        await clean(close_process_metadata(metadata, "web"))
         if errors and not original_error:
             pytest.fail(f"Acceptance cleanup failed: {errors}")
 
