@@ -10,7 +10,9 @@ to the answer and is not saved anywhere else. You can open it beside the
 conversation, change it, and save it to a
 [Dataviz](/docs/dataviz/what-is-dataviz) dashboard. Nothing is saved until you
 pick a dashboard and confirm. The agent can suggest saving a chart, but it
-cannot save one for you.
+cannot save one for you. If you ask it to save a chart or a table, it says so
+and points you to **Save to dashboard…** on the chart or **Add to Dataviz** on
+the table.
 
 A draft keeps only the chart's settings. Its rows are read again from the
 answer's query, as you and under your current role, each time it is shown.
