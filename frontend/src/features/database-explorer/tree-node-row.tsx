@@ -112,7 +112,7 @@ export function TreeNodeRow({
               type='button'
               className={cn(
                 'flex min-w-0 w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted',
-                isSelected && 'bg-primary/10 font-medium text-primary dark:text-foreground',
+                isSelected && 'bg-brand/10 font-medium text-brand dark:text-foreground',
               )}
             >
               <ChevronRight
@@ -124,7 +124,7 @@ export function TreeNodeRow({
               <Icon
                 className={cn(
                   'size-4 shrink-0',
-                  isSelected ? 'text-primary dark:text-foreground' : 'text-muted-foreground',
+                  isSelected ? 'text-brand dark:text-foreground' : 'text-muted-foreground',
                 )}
               />
               <span className='flex-1 min-w-0 truncate text-left'>
@@ -177,7 +177,7 @@ export function TreeNodeRow({
         type='button'
         className={cn(
           'flex min-w-0 w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted',
-          isSelected && 'bg-primary/10 font-medium text-primary dark:text-foreground',
+          isSelected && 'bg-brand/10 font-medium text-brand dark:text-foreground',
         )}
         onClick={() => onSelect(node.id)}
       >
@@ -187,7 +187,7 @@ export function TreeNodeRow({
         <Icon
           className={cn(
             'size-4 shrink-0',
-            isSelected ? 'text-primary dark:text-foreground' : 'text-muted-foreground',
+            isSelected ? 'text-brand dark:text-foreground' : 'text-muted-foreground',
           )}
         />
         <span className='flex-1 min-w-0 truncate text-left'>

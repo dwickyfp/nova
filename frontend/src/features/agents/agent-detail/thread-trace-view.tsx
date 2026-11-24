@@ -554,7 +554,7 @@ function TimelineRow({
         "relative grid min-h-10 w-full grid-cols-[minmax(0,1fr)_3.5rem_5rem] items-center gap-3 px-4 py-1.5 text-left text-xs outline-none transition-colors",
         "hover:bg-muted/60 focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
         // Selected: a surface step and a hairline at the edge, text unchanged.
-        selected && "bg-muted before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-primary",
+        selected && "bg-muted before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-brand",
       )}
     >
       <RailLines rail={rail} depth={node.depth} />

@@ -284,7 +284,7 @@ function ResizableExplorerSidebar({
       {/* Resize handle */}
       <div
         onMouseDown={handleMouseDown}
-        className='group relative z-10 w-1 shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30 active:bg-primary/50'
+        className='group relative z-10 w-1 shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-brand/30 active:bg-brand/50'
       >
         <div className='absolute inset-y-0 -left-1 -right-1' />
       </div>

@@ -130,7 +130,7 @@ export function TableItemWithPopover({
               ?.focus();
           }}
         >
-          <Table2 className="size-3.5 shrink-0 text-primary" />
+          <Table2 className="size-3.5 shrink-0 text-brand" />
           <span className="min-w-0 flex-1 truncate">{name}</span>
         </button>
       </PopoverTrigger>

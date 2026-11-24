@@ -96,7 +96,7 @@ export function AgentOverviewTab({ agentId }: { agentId: string }) {
               <Line
                 type='monotone'
                 dataKey='sessions'
-                stroke='var(--primary)'
+                stroke='var(--chart-1)'
                 strokeWidth={2}
                 dot={{ r: 2 }}
               />

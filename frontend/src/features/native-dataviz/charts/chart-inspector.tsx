@@ -170,7 +170,7 @@ function FormatRules({ state, fields, onChange }: { state: BuilderState; fields:
         <Select value={format.tone ?? 'accent'} onValueChange={tone => update(index, { tone: tone as ConditionalFormat['tone'] })}>
           <SelectTrigger aria-label='Colour' className='h-8 w-24'><SelectValue /></SelectTrigger>
           <SelectContent>{Object.entries(TONE_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>
-            <span aria-hidden className='size-2.5 rounded-full' style={{ backgroundColor: `var(--${value === 'accent' ? 'chart-4' : value === 'negative' ? 'destructive' : value === 'positive' ? 'success' : 'warning'})` }} />{label}
+            <span aria-hidden className='size-2.5 rounded-full' style={{ backgroundColor: `var(--${value === 'accent' ? 'chart-1' : value === 'negative' ? 'destructive' : value === 'positive' ? 'success' : 'warning'})` }} />{label}
           </SelectItem>)}</SelectContent>
         </Select>
       </div>
@@ -312,7 +312,7 @@ function Builder({ datasets, chart, initialVisual, saving, error, onSave, fields
                 onClick={() => setState(current => switchVisual(current, item.value as Visual, fields))}
                 className={cn('flex min-h-14 flex-col items-center justify-center gap-1 rounded-md border px-1 text-xs transition-colors',
                   'focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-                  active ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:bg-muted')}>
+                  active ? 'border-brand bg-brand/10 text-foreground' : 'border-border text-muted-foreground hover:bg-muted')}>
                 <Icon className='size-4' aria-hidden />{item.label}
               </button>
             })}

@@ -151,7 +151,7 @@ function Overview({ data, onOpen }: { data: OntologyMetrics; onOpen?: Open }) {
           {effect ? (
             <div className='flex flex-col gap-4 py-2'>
               <IntervalBar label='Without ontology' measured={effect.without} color='var(--viz-mark)' />
-              <IntervalBar label='With ontology' measured={effect.with} color='var(--chart-4)' />
+              <IntervalBar label='With ontology' measured={effect.with} color='var(--chart-1)' />
               <p className='text-xs text-muted-foreground'>
                 {effect.mcnemar.gained} {effect.mcnemar.gained === 1 ? 'question' : 'questions'} fixed,{' '}
                 {effect.mcnemar.lost} broken by the ontology
@@ -182,7 +182,7 @@ function Overview({ data, onOpen }: { data: OntologyMetrics; onOpen?: Open }) {
               {Object.entries(claims.by_stratum)
                 .sort(([, a], [, b]) => (a.value ?? 0) - (b.value ?? 0))
                 .map(([name, measured]) => (
-                  <IntervalBar key={name} label={STRATUM_LABELS[name] ?? name} measured={measured} color='var(--chart-4)' compact />
+                  <IntervalBar key={name} label={STRATUM_LABELS[name] ?? name} measured={measured} color='var(--chart-1)' compact />
                 ))}
             </div>
           ) : (
@@ -278,8 +278,8 @@ function JoinPanels({ joins, onOpen }: { joins: JoinSummary | null; onOpen?: Ope
       >
         {joins && score ? (
           <div className='flex flex-col gap-4 py-2'>
-            <IntervalBar label='Precision' measured={score.precision} color='var(--chart-4)' />
-            <IntervalBar label='Recall' measured={score.recall} color='var(--chart-4)' />
+            <IntervalBar label='Precision' measured={score.precision} color='var(--chart-1)' />
+            <IntervalBar label='Recall' measured={score.recall} color='var(--chart-1)' />
             <p className='text-xs text-muted-foreground'>
               F1 {score.f1.toFixed(2)} against {reviewed ? 'declared and reviewer-confirmed joins' : 'the joins the views declare'}
               {reviewed ? ` (${joins.undeclared_reviewed} undeclared joins reviewed)` : ''}. Recall counts only joins someone has declared or confirmed.
@@ -301,7 +301,7 @@ function JoinPanels({ joins, onOpen }: { joins: JoinSummary | null; onOpen?: Ope
         {joins?.decisions ? (
           <div className='flex flex-col gap-4 py-2'>
             <IntervalBar label='Decided without a person' measured={joins.decisions.automatic} color='var(--chart-2)' />
-            <IntervalBar label='Accepted and right' measured={joins.decisions.accepted_precision} color='var(--chart-4)' />
+            <IntervalBar label='Accepted and right' measured={joins.decisions.accepted_precision} color='var(--chart-1)' />
             <p className='text-xs text-muted-foreground'>
               {joins.decisions.rejected_misses.successes} of {joins.decisions.rejected_misses.n} rejected pairs were real joins ·{' '}
               {joins.decisions.review_queue} left for review
@@ -536,7 +536,7 @@ function Reliability({ bins }: { bins: CalibrationBin[] }) {
               String(name),
             ]}
           />
-          <Scatter data={points} fill='var(--chart-4)' stroke='var(--card)' strokeWidth={2} />
+          <Scatter data={points} fill='var(--chart-1)' stroke='var(--card)' strokeWidth={2} />
         </ScatterChart>
       </ResponsiveContainer>
     </div>

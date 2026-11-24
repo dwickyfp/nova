@@ -59,7 +59,7 @@ export function ChoiceBody({ request, submit, busy, titleId }: HitlBodyProps<Cho
               className={cn(
                 "flex min-h-16 flex-col items-start gap-1 rounded-lg border border-border bg-background p-3 text-left text-sm transition-colors",
                 "hover:bg-muted/50 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-60",
-                selected && "border-primary bg-primary/5 hover:bg-primary/5",
+                selected && "border-brand bg-brand/5 hover:bg-brand/5",
               )}
             >
               <span className="flex w-full items-start gap-2">
@@ -68,7 +68,7 @@ export function ChoiceBody({ request, submit, busy, titleId }: HitlBodyProps<Cho
                   aria-hidden="true"
                   className={cn(
                     "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-input",
-                    selected && "border-primary bg-primary text-primary-foreground",
+                    selected && "border-brand bg-brand text-brand-foreground",
                   )}
                 >
                   {selected ? <Check className="size-3" /> : null}
@@ -80,7 +80,7 @@ export function ChoiceBody({ request, submit, busy, titleId }: HitlBodyProps<Cho
               {option.recommended || option.badges?.length ? (
                 <span className="mt-0.5 flex flex-wrap gap-1">
                   {option.recommended ? (
-                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">Suggested</span>
+                    <span className="rounded-full bg-brand/10 px-2 py-0.5 text-xs text-brand">Suggested</span>
                   ) : null}
                   {option.badges?.map((badge) => (
                     <span key={badge} className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">

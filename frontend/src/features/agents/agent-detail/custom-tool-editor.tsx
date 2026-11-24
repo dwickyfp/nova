@@ -222,7 +222,7 @@ export function CustomToolEditorDialog({
                   <label
                     key={mode.value}
                     htmlFor={`ct-output-${mode.value}`}
-                    className='flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/40 has-[[data-state=checked]]:border-primary/60 has-[[data-state=checked]]:bg-muted/40'
+                    className='flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/40 has-[[data-state=checked]]:border-brand/60 has-[[data-state=checked]]:bg-muted/40'
                   >
                     <RadioGroupItem
                       id={`ct-output-${mode.value}`}

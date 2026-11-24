@@ -674,7 +674,7 @@ function MarkerContent({ children, className }: MarkerContentProps) {
 
 function DefaultMarkerIcon() {
   return (
-    <div className="relative h-4 w-4 rounded-full border-2 border-background bg-primary shadow-sm" />
+    <div className="relative h-4 w-4 rounded-full border-2 border-background bg-brand shadow-sm" />
   );
 }
 
@@ -973,7 +973,7 @@ function ControlButton({
             "flex size-8 items-center justify-center transition-colors pointer-coarse:size-10",
             "first:rounded-t-md last:rounded-b-md",
             "hover:bg-accent hover:text-accent-foreground",
-            "aria-pressed:bg-primary aria-pressed:text-primary-foreground aria-pressed:hover:bg-primary/90",
+            "aria-pressed:bg-brand aria-pressed:text-brand-foreground aria-pressed:hover:bg-brand/90",
             "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset",
             "aria-disabled:cursor-not-allowed aria-disabled:text-muted-foreground aria-disabled:hover:bg-transparent",
           )}
@@ -1182,7 +1182,7 @@ function CompassButton({ onClick }: { onClick: () => void }) {
         className="size-5"
         style={{ transformStyle: "preserve-3d" }}
       >
-        <path d="M12 2L16 12H12V2Z" className="fill-primary" />
+        <path d="M12 2L16 12H12V2Z" className="fill-brand" />
         <path d="M12 2L8 12H12V2Z" className="fill-muted-foreground" />
         <path d="M12 22L16 12H12V22Z" className="fill-muted-foreground/60" />
         <path d="M12 22L8 12H12V22Z" className="fill-muted-foreground/30" />
@@ -1480,7 +1480,7 @@ type MapRouteProps = {
 function MapRoute({
   id: propId,
   coordinates: coordinatesProp,
-  color = mapColor("--primary"),
+  color = mapColor("--brand"),
   width = 3,
   opacity = 0.8,
   dashArray,
@@ -2320,7 +2320,7 @@ function MapArc<T extends MapArcDatum = MapArcDatum>({
   const mergedPaint = useMemo(
     () =>
       mergeHoverPaint(
-        { ...DEFAULT_ARC_PAINT, "line-color": mapColor("--primary"), ...paint },
+        { ...DEFAULT_ARC_PAINT, "line-color": mapColor("--brand"), ...paint },
         hoverPaint,
       ),
     [paint, hoverPaint],
@@ -2550,12 +2550,12 @@ function MapClusterLayer<
   clusterMaxZoom = 14,
   clusterRadius = 50,
   clusterColors = [
-    mapColor("--primary"),
-    mapColor("--primary"),
-    mapColor("--primary"),
+    mapColor("--brand"),
+    mapColor("--brand"),
+    mapColor("--brand"),
   ],
   clusterThresholds = DEFAULT_CLUSTER_THRESHOLDS,
-  pointColor = mapColor("--primary"),
+  pointColor = mapColor("--brand"),
   onPointClick,
   onClusterClick,
 }: MapClusterLayerProps<P>) {

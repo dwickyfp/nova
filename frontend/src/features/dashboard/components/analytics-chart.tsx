@@ -63,7 +63,7 @@ export function AnalyticsChart() {
           type='monotone'
           dataKey='clicks'
           stroke='currentColor'
-          className='text-primary'
+          className='text-brand'
           fill='currentColor'
           fillOpacity={0.15}
         />

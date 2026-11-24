@@ -381,7 +381,7 @@ export function RoleDetailPage({ name }: { name: string }) {
               <div className='pointer-events-none absolute inset-x-4 top-4 z-10 flex justify-center'>
                 <div className='w-full max-w-xs overflow-hidden rounded-full border border-border bg-background/95 shadow-lg backdrop-blur-sm'>
                   <div className='h-1.5 w-full overflow-hidden bg-muted'>
-                    <div className='h-full w-1/3 animate-pulse rounded-full bg-primary' />
+                    <div className='h-full w-1/3 animate-pulse rounded-full bg-brand' />
                   </div>
                   <div className='px-3 py-2 text-center text-xs font-medium text-foreground'>
                     Refreshing role detail...
@@ -523,7 +523,7 @@ export function RoleDetailPage({ name }: { name: string }) {
               <div className='pointer-events-none absolute inset-x-4 top-4 z-10 flex justify-center'>
                 <div className='w-full max-w-xs overflow-hidden rounded-full border border-border bg-background/95 shadow-lg backdrop-blur-sm'>
                   <div className='h-1.5 w-full overflow-hidden bg-muted'>
-                    <div className='h-full w-1/3 animate-pulse rounded-full bg-primary' />
+                    <div className='h-full w-1/3 animate-pulse rounded-full bg-brand' />
                   </div>
                   <div className='px-3 py-2 text-center text-xs font-medium text-foreground'>
                     Refreshing role detail...

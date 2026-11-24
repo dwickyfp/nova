@@ -266,7 +266,7 @@ export function WorkspaceTabStrip({
           const tabClass = cn(
             "flex min-w-0 flex-1 items-center rounded-t-md py-1.5 text-sm",
             isActive
-              ? "-mb-px border-x border-t-2 border-x-border border-t-primary border-b-0 bg-background text-primary"
+              ? "-mb-px border-x border-t-2 border-x-border border-t-brand border-b-0 bg-background text-brand"
               : "border border-border/80 bg-muted/40 text-muted-foreground hover:bg-muted/60",
           );
           return (

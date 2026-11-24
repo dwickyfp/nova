@@ -1,13 +1,16 @@
 # Nova phoenix assets
 
-Nova uses one brick-red and copper phoenix across Console, Studio, sign-in,
+Nova uses one steel-blue phoenix across Console, Studio, sign-in,
 assistant, browser icons, and the root README. The application palette and
 typography remain defined by [DESIGN.md](../../../DESIGN.md).
 
 ## Source and exports
 
 The master was generated with the built-in imagegen tool and normalized to a
-1024 × 1024 transparent PNG. All exports use that same composition and alpha;
+1024 × 1024 transparent PNG. On 2026-11-24 the owner replaced the orange palette
+with graphite and steel blue; the master was recoloured once by mapping each
+pixel's luminance onto a deep-steel → `--brand` (#2f6fb0) → light-steel ramp,
+keeping its composition and alpha. That ramp is the only sanctioned recolour. All exports use that same composition and alpha;
 none are independently generated or redrawn.
 
 | File | Size | Use |
@@ -30,6 +33,9 @@ nova-phoenix-master.png --out OUTPUT.png`. Regenerate ICO entries from the
 16/32/48 PNGs. Retain the master as the source for future exports.
 
 ## Generation prompt
+
+Historical: the original master was generated in brick red and copper with this
+prompt, then recoloured to steel blue as described above.
 
 ```text
 Use case: logo-brand. Asset type: single master brand emblem for Nova analytics software, used unchanged from 16px favicon to large login emblem. Generate one luxurious phoenix mark, no text. Truly transparent background. Square canvas, centered emblem with 10% clear padding. Distinct phoenix bird head in slight profile, raised sweeping wings balanced on both sides, compact strong body, short elegant flame tail. Sculptural clean broad shapes, only three broad feather shapes per wing, generous negative spaces, bold readable silhouette at tiny sizes. Restrained premium flat graphic design with brick red #D04738 dominant and warm copper #D99765 secondary accent. Crisp edges, no thin lines. Subtle copper accent planes, not realistic metal. No surrounding frame, no badge, no circle, no shadows, no glow, no particles, no gradients, no mockup, no watermark, no typography. Original dignified enterprise brand, refined proportions.

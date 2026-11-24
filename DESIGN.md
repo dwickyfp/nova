@@ -13,9 +13,9 @@
 2. **Warna semantik, bukan warna tampilan.** Komponen menulis *perannya*
    (`text-success`), bukan *warnanya* (`text-emerald-600`). Palet mentah adalah
    keputusan tema, bukan keputusan komponen.
-3. **Bangun di atas `theme.css`.** Token sudah ada dan sudah berkarakter
-   (`--primary: #d04738`, merah bata). Jangan mengganti, jangan menambah sistem
-   warna paralel.
+3. **Bangun di atas `theme.css`.** Token sudah ada dan sudah berkarakter:
+   `--primary` graphite netral untuk aksi, `--brand` biru-baja untuk semua
+   keadaan interaktif. Jangan menambah sistem warna paralel.
 4. **Setiap aturan punya alasan satu baris.** Kalau alasannya tidak muat dalam
    satu baris, keputusannya belum matang.
 
@@ -37,7 +37,9 @@ mendefinisikan warna.
 | `--popover`, `--popover-foreground` | Permukaan mengambang | Dropdown, tooltip, command palette |
 | `--muted`, `--muted-foreground` | Permukaan teredam dan teks sekunder | Label, deskripsi, header tabel |
 | `--border`, `--input`, `--ring` | Garis struktur dan fokus | Border kartu, border input, focus ring |
-| `--primary`, `--primary-foreground` | Aksi utama, merah bata Nova | Tombol primer, tautan aktif, aksen |
+| `--primary`, `--primary-foreground` | Aksi utama, graphite netral | Tombol primer, fill aksi, tooltip, gelembung pesan |
+| `--brand`, `--brand-foreground` | Aksen interaktif biru-baja, satu keluarga dengan backdrop `#8fb4c4` | Tautan, focus ring (`--ring`), tab/toggle aktif, checkbox/switch tercentang, seleksi, rute peta, `--viz-highlight` |
+| `--editor-selection` | Seleksi teks di editor SQL | Monaco `editor.selectionBackground` |
 
 ### 2.2 Warna status
 
@@ -113,7 +115,7 @@ memakai `backdrop-filter`; material bukan tingkat `--surface-4`.
 | `--sidebar-navigation-selected-shadow` | Hairline dan bayangan halus plate aktif di tema terang; `none` di tema gelap |
 | `--sidebar-navigation-foreground` | Teks navigasi; slate di tema terang, `--foreground` di tema gelap |
 | `--sidebar-navigation-muted-foreground` | Teks sekunder yang lolos AA di atas plate navigasi |
-| `--sidebar-navigation-ring` | Fokus merah bata dengan kontras terhadap plate navigasi |
+| `--sidebar-navigation-ring` | Fokus biru-baja tua (`--accent-foreground`) dengan kontras terhadap plate navigasi |
 
 **Backdrop harus punya variasi hue.** Kaca hanya terbaca kalau ada sesuatu di
 belakangnya. Gradien abu-abu netral di bawah tint terlihat sama dengan warna
@@ -127,7 +129,7 @@ sekitarnya, dengan hairline dan bayangan halus); plate gelap di atas backdrop
 terang terbaca sebagai cat abu-abu, bukan kaca. Edge tetap slate di tema terang. Kontras diukur pada hasil kompositnya di
 setiap stop backdrop, bukan pada warna plate itu sendiri.
 
-**Pane terang tetap 100%.** `--primary` (4.53:1) dan token `-strong` diukur
+**Pane terang tetap 100%.** `--brand` (5.2:1) dan token `-strong` diukur
 sebagai teks di atas `--background` tanpa ruang untuk tint, jadi pane tema
 terang tidak tembus. Tema gelap punya margin (teks sekunder 7.1:1 pada stop
 paling terang) dan memakai 82%. Mengubah opacity pane berarti menghitung ulang
@@ -145,7 +147,7 @@ radius, atau shadow pembentuk card, termasuk pada variant `inset` dan
 `floating`. Header, menu, dan footer berada pada satu bidang kaca yang kontinu;
 tidak ada permukaan kaca kedua di dalam sidebar. Frame inset Console
 menggabungkan tint chrome dan backdrop sebagai latar statis tanpa filter.
-Provider dengan sidebar solid memakai latar sebelumnya. Merah bata tetap untuk
+Provider dengan sidebar solid memakai latar sebelumnya. Biru-baja `--brand` untuk
 identitas dan penanda aktif, bukan latar seluruh sidebar.
 
 Shell memiliki paling banyak satu lapisan backdrop blur statis; header, baris,
@@ -208,11 +210,15 @@ hanya untuk seri data di dalam grafik. Warna grafik tidak boleh dipakai sebagai
 warna UI, dan `--success` diambil dari `--chart-2` supaya bahasa status dan
 bahasa grafik tidak bercabang.
 
-- `--chart-1..5` adalah palet kategori lama, dipakai juga oleh `query-cost`.
-- `--chart-6..9` melengkapi palet kategori ke sembilan hue. Chart dengan lebih
-  dari lima seri sebelumnya memakai enam hex ad-hoc di dalam
-  `workspaces/index.tsx`; sekarang semuanya token.
-- `--chart-tone-1..6` adalah ramp satu warna untuk mode "single tone".
+- `--chart-1..9` adalah palet kategori dalam urutan gambar: biru-baja,
+  teal, amber, violet, coral, magenta, hijau, langit, cokelat. Konsumen memakai
+  urutan 1..9 apa adanya; jangan mengurutkan ulang di komponen. Dua slot
+  bersebelahan tidak boleh mirip, dan setiap slot lolos 3:1 terhadap `--card`
+  di kedua tema (`src/styles/theme-contrast.test.ts`).
+- `--chart-1` sama dengan `--brand`; "aksen" di Dataviz (format kondisional,
+  rute) memakai `--chart-1`/`--brand`, bukan slot lain.
+- `--chart-tone-1..6` adalah ramp satu warna dari `--chart-1`, terkuat lebih dulu
+  (terang di tema gelap).
 
 Grafik yang butuh warna konkret (recharts) membacanya lewat `readToken` di
 `src/lib/read-token.ts`, bukan menyalin hex. Token dibaca ulang saat tema
@@ -227,7 +233,7 @@ dan aksen hanya menunjuk temuan.
 |---|---|
 | `--viz-mark` | Isi mark data (bar, slice) dalam slate netral; lolos 3:1 terhadap card |
 | `--viz-line` | Garis dan titik data |
-| `--viz-highlight` | Satu mark yang dibicarakan jawaban view (merah bata di terang) |
+| `--viz-highlight` | Satu mark yang dibicarakan jawaban view (`--brand`) |
 | `--viz-reference` | Garis referensi rata-rata, putus-putus |
 | `--viz-grid`, `--viz-axis` | Gridline horizontal dan garis sumbu |
 | `--pill-discrete*`, `--pill-continuous*` | Pill shelf: fill tint, border, teks kuat. Biru = header diskret, hijau = sumbu kontinu |
@@ -303,13 +309,13 @@ yang namanya cocok `/^read[A-Za-z]*Token$/` **dan** argumen pertamanya adalah
 literal string yang diawali `--`:
 
 ```ts
-readToken('--chart-1', '#f05a47')            // boleh
-readColorToken('--x', 'y', '#d04738')        // boleh
-readToken(someVar, '#d04738')                // dilarang, argumen pertama bukan literal
-readToken('chart-1', '#f05a47')              // dilarang, bukan custom property
-cn('bg-emerald-600', '#d04738')              // dilarang
-`text-[#d04738]`                             // dilarang
-'#d04738'                                    // dilarang
+readToken('--chart-1', '#2f6fb0')            // boleh
+readColorToken('--x', 'y', '#1f2937')        // boleh
+readToken(someVar, '#1f2937')                // dilarang, argumen pertama bukan literal
+readToken('chart-1', '#2f6fb0')              // dilarang, bukan custom property
+cn('bg-emerald-600', '#1f2937')              // dilarang
+`text-[#2f6fb0]`                             // dilarang
+'#2f6fb0'                                    // dilarang
 ```
 
 **Kenapa pengecualian ini ada.** `recharts` menerima warna sebagai nilai
@@ -388,8 +394,8 @@ merekonstruksi string dari sintaksis saat bisa diketahui sepenuhnya:
 ```ts
 'bg-' + 'emerald-600'                 // dilarang
 ['bg', 'emerald', '600'].join('-')    // dilarang
-'#' + 'd04738'                        // dilarang
-`${'#'}d04738`                        // dilarang
+'#' + '2f6fb0'                        // dilarang
+`${'#'}2f6fb0`                        // dilarang
 ```
 
 Rekonstruksinya konservatif: begitu satu operand tidak diketahui dari sintaksis
@@ -478,15 +484,21 @@ Semua teks lolos WCAG AA: 4.5:1 untuk teks normal, 3:1 untuk teks 18px ke atas.
 Garis batas dan ikon non-teks lolos 3:1 terhadap warna di sebelahnya. Rasio
 dihitung, bukan diperkirakan.
 
-**Keputusan yang mengikat untuk `--primary`.** `#d04738` adalah warna brand dan
-tidak digeser. Rasio terukurnya 4.53:1 di light dan 4.25:1 di dark, jadi:
+**Keputusan yang mengikat untuk warna aksi (pemilik, 2026-11-24).** Oranye
+`#d04738` diganti arah "graphite + biru-baja". `--primary` graphite (`#1f2937`
+terang, `#e5e7eb` gelap) dipakai untuk tombol dan fill aksi; `--brand` biru-baja
+(`#2f6fb0` terang, `#6aa5e0` gelap) adalah satu-satunya aksen interaktif.
+Keduanya lolos AA sebagai teks di kedua tema, jadi larangan lama "`text-primary`
+di gelap" tidak berlaku lagi. Aturannya sekarang:
 
-- `--primary` dipakai sebagai **teks** hanya di mode terang. Di mode gelap,
-  teks memakai `--primary-foreground` di atas blok `--primary`, atau token
-  status yang relevan.
-- Di mode gelap, `text-primary` sebagai teks di atas `--background` dilarang.
-  Yang benar adalah `text-primary` di atas blok `bg-primary`, atau
-  `text-primary-foreground`.
+- Fill aksi utama: `bg-primary text-primary-foreground`.
+- Tautan, tab/toggle aktif, seleksi, item tercentang, indikator progres:
+  `text-brand`, `border-brand`, `bg-brand/10`, atau `bg-brand
+  text-brand-foreground`. Jangan memakai `--primary` untuk keadaan, karena
+  graphite tidak terbaca sebagai "aktif".
+- Destructive tetap merah dan sekarang jelas berbeda dari aksi utama.
+- `src/styles/theme-contrast.test.ts` mengukur pasangan teks (4.5:1), focus ring
+  dan seri chart (3:1) dari stylesheet asli di kedua tema.
 
 ---
 
@@ -496,10 +508,10 @@ tidak digeser. Rasio terukurnya 4.53:1 di light dan 4.25:1 di dark, jadi:
 |---|---|
 | `bg-emerald-600`, `text-blue-500` | `bg-success`, `text-info-strong` |
 | `bg-card/60`, `border-border/70` | `bg-surface-2`, `border-surface-border` |
-| `#d04738` di luar `theme.css` | `text-primary`, `bg-primary` |
+| Hex warna di luar `theme.css` | `bg-primary`, `text-brand` |
 | `FILES('s3://...')` di UI | `SELECT * FROM @stage_name.data.csv` |
 | Nama vendor storage di UI/state/log | Nama koneksi (`nova.yaml`) atau `@stage` |
-| `text-primary` sebagai teks di dark | `text-primary-foreground` di atas `bg-primary` |
+| `text-primary`/`bg-primary` untuk keadaan aktif atau seleksi | `text-brand`, `bg-brand/10`, `bg-brand text-brand-foreground` |
 | Ikon AI generik untuk segala arti | Satu ikon, satu arti (B1) |
 
 ---

@@ -30,7 +30,7 @@ export function readTokens(mode: 'current' | 'light' = 'current'): VizTokens {
   // theme.css owns every color; tokens are always defined where charts render.
   const token = (name: string) => mode === 'light' ? readLightToken(name, '') : readToken(name, '')
   return {
-    series: [4, 2, 3, 1, 5, 6, 8, 9, 7].map(index => token(`--chart-${index}`)),
+    series: [1, 2, 3, 4, 5, 6, 7, 8, 9].map(index => token(`--chart-${index}`)),
     tones: [1, 2, 3, 4, 5, 6].map(index => token(`--chart-tone-${index}`)),
     mark: token('--viz-mark'),
     highlight: token('--viz-highlight'),

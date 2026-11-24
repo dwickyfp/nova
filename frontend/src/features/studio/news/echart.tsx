@@ -15,14 +15,14 @@ function tokens(dark: boolean): ChartTokens {
   // missing and mirrors the theme's value for the mode on screen.
   return dark
     ? {
-        series: readToken("--chart-4", "#7398ed"),
+        series: readToken("--chart-1", "#6aa5e0"),
         text: readToken("--foreground", "#f7f8fa"),
         muted: readToken("--muted-foreground", "#9ca8b8"),
         border: readToken("--border", "#28313d"),
         surface: readToken("--background", "#0b0f14"),
       }
     : {
-        series: readToken("--chart-4", "#4f7ee8"),
+        series: readToken("--chart-1", "#2f6fb0"),
         text: readToken("--foreground", "#18181b"),
         muted: readToken("--muted-foreground", "#71717a"),
         border: readToken("--border", "#e4e4e7"),

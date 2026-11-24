@@ -16,9 +16,9 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
       className={cn(
         "flex w-[200px] flex-col gap-1 rounded-lg border bg-card px-3 py-2 text-left shadow-sm",
         nodeData.isFinalizer
-          ? "border-primary/40 border-dashed"
+          ? "border-brand/40 border-dashed"
           : "border-border",
-        selected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
+        selected && "ring-2 ring-brand ring-offset-2 ring-offset-background",
       )}
     >
       <Handle type="target" position={Position.Left} className={HANDLE_CLASS} />
@@ -45,7 +45,7 @@ function StateDot({ tone, state }: { tone: StatusTone; state: string | null }) {
     info: "bg-info",
     danger: "bg-destructive",
     neutral: "bg-muted-foreground/50",
-    primary: "bg-primary",
+    primary: "bg-brand",
   };
   return (
     <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">

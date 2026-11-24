@@ -186,7 +186,7 @@ export function ImproveOverview({
               aria-current={isNext ? "step" : undefined}
               className={cn(
                 "flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:gap-4",
-                isNext && "border-primary/50 bg-muted/30",
+                isNext && "border-brand/50 bg-muted/30",
               )}
             >
               <div className="flex min-w-0 flex-1 gap-4">
@@ -197,7 +197,7 @@ export function ImproveOverview({
                   step.done
                     ? "border-success/40 bg-success/10 text-success-strong"
                     : isNext
-                      ? "border-primary/60 text-foreground"
+                      ? "border-brand/60 text-foreground"
                       : "text-muted-foreground",
                 )}
               >
@@ -207,7 +207,7 @@ export function ImproveOverview({
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <h3 className="text-sm font-medium">{step.title}</h3>
                   {isNext ? (
-                    <span className="text-xs text-primary">Next step</span>
+                    <span className="text-xs text-brand">Next step</span>
                   ) : null}
                 </div>
                 <p className="text-sm text-muted-foreground">{step.why}</p>

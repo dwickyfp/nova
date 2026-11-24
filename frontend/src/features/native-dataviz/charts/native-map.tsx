@@ -13,7 +13,7 @@ const SOURCE = 'native-map-points'
 const LAYER = 'native-map-circles'
 // The right side also clears the in-map controls.
 const PADDING = { top: 32, right: 48, bottom: 32, left: 32 }
-const SERIES = [4, 2, 3, 1, 5, 6, 8, 9, 7]
+const SERIES = [1, 2, 3, 4, 5, 6, 7, 8, 9]
 // More groups than this are named in the point popups instead of the legend.
 const LEGEND = 8
 

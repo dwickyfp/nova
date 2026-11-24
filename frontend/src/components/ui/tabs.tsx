@@ -122,7 +122,7 @@ function TabsList({
           className={cn(
             'pointer-events-none absolute left-0 top-0 z-0 transition-[transform,width,height] duration-200 ease-out motion-reduce:transition-none',
             indicatorVariant === 'underline'
-              ? 'bg-primary'
+              ? 'bg-brand'
               : 'border border-transparent bg-background shadow-sm dark:border-input dark:bg-input/30'
           )}
           style={{
