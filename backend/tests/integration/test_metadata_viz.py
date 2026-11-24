@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import secrets
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -15,6 +17,7 @@ import pytest
 import pytest_asyncio
 from cryptography.fernet import Fernet
 from fastapi import FastAPI
+from psycopg.types.json import Jsonb
 from pydantic import ValidationError
 
 from app.core import metadata_db as metadata_db_module
@@ -35,6 +38,7 @@ from app.modules.access_control.security_context import SecurityContext
 from app.modules.intelligence.metadata_repository import IntelligenceMetadataRepository
 from app.modules.viz import document_service
 from app.modules.viz import router as viz_router
+from app.modules.viz.canvas import dashboard_definition, legacy_widgets
 from app.modules.viz.contracts.authoring import (
     DashboardDatasetCreate,
     DatasetPreviewRequest,
@@ -53,15 +57,19 @@ from app.modules.viz.contracts.commands import (
 from app.modules.viz.contracts.dashboards import (
     DashboardDefinition,
     DatasetReference,
-    Layout,
     Page,
+)
+from app.modules.viz.contracts.dashboards_v2 import (
+    DashboardDefinitionV2,
+    Layout,
+    PageV2,
     TextWidget,
 )
 from app.modules.viz.contracts.datasets import SqlSource
 from app.modules.viz.contracts.filters import FilterDefinition
 from app.modules.viz.dataset_service import NativeDatasetService
 from app.modules.viz.document_service import NativeDocumentService
-from app.modules.viz.documents import VizDocumentRepository
+from app.modules.viz.documents import VizDocumentRepository, canonical, document_identity
 from app.modules.workspaces.metadata_sharing import WorkspaceSharingRepository
 from tests.integration.test_metadata_bootstrap import environment  # noqa: F401
 from tests.integration.test_metadata_workspaces import session
@@ -139,6 +147,27 @@ async def viz(environment):  # noqa: F811
 def dashboard(title="Sales"):
     return DashboardDefinition(dashboard_id=uuid4(), title=title,
                                pages=(Page(page_id=uuid4(), title="Page 1"),))
+
+
+def legacy_dashboard(document):
+    """What an application before migration 63 stored: the v2 grid projection."""
+    raw = document.model_dump(mode="json", exclude={"schema_version"})
+    raw["pages"] = [{
+        "page_id": str(page.page_id), "title": page.title,
+        "widgets": [widget.model_dump(mode="json") for widget in legacy_widgets(page)],
+    } for page in document.pages]
+    return DashboardDefinitionV2.model_validate(raw)
+
+
+async def schema_2_revision(self, document, revision):
+    """The revision insert of an application before migration 63."""
+    kind, identity = document_identity(document)
+    payload = canonical(legacy_dashboard(document) if kind == "dashboard" else document)
+    await self.connection.execute(
+        "INSERT INTO nova_meta.viz_revisions "
+        "(resource_id,revision,schema_version,definition,digest) VALUES (%s,%s,%s,%s,%s)",
+        (identity, revision, 2, Jsonb(json.loads(payload)), hashlib.sha256(payload).hexdigest()),
+    )
 
 
 async def test_dashboard_dataset_registry_pins_and_protects_unvisualized_data(viz):
@@ -928,6 +957,7 @@ async def test_dependency_upgrade_backfills_exact_revision_pins(
     fixture = VizFixture(environment, epoch, "personal", schema_version=49)
     with monkeypatch.context() as old_application:
         old_application.setattr(metadata_db_module, "load_migrations", lambda: previous)
+        old_application.setattr(VizDocumentRepository, "_insert_revision", schema_2_revision)
         source, figure, board = await graph(fixture)
     snapshot_sql = ("SELECT resource_id,revision,digest FROM nova_meta.viz_revisions "
                     "ORDER BY resource_id,revision")
@@ -951,6 +981,62 @@ async def test_dependency_upgrade_backfills_exact_revision_pins(
             ))
 
 
+async def test_canvas_upgrade_keeps_schema_2_revisions_and_reads_them_as_canvas(
+    environment, tmp_path, monkeypatch,  # noqa: F811
+):
+    """Migration 63: stored v2 dashboards stay byte-identical, read upcast, edit to v3."""
+    await environment.bootstrap()
+    previous = tuple(m for m in load_migrations() if m.version <= 62)
+    for migration in previous:
+        (tmp_path / migration.name).write_text(migration.statement)
+    await migrate(environment.role_config("nova_meta_migrator"), app_version="a" * 40,
+                  directory=tmp_path)
+    epoch = str(uuid4())
+    await environment.admin.execute(
+        "UPDATE nova_meta.deployment_state SET metadata_epoch=%s,maintenance=false", (epoch,),
+    )
+    fixture = VizFixture(environment, epoch, "personal", schema_version=62)
+    with monkeypatch.context() as old_application:
+        old_application.setattr(metadata_db_module, "load_migrations", lambda: previous)
+        old_application.setattr(VizDocumentRepository, "_insert_revision", schema_2_revision)
+        _, _, board = await graph(fixture)
+    snapshot_sql = ("SELECT resource_id,revision,schema_version,definition,digest "
+                    "FROM nova_meta.viz_revisions ORDER BY resource_id,revision")
+    before = await fixture.inspect(snapshot_sql)
+    assert {row["schema_version"] for row in before} == {2}
+    await environment.admin.execute("UPDATE nova_meta.deployment_state SET maintenance=true")
+    await migrate(environment.role_config("nova_meta_migrator"), app_version="b" * 40)
+    await environment.admin.execute("UPDATE nova_meta.deployment_state SET maintenance=false")
+    fixture.schema_version = len(load_migrations())
+    assert await fixture.inspect(snapshot_sql) == before
+    element = board.pages[0].elements[0]
+    async with fixture.transaction() as (repo, _):
+        assert (await repo.read(board.dashboard_id, draft=True))["definition"] == board
+        await repo.apply(board.dashboard_id, Operation(
+            operation_id=uuid4(), expected_revision=1, changes=(LayoutChange(
+                page_id=board.pages[0].page_id, placements=(Placement(
+                    widget_id=element.element_id, layout=Layout(x=6, y=0, w=6, h=4)),)),),
+        ))
+    rows = await fixture.inspect(
+        "SELECT revision,schema_version,definition->>'schema_version' AS stored "
+        "FROM nova_meta.viz_revisions WHERE resource_id=%s ORDER BY revision",
+        (board.dashboard_id,))
+    assert rows == [{"revision": 1, "schema_version": 2, "stored": None},
+                    {"revision": 2, "schema_version": 3, "stored": "3"}]
+    async with fixture.transaction() as (repo, connection):
+        edited = (await repo.read(board.dashboard_id, draft=True))["definition"]
+        assert legacy_widgets(edited.pages[0])[0].layout == Layout(x=6, y=0, w=6, h=4)
+        for version, definition in ((2, edited), (3, legacy_dashboard(edited))):
+            with pytest.raises(psycopg.errors.CheckViolation):
+                async with connection.transaction():
+                    await connection.execute(
+                        "INSERT INTO nova_meta.viz_revisions "
+                        "(resource_id,revision,schema_version,definition,digest) "
+                        "VALUES (%s,3,%s,%s,'x')",
+                        (board.dashboard_id, version,
+                         Jsonb(definition.model_dump(mode="json"))))
+
+
 @pytest.mark.parametrize("deleted_source", [False, True])
 async def test_dashboard_dataset_dependency_upgrade_from_51_preserves_history(
     environment, tmp_path, monkeypatch, deleted_source,  # noqa: F811
@@ -972,6 +1058,7 @@ async def test_dashboard_dataset_dependency_upgrade_from_51_preserves_history(
     })
     with monkeypatch.context() as old_application:
         old_application.setattr(metadata_db_module, "load_migrations", lambda: previous)
+        old_application.setattr(VizDocumentRepository, "_insert_revision", schema_2_revision)
         async with fixture.transaction() as (repository, _):
             await repository.create("personal", source, operation_id=uuid4())
             await repository.create("personal", board, operation_id=uuid4())
@@ -1387,8 +1474,9 @@ async def test_twenty_concurrent_layout_editors_lose_no_acknowledged_operation(v
     page_id, widget_id = uuid4(), uuid4()
     note = TextWidget(widget_id=widget_id, text="Notes",
                       layout=Layout(x=0, y=0, w=4, h=4))
-    document = DashboardDefinition(dashboard_id=uuid4(), title="Sales",
-                                   pages=(Page(page_id=page_id, title="Page 1", widgets=(note,)),))
+    document = DashboardDefinitionV2(
+        dashboard_id=uuid4(), title="Sales",
+        pages=(PageV2(page_id=page_id, title="Page 1", widgets=(note,)),))
     await create(viz, document)
     identity = document.dashboard_id
     editors = 20
@@ -1441,7 +1529,9 @@ async def test_twenty_concurrent_layout_editors_lose_no_acknowledged_operation(v
     last = max(acknowledged, key=lambda item: item[2]["new_revision"])
     async with viz.transaction() as (repo, _):
         final = (await repo.read(identity, draft=True))["definition"]
-        assert final.pages[0].widgets[0].layout == Layout(x=last[1] % 9, y=last[1], w=3, h=2)
+        assert final.schema_version == 3
+        expected = Layout(x=last[1] % 9, y=last[1], w=3, h=2)
+        assert legacy_widgets(final.pages[0])[0].layout == expected
         replay = await repo.apply(identity, acknowledged[0][0])
     assert replay == acknowledged[0][2]
     assert (await viz.inspect("SELECT count(*) AS n FROM nova_meta.viz_operations "
@@ -1716,7 +1806,7 @@ async def test_widget_filter_cannot_borrow_another_accessible_dataset_binding(vi
     async with viz.transaction() as (repo, _):
         await repo.create(viz.workspace_id, unrelated, operation_id=uuid4())
     raw = board.model_dump(mode="json")
-    widget = raw["pages"][0]["widgets"][0]
+    widget = raw["pages"][0]["elements"][0]
     widget["filters"] = {"expression": {
         "type": "predicate", "field": {"dataset_id": str(source.dataset_id),
             "dataset_revision": 1, "field_id": "region"},
@@ -1924,7 +2014,7 @@ async def test_query_semantic_metadata_is_published_scoped_and_read_only(viz):
 async def graph(viz):
     source = dataset()
     figure = chart(source, dataset_revision=1)
-    board = DashboardDefinition.model_validate({
+    board = dashboard_definition({
         "dashboard_id": str(uuid4()), "title": "Pinned sales", "pages": [{
             "page_id": str(uuid4()), "title": "Sales", "widgets": [{
                 "kind": "chart", "widget_id": str(uuid4()),

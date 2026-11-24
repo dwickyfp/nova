@@ -5,10 +5,11 @@ import { cdp, page, userEvent } from 'vitest/browser'
 import { cleanup, render } from 'vitest-browser-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAuthStore } from '@/stores/auth-store'
-import type { ChartDefinition, DatasetField } from '../contracts'
+import type { ChartDefinition, DashboardDefinitionV2, DatasetField } from '../contracts'
 import { initialState, toChart } from '../charts/builder-model'
 import { DashboardEditor } from './editor'
 import { NATIVE_DASHBOARD_ACTIVITY, NATIVE_DASHBOARD_CHANGED, NATIVE_DASHBOARD_OPEN, type LinkedSelection, type NativeDashboardActivity, type NativeDashboardOpen } from './events'
+import { upcastDashboard } from './layout'
 import '@/styles/index.css'
 
 /*
@@ -111,7 +112,7 @@ function defaultAnswer(body: Json) {
 }
 
 function snapshot() {
-  return { resource_id: DASHBOARD, revision, metadata_revision: revision, grants_revision: 1, publication_id: publicationId, definition }
+  return { resource_id: DASHBOARD, revision, metadata_revision: revision, grants_revision: 1, publication_id: publicationId, definition: upcastDashboard(definition as unknown as DashboardDefinitionV2) }
 }
 
 /** Server-side application of committed changes, so a reload returns what was saved. */

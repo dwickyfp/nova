@@ -28,6 +28,7 @@ from app.modules.agents.tools import native_dataviz
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import AssistantThread
 from app.modules.assistant.tools import ToolRegistry
+from app.modules.viz.canvas import legacy_widgets
 from app.modules.viz.contracts.common import StringValue
 from app.modules.viz.contracts.queries import DatasetQueryResult, QueryColumn
 from tests.benchmark.harness import ScriptedProvider, text_frame, tool_call_frame
@@ -241,10 +242,10 @@ async def test_stopping_after_one_change_keeps_it_and_runs_no_other(docs):
     assert asked == ["native_dashboard_add_charts"]
     # The committed change is kept: one operation, revision 2, the KPI on the page.
     assert len(docs.applied) == 1 and len(docs.docs[DASHBOARD]) == 2
-    page = docs.docs[DASHBOARD][-1].pages[0]
-    assert len(page.widgets) == 2 and docs.created[0][1].title == "Total revenue"
+    widgets = legacy_widgets(docs.docs[DASHBOARD][-1].pages[0])
+    assert len(widgets) == 2 and docs.created[0][1].title == "Total revenue"
     # The next change never ran: the original chart is still there.
-    assert UUID("55555555-5555-4555-8555-555555555555") in {w.widget_id for w in page.widgets}
+    assert UUID("55555555-5555-4555-8555-555555555555") in {w.widget_id for w in widgets}
     assert all(call["tool_name"] != "native_dashboard_arrange"
                for call in _events(frames, "tool_call"))
     assert "removed the old chart" not in _answer(frames)

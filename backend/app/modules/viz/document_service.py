@@ -26,6 +26,7 @@ from .contracts.commands import (
     RestoreRequest,
 )
 from .contracts.dashboards import DashboardDefinition
+from .contracts.dashboards_v2 import DashboardDefinitionV2
 from .contracts.datasets import DatasetDefinition
 from .contracts.http import dataset_publication
 from .documents import Kind, VizDocumentRepository, document_identity
@@ -183,10 +184,11 @@ class NativeDocumentService:
 
     async def create_visual(
         self, user: Mapping[str, Any], workspace_id: str,
-        document: ChartDefinition | DashboardDefinition, *, operation_id: UUID,
+        document: ChartDefinition | DashboardDefinition | DashboardDefinitionV2, *,
+        operation_id: UUID,
     ) -> dict[str, Any]:
         """Visuals reference validated dataset revisions; dataset authoring owns sources."""
-        if not isinstance(document, (ChartDefinition, DashboardDefinition)):
+        if not isinstance(document, (ChartDefinition, DashboardDefinition, DashboardDefinitionV2)):
             raise NovaException("Expected a chart or dashboard definition", status_code=422)
         _, identity = document_identity(document)
         space = await document_workspace(user, workspace_id, action="CREATE", identity=identity,
@@ -195,10 +197,11 @@ class NativeDocumentService:
             return await repository.create(space.id, document, operation_id=operation_id)
 
     async def replace_visual(
-        self, user: Mapping[str, Any], document: ChartDefinition | DashboardDefinition,
+        self, user: Mapping[str, Any],
+        document: ChartDefinition | DashboardDefinition | DashboardDefinitionV2,
         *, operation_id: UUID, expected_revision: int,
     ) -> dict[str, Any]:
-        if not isinstance(document, (ChartDefinition, DashboardDefinition)):
+        if not isinstance(document, (ChartDefinition, DashboardDefinition, DashboardDefinitionV2)):
             raise NovaException("Expected a chart or dashboard definition", status_code=422)
         _, identity = document_identity(document)
         async with document_transaction(user, action="EDIT", identity=identity) as repository:

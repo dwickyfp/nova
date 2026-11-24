@@ -1,0 +1,4238 @@
+{
+  "actions": [],
+  "dashboard_id": "00000000-0000-4000-8000-00000000003c",
+  "datasets": [],
+  "description": "",
+  "filters": [],
+  "pages": [
+    {
+      "canvas": {
+        "background": null,
+        "fit": "width",
+        "grid": {
+          "baseline": 8,
+          "columns": 12,
+          "gutter": 12,
+          "margin": 6,
+          "show": true,
+          "snap": true,
+          "snap_to_elements": true
+        },
+        "height": 3600,
+        "size": "custom",
+        "width": 1200
+      },
+      "elements": [
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000064",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 6
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000065",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 306,
+            "y": 6
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000066",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 606,
+            "y": 6
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000067",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 906,
+            "y": 6
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000068",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 150
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000069",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 306,
+            "y": 150
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000006a",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 606,
+            "y": 150
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000006b",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 906,
+            "y": 150
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000006c",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 294
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000006d",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 306,
+            "y": 294
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000006e",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 606,
+            "y": 294
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000006f",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 906,
+            "y": 294
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000070",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 438
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000071",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 306,
+            "y": 438
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000072",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 606,
+            "y": 438
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000073",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 906,
+            "y": 438
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000074",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 582
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000075",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 306,
+            "y": 582
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000076",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 606,
+            "y": 582
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000077",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 906,
+            "y": 582
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000078",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 726
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000079",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 306,
+            "y": 726
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000007a",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 606,
+            "y": 726
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000007b",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 906,
+            "y": 726
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000007c",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 870
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000007d",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 306,
+            "y": 870
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000007e",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 606,
+            "y": 870
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000007f",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 906,
+            "y": 870
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000080",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 1014
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000081",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 306,
+            "y": 1014
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000082",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 606,
+            "y": 1014
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000083",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 906,
+            "y": 1014
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000084",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 1158
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000085",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 306,
+            "y": 1158
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000086",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 606,
+            "y": 1158
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000087",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 906,
+            "y": 1158
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000088",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 1302
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000089",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 306,
+            "y": 1302
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000008a",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 606,
+            "y": 1302
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000008b",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 906,
+            "y": 1302
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000008c",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 1446
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000008d",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 306,
+            "y": 1446
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000008e",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 606,
+            "y": 1446
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000008f",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 906,
+            "y": 1446
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000090",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 1590
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000091",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 306,
+            "y": 1590
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000092",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 606,
+            "y": 1590
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000093",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 906,
+            "y": 1590
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000094",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 1734
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000095",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 306,
+            "y": 1734
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000096",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 606,
+            "y": 1734
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000097",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 906,
+            "y": 1734
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000098",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 1878
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000099",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 306,
+            "y": 1878
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000009a",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 606,
+            "y": 1878
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000009b",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 906,
+            "y": 1878
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000009c",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 2022
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000009d",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 306,
+            "y": 2022
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000009e",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 606,
+            "y": 2022
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000009f",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 906,
+            "y": 2022
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000a0",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 2166
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000a1",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 306,
+            "y": 2166
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000a2",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 606,
+            "y": 2166
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000a3",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 906,
+            "y": 2166
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000a4",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 2310
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000a5",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 306,
+            "y": 2310
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000a6",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 606,
+            "y": 2310
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000a7",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 906,
+            "y": 2310
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000a8",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 2454
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000a9",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 306,
+            "y": 2454
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000aa",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 606,
+            "y": 2454
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000ab",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 906,
+            "y": 2454
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000ac",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 2598
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000ad",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 306,
+            "y": 2598
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000ae",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 606,
+            "y": 2598
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000af",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 906,
+            "y": 2598
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000b0",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 2742
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000b1",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 306,
+            "y": 2742
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000b2",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 606,
+            "y": 2742
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000b3",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 906,
+            "y": 2742
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000b4",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 2886
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000b5",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 306,
+            "y": 2886
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000b6",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 606,
+            "y": 2886
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000b7",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 906,
+            "y": 2886
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000b8",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 3030
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000b9",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 306,
+            "y": 3030
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000ba",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 606,
+            "y": 3030
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000bb",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 906,
+            "y": 3030
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000bc",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 3174
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000bd",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 306,
+            "y": 3174
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000be",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 606,
+            "y": 3174
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000bf",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 906,
+            "y": 3174
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000c0",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 3318
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000c1",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 306,
+            "y": 3318
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000c2",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 606,
+            "y": 3318
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000c3",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 906,
+            "y": 3318
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000c4",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 3462
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000c5",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 306,
+            "y": 3462
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000c6",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 606,
+            "y": 3462
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-0000000000c7",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 906,
+            "y": 3462
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        }
+      ],
+      "mobile": {
+        "hidden": [],
+        "order": []
+      },
+      "page_id": "00000000-0000-4000-8000-00000000003d",
+      "tab_order": [],
+      "title": "Wall"
+    }
+  ],
+  "schema_version": 3,
+  "title": "Wall"
+}

@@ -10,11 +10,11 @@ Baseline: `1ee12694e0ecb6ecfd8135965943be08f5195967`.
 | --- | --- | --- |
 | WP00 baseline/inventory | DONE — baseline inventory only | Source callers, assets/identities, recognized links, PG epoch, topology and baseline OSS SBOM verified; release distribution/notice checks belong to WP16 |
 | WP01 contracts/design | In progress | Full spec coverage, complete compatibility conversion, real shared UI composition |
-| WP02 metadata/ACL | In progress | Schema 55 deployed in development (0053 export task handler, 0054 task-login reads and workspace entry insert for scheduled exports, 0055 dashboard comments); final application and release gates remain |
+| WP02 metadata/ACL | In progress | Schema 55 deployed in development (0053 export task handler, 0054 task-login reads and workspace entry insert for scheduled exports, 0055 dashboard comments); 0063 dashboard canvas prepared, not deployed in development; final application and release gates remain |
 | WP03 datasets | In progress | Table/view, SQL (including declared non-sensitive parameters) and published Semantic View inspection/create/preview/source-update APIs active; parameter declaration editor and preview inputs prepared in unmounted components; local metrics, relationships, sensitive-input engine boundary and product-shell Data tab remain open |
 | WP04 calculations | In progress | Exact governed aggregates (sum/avg/min/max/count/distinct, date grains) active; table calculations (running total, percent of total, difference, percent difference, rank, dense rank, moving average) over the governed result, mirrored in scheduled files; ratio/weighted, window calculations, time intelligence and golden results open |
 | WP05 chart builder | In progress | Inspector (Configure/Style) and ECharts/KPI/table rendering for 15 visuals including a cross-tab pivot (row/column groups, totals, subtotals) and conditional formatting (colour scale, threshold highlight) for tables and pivots; point map on the street basemap (size by value, colour by group, legend, popups, cross-filter by group, PNG and print from the drawn map); remaining visual QA open |
-| WP06 canvas | In progress | 12-column GridStack canvas with drag/resize commits, pages, undo/redo, keyboard nudge, one-column phone view, mounted in Dataviz and Studio Artifacts; Neva cursor overlay and 100-widget load open |
+| WP06 canvas | In progress | 12-column GridStack canvas with drag/resize commits, pages, undo/redo, keyboard nudge, one-column phone view, mounted in Dataviz and Studio Artifacts; Neva cursor overlay and 100-widget load open. Free canvas ([ADR-001](../../architecture/native-dataviz/ADR-001-free-canvas.md)): P0 schema-3 contract, lossless schema-2 upcaster, canvas operations and migration 0063 built; P1 renderer (GridStack removal), P2 authoring aids and P3 Neva on canvas open |
 | WP07 filters | In progress | Typed predicate compilation, multi/single value, date range, relative date, number range, text and Boolean controls with governed options; cascading, explicit cross-dataset mapping UI and parameter controls open |
 | WP08 interactions | In progress | A mark click offers filter-the-dashboard or drill-down (finer date level or another grouping, narrowed to the clicked value, with breadcrumb back/reset); drill-through to another dashboard (link a chart, open the target narrowed to the clicked value; hidden from people who cannot open the target) |
 | WP09 query orchestration | In progress | Client query queue (3 in flight), capacity retry, debounce, abort of superseded queries, epoch-scoped cache keys; server-side cache and large-table pagination open |
@@ -1029,3 +1029,19 @@ by a recorded decision and 3 are blocked.
       theme-switch test waited only 1 s for the chart library to load and
       draw; it now waits up to 10 s, like the other chart tests.
 
+## Free canvas P0 (2026-11-24)
+
+- **Built:** schema-3 dashboard contract (`canvas.grid`, eight element kinds plus
+  groups, geometry, stacking, `tab_order`, `mobile`, `ValueBinding`,
+  `DatumAnchor`, 150 elements per page, 1 MiB), read-time upcaster, typed
+  `elements.*`/`page.*` operations with revision CAS, schema-2 operation
+  adapters, migration 0063, generated TypeScript types and a browser mirror of
+  the upcaster. The editor still renders through GridStack until P1.
+- **Not yet active in development:** the shared development database is at an
+  earlier schema; migration 0063 needs the operator upgrade before this code runs
+  there. No live or screenshot run has been made for P0.
+- **Gates (local, attempt 1):** backend 13,581 unit tests, agent harness
+  scorecard 54/54, trajectory suite, changed-file Ruff and full-application mypy
+  pass; frontend lint, build, bundle budget, licenses and 236 files / 2,005 tests
+  with coverage pass. The PG17 suites, including the schema-62 upgrade test,
+  run in CI because the disposable PG17 fixture is not running on this host.

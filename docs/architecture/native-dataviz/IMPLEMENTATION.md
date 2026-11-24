@@ -583,12 +583,34 @@ base dataset in the document dependency graph; their authoring/execution remains
 unfinished. Semantic charts must plan through the existing compiler, including
 its additivity rules, rather than blindly reaggregate a preview result.
 
+## Dashboard schema 3 (free canvas)
+
+[ADR-001](ADR-001-free-canvas.md) records the decision. Dashboards are schema 3:
+pages are canvases with integer pixel geometry, stacking order, `tab_order`,
+`mobile` projection and authoring-only `canvas.grid` settings
+(`contracts/dashboards.py`). The schema-2 models remain in
+`contracts/dashboards_v2.py`; `canvas.py` upcasts them on every read without
+rewriting immutable revisions, and `legacy_widgets` is the exact inverse used by
+grid-speaking callers. Migration 0063 permits `schema_version` 3 for dashboards
+and requires it to match the stored definition.
+
+`operations.py` applies typed canvas changes (`elements.*`, `page.canvas.set`,
+`page.tab_order.set`, `page.mobile.set`) and adapts the unchanged schema-2
+changes, so stored receipts keep their digests and replay. The assistant tools
+and Studio publish still send grid changes; the editor still renders through
+GridStack by projecting pages to cells until the P1 renderer lands.
+
+Active: the contract, upcaster, adapters and migration. Tested: server golden,
+property and digest tests, the browser upcaster against the same goldens, and the
+PG17 upgrade from schema 62 (CI). Open: P1 renderer, P2 authoring aids, P3 Neva
+on canvas operations, and live visual parity.
+
 ## Dataviz assistant tools
 
 `backend/app/modules/agents/tools/native_dataviz.py` gives the Studio Dataviz
 assistant (and any Studio turn asked from a native dashboard) eleven tools in
 the shared `AssistantLoop`: list, read, describe a dataset, aggregate query,
-add charts, update a chart, arrange/remove widgets, filters, create, attach a
+add charts, update a chart, arrange/remove widgets (applied as canvas changes), filters, create, attach a
 dataset (existing or from a table), and publish. They call
 `NativeDocumentService` and `NativeDatasetService` in-process with the turn's
 caller; no service credential or HTTP hop is involved.
