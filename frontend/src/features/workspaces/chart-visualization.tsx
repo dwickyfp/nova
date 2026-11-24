@@ -46,7 +46,7 @@ function readSeriesPalette() {
     readToken("--chart-5", "#d4503f"),
     readToken("--chart-6", "#c03f84"),
     readToken("--chart-7", "#4f8a2b"),
-    readToken("--chart-8", "#1a86b4"),
+    readToken("--chart-8", "#6e6a1c"),
     readToken("--chart-9", "#a0612f"),
   ];
 }

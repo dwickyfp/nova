@@ -105,14 +105,72 @@ describe.each(['light', 'dark'] as const)('theme contrast (%s)', mode => {
   it('never puts two look-alike series next to each other', () => {
     apply()
     const series = Array.from({ length: 9 }, (_, index) => token(`--chart-${index + 1}`))
-    for (let index = 1; index < series.length; index += 1) {
-      expect(distance(series[index - 1], series[index]), `--chart-${index} vs --chart-${index + 1}`).toBeGreaterThan(0.08)
-    }
-    // Non-adjacent slots may be closer (sky and steel blue), but never the same.
+    // Every pair, not only neighbours: a nine-series chart shows all of them.
     for (let a = 0; a < series.length; a += 1) {
       for (let b = a + 1; b < series.length; b += 1) {
-        expect(distance(series[a], series[b]), `--chart-${a + 1} vs --chart-${b + 1}`).toBeGreaterThan(0.06)
+        expect(distance(series[a], series[b]), `--chart-${a + 1} vs --chart-${b + 1}`).toBeGreaterThan(0.08)
       }
     }
   })
+
+  it('keeps the red phoenix mark at 3:1 on the brightest point of its sidebar', async () => {
+    apply()
+    const glass = sidebarGlass()
+    expect(ratio(token('--brand-mark'), glass)).toBeGreaterThanOrEqual(3)
+    expect(ratio(token('--brand-mark'), token('--background'))).toBeGreaterThanOrEqual(3)
+    // The raster itself, not only the token: its body red matches --brand-mark
+    // and clears 3:1 against the same glass.
+    const body = await markBody(mode === 'dark' ? '/images/nova-mark-128-dark.png' : '/images/nova-mark-128.png')
+    expect(distance(body, token('--brand-mark')), `mark body ${body}`).toBeLessThan(0.03)
+    expect(ratio(body, glass), `mark body ${body} on ${glass}`).toBeGreaterThanOrEqual(3)
+  })
+
+  it('keeps the mark red apart from the UI accents', () => {
+    apply()
+    expect(distance(token('--brand-mark'), token('--primary'))).toBeGreaterThan(0.2)
+    expect(distance(token('--brand-mark'), token('--brand'))).toBeGreaterThan(0.2)
+  })
 })
+
+/**
+ * The navigation glass where the logo sits: the sidebar tint composited over
+ * the backdrop's first (top-left) stop, which is its brightest point in dark
+ * and its most saturated in light.
+ */
+function sidebarGlass(): string {
+  const stop = token('--shell-backdrop').match(/#[0-9a-f]{6}/i)![0]
+  const tint = token('--sidebar-navigation-tint')
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = 1
+  const context = canvas.getContext('2d')!
+  context.fillStyle = stop
+  context.fillRect(0, 0, 1, 1)
+  context.fillStyle = tint
+  context.fillRect(0, 0, 1, 1)
+  const [r, g, b] = context.getImageData(0, 0, 1, 1).data
+  return `rgb(${r}, ${g}, ${b})`
+}
+
+/** The most common saturated colour among the mark's opaque pixels. */
+async function markBody(src: string): Promise<string> {
+  const image = new Image()
+  image.src = src
+  await image.decode()
+  const canvas = document.createElement('canvas')
+  canvas.width = image.naturalWidth
+  canvas.height = image.naturalHeight
+  const context = canvas.getContext('2d', { willReadFrequently: true })!
+  context.drawImage(image, 0, 0)
+  const data = context.getImageData(0, 0, canvas.width, canvas.height).data
+  const counts = new Map<string, number>()
+  for (let index = 0; index < data.length; index += 4) {
+    if (data[index + 3] < 250) continue
+    const [r, g, b] = [data[index], data[index + 1], data[index + 2]]
+    if (r - Math.min(g, b) < 80) continue
+    // Quantise to 8 levels per channel so anti-aliasing does not split the vote.
+    const key = [r, g, b].map(v => Math.round(v / 8) * 8).join(',')
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  const [key] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]
+  return `rgb(${key})`
+}
