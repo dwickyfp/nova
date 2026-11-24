@@ -628,13 +628,23 @@ list. New charts and text on a fixed-size page land inside it (`slotOnPage`).
 Untitled items keep their actions in a corner overlay. KPI values that do not
 fit switch to compact notation.
 
+Authoring (P2, part 3) adds dashboard pictures: an **Image** tool, image
+description/fit/replace, and a page background photo with fit and darkening
+(`images.ts`, `picture.tsx`). Pictures are registered in `nova_meta.viz_assets`
+(migration 0064) by `backend/app/modules/viz/assets.py` and served per request
+to viewers of the dashboard by `assets_router.py`; the bytes are kept by the
+workspace storage owner under `.viz-assets/` and swept by the workspace object
+reconciler when no registry row holds them. See ADR-001, "Images (P2, part 3)".
+
 Active: the contract, upcaster, adapters, migration, the frame renderer and
 P2 parts 1 and 2. Tested: server golden, property and digest tests, the browser
 upcaster against the same goldens, the PG17 upgrade from schema 62 (CI),
 `frame.test.ts`, `authoring.test.ts`, `qa-authoring.test.tsx` (including the
 60-item drag frame budget), `insert.test.ts`, `item-panel.test.tsx`, the
-keyboard-only editor test and the editor browser suites. Open: P2 part 3
-(images and photo backgrounds),
+keyboard-only editor test and the editor browser suites. Part 3 is tested by
+`test_native_viz_assets.py`, `test_metadata_viz_assets.py` (PG17, CI) and the
+image browser tests; it is active only where migration 0064 is applied. Open:
+reference scenario 9 on the shared development database after 0064 is applied,
 resolving data-point anchors and value bindings, and P3 Neva on canvas
 operations.
 

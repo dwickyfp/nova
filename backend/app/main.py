@@ -74,6 +74,7 @@ from app.modules.tasks.router import router as tasks_router
 from app.modules.users.router import router as users_router
 from app.modules.variables.router import router as variables_router
 from app.modules.views.router import router as views_router
+from app.modules.viz.assets_router import router as native_viz_assets_router
 from app.modules.viz.router import router as native_viz_router
 from app.modules.viz.studio_publish_router import router as dataviz_router
 from app.modules.workspaces.router import router as workspaces_router
@@ -309,6 +310,7 @@ def create_app() -> FastAPI:
     app.include_router(llm_gateway_router, prefix=f"{prefix}/internal/llm", tags=["internal"])
     app.include_router(workspaces_router, prefix=f"{prefix}/workspaces", tags=["workspaces"])
     app.include_router(native_viz_router, prefix=f"{prefix}/viz", tags=["native-dataviz"])
+    app.include_router(native_viz_assets_router, prefix=f"{prefix}/viz", tags=["native-dataviz"])
     app.include_router(notebooks_router, prefix=f"{prefix}/notebooks", tags=["notebooks"])
     app.include_router(monitoring_router, prefix=f"{prefix}/monitoring", tags=["monitoring"])
     app.include_router(functions_router, prefix=f"{prefix}/functions", tags=["functions"])

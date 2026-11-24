@@ -2,8 +2,10 @@
 
 - Status: accepted. P0 (contract and upcaster), P1 (frame renderer) and P2
   parts 1 (selection, snapping, arrange commands) and 2 (shapes, icons, lines,
-  formatting, layers and tab order) are implemented; P2 part 3 (images) and P3
-  are open.
+  formatting, layers and tab order) are implemented. P2 part 3 (images and
+  background photos, migration 0064) is implemented on its branch; it is not
+  active on the shared development database until 0064 is applied there, and
+  reference scenario 9 is built after that. P3 is open.
 - Owner decisions: one free-form canvas engine replaces GridStack, with no
   hybrid mode or feature flag. Grid assistance is an authoring aid only. The
   Dataviz assistant becomes Neva with per-batch approval (P3).
@@ -204,6 +206,46 @@ toolbar menus are in `insert-menu.tsx` and the **Format and layers** panel in
 - A KPI value that does not fit its box is drawn in compact notation (175.2M)
   with the full value in the tooltip and for screen readers, never truncated.
 
+### Images (P2, part 3)
+
+An image item (`ImageElement`) and a page background photo (`ImageFill`) refer
+to a dashboard picture by `asset_id`, never by URL.
+
+- **Registry.** Migration `0064_viz_assets.sql` adds `nova_meta.viz_assets`
+  (asset, dashboard, object key, type, size, SHA-256, width, height, uploader).
+  Row security admits `viz_can(resource, 'view')` for reads and
+  `viz_can(resource, 'edit')` with `created_by` equal to the principal for
+  inserts. Rows never change or disappear (an older revision may still show the
+  picture). Every insert writes a redacted `UPLOAD_IMAGE` audit row (asset,
+  type and size, no bytes). The maintenance reconciler may read `object_key`
+  only.
+- **Upload** (`POST /viz/dashboards/{id}/images`, raw body, `assets.py`): the
+  bytes are read in a bounded stream (2 MiB) and their type is sniffed (PNG,
+  JPEG or WebP; size from the header, at most 8192 px a side and 40 MP). SVG and
+  everything else are refused with 415. The bytes are written through the
+  workspace storage owner under the dashboard workspace's area
+  (`.viz-assets/<dashboard>/<asset>`), then the registry row commits. A failed
+  commit removes the object; an unknown commit outcome keeps it, and the
+  workspace object reconciler (0060) removes any `.viz-assets` key the registry
+  does not hold after its retention.
+- **Serving** (`GET /viz/dashboards/{id}/images/{asset}`): every request is
+  authorized as the caller (View), the picture must belong to that dashboard,
+  and the stored bytes are checked against the recorded size, digest and type
+  (502 when damaged). Responses carry the recorded type, `nosniff`, a
+  `default-src 'none'; sandbox` policy and `Cache-Control: private, no-store`.
+  There is no public or unauthenticated address.
+- **Editor.** The browser fetches a picture with the session (bearer header)
+  and shows a page-local object URL. Its copy is cleared when the security
+  epoch changes. **Image** in the toolbar uploads, asks for a required
+  description, and adds the item with `elements.add` in the picture's
+  proportions (up to 320 × 240). **Format** sets the description, **Fit** and
+  **Replace picture**; with nothing selected, **Image** as the page background
+  takes **Fit** and **Darken** (`dim`, 0–70 % in the panel, 0–90 % in the
+  contract). A picture that cannot be shown says **Image unavailable**.
+- Not done in part 3: the server does not check that an `asset_id` in a
+  dashboard belongs to it (a foreign ID only shows **Image unavailable**), and
+  pictures are not included in server-side exports.
+
 ## Consequences
 
 - Readers always receive schema 3. Integrations may keep creating schema-2
@@ -213,9 +255,9 @@ toolbar menus are in `insert-menu.tsx` and the **Format and layers** panel in
 - The editor draws pages with the frame renderer (P1). Elements a grid cannot
   express (shapes, icons, connectors, annotations) are drawn when an
   integration creates them; the editor groups and ungroups items (P2 part 1)
-  and creates shapes, icons and connectors (P2 part 2). Images arrive in P2
-  part 3. Annotations and data-point anchors are not authored yet.
-- The metadata schema moves to 63. A shared development database must be
+  and creates shapes, icons and connectors (P2 part 2) and images and background
+  photos (P2 part 3). Annotations and data-point anchors are not authored yet.
+- The metadata schema moves to 64 with part 3 (63 before it). A shared development database must be
   upgraded by the operator procedure (maintenance, backup, migrator, then the
   application's configured schema) before this code runs there.
 
@@ -307,3 +349,28 @@ toolbar menus are in `insert-menu.tsx` and the **Format and layers** panel in
   clicks, typing and drags only: 63 steps, 51 s automated, 8.2 minutes by a
   keystroke-level estimate. Reference 9 needs a photo background and is built in
   part 3.
+
+## Acceptance evidence for P2 part 3
+
+- `test_native_viz_assets.py` (unit): real PNG, JPEG (baseline and
+  progressive) and WebP (lossy, lossless, extended) are recognised with their
+  size; SVG, GIF, BMP, PDF and text are refused with 415; damaged, empty,
+  oversized and too-large pictures are refused. The service writes the object
+  before the row, removes it when the row fails, keeps it on an unknown commit
+  outcome, never logs the key, and refuses to serve a missing (404) or altered
+  (502) copy. The routes refuse other declared types before reading, stop a
+  body over 2 MiB while streaming, and serve with the closed headers.
+- `test_metadata_viz_assets.py` (PG17, CI): an editor registers and a viewer
+  reads; a viewer cannot register; a stranger gets 404 and row security hides
+  the row; a picture of another dashboard is not found; a forged uploader,
+  update and delete are refused; key and type checks hold; the audit row has
+  no picture; the reconciler principal sees only keys, another service sees
+  nothing; the query and task logins are refused. Registered in the CI
+  `metadata-pg` job with `test_metadata_workspace_objects.py`.
+- `test_workspace_object_reconciler.py`: `.viz-assets` keys are candidates.
+- `images.test.tsx`, `item-panel.test.tsx`, `editor.test.tsx` (browser): the
+  file check, the raw upload, placement in proportion, one fetch per role with
+  a new fetch after a role change, the unavailable state, the dimmed
+  background, the dialog's required description and server refusal, image
+  description/fit/replace, the background photo with **Fit** and **Darken**, and
+  adding an image from the toolbar with the picture shown from the viewer's copy.

@@ -19,6 +19,12 @@ const shape = (id: string, x: number, y: number): Element =>
   ({ kind: 'shape', element_id: id, name: 'Card', ...FLAGS, decorative: true, geometry: box(x, y), shape: 'rect', style: { fill: { kind: 'solid', token: 'card', opacity: 100 } } }) as unknown as Element
 const icon = (id: string): Element =>
   ({ kind: 'icon', element_id: id, name: 'Truck', ...FLAGS, decorative: true, geometry: box(500, 0, 48, 48), icon: 'truck', label: '' }) as unknown as Element
+const image = (id: string): Element =>
+  ({ kind: 'image', element_id: id, name: 'Image 1', ...FLAGS, geometry: box(0, 0, 320, 240), title: '', asset_id: '11111111-2222-4333-8444-555555555555', alt: 'Warehouse at night', fit: 'contain' }) as unknown as Element
+const pick = async (name: string) => {
+  const input = document.querySelector<HTMLInputElement>('input[type=file]')!
+  await userEvent.upload(browser.elementLocator(input), new File([new Uint8Array([137, 80, 78, 71])], name, { type: name.endsWith('.svg') ? 'image/svg+xml' : 'image/png' }))
+}
 const start = (elements: Element[]): DashboardDefinition => ({
   schema_version: 3, dashboard_id: 'd', title: 'D', description: '', datasets: [], filters: [], actions: [],
   pages: [{ page_id: 'p', title: 'P', elements, tab_order: [], mobile: { order: [], hidden: [] }, legacy_spacers: [],
@@ -28,11 +34,14 @@ const start = (elements: Element[]): DashboardDefinition => ({
 const ran: Command[] = []
 
 /** The panel with changes applied as the editor applies them. */
+const PICTURE = { asset_id: '7d0f0c3e-1f53-4a52-9b8e-3c1d2a4b5c6d', media_type: 'image/png' as const, size_bytes: 120, width: 640, height: 480 }
+const stubUpload = vi.fn(async (_file: File) => PICTURE)
+
 function Harness({ initial, selected = [] }: { initial: DashboardDefinition; selected?: string[] }) {
   const [definition, setDefinition] = useState(initial)
   const [selection, setSelection] = useState(selected)
   return <div style={{ width: 320, height: 700, display: 'flex' }}>
-    <ItemPanel page={definition.pages[0] as Page} selection={selection} onSelect={setSelection} disabled={false} onClose={() => undefined}
+    <ItemPanel page={definition.pages[0] as Page} selection={selection} onSelect={setSelection} disabled={false} onClose={() => undefined} upload={stubUpload}
       run={command => {
         ran.push(command)
         if (command.changes) setDefinition(current => command.changes!.reduce(applyLocal, current))
@@ -41,7 +50,7 @@ function Harness({ initial, selected = [] }: { initial: DashboardDefinition; sel
 }
 
 const last = () => ran[ran.length - 1]
-afterEach(async () => { await cleanup(); ran.length = 0; vi.unstubAllGlobals() })
+afterEach(async () => { await cleanup(); ran.length = 0; vi.unstubAllGlobals(); stubUpload.mockClear() })
 
 describe('Format and layers panel', () => {
   it('sets a gradient page background when nothing is selected', async () => {
@@ -139,5 +148,57 @@ describe('Format and layers panel', () => {
     await screen.getByRole('button', { name: 'Follow the page' }).click()
     await expect.poll(() => last()?.message).toBe('The tab order follows the page again')
     await expect.poll(list).toBe('1Revenue2Orders')
+  })
+  it('describes, fits and replaces a selected image', async () => {
+    const screen = await render(<Harness initial={start([image('i')])} selected={['i']} />)
+    await expect.element(screen.getByText('Image selected')).toBeVisible()
+    await screen.getByLabelText('Description for screen readers').fill('Jakarta warehouse at night')
+    await userEvent.keyboard('{Enter}')
+    await expect.poll(() => last()?.message).toBe('Description set to Jakarta warehouse at night')
+    expect(last().changes![0]).toMatchObject({ op: 'elements.update', updates: [{ element_id: 'i', set: { alt: 'Jakarta warehouse at night' } }] })
+    // An image always has a description; clearing it is refused, not saved.
+    await screen.getByLabelText('Description for screen readers').fill('')
+    await userEvent.keyboard('{Enter}')
+    await expect.poll(() => last()?.changes).toBeNull()
+    await screen.getByLabelText('Fit').click()
+    await browser.getByRole('option', { name: 'Fill the box' }).click()
+    await expect.poll(() => last()?.message).toBe('The picture now fills its box')
+    expect(last().changes![0]).toMatchObject({ updates: [{ set: { fit: 'cover' } }] })
+    await pick('new.png')
+    await expect.poll(() => last()?.message).toBe('Picture replaced')
+    expect(stubUpload).toHaveBeenCalledTimes(1)
+    expect(last().changes![0]).toMatchObject({ updates: [{ element_id: 'i', set: { asset_id: PICTURE.asset_id } }] })
+  })
+
+  it('refuses an SVG before sending it, and shows a refusal from the server', async () => {
+    const screen = await render(<Harness initial={start([image('i')])} selected={['i']} />)
+    await pick('logo.svg')
+    await expect.element(screen.getByRole('alert')).toHaveTextContent('including SVG, are not accepted')
+    expect(stubUpload).not.toHaveBeenCalled()
+    stubUpload.mockRejectedValueOnce(new Error('This PNG picture is damaged'))
+    await pick('broken.png')
+    await expect.element(screen.getByRole('alert')).toHaveTextContent('This PNG picture is damaged')
+    expect(ran).toHaveLength(0)
+  })
+
+  it('sets a background photo, then darkens it and changes its fit', async () => {
+    const screen = await render(<Harness initial={start([text('a', 0, 0, 'Revenue')])} />)
+    await screen.getByLabelText('Page background').click()
+    await browser.getByRole('option', { name: 'Image' }).click()
+    // Nothing changes until a picture is chosen.
+    expect(ran).toHaveLength(0)
+    await expect.element(screen.getByRole('button', { name: 'Choose a picture' })).toBeVisible()
+    await pick('jakarta.png')
+    await expect.poll(() => last()?.message).toBe('Background picture added')
+    expect(last().changes![0]).toMatchObject({ op: 'page.canvas.set', canvas: { background: { kind: 'image', asset_id: PICTURE.asset_id, fit: 'cover', dim: 0 } } })
+    await screen.getByLabelText('Darken').click()
+    await browser.getByRole('option', { name: '40%' }).click()
+    await expect.poll(() => last()?.message).toBe('Picture darkened by 40%')
+    expect(last().changes![0]).toMatchObject({ canvas: { background: { kind: 'image', dim: 40, fit: 'cover' } } })
+    await screen.getByLabelText('Fit').click()
+    await browser.getByRole('option', { name: 'Show the whole picture' }).click()
+    await expect.poll(() => last()?.message).toBe('The whole picture now shows')
+    expect(last().changes![0]).toMatchObject({ canvas: { background: { fit: 'contain', dim: 40 } } })
+    await expect.element(screen.getByRole('button', { name: 'Replace picture' })).toBeVisible()
   })
 })

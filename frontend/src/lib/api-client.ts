@@ -148,6 +148,8 @@ export class ApiError extends Error {
 type RequestOptions = Omit<RequestInit, 'headers'> & {
   headers?: Record<string, string>
   securityEpoch?: number
+  /** Read the body as bytes (a picture, say) instead of JSON or text. */
+  as?: 'blob'
 }
 
 async function request<T>(
@@ -155,7 +157,7 @@ async function request<T>(
   options: RequestOptions = {},
   renewed = false,
 ): Promise<T> {
-  const { securityEpoch, ...fetchOptions } = options
+  const { securityEpoch, as, ...fetchOptions } = options
   const assertCurrent = () => {
     if (securityEpoch !== undefined && securityEpoch !== useAuthStore.getState().securityEpoch) {
       throw new DOMException('Security context changed', 'AbortError')
@@ -200,6 +202,12 @@ async function request<T>(
 
   if (res.status === 204) {
     return undefined as T
+  }
+
+  if (as === 'blob') {
+    const blob = await res.blob()
+    assertCurrent()
+    return blob as T
   }
 
   const contentType = res.headers.get('content-type') ?? ''

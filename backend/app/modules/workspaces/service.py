@@ -221,6 +221,10 @@ class WorkspaceService:
     async def read_internal_object(self, key: str) -> bytes:
         return await asyncio.to_thread(self._read_object, key)
 
+    async def delete_internal_object(self, key: str) -> None:
+        """Remove an internal object a failed save left behind."""
+        await asyncio.to_thread(self._delete_object, key)
+
     async def read_entry_bytes(self, username: str, entry_id: str) -> tuple[dict, bytes]:
         """A file entry and its raw content, for copying into a runtime."""
         return await self._files.read_entry_bytes(username, entry_id)

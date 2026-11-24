@@ -266,6 +266,45 @@ class VizDocumentRepository(WorkspaceMetadataScope):
         )
         return list(await cursor.fetchall())
 
+    # ── Dashboard images (0064) ─────────────────────────────────────────
+
+    _ASSET_COLUMNS = ("asset_id,object_key,media_type,size_bytes,content_sha256,width,height,"
+                      "created_by,created_at")
+
+    async def asset_target(self, identity: UUID) -> dict[str, Any]:
+        """The dashboard an editor may add a picture to: where its files live."""
+        head = await self._head(identity)
+        if head["kind"] != "dashboard":
+            raise NovaException("Document not found", status_code=404)
+        await self._permission(identity, "edit")
+        return {"workspace_id": head["workspace_id"], "owner_name": head["owner_name"]}
+
+    async def register_asset(self, identity: UUID, asset_id: UUID, object_key: str,
+                             picture: Any) -> dict[str, Any]:
+        await self.asset_target(identity)
+        await self.connection.execute(
+            "INSERT INTO nova_meta.viz_assets (asset_id,resource_id,object_key,media_type,"
+            "size_bytes,content_sha256,width,height,created_by) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,current_setting('nova.principal',true))",
+            (asset_id, identity, object_key, picture.media_type, picture.size_bytes,
+             picture.sha256, picture.width, picture.height),
+        )
+        return await self.asset(identity, asset_id)
+
+    async def asset(self, identity: UUID, asset_id: UUID) -> dict[str, Any]:
+        """A picture of this dashboard; row security admits viewers of the dashboard only."""
+        head = await self._head(identity)
+        if head["kind"] != "dashboard":
+            raise NovaException("Document not found", status_code=404)
+        cursor = await self.connection.execute(
+            f"SELECT {self._ASSET_COLUMNS} FROM nova_meta.viz_assets "
+            "WHERE resource_id=%s AND asset_id=%s", (identity, asset_id),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            raise NovaException("Image not found", status_code=404)
+        return dict(row)
+
     async def add_comment(self, identity: UUID, comment_id: UUID, body: str, *,
                           page_id: UUID | None, widget_id: UUID | None) -> dict[str, Any]:
         await self._head(identity)

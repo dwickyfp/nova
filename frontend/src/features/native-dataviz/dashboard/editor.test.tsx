@@ -29,6 +29,9 @@ const kpi = {
 let revision = 4
 let definition: Record<string, unknown>
 const operations: Record<string, unknown>[] = []
+const ASSET = '99999999-0000-4000-8000-000000000001'
+const uploads: { body: unknown; type: string }[] = []
+let picture: Blob = new Blob()
 
 function dashboard() {
   return { resource_id: DASHBOARD, revision, metadata_revision: revision, grants_revision: 1, publication_id: null, definition: upcastDashboard(definition as unknown as DashboardDefinitionV2) }
@@ -40,6 +43,11 @@ async function route(url: string, options: RequestInit = {}) {
     exports.push(JSON.parse(String(options.body)))
     return permissionList.includes('export') ? json({ allowed: true }) : json({ detail: 'Not allowed' }, 403)
   }
+  if (url.endsWith(`/viz/dashboards/${DASHBOARD}/images`)) {
+    uploads.push({ body: options.body, type: (options.headers as Record<string, string>)['Content-Type'] })
+    return json({ asset_id: ASSET, media_type: 'image/png', size_bytes: 8, width: 800, height: 400, created_at: '2026-11-24T00:00:00Z' }, 201)
+  }
+  if (url.endsWith(`/viz/dashboards/${DASHBOARD}/images/${ASSET}`)) return new Response(picture, { headers: { 'Content-Type': 'image/png' } })
   if (url.includes(`/viz/dashboards/${DASHBOARD}/events`)) return json({ events: [], through: 0, next_sequence: 0 })
   if (url.includes(`/viz/dashboards/${DASHBOARD}/datasets`)) return json({ dashboard_id: DASHBOARD, revision, datasets: [{ dataset_id: DATASET, revision: 1, title: 'Orders' }] })
   if (url.endsWith(`/viz/dashboards/${DASHBOARD}/operations`)) {
@@ -74,6 +82,7 @@ beforeEach(() => {
   exports.length = 0
   revision = 4
   operations.length = 0
+  uploads.length = 0
   definition = {
     schema_version: 2, dashboard_id: DASHBOARD, title: 'Sales overview', description: '', columns: 12,
     datasets: [{ dataset_id: DATASET, revision: 1 }], filters: [], actions: [],
@@ -309,6 +318,30 @@ describe('native dashboard editor', () => {
     expect(XLSX.utils.sheet_to_json(book.Sheets['Units sold'], { header: 1 })).toEqual([['Sum of units'], [15257]])
   })
 
+  it('adds an image from the toolbar and shows the viewer\'s copy on the page', async () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 2
+    canvas.height = 1
+    picture = await new Promise<Blob>(resolve => canvas.toBlob(blob => resolve(blob!), 'image/png'))
+    const screen = await mount()
+    await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
+    await screen.getByRole('button', { name: 'Edit' }).click()
+    await screen.getByRole('toolbar', { name: 'Add to dashboard' }).getByRole('button', { name: 'Image' }).click()
+    const file = new File([picture], 'warehouse.png', { type: 'image/png' })
+    await userEvent.upload(page.elementLocator(document.querySelector<HTMLInputElement>('#image-file')!), file)
+    await page.getByLabelText('Description for screen readers').fill('Jakarta warehouse at night')
+    await page.getByRole('button', { name: 'Add image' }).click()
+    await expect.poll(() => operations.length).toBe(1)
+    expect(uploads).toEqual([{ body: file, type: 'image/png' }])
+    // The item keeps the picture's proportions (800 × 400) and its description.
+    expect(operations[0]).toMatchObject({ changes: [{ op: 'elements.add', page_id: PAGE, elements: [{
+      kind: 'image', asset_id: ASSET, alt: 'Jakarta warehouse at night', fit: 'contain', geometry: { w: 320, h: 160 } }] }] })
+    await expect.element(page.getByRole('dialog')).not.toBeInTheDocument()
+    const shown = screen.getByRole('img', { name: 'Jakarta warehouse at night' })
+    await expect.element(screen.getByTestId('dashboard-image')).toBeVisible()
+    expect((shown.element() as HTMLImageElement).src).toMatch(/^blob:/)
+  })
+
   it('saves nothing when the server refuses the download', async () => {
     permissionList = [...permissionList, 'export']
     const screen = await mount()
@@ -368,14 +401,16 @@ describe('canvas authoring in the editor', () => {
     await expect.poll(() => operations.length).toBe(2)
     expect(lastOp().changes[0]).toMatchObject({ op: 'elements.arrange', placements: [{ element_id: rect }] })
 
-    // Format it: open the panel, then the Fill list, and type to pick Brand.
+    // Format it: open the panel, then the Fill list, and arrow down to Brand.
+    // (Not typeahead: its buffer resets after a second, so a slow run picks another colour.)
     await tabTo('Format and layers')
     await userEvent.keyboard('{Enter}')
     await expect.element(page.getByRole('complementary', { name: 'Format and layers' })).toBeVisible()
     await tabTo('Card')
     await userEvent.keyboard('{Enter}')
     await expect.element(page.getByRole('option', { name: 'Brand' })).toBeVisible()
-    await userEvent.keyboard('Brand')
+    for (let step = 0; step < 20 && document.activeElement?.textContent !== 'Brand'; step++) await userEvent.keyboard('{ArrowDown}')
+    await expect.element(page.getByRole('option', { name: 'Brand' })).toHaveFocus()
     await userEvent.keyboard('{Enter}')
     await expect.poll(() => operations.length).toBe(3)
     expect(lastOp().changes[0]).toMatchObject({ op: 'elements.update', updates: [{ element_id: rect, set: { style: { fill: { token: 'brand' } } } }] })

@@ -16,7 +16,11 @@ maintenance worker under a Redis leader lock and:
 
 An unknown commit outcome resolves itself: a committed save references its
 object and keeps it; one that never committed leaves an unreferenced object that
-is removed after the retention. Keys outside ``.objects`` (imported files,
+is removed after the retention.
+
+Dashboard images (0064) follow the same rule under ``.viz-assets/``: an image
+is written before its registry row commits, and an object no row holds is
+removed after the retention. Other keys outside ``.objects`` (imported files,
 notebook outputs) are never touched.
 """
 
@@ -41,7 +45,7 @@ RETENTION = timedelta(hours=24)
 INTERVAL_SECONDS = 6 * 3600
 MAX_REMOVALS = 1000
 BATCH = 500
-_MARKER = "/.objects/"
+_MARKERS = ("/.objects/", "/.viz-assets/")
 _LOCK = "nova:workspace-objects:reconciler"
 
 
@@ -76,10 +80,10 @@ class Pass:
 
 def candidates(objects: Iterable[StoredObject], *, now: datetime,
                retention: timedelta = RETENTION) -> list[str]:
-    """``.objects`` keys old enough that no write of them can still commit."""
+    """Saved-object keys old enough that no write of them can still commit."""
     cutoff = now - retention
     return [item.key for item in objects
-            if _MARKER in item.key and item.last_modified < cutoff]
+            if any(marker in item.key for marker in _MARKERS) and item.last_modified < cutoff]
 
 
 async def reconcile(store: ObjectListing, referenced: Referenced, *,
@@ -110,15 +114,16 @@ async def reconcile(store: ObjectListing, referenced: Referenced, *,
 
 
 async def referenced_in(connection: Any, keys: Sequence[str]) -> set[str]:
-    """Keys a live entry or a reserved/published version references (0060)."""
+    """Keys a live entry, a reserved/published version (0060) or a dashboard image (0064) holds."""
     if not keys:
         return set()
     cursor = await connection.execute(
         "SELECT object_key FROM nova_meta.config_workspace_entries "
         "WHERE object_key = ANY(%s) AND is_deleted IS NOT TRUE "
         "UNION SELECT object_key FROM nova_meta.config_workspace_file_versions "
-        "WHERE object_key = ANY(%s) AND NOT is_deleted AND state <> 'abandoned'",
-        (list(keys), list(keys)),
+        "WHERE object_key = ANY(%s) AND NOT is_deleted AND state <> 'abandoned' "
+        "UNION SELECT object_key FROM nova_meta.viz_assets WHERE object_key = ANY(%s)",
+        (list(keys), list(keys), list(keys)),
     )
     return {str(row["object_key"]) for row in await cursor.fetchall()}
 
