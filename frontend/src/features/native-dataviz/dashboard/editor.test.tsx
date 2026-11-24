@@ -111,6 +111,10 @@ describe('native dashboard editor', () => {
     await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
     await screen.getByRole('button', { name: 'Edit' }).click()
     await expect.element(screen.getByRole('toolbar', { name: 'Add to dashboard' })).toBeVisible()
+    // An untitled item keeps its actions in a corner, not a header row, so its words start at the top.
+    const words = screen.getByText('<b>Plain</b> notes').element()
+    const top = words.getBoundingClientRect().top - words.closest('[data-element-body]')!.getBoundingClientRect().top
+    expect(top).toBeLessThan(20)
     await screen.getByRole('button', { name: 'Widget actions' }).click()
     await page.getByRole('menuitem', { name: 'Remove' }).click()
     await expect.poll(() => operations.length).toBe(1)
@@ -324,6 +328,96 @@ describe('native dashboard editor', () => {
 })
 
 describe('canvas authoring in the editor', () => {
+  /**
+   * Keyboard only: press Tab (or Shift+Tab) until the focused control's
+   * accessible name matches, as someone without a pointer would.
+   */
+  async function tabTo(name: string | RegExp, { back = false, limit = 120 } = {}) {
+    const matches = () => {
+      const node = document.activeElement as HTMLElement | null
+      if (!node || node === document.body) return false
+      const label = (node.getAttribute('aria-label') ?? node.textContent ?? '').trim()
+      return typeof name === 'string' ? label === name : name.test(label)
+    }
+    for (let step = 0; step < limit && !matches(); step++) await userEvent.keyboard(back ? '{Shift>}{Tab}{/Shift}' : '{Tab}')
+    expect(matches(), `focus reached ${String(name)}`).toBe(true)
+  }
+  const lastOp = () => operations[operations.length - 1] as { changes: Record<string, unknown>[] }
+
+  it('builds and arranges with the keyboard alone: add, move, format, connect, reorder, undo', { timeout: 60_000 }, async () => {
+    await mount()
+    await expect.element(page.getByTestId('kpi-value')).toBeVisible()
+    await tabTo('Edit')
+    await userEvent.keyboard('{Enter}')
+    await expect.element(page.getByRole('toolbar', { name: 'Add to dashboard' })).toBeVisible()
+
+    // Insert a rectangle from the Shape menu: Enter opens it on the first item.
+    await tabTo('Shape')
+    await userEvent.keyboard('{Enter}')
+    await expect.element(page.getByRole('menuitem', { name: 'Rectangle' })).toHaveFocus()
+    await userEvent.keyboard('{Enter}')
+    await expect.poll(() => operations.length).toBe(1)
+    const added = (lastOp().changes[0] as { op: string; elements: { element_id: string; kind: string }[] })
+    expect(added).toMatchObject({ op: 'elements.add', elements: [{ kind: 'shape', shape: 'rect', name: 'Rectangle 1' }] })
+    const rect = added.elements[0].element_id
+    await expect.poll(announced).toMatch(/^Added a rectangle at x \d+, y \d+$/)
+
+    // The new shape is selected: Alt+Right moves it one column.
+    await expect.element(page.getByRole('menu')).not.toBeInTheDocument()
+    await userEvent.keyboard('{Alt>}{ArrowRight}{/Alt}')
+    await expect.poll(() => operations.length).toBe(2)
+    expect(lastOp().changes[0]).toMatchObject({ op: 'elements.arrange', placements: [{ element_id: rect }] })
+
+    // Format it: open the panel, then the Fill list, and type to pick Brand.
+    await tabTo('Format and layers')
+    await userEvent.keyboard('{Enter}')
+    await expect.element(page.getByRole('complementary', { name: 'Format and layers' })).toBeVisible()
+    await tabTo('Card')
+    await userEvent.keyboard('{Enter}')
+    await expect.element(page.getByRole('option', { name: 'Brand' })).toBeVisible()
+    await userEvent.keyboard('Brand')
+    await userEvent.keyboard('{Enter}')
+    await expect.poll(() => operations.length).toBe(3)
+    expect(lastOp().changes[0]).toMatchObject({ op: 'elements.update', updates: [{ element_id: rect, set: { style: { fill: { token: 'brand' } } } }] })
+    // Only what changed is sent; the box and flags are not cleared.
+    expect(Object.keys((lastOp().changes[0] as { updates: { set: object }[] }).updates[0].set)).toEqual(['style'])
+
+    // Layers: arrow to the tab, then add the text to the selection with Shift+Enter.
+    await tabTo('Format')
+    await userEvent.keyboard('{ArrowRight}')
+    await expect.element(page.getByRole('tab', { name: 'Layers' })).toHaveAttribute('aria-selected', 'true')
+    await tabTo(/^Text /)
+    await userEvent.keyboard('{Shift>}{Enter}{/Shift}')
+    await expect.poll(() => document.querySelectorAll('[data-selected]').length).toBe(2)
+
+    // Connect the two from the Arrange menu, typing to reach the item.
+    await tabTo('Arrange', { back: true })
+    await userEvent.keyboard('{Enter}')
+    await expect.element(page.getByRole('menu')).toBeVisible()
+    // Tabbing back past the canvas items kept both selected.
+    expect(document.querySelectorAll('[data-selected]').length).toBe(2)
+    await userEvent.keyboard('Connect')
+    await expect.element(page.getByRole('menuitem', { name: 'Connect with a line' })).toHaveFocus()
+    await userEvent.keyboard('{Enter}')
+    await expect.poll(() => operations.length).toBe(4)
+    expect(lastOp().changes[0]).toMatchObject({ op: 'elements.add', elements: [{ kind: 'connector',
+      start: { kind: 'element', element_id: rect }, end: { kind: 'element', element_id: TEXT_WIDGET } }] })
+
+    // Send the rectangle back with Alt+Down on its name in Layers, then undo that.
+    await expect.element(page.getByRole('menu')).not.toBeInTheDocument()
+    await tabTo('Shape Rectangle 1')
+    await userEvent.keyboard('{Alt>}{ArrowDown}{/Alt}')
+    await expect.poll(() => operations.length).toBe(5)
+    expect(lastOp().changes[0]).toMatchObject({ op: 'elements.reorder' })
+    await expect.poll(announced).toMatch(/^Rectangle 1 is now 3 of 4 from the front$/)
+    await userEvent.keyboard('{Control>}z{/Control}')
+    await expect.poll(() => operations.length).toBe(6)
+    // Back to the order before the move: back to front, the KPI, the text, the rectangle, the new line.
+    const line = (operations[3] as { changes: { elements: { element_id: string }[] }[] }).changes[0].elements[0].element_id
+    expect(lastOp().changes[0]).toMatchObject({ op: 'elements.reorder', element_ids: [KPI_WIDGET, TEXT_WIDGET, rect, line] })
+    expect((operations[4] as { changes: { element_ids: string[] }[] }).changes[0].element_ids).toEqual([KPI_WIDGET, rect, TEXT_WIDGET, line])
+  })
+
   const announced = () => document.querySelector('p[role="status"].sr-only')?.textContent
   async function editing() {
     const screen = await mount()

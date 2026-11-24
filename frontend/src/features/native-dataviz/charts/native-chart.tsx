@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useMemo, useState, type ReactNode } from 'react'
+import { Fragment, useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -38,13 +38,15 @@ type Props = {
   draftRef?: string
 }
 
-function measureFormatter(chart: ChartDefinition, index: number) {
+/** A measure's number format; `short` is its compact form (175.2M) for a value that does not fit. */
+function measureFormatter(chart: ChartDefinition, index: number, short = false) {
   const encoding = chart.encoding
   const format = encoding.kind === 'single_measure'
     ? (index === 0 ? encoding.measure.format : encoding.comparison?.format)
     : 'measures' in encoding ? encoding.measures?.[index]?.format : undefined
-  if (!format) return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 })
-  const options: Intl.NumberFormatOptions = { maximumFractionDigits: format.decimals ?? 2, minimumFractionDigits: 0 }
+  const compact: Intl.NumberFormatOptions = short ? { notation: 'compact', maximumFractionDigits: Math.min(format?.decimals ?? 1, 1) } : {}
+  if (!format) return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2, ...compact })
+  const options: Intl.NumberFormatOptions = { maximumFractionDigits: format.decimals ?? 2, minimumFractionDigits: 0, ...compact }
   if (format.kind === 'currency' && format.currency) Object.assign(options, { style: 'currency', currency: format.currency })
   if (format.kind === 'percent') options.style = 'percent'
   if (format.kind === 'scientific') options.notation = 'scientific'
@@ -62,10 +64,10 @@ function Kpi({ chart, result }: { chart: ChartDefinition; result: DatasetQueryRe
   const formatter = measureFormatter(chart, 0)
   const base = comparison ?? target
   const delta = value !== null && base ? (value - base) / Math.abs(base) : null
-  return <div className='flex min-h-0 flex-1 flex-col justify-center gap-1 px-1'>
-    <p className='viz-numerals truncate text-3xl font-medium tabular-nums' data-testid='kpi-value'>
-      {value === null ? <span aria-hidden>–</span> : formatter.format(value)}
-    </p>
+  return <div className='flex min-h-0 min-w-0 flex-1 flex-col justify-center gap-1 px-1'>
+    {value === null
+      ? <p className='viz-numerals truncate text-3xl font-medium tabular-nums' data-testid='kpi-value'><span aria-hidden>–</span></p>
+      : <KpiValue full={formatter.format(value)} short={measureFormatter(chart, 0, true).format(value)} />}
     {value === null && <p className='text-sm text-muted-foreground' role='status'>No data for the current filters</p>}
     {delta !== null && Number.isFinite(delta) && <p className={cn('flex items-center gap-1 text-sm',
       delta >= 0 ? 'text-success-strong' : 'text-destructive')}>
@@ -74,6 +76,33 @@ function Kpi({ chart, result }: { chart: ChartDefinition; result: DatasetQueryRe
       <span className='text-muted-foreground'>{comparison !== null ? `vs ${columnLabel(result.columns[1]).toLowerCase()}` : 'vs target'}</span>
     </p>}
   </div>
+}
+
+/**
+ * A KPI value in full, or in its compact form when the full one does not fit
+ * the box. Cutting a number short would misread it. Screen readers and the
+ * tooltip keep the full value.
+ */
+function KpiValue({ full, short }: { full: string; short: string }) {
+  const box = useRef<HTMLParagraphElement>(null)
+  const probe = useRef<HTMLSpanElement>(null)
+  const [compact, setCompact] = useState(false)
+  useLayoutEffect(() => {
+    const node = box.current
+    const measure = probe.current
+    if (!node || !measure || full === short) { setCompact(false); return }
+    const check = () => setCompact(measure.offsetWidth > node.clientWidth)
+    check()
+    const observer = new ResizeObserver(check)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [full, short])
+  return <>
+    <span ref={probe} aria-hidden className='viz-numerals pointer-events-none invisible absolute text-3xl font-medium whitespace-nowrap tabular-nums'>{full}</span>
+    <p ref={box} className='viz-numerals truncate text-3xl font-medium tabular-nums' data-testid='kpi-value' title={compact ? full : undefined}>
+      {compact ? <><span aria-hidden>{short}</span><span className='sr-only'>{full}</span></> : full}
+    </p>
+  </>
 }
 
 /** A value a highlight rule matched: a marker and words, so the meaning does not rely on colour. */
@@ -359,10 +388,10 @@ export function NativeChart({ chart, draft, context, parameters, onSelectValue, 
     ? NO_CATEGORY : undefined
   // Downloads wait while this is set, so an image never shows an older result.
   const updating = query.isFetching || whole.isFetching
-  return <div className={cn('relative flex min-h-0 flex-1 flex-col', className)} title={unfilterable}
+  return <div className={cn('relative flex min-h-0 min-w-0 flex-1 flex-col', className)} title={unfilterable}
     data-updating={updating ? '' : undefined}>
     {query.isFetching && <span role='status' className='sr-only'>Updating {chart.title}</span>}
-    <div className={cn('flex min-h-0 flex-1 flex-col motion-safe:transition-opacity', query.isFetching && 'opacity-60')}>
+    <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col motion-safe:transition-opacity', query.isFetching && 'opacity-60')}>
       {empty && chart.visual !== 'kpi' ? <State tone='muted' text='No rows match the current filters.' />
         : chart.visual === 'kpi' ? <Kpi chart={chart} result={result} />
           : chart.visual === 'pivot' ? <PivotTable chart={chart} result={result} />

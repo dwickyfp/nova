@@ -1145,4 +1145,52 @@ by a recorded decision and 3 are blocked.
   pass). PG integration runs in CI.
 - **Open:** P2 part 2 (selection pane with layer and tab order, text, shape,
   icon and background tools, connectors, keyboard-only scenario, reference
-  scenarios 9 and 10 by hand) and part 3 (images).
+  scenarios 9 and 10 by hand) and part 3 (images). Part 2 is recorded below.
+
+## Free canvas P2 part 2 (2026-11-24)
+
+- **Built:** shapes, icons and lines attached to two items; the **Format and
+  layers** panel (token fill and outline colour, line width and style, corners,
+  shadow, opacity, padding, text style, shape, icon, line ending and path,
+  decorative flag, page background), a **Layers** list that restacks, hides and
+  locks, and a **Tab order** list
+  ([ADR-001](../../architecture/native-dataviz/ADR-001-free-canvas.md#authoring-p2-part-2)).
+  Keyboard: Shift/Ctrl/⌘+Space adds the focused item to the selection, Tab
+  keeps a multi-selection, and layer rows take Shift+Enter and Alt+Up/Down. No
+  server or metadata change. Docs: `/docs/dataviz/native-dashboards`.
+- **Active:** in development on my own web/query/Vite processes (8360/8361/5360)
+  as alice; screenshots of the tools, the panel tabs, the docs page and the
+  reference build in light and dark. No LLM turns, no container touched.
+- **Reference scenario 10 by hand:** "Financial analysis (reference 10)" was
+  built live through the editor with clicks, typing and drags only. It has a
+  16:9 page, a sidebar with a logo and four icon-and-label entries, a title,
+  five KPIs (aligned and spaced with **Arrange**), a bar chart and a table.
+  That took 63 steps, 51 s automated, with no refused save; every drag was
+  checked against its target (12 px tolerance). A keystroke-level estimate for
+  a person is 8.2 minutes (gate: under 15). That is a model estimate, not a
+  stopwatch of a person. Reference 9 needs a photo background and moves to
+  part 3.
+- **Found building reference 10, fixed with tests:** (1) new charts, KPIs,
+  tables and text on a fixed-size page were placed below the page and refused
+  as invalid; they now land in a free cell inside the page, else the top-left;
+  (2) untitled items reserved a 28 px header row in Edit, so text in a box
+  under about 52 px was invisible; their actions are now a corner overlay (the
+  new test fails on the old layout at 41 px); (3) the outline colour select had
+  no accessible name; (4) KPI values were cut mid-number ("175,184,…"); they
+  now show the compact form (175.2M) with the full value in the tooltip and for
+  screen readers (the test fails without it); (5) a **Padding** field was
+  missing, so text could not read as a plain label.
+- **Not fixed (recorded):** on a fixed-size page drawn smaller than its size
+  (for example with the assistant panel open), text keeps its own size and can
+  be cut off in small boxes; this follows from the P1 renderer decision
+  (content at native size). In Edit, small KPI titles are cut short by their
+  three action buttons.
+- **Full-suite attempts (frontend coverage, on `014a9f3c` + part 2):** attempt
+  1 failed `intelligence-page.test.tsx` (a Semantic View query) and
+  `studio-chat.integration.test.tsx` (process rail), both on a 15 s wait under
+  load; neither file nor its feature changed, and both pass alone twice.
+  Attempt 2 passed 241 files / 2,093 tests.
+- **Gates (local, final source):** frontend lint (0 errors), build, component
+  schemas, licenses, bundle budget (159.7/175 kB largest chunk, 682.6/690 kB
+  first load), coverage as above. No backend file changed in part 2.
+- **Open:** part 3 (images and photo backgrounds, reference 9).

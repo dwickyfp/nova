@@ -8,7 +8,7 @@ import type { VizTokens } from '../charts/echart-host'
 import { capacityRetry, MAX_CONCURRENT_QUERIES, queuedQuery } from '../charts/query-queue'
 import { chartDataQuery, freshChartData } from '../charts/chart-data'
 import { chartContext, defaultValue, targetBinding, type FilterDefinition } from './filter-model'
-import { firstFreeSlot, gridWidgets, slotAt, upcastDashboard, validPlacements, type Widget } from './layout'
+import { cellRect, firstFreeSlot, gridWidgets, slotAt, slotOnPage, upcastDashboard, upcastWidget, validPlacements, type Page, type Widget } from './layout'
 import { applyLocal, inverse } from './operations'
 
 const DATASET = 'aaaaaaaa-0000-4000-8000-000000000001'
@@ -466,5 +466,43 @@ describe('dropping a widget on a cell', () => {
 
   it('without a cell behaves like the toolbar button', () => {
     expect(slotAt(widgets, 3, 2, null)).toEqual(firstFreeSlot(widgets, 3, 2))
+  })
+})
+
+describe('a new item on a fixed-size page', () => {
+  const grid = { columns: 12, gutter: 16, margin: 16, baseline: 8 }
+  const text = (layout: Widget['layout'], index: number) =>
+    upcastWidget({ widget_id: `w${index}`, kind: 'text', title: '', locked: false, text: 'x', style: 'body', layout } as Widget, grid, 1280)!
+  const page = (fit: 'width' | 'page', layouts: Widget['layout'][]) => ({
+    page_id: 'p', title: 'P', tab_order: [], mobile: { order: [], hidden: [] }, legacy_spacers: [],
+    canvas: { size: '16:9', width: 1280, height: 720, fit, background: null, grid: { ...grid, show: true, snap: true, snap_to_elements: true } },
+    elements: layouts.map(text),
+  }) as unknown as Page
+  const inside = (layout: Widget['layout']) => {
+    const box = cellRect(layout, grid, 1280)
+    return box.x >= 0 && box.y >= 0 && box.x + box.w <= 1280 && box.y + box.h <= 720
+  }
+  const full = [{ x: 0, y: 0, w: 12, h: 8 }]
+
+  it('takes the next slot below on a page that scrolls, which grows', () => {
+    expect(slotOnPage(page('width', full), 6, 4)).toEqual({ x: 0, y: 8, w: 6, h: 4 })
+  })
+
+  it('takes the free slot when it fits inside the page', () => {
+    const slot = slotOnPage(page('page', full), 6, 2)
+    expect(slot).toEqual({ x: 0, y: 8, w: 6, h: 2 })
+    expect(inside(slot)).toBe(true)
+  })
+
+  it('goes to the top-left, over what is there, when no free slot fits', () => {
+    const slot = slotOnPage(page('page', full), 6, 4)
+    expect(slot).toEqual({ x: 0, y: 0, w: 6, h: 4 })
+    expect(inside(slot)).toBe(true)
+  })
+
+  it('shortens an item taller than the page', () => {
+    const slot = slotOnPage(page('page', []), 12, 14)
+    expect(slot).toEqual({ x: 0, y: 0, w: 12, h: 10 })
+    expect(inside(slot)).toBe(true)
   })
 })

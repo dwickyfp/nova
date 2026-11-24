@@ -216,6 +216,28 @@ export function slotAt(widgets: readonly Widget[], w: number, h: number, cell?: 
   return { ...slot, y: slot.y + y }
 }
 
+/**
+ * The slot for a new item on a page. A page that scrolls takes the slot as it
+ * is, since it grows to hold it. A fixed-size page keeps the item inside it:
+ * the first free slot that fits, otherwise the top-left corner, over what is
+ * there, for the author to move. An item taller than the page is shortened.
+ */
+export function slotOnPage(page: Page, w: number, h: number, cell?: { x: number; y: number } | null): Layout {
+  const widgets = gridWidgets(page)
+  const slot = slotAt(widgets, w, h, cell)
+  if ((page.canvas?.fit ?? 'width') === 'width') return slot
+  const { grid, width } = gridOf(page)
+  const height = page.canvas?.height ?? 720
+  const fits = (layout: Layout) => {
+    const box = cellRect(layout, grid, width)
+    return box.y + box.h <= height && box.x + box.w <= width
+  }
+  if (fits(slot)) return slot
+  const rows = Math.max(2, Math.floor((height - grid.margin + grid.gutter) / LEGACY_ROW))
+  const free = firstFreeSlot(widgets, slot.w, Math.min(slot.h, rows))
+  return fits(free) ? free : { x: 0, y: 0, w: free.w, h: free.h }
+}
+
 /** What a toolbar button carries when it is dragged onto the canvas. */
 export type DropItem = { kind: 'chart'; visual: string } | { kind: 'text' }
 export const DROP_TYPE = 'application/x-nova-dashboard-widget'
