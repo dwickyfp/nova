@@ -1021,7 +1021,7 @@ async def test_canvas_upgrade_keeps_schema_2_revisions_and_reads_them_as_canvas(
         "SELECT revision,schema_version,definition->>'schema_version' AS stored "
         "FROM nova_meta.viz_revisions WHERE resource_id=%s ORDER BY revision",
         (board.dashboard_id,))
-    assert rows == [{"revision": 1, "schema_version": 2, "stored": None},
+    assert rows == [{"revision": 1, "schema_version": 2, "stored": "2"},
                     {"revision": 2, "schema_version": 3, "stored": "3"}]
     async with fixture.transaction() as (repo, connection):
         edited = (await repo.read(board.dashboard_id, draft=True))["definition"]
