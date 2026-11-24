@@ -317,9 +317,13 @@ to a dashboard picture by `asset_id`, never by URL.
   fixed-height refusal) and every command's undo round trip.
 - `qa-authoring.test.tsx`: marquee and Shift selection, moving two items in one
   change with guides, snapping to another item, a line following a dragged item
-  during and after the drag, and the drag frame budget (after one warm-up drag
-  and a garbage collection) with 60 items, whether all 60 move together or one
-  snaps against the other 59. It is judged over five drags together
+  during and after the drag.
+- `drag-budget.perf.test.tsx` (the Vitest `perf` project, run alone by
+  `pnpm test:perf` and by its own CI step after the full suite): the drag frame
+  budget (after one warm-up drag and a garbage collection) with 60 items,
+  whether all 60 move together or one snaps against the other 59. It runs alone
+  because other test files running alongside slow every frame on a shared
+  runner. It is judged over five drags together
   (`frame-budget.ts`, tested by `frame-budget.test.ts`):
   - each drag keeps p95 within 8 ms;
   - the median of all frames stays within 4 ms;

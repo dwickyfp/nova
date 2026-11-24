@@ -94,10 +94,14 @@ pnpm exec playwright install --with-deps chromium
 pnpm lint
 pnpm build
 pnpm test:coverage
+pnpm test:perf
 ```
 
 Vitest uses Playwright/Chromium for component/browser tests and a separate Node
-project for lint-rule tests. A mocked browser test does not prove real API or
+project for lint-rule tests. Wall-clock budgets (`*.perf.test.tsx`) are a third
+project, `perf`: `pnpm test:perf` runs them alone, one file at a time, because
+other test files running alongside slow every frame. CI runs it as its own step
+after coverage. A mocked browser test does not prove real API or
 Ranger behavior. Add focused tests for meaningful behavior changes; verify
 reversible copy/style changes through applicable checks and visual inspection
 without inventing tests that merely mirror markup. Documentation-only edits

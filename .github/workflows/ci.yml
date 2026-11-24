@@ -593,6 +593,11 @@ jobs:
       - name: Test with coverage
         run: pnpm test:coverage
 
+      # Wall-clock frame budgets run alone, after the parallel suite has
+      # finished, so other test files do not slow every frame.
+      - name: Drag frame budget (alone)
+        run: pnpm test:perf
+
       - name: Upload frontend coverage
         if: always()
         uses: actions/upload-artifact@v4

@@ -639,8 +639,9 @@ reconciler when no registry row holds them. See ADR-001, "Images (P2, part 3)".
 Active: the contract, upcaster, adapters, migration, the frame renderer and
 P2 parts 1 and 2. Tested: server golden, property and digest tests, the browser
 upcaster against the same goldens, the PG17 upgrade from schema 62 (CI),
-`frame.test.ts`, `authoring.test.ts`, `qa-authoring.test.tsx` (including the
-60-item drag frame budget, judged over five drags by `frame-budget.ts`), `insert.test.ts`, `item-panel.test.tsx`, the
+`frame.test.ts`, `authoring.test.ts`, `qa-authoring.test.tsx`, `drag-budget.perf.test.tsx` (the 60-item drag frame
+budget, judged over five drags by `frame-budget.ts` and run alone by
+`pnpm test:perf`), `insert.test.ts`, `item-panel.test.tsx`, the
 keyboard-only editor test and the editor browser suites. Part 3 is tested by
 `test_native_viz_assets.py`, `test_metadata_viz_assets.py` (PG17, CI) and the
 image browser tests; it is active only where migration 0064 is applied. Open:

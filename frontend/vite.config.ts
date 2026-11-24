@@ -146,7 +146,23 @@ export default defineConfig(({ command }) => ({
           // The design-system rule test loads ESLint, which reaches for Node
           // built-ins the browser runner cannot resolve. It lives in the node
           // project below instead.
-          exclude: ["**/node_modules/**", "**/*.rule.test.ts"],
+          exclude: ["**/node_modules/**", "**/*.rule.test.ts", "**/*.perf.test.tsx"],
+          browser: {
+            enabled: true,
+            provider: playwright(),
+            instances: [{ browser: "chromium" }],
+          },
+        },
+      },
+      {
+        extends: true,
+        test: {
+          // Frame-time budgets are timed by the wall clock. Other test files
+          // running alongside take the processor away and slow every frame,
+          // so these run on their own, one file at a time: `pnpm test:perf`.
+          name: "perf",
+          include: ["src/**/*.perf.test.tsx"],
+          fileParallelism: false,
           browser: {
             enabled: true,
             provider: playwright(),
