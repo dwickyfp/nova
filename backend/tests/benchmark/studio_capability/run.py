@@ -86,6 +86,10 @@ def hitl_policy(unit: dict[str, Any]):  # noqa: ANN201 - returns a client.HitlPo
 
 # ── one unit ───────────────────────────────────────────────────────────
 
+#: Back-off after the model gateway refuses a turn (usage limits reset in minutes).
+OUTAGE_WAIT_S = 300
+
+
 def _resolved(unit: dict[str, Any], aliases: dict[str, str]) -> dict[str, Any]:
     """The unit with ``mcp:<tool>`` expectations named as the turn's tool parts name them."""
     if not aliases:
@@ -231,8 +235,23 @@ class Runner:
               f"num={checks['numeric']['recall']} ui={checks['ui_recall']} "
               f"t={record.get('total_s')}s tools={','.join(checks['tools'])[:60]}", flush=True)
 
+    @staticmethod
+    def provider_outage(record: dict[str, Any]) -> bool:
+        """A turn the model gateway refused at once (quota, 5xx): not a Studio result."""
+        checks = record.get("checks") or {}
+        return checks.get("outcome") == "error" and (record.get("total_s") or 0) < 10 and any(
+            (e or {}).get("code") == "provider_error" for e in checks.get("errors") or [])
+
     async def guard(self, record: dict[str, Any]) -> None:
-        if record.get("transport_error") or (record.get("http_status") or 200) >= 500:
+        if self.provider_outage(record):
+            self.failures += 1
+            print(f"Provider unavailable ({record['id']}); waiting {OUTAGE_WAIT_S}s.", flush=True)
+            if self.failures >= self.max_failures:
+                print("Stopping: the model provider stays unavailable.", flush=True)
+                self.stopped = True
+            else:
+                await asyncio.sleep(OUTAGE_WAIT_S)
+        elif record.get("transport_error") or (record.get("http_status") or 200) >= 500:
             self.failures += 1
             if not await self._healthy():
                 await asyncio.sleep(30)
@@ -247,7 +266,7 @@ class Runner:
             return
         record = await self.turn(unit, None)
         await self.guard(record)
-        if not record.get("transport_error"):
+        if not record.get("transport_error") and not self.provider_outage(record):
             self.save(record)
 
     async def session(self, session: dict[str, Any], turns: list[dict[str, Any]]) -> None:
@@ -266,6 +285,13 @@ class Runner:
                 state_path.write_text(json.dumps(state))
             record = await self.turn(unit, thread_id)
             await self.guard(record)
+            if self.provider_outage(record):
+                # The failed message stays in that thread's history: start the session
+                # again in a new thread next time.
+                for done in turns:
+                    (self.out / "turns" / f"{done['id']}.json").unlink(missing_ok=True)
+                state_path.unlink(missing_ok=True)
+                return
             if record.get("transport_error"):
                 return  # resume this session from this turn next time
             self.save(record)
