@@ -1097,6 +1097,17 @@ by a recorded decision and 3 are blocked.
   the settings dialog (the frame now isolates its stacking context). Found by
   tests: undo restored absent flags as `null`, which the server refuses; it now
   restores the defaults.
+- **Found live after the PR opened:** **Lock** (and every other item update)
+  was refused with a server error. The browser validated each operation and
+  then sent the validated copy, in which the generated schema had filled every
+  unset patch property with `null`, meaning "clear it"; the server cleared the
+  item's box and failed while growing a fit-to-width page. The browser now
+  sends the operation as built (still validated first), and the server checks
+  each updated item at once, so a patch that clears a required property is
+  refused as an invalid request (422) instead of failing. The mocked browser
+  tests could not see this; a transport test now checks the request body, and
+  a server test with a fit-to-width page fails without the fix. Lock and
+  Unlock then saved live on restarted web and query processes.
 - **Drag budget (60 items, local, development React):** after one warm-up drag
   and a garbage collection, all 60 moving together: median 1.1–1.3 ms, worst
   frame 2.5–4.3 ms; one item snapping to the other 59: median 1.4–2.3 ms, worst

@@ -189,6 +189,9 @@ def _update(page: dict[str, Any], change: ElementsUpdate) -> None:
         if moves and element["locked"] and patch.get("locked") is not False:
             raise ValueError("Unlock the element before changing its position or size")
         element.update(patch)
+        # A patch that leaves the element invalid (a null box or flag, a property its
+        # kind does not have) is refused here, before anything reads the page.
+        _ELEMENT.validate_python(element)
 
 
 def _remove(page: dict[str, Any], targets: set[str]) -> set[str]:

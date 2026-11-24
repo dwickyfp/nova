@@ -359,6 +359,16 @@ def test_elements_update_merges_and_revalidates():
     with pytest.raises(ValidationError, match="at least one"):
         apply(document, {"op": "elements.update", "page_id": page_id,
                          "updates": [{"element_id": box["element_id"], "set": {}}]})
+    # Explicit nulls for properties every element has are refused as invalid, not
+    # crashed on: a browser once sent every unset patch field as null, and a
+    # fit-to-width page then read the cleared box while growing.
+    canvas = {"size": "custom", "width": 1200, "height": 720, "fit": "width"}
+    scrolling = v3(page(box, canvas=canvas))
+    scrolling_id = str(scrolling.pages[0].page_id)
+    for cleared in ({"geometry": None}, {"locked": None}, {"style": None}, {"name": None}):
+        with pytest.raises(ValidationError):
+            apply(scrolling, {"op": "elements.update", "page_id": scrolling_id, "updates": [
+                {"element_id": box["element_id"], "set": {"hidden": True, **cleared}}]})
 
 
 def test_locked_elements_do_not_move_until_unlocked():
