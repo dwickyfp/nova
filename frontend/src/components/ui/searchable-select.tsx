@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, Search } from 'lucide-react'
 import {
   Popover,
@@ -34,6 +34,7 @@ export function SearchableSelect({
 }: SearchableSelectProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
+  const content = useRef<HTMLDivElement>(null)
 
   const filtered = useMemo(() => {
     if (!search) return options
@@ -69,7 +70,14 @@ export function SearchableSelect({
         </button>
       </PopoverTrigger>
 
-      <PopoverContent align='end' className='w-56 p-0' sideOffset={8}>
+      <PopoverContent ref={content} align='end' className='w-56 p-0' sideOffset={8}
+        onCloseAutoFocus={(event) => {
+          // Focus returns to this trigger after the list has gone, a moment
+          // after it closes. If the person has already moved on, for example
+          // by opening the next list, pulling focus back would close that list.
+          const active = document.activeElement
+          if (active && active !== document.body && !content.current?.contains(active)) event.preventDefault()
+        }}>
         <div className='p-2'>
           <div className='relative'>
             <Search className='absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground' />

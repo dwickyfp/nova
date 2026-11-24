@@ -1218,3 +1218,35 @@ by a recorded decision and 3 are blocked.
   - Attempt 2: 1 failed, the keyboard-only editor test. Radix select typeahead picked "Accent" instead of "Brand" because its buffer resets after one second under load. The test now arrows down to Brand and checks focus before Enter.
   - Attempt 3: 1 failed, `dataset-create.test.tsx` (SQL parameters). A click timed out after 113 ms, once the test's time budget ran out. The file and its feature have not changed since #227, and it passes alone twice.
   - Each local attempt failed a different unrelated test on a timeout. The full-suite pass of record is the CI frontend job on the final commit of PR #253.
+
+## Drag frame gate made robust (2026-11-24)
+
+- **Why:** on GitHub runners, the 60-item drag test failed from single slow frames (8.4–11.9 ms) on main, #252 and #253, while medians were 1.5–2.4 ms. The old rule needed one of up to three drags to have no frame over 8 ms. That rule failed on runner hiccups and still passed a path that got slower everywhere, as long as no frame crossed 8 ms.
+- **New rule (`frame-budget.ts`):** five drags, alternating direction so the item never reaches the page edge, judged together:
+  - each drag keeps p95 within 8 ms (as before);
+  - the median of all frames stays within 4 ms (new, stricter);
+  - at most 2% of frames go over 8 ms;
+  - at most one frame goes over 33 ms.
+- **Shown to catch regressions:** an injected 3.5 ms per frame failed on the median (5.6 ms). An injected 10 ms every 25th frame failed with 20 of 445 frames over budget. The old rule passed the first. `frame-budget.test.ts` checks both of these cases, plus runner spikes like CI's, one 38 ms descheduled frame, a slow single drag, and a stall in every drag.
+- **Local:**
+  - all 60 together: 445 frames, median 1.0 ms, p95 1.9 ms, max 3.0 ms;
+  - one item snapping to 59: median 2.2 ms, p95 3.2 ms, max 4.0 ms;
+  - 3 of 3 runs passed.
+
+- **Gates (local, final source):**
+  - frontend lint (0 errors), `tsc` and build pass;
+  - full `pnpm test:coverage`: 243 files, 2,111 tests passed.
+- **Open:** CI is the run of record on shared runners.
+
+## Flaky dataset object picker test: root cause fixed (2026-11-24)
+
+- **Symptom:** `dataset-object-picker.test.tsx` failed in CI on #259 and #267 (and in round 1). Clicking **Revenue** in the table list timed out: the button was "not stable", then "detached from the DOM", and never came back.
+- **Root cause (product, not test):** `SearchableSelect` uses a Radix popover. After a list closes, Radix moves focus back to its trigger on a zero-delay timer, once the list's content is removed. On a busy runner, the test could open the next list between the removal and that timer. The removed list no longer counts that click as an interaction outside it, so its late focus return went to the first trigger. That is outside the newly opened list, so the list closed. A person who picks a database and immediately opens the table list can hit the same race.
+- **Fix:** `SearchableSelect` returns focus to its trigger only when nothing else has taken focus since. Focus still returns after an ordinary choice, including one made from the keyboard. No timeout was raised, and the picker test is unchanged.
+- **Tests (`searchable-select.test.tsx`):**
+  - opening the second list at the moment the first list's content is removed keeps it open. Without the fix this fails 3 of 3, with no list open; opening 50 ms later passes either way, which confirms the timer is the cause;
+  - a keyboard choice still returns focus to its trigger.
+- **Local stress (before the fix):** five full native-dataviz and Studio runs with 10 CPU burners did not reproduce the race. That is why the race test sets up the ordering directly instead of relying on load.
+- **Gates (local, final source):**
+  - lint, `tsc` and build pass;
+  - full `pnpm test:coverage`: 244 files, 2,113 tests passed.

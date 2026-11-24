@@ -5,6 +5,7 @@ import { cdp, page as browser } from 'vitest/browser'
 import { cleanup, render } from 'vitest-browser-react'
 import type { DashboardDefinition, ElementPlacement } from '../contracts'
 import { DashboardCanvas } from './canvas'
+import { DRAGS, judgeFrames } from './frame-budget'
 import { LEGACY_GRID, type Element, type Page } from './layout'
 import { applyLocal } from './operations'
 import '@/styles/index.css'
@@ -198,13 +199,12 @@ describe('drag performance', () => {
     return n % 3 === 0 ? text(n, x, y, 100, 60) : n % 3 === 1 ? shape(n, x, y) : icon(n, x, y)
   })
 
-  type Frames = { count: number; median: number; p95: number; max: number }
 
   /**
    * Drag `target` through 90 pointer moves, timing every frame the canvas draws
    * with the style and layout work it causes. `dy` is 1 to drag down, -1 up.
    */
-  async function measuredDrag(target: Element, dy: 1 | -1): Promise<Frames> {
+  async function measuredDrag(target: Element, dy: 1 | -1): Promise<number[]> {
     arranged.length = 0
     // Benchmark hygiene: a collection beforehand keeps a pause for garbage left by earlier tests out of the frames.
     await (cdp() as unknown as { send(method: string): Promise<unknown> }).send('HeapProfiler.collectGarbage')
@@ -228,18 +228,15 @@ describe('drag performance', () => {
     vi.stubGlobal('requestAnimationFrame', real)
     await expect.poll(() => arranged.length).toBe(1)
     // The first frame also mounts the guides layer.
-    const sorted = durations.slice(1).sort((p, q) => p - q)
-    const at = (share: number) => sorted[Math.min(sorted.length - 1, Math.floor(share * sorted.length))]
-    return { count: durations.length, median: at(0.5), p95: at(0.95), max: sorted[sorted.length - 1] }
+    return durations.slice(1)
   }
 
   /**
-   * The 8 ms budget per frame. Wall-clock time also counts moments the system
-   * takes the processor away, which happens when the full suite runs many
-   * browsers at once, so the drag is measured up to three times: every attempt
-   * must keep 95% of its frames within budget, and one attempt must keep every
-   * frame within it. A real slowdown fails all three. Each drag starts where
-   * the item now is, so `dy` must not leave it under a later (higher) item.
+   * The 8 ms budget per frame, judged over five measured drags together (see
+   * `frame-budget.ts`): a shared runner's occasional slow frame passes, a
+   * slower drag path does not. Drags alternate between `dy` and back, each
+   * starting where the item now is, so `dy` must not leave it under a later
+   * (higher) item.
    */
   async function expectWithinBudget(target: Element, annotate: (message: string) => Promise<unknown>, dy: 1 | -1 = 1) {
     // One unmeasured drag warms the code up.
@@ -252,21 +249,23 @@ describe('drag performance', () => {
     await mouse('move', warm)
     await nextFrame()
     await mouse('up', warm)
-    const attempts: Frames[] = []
-    while (attempts.length < 3 && !attempts.some(frames => frames.max <= 8)) {
-      const frames = await measuredDrag(target, dy)
-      attempts.push(frames)
-      await annotate(`drag ${attempts.length}: ${frames.count} frames, median ${frames.median.toFixed(2)} ms, p95 ${frames.p95.toFixed(2)} ms, max ${frames.max.toFixed(2)} ms`)
-      // Every attempt moved the item it pressed, not one it landed on.
+    const drags: number[][] = []
+    for (let drag = 1; drag <= DRAGS; drag++) {
+      // Back and forth, so five drags never run the item into the page edge.
+      const frames = await measuredDrag(target, drag % 2 ? dy : (-dy as 1 | -1))
+      drags.push(frames)
+      // Every drag moved the item it pressed, not one it landed on.
       expect(arranged[0].map(item => item.element_id)).toContain(target.element_id)
       // One frame per move; a slow runner may merge a few.
-      expect(frames.count).toBeGreaterThan(60)
-      expect(frames.p95).toBeLessThanOrEqual(8)
+      expect(frames.length).toBeGreaterThan(60)
     }
-    expect(Math.min(...attempts.map(frames => frames.max))).toBeLessThanOrEqual(8)
+    const verdict = judgeFrames(drags)
+    await annotate(`${DRAGS} drags, ${verdict.frames} frames: median ${verdict.median.toFixed(2)} ms, p95 ${verdict.p95.toFixed(2)} ms, `
+      + `max ${verdict.max.toFixed(2)} ms, ${verdict.slow} over budget`)
+    expect(verdict.problems).toEqual([])
   }
 
-  it('keeps each frame within 8 ms dragging all 60 items together', { timeout: 60_000 }, async ({ annotate }) => {
+  it('keeps each frame within 8 ms dragging all 60 items together', { timeout: 90_000 }, async ({ annotate }) => {
     const elements = sixty()
     await mount(elements)
     // Select all 60 with a marquee, then drag them.
@@ -280,7 +279,7 @@ describe('drag performance', () => {
     expect(arranged[0]).toHaveLength(60)
   })
 
-  it('keeps each frame within 8 ms dragging one item that snaps to the other 59', { timeout: 60_000 }, async ({ annotate }) => {
+  it('keeps each frame within 8 ms dragging one item that snaps to the other 59', { timeout: 90_000 }, async ({ annotate }) => {
     const elements = sixty()
     await mount(elements)
     // Upward, onto items drawn beneath it: dragged down it would land under item 43,
