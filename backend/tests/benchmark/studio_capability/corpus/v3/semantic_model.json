@@ -1,0 +1,25 @@
+{
+ "name": "demo_sales",
+ "version": "v2/0.1.1",
+ "metrics": [
+  "revenue",
+  "order_count",
+  "average_order_value",
+  "customer_count"
+ ],
+ "dimensions": [
+  "order_id",
+  "customer_id",
+  "order_date",
+  "status",
+  "payment_method",
+  "shipping_city",
+  "total_amount"
+ ],
+ "units": {
+  "revenue": "IDR",
+  "order_count": null,
+  "average_order_value": "IDR",
+  "customer_count": null
+ }
+}

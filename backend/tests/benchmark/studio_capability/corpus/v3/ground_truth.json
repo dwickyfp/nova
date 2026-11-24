@@ -1,0 +1,10177 @@
+{
+ "corpus_version": "2026-11-25.4",
+ "data_facts": {
+  "columns": [
+   "first_order",
+   "last_order",
+   "orders"
+  ],
+  "rows": [
+   [
+    "2025-06-01T10:30:00",
+    "2025-07-05T16:00:00",
+    15
+   ]
+  ]
+ },
+ "data_fingerprint": "ecf83a8c44cbf588",
+ "identities": {
+  "admin": "nova_admin",
+  "user": "alice",
+  "user_role": "marketing"
+ },
+ "leak_values": {
+  "governance-001": [
+   "AirPods Pro 3",
+   "Anker 65W USB-C Charger",
+   "Dell XPS 15 Laptop",
+   "LG UltraGear 27 4K Monitor",
+   "Laptop ASUS ROG Strix G16",
+   "Logitech MX Master 3S Mouse",
+   "Mechanical Keyboard Keychron Q1",
+   "Samsung 990 PRO SSD 2TB",
+   "Samsung Galaxy S25 Ultra",
+   "Sony WH-1000XM5 Headphones",
+   "iPad Air M3 256GB",
+   "iPhone 16 Pro Max 256GB"
+  ],
+  "governance-002": [
+   "iPhone 16 Pro Max 256GB"
+  ],
+  "governance-003": [
+   "15000",
+   "20000",
+   "30000",
+   "50000",
+   "Agus Prabowo",
+   "Bandung West DC",
+   "Hendra Wijaya",
+   "Jakarta Central Hub",
+   "Medan North DC",
+   "Ratna Dewi",
+   "Siti Rahayu",
+   "Surabaya East DC"
+  ],
+  "governance-004": [
+   "191000000.00"
+  ],
+  "governance-005": [
+   "17700000.00"
+  ],
+  "governance-006": [
+   "10000000.00",
+   "20000000.00",
+   "30000000.00",
+   "45000000.00",
+   "50000000.00",
+   "60000000.00",
+   "75000000.00",
+   "80000000.00",
+   "Back to School",
+   "Brand Awareness Q1",
+   "Harbolnas 12.12",
+   "New Year New Gadgets",
+   "Ramadan Sale 2025",
+   "Tech Week Flash Sale",
+   "Valentine Special",
+   "Year End Clearance"
+  ],
+  "governance-007": [
+   "171500000.00",
+   "181300000.00",
+   "187200000.00",
+   "2025-08-01",
+   "2025-09-01",
+   "2025-10-01",
+   "2025-11-01",
+   "2025-12-01",
+   "204800000.00",
+   "219000000.00",
+   "300700000.00",
+   "465600000.00"
+  ],
+  "governance-011": [
+   "1000.00"
+  ],
+  "governance-012": [
+   "+62-811-0001",
+   "+62-811-0002"
+  ],
+  "governance-014": [
+   "AirPods Pro 3",
+   "Anker 65W USB-C Charger",
+   "Dell XPS 15 Laptop",
+   "LG UltraGear 27 4K Monitor",
+   "Laptop ASUS ROG Strix G16",
+   "Logitech MX Master 3S Mouse",
+   "Mechanical Keyboard Keychron Q1",
+   "Samsung 990 PRO SSD 2TB",
+   "Samsung Galaxy S25 Ultra",
+   "Sony WH-1000XM5 Headphones",
+   "iPad Air M3 256GB",
+   "iPhone 16 Pro Max 256GB"
+  ],
+  "governance-015": [
+   "AI_SEARCH_EVAL_RUNS",
+   "AI_SEARCH_QUERY_LOG",
+   "AUDIT_LOG",
+   "AUDIT_SEMANTIC_QUERY_USAGE",
+   "AUDIT_STREAM_CLAIMS",
+   "AUDIT_STREAM_CONSUMPTIONS",
+   "AUDIT_STREAM_CONSUMPTION_OPERATIONS",
+   "AUDIT_STREAM_NAMESPACE_OPERATIONS",
+   "AUDIT_STREAM_SOURCE_COMMITS",
+   "CATALOG_ANNOTATIONS",
+   "CATALOG_CATALOGS",
+   "CATALOG_COLUMNS",
+   "CATALOG_CONNECTIONS",
+   "CATALOG_CONNECTION_CREDENTIALS",
+   "CATALOG_CONNECTION_WRITE_CREDENTIALS",
+   "CATALOG_LINEAGE",
+   "CATALOG_OBJECTS",
+   "CATALOG_SECURABLES",
+   "CATALOG_SECURABLE_LINKS",
+   "CATALOG_SYNC_RUNS",
+   "CONFIG_AGENTS",
+   "CONFIG_AGENT_AUTOMATIONS",
+   "CONFIG_AGENT_CAPABILITIES",
+   "CONFIG_AGENT_HARNESS_LESSONS",
+   "CONFIG_AGENT_IMPROVEMENT_PROPOSALS",
+   "CONFIG_AGENT_MEMORIES",
+   "CONFIG_AGENT_MEMORY_EVIDENCE",
+   "CONFIG_AGENT_MEMORY_REVISIONS",
+   "CONFIG_AGENT_MESSAGES",
+   "CONFIG_AGENT_QUALITY_CASES",
+   "CONFIG_AGENT_QUALITY_MONITORING",
+   "CONFIG_AGENT_QUALITY_RUNS",
+   "CONFIG_AGENT_RELEASE_MANIFESTS",
+   "CONFIG_AGENT_ROLES",
+   "CONFIG_AGENT_RULE_PROPOSALS",
+   "CONFIG_AGENT_RUNS",
+   "CONFIG_AGENT_RUN_EVENTS",
+   "CONFIG_AGENT_SESSION_EVENTS",
+   "CONFIG_AGENT_SKILLS",
+   "CONFIG_AGENT_VERSIONS"
+  ]
+ },
+ "pending": [],
+ "references": {
+  "00a6728749e32dbf": {
+   "admin": {
+    "columns": [
+     "payment_method",
+     "avg(total_amount)"
+    ],
+    "rows": [
+     [
+      "DANA",
+      "11032000.00000000"
+     ],
+     [
+      "GoPay",
+      "2132333.33333333"
+     ],
+     [
+      "QRIS",
+      "3732333.33333333"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT payment_method, AVG(total_amount) FROM NOVA_DEMO.orders WHERE payment_method IN ('DANA','GoPay','QRIS') GROUP BY 1",
+   "user": {
+    "columns": [
+     "payment_method",
+     "avg(total_amount)"
+    ],
+    "rows": [
+     [
+      "DANA",
+      "11032000.00000000"
+     ],
+     [
+      "GoPay",
+      "2132333.33333333"
+     ],
+     [
+      "QRIS",
+      "3732333.33333333"
+     ]
+    ]
+   }
+  },
+  "034716c2aad3776a": {
+   "admin": {
+    "columns": [
+     "product_name",
+     "price"
+    ],
+    "rows": [
+     [
+      "iPhone 16 Pro Max 256GB",
+      "24999000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": false,
+   "sql": "SELECT product_name, price FROM NOVA_CATALOG.products ORDER BY price DESC LIMIT 1",
+   "user": {
+    "error": "SQL error: (5204) Access denied; you need (at least one of) the SELECT privilege(s) on COLUMN price for this operation."
+   }
+  },
+  "036158671ee780f5": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Palembang",
+      "599000.00"
+     ],
+     [
+      "Bali",
+      "3999000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value ASC LIMIT 2",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Palembang",
+      "599000.00"
+     ],
+     [
+      "Bali",
+      "3999000.00"
+     ]
+    ]
+   }
+  },
+  "03f94a69fadc9782": {
+   "admin": {
+    "columns": [
+     "id",
+     "amount"
+    ],
+    "rows": [
+     [
+      2,
+      "200.00"
+     ],
+     [
+      4,
+      "400.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": false,
+   "sql": "SELECT id, amount FROM analytics.sales WHERE city = 'Bandung'",
+   "user": {
+    "columns": [
+     "id",
+     "amount"
+    ],
+    "rows": []
+   }
+  },
+  "04c9117bbff5445e": {
+   "admin": {
+    "columns": [
+     "date_trunc('month', order_date)",
+     "sum(total_amount)"
+    ],
+    "rows": [
+     [
+      "2025-06-01T00:00:00",
+      "145886000.00"
+     ],
+     [
+      "2025-07-01T00:00:00",
+      "29298000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT DATE_TRUNC('month', order_date), SUM(total_amount) FROM NOVA_DEMO.orders GROUP BY 1",
+   "user": {
+    "columns": [
+     "date_trunc('month', order_date)",
+     "sum(total_amount)"
+    ],
+    "rows": [
+     [
+      "2025-06-01T00:00:00",
+      "145886000.00"
+     ],
+     [
+      "2025-07-01T00:00:00",
+      "29298000.00"
+     ]
+    ]
+   }
+  },
+  "07fd4dda59880a7b": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      "30496000.00"
+     ],
+     [
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "Bandung",
+      "18999000.00"
+     ],
+     [
+      "Surabaya",
+      "5798000.00"
+     ],
+     [
+      "Bali",
+      "3999000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE status = 'completed' GROUP BY shipping_city ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      "30496000.00"
+     ],
+     [
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "Bandung",
+      "18999000.00"
+     ],
+     [
+      "Surabaya",
+      "5798000.00"
+     ],
+     [
+      "Bali",
+      "3999000.00"
+     ]
+    ]
+   }
+  },
+  "088676def697b9aa": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "17518400.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) / COUNT(DISTINCT customer_id) AS value FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "17518400.00000000"
+     ]
+    ]
+   }
+  },
+  "0b7bee6297bae7aa": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "74494000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-06-08'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "74494000.00"
+     ]
+    ]
+   }
+  },
+  "0ba63b691a1121ab": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Credit Card",
+      "20999000.00000000"
+     ],
+     [
+      "Bank Transfer",
+      "20499000.00000000"
+     ],
+     [
+      "DANA",
+      "11032000.00000000"
+     ],
+     [
+      "QRIS",
+      "3732333.33333333"
+     ],
+     [
+      "GoPay",
+      "2132333.33333333"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT payment_method AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY payment_method ORDER BY value DESC LIMIT 5",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Credit Card",
+      "20999000.00000000"
+     ],
+     [
+      "Bank Transfer",
+      "20499000.00000000"
+     ],
+     [
+      "DANA",
+      "11032000.00000000"
+     ],
+     [
+      "QRIS",
+      "3732333.33333333"
+     ],
+     [
+      "GoPay",
+      "2132333.33333333"
+     ]
+    ]
+   }
+  },
+  "0be4d8ebcadc4be7": {
+   "admin": {
+    "columns": [
+     "sum(amount)"
+    ],
+    "rows": [
+     [
+      "191000000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": false,
+   "sql": "SELECT SUM(amount) FROM NOVA_ANALYTICS.invoices WHERE status = 'unpaid'",
+   "user": {
+    "error": "SQL error: (5204) Access denied; you need (at least one of) the SELECT privilege(s) on COLUMN amount for this operation."
+   }
+  },
+  "0bf4c221c1c5eac0": {
+   "admin": {
+    "columns": [
+     "date(order_date)",
+     "sum(total_amount)"
+    ],
+    "rows": [
+     [
+      "2025-06-01",
+      "23298000.00"
+     ],
+     [
+      "2025-06-02",
+      "4299000.00"
+     ],
+     [
+      "2025-06-03",
+      "18999000.00"
+     ],
+     [
+      "2025-06-05",
+      "2899000.00"
+     ],
+     [
+      "2025-06-07",
+      "24999000.00"
+     ],
+     [
+      "2025-06-10",
+      "6499000.00"
+     ],
+     [
+      "2025-06-12",
+      "19999000.00"
+     ],
+     [
+      "2025-06-15",
+      "1499000.00"
+     ],
+     [
+      "2025-06-18",
+      "12999000.00"
+     ],
+     [
+      "2025-06-20",
+      "3999000.00"
+     ],
+     [
+      "2025-06-22",
+      "3299000.00"
+     ],
+     [
+      "2025-06-25",
+      "22499000.00"
+     ],
+     [
+      "2025-06-28",
+      "599000.00"
+     ],
+     [
+      "2025-07-01",
+      "4299000.00"
+     ],
+     [
+      "2025-07-05",
+      "24999000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT DATE(order_date), SUM(total_amount) FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY 1",
+   "user": {
+    "columns": [
+     "date(order_date)",
+     "sum(total_amount)"
+    ],
+    "rows": [
+     [
+      "2025-06-01",
+      "23298000.00"
+     ],
+     [
+      "2025-06-02",
+      "4299000.00"
+     ],
+     [
+      "2025-06-03",
+      "18999000.00"
+     ],
+     [
+      "2025-06-05",
+      "2899000.00"
+     ],
+     [
+      "2025-06-07",
+      "24999000.00"
+     ],
+     [
+      "2025-06-10",
+      "6499000.00"
+     ],
+     [
+      "2025-06-12",
+      "19999000.00"
+     ],
+     [
+      "2025-06-15",
+      "1499000.00"
+     ],
+     [
+      "2025-06-18",
+      "12999000.00"
+     ],
+     [
+      "2025-06-20",
+      "3999000.00"
+     ],
+     [
+      "2025-06-22",
+      "3299000.00"
+     ],
+     [
+      "2025-06-25",
+      "22499000.00"
+     ],
+     [
+      "2025-06-28",
+      "599000.00"
+     ],
+     [
+      "2025-07-01",
+      "4299000.00"
+     ],
+     [
+      "2025-07-05",
+      "24999000.00"
+     ]
+    ]
+   }
+  },
+  "0c2064ce507ae196": {
+   "admin": {
+    "columns": [
+     "order_id",
+     "value"
+    ],
+    "rows": [
+     [
+      1005,
+      "24999000.00"
+     ],
+     [
+      1007,
+      "19999000.00"
+     ],
+     [
+      1009,
+      "12999000.00"
+     ],
+     [
+      1011,
+      "3299000.00"
+     ],
+     [
+      1013,
+      "599000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT order_id, total_amount AS value FROM NOVA_DEMO.orders WHERE status <> 'completed'",
+   "user": {
+    "columns": [
+     "order_id",
+     "value"
+    ],
+    "rows": [
+     [
+      1005,
+      "24999000.00"
+     ],
+     [
+      1007,
+      "19999000.00"
+     ],
+     [
+      1009,
+      "12999000.00"
+     ],
+     [
+      1011,
+      "3299000.00"
+     ],
+     [
+      1013,
+      "599000.00"
+     ]
+    ]
+   }
+  },
+  "0ca6eb8c87d8d99a": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Jakarta",
+      3
+     ],
+     [
+      "Surabaya",
+      2
+     ],
+     [
+      "Yogyakarta",
+      2
+     ],
+     [
+      "Malang",
+      1
+     ],
+     [
+      "Bandung",
+      1
+     ],
+     [
+      "Bali",
+      1
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE status = 'completed' GROUP BY shipping_city ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Jakarta",
+      3
+     ],
+     [
+      "Surabaya",
+      2
+     ],
+     [
+      "Yogyakarta",
+      2
+     ],
+     [
+      "Malang",
+      1
+     ],
+     [
+      "Bandung",
+      1
+     ],
+     [
+      "Bali",
+      1
+     ]
+    ]
+   }
+  },
+  "104d07a56c2ed020": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "192702400.000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) * 1.1 AS value FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "192702400.000"
+     ]
+    ]
+   }
+  },
+  "11ba0501aaac6dd1": {
+   "admin": {
+    "columns": [
+     "sum(total_amount)",
+     "count(*)"
+    ],
+    "rows": [
+     [
+      "30496000.00",
+      3
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount), COUNT(*) FROM NOVA_DEMO.orders WHERE shipping_city='Jakarta'",
+   "user": {
+    "columns": [
+     "sum(total_amount)",
+     "count(*)"
+    ],
+    "rows": [
+     [
+      "30496000.00",
+      3
+     ]
+    ]
+   }
+  },
+  "11de0f3ae9c2d987": {
+   "admin": {
+    "columns": [
+     "bandung",
+     "yogyakarta"
+    ],
+    "rows": [
+     [
+      2,
+      2
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(CASE WHEN shipping_city='Bandung' THEN 1 ELSE 0 END) AS bandung, SUM(CASE WHEN shipping_city='Yogyakarta' THEN 1 ELSE 0 END) AS yogyakarta FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "bandung",
+     "yogyakarta"
+    ],
+    "rows": [
+     [
+      2,
+      2
+     ]
+    ]
+   }
+  },
+  "11e3b564e83277eb": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      5,
+      "31498000.00"
+     ],
+     [
+      1,
+      "30496000.00"
+     ],
+     [
+      4,
+      "24999000.00"
+     ],
+     [
+      9,
+      "22499000.00"
+     ],
+     [
+      3,
+      "22298000.00"
+     ],
+     [
+      6,
+      "19999000.00"
+     ],
+     [
+      7,
+      "12999000.00"
+     ],
+     [
+      2,
+      "5798000.00"
+     ],
+     [
+      8,
+      "3999000.00"
+     ],
+     [
+      10,
+      "599000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT customer_id AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY customer_id ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      5,
+      "31498000.00"
+     ],
+     [
+      1,
+      "30496000.00"
+     ],
+     [
+      4,
+      "24999000.00"
+     ],
+     [
+      9,
+      "22499000.00"
+     ],
+     [
+      3,
+      "22298000.00"
+     ],
+     [
+      6,
+      "19999000.00"
+     ],
+     [
+      7,
+      "12999000.00"
+     ],
+     [
+      2,
+      "5798000.00"
+     ],
+     [
+      8,
+      "3999000.00"
+     ],
+     [
+      10,
+      "599000.00"
+     ]
+    ]
+   }
+  },
+  "14c40dc4cbcc8d7d": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "61497000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE payment_method = 'Bank Transfer'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "61497000.00"
+     ]
+    ]
+   }
+  },
+  "151941d28c6e6193": {
+   "admin": {
+    "columns": [
+     "revenue",
+     "orders"
+    ],
+    "rows": [
+     [
+      "145886000.00",
+      13
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS revenue, COUNT(*) AS orders FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01'",
+   "user": {
+    "columns": [
+     "revenue",
+     "orders"
+    ],
+    "rows": [
+     [
+      "145886000.00",
+      13
+     ]
+    ]
+   }
+  },
+  "18bd57c586f56d51": {
+   "admin": {
+    "columns": [
+     "pct"
+    ],
+    "rows": [
+     [
+      "35.33142300"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(CASE WHEN status <> 'completed' THEN total_amount END) / SUM(total_amount) * 100 AS pct FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "pct"
+    ],
+    "rows": [
+     [
+      "35.33142300"
+     ]
+    ]
+   }
+  },
+  "196eb07455694357": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "2025-07-05",
+      "24999000.00"
+     ],
+     [
+      "2025-06-07",
+      "24999000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT DATE(order_date) AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY value DESC LIMIT 2",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "2025-07-05",
+      "24999000.00"
+     ],
+     [
+      "2025-06-07",
+      "24999000.00"
+     ]
+    ]
+   }
+  },
+  "1ab84ea6662af538": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "completed",
+      8
+     ],
+     [
+      "shipped",
+      3
+     ],
+     [
+      "processing",
+      1
+     ],
+     [
+      "pending",
+      1
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT status AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01' GROUP BY status ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "completed",
+      8
+     ],
+     [
+      "shipped",
+      3
+     ],
+     [
+      "processing",
+      1
+     ],
+     [
+      "pending",
+      1
+     ]
+    ]
+   }
+  },
+  "1afaee95a7f006f2": {
+   "admin": {
+    "columns": [
+     "revenue",
+     "orders",
+     "aov"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15,
+      "11678933.33333333"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS revenue, COUNT(*) AS orders, AVG(total_amount) AS aov FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "revenue",
+     "orders",
+     "aov"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15,
+      "11678933.33333333"
+     ]
+    ]
+   }
+  },
+  "21b270c6c6cc30d8": {
+   "admin": {
+    "columns": [
+     "payment_method",
+     "sum(total_amount)",
+     "count(*)",
+     "avg(total_amount)"
+    ],
+    "rows": [
+     [
+      "DANA",
+      "33096000.00",
+      3,
+      "11032000.00000000"
+     ],
+     [
+      "QRIS",
+      "11197000.00",
+      3,
+      "3732333.33333333"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT payment_method, SUM(total_amount), COUNT(*), AVG(total_amount) FROM NOVA_DEMO.orders WHERE payment_method IN ('QRIS','DANA') GROUP BY 1",
+   "user": {
+    "columns": [
+     "payment_method",
+     "sum(total_amount)",
+     "count(*)",
+     "avg(total_amount)"
+    ],
+    "rows": [
+     [
+      "DANA",
+      "33096000.00",
+      3,
+      "11032000.00000000"
+     ],
+     [
+      "QRIS",
+      "11197000.00",
+      3,
+      "3732333.33333333"
+     ]
+    ]
+   }
+  },
+  "237f363410ea8d89": {
+   "admin": {
+    "columns": [
+     "sum(total_amount)",
+     "count(*)",
+     "avg(total_amount)"
+    ],
+    "rows": [
+     [
+      "11197000.00",
+      3,
+      "3732333.33333333"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount), COUNT(*), AVG(total_amount) FROM NOVA_DEMO.orders WHERE payment_method='QRIS'",
+   "user": {
+    "columns": [
+     "sum(total_amount)",
+     "count(*)",
+     "avg(total_amount)"
+    ],
+    "rows": [
+     [
+      "11197000.00",
+      3,
+      "3732333.33333333"
+     ]
+    ]
+   }
+  },
+  "23ffc0928c5687d2": {
+   "admin": {
+    "columns": [
+     "payment_method",
+     "sum(total_amount)",
+     "count(*)"
+    ],
+    "rows": [
+     [
+      "Bank Transfer",
+      "61497000.00",
+      3
+     ],
+     [
+      "Credit Card",
+      "62997000.00",
+      3
+     ],
+     [
+      "DANA",
+      "33096000.00",
+      3
+     ],
+     [
+      "GoPay",
+      "6397000.00",
+      3
+     ],
+     [
+      "QRIS",
+      "11197000.00",
+      3
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT payment_method, SUM(total_amount), COUNT(*) FROM NOVA_DEMO.orders GROUP BY 1",
+   "user": {
+    "columns": [
+     "payment_method",
+     "sum(total_amount)",
+     "count(*)"
+    ],
+    "rows": [
+     [
+      "Bank Transfer",
+      "61497000.00",
+      3
+     ],
+     [
+      "Credit Card",
+      "62997000.00",
+      3
+     ],
+     [
+      "DANA",
+      "33096000.00",
+      3
+     ],
+     [
+      "GoPay",
+      "6397000.00",
+      3
+     ],
+     [
+      "QRIS",
+      "11197000.00",
+      3
+     ]
+    ]
+   }
+  },
+  "25268502ef9fca92": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Jakarta",
+      "26197000.00"
+     ],
+     [
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "Bandung",
+      "22298000.00"
+     ],
+     [
+      "Medan",
+      "19999000.00"
+     ],
+     [
+      "Makassar",
+      "12999000.00"
+     ],
+     [
+      "Yogyakarta",
+      "6499000.00"
+     ],
+     [
+      "Surabaya",
+      "5798000.00"
+     ],
+     [
+      "Bali",
+      "3999000.00"
+     ],
+     [
+      "Palembang",
+      "599000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01' GROUP BY shipping_city ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Jakarta",
+      "26197000.00"
+     ],
+     [
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "Bandung",
+      "22298000.00"
+     ],
+     [
+      "Medan",
+      "19999000.00"
+     ],
+     [
+      "Makassar",
+      "12999000.00"
+     ],
+     [
+      "Yogyakarta",
+      "6499000.00"
+     ],
+     [
+      "Surabaya",
+      "5798000.00"
+     ],
+     [
+      "Bali",
+      "3999000.00"
+     ],
+     [
+      "Palembang",
+      "599000.00"
+     ]
+    ]
+   }
+  },
+  "25b8de2940da2bbc": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "2025-05-26T00:00:00",
+      1
+     ],
+     [
+      "2025-06-02T00:00:00",
+      4
+     ],
+     [
+      "2025-06-09T00:00:00",
+      3
+     ],
+     [
+      "2025-06-16T00:00:00",
+      3
+     ],
+     [
+      "2025-06-23T00:00:00",
+      2
+     ],
+     [
+      "2025-06-30T00:00:00",
+      2
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT DATE_TRUNC('week', order_date) AS label, COUNT(*) AS value FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY 1",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "2025-05-26T00:00:00",
+      1
+     ],
+     [
+      "2025-06-02T00:00:00",
+      4
+     ],
+     [
+      "2025-06-09T00:00:00",
+      3
+     ],
+     [
+      "2025-06-16T00:00:00",
+      3
+     ],
+     [
+      "2025-06-23T00:00:00",
+      2
+     ],
+     [
+      "2025-06-30T00:00:00",
+      2
+     ]
+    ]
+   }
+  },
+  "26be9a3618a21046": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      10
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(DISTINCT customer_id) AS value FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      10
+     ]
+    ]
+   }
+  },
+  "26db8c74c225ab4e": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      6499000.0
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT PERCENTILE_APPROX(total_amount, 0.5) AS value FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      6499000.0
+     ]
+    ]
+   }
+  },
+  "286a69cb00c11d79": {
+   "admin": {
+    "columns": [
+     "customer_id",
+     "count(*)"
+    ],
+    "rows": [
+     [
+      1,
+      3
+     ],
+     [
+      4,
+      1
+     ],
+     [
+      5,
+      2
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT customer_id, COUNT(*) FROM NOVA_DEMO.orders WHERE customer_id IN (1,5,4) GROUP BY 1",
+   "user": {
+    "columns": [
+     "customer_id",
+     "count(*)"
+    ],
+    "rows": [
+     [
+      1,
+      3
+     ],
+     [
+      4,
+      1
+     ],
+     [
+      5,
+      2
+     ]
+    ]
+   }
+  },
+  "288b53be8f76d26e": {
+   "admin": {
+    "columns": [
+     "sum(total_amount)",
+     "count(*)",
+     "avg(total_amount)"
+    ],
+    "rows": [
+     [
+      "29298000.00",
+      2,
+      "14649000.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount), COUNT(*), AVG(total_amount) FROM NOVA_DEMO.orders WHERE order_date >= '2025-07-01' AND order_date < '2025-08-01'",
+   "user": {
+    "columns": [
+     "sum(total_amount)",
+     "count(*)",
+     "avg(total_amount)"
+    ],
+    "rows": [
+     [
+      "29298000.00",
+      2,
+      "14649000.00000000"
+     ]
+    ]
+   }
+  },
+  "2972abdd5dac173b": {
+   "admin": {
+    "columns": [
+     "order_id",
+     "value"
+    ],
+    "rows": [
+     [
+      1001,
+      "23298000.00"
+     ],
+     [
+      1005,
+      "24999000.00"
+     ],
+     [
+      1012,
+      "22499000.00"
+     ],
+     [
+      1015,
+      "24999000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT order_id, total_amount AS value FROM NOVA_DEMO.orders WHERE total_amount > 20000000",
+   "user": {
+    "columns": [
+     "order_id",
+     "value"
+    ],
+    "rows": [
+     [
+      1001,
+      "23298000.00"
+     ],
+     [
+      1005,
+      "24999000.00"
+     ],
+     [
+      1012,
+      "22499000.00"
+     ],
+     [
+      1015,
+      "24999000.00"
+     ]
+    ]
+   }
+  },
+  "29dffad5dbec148d": {
+   "admin": {
+    "columns": [
+     "date(order_date)",
+     "v"
+    ],
+    "rows": [
+     [
+      "2025-06-07",
+      "24999000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT DATE(order_date), SUM(total_amount) v FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01' GROUP BY 1 ORDER BY v DESC LIMIT 1",
+   "user": {
+    "columns": [
+     "date(order_date)",
+     "v"
+    ],
+    "rows": [
+     [
+      "2025-06-07",
+      "24999000.00"
+     ]
+    ]
+   }
+  },
+  "2ae2985f0ff7f3cc": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "24999000.00"
+     ],
+     [
+      "Jakarta",
+      "4299000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-07-01' AND order_date < '2025-08-01' GROUP BY shipping_city ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "24999000.00"
+     ],
+     [
+      "Jakarta",
+      "4299000.00"
+     ]
+    ]
+   }
+  },
+  "2af52713c46f3b7a": {
+   "admin": {
+    "columns": [
+     "date_trunc('month', order_date)",
+     "sum(total_amount)"
+    ],
+    "rows": [
+     [
+      "2025-06-01T00:00:00",
+      "145886000.00"
+     ],
+     [
+      "2025-07-01T00:00:00",
+      "29298000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT DATE_TRUNC('month', order_date), SUM(total_amount) FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY 1",
+   "user": {
+    "columns": [
+     "date_trunc('month', order_date)",
+     "sum(total_amount)"
+    ],
+    "rows": [
+     [
+      "2025-06-01T00:00:00",
+      "145886000.00"
+     ],
+     [
+      "2025-07-01T00:00:00",
+      "29298000.00"
+     ]
+    ]
+   }
+  },
+  "2c6f95928c9bffbf": {
+   "admin": {
+    "columns": [
+     "product_id",
+     "sum(quantity)"
+    ],
+    "rows": [
+     [
+      1,
+      2
+     ],
+     [
+      10,
+      1
+     ],
+     [
+      11,
+      1
+     ],
+     [
+      12,
+      1
+     ],
+     [
+      2,
+      2
+     ],
+     [
+      3,
+      1
+     ],
+     [
+      4,
+      3
+     ],
+     [
+      5,
+      1
+     ],
+     [
+      6,
+      1
+     ],
+     [
+      7,
+      1
+     ],
+     [
+      8,
+      1
+     ],
+     [
+      9,
+      1
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT product_id, SUM(quantity) FROM NOVA_DEMO.order_items GROUP BY 1",
+   "user": {
+    "columns": [
+     "product_id",
+     "sum(quantity)"
+    ],
+    "rows": [
+     [
+      1,
+      2
+     ],
+     [
+      10,
+      1
+     ],
+     [
+      11,
+      1
+     ],
+     [
+      12,
+      1
+     ],
+     [
+      2,
+      2
+     ],
+     [
+      3,
+      1
+     ],
+     [
+      4,
+      3
+     ],
+     [
+      5,
+      1
+     ],
+     [
+      6,
+      1
+     ],
+     [
+      7,
+      1
+     ],
+     [
+      8,
+      1
+     ],
+     [
+      9,
+      1
+     ]
+    ]
+   }
+  },
+  "2d469670a62137c2": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      5,
+      "31498000.00"
+     ],
+     [
+      1,
+      "30496000.00"
+     ],
+     [
+      4,
+      "24999000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT customer_id AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY customer_id ORDER BY value DESC LIMIT 3",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      5,
+      "31498000.00"
+     ],
+     [
+      1,
+      "30496000.00"
+     ],
+     [
+      4,
+      "24999000.00"
+     ]
+    ]
+   }
+  },
+  "2d67294de2a0ecd2": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "26397000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-21' AND order_date < '2025-07-01'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "26397000.00"
+     ]
+    ]
+   }
+  },
+  "2dc63c0009c52d74": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "151886000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE status NOT IN ('pending','processing')",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "151886000.00"
+     ]
+    ]
+   }
+  },
+  "2e4bac2d9d302720": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "2025-06-01",
+      "23298000.00"
+     ],
+     [
+      "2025-06-02",
+      "4299000.00"
+     ],
+     [
+      "2025-06-03",
+      "18999000.00"
+     ],
+     [
+      "2025-06-05",
+      "2899000.00"
+     ],
+     [
+      "2025-06-07",
+      "24999000.00"
+     ],
+     [
+      "2025-06-10",
+      "6499000.00"
+     ],
+     [
+      "2025-06-12",
+      "19999000.00"
+     ],
+     [
+      "2025-06-15",
+      "1499000.00"
+     ],
+     [
+      "2025-06-18",
+      "12999000.00"
+     ],
+     [
+      "2025-06-20",
+      "3999000.00"
+     ],
+     [
+      "2025-06-22",
+      "3299000.00"
+     ],
+     [
+      "2025-06-25",
+      "22499000.00"
+     ],
+     [
+      "2025-06-28",
+      "599000.00"
+     ],
+     [
+      "2025-07-01",
+      "4299000.00"
+     ],
+     [
+      "2025-07-05",
+      "24999000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT DATE(order_date) AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY DATE(order_date) ORDER BY label",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "2025-06-01",
+      "23298000.00"
+     ],
+     [
+      "2025-06-02",
+      "4299000.00"
+     ],
+     [
+      "2025-06-03",
+      "18999000.00"
+     ],
+     [
+      "2025-06-05",
+      "2899000.00"
+     ],
+     [
+      "2025-06-07",
+      "24999000.00"
+     ],
+     [
+      "2025-06-10",
+      "6499000.00"
+     ],
+     [
+      "2025-06-12",
+      "19999000.00"
+     ],
+     [
+      "2025-06-15",
+      "1499000.00"
+     ],
+     [
+      "2025-06-18",
+      "12999000.00"
+     ],
+     [
+      "2025-06-20",
+      "3999000.00"
+     ],
+     [
+      "2025-06-22",
+      "3299000.00"
+     ],
+     [
+      "2025-06-25",
+      "22499000.00"
+     ],
+     [
+      "2025-06-28",
+      "599000.00"
+     ],
+     [
+      "2025-07-01",
+      "4299000.00"
+     ],
+     [
+      "2025-07-05",
+      "24999000.00"
+     ]
+    ]
+   }
+  },
+  "2e6abfdeec66233f": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Credit Card",
+      "20999000.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT payment_method AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY payment_method ORDER BY value DESC LIMIT 1",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Credit Card",
+      "20999000.00000000"
+     ]
+    ]
+   }
+  },
+  "2f2fc20d31a73a4d": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "2025-06-01",
+      "23298000.00"
+     ],
+     [
+      "2025-06-02",
+      "4299000.00"
+     ],
+     [
+      "2025-06-03",
+      "18999000.00"
+     ],
+     [
+      "2025-06-05",
+      "2899000.00"
+     ],
+     [
+      "2025-06-07",
+      "24999000.00"
+     ],
+     [
+      "2025-06-10",
+      "6499000.00"
+     ],
+     [
+      "2025-06-12",
+      "19999000.00"
+     ],
+     [
+      "2025-06-15",
+      "1499000.00"
+     ],
+     [
+      "2025-06-18",
+      "12999000.00"
+     ],
+     [
+      "2025-06-20",
+      "3999000.00"
+     ],
+     [
+      "2025-06-22",
+      "3299000.00"
+     ],
+     [
+      "2025-06-25",
+      "22499000.00"
+     ],
+     [
+      "2025-06-28",
+      "599000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT DATE(order_date) AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01' GROUP BY 1 ORDER BY 1",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "2025-06-01",
+      "23298000.00"
+     ],
+     [
+      "2025-06-02",
+      "4299000.00"
+     ],
+     [
+      "2025-06-03",
+      "18999000.00"
+     ],
+     [
+      "2025-06-05",
+      "2899000.00"
+     ],
+     [
+      "2025-06-07",
+      "24999000.00"
+     ],
+     [
+      "2025-06-10",
+      "6499000.00"
+     ],
+     [
+      "2025-06-12",
+      "19999000.00"
+     ],
+     [
+      "2025-06-15",
+      "1499000.00"
+     ],
+     [
+      "2025-06-18",
+      "12999000.00"
+     ],
+     [
+      "2025-06-20",
+      "3999000.00"
+     ],
+     [
+      "2025-06-22",
+      "3299000.00"
+     ],
+     [
+      "2025-06-25",
+      "22499000.00"
+     ],
+     [
+      "2025-06-28",
+      "599000.00"
+     ]
+    ]
+   }
+  },
+  "2fc578a91ffb41b9": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Semarang",
+      "24999000.00000000"
+     ],
+     [
+      "Malang",
+      "22499000.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC LIMIT 2",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Semarang",
+      "24999000.00000000"
+     ],
+     [
+      "Malang",
+      "22499000.00000000"
+     ]
+    ]
+   }
+  },
+  "309461d1db32810a": {
+   "admin": {
+    "columns": [
+     "customer_id",
+     "n"
+    ],
+    "rows": [
+     [
+      1,
+      3
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT customer_id, COUNT(*) n FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY n DESC LIMIT 1",
+   "user": {
+    "columns": [
+     "customer_id",
+     "n"
+    ],
+    "rows": [
+     [
+      1,
+      3
+     ]
+    ]
+   }
+  },
+  "31b7696e53262ccc": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      2
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(DISTINCT customer_id) AS value FROM NOVA_DEMO.orders WHERE payment_method = 'GoPay'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      2
+     ]
+    ]
+   }
+  },
+  "32d76488b9885bf2": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Palembang",
+      "599000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value ASC LIMIT 1",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Palembang",
+      "599000.00"
+     ]
+    ]
+   }
+  },
+  "3542fe895e077da6": {
+   "admin": {
+    "columns": [
+     "revenue",
+     "orders"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS revenue, COUNT(*) AS orders FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "revenue",
+     "orders"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15
+     ]
+    ]
+   }
+  },
+  "3a35cc94e24111f1": {
+   "admin": {
+    "columns": [
+     "order_id",
+     "value"
+    ],
+    "rows": [
+     [
+      1013,
+      "599000.00"
+     ],
+     [
+      1008,
+      "1499000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT order_id, total_amount AS value FROM NOVA_DEMO.orders ORDER BY total_amount ASC LIMIT 2",
+   "user": {
+    "columns": [
+     "order_id",
+     "value"
+    ],
+    "rows": [
+     [
+      1013,
+      "599000.00"
+     ],
+     [
+      1008,
+      "1499000.00"
+     ]
+    ]
+   }
+  },
+  "3af1feb3fcb3d0b4": {
+   "admin": {
+    "columns": [
+     "sum(spend)"
+    ],
+    "rows": [
+     [
+      "17700000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": false,
+   "sql": "SELECT SUM(spend) FROM NOVA_ANALYTICS.channel_performance WHERE channel='Google Ads'",
+   "user": {
+    "error": "SQL error: (5204) Access denied; you need (at least one of) the SELECT privilege(s) on COLUMN spend for this operation."
+   }
+  },
+  "3c99cee15294a0d0": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      3
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE status = 'shipped'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      3
+     ]
+    ]
+   }
+  },
+  "3cc0df3a40e5312f": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "processing",
+      "19999000.00000000"
+     ],
+     [
+      "shipped",
+      "12865666.66666667"
+     ],
+     [
+      "completed",
+      "10498875.00000000"
+     ],
+     [
+      "pending",
+      "3299000.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT status AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01' GROUP BY status ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "processing",
+      "19999000.00000000"
+     ],
+     [
+      "shipped",
+      "12865666.66666667"
+     ],
+     [
+      "completed",
+      "10498875.00000000"
+     ],
+     [
+      "pending",
+      "3299000.00000000"
+     ]
+    ]
+   }
+  },
+  "3d0954129cda7a9c": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      1
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE status = 'pending'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      1
+     ]
+    ]
+   }
+  },
+  "417cf85cd89dd765": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      3
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE payment_method = 'GoPay'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      3
+     ]
+    ]
+   }
+  },
+  "442c53ae47cf1824": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC LIMIT 1",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ]
+    ]
+   }
+  },
+  "45fad0371747107f": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Semarang",
+      "24999000.00000000"
+     ],
+     [
+      "Malang",
+      "22499000.00000000"
+     ],
+     [
+      "Medan",
+      "19999000.00000000"
+     ],
+     [
+      "Yogyakarta",
+      "15749000.00000000"
+     ],
+     [
+      "Makassar",
+      "12999000.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC LIMIT 5",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Semarang",
+      "24999000.00000000"
+     ],
+     [
+      "Malang",
+      "22499000.00000000"
+     ],
+     [
+      "Medan",
+      "19999000.00000000"
+     ],
+     [
+      "Yogyakarta",
+      "15749000.00000000"
+     ],
+     [
+      "Makassar",
+      "12999000.00000000"
+     ]
+    ]
+   }
+  },
+  "49b0f96fe00d95d0": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Credit Card",
+      "62997000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT payment_method AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY payment_method ORDER BY value DESC LIMIT 1",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Credit Card",
+      "62997000.00"
+     ]
+    ]
+   }
+  },
+  "4c75672099b68770": {
+   "admin": {
+    "columns": [
+     "total",
+     "jakarta"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      "30496000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS total, SUM(CASE WHEN shipping_city='Jakarta' THEN total_amount ELSE 0 END) AS jakarta FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "total",
+     "jakarta"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      "30496000.00"
+     ]
+    ]
+   }
+  },
+  "4dc756587cb87490": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "completed",
+      "113289000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT status AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY status ORDER BY value DESC LIMIT 1",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "completed",
+      "113289000.00"
+     ]
+    ]
+   }
+  },
+  "4e6a223224371685": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Surabaya",
+      2
+     ],
+     [
+      "Bandung",
+      2
+     ],
+     [
+      "Jakarta",
+      2
+     ],
+     [
+      "Semarang",
+      1
+     ],
+     [
+      "Makassar",
+      1
+     ],
+     [
+      "Malang",
+      1
+     ],
+     [
+      "Medan",
+      1
+     ],
+     [
+      "Palembang",
+      1
+     ],
+     [
+      "Yogyakarta",
+      1
+     ],
+     [
+      "Bali",
+      1
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01' GROUP BY shipping_city ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Surabaya",
+      2
+     ],
+     [
+      "Bandung",
+      2
+     ],
+     [
+      "Jakarta",
+      2
+     ],
+     [
+      "Medan",
+      1
+     ],
+     [
+      "Semarang",
+      1
+     ],
+     [
+      "Makassar",
+      1
+     ],
+     [
+      "Malang",
+      1
+     ],
+     [
+      "Palembang",
+      1
+     ],
+     [
+      "Yogyakarta",
+      1
+     ],
+     [
+      "Bali",
+      1
+     ]
+    ]
+   }
+  },
+  "4e7e1b009f9e24a5": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "24999000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE shipping_city = 'Semarang'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "24999000.00"
+     ]
+    ]
+   }
+  },
+  "4f2ff31e27a7baa9": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      3
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE shipping_city = 'Jakarta'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      3
+     ]
+    ]
+   }
+  },
+  "4fee9120510ee50d": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Palembang",
+      "599000.00"
+     ],
+     [
+      "Bali",
+      "3999000.00"
+     ],
+     [
+      "Surabaya",
+      "5798000.00"
+     ],
+     [
+      "Makassar",
+      "12999000.00"
+     ],
+     [
+      "Medan",
+      "19999000.00"
+     ],
+     [
+      "Bandung",
+      "22298000.00"
+     ],
+     [
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "Jakarta",
+      "30496000.00"
+     ],
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value ASC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Palembang",
+      "599000.00"
+     ],
+     [
+      "Bali",
+      "3999000.00"
+     ],
+     [
+      "Surabaya",
+      "5798000.00"
+     ],
+     [
+      "Makassar",
+      "12999000.00"
+     ],
+     [
+      "Medan",
+      "19999000.00"
+     ],
+     [
+      "Bandung",
+      "22298000.00"
+     ],
+     [
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "Jakarta",
+      "30496000.00"
+     ],
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ]
+    ]
+   }
+  },
+  "503e67696757638c": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "62997000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE payment_method = 'Credit Card'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "62997000.00"
+     ]
+    ]
+   }
+  },
+  "50560f102bcb06dd": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Malang",
+      "22499000.00000000"
+     ],
+     [
+      "Bandung",
+      "18999000.00000000"
+     ],
+     [
+      "Yogyakarta",
+      "15749000.00000000"
+     ],
+     [
+      "Jakarta",
+      "10165333.33333333"
+     ],
+     [
+      "Bali",
+      "3999000.00000000"
+     ],
+     [
+      "Surabaya",
+      "2899000.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders WHERE status = 'completed' GROUP BY shipping_city ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Malang",
+      "22499000.00000000"
+     ],
+     [
+      "Bandung",
+      "18999000.00000000"
+     ],
+     [
+      "Yogyakarta",
+      "15749000.00000000"
+     ],
+     [
+      "Jakarta",
+      "10165333.33333333"
+     ],
+     [
+      "Bali",
+      "3999000.00000000"
+     ],
+     [
+      "Surabaya",
+      "2899000.00000000"
+     ]
+    ]
+   }
+  },
+  "518cb94764f45254": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      3
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE payment_method = 'QRIS'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      3
+     ]
+    ]
+   }
+  },
+  "527732ccecc2b56a": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Credit Card",
+      3
+     ],
+     [
+      "Bank Transfer",
+      3
+     ],
+     [
+      "DANA",
+      3
+     ],
+     [
+      "QRIS",
+      3
+     ],
+     [
+      "GoPay",
+      3
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT payment_method AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders GROUP BY payment_method ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Credit Card",
+      3
+     ],
+     [
+      "Bank Transfer",
+      3
+     ],
+     [
+      "GoPay",
+      3
+     ],
+     [
+      "DANA",
+      3
+     ],
+     [
+      "QRIS",
+      3
+     ]
+    ]
+   }
+  },
+  "52a280afb799a174": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "12865666.66666667"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT AVG(total_amount) AS value FROM NOVA_DEMO.orders WHERE status = 'shipped'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "12865666.66666667"
+     ]
+    ]
+   }
+  },
+  "53041272f0a2fcf3": {
+   "admin": {
+    "columns": [
+     "pct"
+    ],
+    "rows": [
+     [
+      "35.96047600"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(CASE WHEN payment_method='Credit Card' THEN total_amount END) / SUM(total_amount) * 100 AS pct FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "pct"
+    ],
+    "rows": [
+     [
+      "35.96047600"
+     ]
+    ]
+   }
+  },
+  "530e150dd398ae4c": {
+   "admin": {
+    "columns": [
+     "sum(total_amount)",
+     "((sum(total_amount)) / ((SELECT sum(total_amount) FROM NOVA_DEMO.orders))) * 100"
+    ],
+    "rows": [
+     [
+      "90090000.00",
+      "51.42592900"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount), SUM(total_amount) / (SELECT SUM(total_amount) FROM NOVA_DEMO.orders) * 100 FROM NOVA_DEMO.orders WHERE customer_id IN (SELECT customer_id FROM NOVA_DEMO.orders GROUP BY 1 HAVING COUNT(*) > 1)",
+   "user": {
+    "columns": [
+     "sum(total_amount)",
+     "((sum(total_amount)) / ((SELECT sum(total_amount) FROM NOVA_DEMO.orders))) * 100"
+    ],
+    "rows": [
+     [
+      "90090000.00",
+      "51.42592900"
+     ]
+    ]
+   }
+  },
+  "53d9100ce679efc4": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      13
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      13
+     ]
+    ]
+   }
+  },
+  "54a0ce5abc9e0dd2": {
+   "admin": {
+    "columns": [
+     "(sum(total_amount)) + (sum(CASE WHEN (shipping_city = 'Jakarta') THEN total_amount ELSE 0 END))"
+    ],
+    "rows": [
+     [
+      "205680000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) + SUM(CASE WHEN shipping_city='Jakarta' THEN total_amount ELSE 0 END) FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "(sum(total_amount)) + (sum(CASE WHEN (shipping_city = 'Jakarta') THEN total_amount ELSE 0 END))"
+    ],
+    "rows": [
+     [
+      "205680000.00"
+     ]
+    ]
+   }
+  },
+  "5a3618b432bbf4b7": {
+   "admin": {
+    "columns": [
+     "dana",
+     "gopay",
+     "diff"
+    ],
+    "rows": [
+     [
+      "33096000.00",
+      "6397000.00",
+      "26699000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(CASE WHEN payment_method='DANA' THEN total_amount END) AS dana, SUM(CASE WHEN payment_method='GoPay' THEN total_amount END) AS gopay, SUM(CASE WHEN payment_method='DANA' THEN total_amount END) - SUM(CASE WHEN payment_method='GoPay' THEN total_amount END) AS diff FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "dana",
+     "gopay",
+     "diff"
+    ],
+    "rows": [
+     [
+      "33096000.00",
+      "6397000.00",
+      "26699000.00"
+     ]
+    ]
+   }
+  },
+  "5b18e66001f3baa7": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      "30496000.00"
+     ],
+     [
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "Bandung",
+      "22298000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC LIMIT 5",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      "30496000.00"
+     ],
+     [
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "Bandung",
+      "22298000.00"
+     ]
+    ]
+   }
+  },
+  "5b530332c9d2df95": {
+   "admin": {
+    "columns": [
+     "report_month",
+     "net_revenue"
+    ],
+    "rows": [
+     [
+      "2025-06-01",
+      "171500000.00"
+     ],
+     [
+      "2025-07-01",
+      "187200000.00"
+     ],
+     [
+      "2025-08-01",
+      "204800000.00"
+     ],
+     [
+      "2025-09-01",
+      "181300000.00"
+     ],
+     [
+      "2025-10-01",
+      "219000000.00"
+     ],
+     [
+      "2025-11-01",
+      "300700000.00"
+     ],
+     [
+      "2025-12-01",
+      "465600000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": false,
+   "sql": "SELECT report_month, net_revenue FROM NOVA_ANALYTICS.monthly_revenue",
+   "user": {
+    "error": "SQL error: (5204) Access denied; you need (at least one of) the SELECT privilege(s) on COLUMN net_revenue for this operation."
+   }
+  },
+  "5c2c327dbfc403b2": {
+   "admin": {
+    "columns": [
+     "order_id",
+     "value"
+    ],
+    "rows": [
+     [
+      1001,
+      "23298000.00"
+     ],
+     [
+      1002,
+      "4299000.00"
+     ],
+     [
+      1003,
+      "18999000.00"
+     ],
+     [
+      1004,
+      "2899000.00"
+     ],
+     [
+      1005,
+      "24999000.00"
+     ],
+     [
+      1006,
+      "6499000.00"
+     ],
+     [
+      1007,
+      "19999000.00"
+     ],
+     [
+      1008,
+      "1499000.00"
+     ],
+     [
+      1009,
+      "12999000.00"
+     ],
+     [
+      1010,
+      "3999000.00"
+     ],
+     [
+      1011,
+      "3299000.00"
+     ],
+     [
+      1012,
+      "22499000.00"
+     ],
+     [
+      1013,
+      "599000.00"
+     ],
+     [
+      1014,
+      "4299000.00"
+     ],
+     [
+      1015,
+      "24999000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT order_id, total_amount AS value FROM NOVA_DEMO.orders ORDER BY order_date",
+   "user": {
+    "columns": [
+     "order_id",
+     "value"
+    ],
+    "rows": [
+     [
+      1001,
+      "23298000.00"
+     ],
+     [
+      1002,
+      "4299000.00"
+     ],
+     [
+      1003,
+      "18999000.00"
+     ],
+     [
+      1004,
+      "2899000.00"
+     ],
+     [
+      1005,
+      "24999000.00"
+     ],
+     [
+      1006,
+      "6499000.00"
+     ],
+     [
+      1007,
+      "19999000.00"
+     ],
+     [
+      1008,
+      "1499000.00"
+     ],
+     [
+      1009,
+      "12999000.00"
+     ],
+     [
+      1010,
+      "3999000.00"
+     ],
+     [
+      1011,
+      "3299000.00"
+     ],
+     [
+      1012,
+      "22499000.00"
+     ],
+     [
+      1013,
+      "599000.00"
+     ],
+     [
+      1014,
+      "4299000.00"
+     ],
+     [
+      1015,
+      "24999000.00"
+     ]
+    ]
+   }
+  },
+  "5c2d65858c01a3b4": {
+   "admin": {
+    "columns": [
+     "revenue",
+     "orders",
+     "aov"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15,
+      "11678933.33333333"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS revenue, COUNT(order_id) AS orders, AVG(total_amount) AS aov FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "revenue",
+     "orders",
+     "aov"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15,
+      "11678933.33333333"
+     ]
+    ]
+   }
+  },
+  "5e8183763dee651b": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      2
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-07-01' AND order_date < '2025-08-01'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      2
+     ]
+    ]
+   }
+  },
+  "60ee69db4438dfe0": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "completed",
+      "113289000.00"
+     ],
+     [
+      "shipped",
+      "38597000.00"
+     ],
+     [
+      "processing",
+      "19999000.00"
+     ],
+     [
+      "pending",
+      "3299000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT status AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY status ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "completed",
+      "113289000.00"
+     ],
+     [
+      "shipped",
+      "38597000.00"
+     ],
+     [
+      "processing",
+      "19999000.00"
+     ],
+     [
+      "pending",
+      "3299000.00"
+     ]
+    ]
+   }
+  },
+  "6104f4f67d01fd71": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Credit Card",
+      "62997000.00"
+     ],
+     [
+      "Bank Transfer",
+      "61497000.00"
+     ],
+     [
+      "DANA",
+      "33096000.00"
+     ],
+     [
+      "QRIS",
+      "11197000.00"
+     ],
+     [
+      "GoPay",
+      "6397000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT payment_method AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY payment_method ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Credit Card",
+      "62997000.00"
+     ],
+     [
+      "Bank Transfer",
+      "61497000.00"
+     ],
+     [
+      "DANA",
+      "33096000.00"
+     ],
+     [
+      "QRIS",
+      "11197000.00"
+     ],
+     [
+      "GoPay",
+      "6397000.00"
+     ]
+    ]
+   }
+  },
+  "63a6e3a0ef64f891": {
+   "admin": {
+    "columns": [
+     "id",
+     "phone"
+    ],
+    "rows": [
+     [
+      1,
+      "+62-811-0001"
+     ],
+     [
+      2,
+      "+62-811-0002"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": false,
+   "sql": "SELECT id, phone FROM analytics.customers",
+   "user": {
+    "columns": [
+     "id",
+     "phone"
+    ],
+    "rows": [
+     [
+      1,
+      "+00-000-0000"
+     ],
+     [
+      2,
+      "+00-000-0000"
+     ]
+    ]
+   }
+  },
+  "647808f59ced1d1c": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "18999000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE shipping_city = 'Bandung' AND status = 'completed'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "18999000.00"
+     ]
+    ]
+   }
+  },
+  "64d76cd5c170b390": {
+   "admin": {
+    "columns": [
+     "repeaters",
+     "value"
+    ],
+    "rows": [
+     [
+      4,
+      "90090000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(*) AS repeaters, SUM(v) AS value FROM (SELECT customer_id, COUNT(*) n, SUM(total_amount) v FROM NOVA_DEMO.orders GROUP BY 1 HAVING COUNT(*) > 1) r",
+   "user": {
+    "columns": [
+     "repeaters",
+     "value"
+    ],
+    "rows": [
+     [
+      4,
+      "90090000.00"
+     ]
+    ]
+   }
+  },
+  "6567158c93f05272": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "processing",
+      "19999000.00000000"
+     ],
+     [
+      "shipped",
+      "12865666.66666667"
+     ],
+     [
+      "completed",
+      "11328900.00000000"
+     ],
+     [
+      "pending",
+      "3299000.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT status AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY status ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "processing",
+      "19999000.00000000"
+     ],
+     [
+      "shipped",
+      "12865666.66666667"
+     ],
+     [
+      "completed",
+      "11328900.00000000"
+     ],
+     [
+      "pending",
+      "3299000.00000000"
+     ]
+    ]
+   }
+  },
+  "65bd275133e4013f": {
+   "admin": {
+    "columns": [
+     "shipping_city",
+     "count(*)"
+    ],
+    "rows": [
+     [
+      "Bandung",
+      1
+     ],
+     [
+      "Jakarta",
+      1
+     ],
+     [
+      "Yogyakarta",
+      1
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city, COUNT(*) FROM NOVA_DEMO.orders WHERE payment_method='DANA' GROUP BY 1",
+   "user": {
+    "columns": [
+     "shipping_city",
+     "count(*)"
+    ],
+    "rows": [
+     [
+      "Bandung",
+      1
+     ],
+     [
+      "Jakarta",
+      1
+     ],
+     [
+      "Yogyakarta",
+      1
+     ]
+    ]
+   }
+  },
+  "68db2b81bfaeaaa8": {
+   "admin": {
+    "columns": [
+     "email",
+     "phone"
+    ],
+    "rows": [
+     [
+      "andi@example.com",
+      "082212345678"
+     ],
+     [
+      "budi@example.com",
+      "085612345678"
+     ],
+     [
+      "dimas@example.com",
+      "084412345678"
+     ],
+     [
+      "dwicky@example.com",
+      "081234567890"
+     ],
+     [
+      "kezia@example.com",
+      "081298765432"
+     ],
+     [
+      "lisa@example.com",
+      "083312345678"
+     ],
+     [
+      "maya@example.com",
+      "081112223344"
+     ],
+     [
+      "nina@example.com",
+      "085512345678"
+     ],
+     [
+      "rizki@example.com",
+      "089912345678"
+     ],
+     [
+      "sarah@example.com",
+      "087812345678"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT email, phone FROM NOVA_DEMO.customers",
+   "user": {
+    "columns": [
+     "email",
+     "phone"
+    ],
+    "rows": [
+     [
+      "andi@example.com",
+      "082212345678"
+     ],
+     [
+      "budi@example.com",
+      "085612345678"
+     ],
+     [
+      "dimas@example.com",
+      "084412345678"
+     ],
+     [
+      "dwicky@example.com",
+      "081234567890"
+     ],
+     [
+      "kezia@example.com",
+      "081298765432"
+     ],
+     [
+      "lisa@example.com",
+      "083312345678"
+     ],
+     [
+      "maya@example.com",
+      "081112223344"
+     ],
+     [
+      "nina@example.com",
+      "085512345678"
+     ],
+     [
+      "rizki@example.com",
+      "089912345678"
+     ],
+     [
+      "sarah@example.com",
+      "087812345678"
+     ]
+    ]
+   }
+  },
+  "694ad6dce5f776b0": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY 1 HAVING COUNT(*) > 1 ORDER BY value DESC LIMIT 1",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ]
+    ]
+   }
+  },
+  "6a1fd030de1f09c6": {
+   "admin": {
+    "columns": [
+     "sum(total_amount)",
+     "count(*)",
+     "avg(total_amount)"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15,
+      "11678933.33333333"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount), COUNT(*), AVG(total_amount) FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "sum(total_amount)",
+     "count(*)",
+     "avg(total_amount)"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15,
+      "11678933.33333333"
+     ]
+    ]
+   }
+  },
+  "6cb9d7d75b2afce0": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Bank Transfer",
+      3
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT payment_method AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders GROUP BY payment_method ORDER BY value DESC, label LIMIT 1",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Bank Transfer",
+      3
+     ]
+    ]
+   }
+  },
+  "6eea3b6c3accfb30": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      15
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-01-01'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      15
+     ]
+    ]
+   }
+  },
+  "71876d78596b1974": {
+   "admin": {
+    "columns": [
+     "sum(total_amount)",
+     "count(*)",
+     "avg(total_amount)"
+    ],
+    "rows": [
+     [
+      "145886000.00",
+      13,
+      "11222000.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount), COUNT(*), AVG(total_amount) FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01'",
+   "user": {
+    "columns": [
+     "sum(total_amount)",
+     "count(*)",
+     "avg(total_amount)"
+    ],
+    "rows": [
+     [
+      "145886000.00",
+      13,
+      "11222000.00000000"
+     ]
+    ]
+   }
+  },
+  "71ff031242e198aa": {
+   "admin": {
+    "columns": [
+     "jakarta",
+     "surabaya",
+     "diff"
+    ],
+    "rows": [
+     [
+      "30496000.00",
+      "5798000.00",
+      "24698000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(CASE WHEN shipping_city='Jakarta' THEN total_amount END) AS jakarta, SUM(CASE WHEN shipping_city='Surabaya' THEN total_amount END) AS surabaya, SUM(CASE WHEN shipping_city='Jakarta' THEN total_amount END) - SUM(CASE WHEN shipping_city='Surabaya' THEN total_amount END) AS diff FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "jakarta",
+     "surabaya",
+     "diff"
+    ],
+    "rows": [
+     [
+      "30496000.00",
+      "5798000.00",
+      "24698000.00"
+     ]
+    ]
+   }
+  },
+  "72fb9f37e7d442c8": {
+   "admin": {
+    "columns": [
+     "payment_method",
+     "date_trunc('month', order_date)",
+     "value"
+    ],
+    "rows": [
+     [
+      "Bank Transfer",
+      "2025-06-01T00:00:00",
+      "61497000.00"
+     ],
+     [
+      "Credit Card",
+      "2025-06-01T00:00:00",
+      "37998000.00"
+     ],
+     [
+      "Credit Card",
+      "2025-07-01T00:00:00",
+      "24999000.00"
+     ],
+     [
+      "DANA",
+      "2025-06-01T00:00:00",
+      "33096000.00"
+     ],
+     [
+      "GoPay",
+      "2025-06-01T00:00:00",
+      "6397000.00"
+     ],
+     [
+      "QRIS",
+      "2025-06-01T00:00:00",
+      "6898000.00"
+     ],
+     [
+      "QRIS",
+      "2025-07-01T00:00:00",
+      "4299000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT payment_method, DATE_TRUNC('month', order_date), SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY 1, 2",
+   "user": {
+    "columns": [
+     "payment_method",
+     "date_trunc('month', order_date)",
+     "value"
+    ],
+    "rows": [
+     [
+      "Bank Transfer",
+      "2025-06-01T00:00:00",
+      "61497000.00"
+     ],
+     [
+      "Credit Card",
+      "2025-06-01T00:00:00",
+      "37998000.00"
+     ],
+     [
+      "Credit Card",
+      "2025-07-01T00:00:00",
+      "24999000.00"
+     ],
+     [
+      "DANA",
+      "2025-06-01T00:00:00",
+      "33096000.00"
+     ],
+     [
+      "GoPay",
+      "2025-06-01T00:00:00",
+      "6397000.00"
+     ],
+     [
+      "QRIS",
+      "2025-06-01T00:00:00",
+      "6898000.00"
+     ],
+     [
+      "QRIS",
+      "2025-07-01T00:00:00",
+      "4299000.00"
+     ]
+    ]
+   }
+  },
+  "752622cfa7d9681c": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "Medan",
+      "19999000.00"
+     ],
+     [
+      "Makassar",
+      "12999000.00"
+     ],
+     [
+      "Bandung",
+      "3299000.00"
+     ],
+     [
+      "Palembang",
+      "599000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE status <> 'completed' GROUP BY shipping_city ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "Medan",
+      "19999000.00"
+     ],
+     [
+      "Makassar",
+      "12999000.00"
+     ],
+     [
+      "Bandung",
+      "3299000.00"
+     ],
+     [
+      "Palembang",
+      "599000.00"
+     ]
+    ]
+   }
+  },
+  "7552ba3cf2eb7fae": {
+   "admin": {
+    "columns": [
+     "order_id",
+     "total_amount"
+    ],
+    "rows": [
+     [
+      1015,
+      "24999000.00"
+     ],
+     [
+      1005,
+      "24999000.00"
+     ],
+     [
+      1001,
+      "23298000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT order_id, total_amount FROM NOVA_DEMO.orders ORDER BY total_amount DESC LIMIT 3",
+   "user": {
+    "columns": [
+     "order_id",
+     "total_amount"
+    ],
+    "rows": [
+     [
+      1015,
+      "24999000.00"
+     ],
+     [
+      1005,
+      "24999000.00"
+     ],
+     [
+      1001,
+      "23298000.00"
+     ]
+    ]
+   }
+  },
+  "78d2a17f7833acc3": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      5,
+      "31498000.00"
+     ],
+     [
+      1,
+      "30496000.00"
+     ],
+     [
+      4,
+      "24999000.00"
+     ],
+     [
+      9,
+      "22499000.00"
+     ],
+     [
+      3,
+      "22298000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT customer_id AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY customer_id ORDER BY value DESC LIMIT 5",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      5,
+      "31498000.00"
+     ],
+     [
+      1,
+      "30496000.00"
+     ],
+     [
+      4,
+      "24999000.00"
+     ],
+     [
+      9,
+      "22499000.00"
+     ],
+     [
+      3,
+      "22298000.00"
+     ]
+    ]
+   }
+  },
+  "7b1d8bb61cb4a274": {
+   "admin": {
+    "columns": [
+     "revenue",
+     "orders",
+     "aov"
+    ],
+    "rows": [
+     [
+      "5798000.00",
+      2,
+      "2899000.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS revenue, COUNT(order_id) AS orders, AVG(total_amount) AS aov FROM NOVA_DEMO.orders WHERE shipping_city = 'Surabaya'",
+   "user": {
+    "columns": [
+     "revenue",
+     "orders",
+     "aov"
+    ],
+    "rows": [
+     [
+      "5798000.00",
+      2,
+      "2899000.00000000"
+     ]
+    ]
+   }
+  },
+  "7b4e28c26921383b": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      "30496000.00"
+     ],
+     [
+      "Semarang",
+      "24999000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC LIMIT 3",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      "30496000.00"
+     ],
+     [
+      "Semarang",
+      "24999000.00"
+     ]
+    ]
+   }
+  },
+  "7ccf5c1a0ce7a7c7": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "20999000.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT AVG(total_amount) AS value FROM NOVA_DEMO.orders WHERE payment_method = (SELECT payment_method FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY SUM(total_amount) DESC LIMIT 1)",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "20999000.00000000"
+     ]
+    ]
+   }
+  },
+  "7d8a63e909765fc9": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      10
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE status = 'completed'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      10
+     ]
+    ]
+   }
+  },
+  "7dc899b76a43edba": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "11149000.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT AVG(total_amount) AS value FROM NOVA_DEMO.orders WHERE shipping_city = 'Bandung'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "11149000.00000000"
+     ]
+    ]
+   }
+  },
+  "7ec866f6e361d0e4": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "29298000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-07-01' AND order_date < '2025-08-01'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "29298000.00"
+     ]
+    ]
+   }
+  },
+  "807ebc5733a1799d": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "145886000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-01-01' AND order_date < '2025-07-01'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "145886000.00"
+     ]
+    ]
+   }
+  },
+  "8195398eb6f54b7c": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "2025-05-26T00:00:00",
+      "23298000.00"
+     ],
+     [
+      "2025-06-02T00:00:00",
+      "51196000.00"
+     ],
+     [
+      "2025-06-09T00:00:00",
+      "27997000.00"
+     ],
+     [
+      "2025-06-16T00:00:00",
+      "20297000.00"
+     ],
+     [
+      "2025-06-23T00:00:00",
+      "23098000.00"
+     ],
+     [
+      "2025-06-30T00:00:00",
+      "29298000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT DATE_TRUNC('week', order_date) AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY 1",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "2025-05-26T00:00:00",
+      "23298000.00"
+     ],
+     [
+      "2025-06-02T00:00:00",
+      "51196000.00"
+     ],
+     [
+      "2025-06-09T00:00:00",
+      "27997000.00"
+     ],
+     [
+      "2025-06-16T00:00:00",
+      "20297000.00"
+     ],
+     [
+      "2025-06-23T00:00:00",
+      "23098000.00"
+     ],
+     [
+      "2025-06-30T00:00:00",
+      "29298000.00"
+     ]
+    ]
+   }
+  },
+  "81a48625bacaf517": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "30496000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE customer_id = 1",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "30496000.00"
+     ]
+    ]
+   }
+  },
+  "81ce981e6bedf85f": {
+   "admin": {
+    "columns": [
+     "sum(CASE WHEN (shipping_city = 'Semarang') THEN 1 ELSE 0 END)",
+     "sum(CASE WHEN (shipping_city = 'Medan') THEN 1 ELSE 0 END)"
+    ],
+    "rows": [
+     [
+      1,
+      1
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(CASE WHEN shipping_city='Semarang' THEN 1 ELSE 0 END), SUM(CASE WHEN shipping_city='Medan' THEN 1 ELSE 0 END) FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "sum(CASE WHEN (shipping_city = 'Semarang') THEN 1 ELSE 0 END)",
+     "sum(CASE WHEN (shipping_city = 'Medan') THEN 1 ELSE 0 END)"
+    ],
+    "rows": [
+     [
+      1,
+      1
+     ]
+    ]
+   }
+  },
+  "8292cab6e6a88f5c": {
+   "admin": {
+    "columns": [
+     "sum(CASE WHEN (shipping_city = 'Jakarta') THEN total_amount END)",
+     "(sum(total_amount)) / (count(DISTINCT shipping_city))"
+    ],
+    "rows": [
+     [
+      "30496000.00",
+      "17518400.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(CASE WHEN shipping_city='Jakarta' THEN total_amount END), SUM(total_amount) / COUNT(DISTINCT shipping_city) FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "sum(CASE WHEN (shipping_city = 'Jakarta') THEN total_amount END)",
+     "(sum(total_amount)) / (count(DISTINCT shipping_city))"
+    ],
+    "rows": [
+     [
+      "30496000.00",
+      "17518400.00000000"
+     ]
+    ]
+   }
+  },
+  "835c1a628d55348e": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      15
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      15
+     ]
+    ]
+   }
+  },
+  "853ea9ac7efa4958": {
+   "admin": {
+    "columns": [
+     "((sum(total_amount)) - (sum(CASE WHEN (shipping_city = 'Medan') THEN total_amount ELSE 0 END))) * 1.15"
+    ],
+    "rows": [
+     [
+      "178462750.0000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT (SUM(total_amount) - SUM(CASE WHEN shipping_city='Medan' THEN total_amount ELSE 0 END)) * 1.15 FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "((sum(total_amount)) - (sum(CASE WHEN (shipping_city = 'Medan') THEN total_amount ELSE 0 END))) * 1.15"
+    ],
+    "rows": [
+     [
+      "178462750.0000"
+     ]
+    ]
+   }
+  },
+  "86b330c61258da0f": {
+   "admin": {
+    "columns": [
+     "date_trunc('week', order_date)",
+     "shipping_city",
+     "sum(total_amount)"
+    ],
+    "rows": [
+     [
+      "2025-05-26T00:00:00",
+      "Jakarta",
+      "23298000.00"
+     ],
+     [
+      "2025-06-02T00:00:00",
+      "Bandung",
+      "18999000.00"
+     ],
+     [
+      "2025-06-02T00:00:00",
+      "Jakarta",
+      "2899000.00"
+     ],
+     [
+      "2025-06-02T00:00:00",
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "2025-06-02T00:00:00",
+      "Surabaya",
+      "4299000.00"
+     ],
+     [
+      "2025-06-09T00:00:00",
+      "Medan",
+      "19999000.00"
+     ],
+     [
+      "2025-06-09T00:00:00",
+      "Surabaya",
+      "1499000.00"
+     ],
+     [
+      "2025-06-09T00:00:00",
+      "Yogyakarta",
+      "6499000.00"
+     ],
+     [
+      "2025-06-16T00:00:00",
+      "Bali",
+      "3999000.00"
+     ],
+     [
+      "2025-06-16T00:00:00",
+      "Bandung",
+      "3299000.00"
+     ],
+     [
+      "2025-06-16T00:00:00",
+      "Makassar",
+      "12999000.00"
+     ],
+     [
+      "2025-06-23T00:00:00",
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "2025-06-23T00:00:00",
+      "Palembang",
+      "599000.00"
+     ],
+     [
+      "2025-06-30T00:00:00",
+      "Jakarta",
+      "4299000.00"
+     ],
+     [
+      "2025-06-30T00:00:00",
+      "Yogyakarta",
+      "24999000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT DATE_TRUNC('week', order_date), shipping_city, SUM(total_amount) FROM NOVA_DEMO.orders GROUP BY 1, 2",
+   "user": {
+    "columns": [
+     "date_trunc('week', order_date)",
+     "shipping_city",
+     "sum(total_amount)"
+    ],
+    "rows": [
+     [
+      "2025-05-26T00:00:00",
+      "Jakarta",
+      "23298000.00"
+     ],
+     [
+      "2025-06-02T00:00:00",
+      "Bandung",
+      "18999000.00"
+     ],
+     [
+      "2025-06-02T00:00:00",
+      "Jakarta",
+      "2899000.00"
+     ],
+     [
+      "2025-06-02T00:00:00",
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "2025-06-02T00:00:00",
+      "Surabaya",
+      "4299000.00"
+     ],
+     [
+      "2025-06-09T00:00:00",
+      "Medan",
+      "19999000.00"
+     ],
+     [
+      "2025-06-09T00:00:00",
+      "Surabaya",
+      "1499000.00"
+     ],
+     [
+      "2025-06-09T00:00:00",
+      "Yogyakarta",
+      "6499000.00"
+     ],
+     [
+      "2025-06-16T00:00:00",
+      "Bali",
+      "3999000.00"
+     ],
+     [
+      "2025-06-16T00:00:00",
+      "Bandung",
+      "3299000.00"
+     ],
+     [
+      "2025-06-16T00:00:00",
+      "Makassar",
+      "12999000.00"
+     ],
+     [
+      "2025-06-23T00:00:00",
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "2025-06-23T00:00:00",
+      "Palembang",
+      "599000.00"
+     ],
+     [
+      "2025-06-30T00:00:00",
+      "Jakarta",
+      "4299000.00"
+     ],
+     [
+      "2025-06-30T00:00:00",
+      "Yogyakarta",
+      "24999000.00"
+     ]
+    ]
+   }
+  },
+  "88515bb8d7cf1eb6": {
+   "admin": {
+    "columns": [
+     "cc",
+     "bt"
+    ],
+    "rows": [
+     [
+      "62997000.00",
+      "61497000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(CASE WHEN payment_method='Credit Card' THEN total_amount END) AS cc, SUM(CASE WHEN payment_method='Bank Transfer' THEN total_amount END) AS bt FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "cc",
+     "bt"
+    ],
+    "rows": [
+     [
+      "62997000.00",
+      "61497000.00"
+     ]
+    ]
+   }
+  },
+  "88820ba6ad4b0df8": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Bank Transfer",
+      "20499000.00000000"
+     ],
+     [
+      "Credit Card",
+      "18999000.00000000"
+     ],
+     [
+      "DANA",
+      "11032000.00000000"
+     ],
+     [
+      "QRIS",
+      "3449000.00000000"
+     ],
+     [
+      "GoPay",
+      "2132333.33333333"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT payment_method AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01' GROUP BY payment_method ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Bank Transfer",
+      "20499000.00000000"
+     ],
+     [
+      "Credit Card",
+      "18999000.00000000"
+     ],
+     [
+      "DANA",
+      "11032000.00000000"
+     ],
+     [
+      "QRIS",
+      "3449000.00000000"
+     ],
+     [
+      "GoPay",
+      "2132333.33333333"
+     ]
+    ]
+   }
+  },
+  "88b667f620c81dd2": {
+   "admin": {
+    "columns": [
+     "revenue",
+     "orders",
+     "aov"
+    ],
+    "rows": [
+     [
+      "145886000.00",
+      13,
+      "11222000.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS revenue, COUNT(order_id) AS orders, AVG(total_amount) AS aov FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01'",
+   "user": {
+    "columns": [
+     "revenue",
+     "orders",
+     "aov"
+    ],
+    "rows": [
+     [
+      "145886000.00",
+      13,
+      "11222000.00000000"
+     ]
+    ]
+   }
+  },
+  "8a586dcc6e3142ae": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "29298000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-29'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "29298000.00"
+     ]
+    ]
+   }
+  },
+  "8af13bea79804481": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "33096000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE payment_method = 'DANA'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "33096000.00"
+     ]
+    ]
+   }
+  },
+  "8c342faf4544dec6": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "completed",
+      10
+     ],
+     [
+      "shipped",
+      3
+     ],
+     [
+      "processing",
+      1
+     ],
+     [
+      "pending",
+      1
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT status AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders GROUP BY status ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "completed",
+      10
+     ],
+     [
+      "shipped",
+      3
+     ],
+     [
+      "processing",
+      1
+     ],
+     [
+      "pending",
+      1
+     ]
+    ]
+   }
+  },
+  "8da703c21b393238": {
+   "admin": {
+    "columns": [
+     "max(v)",
+     "((max(v)) / (sum(v))) * 100"
+    ],
+    "rows": [
+     [
+      "31498000.00",
+      "17.97995300"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT MAX(v), MAX(v)/SUM(v)*100 FROM (SELECT shipping_city, SUM(total_amount) v FROM NOVA_DEMO.orders GROUP BY 1) s",
+   "user": {
+    "columns": [
+     "max(v)",
+     "((max(v)) / (sum(v))) * 100"
+    ],
+    "rows": [
+     [
+      "31498000.00",
+      "17.97995300"
+     ]
+    ]
+   }
+  },
+  "9127fc979a7fb44c": {
+   "admin": {
+    "columns": [
+     "revenue",
+     "orders",
+     "aov"
+    ],
+    "rows": [
+     [
+      "11197000.00",
+      3,
+      "3732333.33333333"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS revenue, COUNT(order_id) AS orders, AVG(total_amount) AS aov FROM NOVA_DEMO.orders WHERE payment_method = 'QRIS'",
+   "user": {
+    "columns": [
+     "revenue",
+     "orders",
+     "aov"
+    ],
+    "rows": [
+     [
+      "11197000.00",
+      3,
+      "3732333.33333333"
+     ]
+    ]
+   }
+  },
+  "91b0b4e9ea6c1aae": {
+   "admin": {
+    "columns": [
+     "shipping_city",
+     "avg(total_amount)"
+    ],
+    "rows": [
+     [
+      "Semarang",
+      "24999000.00000000"
+     ],
+     [
+      "Malang",
+      "22499000.00000000"
+     ],
+     [
+      "Bandung",
+      "11149000.00000000"
+     ],
+     [
+      "Jakarta",
+      "10165333.33333333"
+     ],
+     [
+      "Yogyakarta",
+      "15749000.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city, AVG(total_amount) FROM NOVA_DEMO.orders WHERE shipping_city IN (SELECT shipping_city FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY SUM(total_amount) DESC LIMIT 5) GROUP BY 1",
+   "user": {
+    "columns": [
+     "shipping_city",
+     "avg(total_amount)"
+    ],
+    "rows": [
+     [
+      "Semarang",
+      "24999000.00000000"
+     ],
+     [
+      "Malang",
+      "22499000.00000000"
+     ],
+     [
+      "Bandung",
+      "11149000.00000000"
+     ],
+     [
+      "Jakarta",
+      "10165333.33333333"
+     ],
+     [
+      "Yogyakarta",
+      "15749000.00000000"
+     ]
+    ]
+   }
+  },
+  "91c82b2347ad0696": {
+   "admin": {
+    "columns": [
+     "shipping_city",
+     "payment_method",
+     "value"
+    ],
+    "rows": [
+     [
+      "Surabaya",
+      "GoPay",
+      2
+     ],
+     [
+      "Jakarta",
+      "QRIS",
+      2
+     ],
+     [
+      "Semarang",
+      "Credit Card",
+      1
+     ],
+     [
+      "Makassar",
+      "Credit Card",
+      1
+     ],
+     [
+      "Malang",
+      "Bank Transfer",
+      1
+     ],
+     [
+      "Medan",
+      "Bank Transfer",
+      1
+     ],
+     [
+      "Bandung",
+      "DANA",
+      1
+     ],
+     [
+      "Jakarta",
+      "DANA",
+      1
+     ],
+     [
+      "Palembang",
+      "GoPay",
+      1
+     ],
+     [
+      "Bandung",
+      "Bank Transfer",
+      1
+     ],
+     [
+      "Yogyakarta",
+      "DANA",
+      1
+     ],
+     [
+      "Bali",
+      "QRIS",
+      1
+     ],
+     [
+      "Yogyakarta",
+      "Credit Card",
+      1
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city, payment_method, COUNT(*) AS value FROM NOVA_DEMO.orders GROUP BY 1, 2 ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "shipping_city",
+     "payment_method",
+     "value"
+    ],
+    "rows": [
+     [
+      "Jakarta",
+      "QRIS",
+      2
+     ],
+     [
+      "Surabaya",
+      "GoPay",
+      2
+     ],
+     [
+      "Semarang",
+      "Credit Card",
+      1
+     ],
+     [
+      "Makassar",
+      "Credit Card",
+      1
+     ],
+     [
+      "Malang",
+      "Bank Transfer",
+      1
+     ],
+     [
+      "Jakarta",
+      "DANA",
+      1
+     ],
+     [
+      "Palembang",
+      "GoPay",
+      1
+     ],
+     [
+      "Medan",
+      "Bank Transfer",
+      1
+     ],
+     [
+      "Bandung",
+      "DANA",
+      1
+     ],
+     [
+      "Bandung",
+      "Bank Transfer",
+      1
+     ],
+     [
+      "Yogyakarta",
+      "DANA",
+      1
+     ],
+     [
+      "Bali",
+      "QRIS",
+      1
+     ],
+     [
+      "Yogyakarta",
+      "Credit Card",
+      1
+     ]
+    ]
+   }
+  },
+  "939fc59534137443": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "19999000.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT AVG(total_amount) AS value FROM NOVA_DEMO.orders WHERE shipping_city = 'Medan'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "19999000.00000000"
+     ]
+    ]
+   }
+  },
+  "94b034e3ad07e838": {
+   "admin": {
+    "columns": [
+     "warehouse_name",
+     "capacity",
+     "manager"
+    ],
+    "rows": [
+     [
+      "Bandung West DC",
+      20000,
+      "Agus Prabowo"
+     ],
+     [
+      "Jakarta Central Hub",
+      50000,
+      "Hendra Wijaya"
+     ],
+     [
+      "Medan North DC",
+      15000,
+      "Ratna Dewi"
+     ],
+     [
+      "Surabaya East DC",
+      30000,
+      "Siti Rahayu"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": false,
+   "sql": "SELECT warehouse_name, capacity, manager FROM NOVA_CATALOG.warehouses",
+   "user": {
+    "error": "SQL error: (5204) Access denied; you need (at least one of) the SELECT privilege(s) on COLUMN warehouse_name for this operation."
+   }
+  },
+  "94d0596b148b6790": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "145886000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "145886000.00"
+     ]
+    ]
+   }
+  },
+  "964009ec5d1b4153": {
+   "admin": {
+    "columns": [
+     "order_id",
+     "value"
+    ],
+    "rows": [
+     [
+      1015,
+      "24999000.00"
+     ],
+     [
+      1005,
+      "24999000.00"
+     ],
+     [
+      1001,
+      "23298000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT order_id, total_amount AS value FROM NOVA_DEMO.orders ORDER BY total_amount DESC LIMIT 3",
+   "user": {
+    "columns": [
+     "order_id",
+     "value"
+    ],
+    "rows": [
+     [
+      1015,
+      "24999000.00"
+     ],
+     [
+      1005,
+      "24999000.00"
+     ],
+     [
+      1001,
+      "23298000.00"
+     ]
+    ]
+   }
+  },
+  "96a8bda6457f44cd": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "23098000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-23' AND order_date < '2025-07-01'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "23098000.00"
+     ]
+    ]
+   }
+  },
+  "96d71d164eb6d3fd": {
+   "admin": {
+    "columns": [
+     "first_name",
+     "last_name",
+     "phone"
+    ],
+    "rows": [
+     [
+      "Dwicky",
+      "Putra",
+      "081234567890"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT first_name, last_name, phone FROM NOVA_DEMO.customers WHERE customer_id = 1",
+   "user": {
+    "columns": [
+     "first_name",
+     "last_name",
+     "phone"
+    ],
+    "rows": [
+     [
+      "Dwicky",
+      "Putra",
+      "081234567890"
+     ]
+    ]
+   }
+  },
+  "99a98eb4de13e522": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "2025-06-01T00:00:00",
+      "145886000.00"
+     ],
+     [
+      "2025-07-01T00:00:00",
+      "29298000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT DATE_TRUNC('month', order_date) AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY 1",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "2025-06-01T00:00:00",
+      "145886000.00"
+     ],
+     [
+      "2025-07-01T00:00:00",
+      "29298000.00"
+     ]
+    ]
+   }
+  },
+  "99f53ccd25a3010c": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Semarang",
+      "24999000.00000000"
+     ],
+     [
+      "Malang",
+      "22499000.00000000"
+     ],
+     [
+      "Medan",
+      "19999000.00000000"
+     ],
+     [
+      "Yogyakarta",
+      "15749000.00000000"
+     ],
+     [
+      "Makassar",
+      "12999000.00000000"
+     ],
+     [
+      "Bandung",
+      "11149000.00000000"
+     ],
+     [
+      "Jakarta",
+      "10165333.33333333"
+     ],
+     [
+      "Bali",
+      "3999000.00000000"
+     ],
+     [
+      "Surabaya",
+      "2899000.00000000"
+     ],
+     [
+      "Palembang",
+      "599000.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Semarang",
+      "24999000.00000000"
+     ],
+     [
+      "Malang",
+      "22499000.00000000"
+     ],
+     [
+      "Medan",
+      "19999000.00000000"
+     ],
+     [
+      "Yogyakarta",
+      "15749000.00000000"
+     ],
+     [
+      "Makassar",
+      "12999000.00000000"
+     ],
+     [
+      "Bandung",
+      "11149000.00000000"
+     ],
+     [
+      "Jakarta",
+      "10165333.33333333"
+     ],
+     [
+      "Bali",
+      "3999000.00000000"
+     ],
+     [
+      "Surabaya",
+      "2899000.00000000"
+     ],
+     [
+      "Palembang",
+      "599000.00000000"
+     ]
+    ]
+   }
+  },
+  "9b327c7436171973": {
+   "admin": {
+    "columns": [
+     "top_value",
+     "share"
+    ],
+    "rows": [
+     [
+      "31498000.00",
+      "17.97995300"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT MAX(v) AS top_value, MAX(v) / SUM(v) * 100 AS share FROM (SELECT shipping_city, SUM(total_amount) AS v FROM NOVA_DEMO.orders GROUP BY 1) s",
+   "user": {
+    "columns": [
+     "top_value",
+     "share"
+    ],
+    "rows": [
+     [
+      "31498000.00",
+      "17.97995300"
+     ]
+    ]
+   }
+  },
+  "9d4a3efe7ea4d754": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "2025-06-01",
+      "23298000.00"
+     ],
+     [
+      "2025-06-02",
+      "4299000.00"
+     ],
+     [
+      "2025-06-03",
+      "18999000.00"
+     ],
+     [
+      "2025-06-05",
+      "2899000.00"
+     ],
+     [
+      "2025-06-07",
+      "24999000.00"
+     ],
+     [
+      "2025-06-10",
+      "6499000.00"
+     ],
+     [
+      "2025-06-12",
+      "19999000.00"
+     ],
+     [
+      "2025-06-15",
+      "1499000.00"
+     ],
+     [
+      "2025-06-18",
+      "12999000.00"
+     ],
+     [
+      "2025-06-20",
+      "3999000.00"
+     ],
+     [
+      "2025-06-22",
+      "3299000.00"
+     ],
+     [
+      "2025-06-25",
+      "22499000.00"
+     ],
+     [
+      "2025-06-28",
+      "599000.00"
+     ],
+     [
+      "2025-07-01",
+      "4299000.00"
+     ],
+     [
+      "2025-07-05",
+      "24999000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT DATE(order_date) AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY 1",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "2025-06-01",
+      "23298000.00"
+     ],
+     [
+      "2025-06-02",
+      "4299000.00"
+     ],
+     [
+      "2025-06-03",
+      "18999000.00"
+     ],
+     [
+      "2025-06-05",
+      "2899000.00"
+     ],
+     [
+      "2025-06-07",
+      "24999000.00"
+     ],
+     [
+      "2025-06-10",
+      "6499000.00"
+     ],
+     [
+      "2025-06-12",
+      "19999000.00"
+     ],
+     [
+      "2025-06-15",
+      "1499000.00"
+     ],
+     [
+      "2025-06-18",
+      "12999000.00"
+     ],
+     [
+      "2025-06-20",
+      "3999000.00"
+     ],
+     [
+      "2025-06-22",
+      "3299000.00"
+     ],
+     [
+      "2025-06-25",
+      "22499000.00"
+     ],
+     [
+      "2025-06-28",
+      "599000.00"
+     ],
+     [
+      "2025-07-01",
+      "4299000.00"
+     ],
+     [
+      "2025-07-05",
+      "24999000.00"
+     ]
+    ]
+   }
+  },
+  "9df5dd4a31b41389": {
+   "admin": {
+    "columns": [
+     "order_id",
+     "total_amount"
+    ],
+    "rows": [
+     [
+      1005,
+      "24999000.00"
+     ],
+     [
+      1009,
+      "12999000.00"
+     ],
+     [
+      1015,
+      "24999000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT order_id, total_amount FROM NOVA_DEMO.orders WHERE payment_method='Credit Card'",
+   "user": {
+    "columns": [
+     "order_id",
+     "total_amount"
+    ],
+    "rows": [
+     [
+      1005,
+      "24999000.00"
+     ],
+     [
+      1009,
+      "12999000.00"
+     ],
+     [
+      1015,
+      "24999000.00"
+     ]
+    ]
+   }
+  },
+  "9e7864028adc672e": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "145886000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-04-01' AND order_date < '2025-07-01'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "145886000.00"
+     ]
+    ]
+   }
+  },
+  "9fb90143cfd15078": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "61895000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE status <> 'completed'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "61895000.00"
+     ]
+    ]
+   }
+  },
+  "a0e2268e1e1d52c2": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "210220800.000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) * 1.2 AS value FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "210220800.000"
+     ]
+    ]
+   }
+  },
+  "a28e7b2c774cf96b": {
+   "admin": {
+    "columns": [
+     "label",
+     "value",
+     "n"
+    ],
+    "rows": [
+     [
+      5,
+      "31498000.00",
+      2
+     ],
+     [
+      1,
+      "30496000.00",
+      3
+     ],
+     [
+      4,
+      "24999000.00",
+      1
+     ],
+     [
+      9,
+      "22499000.00",
+      1
+     ],
+     [
+      3,
+      "22298000.00",
+      2
+     ],
+     [
+      6,
+      "19999000.00",
+      1
+     ],
+     [
+      7,
+      "12999000.00",
+      1
+     ],
+     [
+      2,
+      "5798000.00",
+      2
+     ],
+     [
+      8,
+      "3999000.00",
+      1
+     ],
+     [
+      10,
+      "599000.00",
+      1
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT customer_id AS label, SUM(total_amount) AS value, COUNT(*) AS n FROM NOVA_DEMO.orders GROUP BY customer_id ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value",
+     "n"
+    ],
+    "rows": [
+     [
+      5,
+      "31498000.00",
+      2
+     ],
+     [
+      1,
+      "30496000.00",
+      3
+     ],
+     [
+      4,
+      "24999000.00",
+      1
+     ],
+     [
+      9,
+      "22499000.00",
+      1
+     ],
+     [
+      3,
+      "22298000.00",
+      2
+     ],
+     [
+      6,
+      "19999000.00",
+      1
+     ],
+     [
+      7,
+      "12999000.00",
+      1
+     ],
+     [
+      2,
+      "5798000.00",
+      2
+     ],
+     [
+      8,
+      "3999000.00",
+      1
+     ],
+     [
+      10,
+      "599000.00",
+      1
+     ]
+    ]
+   }
+  },
+  "a362aa78a7bd7aa1": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Credit Card",
+      "24999000.00000000"
+     ],
+     [
+      "Bank Transfer",
+      "20749000.00000000"
+     ],
+     [
+      "DANA",
+      "14898500.00000000"
+     ],
+     [
+      "QRIS",
+      "3732333.33333333"
+     ],
+     [
+      "GoPay",
+      "2899000.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT payment_method AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders WHERE status = 'completed' GROUP BY payment_method ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Credit Card",
+      "24999000.00000000"
+     ],
+     [
+      "Bank Transfer",
+      "20749000.00000000"
+     ],
+     [
+      "DANA",
+      "14898500.00000000"
+     ],
+     [
+      "QRIS",
+      "3732333.33333333"
+     ],
+     [
+      "GoPay",
+      "2899000.00000000"
+     ]
+    ]
+   }
+  },
+  "a3e30ae34c5255e1": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "completed",
+      "113289000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT status AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE status = 'completed' GROUP BY status ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "completed",
+      "113289000.00"
+     ]
+    ]
+   }
+  },
+  "a3f14daaa918cb8d": {
+   "admin": {
+    "columns": [
+     "shipping_city",
+     "status",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "completed",
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      "completed",
+      "30496000.00"
+     ],
+     [
+      "Semarang",
+      "shipped",
+      "24999000.00"
+     ],
+     [
+      "Malang",
+      "completed",
+      "22499000.00"
+     ],
+     [
+      "Medan",
+      "processing",
+      "19999000.00"
+     ],
+     [
+      "Bandung",
+      "completed",
+      "18999000.00"
+     ],
+     [
+      "Makassar",
+      "shipped",
+      "12999000.00"
+     ],
+     [
+      "Surabaya",
+      "completed",
+      "5798000.00"
+     ],
+     [
+      "Bali",
+      "completed",
+      "3999000.00"
+     ],
+     [
+      "Bandung",
+      "pending",
+      "3299000.00"
+     ],
+     [
+      "Palembang",
+      "shipped",
+      "599000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city, status, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY 1, 2 ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "shipping_city",
+     "status",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "completed",
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      "completed",
+      "30496000.00"
+     ],
+     [
+      "Semarang",
+      "shipped",
+      "24999000.00"
+     ],
+     [
+      "Malang",
+      "completed",
+      "22499000.00"
+     ],
+     [
+      "Medan",
+      "processing",
+      "19999000.00"
+     ],
+     [
+      "Bandung",
+      "completed",
+      "18999000.00"
+     ],
+     [
+      "Makassar",
+      "shipped",
+      "12999000.00"
+     ],
+     [
+      "Surabaya",
+      "completed",
+      "5798000.00"
+     ],
+     [
+      "Bali",
+      "completed",
+      "3999000.00"
+     ],
+     [
+      "Bandung",
+      "pending",
+      "3299000.00"
+     ],
+     [
+      "Palembang",
+      "shipped",
+      "599000.00"
+     ]
+    ]
+   }
+  },
+  "a5c6fba68c144d10": {
+   "admin": {
+    "columns": [
+     "(sum(total_amount)) * 1.15"
+    ],
+    "rows": [
+     [
+      "201461600.0000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount)*1.15 FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "(sum(total_amount)) * 1.15"
+    ],
+    "rows": [
+     [
+      "201461600.0000"
+     ]
+    ]
+   }
+  },
+  "a7b819658d748619": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "112187000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(CASE WHEN payment_method <> 'Credit Card' THEN total_amount END) AS value FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "112187000.00"
+     ]
+    ]
+   }
+  },
+  "ac98da29e127f07c": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "completed",
+      "83991000.00"
+     ],
+     [
+      "shipped",
+      "38597000.00"
+     ],
+     [
+      "processing",
+      "19999000.00"
+     ],
+     [
+      "pending",
+      "3299000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT status AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01' GROUP BY status ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "completed",
+      "83991000.00"
+     ],
+     [
+      "shipped",
+      "38597000.00"
+     ],
+     [
+      "processing",
+      "19999000.00"
+     ],
+     [
+      "pending",
+      "3299000.00"
+     ]
+    ]
+   }
+  },
+  "aebff6358fbde14d": {
+   "admin": {
+    "columns": [
+     "avg(CASE WHEN ((order_date >= '2025-06-01') AND (order_date < '2025-07-01')) THEN total_amount END)",
+     "avg(CASE WHEN ((order_date >= '2025-07-01') AND (order_date < '2025-08-01')) THEN total_amount END)"
+    ],
+    "rows": [
+     [
+      "11222000.00000000",
+      "14649000.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT AVG(CASE WHEN order_date >= '2025-06-01' AND order_date < '2025-07-01' THEN total_amount END), AVG(CASE WHEN order_date >= '2025-07-01' AND order_date < '2025-08-01' THEN total_amount END) FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "avg(CASE WHEN ((order_date >= '2025-06-01') AND (order_date < '2025-07-01')) THEN total_amount END)",
+     "avg(CASE WHEN ((order_date >= '2025-07-01') AND (order_date < '2025-08-01')) THEN total_amount END)"
+    ],
+    "rows": [
+     [
+      "11222000.00000000",
+      "14649000.00000000"
+     ]
+    ]
+   }
+  },
+  "b05d8566bc5721df": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "completed",
+      10
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT status AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE status = 'completed' GROUP BY status ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "completed",
+      10
+     ]
+    ]
+   }
+  },
+  "b0773116f6c73cc2": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      1
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE shipping_city = 'Semarang'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      1
+     ]
+    ]
+   }
+  },
+  "b16524b52b3186b5": {
+   "admin": {
+    "columns": [
+     "((sum(CASE WHEN (status != 'completed') THEN 1 ELSE 0 END)) / (count(*))) * 100"
+    ],
+    "rows": [
+     [
+      33.33333333333333
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(CASE WHEN status<>'completed' THEN 1 ELSE 0 END) / COUNT(*) * 100 FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "((sum(CASE WHEN (status != 'completed') THEN 1 ELSE 0 END)) / (count(*))) * 100"
+    ],
+    "rows": [
+     [
+      33.33333333333333
+     ]
+    ]
+   }
+  },
+  "b1f13fe89744692c": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      7
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE total_amount > 10000000",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      7
+     ]
+    ]
+   }
+  },
+  "b2ab82b59f3e1795": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "QRIS",
+      3
+     ],
+     [
+      "Bank Transfer",
+      2
+     ],
+     [
+      "DANA",
+      2
+     ],
+     [
+      "GoPay",
+      2
+     ],
+     [
+      "Credit Card",
+      1
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT payment_method AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE status = 'completed' GROUP BY payment_method ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "QRIS",
+      3
+     ],
+     [
+      "Bank Transfer",
+      2
+     ],
+     [
+      "GoPay",
+      2
+     ],
+     [
+      "DANA",
+      2
+     ],
+     [
+      "Credit Card",
+      1
+     ]
+    ]
+   }
+  },
+  "b2e9049d838eb3d2": {
+   "admin": {
+    "columns": [
+     "avg(total_amount)"
+    ],
+    "rows": [
+     [
+      "18999000.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT AVG(total_amount) FROM NOVA_DEMO.orders WHERE payment_method='Credit Card' AND order_id <> 1005",
+   "user": {
+    "columns": [
+     "avg(total_amount)"
+    ],
+    "rows": [
+     [
+      "18999000.00000000"
+     ]
+    ]
+   }
+  },
+  "b53f34ddea5ecc7b": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "31498000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE shipping_city = 'Yogyakarta'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "31498000.00"
+     ]
+    ]
+   }
+  },
+  "b5b1720fe92925f5": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "599000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT MIN(total_amount) AS value FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "599000.00"
+     ]
+    ]
+   }
+  },
+  "b5c6620bc5f6bc98": {
+   "admin": {
+    "columns": [
+     "total",
+     "without_pending"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      "171885000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS total, SUM(CASE WHEN status <> 'pending' THEN total_amount END) AS without_pending FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "total",
+     "without_pending"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      "171885000.00"
+     ]
+    ]
+   }
+  },
+  "b63d55ee79cb8b32": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Bank Transfer",
+      3
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT payment_method AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders GROUP BY payment_method ORDER BY value ASC, label LIMIT 1",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Bank Transfer",
+      3
+     ]
+    ]
+   }
+  },
+  "b6a76e66aa71324d": {
+   "admin": {
+    "columns": [
+     "campaign_name",
+     "budget"
+    ],
+    "rows": [
+     [
+      "Back to School",
+      "30000000.00"
+     ],
+     [
+      "Brand Awareness Q1",
+      "80000000.00"
+     ],
+     [
+      "Harbolnas 12.12",
+      "75000000.00"
+     ],
+     [
+      "New Year New Gadgets",
+      "45000000.00"
+     ],
+     [
+      "Ramadan Sale 2025",
+      "50000000.00"
+     ],
+     [
+      "Tech Week Flash Sale",
+      "10000000.00"
+     ],
+     [
+      "Valentine Special",
+      "20000000.00"
+     ],
+     [
+      "Year End Clearance",
+      "60000000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": false,
+   "sql": "SELECT campaign_name, budget FROM NOVA_ANALYTICS.campaigns",
+   "user": {
+    "error": "SQL error: (5204) Access denied; you need (at least one of) the SELECT privilege(s) on COLUMN campaign_name for this operation."
+   }
+  },
+  "b933076a5d8fa2e3": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "175184000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "175184000.00"
+     ]
+    ]
+   }
+  },
+  "bc82153d4e835039": {
+   "admin": {
+    "columns": [
+     "product_name",
+     "price"
+    ],
+    "rows": [
+     [
+      "AirPods Pro 3",
+      "3999000.00"
+     ],
+     [
+      "Anker 65W USB-C Charger",
+      "599000.00"
+     ],
+     [
+      "Dell XPS 15 Laptop",
+      "22499000.00"
+     ],
+     [
+      "LG UltraGear 27 4K Monitor",
+      "6499000.00"
+     ],
+     [
+      "Laptop ASUS ROG Strix G16",
+      "18999000.00"
+     ],
+     [
+      "Logitech MX Master 3S Mouse",
+      "1499000.00"
+     ],
+     [
+      "Mechanical Keyboard Keychron Q1",
+      "2899000.00"
+     ],
+     [
+      "Samsung 990 PRO SSD 2TB",
+      "3299000.00"
+     ],
+     [
+      "Samsung Galaxy S25 Ultra",
+      "19999000.00"
+     ],
+     [
+      "Sony WH-1000XM5 Headphones",
+      "4299000.00"
+     ],
+     [
+      "iPad Air M3 256GB",
+      "12999000.00"
+     ],
+     [
+      "iPhone 16 Pro Max 256GB",
+      "24999000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": false,
+   "sql": "SELECT product_name, price FROM NOVA_CATALOG.products",
+   "user": {
+    "error": "SQL error: (5204) Access denied; you need (at least one of) the SELECT privilege(s) on COLUMN price for this operation."
+   }
+  },
+  "bdb00fa9835e8285": {
+   "admin": {
+    "columns": [
+     "completed",
+     "shipped"
+    ],
+    "rows": [
+     [
+      "11328900.00000000",
+      "12865666.66666667"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT AVG(CASE WHEN status='completed' THEN total_amount END) AS completed, AVG(CASE WHEN status='shipped' THEN total_amount END) AS shipped FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "completed",
+     "shipped"
+    ],
+    "rows": [
+     [
+      "11328900.00000000",
+      "12865666.66666667"
+     ]
+    ]
+   }
+  },
+  "bec75a8de1f88465": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "136587000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(CASE WHEN status IN ('completed','pending','processing') THEN total_amount END) AS value FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "136587000.00"
+     ]
+    ]
+   }
+  },
+  "bf3c5a4062716d30": {
+   "admin": {
+    "columns": [
+     "shipping_city",
+     "count(*)",
+     "sum(total_amount)"
+    ],
+    "rows": [
+     [
+      "Bali",
+      1,
+      "3999000.00"
+     ],
+     [
+      "Bandung",
+      2,
+      "22298000.00"
+     ],
+     [
+      "Jakarta",
+      3,
+      "30496000.00"
+     ],
+     [
+      "Makassar",
+      1,
+      "12999000.00"
+     ],
+     [
+      "Malang",
+      1,
+      "22499000.00"
+     ],
+     [
+      "Medan",
+      1,
+      "19999000.00"
+     ],
+     [
+      "Palembang",
+      1,
+      "599000.00"
+     ],
+     [
+      "Semarang",
+      1,
+      "24999000.00"
+     ],
+     [
+      "Surabaya",
+      2,
+      "5798000.00"
+     ],
+     [
+      "Yogyakarta",
+      2,
+      "31498000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city, COUNT(*), SUM(total_amount) FROM NOVA_DEMO.orders GROUP BY 1",
+   "user": {
+    "columns": [
+     "shipping_city",
+     "count(*)",
+     "sum(total_amount)"
+    ],
+    "rows": [
+     [
+      "Bali",
+      1,
+      "3999000.00"
+     ],
+     [
+      "Bandung",
+      2,
+      "22298000.00"
+     ],
+     [
+      "Jakarta",
+      3,
+      "30496000.00"
+     ],
+     [
+      "Makassar",
+      1,
+      "12999000.00"
+     ],
+     [
+      "Malang",
+      1,
+      "22499000.00"
+     ],
+     [
+      "Medan",
+      1,
+      "19999000.00"
+     ],
+     [
+      "Palembang",
+      1,
+      "599000.00"
+     ],
+     [
+      "Semarang",
+      1,
+      "24999000.00"
+     ],
+     [
+      "Surabaya",
+      2,
+      "5798000.00"
+     ],
+     [
+      "Yogyakarta",
+      2,
+      "31498000.00"
+     ]
+    ]
+   }
+  },
+  "c1d410d5a322d54f": {
+   "admin": {
+    "columns": [
+     "label",
+     "n",
+     "value"
+    ],
+    "rows": [
+     [
+      "DANA",
+      3,
+      "33096000.00"
+     ],
+     [
+      "QRIS",
+      3,
+      "11197000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT payment_method AS label, COUNT(*) AS n, SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE payment_method IN ('QRIS','DANA') GROUP BY 1",
+   "user": {
+    "columns": [
+     "label",
+     "n",
+     "value"
+    ],
+    "rows": [
+     [
+      "DANA",
+      3,
+      "33096000.00"
+     ],
+     [
+      "QRIS",
+      3,
+      "11197000.00"
+     ]
+    ]
+   }
+  },
+  "c2659839dc3d6ac5": {
+   "admin": {
+    "columns": [
+     "date_trunc('week', order_date)",
+     "sum(total_amount)"
+    ],
+    "rows": [
+     [
+      "2025-05-26T00:00:00",
+      "23298000.00"
+     ],
+     [
+      "2025-06-02T00:00:00",
+      "51196000.00"
+     ],
+     [
+      "2025-06-09T00:00:00",
+      "27997000.00"
+     ],
+     [
+      "2025-06-16T00:00:00",
+      "20297000.00"
+     ],
+     [
+      "2025-06-23T00:00:00",
+      "23098000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT DATE_TRUNC('week', order_date), SUM(total_amount) FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01' GROUP BY 1 ORDER BY 1",
+   "user": {
+    "columns": [
+     "date_trunc('week', order_date)",
+     "sum(total_amount)"
+    ],
+    "rows": [
+     [
+      "2025-05-26T00:00:00",
+      "23298000.00"
+     ],
+     [
+      "2025-06-02T00:00:00",
+      "51196000.00"
+     ],
+     [
+      "2025-06-09T00:00:00",
+      "27997000.00"
+     ],
+     [
+      "2025-06-16T00:00:00",
+      "20297000.00"
+     ],
+     [
+      "2025-06-23T00:00:00",
+      "23098000.00"
+     ]
+    ]
+   }
+  },
+  "c266f9061958ecc2": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Credit Card",
+      "24999000.00"
+     ],
+     [
+      "QRIS",
+      "4299000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT payment_method AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-07-01' AND order_date < '2025-08-01' GROUP BY payment_method ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Credit Card",
+      "24999000.00"
+     ],
+     [
+      "QRIS",
+      "4299000.00"
+     ]
+    ]
+   }
+  },
+  "c3361339529fd087": {
+   "admin": {
+    "columns": [
+     "sum(amount)"
+    ],
+    "rows": [
+     [
+      "1000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": false,
+   "sql": "SELECT SUM(amount) FROM analytics.sales",
+   "user": {
+    "columns": [
+     "sum(amount)"
+    ],
+    "rows": [
+     [
+      "400.00"
+     ]
+    ]
+   }
+  },
+  "c73cb3f00285ff33": {
+   "admin": {
+    "columns": [
+     "top_aov",
+     "diff"
+    ],
+    "rows": [
+     [
+      "24999000.00000000",
+      "13320066.66666667"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT MAX(a) AS top_aov, MAX(a) - (SELECT AVG(total_amount) FROM NOVA_DEMO.orders) AS diff FROM (SELECT shipping_city, AVG(total_amount) AS a FROM NOVA_DEMO.orders GROUP BY 1) s",
+   "user": {
+    "columns": [
+     "top_aov",
+     "diff"
+    ],
+    "rows": [
+     [
+      "24999000.00000000",
+      "13320066.66666667"
+     ]
+    ]
+   }
+  },
+  "c99a2a311fb27408": {
+   "admin": {
+    "columns": [
+     "pct"
+    ],
+    "rows": [
+     [
+      "-79.9"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT ROUND((SUM(CASE WHEN order_date >= '2025-07-01' AND order_date < '2025-08-01' THEN total_amount END) / SUM(CASE WHEN order_date >= '2025-06-01' AND order_date < '2025-07-01' THEN total_amount END) - 1) * 100, 1) AS pct FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "pct"
+    ],
+    "rows": [
+     [
+      "-79.9"
+     ]
+    ]
+   }
+  },
+  "cae7032771f30f85": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Bank Transfer",
+      "41498000.00"
+     ],
+     [
+      "DANA",
+      "29797000.00"
+     ],
+     [
+      "Credit Card",
+      "24999000.00"
+     ],
+     [
+      "QRIS",
+      "11197000.00"
+     ],
+     [
+      "GoPay",
+      "5798000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT payment_method AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE status = 'completed' GROUP BY payment_method ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Bank Transfer",
+      "41498000.00"
+     ],
+     [
+      "DANA",
+      "29797000.00"
+     ],
+     [
+      "Credit Card",
+      "24999000.00"
+     ],
+     [
+      "QRIS",
+      "11197000.00"
+     ],
+     [
+      "GoPay",
+      "5798000.00"
+     ]
+    ]
+   }
+  },
+  "cb31ff03012edf5f": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      3
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE payment_method = 'Bank Transfer' AND order_date >= '2025-06-01' AND order_date < '2025-07-01'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      3
+     ]
+    ]
+   }
+  },
+  "cc0e4c60e9c274bf": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      1
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE status = 'processing'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      1
+     ]
+    ]
+   }
+  },
+  "cecbf764682ecbd1": {
+   "admin": {
+    "columns": [
+     "june",
+     "july"
+    ],
+    "rows": [
+     [
+      "145886000.00",
+      "29298000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(CASE WHEN order_date >= '2025-06-01' AND order_date < '2025-07-01' THEN total_amount END) AS june, SUM(CASE WHEN order_date >= '2025-07-01' AND order_date < '2025-08-01' THEN total_amount END) AS july FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "june",
+     "july"
+    ],
+    "rows": [
+     [
+      "145886000.00",
+      "29298000.00"
+     ]
+    ]
+   }
+  },
+  "d19b679bc06ddba5": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "22298000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE shipping_city = 'Bandung'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "22298000.00"
+     ]
+    ]
+   }
+  },
+  "d4004e5b72ad2e79": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "37998000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE payment_method = 'Credit Card' AND order_date >= '2025-06-01' AND order_date < '2025-07-01'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "37998000.00"
+     ]
+    ]
+   }
+  },
+  "d43e46a8cafe3bed": {
+   "admin": {
+    "columns": [
+     "table_schema",
+     "table_name"
+    ],
+    "rows": [
+     [
+      "NOVA_ANALYTICS",
+      "campaigns"
+     ],
+     [
+      "NOVA_ANALYTICS",
+      "channel_performance"
+     ],
+     [
+      "NOVA_ANALYTICS",
+      "invoices"
+     ],
+     [
+      "NOVA_ANALYTICS",
+      "monthly_revenue"
+     ],
+     [
+      "NOVA_CATALOG",
+      "categories"
+     ],
+     [
+      "NOVA_CATALOG",
+      "products"
+     ],
+     [
+      "NOVA_CATALOG",
+      "warehouses"
+     ],
+     [
+      "NOVA_DEMO",
+      "customers"
+     ],
+     [
+      "NOVA_DEMO",
+      "order_items"
+     ],
+     [
+      "NOVA_DEMO",
+      "orders"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "AI_SEARCH_EVAL_RUNS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "AI_SEARCH_QUERY_LOG"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "AUDIT_LOG"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "AUDIT_SEMANTIC_QUERY_USAGE"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "AUDIT_STREAM_CLAIMS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "AUDIT_STREAM_CONSUMPTIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "AUDIT_STREAM_CONSUMPTION_OPERATIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "AUDIT_STREAM_NAMESPACE_OPERATIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "AUDIT_STREAM_SOURCE_COMMITS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CATALOG_ANNOTATIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CATALOG_CATALOGS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CATALOG_COLUMNS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CATALOG_CONNECTIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CATALOG_CONNECTION_CREDENTIALS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CATALOG_CONNECTION_WRITE_CREDENTIALS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CATALOG_LINEAGE"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CATALOG_OBJECTS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CATALOG_SECURABLES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CATALOG_SECURABLE_LINKS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CATALOG_SYNC_RUNS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_AGENTS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_AGENT_AUTOMATIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_AGENT_CAPABILITIES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_AGENT_HARNESS_LESSONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_AGENT_IMPROVEMENT_PROPOSALS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_AGENT_MEMORIES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_AGENT_MEMORY_EVIDENCE"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_AGENT_MEMORY_REVISIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_AGENT_MESSAGES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_AGENT_QUALITY_CASES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_AGENT_QUALITY_MONITORING"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_AGENT_QUALITY_RUNS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_AGENT_RELEASE_MANIFESTS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_AGENT_ROLES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_AGENT_RULE_PROPOSALS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_AGENT_RUNS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_AGENT_RUN_EVENTS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_AGENT_SESSION_EVENTS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_AGENT_SKILLS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_AGENT_VERSIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_AI_MODELS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_AI_PROVIDERS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_AI_SEARCH_INDEXES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_AI_SEARCH_SYNC_STATE"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_AI_SEARCH_VERSIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_ASSISTANT_MESSAGES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_ASSISTANT_THREADS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_ASSISTANT_UI_STATE"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_BI_AUTHOR_ROLES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_BUSINESS_POLICIES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_CONTEXT_EDGES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_CONTEXT_NODES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_CUSTOM_TOOLS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_DASHBOARDS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_DASHBOARD_WIDGETS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_DATAVIZ_PUBLICATIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_DATA_SCOPE_ASSIGNMENTS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_DECISION_EVENTS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_DECISION_OUTCOMES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_ENTITIES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_EXTERNAL_CATALOGS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_FEATURE_GROUPS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_FEATURE_GROUP_VERSIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_FEATURE_ML_LINKS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_FEATURE_TRAINING_SETS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_FEATURE_VIEWS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_FEATURE_VIEW_VERSIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_INTELLIGENCE_ACTIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_INTELLIGENCE_ACTION_EVENTS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_INTELLIGENCE_COMPARISONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_INTELLIGENCE_DECISIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_INTELLIGENCE_EDITIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_INTELLIGENCE_INCIDENTS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_INTELLIGENCE_INVESTIGATIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_INTELLIGENCE_INVESTIGATION_UPDATES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_INTELLIGENCE_MONITORS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_INTELLIGENCE_NEWS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_INTELLIGENCE_OBSERVATIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_INTELLIGENCE_SIGNALS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_INTELLIGENCE_STORIES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_INTELLIGENCE_STORY_FEEDBACK"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_MCP_SERVERS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_MIGRATION_JOBS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_MIGRATION_SOURCES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_ML_JOBS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_MODEL_ALIASES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_NOTEBOOK_EXECUTIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_NOTEBOOK_PACKAGES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_NOTEBOOK_RUNTIMES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_OBJECT_TAGS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_ONTOLOGY_ALIASES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_ONTOLOGY_COMPILATIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_ONTOLOGY_CONCEPTS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_ONTOLOGY_DERIVED"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_ONTOLOGY_DOMAINS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_ONTOLOGY_EVAL_CASES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_ONTOLOGY_EVAL_RESULTS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_ONTOLOGY_EVAL_RUNS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_ONTOLOGY_PROPOSALS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_ONTOLOGY_RELATIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_ONTOLOGY_RELEASES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_ONTOLOGY_REPRESENTATIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_PINNED_QUERIES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_SECURITY_POLICIES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_SECURITY_ROLE_PROJECTIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_SEMANTIC_BI_DATASETS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_SEMANTIC_MODELS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_SEMANTIC_MODEL_VERSIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_SEMANTIC_VERIFIED_QUERIES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_SEMANTIC_VIEWS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_SEMANTIC_VIEW_VERSIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_SKILL_BODY_CHUNKS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_STAGES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_STREAMS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_STREAM_DEFINITIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_STREAM_SOURCES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_STUDIO_ARTIFACTS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_STUDIO_DELIVERABLES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_STUDIO_MISSIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_STUDIO_RESOURCES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_STUDIO_RESOURCE_GRANTS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_STUDIO_SHARES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_TASKS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_TASK_EDGES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_TASK_GRAPH_RUNS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_TASK_ROLE_BINDINGS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_TASK_RUNS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_TOOLS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_USER_PREFERENCES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_VERIFIED_QUERY_CANDIDATES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_WORKSPACES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_WORKSPACE_ENTRIES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_WORKSPACE_FILE_VERSIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "CONFIG_WORKSPACE_SHARES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "LINEAGE_LOAD_HISTORY"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "ML_EPHEMERAL_RUNS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "ML_MODELS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "ML_MODEL_ALIASES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "ML_MODEL_VERSIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "ML_RUNS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "QUALITY_TABLE_STATS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "QUERY_AUTOPILOT_ACTIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "QUERY_AUTOPILOT_BASELINES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "QUERY_AUTOPILOT_ENROLLMENTS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "QUERY_AUTOPILOT_EVIDENCE"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "QUERY_AUTOPILOT_EXPERIMENTS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "QUERY_AUTOPILOT_FAMILIES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "QUERY_AUTOPILOT_INCIDENTS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "QUERY_AUTOPILOT_JOBS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "QUERY_AUTOPILOT_OBSERVATIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "QUERY_AUTOPILOT_OPPORTUNITIES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "QUERY_AUTOPILOT_OUTCOMES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "QUERY_AUTOPILOT_POLICIES"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "QUERY_AUTOPILOT_ROLLUPS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "STAGE_FILE_MANIFEST"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "USAGE_LLM_FUNCTIONS"
+     ],
+     [
+      "NOVA_SYSTEM",
+      "USAGE_QUERY_STATS"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": false,
+   "sql": "SELECT table_schema, table_name FROM information_schema.tables WHERE table_schema LIKE 'NOVA_%'",
+   "user": {
+    "columns": [
+     "table_schema",
+     "table_name"
+    ],
+    "rows": [
+     [
+      "NOVA_DEMO",
+      "customers"
+     ],
+     [
+      "NOVA_DEMO",
+      "order_items"
+     ],
+     [
+      "NOVA_DEMO",
+      "orders"
+     ]
+    ]
+   }
+  },
+  "d539ea1e29814bfe": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "completed",
+      "11328900.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT status AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders WHERE status = 'completed' GROUP BY status ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "completed",
+      "11328900.00000000"
+     ]
+    ]
+   }
+  },
+  "d7617e7b84cb1ddc": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Jakarta",
+      3
+     ],
+     [
+      "Bandung",
+      2
+     ],
+     [
+      "Surabaya",
+      2
+     ],
+     [
+      "Yogyakarta",
+      2
+     ],
+     [
+      "Bali",
+      1
+     ],
+     [
+      "Makassar",
+      1
+     ],
+     [
+      "Malang",
+      1
+     ],
+     [
+      "Medan",
+      1
+     ],
+     [
+      "Palembang",
+      1
+     ],
+     [
+      "Semarang",
+      1
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC, label LIMIT 10",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Jakarta",
+      3
+     ],
+     [
+      "Bandung",
+      2
+     ],
+     [
+      "Surabaya",
+      2
+     ],
+     [
+      "Yogyakarta",
+      2
+     ],
+     [
+      "Bali",
+      1
+     ],
+     [
+      "Makassar",
+      1
+     ],
+     [
+      "Malang",
+      1
+     ],
+     [
+      "Medan",
+      1
+     ],
+     [
+      "Palembang",
+      1
+     ],
+     [
+      "Semarang",
+      1
+     ]
+    ]
+   }
+  },
+  "d829381edc0d07a7": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "20999000.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT AVG(total_amount) AS value FROM NOVA_DEMO.orders WHERE payment_method = 'Credit Card'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "20999000.00000000"
+     ]
+    ]
+   }
+  },
+  "d877e1284e60de36": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      "30496000.00"
+     ],
+     [
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "Bandung",
+      "22298000.00"
+     ],
+     [
+      "Medan",
+      "19999000.00"
+     ],
+     [
+      "Makassar",
+      "12999000.00"
+     ],
+     [
+      "Surabaya",
+      "5798000.00"
+     ],
+     [
+      "Bali",
+      "3999000.00"
+     ],
+     [
+      "Palembang",
+      "599000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      "30496000.00"
+     ],
+     [
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "Bandung",
+      "22298000.00"
+     ],
+     [
+      "Medan",
+      "19999000.00"
+     ],
+     [
+      "Makassar",
+      "12999000.00"
+     ],
+     [
+      "Surabaya",
+      "5798000.00"
+     ],
+     [
+      "Bali",
+      "3999000.00"
+     ],
+     [
+      "Palembang",
+      "599000.00"
+     ]
+    ]
+   }
+  },
+  "d8b3098f2f31b7fd": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Bank Transfer",
+      "61497000.00"
+     ],
+     [
+      "Credit Card",
+      "37998000.00"
+     ],
+     [
+      "DANA",
+      "33096000.00"
+     ],
+     [
+      "QRIS",
+      "6898000.00"
+     ],
+     [
+      "GoPay",
+      "6397000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT payment_method AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01' GROUP BY payment_method ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Bank Transfer",
+      "61497000.00"
+     ],
+     [
+      "Credit Card",
+      "37998000.00"
+     ],
+     [
+      "DANA",
+      "33096000.00"
+     ],
+     [
+      "QRIS",
+      "6898000.00"
+     ],
+     [
+      "GoPay",
+      "6397000.00"
+     ]
+    ]
+   }
+  },
+  "dc32a183e9828146": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      2
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE shipping_city = 'Surabaya'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      2
+     ]
+    ]
+   }
+  },
+  "dd02f2c18395505a": {
+   "admin": {
+    "columns": [
+     "order_id",
+     "value"
+    ],
+    "rows": [
+     [
+      1014,
+      "4299000.00"
+     ],
+     [
+      1015,
+      "24999000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT order_id, total_amount AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-07-01' AND order_date < '2025-08-01'",
+   "user": {
+    "columns": [
+     "order_id",
+     "value"
+    ],
+    "rows": [
+     [
+      1014,
+      "4299000.00"
+     ],
+     [
+      1015,
+      "24999000.00"
+     ]
+    ]
+   }
+  },
+  "ddb54d68553daa7d": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "30496000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE status = 'completed' AND shipping_city = 'Jakarta'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "30496000.00"
+     ]
+    ]
+   }
+  },
+  "de7e73074bc925eb": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "30496000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE shipping_city = 'Jakarta'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "30496000.00"
+     ]
+    ]
+   }
+  },
+  "e034d15e99347a9b": {
+   "admin": {
+    "columns": [
+     "h1",
+     "h2",
+     "h1_orders",
+     "h2_orders"
+    ],
+    "rows": [
+     [
+      "102491000.00",
+      "43395000.00",
+      8,
+      5
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(CASE WHEN order_date < '2025-06-16' THEN total_amount END) AS h1, SUM(CASE WHEN order_date >= '2025-06-16' AND order_date < '2025-07-01' THEN total_amount END) AS h2, SUM(CASE WHEN order_date < '2025-06-16' THEN 1 ELSE 0 END) AS h1_orders, SUM(CASE WHEN order_date >= '2025-06-16' AND order_date < '2025-07-01' THEN 1 ELSE 0 END) AS h2_orders FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "h1",
+     "h2",
+     "h1_orders",
+     "h2_orders"
+    ],
+    "rows": [
+     [
+      "102491000.00",
+      "43395000.00",
+      8,
+      5
+     ]
+    ]
+   }
+  },
+  "e05cfec78aacd96f": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "2025-06-02T00:00:00",
+      "51196000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT DATE_TRUNC('week', order_date) AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY value DESC LIMIT 1",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "2025-06-02T00:00:00",
+      "51196000.00"
+     ]
+    ]
+   }
+  },
+  "e11ea18ddd70fa40": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Jakarta",
+      "10165333.33333333"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders WHERE shipping_city IN (SELECT shipping_city FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY SUM(total_amount) DESC LIMIT 3) GROUP BY 1 ORDER BY value ASC LIMIT 1",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Jakarta",
+      "10165333.33333333"
+     ]
+    ]
+   }
+  },
+  "e2f34b610056a297": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "205680000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) + SUM(CASE WHEN shipping_city='Jakarta' THEN total_amount ELSE 0 END) AS value FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "205680000.00"
+     ]
+    ]
+   }
+  },
+  "e6a64f2562c2fe72": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Jakarta",
+      3
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC, label LIMIT 1",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Jakarta",
+      3
+     ]
+    ]
+   }
+  },
+  "e7011aefa191fea0": {
+   "admin": {
+    "columns": [
+     "date(order_date)",
+     "v"
+    ],
+    "rows": [
+     [
+      "2025-07-05",
+      "24999000.00"
+     ],
+     [
+      "2025-06-07",
+      "24999000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT DATE(order_date), SUM(total_amount) v FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY v DESC LIMIT 2",
+   "user": {
+    "columns": [
+     "date(order_date)",
+     "v"
+    ],
+    "rows": [
+     [
+      "2025-07-05",
+      "24999000.00"
+     ],
+     [
+      "2025-06-07",
+      "24999000.00"
+     ]
+    ]
+   }
+  },
+  "e9e0762b1bd99e00": {
+   "admin": {
+    "columns": [
+     "revenue",
+     "orders",
+     "aov"
+    ],
+    "rows": [
+     [
+      "30496000.00",
+      3,
+      "10165333.33333333"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS revenue, COUNT(order_id) AS orders, AVG(total_amount) AS aov FROM NOVA_DEMO.orders WHERE shipping_city = 'Jakarta'",
+   "user": {
+    "columns": [
+     "revenue",
+     "orders",
+     "aov"
+    ],
+    "rows": [
+     [
+      "30496000.00",
+      3,
+      "10165333.33333333"
+     ]
+    ]
+   }
+  },
+  "ea01b50c855f66d0": {
+   "admin": {
+    "columns": [
+     "count(*)"
+    ],
+    "rows": [
+     [
+      4
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(*) FROM (SELECT customer_id FROM NOVA_DEMO.orders GROUP BY 1 HAVING COUNT(*) > 1) r",
+   "user": {
+    "columns": [
+     "count(*)"
+    ],
+    "rows": [
+     [
+      4
+     ]
+    ]
+   }
+  },
+  "ea3f268f56b2423c": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "29298000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-30'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "29298000.00"
+     ]
+    ]
+   }
+  },
+  "ecb3ff2837188557": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "5798000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE shipping_city = 'Surabaya'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "5798000.00"
+     ]
+    ]
+   }
+  },
+  "ed98378921e86643": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "2025-05-26T00:00:00",
+      "23298000.00000000"
+     ],
+     [
+      "2025-06-02T00:00:00",
+      "12799000.00000000"
+     ],
+     [
+      "2025-06-09T00:00:00",
+      "9332333.33333333"
+     ],
+     [
+      "2025-06-16T00:00:00",
+      "6765666.66666667"
+     ],
+     [
+      "2025-06-23T00:00:00",
+      "11549000.00000000"
+     ],
+     [
+      "2025-06-30T00:00:00",
+      "14649000.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT DATE_TRUNC('week', order_date) AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY 1",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "2025-05-26T00:00:00",
+      "23298000.00000000"
+     ],
+     [
+      "2025-06-02T00:00:00",
+      "12799000.00000000"
+     ],
+     [
+      "2025-06-09T00:00:00",
+      "9332333.33333333"
+     ],
+     [
+      "2025-06-16T00:00:00",
+      "6765666.66666667"
+     ],
+     [
+      "2025-06-23T00:00:00",
+      "11549000.00000000"
+     ],
+     [
+      "2025-06-30T00:00:00",
+      "14649000.00000000"
+     ]
+    ]
+   }
+  },
+  "f039db752f169b1c": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "24999000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT MAX(total_amount) AS value FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "24999000.00"
+     ]
+    ]
+   }
+  },
+  "f05b0dabfd9cde90": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Jakarta",
+      3
+     ],
+     [
+      "Surabaya",
+      2
+     ],
+     [
+      "Bandung",
+      2
+     ],
+     [
+      "Yogyakarta",
+      2
+     ],
+     [
+      "Semarang",
+      1
+     ],
+     [
+      "Makassar",
+      1
+     ],
+     [
+      "Malang",
+      1
+     ],
+     [
+      "Palembang",
+      1
+     ],
+     [
+      "Medan",
+      1
+     ],
+     [
+      "Bali",
+      1
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Jakarta",
+      3
+     ],
+     [
+      "Surabaya",
+      2
+     ],
+     [
+      "Bandung",
+      2
+     ],
+     [
+      "Yogyakarta",
+      2
+     ],
+     [
+      "Semarang",
+      1
+     ],
+     [
+      "Makassar",
+      1
+     ],
+     [
+      "Malang",
+      1
+     ],
+     [
+      "Palembang",
+      1
+     ],
+     [
+      "Medan",
+      1
+     ],
+     [
+      "Bali",
+      1
+     ]
+    ]
+   }
+  },
+  "f0bc0670a3621f8d": {
+   "admin": {
+    "columns": [
+     "revenue",
+     "orders",
+     "aov"
+    ],
+    "rows": [
+     [
+      "113289000.00",
+      10,
+      "11328900.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS revenue, COUNT(order_id) AS orders, AVG(total_amount) AS aov FROM NOVA_DEMO.orders WHERE status = 'completed'",
+   "user": {
+    "columns": [
+     "revenue",
+     "orders",
+     "aov"
+    ],
+    "rows": [
+     [
+      "113289000.00",
+      10,
+      "11328900.00000000"
+     ]
+    ]
+   }
+  },
+  "f151a57e327d25e3": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "52794000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE shipping_city IN ('Jakarta','Bandung')",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "52794000.00"
+     ]
+    ]
+   }
+  },
+  "f3cc3aca6f7f1b2f": {
+   "admin": {
+    "columns": [
+     "revenue",
+     "orders",
+     "june",
+     "july"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15,
+      "145886000.00",
+      "29298000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS revenue, COUNT(*) AS orders, SUM(CASE WHEN order_date >= '2025-06-01' AND order_date < '2025-07-01' THEN total_amount END) AS june, SUM(CASE WHEN order_date >= '2025-07-01' AND order_date < '2025-08-01' THEN total_amount END) AS july FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "revenue",
+     "orders",
+     "june",
+     "july"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15,
+      "145886000.00",
+      "29298000.00"
+     ]
+    ]
+   }
+  },
+  "f3d1f4ee816e0a69": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      5
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE status <> 'completed'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      5
+     ]
+    ]
+   }
+  },
+  "f5a913d6db3b4c59": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Credit Card",
+      "20999000.00000000"
+     ],
+     [
+      "Bank Transfer",
+      "20499000.00000000"
+     ],
+     [
+      "DANA",
+      "11032000.00000000"
+     ],
+     [
+      "QRIS",
+      "3732333.33333333"
+     ],
+     [
+      "GoPay",
+      "2132333.33333333"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT payment_method AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY payment_method ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Credit Card",
+      "20999000.00000000"
+     ],
+     [
+      "Bank Transfer",
+      "20499000.00000000"
+     ],
+     [
+      "DANA",
+      "11032000.00000000"
+     ],
+     [
+      "QRIS",
+      "3732333.33333333"
+     ],
+     [
+      "GoPay",
+      "2132333.33333333"
+     ]
+    ]
+   }
+  },
+  "f6928bcd84a041ad": {
+   "admin": {
+    "columns": [
+     "order_id",
+     "total_amount"
+    ],
+    "rows": [
+     [
+      1005,
+      "24999000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT order_id, total_amount FROM NOVA_DEMO.orders WHERE DATE(order_date)='2025-06-07'",
+   "user": {
+    "columns": [
+     "order_id",
+     "total_amount"
+    ],
+    "rows": [
+     [
+      1005,
+      "24999000.00"
+     ]
+    ]
+   }
+  },
+  "f6a58faaa34a7631": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "11678933.33333333"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT AVG(total_amount) AS value FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "11678933.33333333"
+     ]
+    ]
+   }
+  },
+  "f830bc26757ae7f7": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      10
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(DISTINCT shipping_city) AS value FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      10
+     ]
+    ]
+   }
+  },
+  "f92a07a97237a61e": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Semarang",
+      "24999000.00000000"
+     ],
+     [
+      "Malang",
+      "22499000.00000000"
+     ],
+     [
+      "Medan",
+      "19999000.00000000"
+     ],
+     [
+      "Jakarta",
+      "13098500.00000000"
+     ],
+     [
+      "Makassar",
+      "12999000.00000000"
+     ],
+     [
+      "Bandung",
+      "11149000.00000000"
+     ],
+     [
+      "Yogyakarta",
+      "6499000.00000000"
+     ],
+     [
+      "Bali",
+      "3999000.00000000"
+     ],
+     [
+      "Surabaya",
+      "2899000.00000000"
+     ],
+     [
+      "Palembang",
+      "599000.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01' GROUP BY shipping_city ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Semarang",
+      "24999000.00000000"
+     ],
+     [
+      "Malang",
+      "22499000.00000000"
+     ],
+     [
+      "Medan",
+      "19999000.00000000"
+     ],
+     [
+      "Jakarta",
+      "13098500.00000000"
+     ],
+     [
+      "Makassar",
+      "12999000.00000000"
+     ],
+     [
+      "Bandung",
+      "11149000.00000000"
+     ],
+     [
+      "Yogyakarta",
+      "6499000.00000000"
+     ],
+     [
+      "Bali",
+      "3999000.00000000"
+     ],
+     [
+      "Surabaya",
+      "2899000.00000000"
+     ],
+     [
+      "Palembang",
+      "599000.00000000"
+     ]
+    ]
+   }
+  },
+  "fa7f61ea8e88b9b1": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      2
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE shipping_city = 'Bandung'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      2
+     ]
+    ]
+   }
+  },
+  "faafca3e95504c88": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "2025-06-01",
+      "23298000.00"
+     ],
+     [
+      "2025-06-02",
+      "27597000.00"
+     ],
+     [
+      "2025-06-03",
+      "46596000.00"
+     ],
+     [
+      "2025-06-05",
+      "49495000.00"
+     ],
+     [
+      "2025-06-07",
+      "74494000.00"
+     ],
+     [
+      "2025-06-10",
+      "80993000.00"
+     ],
+     [
+      "2025-06-12",
+      "100992000.00"
+     ],
+     [
+      "2025-06-15",
+      "102491000.00"
+     ],
+     [
+      "2025-06-18",
+      "115490000.00"
+     ],
+     [
+      "2025-06-20",
+      "119489000.00"
+     ],
+     [
+      "2025-06-22",
+      "122788000.00"
+     ],
+     [
+      "2025-06-25",
+      "145287000.00"
+     ],
+     [
+      "2025-06-28",
+      "145886000.00"
+     ],
+     [
+      "2025-07-01",
+      "150185000.00"
+     ],
+     [
+      "2025-07-05",
+      "175184000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT label, SUM(value) OVER (ORDER BY label) AS value FROM (SELECT DATE(order_date) AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY 1) d ORDER BY label",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "2025-06-01",
+      "23298000.00"
+     ],
+     [
+      "2025-06-02",
+      "27597000.00"
+     ],
+     [
+      "2025-06-03",
+      "46596000.00"
+     ],
+     [
+      "2025-06-05",
+      "49495000.00"
+     ],
+     [
+      "2025-06-07",
+      "74494000.00"
+     ],
+     [
+      "2025-06-10",
+      "80993000.00"
+     ],
+     [
+      "2025-06-12",
+      "100992000.00"
+     ],
+     [
+      "2025-06-15",
+      "102491000.00"
+     ],
+     [
+      "2025-06-18",
+      "115490000.00"
+     ],
+     [
+      "2025-06-20",
+      "119489000.00"
+     ],
+     [
+      "2025-06-22",
+      "122788000.00"
+     ],
+     [
+      "2025-06-25",
+      "145287000.00"
+     ],
+     [
+      "2025-06-28",
+      "145886000.00"
+     ],
+     [
+      "2025-07-01",
+      "150185000.00"
+     ],
+     [
+      "2025-07-05",
+      "175184000.00"
+     ]
+    ]
+   }
+  },
+  "fc4cb9f0ba6ac304": {
+   "admin": {
+    "columns": [
+     "revenue",
+     "orders",
+     "aov"
+    ],
+    "rows": [
+     [
+      "29298000.00",
+      2,
+      "14649000.00000000"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS revenue, COUNT(order_id) AS orders, AVG(total_amount) AS aov FROM NOVA_DEMO.orders WHERE order_date >= '2025-07-01' AND order_date < '2025-08-01'",
+   "user": {
+    "columns": [
+     "revenue",
+     "orders",
+     "aov"
+    ],
+    "rows": [
+     [
+      "29298000.00",
+      2,
+      "14649000.00000000"
+     ]
+    ]
+   }
+  },
+  "fe35e54f7173b8c7": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Bank Transfer",
+      3
+     ],
+     [
+      "GoPay",
+      3
+     ],
+     [
+      "DANA",
+      3
+     ],
+     [
+      "Credit Card",
+      2
+     ],
+     [
+      "QRIS",
+      2
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT payment_method AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01' GROUP BY payment_method ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Bank Transfer",
+      3
+     ],
+     [
+      "DANA",
+      3
+     ],
+     [
+      "GoPay",
+      3
+     ],
+     [
+      "Credit Card",
+      2
+     ],
+     [
+      "QRIS",
+      2
+     ]
+    ]
+   }
+  },
+  "ff07bb752f559372": {
+   "admin": {
+    "columns": [
+     "product_name",
+     "stock_qty"
+    ],
+    "rows": [
+     [
+      "AirPods Pro 3",
+      90
+     ],
+     [
+      "Anker 65W USB-C Charger",
+      200
+     ],
+     [
+      "Dell XPS 15 Laptop",
+      20
+     ],
+     [
+      "LG UltraGear 27 4K Monitor",
+      30
+     ],
+     [
+      "Laptop ASUS ROG Strix G16",
+      25
+     ],
+     [
+      "Logitech MX Master 3S Mouse",
+      120
+     ],
+     [
+      "Mechanical Keyboard Keychron Q1",
+      80
+     ],
+     [
+      "Samsung 990 PRO SSD 2TB",
+      60
+     ],
+     [
+      "Samsung Galaxy S25 Ultra",
+      40
+     ],
+     [
+      "Sony WH-1000XM5 Headphones",
+      100
+     ],
+     [
+      "iPad Air M3 256GB",
+      35
+     ],
+     [
+      "iPhone 16 Pro Max 256GB",
+      50
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": false,
+   "sql": "SELECT product_name, stock_qty FROM NOVA_CATALOG.products",
+   "user": {
+    "error": "SQL error: (5204) Access denied; you need (at least one of) the SELECT privilege(s) on COLUMN stock_qty for this operation."
+   }
+  },
+  "ff494897d1730a62": {
+   "admin": {
+    "columns": [
+     "label",
+     "n",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      2,
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      3,
+      "30496000.00"
+     ],
+     [
+      "Semarang",
+      1,
+      "24999000.00"
+     ],
+     [
+      "Malang",
+      1,
+      "22499000.00"
+     ],
+     [
+      "Bandung",
+      2,
+      "22298000.00"
+     ],
+     [
+      "Medan",
+      1,
+      "19999000.00"
+     ],
+     [
+      "Makassar",
+      1,
+      "12999000.00"
+     ],
+     [
+      "Surabaya",
+      2,
+      "5798000.00"
+     ],
+     [
+      "Bali",
+      1,
+      "3999000.00"
+     ],
+     [
+      "Palembang",
+      1,
+      "599000.00"
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, COUNT(*) AS n, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "n",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      2,
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      3,
+      "30496000.00"
+     ],
+     [
+      "Semarang",
+      1,
+      "24999000.00"
+     ],
+     [
+      "Malang",
+      1,
+      "22499000.00"
+     ],
+     [
+      "Bandung",
+      2,
+      "22298000.00"
+     ],
+     [
+      "Medan",
+      1,
+      "19999000.00"
+     ],
+     [
+      "Makassar",
+      1,
+      "12999000.00"
+     ],
+     [
+      "Surabaya",
+      2,
+      "5798000.00"
+     ],
+     [
+      "Bali",
+      1,
+      "3999000.00"
+     ],
+     [
+      "Palembang",
+      1,
+      "599000.00"
+     ]
+    ]
+   }
+  }
+ },
+ "semantic_model": "demo_sales@v2/0.1.1"
+}
