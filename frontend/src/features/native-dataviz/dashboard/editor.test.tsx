@@ -101,7 +101,7 @@ describe('native dashboard editor', () => {
     await expect.element(screen.getByRole('heading', { name: 'Sales overview' })).toBeVisible()
     await expect.element(screen.getByTestId('kpi-value')).toHaveTextContent('15,257')
     await expect.element(screen.getByText('<b>Plain</b> notes')).toBeVisible()
-    expect(document.querySelector('.grid-stack b')).toBeNull()
+    expect(document.querySelector('.nova-dataviz-canvas b')).toBeNull()
     const query = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/query'))!
     expect(JSON.parse(query[1].body)).toMatchObject({ revision: 1, draft: false, measures: [{ field_id: 'units', aggregation: 'sum' }] })
   })
@@ -123,23 +123,26 @@ describe('native dashboard editor', () => {
     await expect.element(screen.getByRole('button', { name: 'Redo' })).toBeEnabled()
   })
 
-  it('moves and resizes the selected widget from the keyboard, never into another widget', async () => {
+  it('moves and resizes the selected item from the keyboard in page pixels', async () => {
     const screen = await mount()
     await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
     await screen.getByRole('button', { name: 'Edit' }).click()
     await screen.getByText('<b>Plain</b> notes').click()
     await userEvent.keyboard('{Alt>}{ArrowDown}{/Alt}')
     await expect.poll(() => operations.length).toBe(1)
-    expect(operations[0]).toMatchObject({ changes: [{ op: 'layout.apply', page_id: PAGE, placements: expect.arrayContaining([
-      { widget_id: TEXT_WIDGET, layout: { x: 3, y: 1, w: 9, h: 2 } },
-      { widget_id: KPI_WIDGET, layout: { x: 0, y: 0, w: 3, h: 2 } },
-    ]) }] })
-    await expect.element(screen.getByText('Moved: column 4, row 2, 9 columns wide, 2 rows tall')).toBeInTheDocument()
-    // Widening the KPI would overlap the text widget beside it: nothing is sent.
+    // One baseline row down; only the moved item is sent.
+    expect(operations[0]).toMatchObject({ changes: [{ op: 'elements.arrange', page_id: PAGE, placements: [
+      { element_id: TEXT_WIDGET, geometry: { x: 306, y: 14, w: 888, h: 132, rotation: 0 } },
+    ] }] })
+    await expect.element(screen.getByText('Moved to x 306, y 14, 888 by 132 pixels')).toBeInTheDocument()
+    // A free canvas lets items overlap: widening the KPI to the next column end is sent as asked.
     await screen.getByTestId('kpi-value').click()
     await userEvent.keyboard('{Alt>}{Shift>}{ArrowRight}{/Shift}{/Alt}')
-    await expect.element(screen.getByText('Another widget is in the way')).toBeInTheDocument()
-    expect(operations).toHaveLength(1)
+    await expect.poll(() => operations.length).toBe(2)
+    expect(operations[1]).toMatchObject({ changes: [{ op: 'elements.arrange', placements: [
+      { element_id: KPI_WIDGET, geometry: { x: 6, y: 6, w: 388, h: 132, rotation: 0 } },
+    ] }] })
+    await expect.element(screen.getByText('Resized to x 6, y 6, 388 by 132 pixels')).toBeInTheDocument()
   })
 
   it('shows the published defaults read-only to someone who may view but not interact', async () => {
@@ -161,17 +164,18 @@ describe('native dashboard editor', () => {
       String(url).endsWith('/query') && String(init?.body).includes('Jakarta'))).toBe(true)
   })
 
-  it('shows a six-column tablet view scaled from the saved layout and never saves it', async () => {
+  it('scales the saved page to a narrower window and never saves it', async () => {
     const screen = await mount(760)
     await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
-    const grid = () => (document.querySelector('.grid-stack') as unknown as { gridstack: { getColumn: () => number } }).gridstack
-    const width = (id: string) => document.querySelector(`[gs-id="${id}"]`)?.getAttribute('gs-w')
-    await expect.poll(() => grid().getColumn()).toBe(6)
-    expect(Number(width(TEXT_WIDGET))).toBeLessThanOrEqual(6)
-    // Back at desktop width the saved 12-column layout returns unchanged.
-    ;(screen.getByTestId('frame').element() as HTMLElement).style.width = '1200px'
-    await expect.poll(() => grid().getColumn()).toBe(12)
-    await expect.poll(() => [width(KPI_WIDGET), width(TEXT_WIDGET)]).toEqual(['3', '9'])
+    const width = (id: string) => document.querySelector(`[data-element-id="${id}"]`)!.getBoundingClientRect().width
+    const scale = () => document.querySelector('[data-canvas-frame]')!.getBoundingClientRect().width / 1200
+    await expect.poll(scale).toBeLessThan(0.7)
+    expect(width(TEXT_WIDGET) / scale()).toBeCloseTo(888, 0)
+    expect(width(KPI_WIDGET) / scale()).toBeCloseTo(288, 0)
+    // At a wider window the same saved pixels are drawn larger, still in proportion.
+    ;(screen.getByTestId('frame').element() as HTMLElement).style.width = '1280px'
+    await expect.poll(scale).toBeGreaterThan(0.85)
+    expect(width(TEXT_WIDGET) / width(KPI_WIDGET)).toBeCloseTo(888 / 288, 2)
     expect(operations).toHaveLength(0)
   })
 
@@ -180,8 +184,11 @@ describe('native dashboard editor', () => {
     page0.widgets[1].layout = { x: 3, y: 3, w: 9, h: 2 }
     const screen = await mount()
     await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
-    const item = () => document.querySelector(`[gs-id="${TEXT_WIDGET}"]`)
-    await expect.poll(() => [item()?.getAttribute('gs-x'), item()?.getAttribute('gs-y')]).toEqual(['3', '3'])
+    const frame = () => document.querySelector('[data-canvas-frame]')!.getBoundingClientRect()
+    const item = () => document.querySelector(`[data-element-id="${TEXT_WIDGET}"]`)!.getBoundingClientRect()
+    const scale = () => frame().width / 1200
+    await expect.poll(() => Math.round((item().left - frame().left) / scale())).toBe(306)
+    expect(Math.round((item().top - frame().top) / scale())).toBe(222)
     expect(operations).toHaveLength(0)
   })
 
@@ -201,33 +208,32 @@ describe('native dashboard editor', () => {
     const screen = await mount()
     await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
     await screen.getByRole('button', { name: 'Edit' }).click()
-    const frame = document.querySelector<HTMLElement>(`[gs-id="${TEXT_WIDGET}"] .grid-stack-item-content`)!
-    expect(frame.tabIndex).toBe(0)
-    frame.focus()
+    const item = document.querySelector<HTMLElement>(`[data-element-id="${TEXT_WIDGET}"]`)!
+    expect(item.tabIndex).toBe(0)
+    expect(item.getAttribute('aria-label')).toBe('<b>Plain</b> notes, press Alt and an arrow key to move it')
+    item.focus()
     await userEvent.keyboard('{Alt>}{ArrowDown}{/Alt}')
     await expect.poll(() => operations.length).toBe(1)
-    expect(operations[0]).toMatchObject({ changes: [{ op: 'layout.apply', placements: expect.arrayContaining([
-      { widget_id: TEXT_WIDGET, layout: { x: 3, y: 1, w: 9, h: 2 } }]) }] })
+    expect(operations[0]).toMatchObject({ changes: [{ op: 'elements.arrange', placements: [
+      { element_id: TEXT_WIDGET, geometry: { x: 306, y: 14, w: 888, h: 132, rotation: 0 } }] }] })
   })
 
-  it('shows every grid cell while editing, lined up with the widgets, and none in view', async () => {
+  it('shows the column grid while editing, lined up with the widgets, and none in view', async () => {
     const screen = await mount()
     await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
-    expect(document.querySelector('[data-testid="canvas-cells"]')).toBeNull()
+    expect(document.querySelector('[data-testid="canvas-grid"]')).toBeNull()
     await screen.getByRole('button', { name: 'Edit' }).click()
-    const cells = () => [...document.querySelectorAll<HTMLElement>('[data-testid="canvas-cells"] > span')]
-    await expect.poll(() => cells().length).toBeGreaterThan(0)
-    expect(cells().length % 12).toBe(0)
-    for (const item of document.querySelectorAll<HTMLElement>('.nova-dataviz-canvas > .grid-stack-item')) {
-      const [x, y, w, h] = ['gs-x', 'gs-y', 'gs-w', 'gs-h'].map(name => Number(item.getAttribute(name)))
-      // Room is kept below the lowest widget to drag or resize into.
-      expect(cells().length / 12).toBeGreaterThanOrEqual(y + h + 3)
-      const content = item.querySelector('.grid-stack-item-content')!.getBoundingClientRect()
-      const first = cells()[y * 12 + x].getBoundingClientRect()
-      const last = cells()[(y + h - 1) * 12 + x + w - 1].getBoundingClientRect()
-      expect([content.left - first.left, content.top - first.top, content.right - last.right, content.bottom - last.bottom]
-        .map(value => Math.abs(value) < 1)).toEqual([true, true, true, true])
+    const columns = () => [...document.querySelectorAll<HTMLElement>('[data-testid="canvas-grid"] > span')].map(item => item.getBoundingClientRect())
+    await expect.poll(() => columns().length).toBe(12)
+    for (const id of [KPI_WIDGET, TEXT_WIDGET]) {
+      const box = document.querySelector(`[data-element-id="${id}"]`)!.getBoundingClientRect()
+      // A widget starts on a column's left edge and ends on a column's right edge.
+      expect(columns().some(column => Math.abs(column.left - box.left) < 1)).toBe(true)
+      expect(columns().some(column => Math.abs(column.right - box.right) < 1)).toBe(true)
     }
+    // Room is kept below the page to drag or resize into.
+    const frame = document.querySelector('[data-canvas-frame]')!.getBoundingClientRect()
+    expect(frame.height / (frame.width / 1200)).toBeGreaterThanOrEqual(720 + 216 - 1)
     expect(operations).toHaveLength(0)
   })
 

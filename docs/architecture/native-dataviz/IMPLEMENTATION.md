@@ -597,13 +597,23 @@ and requires it to match the stored definition.
 `operations.py` applies typed canvas changes (`elements.*`, `page.canvas.set`,
 `page.tab_order.set`, `page.mobile.set`) and adapts the unchanged schema-2
 changes, so stored receipts keep their digests and replay. The assistant tools
-and Studio publish still send grid changes; the editor still renders through
-GridStack by projecting pages to cells until the P1 renderer lands.
+and Studio publish still send grid changes.
 
-Active: the contract, upcaster, adapters and migration. Tested: server golden,
-property and digest tests, the browser upcaster against the same goldens, and the
-PG17 upgrade from schema 62 (CI). Open: P1 renderer, P2 authoring aids, P3 Neva
-on canvas operations, and live visual parity.
+The editor (and Studio's artifact panel, which mounts the same editor) draws
+pages with the frame renderer in `frontend/src/features/native-dataviz/dashboard/`:
+`canvas.tsx` (page frame, absolutely positioned items, SVG shapes and
+connectors, phone column, pointer move/resize) over the pure `frame.ts` (scale,
+reading/tab/phone order, snapping, clamping, connector paths, token styles).
+Moves and resizes commit one `elements.arrange` per gesture or key press; adding,
+duplicating and replacing widgets still go through the grid-shaped changes.
+GridStack is no longer a dependency.
+
+Active: the contract, upcaster, adapters, migration and the frame renderer.
+Tested: server golden, property and digest tests, the browser upcaster against
+the same goldens, the PG17 upgrade from schema 62 (CI), `frame.test.ts` and the
+editor browser suites. Open: P2 authoring aids (grid settings, smart guides,
+align/distribute, creating shapes, icons, connectors and groups), resolving
+data-point anchors and value bindings, and P3 Neva on canvas operations.
 
 ## Dataviz assistant tools
 

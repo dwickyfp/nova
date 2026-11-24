@@ -53,6 +53,15 @@ describe('presence cursors', () => {
     expect(pointer.style.left).toBe('50%')
     expect(pointer.style.top).toBe(`${2 * ROW_PX}px`)
   })
+
+  it('scales pointers with the page, so they land on the same spot at any width', async () => {
+    const { container } = await render(<div style={{ position: 'relative', width: 600, height: 400 }}>
+      <PresenceCursors others={[person('a', 'alice', { cursor: { x: 0.25, y: 3 } })]} pageId='p1' scale={0.5} />
+    </div>)
+    const pointer = container.querySelector<HTMLElement>('[style*="left"]')!
+    expect(pointer.style.left).toBe('25%')
+    expect(pointer.style.top).toBe(`${3 * ROW_PX * 0.5}px`)
+  })
 })
 
 describe('presence after access is revoked', () => {

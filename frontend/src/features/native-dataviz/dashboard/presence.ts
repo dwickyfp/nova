@@ -18,7 +18,7 @@ type Beat = { viewer: string; others: Collaborator[]; more: number }
 
 /** How often this viewer says it is here; others see a pointer move this often. */
 export const BEAT_MS = 1000
-/** Grid row height on the canvas, in CSS pixels, shared with GridStack. */
+/** A legacy grid row in page pixels; pointers are shared in these rows down the page. */
 export const ROW_PX = 72
 
 // Theme series tokens, so each person keeps one colour on every screen.

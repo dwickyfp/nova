@@ -18,7 +18,7 @@ import type { NativeViewFilter } from '@/features/agents/api'
 import { ApiError } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
-import type { ChartDefinition, DashboardDefinition, FilterTree, Interaction, Operation, OperationReceipt } from '../contracts'
+import type { ChartDefinition, DashboardDefinition, ElementPlacement, FilterTree, Interaction, Operation, OperationReceipt } from '../contracts'
 import { DashboardDataTab } from '../dashboard-data-tab'
 import { nativeDocuments } from '../documents'
 import { ChartInspector } from '../charts/chart-inspector'
@@ -39,10 +39,11 @@ import { FilterBar, FilterBuilder } from './filters'
 import { describeFilterValue } from './filter-describe'
 import { viewFilters } from './view-filters'
 import { chartContext, defaultValue, type CrossFilter, type FilterDefinition, type FilterValue } from './filter-model'
-import { activeDrop, DROP_TYPE, firstFreeSlot, gridWidgets, sizeFor, slotAt, type DropItem, type Layout, type Widget } from './layout'
+import { activeDrop, DROP_TYPE, firstFreeSlot, gridWidgets, sizeFor, slotAt, type DropItem, type Widget } from './layout'
 import { NATIVE_DASHBOARD_ACTIVITY, NATIVE_DASHBOARD_CHANGED, NATIVE_DASHBOARD_OPEN, type LinkedSelection, type NativeDashboardActivity, type NativeDashboardChanged, type NativeDashboardOpen } from './events'
 import { nevaWords, type NevaActivity } from './neva-pointer'
-import { applyLocal, inverse, sameLayout, type Change } from './operations'
+import { applyLocal, inverse, type Change } from './operations'
+import { clampBox, countElements, findElement, frameGrid, nudgeBox, pageSize, sameBox, tabOrder, toGeometry, type Arrow } from './frame'
 import { ShareDialog } from './share-dialog'
 import { ScheduleDialog } from './schedule-dialog'
 import { CommentsPanel } from './comments-panel'
@@ -90,9 +91,9 @@ function dragged(item: DropItem) {
 }
 
 /** A new chart may carry the canvas cell it was dropped on. */
-/** The contract's page cap; more widgets go on another page. */
-export const MAX_WIDGETS = 100
-const PAGE_FULL = `This page has ${MAX_WIDGETS} widgets, the most a page can hold. Add a page for more.`
+/** The contract's page cap, counting every item (grouped ones too); more go on another page. */
+export const MAX_WIDGETS = 150
+const PAGE_FULL = `This page has ${MAX_WIDGETS} items, the most a page can hold. Add a page for more.`
 
 type Inspector = { mode: 'new'; visual: Visual; at?: { x: number; y: number } } | { mode: 'edit'; widget: Widget; chart: ChartDefinition }
 
@@ -420,39 +421,31 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
       }
       if (selected && page && event.altKey && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
         event.preventDefault()
-        const widgets = gridWidgets(page)
-        const moved = widgets.map(widget => {
-          if (widget.widget_id !== selected) return { widget_id: widget.widget_id, layout: widget.layout }
-          const l = widget.layout
-          const delta = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key]!
-          return { widget_id: widget.widget_id, layout: event.shiftKey
-            ? { ...l, w: Math.max(2, Math.min(12 - l.x, l.w + delta[0])), h: Math.max(2, l.h + delta[1]) }
-            : { ...l, x: Math.max(0, Math.min(12 - l.w, l.x + delta[0])), y: Math.max(0, l.y + delta[1]) } }
-        })
-        const target = moved.find(item => item.widget_id === selected)!.layout
-        const collides = moved.some(item => item.widget_id !== selected && item.layout.x < target.x + target.w && target.x < item.layout.x + item.layout.w
-          && item.layout.y < target.y + target.h && target.y < item.layout.y + item.layout.h)
-        if (collides) {
-          setAnnouncement('Another widget is in the way')
-        } else {
-          void apply([{ op: 'layout.apply', page_id: page.page_id, placements: moved }])
-          setAnnouncement(`${event.shiftKey ? 'Resized' : 'Moved'}: column ${target.x + 1}, row ${target.y + 1}, ${target.w} columns wide, ${target.h} rows tall`)
-        }
+        const element = findElement(page.elements ?? [], selected) ?? page.legacy_spacers?.find(item => item.element_id === selected)
+        if (!element) return
+        if (element.locked) { setAnnouncement('This item is locked'); return }
+        const nested = !(page.elements ?? []).some(item => item.element_id === selected)
+        const before = element.geometry
+        const box = clampBox(nudgeBox(before, event.key as Arrow, event.shiftKey, frameGrid(page), pageSize(page).width,
+          page.canvas?.grid?.snap ?? true), page, { nested, resize: event.shiftKey })
+        if (sameBox(box, before)) { setAnnouncement('It cannot go further that way'); return }
+        void apply([{ op: 'elements.arrange', page_id: page.page_id, placements: [{ element_id: selected, geometry: toGeometry(box, before.rotation ?? 0) }] }])
+        setAnnouncement(`${event.shiftKey ? 'Resized' : 'Moved'} to x ${box.x}, y ${box.y}, ${box.w} by ${box.h} pixels`)
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   })
 
-  const onLayout = useCallback((placements: { widget_id: string; layout: Layout }[]) => {
+  const onArrange = useCallback((placements: ElementPlacement[]) => {
     const current = definitionRef.current?.pages.find(item => item.page_id === pageIdRef.current) ?? definitionRef.current?.pages[0]
-    if (!current || sameLayout(current, placements)) return
-    void apply([{ op: 'layout.apply', page_id: current.page_id, placements }])
+    if (!current || !placements.length) return
+    void apply([{ op: 'elements.arrange', page_id: current.page_id, placements }])
   }, [apply])
   const pageIdRef = useRef(pageId)
   useEffect(() => { pageIdRef.current = page?.page_id ?? null }, [page])
 
-  const pageFull = (page ? gridWidgets(page).length : 0) >= MAX_WIDGETS
+  const pageFull = (page ? countElements(page.elements ?? []) : 0) >= MAX_WIDGETS
 
   async function saveChart(chart: ChartDefinition) {
     if (!page) return
@@ -641,7 +634,9 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
       const many = definition.pages.length > 1
       for (const sheet of definition.pages) {
       if (many) items.push({ kind: 'page', title: sheet.title })
-      const ordered = [...gridWidgets(sheet)].sort((a, b) => a.layout.y - b.layout.y || a.layout.x - b.layout.x)
+      // In reading order (or the page's own tab order), as a screen reader reads it.
+      const byId = new Map(gridWidgets(sheet).map(widget => [widget.widget_id, widget]))
+      const ordered = tabOrder(sheet).map(element => byId.get(element.element_id)).filter((widget): widget is Widget => Boolean(widget))
       for (const widget of ordered) {
         if (widget.kind === 'text' && 'text' in widget) {
           items.push({ kind: 'text', title: widget.title ?? '', text: widget.text })
@@ -657,7 +652,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
         const result = await freshChartData(client, epoch, chart, request)
         if (chart.visual === 'map') {
           // A map prints as drawn on screen, basemap included; off screen it prints its rows.
-          const canvas = document.querySelector<HTMLCanvasElement>(`[gs-id="${CSS.escape(widget.widget_id)}"] canvas`)
+          const canvas = document.querySelector<HTMLCanvasElement>(`[data-element-id="${CSS.escape(widget.widget_id)}"] canvas`)
           if (canvas?.width) {
             const width = Math.round(Math.min(720, canvas.getBoundingClientRect().width || 640))
             items.push({ kind: 'image', title, src: canvas.toDataURL('image/png'), width })
@@ -665,7 +660,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
           }
         } else if (hasImage(chart)) {
           // Same size as on screen, redrawn in the light theme for paper.
-          const box = document.querySelector<HTMLElement>(`[gs-id="${CSS.escape(widget.widget_id)}"] [role="img"]`)?.getBoundingClientRect()
+          const box = document.querySelector<HTMLElement>(`[data-element-id="${CSS.escape(widget.widget_id)}"] [role="img"]`)?.getBoundingClientRect()
           const width = Math.round(Math.min(720, Math.max(360, box?.width ?? 640)))
           const height = Math.round(Math.max(220, Math.min(420, box?.height ?? 320)))
           // A capped pie prints its Other slice from a fresh governed total, as on screen.
@@ -808,7 +803,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
             editing={editing} onEdit={openFilters} readOnly={!canInteract && !editing} />
           <DashboardCanvas definition={definition} page={page} draft={editing} editing={editing}
             collaborators={presence.others} onPointer={presence.point}
-            selectedId={selected} onSelect={setSelected} onLayout={onLayout}
+            selectedId={selected} onSelect={setSelected} onArrange={onArrange}
             onEditChart={(widget, chart) => setInspector({ mode: 'edit', widget, chart })}
             onDropWidget={(item, cell) => {
               if (pageFull) toast.info(PAGE_FULL)

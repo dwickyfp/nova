@@ -1,6 +1,7 @@
 # ADR-001: Free-form dashboard canvas (dashboard schema 3)
 
-- Status: accepted. P0 (contract and upcaster) is implemented; P1–P3 are open.
+- Status: accepted. P0 (contract and upcaster) and P1 (frame renderer) are
+  implemented; P2 and P3 are open.
 - Owner decisions: one free-form canvas engine replaces GridStack, with no
   hybrid mode or feature flag. Grid assistance is an authoring aid only. The
   Dataviz assistant becomes Neva with per-batch approval (P3).
@@ -90,15 +91,54 @@ Migration `0063_viz_dashboard_canvas.sql` allows `viz_revisions.schema_version`
 (absent means 2). New dashboard revisions are schema 3; existing rows keep their
 definition and digest.
 
+### Renderer (P1)
+
+`frontend/src/features/native-dataviz/dashboard/canvas.tsx` draws a page as a
+frame; the pure geometry lives in `frame.ts`. GridStack is removed.
+
+- The page has a logical size (preset or custom). `fit: width` fills the width
+  and scrolls down, `page` shows the whole page, `actual` draws it at its own
+  size. Items are absolutely positioned at `geometry × scale`; their content is
+  laid out at native size (not a CSS transform), so text stays crisp and charts
+  resize their own canvas. At a 1,200 px wide frame an upcast schema-2 page is
+  drawn one to one.
+- Array order is stacking order (`z-index`); DOM order is the tab order
+  (`tab_order`, else reading order), so keyboard and screen-reader order are
+  independent of stacking. Decorative items are `aria-hidden` in View. Hidden
+  items are omitted in View and dimmed in Edit.
+- Shapes are per-item SVG drawn in screen pixels; connectors are SVG paths on the
+  page's coordinate system at their own stacking slot, joining element sides or
+  points. A connector with a missing end, an end on a data point, an annotation
+  and a `ValueBinding` run are not resolved yet: the first three are not drawn in
+  View and a value shows a dash (fail closed, no guessed position or value).
+- Below 520 px the page becomes one column: content items (also inside groups)
+  in `mobile.order`, then reading order, minus `mobile.hidden`, heights clamped
+  to 120–640 px. Editing is disabled there.
+- Edit: pointer drag (3 px threshold) and eight resize handles. Top-level edges
+  snap magnetically (12 px) to column starts and ends, otherwise to the baseline
+  from the margin; heights leave a gutter, so a legacy cell snaps back to
+  exactly itself. Alt/⌘ suspends snapping; Escape cancels. One
+  `elements.arrange` is committed per gesture, with the element's rotation.
+  Keyboard: Alt+arrows move (next column start, or one baseline row),
+  Alt+Shift+arrows resize. Locked items do not move. Overlap is allowed.
+- Corner radii are drawn on the theme scale (`themeRadius`): 8 page px is the
+  theme's `--radius`, other values scale from it and 9999 is a pill, so an
+  upcast card keeps the corner the grid editor drew in every theme.
+- `legacy_spacers` are drawn as empty frames above the page's items, in saved
+  order, as the grid editor drew them. They are `aria-hidden` in View, and can
+  be selected, moved and resized in Edit; phones omit them.
+- Studio's artifact panel mounts the same `DashboardEditor`, so it uses this
+  renderer with no Studio change.
+
 ## Consequences
 
 - Readers always receive schema 3. Integrations may keep creating schema-2
   dashboards and sending grid changes; both are applied to the canvas.
 - The Dataviz assistant tools and Studio publish keep using grid cells through
   `legacy_widgets` until P3 moves them to element operations.
-- Until P1, the editor still renders with GridStack by projecting each page to
-  grid cells; elements a grid cannot show (shapes, icons, connectors, annotations,
-  groups) cannot be created yet.
+- The editor draws pages with the frame renderer (P1). Elements a grid cannot
+  express (shapes, icons, connectors, annotations, groups) are drawn when an
+  integration creates them, but the editor cannot create them until P2.
 - The metadata schema moves to 63. A shared development database must be
   upgraded by the operator procedure (maintenance, backup, migrator, then the
   application's configured schema) before this code runs there.
@@ -128,3 +168,23 @@ definition and digest.
 - `backend/tests/integration/test_metadata_viz.py`: PG17 upgrade from schema 62
   keeps schema-2 rows byte-identical, reads them upcast, writes the next edit as
   schema 3 and rejects a mismatched `schema_version`.
+
+## Acceptance evidence for P1
+
+- `frontend/src/features/native-dataviz/dashboard/frame.test.ts`: frame scale,
+  reading, tab and phone order, snapping (a legacy cell snaps to itself),
+  resize, clamp, keyboard nudge, connector paths, theme radius, unscaled
+  padding and the `elements.arrange` inverse.
+- `qa-editor.test.tsx`, `qa-editor-a11y.test.tsx`, `qa-canvas.test.tsx`,
+  `editor.test.tsx` and `presence.test.tsx` run the editor on the frame:
+  pointer drag and resize with eight handles, keyboard moves and their
+  announcements, 150 items, phone column, tab order, scaled presence cursors and
+  `legacy_spacers`.
+- Screenshot parity against `main` (GridStack), with no tolerance: the five
+  `viz_dashboards_v2` fixtures, upcast and drawn at 1,200 px in light and dark,
+  are pixel-identical (10 of 10 images, 0 differing pixels). Live development
+  dashboards captured at a 1,200 px canvas match except for 1–11 colour levels
+  on the first card's title glyphs and corners (up to 0.24% of pixels, none
+  above 16 levels); `main` draws that first grid item differently from the
+  identical second one, while the frame draws both the same. Phone captures
+  differ by at most 0.03% of pixels, none above 16 levels inside the canvas.

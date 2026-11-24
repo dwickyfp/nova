@@ -119,9 +119,8 @@ describe('QA accessibility', { timeout: 30_000 }, () => {
     await page.viewport(390, 844)
     const screen = await mount(390, 844)
     await expect.poll(() => screen.container.querySelectorAll('[data-testid="kpi-value"]').length).toBe(4)
-    const grid = (screen.container.querySelector('.grid-stack') as unknown as { gridstack: { getColumn: () => number } }).gridstack
-    await expect.poll(() => grid.getColumn()).toBe(1)
-    const measure = () => [...WIDGETS, TEXT_WIDGET].map(id => screen.container.querySelector<HTMLElement>(`[gs-id="${id}"]`)!.getBoundingClientRect())
+    await expect.poll(() => screen.container.querySelector('[data-layout="phone"]')).not.toBeNull()
+    const measure = () => [...WIDGETS, TEXT_WIDGET].map(id => screen.container.querySelector<HTMLElement>(`[data-element-id="${id}"]`)!.getBoundingClientRect())
     // One column: every widget starts at the same left edge, is as wide as the others and sits below the previous one.
     await expect.poll(() => new Set(measure().map(box => Math.round(box.left))).size).toBe(1)
     await expect.poll(() => new Set(measure().map(box => Math.round(box.width))).size).toBe(1)
@@ -152,7 +151,7 @@ describe('QA accessibility', { timeout: 30_000 }, () => {
     await page.viewport(768, 1024)
     const screen = await mount(768, 1024)
     await expect.poll(() => screen.container.querySelectorAll('[data-testid="kpi-value"]').length).toBe(4)
-    const canvas = screen.container.querySelector<HTMLElement>('.grid-stack')!
+    const canvas = screen.container.querySelector<HTMLElement>('[data-canvas-frame]')!
     await tabTo(screen.getByRole('button', { name: 'Edit' }).element() as HTMLElement)
     await userEvent.keyboard('{Enter}')
     const toolbar = screen.getByRole('toolbar', { name: 'Add to dashboard' })

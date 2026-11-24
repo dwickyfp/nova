@@ -1049,3 +1049,29 @@ by a recorded decision and 3 are blocked.
   upgrade test expected schema-2 rows to omit `schema_version` from the stored
   definition; they store it as `2`. The test expectation was corrected; the
   migration and code were unchanged. All other jobs passed.
+
+## Free canvas P1 (2026-11-24)
+
+- **Built:** the frame renderer (`dashboard/frame.ts`, `dashboard/canvas.tsx`):
+  page frame scaled to fit, absolutely placed items with an SVG layer for shapes,
+  icons and connectors, reading-order DOM and tab order, a one-column phone
+  projection, pointer drag/resize with eight handles and magnetic snapping
+  (Alt/⌘ suspends it), keyboard moves, and one `elements.arrange` per gesture.
+  GridStack and its dependency are removed. Studio's artifact panel uses the
+  same editor. `/docs/dataviz/native-dashboards` and
+  `/docs/dataviz/native-documents` describe the canvas.
+- **Active:** in development on the live stack (web, query and Vite on the
+  P1 ports, signed in as alice); no LLM turns were run.
+- **Parity (local):** the five schema-2 fixtures drawn at 1,200 px are
+  pixel-identical to `main` in light and dark. Two fixes came from this run:
+  corner radii on the theme scale, and `legacy_spacers`, which the first
+  build did not draw (2.27% of pixels in the dark all-kinds fixture).
+  Padding no longer scales with the page, which had moved card titles 5 px on
+  phones. Live dashboards at 1,200 px differ only by up to 11 colour levels on
+  `main`'s first grid item (≤0.24% of pixels, none above 16 levels).
+- **Flake observed:** GRID-013 timed out once in a full frontend run; the file
+  then passed 32/32 twice and the test alone 3/3. Recorded, not retried away.
+- **Gates (local, on `e856caa3` + P1):** frontend lint (0 errors), build,
+  bundle budget (159.7/175 kB largest chunk, 677.1/690 kB first load),
+  licenses, component schemas and 236 files / 2,027 tests with coverage pass.
+  No backend file changed.
