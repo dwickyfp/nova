@@ -59,7 +59,10 @@ def semantic_plan_schema() -> dict[str, Any]:
                         "field": {"type": "string"},
                         "operator": {
                             "type": "string",
-                            "enum": ["=", "!=", ">", ">=", "<", "<=", "IN", "LIKE"],
+                            "enum": [
+                                "=", "!=", ">", ">=", "<", "<=", "IN", "NOT IN", "LIKE",
+                                "IS NULL", "IS NOT NULL",
+                            ],
                         },
                         "value": {
                             "type": ["string", "number", "boolean", "null", "array"],
@@ -139,11 +142,14 @@ def validate_generated_plan(value: dict[str, Any]) -> None:
         paths = ", ".join(error.path for error in errors[:8])
         raise SemanticPlanError(f"Generated plan violates its schema at: {paths}.")
     for item in value["filters"]:
-        if item["operator"] == "IN":
+        if item["operator"] in {"IN", "NOT IN"}:
             if not isinstance(item["value"], list) or not item["value"]:
-                raise SemanticPlanError("IN requires a non-empty list of literal values.")
+                raise SemanticPlanError(
+                    f"{item['operator']} requires a non-empty list of literal values.")
         elif isinstance(item["value"], list):
-            raise SemanticPlanError("A list of filter values requires IN.")
+            raise SemanticPlanError("A list of filter values requires IN or NOT IN.")
+        elif item["operator"] in {"IS NULL", "IS NOT NULL"} and item["value"] is not None:
+            raise SemanticPlanError(f"{item['operator']} takes no value; use null.")
     time = value.get("time")
     if isinstance(time, dict) and time.get("range"):
         from app.modules.agents.semantic.time_ranges import (

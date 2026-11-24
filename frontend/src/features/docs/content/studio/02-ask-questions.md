@@ -154,6 +154,9 @@ AI model work the answer used.
   whose shipping city is Bandung. If a combination of conditions matches no
   record, the agent says so, then gives the figure without the condition that
   left nothing, labelled as such.
+- **Records with or without a value**: "orders that have a customer" or
+  "orders with no shipping city" count the records where that value is filled
+  in, or left empty.
 - **A table the agent cannot use**: if you name a table or schema that this
   agent does not use, such as `analytics.sales`, the agent says first that it
   is not available here. Any figure it gives instead names the data it came
