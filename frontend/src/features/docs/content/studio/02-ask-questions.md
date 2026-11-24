@@ -178,6 +178,12 @@ What stays in place:
 - Every tool call is recorded in the audit log under your name and role, with
   its inputs (passwords, tokens and keys are hidden).
 
+When the agent schedules an automation, for example "Send a revenue summary
+every morning at 7", the answer states only the next run and the time zone
+that Nova's scheduler returned, for example 07:00 in Asia/Jakarta. If the
+schedule could not be created, the answer says "Nothing was scheduled." and
+why. Each run appears in **History**.
+
 A scheduled automation runs with nobody there, so it only reads: it answers
 from data and can call an outside tool whose server says it only reads, but it
 never takes an action, calls any other outside tool, or schedules another

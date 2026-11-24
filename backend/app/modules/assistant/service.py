@@ -977,6 +977,8 @@ class AssistantLoop:
         dashboard_receipts: list[dict[str, Any]] = []
         #: Capabilities that ran in this turn and failed (not ones the model skipped).
         failed_capabilities: set[str] = set()
+        #: The last short, redacted reason each tool failed with this turn.
+        failure_reasons: dict[str, str] = {}
         composing_final = False
         #: The page layout the current iteration is writing, published as it streams.
         live_layout: Any = None
@@ -1947,6 +1949,14 @@ class AssistantLoop:
                         "Turn incomplete: required %s not run (intent %s)",
                         sorted(missing_required), route.intent.value,
                     )
+                    not_done = _not_done_text(
+                        missing_required, failure_reasons, self._registry,
+                        _turn_language(context),
+                    )
+                    if not_done:
+                        # The model's draft is not shown here; an action that failed
+                        # is said in Nova's words, with its reason, instead of nothing.
+                        yield events.text_delta(not_done)
                     yield events.error(
                         "required_capability_incomplete",
                         "The required capability was not executed, so Nova cannot "
@@ -2931,6 +2941,9 @@ class AssistantLoop:
                 )
                 _finish_tool_step(context, "failed", outcome.error)
                 failed_capabilities.add(invocation.tool_name)
+                failure_reasons[invocation.tool_name] = failure_reason(
+                    outcome.error, outcome.error_class,
+                ) or ""
                 terminal = (outcome.error_class or "").upper() in {
                     "PERMISSION_DENIED",
                     "AUTHORIZATION_FAILURE",
@@ -2993,6 +3006,14 @@ class AssistantLoop:
                     _transition(context, TurnState.FAILED)
                     yield events.done(str(uuid4()), finish_reason="error")
                     return
+                if getattr(tool, "not_done_message", None):
+                    # An action that did not happen is said plainly, with its reason.
+                    not_done = _not_done_text(
+                        [invocation.tool_name], failure_reasons, self._registry,
+                        _turn_language(context),
+                    )
+                    if not_done:
+                        yield events.text_delta(not_done)
                 yield events.error("tool_failed", outcome.error or "The tool call failed.")
                 _transition(context, TurnState.FAILED)
                 yield events.done(str(uuid4()), finish_reason="error")
@@ -5276,6 +5297,19 @@ def _chosen_tools_phrase(lookup: Any, names: Iterable[str]) -> str:
         _tool_label(lookup(name), name) if name.startswith("mcp_") else name
         for name in names
     )
+
+
+def _not_done_text(
+    missing: Any, reasons: dict[str, str], registry: Any, language: str,
+) -> str | None:
+    """Nova's sentence for a required step that failed, with its short reason."""
+    failed = [name for name in sorted(missing) if name in reasons]
+    if not failed:
+        return None
+    name = failed[0]
+    message = getattr(registry.get(name), "not_done_message", None) or "loop.not_done"
+    reason = reasons[name] or "The step could not be completed."
+    return say(message, language, reason=reason).strip()
 
 
 def _tool_label(tool: Any, name: str) -> str:

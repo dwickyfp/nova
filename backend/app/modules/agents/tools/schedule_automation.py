@@ -56,6 +56,8 @@ class ScheduleAutomationTool:
     #: loop audits it); an unattended run can never schedule another automation.
     classification: ToolClassification = "destructive"
     requires_consent = True
+    #: What Nova says when the turn ends without this step succeeding.
+    not_done_message = "loop.not_scheduled"
 
     def preview(self, invocation: ToolInvocation) -> str:
         args = invocation.arguments or {}
@@ -91,16 +93,43 @@ class ScheduleAutomationTool:
                 ok=False, summary="", error=str(exc)[:300], error_class="INVALID_TOOL_ARGUMENTS",
                 recoverable=True, safe_detail=str(exc)[:300],
             )
+        timezone = str(created.get("timezone") or body.timezone)
+        next_utc, next_local = _next_run_times(created.get("next_run_at"), timezone)
         return ToolOutcome(
             ok=True,
             summary=(
-                f"Scheduled '{created['title']}'. Next run: {created['next_run_at']} UTC. "
-                "Each run appears in Studio history."
+                f"Scheduled '{created['title']}'. Schedule time zone: {timezone}. "
+                f"Next run: {next_local} ({timezone}), which is {next_utc} UTC. "
+                "Each run appears in Studio history. State only this next run and this "
+                "time zone; do not work out other dates or zones."
             ),
             data={"automation_id": created["automation_id"],
-                  "next_run_at": str(created["next_run_at"])},
+                  "next_run_at": next_utc, "next_run_local": next_local,
+                  "timezone": timezone},
             metadata={"evidence_kind": "action"},
         )
+
+
+def _next_run_times(value: Any, timezone: str) -> tuple[str, str]:
+    """The scheduler's next run as ISO UTC and as wall time in the schedule's zone."""
+    from datetime import UTC, datetime
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value)
+        except ValueError:
+            return value, value
+    if not isinstance(value, datetime):
+        return str(value), str(value)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    utc = value.astimezone(UTC)
+    try:
+        local = utc.astimezone(ZoneInfo(timezone))
+    except (ZoneInfoNotFoundError, ValueError):
+        local = utc
+    return utc.isoformat(), local.strftime("%Y-%m-%d %H:%M")
 
 
 schedule_automation_tool = ScheduleAutomationTool()
