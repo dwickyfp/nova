@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from tests.benchmark.studio_capability import settings
+from tests.benchmark.studio_capability.checks import outcome_matches
 from tests.benchmark.studio_capability.judge import DIMENSIONS
 
 LABEL_ID = {"accuracy": "Akurasi", "intelligence": "Kecerdasan", "ui": "UI",
@@ -437,6 +438,22 @@ def _by_unit(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return {r["id"]: r for r in rows}
 
 
+# Outcome as the server reports it in ``run.finished.finish_reason``. Kept beside the
+# text-based outcome (not replacing it) so a comparison with an older run stays fair.
+FINISH_OUTCOMES = {"out_of_scope": "limitation", "clarification": "clarify",
+                   "denied": "refuse", "required_capability_unavailable": "limitation",
+                   "required_capability_incomplete": "error"}
+
+
+def reported_outcome_ok(checks: dict[str, Any]) -> bool:
+    """Whether the finish reason (falling back to the detected outcome) is right."""
+    detected = FINISH_OUTCOMES.get(str(checks.get("finish_reason") or ""), checks["outcome"])
+    if checks["outcome"] in {"error", "cancelled"}:
+        detected = checks["outcome"]
+    return outcome_matches(str(checks.get("expected_outcome") or "answer"), detected,
+                           checks.get("clarify_mode"))
+
+
 def _category_stats(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
@@ -447,6 +464,8 @@ def _category_stats(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
         out[category] = {
             "n": len(members),
             "outcome_ok": _mean([float(r["checks"]["outcome_ok"]) for r in members]),
+            "outcome_reported_ok": _mean([float(reported_outcome_ok(r["checks"]))
+                                          for r in members]),
             "errors": sum(r["checks"]["outcome"] == "error" for r in members),
             **{d: _mean([r["judgment"]["final"][d] for r in judged]) for d in DIMENSIONS},
         }
@@ -460,7 +479,7 @@ def compare(current: list[dict[str, Any]], baseline: list[dict[str, Any]]) -> di
     for category in sorted(set(now) | set(before)):
         a, b = before.get(category, {}), now.get(category, {})
         row: dict[str, Any] = {"category": category, "n": b.get("n", 0)}
-        for key in ("outcome_ok", "errors", *DIMENSIONS):
+        for key in ("outcome_ok", "outcome_reported_ok", "errors", *DIMENSIONS):
             old, new = a.get(key), b.get(key)
             row[key] = {"baseline": old, "now": new,
                         "delta": round(new - old, 2) if isinstance(old, int | float)
@@ -501,13 +520,18 @@ def write_comparison(out: Path, result: dict[str, Any], baseline_dir: Path) -> P
 
     lines = ["# Perbandingan dengan baseline", "",
              f"Baseline: `{baseline_dir}` ({result['units']['baseline']} giliran); "
-             f"sekarang: {result['units']['now']} giliran. Korpus dan model sama.", "",
-             "| Kategori | n | Hasil benar | Δ | Error | Δ | Akurasi | Δ | Kecerdasan | Δ | UI | Δ "
+             f"sekarang: {result['units']['now']} giliran. Korpus dan model sama. "
+             "“Hasil benar” memakai deteksi teks yang sama dengan baseline; “Hasil "
+             "(finish_reason)” membaca alasan selesai dari server (out_of_scope, "
+             "clarification, denied, required_capability_*) dan dihitung ulang untuk "
+             "kedua run.", "",
+             "| Kategori | n | Hasil benar | Δ | Hasil (finish_reason) | Δ | Error | Δ "
+             "| Akurasi | Δ | Kecerdasan | Δ | UI | Δ "
              "| Proses | Δ | Keamanan | Δ |",
-             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for row in result["categories"]:
         cells = [row["category"], str(row["n"])]
-        for key in ("outcome_ok", "errors", *DIMENSIONS):
+        for key in ("outcome_ok", "outcome_reported_ok", "errors", *DIMENSIONS):
             cells += [_fmt(row[key]["now"]), delta(row[key])]
         lines.append("| " + " | ".join(cells) + " |")
     lines += ["", "## Latensi p50 (detik)", "", "| Ukuran | Baseline | Sekarang |", "|---|---|---|"]

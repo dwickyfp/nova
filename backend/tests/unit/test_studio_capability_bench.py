@@ -292,3 +292,14 @@ def test_comparison_reports_category_deltas_and_changed_outcomes(tmp_path: Path)
     assert row["accuracy"]["delta"] == 1.5  # the turn and its fresh twin share a category
     page = report.write_comparison(now, result, base).read_text()
     assert "Perbandingan dengan baseline" in page and "`number-001`" in page
+
+
+def test_reported_outcome_reads_the_finish_reason() -> None:
+    base = {"outcome": "answer", "expected_outcome": "limitation", "clarify_mode": None}
+    assert report.reported_outcome_ok({**base, "finish_reason": "out_of_scope"})
+    assert report.reported_outcome_ok({**base, "expected_outcome": "clarify",
+                                       "finish_reason": "clarification"})
+    assert not report.reported_outcome_ok({**base, "outcome": "error",
+                                           "finish_reason": "out_of_scope"})
+    assert report.reported_outcome_ok({**base, "expected_outcome": "answer",
+                                       "finish_reason": "stop"})
