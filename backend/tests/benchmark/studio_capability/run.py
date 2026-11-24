@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -87,7 +88,7 @@ def hitl_policy(unit: dict[str, Any]):  # noqa: ANN201 - returns a client.HitlPo
 # ── one unit ───────────────────────────────────────────────────────────
 
 #: Back-off after the model gateway refuses a turn (usage limits reset in minutes).
-OUTAGE_WAIT_S = 300
+OUTAGE_WAIT_S = int(os.environ.get("NOVA_BENCH_OUTAGE_WAIT_S", "300"))
 
 
 def _resolved(unit: dict[str, Any], aliases: dict[str, str]) -> dict[str, Any]:
