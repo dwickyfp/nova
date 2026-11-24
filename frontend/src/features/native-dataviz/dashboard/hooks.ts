@@ -17,9 +17,9 @@ export function chartDocumentQuery(epoch: number, chartId: string, revision: num
   }
 }
 
-export function useChartDocument(chartId: string, revision: number, draft: boolean) {
+export function useChartDocument(chartId: string, revision: number, draft: boolean, enabled = true) {
   const epoch = useAuthStore(state => state.securityEpoch)
-  return useQuery(chartDocumentQuery(epoch, chartId, revision, draft))
+  return useQuery({ ...chartDocumentQuery(epoch, chartId, revision, draft), enabled })
 }
 
 export type DashboardEntry = DocumentSummary & { editable: boolean; space: WorkspaceSpace }

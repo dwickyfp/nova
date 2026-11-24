@@ -4,10 +4,11 @@ import type {
 } from '../contracts'
 
 /**
- * Schema-3 pages are a free canvas. Until the canvas renderer replaces the
- * grid editor, the editor reads each page as 12-column grid widgets and sends
- * grid operations, which the server applies to the canvas. This module mirrors
- * the server's upcaster (backend/app/modules/viz/canvas.py) exactly.
+ * Schema-3 pages are a free canvas, drawn by the frame renderer (canvas.tsx,
+ * frame.ts). This module mirrors the server's upcaster
+ * (backend/app/modules/viz/canvas.py) exactly, and keeps the 12-column cell
+ * view that grid-speaking callers (adding, duplicating, replacing widgets and
+ * the export) still use; the server applies those changes to the canvas.
  */
 export type Page = DashboardDefinition['pages'][number]
 export type Element = NonNullable<Page['elements']>[number]
@@ -76,34 +77,36 @@ export function appearanceOf(style: ElementStyle = {}): WidgetAppearance {
   return { surface: style.fill ? 'card' : 'transparent', border: Boolean(style.stroke), padding: padding ?? 'compact' }
 }
 
+/** One element as a grid widget, or null for kinds a grid cannot show. */
+export function widgetOf(element: Element, grid: Grid = LEGACY_GRID, width = LEGACY_WIDTH): Widget | null {
+  const base = {
+    widget_id: element.element_id, layout: cellOf(element.geometry, grid, width),
+    locked: element.locked ?? false, appearance: appearanceOf(element.style),
+  }
+  switch (element.kind) {
+    case 'visual':
+      return { ...base, kind: 'chart', title: element.title ?? '', chart_ref: element.chart_ref,
+        style: element.overrides ?? {}, filters: element.filters ?? null }
+    case 'text': {
+      const text = (element.text?.runs ?? []).map(run => 'text' in run ? run.text : '').join('')
+      return { ...base, kind: 'text', title: element.title ?? '', text, style: element.role === 'title' ? 'title' : 'body' }
+    }
+    case 'image':
+      return { ...base, kind: 'image', title: element.title ?? '', asset_id: element.asset_id, alt: element.alt, fit: element.fit }
+    case 'filter':
+      return { ...base, kind: 'filter', title: element.title ?? '', filter_id: element.filter_id }
+    default:
+      return null
+  }
+}
+
 /** The page as grid widgets, in stacking order, then spacers (server: ``legacy_widgets``). */
 export function gridWidgets(page: Page): Widget[] {
   const { grid, width } = gridOf(page)
   const widgets: Widget[] = []
   for (const element of page.elements ?? []) {
-    const base = {
-      widget_id: element.element_id, layout: cellOf(element.geometry, grid, width),
-      locked: element.locked ?? false, appearance: appearanceOf(element.style),
-    }
-    switch (element.kind) {
-      case 'visual':
-        widgets.push({ ...base, kind: 'chart', title: element.title ?? '', chart_ref: element.chart_ref,
-          style: element.overrides ?? {}, filters: element.filters ?? null })
-        break
-      case 'text': {
-        const text = (element.text?.runs ?? []).map(run => 'text' in run ? run.text : '').join('')
-        widgets.push({ ...base, kind: 'text', title: element.title ?? '', text,
-          style: element.role === 'title' ? 'title' : 'body' })
-        break
-      }
-      case 'image':
-        widgets.push({ ...base, kind: 'image', title: element.title ?? '', asset_id: element.asset_id,
-          alt: element.alt, fit: element.fit })
-        break
-      case 'filter':
-        widgets.push({ ...base, kind: 'filter', title: element.title ?? '', filter_id: element.filter_id })
-        break
-    }
+    const widget = widgetOf(element, grid, width)
+    if (widget) widgets.push(widget)
   }
   for (const spacer of page.legacy_spacers ?? []) {
     widgets.push({ widget_id: spacer.element_id, layout: cellOf(spacer.geometry, grid, width), kind: 'spacer',

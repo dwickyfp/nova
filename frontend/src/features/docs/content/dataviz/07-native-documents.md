@@ -195,6 +195,14 @@ The grid is only a guide for placing items. Its settings (number of columns,
 gutter, margin, row height, and whether it is shown and items snap to it) are
 saved with the page.
 
+The dashboard editor draws every item at its saved position, scaled with the
+page to fit the window. Shapes, icons and connector lines are drawn as vectors.
+A connector whose end item no longer exists is not drawn. Notes attached to a
+data point, connector ends on a data point, and values read from a chart's
+result are not shown yet: such a note and line are hidden, and such a value
+shows a dash. On a phone, the page shows its charts, filters, text, images and
+labelled icons in one column, in its phone order, then in reading order.
+
 Dashboards saved before canvases existed used a grid of 12 columns. Nova keeps
 those saved versions exactly as they are and reads them as canvas pages 1,200
 pixels wide that scroll down; every chart keeps its place and size. Integrations

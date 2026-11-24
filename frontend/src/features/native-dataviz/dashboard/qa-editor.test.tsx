@@ -5,11 +5,11 @@ import { cdp, page, userEvent } from 'vitest/browser'
 import { cleanup, render } from 'vitest-browser-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAuthStore } from '@/stores/auth-store'
-import type { ChartDefinition, DashboardDefinitionV2, DatasetField } from '../contracts'
+import type { ChartDefinition, DashboardDefinitionV2, DatasetField, Geometry } from '../contracts'
 import { initialState, toChart } from '../charts/builder-model'
 import { DashboardEditor } from './editor'
 import { NATIVE_DASHBOARD_ACTIVITY, NATIVE_DASHBOARD_CHANGED, NATIVE_DASHBOARD_OPEN, type LinkedSelection, type NativeDashboardActivity, type NativeDashboardOpen } from './events'
-import { upcastDashboard } from './layout'
+import { cellOf, upcastDashboard } from './layout'
 import '@/styles/index.css'
 
 /*
@@ -125,6 +125,12 @@ function commit(changes: Json[]) {
         if (widget) widget.layout = { ...placement.layout }
       }
     }
+    if (change.op === 'elements.arrange' && target) {
+      for (const placement of change.placements as { element_id: string; geometry: Geometry }[]) {
+        const widget = target.widgets.find(item => item.widget_id === placement.element_id)
+        if (widget) widget.layout = cellOf(placement.geometry)
+      }
+    }
     if (change.op === 'widget.add' && target) target.widgets.push(clone(change.widget as WidgetJson))
     if (change.op === 'widget.remove' && target) target.widgets = target.widgets.filter(item => item.widget_id !== change.widget_id)
   }
@@ -207,32 +213,35 @@ function setWidgets(widgets: WidgetJson[]) {
   definition.pages = [{ page_id: PAGE, title: 'Overview', widgets }]
 }
 
-type Grid = { getColumn: () => number; engine: { nodes: { id?: string; x?: number; y?: number; w?: number; h?: number }[] } }
-const gridOf = (root: ParentNode = document) => (root.querySelector('.grid-stack') as unknown as { gridstack: Grid }).gridstack
-const item = (id: string, root: ParentNode = document) => root.querySelector<HTMLElement>(`[gs-id="${id}"]`)!
+const item = (id: string, root: ParentNode = document) => root.querySelector<HTMLElement>(`[data-element-id="${id}"]`)!
+/** The 12-column cell an item is drawn at, read back from its pixels on screen. */
 const geometry = (id: string, root: ParentNode = document) => {
   const element = item(id, root)
-  return { x: Number(element.getAttribute('gs-x') ?? 0), y: Number(element.getAttribute('gs-y') ?? 0),
-    w: Number(element.getAttribute('gs-w') ?? 1), h: Number(element.getAttribute('gs-h') ?? 1) }
+  const frameBox = element.closest('[data-canvas-frame]')!.getBoundingClientRect()
+  const box = element.getBoundingClientRect()
+  const scale = frameBox.width / 1200
+  return cellOf({ x: (box.left - frameBox.left) / scale, y: (box.top - frameBox.top) / scale, w: box.width / scale, h: box.height / scale, rotation: 0 })
 }
 const frame = (screen: Awaited<ReturnType<typeof mount>>) => screen.getByTestId('frame').element() as HTMLElement
+const canvasMode = (root: ParentNode = document) => root.querySelector<HTMLElement>('.nova-dataviz-canvas')?.dataset.mode
 
-/** Presses, moves and releases the mouse on a widget, the way GridStack drags start. */
-async function mouseDrag(target: HTMLElement, dx: number, dy: number) {
+/** Presses, moves and releases a pointer on an item, the way a person drags it. */
+async function pointerDrag(target: HTMLElement, dx: number, dy: number) {
   const box = target.getBoundingClientRect()
   const x = box.left + box.width / 2
   const y = box.top + 12
-  const init = (cx: number, cy: number, buttons: number): MouseEventInit => ({ bubbles: true, cancelable: true, clientX: cx, clientY: cy, button: 0, buttons, view: window })
-  target.dispatchEvent(new MouseEvent('mousedown', init(x, y, 1)))
+  const init = (cx: number, cy: number, buttons: number): PointerEventInit => ({ bubbles: true, cancelable: true, clientX: cx, clientY: cy,
+    button: 0, buttons, pointerId: 1, pointerType: 'mouse', isPrimary: true, view: window })
+  target.dispatchEvent(new PointerEvent('pointerdown', init(x, y, 1)))
   for (let step = 1; step <= 12; step += 1) {
-    document.dispatchEvent(new MouseEvent('mousemove', init(x + dx * step / 12, y + dy * step / 12, 1)))
+    document.dispatchEvent(new PointerEvent('pointermove', init(x + dx * step / 12, y + dy * step / 12, 1)))
     await wait(16)
   }
-  document.dispatchEvent(new MouseEvent('mouseup', init(x + dx, y + dy, 0)))
+  document.dispatchEvent(new PointerEvent('pointerup', init(x + dx, y + dy, 0)))
   await wait(300)
 }
 
-const visibleResizeHandles = (root: ParentNode = document) => [...root.querySelectorAll<HTMLElement>('.ui-resizable-handle')]
+const visibleResizeHandles = (root: ParentNode = document) => [...root.querySelectorAll<HTMLElement>('[data-handle]')]
   .filter(handle => handle.getBoundingClientRect().width > 0 && getComputedStyle(handle).display !== 'none')
 
 type Instance = NonNullable<ReturnType<typeof getInstanceByDom>>
@@ -321,14 +330,14 @@ describe('QA grid', { timeout: 30_000 }, () => {
     const width = chart.getWidth()
     const height = chart.getHeight()
 
-    // A committed resize of the bar chart (keyboard resize goes through layout.apply).
+    // A committed resize of the bar chart: one column wider, then one baseline row taller.
     await screen.getByRole('heading', { name: 'Revenue by region' }).click()
     await userEvent.keyboard('{Alt>}{Shift>}{ArrowRight}{/Shift}{/Alt}')
     await userEvent.keyboard('{Alt>}{Shift>}{ArrowDown}{/Shift}{/Alt}')
     await expect.poll(() => operations.length).toBe(2)
-    expect(operations[1]).toMatchObject({ changes: [{ op: 'layout.apply', placements: expect.arrayContaining([
-      { widget_id: BAR_WIDGET, layout: { x: 3, y: 0, w: 7, h: 4 } },
-    ]) }] })
+    expect(operations[1]).toMatchObject({ changes: [{ op: 'elements.arrange', placements: [
+      { element_id: BAR_WIDGET, geometry: { x: 306, y: 6, w: 688, h: 212, rotation: 0 } },
+    ] }] })
     // ECharts follows its container: the same drawing is resized in place.
     await expect.poll(() => chart.getWidth()).toBeGreaterThan(width)
     await expect.poll(() => chart.getHeight()).toBeGreaterThan(height)
@@ -353,12 +362,15 @@ describe('QA grid', { timeout: 30_000 }, () => {
     await screen.getByRole('button', { name: 'Edit' }).click()
     await expect.element(screen.getByRole('toolbar', { name: 'Add to dashboard' })).toBeVisible()
     frame(screen).style.width = '400px'
-    await expect.poll(() => gridOf().getColumn()).toBe(1)
-    await expect.element(screen.getByText('Widen the window to move or resize widgets.', { exact: false })).toBeVisible()
-    expect(geometry(KPI_WIDGET).x).toBe(0)
-    expect(geometry(TEXT_WIDGET).x).toBe(0)
+    await expect.poll(() => document.querySelector('[data-layout="phone"]')).not.toBeNull()
+    await expect.element(screen.getByText('Widen the window to move or resize items.', { exact: false })).toBeVisible()
+    // One column: both items start at the same left edge and are as wide.
+    const kpiBox = item(KPI_WIDGET).getBoundingClientRect()
+    const textBox = item(TEXT_WIDGET).getBoundingClientRect()
+    expect([Math.round(kpiBox.left), Math.round(kpiBox.width)]).toEqual([Math.round(textBox.left), Math.round(textBox.width)])
+    expect(textBox.top).toBeGreaterThanOrEqual(kpiBox.bottom - 1)
     frame(screen).style.width = '1200px'
-    await expect.poll(() => gridOf().getColumn()).toBe(12)
+    await expect.poll(() => document.querySelector('[data-layout="frame"]')).not.toBeNull()
     await expect.poll(() => [geometry(KPI_WIDGET), geometry(TEXT_WIDGET)]).toEqual([{ x: 0, y: 0, w: 3, h: 2 }, { x: 3, y: 0, w: 9, h: 2 }])
     await wait(500)
     expect(operations).toHaveLength(0)
@@ -423,10 +435,11 @@ describe('QA grid', { timeout: 30_000 }, () => {
     await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
     await screen.getByRole('button', { name: 'Edit' }).click()
     const source = screen.getByRole('toolbar', { name: 'Add to dashboard' }).getByRole('button', { name: 'Text' }).element() as HTMLElement
-    const canvas = document.querySelector<HTMLElement>('.nova-dataviz-canvas')!
+    const canvas = document.querySelector<HTMLElement>('[data-canvas-frame]')!
     const box = canvas.getBoundingClientRect()
+    const scale = box.width / 1200
     // The middle of the cell in column 5, row 4 (0-based), below the existing widgets.
-    const at = { clientX: box.left + (5.5 * box.width) / 12, clientY: box.top + 4.5 * 72 }
+    const at = { clientX: box.left + (5.5 * box.width) / 12, clientY: box.top + 4.5 * 72 * scale }
     const transfer = new DataTransfer()
     source.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: transfer }))
     canvas.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: transfer, ...at }))
@@ -454,18 +467,20 @@ describe('QA grid', { timeout: 30_000 }, () => {
     await screen.getByRole('button', { name: 'Edit' }).click()
     const toolbar = screen.getByRole('toolbar', { name: 'Add to dashboard' })
     const source = toolbar.getByRole('button', { name: 'KPI' }).element() as HTMLElement
-    const canvas = document.querySelector<HTMLElement>('.nova-dataviz-canvas')!
+    const canvas = document.querySelector<HTMLElement>('[data-canvas-frame]')!
     const box = canvas.getBoundingClientRect()
+    const scale = box.width / 1200
     const transfer = new DataTransfer()
     source.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: transfer }))
-    const at = { clientX: box.left + (8.5 * box.width) / 12, clientY: box.top + 3.5 * 72 }
+    const at = { clientX: box.left + (8.5 * box.width) / 12, clientY: box.top + 3.5 * 72 * scale }
     canvas.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: transfer, ...at }))
     const preview = screen.getByTestId('drop-preview')
     await expect.element(preview).toBeInTheDocument()
     // A KPI is three columns by two rows, placed at the cell under the pointer.
     const shown = (preview.element() as HTMLElement).style
-    expect([parseFloat(shown.left), parseFloat(shown.width)]).toEqual([expect.closeTo(800 / 12, 3), 25])
-    expect([shown.top, shown.height]).toEqual([`${3 * 72}px`, `${2 * 72}px`])
+    // Drawn as the KPI's own cell: column 8 (0-based), three columns wide, at row 3, two rows tall.
+    expect([parseFloat(shown.left), parseFloat(shown.width)].map(value => value / scale)).toEqual([expect.closeTo(806, 1), expect.closeTo(288, 1)])
+    expect([parseFloat(shown.top), parseFloat(shown.height)].map(value => value / scale)).toEqual([expect.closeTo(222, 1), expect.closeTo(132, 1)])
     canvas.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer, ...at }))
     await expect.element(page.getByRole('heading', { name: 'New chart' })).toBeVisible()
     expect(operations).toHaveLength(0)
@@ -523,34 +538,34 @@ describe('QA grid', { timeout: 30_000 }, () => {
     publicationId = '99999999-0000-4000-8000-000000000001'
     const screen = await mount()
     await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
-    const grid = screen.container.querySelector<HTMLElement>('.grid-stack')!
-    expect(grid.dataset.mode).toBe('view')
-    expect(grid.classList).toContain('grid-stack-static')
+    expect(canvasMode()).toBe('view')
     await userEvent.hover(item(KPI_WIDGET))
     expect(visibleResizeHandles()).toHaveLength(0)
-    await mouseDrag(item(KPI_WIDGET).querySelector<HTMLElement>('.grid-stack-item-content')!, 320, 0)
+    await pointerDrag(item(KPI_WIDGET), 320, 0)
     expect(geometry(KPI_WIDGET)).toEqual({ x: 0, y: 0, w: 3, h: 2 })
     expect(operations).toHaveLength(0)
 
     // The same drag in Edit mode does move and save, so the gesture above was real.
     await screen.getByRole('button', { name: 'Edit' }).click()
-    await expect.poll(() => grid.classList.contains('grid-stack-static')).toBe(false)
-    await userEvent.hover(item(TEXT_WIDGET))
-    await userEvent.hover(item(KPI_WIDGET))
-    await expect.poll(() => visibleResizeHandles(item(KPI_WIDGET)).length).toBeGreaterThan(0)
-    await mouseDrag(item(KPI_WIDGET).querySelector<HTMLElement>('.grid-stack-item-content')!, 320, 0)
+    await expect.poll(() => canvasMode()).toBe('edit')
+    await userEvent.click(item(KPI_WIDGET))
+    // The selected item shows its eight resize handles.
+    await expect.poll(() => visibleResizeHandles(item(KPI_WIDGET)).length).toBe(8)
+    await pointerDrag(item(KPI_WIDGET), 320, 0)
     await expect.poll(() => operations.length).toBe(1)
-    expect(operations[0]).toMatchObject({ changes: [{ op: 'layout.apply' }] })
+    expect(operations[0]).toMatchObject({ changes: [{ op: 'elements.arrange', placements: [{ element_id: KPI_WIDGET }] }] })
     expect(geometry(KPI_WIDGET).x).toBeGreaterThan(0)
+    // Snapping kept the move on the page grid's 8-pixel baseline, measured from its margin.
+    const saved = (operations[0].changes as { placements: { geometry: Geometry }[] }[])[0].placements[0].geometry
+    expect([(saved.x - 6) % 8, (saved.y - 6) % 8, saved.w, saved.h]).toEqual([0, 0, 288, 132])
 
-    // Back in View mode the grid is static again.
+    // Back in View mode nothing can be dragged again.
     await screen.getByRole('button', { name: 'Done' }).click()
-    await expect.poll(() => grid.classList.contains('grid-stack-static')).toBe(true)
-    await userEvent.hover(item(TEXT_WIDGET))
+    await expect.poll(() => canvasMode()).toBe('view')
     await userEvent.hover(item(KPI_WIDGET))
     expect(visibleResizeHandles()).toHaveLength(0)
     const x = geometry(KPI_WIDGET).x
-    await mouseDrag(item(KPI_WIDGET).querySelector<HTMLElement>('.grid-stack-item-content')!, -320, 0)
+    await pointerDrag(item(KPI_WIDGET), -320, 0)
     expect(geometry(KPI_WIDGET).x).toBe(x)
     expect(operations).toHaveLength(1)
   })
@@ -572,19 +587,17 @@ describe('QA filters and interactions', { timeout: 30_000 }, () => {
     const barQueries = () => queries().filter(call => (call.body?.dimensions as unknown[] | undefined)?.length)
     // Edit shows the draft, so the chart is read and drawn again once for it.
     await screen.getByRole('button', { name: 'Edit' }).click()
-    const grid = screen.container.querySelector<HTMLElement>('.grid-stack')!
-    await expect.poll(() => grid.classList.contains('grid-stack-static')).toBe(false)
+    await expect.poll(() => canvasMode()).toBe('edit')
     await expect.poll(() => barQueries().some(call => call.body?.draft === true)).toBe(true)
     const { host, chart } = await echartsIn(BAR_WIDGET)
     await wait(500)
     const before = barQueries().length
 
-    await userEvent.hover(item(BAR_WIDGET))
-    await mouseDrag(item(BAR_WIDGET).querySelector<HTMLElement>('.grid-stack-item-content')!, 0, 300)
+    await pointerDrag(item(BAR_WIDGET), 0, 300)
     await expect.poll(() => operations.length).toBe(1)
-    expect(operations[0]).toMatchObject({ changes: [{ op: 'layout.apply' }] })
+    expect(operations[0]).toMatchObject({ changes: [{ op: 'elements.arrange' }] })
     expect(geometry(BAR_WIDGET).y).toBeGreaterThan(0)
-    // GridStack moved the element; React kept the chart: same host, same live instance, no new query.
+    // The item moved; React kept the chart: same host, same live instance, no new query.
     expect(item(BAR_WIDGET).querySelector('[role="img"]')).toBe(host)
     expect(getInstanceByDom(host)).toBe(chart)
     expect(chart.getDom()).toBe(host)
@@ -1027,8 +1040,8 @@ describe('QA multiple tabs', { timeout: 40_000 }, () => {
     await expect.poll(() => operations.length).toBe(2)
     expect(refused).toHaveLength(0)
     expect(operations[1]).toMatchObject({ expected_revision: 5 })
-    const placements = (operations[1].changes as { placements: { widget_id: string }[] }[])[0].placements
-    expect(placements.map(placement => placement.widget_id)).toEqual([KPI_WIDGET])
+    const placements = (operations[1].changes as { placements: { element_id: string }[] }[])[0].placements
+    expect(placements.map(placement => placement.element_id)).toEqual([KPI_WIDGET])
     expect(definition.pages[0].widgets.map(widget => widget.widget_id)).toEqual([KPI_WIDGET])
     await B.getByRole('button', { name: 'Done' }).click()
 
@@ -1067,9 +1080,9 @@ describe('QA multiple tabs', { timeout: 40_000 }, () => {
 // ---- scale --------------------------------------------------------------------------
 
 describe('QA scale', { timeout: 90_000 }, () => {
-  it('NDV-GRID-019: a full page of 100 widgets draws only what is near the screen, queries at most 3 at a time, and accepts no 101st widget', async () => {
+  it('NDV-GRID-019: a full page of 150 items draws only what is near the screen, queries at most 3 at a time, and accepts no 151st', async () => {
     const widgets: WidgetJson[] = []
-    for (let index = 1; index <= 100; index += 1) {
+    for (let index = 1; index <= 150; index += 1) {
       const id = `cccccccc-0000-4000-8000-${String(index).padStart(12, '0')}`
       charts[id] = kpiChart(id, `Chart ${index}`, `units_${index}`)
       widgets.push(chartWidget(`ffffffff-0000-4000-8000-${String(index).padStart(12, '0')}`, id,
@@ -1093,30 +1106,30 @@ describe('QA scale', { timeout: 90_000 }, () => {
     await expect.poll(drawn, { timeout: 15_000 }).toBeGreaterThan(0)
     await wait(800)
     // Every widget is laid out; only the rows near the screen draw and query.
-    expect(screen.container.querySelectorAll('.grid-stack > .grid-stack-item')).toHaveLength(100)
+    expect(screen.container.querySelectorAll('.nova-dataviz-canvas > [data-element-id]')).toHaveLength(150)
     const first = drawn()
     expect(first).toBeLessThan(60)
-    expect(drawn() + waiting()).toBe(100)
+    expect(drawn() + waiting()).toBe(150)
     expect(queries()).toHaveLength(first)
     expect(most).toBeLessThanOrEqual(3)
 
     // Scrolling to the end draws the last widgets; each chart is still asked once.
     const scroller = screen.container.querySelector<HTMLElement>('[data-canvas-scroll]')!
-    for (let step = 0; step < 40 && waiting(); step += 1) {
+    for (let step = 0; step < 60 && waiting(); step += 1) {
       scroller.scrollTop += 600
       await wait(150)
     }
-    await expect.poll(drawn, { timeout: 30_000 }).toBe(100)
-    await expect.poll(() => queries().length, { timeout: 15_000 }).toBe(100)
-    expect(new Set(queries().map(call => measureOf(call.body))).size).toBe(100)
+    await expect.poll(drawn, { timeout: 30_000 }).toBe(150)
+    await expect.poll(() => queries().length, { timeout: 15_000 }).toBe(150)
+    expect(new Set(queries().map(call => measureOf(call.body))).size).toBe(150)
     expect(most).toBeLessThanOrEqual(3)
-    expect(document.querySelectorAll('[data-testid="kpi-value"]')).toHaveLength(100)
+    expect(document.querySelectorAll('[data-testid="kpi-value"]')).toHaveLength(150)
 
     // The page is full: nothing more can be added to it.
     await screen.getByRole('button', { name: 'Edit' }).click()
     const toolbar = screen.getByRole('toolbar', { name: 'Add to dashboard' })
     for (const name of ['Chart', 'KPI', 'Table', 'Text']) await expect.element(toolbar.getByRole('button', { name, exact: true })).toBeDisabled()
-    await expect.element(toolbar.getByText('This page has 100 widgets, the most a page can hold. Add a page for more.')).toBeVisible()
+    await expect.element(toolbar.getByText('This page has 150 items, the most a page can hold. Add a page for more.')).toBeVisible()
     expect(operations).toHaveLength(0)
   })
 
@@ -1147,11 +1160,11 @@ describe('QA scale', { timeout: 90_000 }, () => {
       await expect.poll(() => screen.container.querySelectorAll('[data-testid="kpi-value"]').length, { timeout: 15_000 }).toBe(kpis)
       await expect.poll(() => [...screen.container.querySelectorAll<HTMLElement>('[role="img"]')]
         .filter(node => getInstanceByDom(node)).length, { timeout: 15_000 }).toBe(bars)
-      expect(gridOf().engine.nodes).toHaveLength(sheet.widgets.length)
-      expect(screen.container.querySelectorAll('.grid-stack > .grid-stack-item')).toHaveLength(sheet.widgets.length)
+      const items = [...screen.container.querySelectorAll<HTMLElement>('.nova-dataviz-canvas > [data-element-id]')]
+      expect(items).toHaveLength(sheet.widgets.length)
       // Every chart on screen belongs to this page; no other page's chart is drawn.
       const ids = new Set(sheet.widgets.map(widget => widget.widget_id))
-      expect([...screen.container.querySelectorAll('.grid-stack > .grid-stack-item')].every(node => ids.has(node.getAttribute('gs-id')!))).toBe(true)
+      expect(items.every(node => ids.has(node.dataset.elementId!))).toBe(true)
       await wait(300)
       return { nodes: document.querySelectorAll('*').length, charts: document.querySelectorAll('[_echarts_instance_]').length }
     }
@@ -1339,16 +1352,15 @@ describe('QA Neva layout plan', { timeout: 40_000 }, () => {
     const started = performance.now()
     window.dispatchEvent(new CustomEvent(NATIVE_DASHBOARD_CHANGED, { detail: { dashboard_id: DASHBOARD, revision } }))
     await expect.poll(() => target.every(({ id, layout }) => {
-      const node = gridOf().engine.nodes.find(entry => entry.id === id)
-      return node?.x === layout.x && node?.y === layout.y && node?.w === layout.w && node?.h === layout.h
+      const cell = geometry(id)
+      return cell.x === layout.x && cell.y === layout.y && cell.w === layout.w && cell.h === layout.h
     }), { timeout: 10_000 }).toBe(true)
     const applied = performance.now() - started
     await wait(600)
     observer.disconnect()
     // Every widget is where the plan put it, drawn in place, after one reload.
     for (const { id, layout } of target) {
-      expect(item(id).getAttribute('gs-x')).toBe(String(layout.x))
-      expect(item(id).getAttribute('gs-y')).toBe(String(layout.y))
+      expect(geometry(id)).toEqual(layout)
     }
     const reads = calls.filter(call => call.method === 'GET' && call.url.includes(`/viz/dashboards/${DASHBOARD}`) && !call.url.includes('/events'))
     expect(reads.length).toBeGreaterThan(0)

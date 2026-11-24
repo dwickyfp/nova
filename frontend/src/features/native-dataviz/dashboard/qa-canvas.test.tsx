@@ -91,7 +91,7 @@ async function mountCanvas(width = 1000, title = '') {
   const screen = await render(<QueryClientProvider client={client}>
     <div style={{ width, height: 600, display: 'flex', flexDirection: 'column' }}>
       <DashboardCanvas definition={dashboardDefinition} page={pageWith(title)} draft={false} editing={false} selectedId={null}
-        onSelect={noop} onLayout={noop} onEditChart={noop} onDuplicate={noop} onRemove={noop}
+        onSelect={noop} onArrange={noop} onEditChart={noop} onDuplicate={noop} onRemove={noop}
         contextFor={() => BASE} onSelectValue={onSelectValue} interactive />
     </div>
   </QueryClientProvider>)
@@ -200,7 +200,8 @@ describe('NDV-A11Y-003 reduced motion', () => {
       expect(moving(container)).toEqual([])
       const { chart } = await chartOn(container, labels('year'))
       expect((chart.getOption() as { animation?: boolean }).animation).toBe(false)
-      expect(container.querySelector('.grid-stack')!.classList.contains('grid-stack-animate')).toBe(false)
+      // Items are placed, never slid: no transition on the frame's items.
+      expect(getComputedStyle(container.querySelector<HTMLElement>(`[data-element-id="${WIDGET}"]`)!).transitionDuration).toBe('0s')
       expect(moving(container)).toEqual([])
     } finally {
       await motion('no-preference')
@@ -210,7 +211,7 @@ describe('NDV-A11Y-003 reduced motion', () => {
     const { screen } = await mountCanvas()
     const { chart } = await chartOn(screen.container, labels('year'))
     expect((chart.getOption() as { animation?: boolean }).animation).not.toBe(false)
-    expect(screen.container.querySelector('.grid-stack')!.classList.contains('grid-stack-animate')).toBe(true)
+    expect(getComputedStyle(screen.container.querySelector<HTMLElement>(`[data-element-id="${WIDGET}"]`)!).transitionDuration).toBe('0s')
   })
 })
 
@@ -309,7 +310,7 @@ describe('NDV-A11Y-005 long and multi-language labels', () => {
     expect(title.getAttribute('title')).toBe(LONG_TITLE)
     expect(getComputedStyle(title).textOverflow).toBe('ellipsis')
     expect(title.scrollWidth).toBeGreaterThan(title.clientWidth)
-    const card = container.querySelector<HTMLElement>('.grid-stack-item-content')!
+    const card = container.querySelector<HTMLElement>('[data-element-body]')!
     const box = card.getBoundingClientRect()
     // Nothing drawn sticks out of the card (the screen-reader table is clipped to nothing).
     const visible = [...card.querySelectorAll<HTMLElement>('*')].filter(el => !el.closest('.sr-only'))
@@ -357,5 +358,44 @@ describe('NDV-A11Y-005 long and multi-language labels', () => {
     expect(name.getAttribute('title')).toBe(LONG_TITLE)
     expect(name.scrollHeight).toBeGreaterThan(name.clientHeight)
     expect(button.scrollWidth).toBeLessThanOrEqual(button.clientWidth)
+  })
+})
+
+describe('grid dashboard spacers', () => {
+  const SPACER = id(906)
+  const spaced = (): Page => upcastPage({ page_id: PAGE, title: 'Overview', widgets: [
+    { kind: 'chart', widget_id: WIDGET, title: '', locked: false, layout: { x: 0, y: 0, w: 4, h: 2 }, chart_ref: { chart_id: CHART, revision: 1 } },
+    { kind: 'spacer', widget_id: SPACER, layout: { x: 4, y: 7, w: 8, h: 2 } },
+  ] } as unknown as PageV2)
+
+  async function mount(editing: boolean) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    clients.push(client)
+    const noop = () => undefined
+    // 1,200 page pixels across plus the canvas padding, so the page draws at its saved size.
+    return render(<QueryClientProvider client={client}>
+      <div style={{ width: 1220, height: 900, display: 'flex', flexDirection: 'column' }}>
+        <DashboardCanvas definition={dashboardDefinition} page={spaced()} draft={false} editing={editing} selectedId={null}
+          onSelect={noop} onArrange={noop} onEditChart={noop} onDuplicate={noop} onRemove={noop} contextFor={() => BASE} onSelectValue={noop} />
+      </div>
+    </QueryClientProvider>)
+  }
+
+  it('keeps a spacer saved by the grid editor as an empty frame at its place, hidden from screen readers', async () => {
+    const screen = await mount(false)
+    const find = () => screen.container.querySelector<HTMLElement>(`[data-element-id="${SPACER}"]`)
+    await expect.poll(find).not.toBeNull()
+    const spacer = find()!
+    expect([spacer.style.left, spacer.style.top, spacer.style.width, spacer.style.height]).toEqual(['406px', '510px', '788px', '132px'])
+    expect(spacer.querySelector('[data-element-body]')).not.toBeNull()
+    expect(spacer.getAttribute('aria-hidden')).toBe('true')
+    // Stacked above the page's items, as the grid drew it.
+    const chart = screen.container.querySelector<HTMLElement>(`[data-element-id="${WIDGET}"]`)!
+    expect(Number(spacer.style.zIndex)).toBeGreaterThan(Number(chart.style.zIndex))
+  })
+
+  it('lets an editor select and move a spacer', async () => {
+    const screen = await mount(true)
+    await expect.element(screen.getByRole('group', { name: /^Spacer, press Alt and an arrow key to move it$/ })).toBeVisible()
   })
 })

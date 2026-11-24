@@ -9,7 +9,7 @@ import { capacityRetry, MAX_CONCURRENT_QUERIES, queuedQuery } from '../charts/qu
 import { chartDataQuery, freshChartData } from '../charts/chart-data'
 import { chartContext, defaultValue, targetBinding, type FilterDefinition } from './filter-model'
 import { firstFreeSlot, gridWidgets, slotAt, upcastDashboard, validPlacements, type Widget } from './layout'
-import { applyLocal, inverse, sameLayout } from './operations'
+import { applyLocal, inverse } from './operations'
 
 const DATASET = 'aaaaaaaa-0000-4000-8000-000000000001'
 const OTHER = 'aaaaaaaa-0000-4000-8000-000000000002'
@@ -205,7 +205,8 @@ describe('layout and operations', () => {
     const before = dashboard([widget('a', 0, 0), widget('b', 6, 0)])
     const moves = [{ op: 'layout.apply' as const, page_id: 'p', placements: [{ widget_id: 'a', layout: { x: 0, y: 4, w: 6, h: 4 } }, { widget_id: 'b', layout: { x: 0, y: 0, w: 6, h: 4 } }] }]
     const after = moves.reduce(applyLocal, before)
-    expect(sameLayout(after.pages[0], moves[0].placements)).toBe(true)
+    expect(gridWidgets(after.pages[0]).map(item => ({ widget_id: item.widget_id, layout: item.layout })))
+      .toEqual(expect.arrayContaining(moves[0].placements))
     expect(applyLocal(after, inverse(moves[0], before)!)).toEqual(before)
     const removal = { op: 'widget.remove' as const, page_id: 'p', widget_id: 'a' }
     expect(gridWidgets(applyLocal(applyLocal(before, removal), inverse(removal, before)!).pages[0])).toHaveLength(2)

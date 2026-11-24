@@ -56,7 +56,7 @@ export function NevaPointer({ activity, host, short }: { activity: NevaActivity;
     const place = () => {
       const box = frame.getBoundingClientRect()
       const element = activity.widget_ids
-        .map(id => grid.querySelector<HTMLElement>(`[gs-id="${CSS.escape(id)}"]`))
+        .map(id => grid.querySelector<HTMLElement>(`[data-element-id="${CSS.escape(id)}"]`))
         .find((item): item is HTMLElement => !!item)
       if (element) {
         // On the widget's top edge, at the right, clear of its title.

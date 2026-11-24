@@ -6,7 +6,7 @@ description: Create a dashboard, add a dataset, build charts and filters, arrang
 ## What it is
 
 A **native dashboard** is a Nova dashboard made of charts, KPIs, tables and
-text on a 12-column canvas. Every chart reads a **dataset** of the dashboard
+text placed on a page. Every chart reads a **dataset** of the dashboard
 and runs its query with your sign-in and active role, so row filters and
 masks apply exactly as they do in a SQL worksheet. Each saved change becomes a
 new revision; viewers only see what you publish.
@@ -38,12 +38,12 @@ You can also build a dataset from a SQL query, with named parameters. See
 
 ## Add charts
 
-1. Go back to **Canvas** and click **Edit**. A dotted grid and the toolbar
+1. Go back to **Canvas** and click **Edit**. The page grid and the toolbar
    appear.
 2. Click **Chart**, **KPI** or **Table**. The chart panel opens on the right
-   with a live preview. To choose where it goes, drag the button onto a square
-   of the grid instead: an outline shows the space it will take, and the chart
-   is placed there when you add it. **Text** can be dragged the same way.
+   with a live preview. To choose where it goes, drag the button onto the page
+   instead: an outline shows the space it will take, and the chart is placed
+   there when you add it. **Text** can be dragged the same way.
 3. On **Configure**, type a **Chart name**, pick a visualization (KPI, Bar,
    Line, Area, Combo, Pie, Funnel, Table, Pivot, Scatter, Heatmap, Treemap,
    Flow, Histogram, Gauge or Map), and choose the fields. For a date field, **Group by**
@@ -165,27 +165,36 @@ Click **Text** to add a heading or paragraph. Text is shown exactly as typed.
 
 ## Arrange the canvas
 
-- In **Edit**, the canvas shows its grid as light squares: 12 across, filling
-  the window and a few rows below the lowest widget. A widget always covers
-  whole squares. The squares disappear when you click **Done**.
-- In **Edit**, drag a widget to move it and drag its lower-right corner to
-  resize it. Each completed move is saved as a new revision.
+Each page has a size, and the whole page is scaled to fit your window, so it
+looks the same at any width, only larger or smaller. A dashboard made before
+pages had sizes is 1,200 pixels wide and grows downwards; it scrolls as before.
+
+- In **Edit**, the page shows its grid as light bands: 12 columns with a gap
+  between them, and some room below the lowest widget to move things into. The
+  grid is only a guide and disappears when you click **Done**.
+- In **Edit**, drag a widget to move it. Click a widget to select it; drag one
+  of the eight handles on its edges and corners to resize it. While you drag,
+  edges near a column edge snap to it and everything else snaps to small
+  8-pixel steps. Hold Alt (⌥ on a Mac) or ⌘ while dragging to place it freely.
+  Press Escape during a drag to cancel it. Each completed move is saved as a
+  new revision.
+- Widgets may overlap. A widget added later is drawn on top.
 - Use **Undo** and **Redo** in the toolbar, or Ctrl+Z / Ctrl+Shift+Z
   (⌘Z / ⌘⇧Z on a Mac). Undo saves the previous layout as a new revision.
 - Select a widget, by clicking it or moving to it with Tab, and press Alt with
-  an arrow key to nudge it, or Alt+Shift with an arrow key to resize it.
+  an arrow key to nudge it, or Alt+Shift with an arrow key to resize it. Left
+  and right go to the next column; up and down move by 8 pixels.
 - Empty rows you leave between widgets stay where you put them; widgets never
   slide up on their own.
 - Open a widget's **…** menu for **Edit chart**, **Duplicate** or **Remove**.
-- Click **+** next to the page name to add a page. A page holds up to 100
-  widgets; when it is full, the add buttons are turned off and a note says
+- Click **+** next to the page name to add a page. A page holds up to 150
+  items; when it is full, the add buttons are turned off and a note says
   so. Add another page for more.
 - Click **Done** to return to the view.
 
-On a medium-width window, such as a tablet, the canvas shows six columns
-scaled from the full layout. On a phone-width window, widgets stack in one
-column. In both, the layout cannot be changed and the saved layout is kept for
-larger screens.
+On a phone-width window, the widgets stack in one column, in reading order: top
+to bottom, then left to right. The layout cannot be changed there, and the saved
+page is kept for larger screens.
 
 ## Filters and selections
 
@@ -309,12 +318,14 @@ shown exactly as written and never change the dashboard or its data.
   slice. A screen reader announces each one. Press **Enter** to do what a click
   does, and **Escape** to leave the mark.
 - When your system is set to reduce motion, charts appear without animation,
-  widgets snap into place instead of sliding, loading placeholders stay still
-  and other people's pointers jump instead of gliding.
+  loading placeholders stay still and other people's pointers jump instead of
+  gliding. Widgets never slide on their own.
+- Tab and screen readers go through the widgets in reading order: top to
+  bottom, then left to right, whatever order they were added in.
 - In **Edit**, press Tab to move from widget to widget; the focused widget is
   selected. Press **Alt** with an arrow key to move it, or **Alt** and
   **Shift** with an arrow key to resize it. A screen reader announces the new
-  position, or that another widget is in the way.
+  position and size, or that the widget is locked or cannot go further.
 - Closing the **Filters** window returns you to the button that opened it.
 - Every button, field and widget you reach with Tab shows a focus ring and has
   a name a screen reader can read. With a high-contrast theme (forced colours)

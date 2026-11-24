@@ -17,6 +17,17 @@ export function inverse(change: Change, before: DashboardDefinition): Change | n
       return { op: 'layout.apply', page_id: change.page_id, placements: gridWidgets(current).map(item =>
         ({ widget_id: item.widget_id, layout: item.layout })) }
     }
+    case 'elements.arrange': {
+      const current = page(change.page_id)
+      if (!current) return null
+      const placements = change.placements.map(item => {
+        const geometry = geometryOf(current, item.element_id)
+        return geometry ? { element_id: item.element_id, geometry } : null
+      })
+      return placements.every(Boolean)
+        ? { op: 'elements.arrange', page_id: change.page_id, placements: placements as { element_id: string; geometry: Geometry }[] }
+        : null
+    }
     case 'widget.add':
       return { op: 'widget.remove', page_id: change.page_id, widget_id: change.widget.widget_id }
     case 'widget.remove': {
@@ -42,6 +53,27 @@ export function inverse(change: Change, before: DashboardDefinition): Change | n
     default:
       return null
   }
+}
+
+/** An element's geometry at any depth, or a kept spacer's. */
+function geometryOf(page: Page, id: string): Geometry | undefined {
+  const walk = (items: readonly Element[]): Geometry | undefined => {
+    for (const item of items) {
+      if (item.element_id === id) return item.geometry
+      const found = item.kind === 'group' ? walk(item.children) : undefined
+      if (found) return found
+    }
+    return undefined
+  }
+  return walk(page.elements ?? []) ?? page.legacy_spacers?.find(item => item.element_id === id)?.geometry
+}
+
+function placeAll(items: readonly Element[], geometries: Map<string, Geometry>): Element[] {
+  return items.map(item => {
+    const geometry = geometries.get(item.element_id)
+    const moved = geometry ? { ...item, geometry } : item
+    return moved.kind === 'group' ? { ...moved, children: placeAll(moved.children, geometries) as typeof moved.children } : moved
+  })
 }
 
 /** An unchanged cell keeps the element's exact geometry; a moved one snaps to the cell. */
@@ -92,6 +124,16 @@ export function applyLocal(definition: DashboardDefinition, change: Change): Das
       target.legacy_spacers = target.legacy_spacers.map(move)
       break
     }
+    case 'elements.arrange': {
+      if (!target) break
+      const geometries = new Map(change.placements.map(item => [item.element_id, item.geometry]))
+      target.elements = placeAll(target.elements, geometries)
+      target.legacy_spacers = target.legacy_spacers.map(item => {
+        const geometry = geometries.get(item.element_id)
+        return geometry ? { ...item, geometry } : item
+      })
+      break
+    }
     case 'widget.add': {
       if (!target) break
       const widget = change.widget as Widget
@@ -130,12 +172,4 @@ export function applyLocal(definition: DashboardDefinition, change: Change): Das
   }
   if (target) pages[index] = grow(target) as typeof target
   return next
-}
-
-export function sameLayout(page: Page, placements: { widget_id: string; layout: Layout }[]): boolean {
-  const current = new Map(gridWidgets(page).map(widget => [widget.widget_id, widget.layout]))
-  return placements.length === current.size && placements.every(item => {
-    const layout = current.get(item.widget_id)
-    return layout && layout.x === item.layout.x && layout.y === item.layout.y && layout.w === item.layout.w && layout.h === item.layout.h
-  })
 }

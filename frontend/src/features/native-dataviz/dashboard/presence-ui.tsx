@@ -33,15 +33,19 @@ export function PresenceAvatars({ others, more }: { others: Collaborator[]; more
   </div>
 }
 
-/** Other people's pointers on this page, gliding between heartbeats. */
-export function PresenceCursors({ others, pageId }: { others: Collaborator[]; pageId: string }) {
+/**
+ * Other people's pointers on this page, gliding between heartbeats. A pointer
+ * is saved in page units (across as a share of the width, down in 72-pixel
+ * rows), so it lands on the same spot at any scale.
+ */
+export function PresenceCursors({ others, pageId, scale = 1 }: { others: Collaborator[]; pageId: string; scale?: number }) {
   const here = others.filter(item => item.page_id === pageId && item.cursor)
   return <div aria-hidden className='pointer-events-none absolute inset-0 z-20 overflow-hidden'>
     {here.map(item => {
       const colour = colourFor(item.viewer)
       return <div key={item.viewer}
         className='absolute flex items-start motion-safe:transition-[left,top] motion-safe:duration-1000 motion-safe:ease-linear'
-        style={{ left: `${item.cursor!.x * 100}%`, top: item.cursor!.y * ROW_PX }}>
+        style={{ left: `${item.cursor!.x * 100}%`, top: item.cursor!.y * ROW_PX * scale }}>
         <MousePointer2 className='size-4 drop-shadow-sm' style={{ color: colour }} fill='currentColor' strokeWidth={1.5} stroke='var(--background)' />
         <span className='mt-3.5 -ml-1 flex max-w-32 items-center gap-1 rounded bg-foreground px-1.5 py-0.5 text-[11px] leading-4 font-medium text-background shadow-sm'>
           <span className='size-1.5 shrink-0 rounded-full' style={{ background: colour }} />
