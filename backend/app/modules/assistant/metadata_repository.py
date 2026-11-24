@@ -28,7 +28,7 @@ import psycopg
 from psycopg.pq import TransactionStatus
 from psycopg.types.json import Jsonb
 
-from app.core.metadata_db import MetadataConflict, MetadataPermissionDenied
+from app.core.metadata_db import MetadataConflict, MetadataPermissionDenied, storable_text
 from app.modules.access_control.security_context import SecurityContext
 from app.modules.assistant.events import _json_default
 
@@ -275,6 +275,10 @@ class AssistantMetadataRepository:
                 turn[field] = json.loads(json.dumps(
                     turn[field], default=_json_default, allow_nan=False,
                 ))
+        # A NUL or lone surrogate from a data source or the model would fail the
+        # whole write (SQLSTATE 22P05) and lose the reply; store a placeholder.
+        for field in ("content", "instructions", *_JSON):
+            turn[field] = storable_text(turn[field])
         message_id = message_id or str(uuid4())
         existing = await self._one(
             "SELECT * FROM nova_meta.config_assistant_messages WHERE message_id=%s",

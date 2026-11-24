@@ -172,6 +172,8 @@ export type TurnRunState = {
 
 /** Finish reasons that end a turn normally: an answer, or a question back. */
 const FINISHED = new Set(["stop", "clarification"]);
+/** Errors that stop the run itself; shown even under an answer that streamed. */
+const RUN_STOPPED_CODES = new Set(["run_persistence_unavailable", "run_timed_out"]);
 const CONTENT_TYPES = new Set(["text", "table", "chart", "component", "citation", "dashboard", "ui"]);
 const TERMINAL_TOOL = new Set<ToolCallStatus>(["done", "failed", "denied", "cancelled"]);
 
@@ -408,9 +410,10 @@ function reduce(state: TurnRunState, event: StudioEvent): TurnRunState {
     }
     case "run.error": {
       // Tool failures already show on their parts. An answer that streamed
-      // stays readable; a persistence failure is always surfaced.
+      // stays readable; a run stopped by storage or a timed-out check is always
+      // surfaced.
       const answered = state.parts.some((part) => part.type === "text" && part.text);
-      if (answered && event.code !== "run_persistence_unavailable") return state;
+      if (answered && !RUN_STOPPED_CODES.has(event.code)) return state;
       return { ...state, error: event.message, status: "error" };
     }
     case "run.finished": {

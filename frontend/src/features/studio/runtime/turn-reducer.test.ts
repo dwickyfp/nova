@@ -202,6 +202,17 @@ describe("turn reducer", () => {
     expect(turn.content.find((item) => item.type === "ui")?.complete).toBe(false);
   });
 
+  it("shows a run stopped by storage or a timed-out check under a streamed answer", () => {
+    const streamed = parsedEvents(answerCase.v2).filter((event) => event.type !== "run.finished");
+    const seq = Math.max(...streamed.map((event) => event.seq)) + 1;
+    const after = (code: string) =>
+      reduceEvents([...streamed, { type: "run.error", seq, code, message: "Stopped." }]);
+    expect(after("run_timed_out")).toMatchObject({ error: "Stopped.", status: "error" });
+    expect(after("run_persistence_unavailable")).toMatchObject({ error: "Stopped.", status: "error" });
+    // Any other error under a readable answer leaves the answer as it streamed.
+    expect(after("tool_failed").error).toBeUndefined();
+  });
+
   it("interleaves model reasoning and narration with tools, and keeps the answer's verified state", () => {
     const turn = live(parsedEvents(reasoningCase.v2));
     const reasoning = turn.run.parts.flatMap((part) => (part.type === "reasoning" ? [[part.source, part.text]] : []));

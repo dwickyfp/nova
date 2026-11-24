@@ -105,10 +105,15 @@ async def test_storage_failure_closes_stream_and_loop_without_another_effect(
         done = [json.loads(frame.split("data: ", 1)[1]) for frame in frames
                 if frame.startswith("event: run.finished\n")]
         assert len(done) == 1 and done[0]["finish_reason"] == "interrupted"
-        # The outcome says why: the run's progress could not be saved.
+        codes = [json.loads(frame.split("data: ", 1)[1])["code"] for frame in frames
+                 if frame.startswith("event: run.error\n")]
+        # Running out of time in the Mission projection's access check is not a
+        # failed save; real journal and reply write failures still say so, and
+        # the outcome says which.
+        timed_out = fault.startswith("projection") and "timeout" in fault
+        assert codes == (["run_timed_out"] if timed_out else ["run_persistence_unavailable"])
         assert (done[0]["outcome"]["kind"], done[0]["outcome"]["reason"]) == (
-            "error", "persistence_unavailable")
-        assert any('"code":"run_persistence_unavailable"' in frame for frame in frames)
+            "error", "timeout" if timed_out else "persistence_unavailable")
         finish.assert_awaited_once()
         assert finish.await_args.args[1] == "interrupted"
         if not fault.startswith("history"):
