@@ -699,6 +699,13 @@ def _filter_sql(expression: str, operator: str, value: Any) -> str:
         if None in value:
             parts.append(f"{expression} IS {'NOT ' if operator == 'NOT IN' else ''}NULL")
         return "(" + (" AND " if operator == "NOT IN" else " OR ").join(parts) + ")"
+    if value is None:
+        # "= NULL" is never true in SQL: equality with a missing value is IS NULL.
+        if operator in {"=", "!="}:
+            return f"{expression} IS {'NOT ' if operator == '!=' else ''}NULL"
+        raise SemanticPlanError(
+            f"A {operator} filter needs a value; use IS NULL or IS NOT NULL for a missing one."
+        )
     return f"{expression} {operator} {_literal(value)}"
 
 
