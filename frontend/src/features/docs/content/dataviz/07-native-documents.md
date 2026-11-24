@@ -211,6 +211,17 @@ send grid changes to move, add, replace or remove a widget. Nova applies them to
 the canvas. Sending an earlier change again with its original operation ID
 returns its original receipt.
 
+Changes to a page each say what they do: add, change, move, restack or remove
+items, group items or ungroup a group, and set the page's canvas, keyboard
+order or phone order. Grouping takes items that sit on the page itself, keeps
+each one where it is on screen, and stacks the new group where the topmost of
+them was; links between charts are kept, and the group takes the items' place
+in the phone order. Ungrouping puts a group's items back on the page at the
+same places, keeps them hidden or locked if the group was, and takes the group
+out of the keyboard order. Items inside a group cannot be grouped again from
+there, and a group inside another group is ungrouped by first ungrouping the
+outer one.
+
 A page holds at most 150 items, and groups can be nested at most three deep.
 
 ## Drafts and publications

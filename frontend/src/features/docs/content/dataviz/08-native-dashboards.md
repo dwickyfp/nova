@@ -172,25 +172,82 @@ pages had sizes is 1,200 pixels wide and grows downwards; it scrolls as before.
 - In **Edit**, the page shows its grid as light bands: 12 columns with a gap
   between them, and some room below the lowest widget to move things into. The
   grid is only a guide and disappears when you click **Done**.
-- In **Edit**, drag a widget to move it. Click a widget to select it; drag one
-  of the eight handles on its edges and corners to resize it. While you drag,
-  edges near a column edge snap to it and everything else snaps to small
-  8-pixel steps. Hold Alt (⌥ on a Mac) or ⌘ while dragging to place it freely.
-  Press Escape during a drag to cancel it. Each completed move is saved as a
-  new revision.
-- Widgets may overlap. A widget added later is drawn on top.
+- Click an item to select it. Hold Shift (or Ctrl, or ⌘ on a Mac) and click to
+  add an item to the selection or take it out again. To select several at
+  once, drag across empty page: everything the rectangle touches is selected.
+  Ctrl+A (⌘A) selects everything on the page, and Escape clears the selection.
+- Drag a selected item to move it; the other selected items move with it.
+  With one item selected, drag one of the eight handles on its edges and
+  corners to resize it. Press Escape during a drag to cancel it. Each completed
+  move is saved as a new revision.
+- While you drag, edges and centres snap to other items' edges and centres, to
+  the middle and margins of the page, and to the column edges; anything else
+  snaps to 8-pixel rows. Guide lines show what the item lined up with, and
+  numbers show the gap in pixels to its nearest neighbours. Hold Alt (⌥ on a
+  Mac) or ⌘ while dragging to place it freely.
+- **Show grid** in the toolbar hides or shows the bands, and **Snap to grid**
+  turns snapping off or on. Both are saved with the page, so everyone editing
+  it sees the same. **Page and grid settings** sets the page size, how the page
+  fits the window (**Whole page**, **Fit to width** or **Actual size**), the
+  number of columns, the gutter between them, the margin, the row height and
+  whether items snap to each other. The window tells you if the columns do not
+  fit the page width.
+- Items may overlap. An item added later is drawn on top.
+- The **Arrange** menu acts on the selection:
+  - **Align left**, **Align centre**, **Align right**, **Align top**,
+    **Align middle** and **Align bottom** line several items up with each
+    other. One item aligns with the page (or with its group).
+  - **Space evenly across** and **Space evenly down** make the gaps between
+    three or more items equal. The two outer items stay where they are.
+  - **Auto-arrange page** puts each chart, filter, text and group on whole
+    columns and rows, one after another in reading order, so nothing overlaps.
+    Shapes, icons, lines and locked items stay where they are. With several
+    items selected, it is **Auto-arrange selected** and moves only those. On a
+    page with a fixed height, it tells you when the result would not fit.
+  - **Bring to front**, **Bring forward**, **Send backward** and **Send to
+    back** change which items are drawn on top.
+  - **Group** puts two or more items into one group that moves as one. Its
+    links between charts stay as they were. Double-click a group to work on
+    the items inside it; click outside the group to close it. **Ungroup** puts
+    the items back on the page where they were.
+  - **Lock** stops an item from being moved or resized until you choose
+    **Unlock**. **Hide** keeps an item on the page but hides it from viewers
+    until you choose **Show**. In **Edit** it stays faintly visible.
+  - **Duplicate** adds a copy a little below and to the right; **Delete**
+    removes the selection.
 - Use **Undo** and **Redo** in the toolbar, or Ctrl+Z / Ctrl+Shift+Z
-  (⌘Z / ⌘⇧Z on a Mac). Undo saves the previous layout as a new revision.
-- Select a widget, by clicking it or moving to it with Tab, and press Alt with
+  (⌘Z / ⌘⇧Z on a Mac). Every change above, from a move to new page settings,
+  is one step. Undo saves the previous page as a new revision. Deleting an item
+  from inside an open group cannot be undone; Nova says so when you do it, and
+  Undo then starts again from that point.
+- Select an item, by clicking it or moving to it with Tab, and press Alt with
   an arrow key to nudge it, or Alt+Shift with an arrow key to resize it. Left
-  and right go to the next column; up and down move by 8 pixels.
-- Empty rows you leave between widgets stay where you put them; widgets never
+  and right go to the next column; up and down move by 8 pixels. Several
+  selected items move together.
+- Empty rows you leave between items stay where you put them; items never
   slide up on their own.
+
 - Open a widget's **…** menu for **Edit chart**, **Duplicate** or **Remove**.
 - Click **+** next to the page name to add a page. A page holds up to 150
   items; when it is full, the add buttons are turned off and a note says
   so. Add another page for more.
 - Click **Done** to return to the view.
+
+Keyboard shortcuts in **Edit**:
+
+| Shortcut (Windows and Linux) | On a Mac | Does |
+| --- | --- | --- |
+| Ctrl+A | ⌘A | Select everything on the page |
+| Escape | Escape | Clear the selection |
+| Delete or Backspace | Delete | Delete the selection |
+| Ctrl+D | ⌘D | Duplicate |
+| Ctrl+G / Ctrl+Shift+G | ⌘G / ⌘⇧G | Group / Ungroup |
+| Ctrl+] / Ctrl+[ | ⌘] / ⌘[ | Bring forward / Send backward |
+| Ctrl+Shift+] / Ctrl+Shift+[ | ⌘⇧] / ⌘⇧[ | Bring to front / Send to back |
+| Ctrl+Shift+L | ⌘⇧L | Lock or unlock |
+| Ctrl+Shift+H | ⌘⇧H | Hide or show |
+| Alt+arrow / Alt+Shift+arrow | ⌥+arrow / ⌥⇧+arrow | Move / Resize |
+| Ctrl+Z / Ctrl+Shift+Z | ⌘Z / ⌘⇧Z | Undo / Redo |
 
 On a phone-width window, the widgets stack in one column, in reading order: top
 to bottom, then left to right. The layout cannot be changed there, and the saved
@@ -322,10 +379,13 @@ shown exactly as written and never change the dashboard or its data.
   gliding. Widgets never slide on their own.
 - Tab and screen readers go through the widgets in reading order: top to
   bottom, then left to right, whatever order they were added in.
-- In **Edit**, press Tab to move from widget to widget; the focused widget is
+- In **Edit**, press Tab to move from item to item; the focused item is
   selected. Press **Alt** with an arrow key to move it, or **Alt** and
-  **Shift** with an arrow key to resize it. A screen reader announces the new
-  position and size, or that the widget is locked or cannot go further.
+  **Shift** with an arrow key to resize it. Every shortcut in
+  [Arrange the canvas](#arrange-the-canvas) works from the keyboard, and the
+  **Arrange** menu opens with Enter. A screen reader announces what each one
+  did, such as the new position and size, "Grouped 2 items" or "3 items
+  selected", or why it could not, such as an item being locked.
 - Closing the **Filters** window returns you to the button that opened it.
 - Every button, field and widget you reach with Tab shows a focus ring and has
   a name a screen reader can read. With a high-contrast theme (forced colours)

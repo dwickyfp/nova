@@ -28,8 +28,10 @@ from .contracts.commands import (
     ElementPlacement,
     ElementsAdd,
     ElementsArrange,
+    ElementsGroup,
     ElementsRemove,
     ElementsReorder,
+    ElementsUngroup,
     ElementsUpdate,
     FiltersReplace,
     LayoutChange,
@@ -101,6 +103,10 @@ def apply_operation(document: DashboardDefinition, operation: Operation) -> Dash
                 _arrange(page, change)
             elif isinstance(change, ElementsReorder):
                 _reorder(page, [str(item) for item in change.element_ids])
+            elif isinstance(change, ElementsGroup):
+                _group(page, change)
+            elif isinstance(change, ElementsUngroup):
+                _ungroup(page, str(change.group_id))
             elif isinstance(change, LayoutChange):
                 _legacy_layout(page, change)
             elif isinstance(change, WidgetAdd):
@@ -183,6 +189,9 @@ def _update(page: dict[str, Any], change: ElementsUpdate) -> None:
         if moves and element["locked"] and patch.get("locked") is not False:
             raise ValueError("Unlock the element before changing its position or size")
         element.update(patch)
+        # A patch that leaves the element invalid (a null box or flag, a property its
+        # kind does not have) is refused here, before anything reads the page.
+        _ELEMENT.validate_python(element)
 
 
 def _remove(page: dict[str, Any], targets: set[str]) -> set[str]:
@@ -267,6 +276,85 @@ def _reorder(page: dict[str, Any], order: list[str]) -> None:
     if len(order) != len(by_id) or set(order) != set(by_id):
         raise ValueError("Element order must list every element on the page exactly once")
     page["elements"] = [by_id[identity] for identity in order]
+
+
+def _group(page: dict[str, Any], change: ElementsGroup) -> None:
+    members = [str(item) for item in change.element_ids]
+    group_id = str(change.group_id)
+    if len(set(members)) != len(members):
+        raise ValueError("Group each element once")
+    top = page["elements"]
+    indices = {item["element_id"]: index for index, item in enumerate(top)}
+    if not set(members) <= indices.keys():
+        raise ValueError("Only elements on the page itself can be grouped")
+    taken = _ids(top) | {item["element_id"] for item in page.get("legacy_spacers") or []}
+    if group_id in taken:
+        raise ValueError("Element already exists")
+    chosen = sorted(members, key=indices.__getitem__)
+    boxes = [top[indices[identity]]["geometry"] for identity in chosen]
+    left = min(box["x"] for box in boxes)
+    upper = min(box["y"] for box in boxes)
+    right = max(box["x"] + box["w"] for box in boxes)
+    lower = max(box["y"] + box["h"] for box in boxes)
+    children = []
+    for identity in chosen:
+        child = top[indices[identity]]
+        geometry = child["geometry"]
+        children.append({**child, "geometry": {**geometry, "x": geometry["x"] - left,
+                                               "y": geometry["y"] - upper}})
+    group = {"kind": "group", "element_id": group_id, "name": change.name,
+             "geometry": {"x": left, "y": upper, "w": right - left, "h": lower - upper,
+                          "rotation": 0},
+             "locked": False, "hidden": False, "decorative": False,
+             "style": ElementStyle().model_dump(mode="json"), "children": children}
+    at = indices[chosen[-1]]
+    kept = [item for item in top[:at] if item["element_id"] not in members]
+    page["elements"] = [*kept, group,
+                        *[item for item in top[at + 1:] if item["element_id"] not in members]]
+    # A phone lists only items on the page itself: the group takes its first member's place.
+    mobile = page.get("mobile") or {}
+    order: list[str] = []
+    for identity in mobile.get("order") or []:
+        if identity in members:
+            if group_id not in order:
+                order.append(group_id)
+        else:
+            order.append(identity)
+    hidden = [item for item in mobile.get("hidden") or [] if item not in members]
+    if members and all(item in (mobile.get("hidden") or []) for item in members):
+        hidden.append(group_id)
+    page["mobile"] = {"order": order, "hidden": hidden}
+
+
+def _ungroup(page: dict[str, Any], group_id: str) -> None:
+    top = page["elements"]
+    index = next((i for i, item in enumerate(top) if item["element_id"] == group_id), None)
+    if index is None or top[index].get("kind") != "group":
+        raise ValueError("Only a group on the page itself can be ungrouped")
+    group = top[index]
+    origin = group["geometry"]
+    children = []
+    for child in group["children"]:
+        geometry = child["geometry"]
+        children.append({
+            **child,
+            "geometry": {**geometry, "x": geometry["x"] + origin["x"],
+                         "y": geometry["y"] + origin["y"]},
+            # What the group hid or locked stays hidden or locked.
+            "hidden": child["hidden"] or group["hidden"],
+            "locked": child["locked"] or group["locked"],
+        })
+    page["elements"] = [*top[:index], *children, *top[index + 1:]]
+    released = [child["element_id"] for child in children]
+    page["tab_order"] = [item for item in page.get("tab_order") or [] if item != group_id]
+    mobile = page.get("mobile") or {}
+    order: list[str] = []
+    for identity in mobile.get("order") or []:
+        order.extend(released if identity == group_id else [identity])
+    hidden: list[str] = []
+    for identity in mobile.get("hidden") or []:
+        hidden.extend(released if identity == group_id else [identity])
+    page["mobile"] = {"order": order, "hidden": hidden}
 
 
 # ── Legacy grid adapter ─────────────────────────────────────────────────

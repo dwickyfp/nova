@@ -99,9 +99,11 @@ export function nativeDocuments(securityEpoch: number) {
     collection: Collection, id: string, suffix: string, method: string,
     schema: z.ZodType<T>, value: T, options?: RequestOptions,
   ) {
-    const body = validated(schema, value, 'request')
-    return mutate(resourcePath(collection, id) + suffix, method, body, id,
-      body.operation_id, body.expected_revision, options)
+    // Check the shape, but send what the caller built. The schema's defaults would
+    // fill an element patch's unset properties with null, which means "clear it".
+    validated(schema, value, 'request')
+    return mutate(resourcePath(collection, id) + suffix, method, value, id,
+      value.operation_id, value.expected_revision, options)
   }
 
   return {

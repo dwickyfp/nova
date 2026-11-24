@@ -3224,6 +3224,51 @@ const schema = {
       "title": "ElementsArrange",
       "type": "object"
     },
+    "ElementsGroup": {
+      "additionalProperties": false,
+      "description": "Put top-level elements into a new group, stacked where the topmost of them was.\n\nThe group's box is the smallest box around its members; their positions on the\npage do not change.",
+      "properties": {
+        "element_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 150,
+          "minItems": 1,
+          "title": "Element Ids",
+          "type": "array"
+        },
+        "group_id": {
+          "format": "uuid",
+          "title": "Group Id",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "maxLength": 120,
+          "title": "Name",
+          "type": "string"
+        },
+        "op": {
+          "const": "elements.group",
+          "default": "elements.group",
+          "title": "Op",
+          "type": "string"
+        },
+        "page_id": {
+          "format": "uuid",
+          "title": "Page Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id",
+        "group_id",
+        "element_ids"
+      ],
+      "title": "ElementsGroup",
+      "type": "object"
+    },
     "ElementsRemove": {
       "additionalProperties": false,
       "description": "Remove elements; connectors, annotations and interactions that depended on them go too.",
@@ -3287,6 +3332,34 @@ const schema = {
         "element_ids"
       ],
       "title": "ElementsReorder",
+      "type": "object"
+    },
+    "ElementsUngroup": {
+      "additionalProperties": false,
+      "description": "Release a top-level group's children onto the page, stacked where the group was.",
+      "properties": {
+        "group_id": {
+          "format": "uuid",
+          "title": "Group Id",
+          "type": "string"
+        },
+        "op": {
+          "const": "elements.ungroup",
+          "default": "elements.ungroup",
+          "title": "Op",
+          "type": "string"
+        },
+        "page_id": {
+          "format": "uuid",
+          "title": "Page Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id",
+        "group_id"
+      ],
+      "title": "ElementsUngroup",
       "type": "object"
     },
     "ElementsUpdate": {
@@ -5500,8 +5573,10 @@ const schema = {
                 "datasets.replace": "#/$defs/DatasetsReplace",
                 "elements.add": "#/$defs/ElementsAdd",
                 "elements.arrange": "#/$defs/ElementsArrange",
+                "elements.group": "#/$defs/ElementsGroup",
                 "elements.remove": "#/$defs/ElementsRemove",
                 "elements.reorder": "#/$defs/ElementsReorder",
+                "elements.ungroup": "#/$defs/ElementsUngroup",
                 "elements.update": "#/$defs/ElementsUpdate",
                 "filters.replace": "#/$defs/FiltersReplace",
                 "layout.apply": "#/$defs/LayoutChange",
@@ -5569,6 +5644,12 @@ const schema = {
               },
               {
                 "$ref": "#/$defs/ElementsReorder"
+              },
+              {
+                "$ref": "#/$defs/ElementsGroup"
+              },
+              {
+                "$ref": "#/$defs/ElementsUngroup"
               },
               {
                 "$ref": "#/$defs/PageCanvasSet"

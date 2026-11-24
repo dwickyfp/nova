@@ -280,6 +280,19 @@ describe('native document transport', () => {
     expect(JSON.parse(options.body)).toMatchObject(document)
   })
 
+  it('sends an element patch with only the properties it sets', async () => {
+    // The generated schema gives every patch property a null default; sent as built,
+    // a patch that locks an item must not also clear its box, name and style.
+    const operation = { ...intent, changes: [{ op: 'elements.update' as const, page_id: id(2),
+      updates: [{ element_id: id(4), set: { locked: true } }] }] }
+    await expect(client().apply(id(1), operation)).resolves.toEqual(receipt)
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual(operation)
+    // An invalid operation is still refused (as it is built) before anything is sent.
+    expect(() => client().apply(id(1), { ...operation, changes: [{ op: 'elements.update' as const, page_id: id(2),
+      updates: [{ element_id: id(4), set: { locked: 'yes' as unknown as boolean } }] }] })).toThrow('Invalid document request')
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
   it('does not generate a new operation or replay a mutation after an unknown outcome', async () => {
     fetchMock.mockRejectedValueOnce(new TypeError('Connection lost'))
     await expect(client().replaceDashboard(document, intent)).rejects.toThrow('Connection lost')

@@ -322,3 +322,107 @@ describe('native dashboard editor', () => {
     expect(downloads).toEqual([])
   })
 })
+
+describe('canvas authoring in the editor', () => {
+  const announced = () => document.querySelector('p[role="status"].sr-only')?.textContent
+  async function editing() {
+    const screen = await mount()
+    await expect.element(screen.getByTestId('kpi-value')).toBeVisible()
+    await screen.getByRole('button', { name: 'Edit' }).click()
+    await expect.element(screen.getByRole('toolbar', { name: 'Add to dashboard' })).toBeVisible()
+    return screen
+  }
+
+  it('selects everything, groups it with a shortcut, and undoes and redoes the group', async () => {
+    await editing()
+    await userEvent.keyboard('{Control>}a{/Control}')
+    await expect.poll(() => document.querySelectorAll('[data-selected]').length).toBe(2)
+    await expect.poll(announced).toBe('2 items selected')
+
+    await userEvent.keyboard('{Control>}g{/Control}')
+    await expect.poll(() => operations.length).toBe(1)
+    const group = (operations[0].changes as { op: string; group_id: string; element_ids: string[] }[])[0]
+    expect(group).toMatchObject({ op: 'elements.group', page_id: PAGE, element_ids: [KPI_WIDGET, TEXT_WIDGET], name: 'Group 1' })
+    await expect.poll(announced).toBe('Grouped 2 items')
+    await expect.poll(() => document.querySelector(`[data-element-id="${group.group_id}"][data-kind="group"]`)).not.toBeNull()
+
+    await userEvent.keyboard('{Control>}z{/Control}')
+    await expect.poll(() => operations.length).toBe(2)
+    expect((operations[1].changes as { op: string }[]).map(change => change.op)).toEqual(['elements.ungroup', 'elements.reorder', 'page.mobile.set'])
+    await expect.poll(() => document.querySelector('[data-kind="group"]')).toBeNull()
+
+    await userEvent.keyboard('{Control>}{Shift>}z{/Shift}{/Control}')
+    await expect.poll(() => operations.length).toBe(3)
+    expect(operations[2].changes).toEqual(operations[0].changes)
+  })
+
+  it('aligns, locks and restacks the selection from the Arrange menu', async () => {
+    const screen = await editing()
+    const text = document.querySelector<HTMLElement>(`[data-element-id="${TEXT_WIDGET}"]`)!
+    text.focus()
+    await userEvent.keyboard('{Escape}')
+    await userEvent.click(text, { position: { x: 400, y: 60 } })
+    await expect.poll(() => text.hasAttribute('data-selected')).toBe(true)
+
+    await screen.getByRole('button', { name: 'Arrange' }).click()
+    await page.getByRole('menuitem', { name: 'Align right' }).click()
+    await expect.poll(() => operations.length).toBe(1)
+    // One item aligns with the page: its right edge on the page's right edge.
+    expect(operations[0]).toMatchObject({ changes: [{ op: 'elements.arrange', placements: [{ element_id: TEXT_WIDGET, geometry: { x: 312, y: 6, w: 888 } }] }] })
+    await expect.poll(announced).toBe('Aligned to the page')
+
+    await screen.getByRole('button', { name: 'Arrange' }).click()
+    await page.getByRole('menuitem', { name: 'Send to back' }).click()
+    await expect.poll(() => operations.length).toBe(2)
+    expect(operations[1]).toMatchObject({ changes: [{ op: 'elements.reorder', element_ids: [TEXT_WIDGET, KPI_WIDGET] }] })
+
+    await screen.getByRole('button', { name: 'Arrange' }).click()
+    await page.getByRole('menuitem', { name: 'Lock' }).click()
+    await expect.poll(() => operations.length).toBe(3)
+    expect(operations[2]).toMatchObject({ changes: [{ op: 'elements.update', updates: [{ element_id: TEXT_WIDGET, set: { locked: true } }] }] })
+    // Locked items do not move from the keyboard.
+    await expect.element(page.getByRole('menu')).not.toBeInTheDocument()
+    await userEvent.keyboard('{Alt>}{ArrowLeft}{/Alt}')
+    await expect.poll(announced).toBe('This item is locked')
+    expect(operations).toHaveLength(3)
+    await screen.getByRole('button', { name: 'Arrange' }).click()
+    await expect.element(page.getByRole('menuitem', { name: 'Unlock' })).toBeVisible()
+    await userEvent.keyboard('{Escape}')
+  })
+
+  it('hides the grid and turns snapping off for the page, and checks page settings before saving', async () => {
+    const screen = await editing()
+    await expect.poll(() => document.querySelector('[data-testid="canvas-grid"]')).not.toBeNull()
+    const show = screen.getByRole('button', { name: 'Show grid' })
+    await expect.element(show).toHaveAttribute('aria-pressed', 'true')
+    await show.click()
+    await expect.poll(() => operations.length).toBe(1)
+    expect(operations[0]).toMatchObject({ changes: [{ op: 'page.canvas.set', page_id: PAGE, canvas: { width: 1200, grid: { show: false, snap: true, columns: 12 } } }] })
+    await expect.poll(() => document.querySelector('[data-testid="canvas-grid"]')).toBeNull()
+    await expect.element(show).toHaveAttribute('aria-pressed', 'false')
+
+    await screen.getByRole('button', { name: 'Snap to grid' }).click()
+    await expect.poll(() => operations.length).toBe(2)
+    expect(operations[1]).toMatchObject({ changes: [{ op: 'page.canvas.set', canvas: { grid: { show: false, snap: false } } }] })
+
+    await screen.getByRole('button', { name: 'Page and grid settings' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Page and grid settings' })
+    await expect.element(dialog).toBeVisible()
+    const columns = dialog.getByLabelText('Columns')
+    await columns.fill('30')
+    await expect.element(dialog.getByRole('alert')).toHaveTextContent('Enter a whole number for columns (1–24).')
+    await expect.element(dialog.getByRole('button', { name: 'Save' })).toBeDisabled()
+    await columns.fill('24')
+    await dialog.getByLabelText('Gutter (px)').fill('64')
+    await expect.element(dialog.getByRole('alert')).toHaveTextContent('The columns do not fit the page width.')
+    await dialog.getByLabelText('Gutter (px)').fill('16')
+    await columns.fill('6')
+    await dialog.getByRole('button', { name: 'Save' }).click()
+    await expect.poll(() => operations.length).toBe(3)
+    expect(operations[2]).toMatchObject({ changes: [{ op: 'page.canvas.set', canvas: { size: 'custom', width: 1200, grid: { columns: 6, gutter: 16, snap: false } } }] })
+    await expect.poll(announced).toBe('Page settings saved')
+    await screen.getByRole('button', { name: 'Undo' }).click()
+    await expect.poll(() => operations.length).toBe(4)
+    expect(operations[3]).toMatchObject({ changes: [{ op: 'page.canvas.set', canvas: { grid: { columns: 12, gutter: 12 } } }] })
+  })
+})
