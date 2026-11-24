@@ -10,6 +10,7 @@ from pydantic import AwareDatetime, Field
 from .charts import ChartDefinition
 from .common import Contract, FieldId, Name, Permission, Revision
 from .dashboards import DashboardDefinition
+from .dashboards_v2 import DashboardDefinitionV2
 from .datasets import DatasetDefinition, DatasetField, Parameter
 
 
@@ -20,7 +21,8 @@ class ChartCreate(Contract):
 
 class DashboardCreate(Contract):
     workspace_id: str = Field(min_length=1, max_length=128)
-    definition: DashboardDefinition
+    #: A schema-2 grid definition is still accepted and stored upcast to the canvas.
+    definition: DashboardDefinitionV2 | DashboardDefinition = Field(union_mode="left_to_right")
 
 
 class OperationReceipt(Contract):

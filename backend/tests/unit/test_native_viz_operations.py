@@ -6,8 +6,8 @@ from uuid import UUID, uuid4
 import pytest
 from pydantic import ValidationError
 
+from app.modules.viz.canvas import dashboard_definition, legacy_widgets
 from app.modules.viz.contracts.commands import Operation
-from app.modules.viz.contracts.dashboards import DashboardDefinition
 from app.modules.viz.contracts.filters import FilterDefinition, FilterScope, RelativeWindow
 from app.modules.viz.operations import apply_operation
 from tests.unit.test_native_viz_contracts import (
@@ -34,7 +34,7 @@ def filter_definition(**changes):
 
 
 def test_dataset_registry_edits_preserve_canvas_and_other_bindings():
-    document = DashboardDefinition.model_validate(dashboard())
+    document = dashboard_definition(dashboard())
     identity = uuid4()
     pinned = {"dataset_id": str(identity), "revision": 2}
     added = apply(document, [{"op": "datasets.replace", "datasets": [pinned]}])
@@ -51,7 +51,7 @@ def test_dataset_registry_edits_preserve_canvas_and_other_bindings():
 
 
 def test_page_and_widget_lifecycle_keeps_other_pages_and_source_unchanged():
-    original = DashboardDefinition.model_validate(dashboard())
+    original = dashboard_definition(dashboard())
     new_page = str(uuid4())
     added = {"widget_id": str(uuid4()), "kind": "text", "text": "Quarterly results",
              "layout": {"x": 0, "y": 0, "w": 12, "h": 2}}
@@ -64,7 +64,7 @@ def test_page_and_widget_lifecycle_keeps_other_pages_and_source_unchanged():
         {"op": "dashboard.rename", "title": "Quarterly sales"},
     ])
     assert document.pages[0].title == "Review"
-    assert document.pages[0].widgets[0].text == "Reviewed"
+    assert legacy_widgets(document.pages[0])[0].text == "Reviewed"
     assert document.pages[1] == original.pages[0]
     document = apply(document, [
         {"op": "widget.remove", "page_id": new_page, "widget_id": added["widget_id"]},
@@ -83,7 +83,7 @@ def test_page_and_widget_lifecycle_keeps_other_pages_and_source_unchanged():
     {"op": "widget.remove", "page_id": PAGE, "widget_id": str(uuid4())},
 ])
 def test_invalid_edits_do_not_modify_the_original_document(change):
-    document = DashboardDefinition.model_validate(dashboard())
+    document = dashboard_definition(dashboard())
     before = document.model_dump_json()
     with pytest.raises(ValueError):
         apply(document, [{"op": "dashboard.rename", "title": "Never committed"}, change])
@@ -93,7 +93,7 @@ def test_invalid_edits_do_not_modify_the_original_document(change):
 def test_locked_widget_reflow_and_duplicate_add_are_rejected():
     payload = dashboard()
     payload["pages"][0]["widgets"][0]["locked"] = True
-    document = DashboardDefinition.model_validate(payload)
+    document = dashboard_definition(payload)
     with pytest.raises(ValueError, match="Unlock"):
         apply(document, [{"op": "layout.apply", "page_id": PAGE, "placements": [
             {"widget_id": WIDGET_A, "layout": {"x": 6, "y": 0, "w": 6, "h": 4}},
@@ -104,7 +104,7 @@ def test_locked_widget_reflow_and_duplicate_add_are_rejected():
                           "widget": payload["pages"][0]["widgets"][0]}])
     missing = deepcopy(payload["pages"][0]["widgets"][0])
     missing["widget_id"] = str(uuid4())
-    with pytest.raises(ValueError, match="Unknown widget"):
+    with pytest.raises(ValueError, match="Unknown"):
         apply(document, [{"op": "widget.replace", "page_id": PAGE, "widget": missing}])
 
 
@@ -114,12 +114,12 @@ def test_removing_a_widget_removes_its_own_interactions_in_the_same_revision():
     action = {"action_id": str(uuid4()), "kind": "filter", "source_widget_id": WIDGET_A,
               "target_widget_ids": [WIDGET_B], "mappings": [{"source": field, "target": field}]}
     payload["actions"] = [action]
-    document = DashboardDefinition.model_validate(payload)
+    document = dashboard_definition(payload)
     remove = {"op": "widget.remove", "page_id": PAGE, "widget_id": WIDGET_A}
     # An interaction never outlives its source widget, alone or in an explicit batch.
     for changes in ([remove], [remove, {"op": "actions.replace", "actions": []}]):
         updated = apply(document, changes)
-        assert [w.widget_id for w in updated.pages[0].widgets] == [UUID(WIDGET_B)]
+        assert [w.widget_id for w in legacy_widgets(updated.pages[0])] == [UUID(WIDGET_B)]
         assert updated.actions == ()
     assert len(document.actions) == 1  # the original document is unchanged
 
@@ -128,7 +128,7 @@ def test_cascading_filters_require_existing_acyclic_parents():
     payload = dashboard()
     parent, child = filter_definition(), filter_definition()
     child["depends_on"] = [parent["filter_id"]]
-    document = apply(DashboardDefinition.model_validate(payload), [
+    document = apply(dashboard_definition(payload), [
         {"op": "filters.replace", "filters": [parent, child]},
     ])
     assert len(document.filters) == 2

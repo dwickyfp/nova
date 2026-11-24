@@ -10,7 +10,7 @@ import pytest
 
 from app.core.metadata_db import MetadataConflict, MetadataPermissionDenied
 from app.modules.viz.contracts.commands import DeleteRequest, PublicationRequest
-from app.modules.viz.contracts.dashboards import ChartReference, ChartWidget, Layout
+from app.modules.viz.contracts.dashboards import ChartReference, Geometry, VisualElement
 from tests.integration.test_metadata_bootstrap import environment  # noqa: F401
 from tests.integration.test_metadata_viz import (  # noqa: F401
     create,
@@ -189,9 +189,9 @@ async def test_a_widget_cannot_point_at_a_chart_the_editor_cannot_see(viz):  # n
         await repository.create("personal", foreign, operation_id=uuid4())
     document, _, _ = await create(viz)
     page = document.pages[0]
-    widget = ChartWidget(widget_id=uuid4(), layout=Layout(x=0, y=0, w=6, h=4),
-                         chart_ref=ChartReference(chart_id=foreign.chart_id, revision=1))
-    pages = (page.model_copy(update={"widgets": (widget,)}),)
+    widget = VisualElement(element_id=uuid4(), geometry=Geometry(x=24, y=24, w=600, h=280),
+                           chart_ref=ChartReference(chart_id=foreign.chart_id, revision=1))
+    pages = (page.model_copy(update={"elements": (widget,)}),)
     changed = document.model_copy(update={"pages": pages})
     before = await counts(viz)
     with pytest.raises((MetadataPermissionDenied, ValueError, Exception)) as refused:

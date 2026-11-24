@@ -572,8 +572,9 @@ async def _already_on(
     copy of a chart with the same title over it.
     """
     from app.modules.agents.tools.native_dataviz import _dataset, _draft
+    from app.modules.viz.canvas import legacy_widgets
     from app.modules.viz.contracts.charts import ChartDefinition
-    from app.modules.viz.contracts.dashboards import ChartWidget
+    from app.modules.viz.contracts.dashboards_v2 import ChartWidget
     from app.modules.viz.contracts.datasets import SqlSource
 
     _, dashboard = await _draft(user, dashboard_id)
@@ -590,7 +591,7 @@ async def _already_on(
     if dataset_id is None:
         return None, None
     for page in dashboard.pages:
-        for widget in page.widgets:
+        for widget in legacy_widgets(page):
             if not isinstance(widget, ChartWidget):
                 continue
             try:
@@ -711,7 +712,8 @@ async def target_dashboard(
     user: dict[str, Any], target: Target, base: UUID, chart_title: str,
 ) -> UUID:
     """The dashboard to add to: the chosen one, or a new one in the personal workspace."""
-    from app.modules.viz.contracts.dashboards import DashboardDefinition, Page
+    from app.modules.viz.contracts.dashboards_v2 import DashboardDefinitionV2 as DashboardDefinition
+    from app.modules.viz.contracts.dashboards_v2 import PageV2 as Page
 
     if target.mode != "new":
         if target.dashboard_id is None:
@@ -737,12 +739,10 @@ async def place_chart(
     under the dashboard's revision CAS and finds its own receipt on a retry.
     """
     from app.modules.agents.tools.native_dataviz import DEFAULT_SIZE, apply_changes, first_free
+    from app.modules.viz.canvas import legacy_widgets
     from app.modules.viz.contracts.commands import WidgetAdd
-    from app.modules.viz.contracts.dashboards import (
-        ChartReference,
-        ChartWidget,
-        DashboardDefinition,
-    )
+    from app.modules.viz.contracts.dashboards import ChartReference, DashboardDefinition
+    from app.modules.viz.contracts.dashboards_v2 import ChartWidget
 
     create_chart = uuid5(base, "chart-create")
     await _once(user, create_chart, partial(
@@ -752,7 +752,7 @@ async def place_chart(
     def place(current: DashboardDefinition) -> list[Any]:
         page = current.pages[0]
         width, height = DEFAULT_SIZE.get(chart.visual, (6, 4))
-        layout = first_free([widget.layout for widget in page.widgets], width, height)
+        layout = first_free([widget.layout for widget in legacy_widgets(page)], width, height)
         return [WidgetAdd(page_id=page.page_id, widget=ChartWidget(
             widget_id=widget_id, layout=layout,
             chart_ref=ChartReference(chart_id=chart.chart_id, revision=1),

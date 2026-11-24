@@ -1,0 +1,37 @@
+{
+  "actions": [],
+  "dashboard_id": "00000000-0000-4000-8000-000000000001",
+  "datasets": [],
+  "description": "",
+  "filters": [],
+  "pages": [
+    {
+      "canvas": {
+        "background": null,
+        "fit": "width",
+        "grid": {
+          "baseline": 8,
+          "columns": 12,
+          "gutter": 12,
+          "margin": 6,
+          "show": true,
+          "snap": true,
+          "snap_to_elements": true
+        },
+        "height": 720,
+        "size": "custom",
+        "width": 1200
+      },
+      "elements": [],
+      "mobile": {
+        "hidden": [],
+        "order": []
+      },
+      "page_id": "00000000-0000-4000-8000-000000000002",
+      "tab_order": [],
+      "title": "Overview"
+    }
+  ],
+  "schema_version": 3,
+  "title": "Empty"
+}

@@ -40,7 +40,7 @@ from .contracts.charts import (
     SingleMeasureEncoding,
     TableEncoding,
 )
-from .contracts.dashboards import ChartWidget, DashboardDefinition, Page
+from .contracts.dashboards import DashboardDefinition, Page, VisualElement
 from .contracts.filters import FieldBinding, FilterDefinition, FilterTree
 from .contracts.queries import DatasetQueryRequest, DatasetQueryResult, QueryColumn
 
@@ -709,13 +709,14 @@ async def page_workbook(user: Mapping[str, Any], target: ExportTarget, *,
     if page is None:
         raise ExportUnavailable("The scheduled page no longer exists")
     sheets = []
-    for widget in [item for item in page.widgets if isinstance(item, ChartWidget)][:MAX_CHARTS]:
+    visuals = [item for item in page.all_elements() if isinstance(item, VisualElement)]
+    for widget in visuals[:MAX_CHARTS]:
         chart_snapshot = await documents.read(user, widget.chart_ref.chart_id, draft=False,
                                               revision=widget.chart_ref.revision)
         chart = chart_snapshot["definition"]
         if not isinstance(chart, ChartDefinition):
             continue
-        request = chart_request(dashboard, chart, widget.widget_id, page.page_id, timezone)
+        request = chart_request(dashboard, chart, widget.element_id, page.page_id, timezone)
         result = await datasets.query(user, chart.dataset_id, request)
         sheets.append(result_sheet(widget.title or chart.title, result, chart))
     return dashboard, page, workbook(sheets, run=run)

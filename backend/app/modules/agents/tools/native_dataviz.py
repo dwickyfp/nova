@@ -36,6 +36,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from app.core.exceptions import NovaException
 from app.modules.assistant.schemas import ToolClassification
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome
+from app.modules.viz.canvas import legacy_widgets
 from app.modules.viz.contracts.charts import (
     CartesianEncoding,
     CategoryEncoding,
@@ -71,11 +72,15 @@ from app.modules.viz.contracts.common import (
 )
 from app.modules.viz.contracts.dashboards import (
     ChartReference,
-    ChartWidget,
     DashboardDefinition,
     DatasetReference,
-    Layout,
     Page,
+)
+from app.modules.viz.contracts.dashboards_v2 import (
+    ChartWidget,
+    DashboardDefinitionV2,
+    Layout,
+    PageV2,
 )
 from app.modules.viz.contracts.datasets import DatasetDefinition, DatasetField
 from app.modules.viz.contracts.filters import (
@@ -663,9 +668,9 @@ async def dashboard_summary(
     pages: list[dict[str, Any]] = []
     for page in dashboard.pages:
         widgets: list[dict[str, Any]] = []
-        for widget in page.widgets[:60]:
+        for widget in legacy_widgets(page)[:60]:
             entry: dict[str, Any] = {
-                "widget_id": str(widget.widget_id), "kind": widget.kind,
+                "widget_id": str(widget.widget_id), "kind": getattr(widget, "kind", "widget"),
                 "position": widget.layout.model_dump(),
             }
             if widget.title:
@@ -998,7 +1003,7 @@ def _touched(
     named: set[str] = set()
     placed: set[str] = set()
     layouts = {str(widget.widget_id): widget.layout.model_dump(mode="json")
-               for page in current.pages for widget in page.widgets}
+               for page in current.pages for widget in legacy_widgets(page)}
     for change in changes:
         data = change.model_dump(mode="json") if hasattr(change, "model_dump") else dict(change)
         if data.get("widget_id"):
@@ -1011,7 +1016,7 @@ def _touched(
                 placed.add(identity)
     state: dict[str, Any] = {}
     for page in dashboard.pages:
-        for widget in page.widgets:
+        for widget in legacy_widgets(page):
             identity = str(widget.widget_id)
             if identity in named:
                 state[identity] = widget.model_dump(mode="json")
@@ -1124,7 +1129,7 @@ async def _filter_targets(
     user: dict[str, Any], dashboard: DashboardDefinition, filters: list[FilterDefinition],
 ) -> list[list[str]]:
     """For each filter, the titles of the chart widgets it filters."""
-    placed = [(page.page_id, widget) for page in dashboard.pages for widget in page.widgets]
+    placed = [(page.page_id, widget) for page in dashboard.pages for widget in legacy_widgets(page)]
     charts = await _charts(user, [widget for _, widget in placed])
     targets: list[list[str]] = []
     for item in filters:
@@ -1671,7 +1676,7 @@ class AddChartsTool(_Change):
 
         def build(current: DashboardDefinition) -> list[Any]:
             page = _page(current, args.page_id, context)
-            occupied = [widget.layout for widget in page.widgets]
+            occupied = [widget.layout for widget in legacy_widgets(page)]
             placed.clear()
             changes: list[Any] = []
             for index, (spec, chart) in enumerate(charts):
@@ -1791,7 +1796,7 @@ class UpdateChartTool(_Change):
         """The chart as it is and as this change would save it."""
         identity = _dashboard_id(args.dashboard_id, context)
         _, dashboard = await _draft(user, identity)
-        widget = next((item for page in dashboard.pages for item in page.widgets
+        widget = next((item for page in dashboard.pages for item in legacy_widgets(page)
                        if item.widget_id == args.widget_id), None)
         if not isinstance(widget, ChartWidget):
             raise Refusal("That widget is not a chart on this dashboard. Read the dashboard first.")
@@ -1862,7 +1867,7 @@ class UpdateChartTool(_Change):
 
         def build(latest: DashboardDefinition) -> list[Any]:
             for page in latest.pages:
-                for item in page.widgets:
+                for item in legacy_widgets(page):
                     if item.widget_id == args.widget_id and isinstance(item, ChartWidget):
                         replaced = item.model_copy(update={"chart_ref": ChartReference(
                             chart_id=chart_id, revision=chart_revision)})
@@ -1935,11 +1940,11 @@ class ArrangeTool(_Change):
         """The page the named widgets are on and the changes, checked as the editor would."""
         named = {item.widget_id for item in args.move} | set(args.remove)
         pages = [page for page in dashboard.pages
-                 if named & {widget.widget_id for widget in page.widgets}]
+                 if named & {widget.widget_id for widget in legacy_widgets(page)}]
         if len(pages) != 1:
             raise Refusal("Name widgets from one page of this dashboard.")
         page = pages[0]
-        present = {widget.widget_id: widget for widget in page.widgets}
+        present = {widget.widget_id: widget for widget in legacy_widgets(page)}
         missing = named - set(present)
         if missing:
             raise Refusal(
@@ -1981,7 +1986,7 @@ class ArrangeTool(_Change):
         page, changes = self._changes(args, dashboard)
         # The same local check the change runs before it is sent.
         _validated(dashboard, uuid5(_base(invocation), "preview"), revision, changes)
-        present = {widget.widget_id: widget for widget in page.widgets}
+        present = {widget.widget_id: widget for widget in legacy_widgets(page)}
         touched = [present[item.widget_id] for item in args.move]
         touched += [present[widget_id] for widget_id in args.remove]
         charts = await _charts(user, touched[:MAX_LISTED])
@@ -2293,9 +2298,11 @@ class CreateDashboardTool(_Change):
         references: tuple[DatasetReference, ...] = ()
         if args.dataset_id is not None:
             references = (await _existing_reference(user, args.dataset_id),)
-        definition = DashboardDefinition(
+        # Created as a grid (schema 2) page, stored upcast to a scrolling canvas
+        # page; the request, and so its receipt digest, is unchanged.
+        definition = DashboardDefinitionV2(
             dashboard_id=identity, title=args.title,
-            pages=(Page(page_id=uuid5(base, "page:1"), title="Page 1"),),
+            pages=(PageV2(page_id=uuid5(base, "page:1"), title="Page 1"),),
             datasets=references,
         )
         operation_id = uuid5(base, "create")

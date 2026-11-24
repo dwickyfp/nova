@@ -10,6 +10,20 @@ export type And = {
   "children": Array<Predicate | And | Or | Not>;
 };
 
+export type AnnotationElement = {
+  "element_id": string;
+  "name"?: string;
+  "geometry": Geometry;
+  "locked"?: boolean;
+  "hidden"?: boolean;
+  "decorative"?: boolean;
+  "style"?: ElementStyle;
+  "kind"?: "annotation";
+  "target": DatumAnchor;
+  "text"?: RichText;
+  "placement"?: "auto" | "n" | "e" | "s" | "w";
+};
+
 export type AxisStyle = {
   "title"?: string | null;
   "scale"?: "linear" | "log";
@@ -21,6 +35,16 @@ export type AxisStyle = {
 export type BooleanValue = {
   "type"?: "boolean";
   "value": boolean;
+};
+
+export type CanvasGrid = {
+  "columns"?: number;
+  "gutter"?: number;
+  "margin"?: number;
+  "baseline"?: number;
+  "show"?: boolean;
+  "snap"?: boolean;
+  "snap_to_elements"?: boolean;
 };
 
 export type CartesianEncoding = {
@@ -117,9 +141,24 @@ export type ConditionalFormat = {
   "tone"?: "accent" | "positive" | "negative" | "warning";
 };
 
+export type ConnectorElement = {
+  "element_id": string;
+  "name"?: string;
+  "geometry": Geometry;
+  "locked"?: boolean;
+  "hidden"?: boolean;
+  "decorative"?: boolean;
+  "style"?: ElementStyle;
+  "kind"?: "connector";
+  "start": ElementEndpoint | DatumEndpoint | PointEndpoint;
+  "end": ElementEndpoint | DatumEndpoint | PointEndpoint;
+  "head"?: "none" | "arrow" | "dot";
+  "curve"?: "straight" | "arc" | "elbow";
+};
+
 export type DashboardCreate = {
   "workspace_id": string;
-  "definition": DashboardDefinition;
+  "definition": DashboardDefinitionV2 | DashboardDefinition;
 };
 
 export type DashboardDatasetCreate = {
@@ -133,12 +172,23 @@ export type DashboardDatasets = {
 };
 
 export type DashboardDefinition = {
+  "schema_version"?: 3;
+  "dashboard_id": string;
+  "title": string;
+  "description"?: string;
+  "pages": Array<Page>;
+  "datasets"?: Array<DatasetReference>;
+  "filters"?: Array<FilterDefinition>;
+  "actions"?: Array<Interaction>;
+};
+
+export type DashboardDefinitionV2 = {
   "schema_version"?: 2;
   "dashboard_id": string;
   "title": string;
   "description"?: string;
   "columns"?: 12;
-  "pages": Array<Page>;
+  "pages": Array<PageV2>;
   "datasets"?: Array<DatasetReference>;
   "filters"?: Array<FilterDefinition>;
   "actions"?: Array<Interaction>;
@@ -243,6 +293,24 @@ export type DateValue = {
   "value": string;
 };
 
+export type DatumAnchor = {
+  "element_id": string;
+  "match"?: Array<DatumMatch>;
+  "rule"?: "max" | "min" | "first" | "last" | null;
+  "measure_id"?: string | null;
+  "missing"?: "hide";
+};
+
+export type DatumEndpoint = {
+  "kind"?: "datum";
+  "anchor": DatumAnchor;
+};
+
+export type DatumMatch = {
+  "field_id": string;
+  "value": StringValue | IntegerValue | DecimalValue | FloatValue | BooleanValue | DateValue | TimestampValue;
+};
+
 export type DecimalValue = {
   "type"?: "decimal";
   "value": string;
@@ -297,6 +365,90 @@ export type DocumentSummary = {
   "title": string;
 };
 
+export type ElementEndpoint = {
+  "kind"?: "element";
+  "element_id": string;
+  "side"?: "auto" | "n" | "e" | "s" | "w";
+};
+
+export type ElementPatch = {
+  "name"?: string | null;
+  "geometry"?: Geometry | null;
+  "locked"?: boolean | null;
+  "hidden"?: boolean | null;
+  "decorative"?: boolean | null;
+  "style"?: ElementStyle | null;
+  "title"?: string | null;
+  "chart_ref"?: ChartReference | null;
+  "overrides"?: ChartOverrides | null;
+  "filters"?: FilterTree | null;
+  "filter_id"?: string | null;
+  "role"?: "title" | "heading" | "body" | "caption" | null;
+  "text"?: RichText | null;
+  "asset_id"?: string | null;
+  "alt"?: string | null;
+  "fit"?: "contain" | "cover" | null;
+  "shape"?: "rect" | "ellipse" | "line" | "pill" | "triangle" | null;
+  "icon"?: "activity" | "arrow-down" | "arrow-down-right" | "arrow-left" | "arrow-right" | "arrow-up" | "arrow-up-right" | "award" | "banknote" | "briefcase" | "building-2" | "calendar" | "car" | "chart-bar" | "chart-column" | "chart-line" | "chart-pie" | "circle-alert" | "circle-check" | "circle-x" | "clock" | "cloud" | "credit-card" | "database" | "dollar-sign" | "droplet" | "factory" | "flag" | "fuel" | "gauge" | "globe" | "graduation-cap" | "heart" | "heart-pulse" | "house" | "info" | "leaf" | "lightbulb" | "lock" | "mail" | "map" | "map-pin" | "message-square" | "package" | "percent" | "phone" | "plane" | "server" | "shield-check" | "ship" | "shopping-bag" | "shopping-cart" | "sparkles" | "star" | "store" | "sun" | "target" | "thumbs-down" | "thumbs-up" | "timer" | "trending-down" | "trending-up" | "triangle-alert" | "trophy" | "truck" | "user" | "user-check" | "users" | "wallet" | "warehouse" | "zap" | null;
+  "label"?: string | null;
+  "start"?: ElementEndpoint | DatumEndpoint | PointEndpoint | null;
+  "end"?: ElementEndpoint | DatumEndpoint | PointEndpoint | null;
+  "head"?: "none" | "arrow" | "dot" | null;
+  "curve"?: "straight" | "arc" | "elbow" | null;
+  "target"?: DatumAnchor | null;
+  "placement"?: "auto" | "n" | "e" | "s" | "w" | null;
+};
+
+export type ElementPlacement = {
+  "element_id": string;
+  "geometry": Geometry;
+};
+
+export type ElementStyle = {
+  "fill"?: SolidFill | GradientFill | ImageFill | null;
+  "stroke"?: Stroke | null;
+  "radius"?: 0 | 4 | 8 | 12 | 16 | 9999;
+  "shadow"?: "none" | "sm" | "md";
+  "opacity"?: number;
+  "padding"?: 0 | 4 | 8 | 12 | 16 | 24;
+};
+
+export type ElementUpdate = {
+  "element_id": string;
+  "set": ElementPatch;
+};
+
+export type ElementsAdd = {
+  "op"?: "elements.add";
+  "page_id": string;
+  "elements": Array<VisualElement | FilterElement | TextElement | ImageElement | ShapeElement | IconElement | ConnectorElement | AnnotationElement | GroupElement>;
+  "stack"?: "front" | "back" | StackAbove;
+};
+
+export type ElementsArrange = {
+  "op"?: "elements.arrange";
+  "page_id": string;
+  "placements": Array<ElementPlacement>;
+};
+
+export type ElementsRemove = {
+  "op"?: "elements.remove";
+  "page_id": string;
+  "element_ids": Array<string>;
+};
+
+export type ElementsReorder = {
+  "op"?: "elements.reorder";
+  "page_id": string;
+  "element_ids": Array<string>;
+};
+
+export type ElementsUpdate = {
+  "op"?: "elements.update";
+  "page_id": string;
+  "updates": Array<ElementUpdate>;
+};
+
 export type EventPage = {
   "events": Array<DocumentEvent>;
   "through": number;
@@ -329,6 +481,19 @@ export type FilterDefinition = {
   "include_null"?: boolean;
   "searchable"?: boolean;
   "depends_on"?: Array<string>;
+};
+
+export type FilterElement = {
+  "element_id": string;
+  "name"?: string;
+  "geometry": Geometry;
+  "locked"?: boolean;
+  "hidden"?: boolean;
+  "decorative"?: boolean;
+  "style"?: ElementStyle;
+  "kind"?: "filter";
+  "title"?: string;
+  "filter_id": string;
 };
 
 export type FilterScope = {
@@ -368,6 +533,21 @@ export type FlowEncoding = {
   "value": Measure;
 };
 
+export type Geometry = {
+  "x": number;
+  "y": number;
+  "w": number;
+  "h": number;
+  "rotation"?: 0 | 90 | 180 | 270;
+};
+
+export type GradientFill = {
+  "kind"?: "gradient";
+  "start": "background" | "card" | "muted" | "accent" | "brand" | "primary" | "foreground" | "muted-foreground" | "border" | "surface-border" | "success" | "warning" | "destructive" | "chart-1" | "chart-2" | "chart-3" | "chart-4" | "chart-5" | "chart-6" | "chart-7" | "chart-8" | "chart-9";
+  "end": "background" | "card" | "muted" | "accent" | "brand" | "primary" | "foreground" | "muted-foreground" | "border" | "surface-border" | "success" | "warning" | "destructive" | "chart-1" | "chart-2" | "chart-3" | "chart-4" | "chart-5" | "chart-6" | "chart-7" | "chart-8" | "chart-9";
+  "angle"?: number;
+};
+
 export type Grant = {
   "subject_type": "user" | "role";
   "subject_id": string;
@@ -395,6 +575,18 @@ export type GrantsReplace = {
   "grants": Array<Grant>;
 };
 
+export type GroupElement = {
+  "element_id": string;
+  "name"?: string;
+  "geometry": Geometry;
+  "locked"?: boolean;
+  "hidden"?: boolean;
+  "decorative"?: boolean;
+  "style"?: ElementStyle;
+  "kind"?: "group";
+  "children": Array<VisualElement | FilterElement | TextElement | ImageElement | ShapeElement | IconElement | ConnectorElement | AnnotationElement | GroupElement>;
+};
+
 export type HeatmapEncoding = {
   "kind"?: "heatmap";
   "x": Dimension;
@@ -406,6 +598,41 @@ export type HierarchyEncoding = {
   "kind"?: "hierarchy";
   "levels": Array<Dimension>;
   "value": Measure;
+};
+
+export type IconElement = {
+  "element_id": string;
+  "name"?: string;
+  "geometry": Geometry;
+  "locked"?: boolean;
+  "hidden"?: boolean;
+  "decorative"?: boolean;
+  "style"?: ElementStyle;
+  "kind"?: "icon";
+  "icon": "activity" | "arrow-down" | "arrow-down-right" | "arrow-left" | "arrow-right" | "arrow-up" | "arrow-up-right" | "award" | "banknote" | "briefcase" | "building-2" | "calendar" | "car" | "chart-bar" | "chart-column" | "chart-line" | "chart-pie" | "circle-alert" | "circle-check" | "circle-x" | "clock" | "cloud" | "credit-card" | "database" | "dollar-sign" | "droplet" | "factory" | "flag" | "fuel" | "gauge" | "globe" | "graduation-cap" | "heart" | "heart-pulse" | "house" | "info" | "leaf" | "lightbulb" | "lock" | "mail" | "map" | "map-pin" | "message-square" | "package" | "percent" | "phone" | "plane" | "server" | "shield-check" | "ship" | "shopping-bag" | "shopping-cart" | "sparkles" | "star" | "store" | "sun" | "target" | "thumbs-down" | "thumbs-up" | "timer" | "trending-down" | "trending-up" | "triangle-alert" | "trophy" | "truck" | "user" | "user-check" | "users" | "wallet" | "warehouse" | "zap";
+  "label"?: string;
+};
+
+export type ImageElement = {
+  "element_id": string;
+  "name"?: string;
+  "geometry": Geometry;
+  "locked"?: boolean;
+  "hidden"?: boolean;
+  "decorative"?: boolean;
+  "style"?: ElementStyle;
+  "kind"?: "image";
+  "title"?: string;
+  "asset_id": string;
+  "alt": string;
+  "fit"?: "contain" | "cover";
+};
+
+export type ImageFill = {
+  "kind"?: "image";
+  "asset_id": string;
+  "fit"?: "cover" | "contain";
+  "dim"?: number;
 };
 
 export type ImageWidget = {
@@ -456,6 +683,14 @@ export type LayoutChange = {
   "placements": Array<Placement>;
 };
 
+export type LegacySpacer = {
+  "element_id": string;
+  "geometry": Geometry;
+  "title"?: string;
+  "locked"?: boolean;
+  "style"?: ElementStyle;
+};
+
 export type LocalMetricSource = {
   "kind"?: "dashboard_local_metric_view";
   "dataset_id": string;
@@ -492,6 +727,11 @@ export type Metric = {
   "period"?: RelativeWindow | null;
   "missing_periods"?: "gap" | "zero";
   "leap_day"?: "last_day" | "null";
+};
+
+export type MobileProjection = {
+  "order"?: Array<string>;
+  "hidden"?: Array<string>;
 };
 
 export type Not = {
@@ -556,7 +796,7 @@ export type ObjectSource = {
 export type Operation = {
   "operation_id": string;
   "expected_revision": number;
-  "changes": Array<LayoutChange | WidgetAdd | WidgetReplace | WidgetRemove | PageAdd | PageRemove | PageRename | PageOrder | Rename | FiltersReplace | ActionsReplace | DatasetsReplace>;
+  "changes": Array<LayoutChange | WidgetAdd | WidgetReplace | WidgetRemove | PageAdd | PageRemove | PageRename | PageOrder | Rename | FiltersReplace | ActionsReplace | DatasetsReplace | ElementsAdd | ElementsUpdate | ElementsRemove | ElementsArrange | ElementsReorder | PageCanvasSet | PageTabOrderSet | PageMobileSet>;
 };
 
 export type OperationReceipt = {
@@ -576,12 +816,37 @@ export type Or = {
 export type Page = {
   "page_id": string;
   "title": string;
-  "widgets"?: Array<ChartWidget | TextWidget | ImageWidget | FilterWidget | SpacerWidget>;
+  "canvas"?: PageCanvas;
+  "elements"?: Array<VisualElement | FilterElement | TextElement | ImageElement | ShapeElement | IconElement | ConnectorElement | AnnotationElement | GroupElement>;
+  "tab_order"?: Array<string>;
+  "mobile"?: MobileProjection;
+  "legacy_spacers"?: Array<LegacySpacer>;
 };
 
 export type PageAdd = {
   "op"?: "page.add";
-  "page": Page;
+  "page": PageV2 | Page;
+};
+
+export type PageCanvas = {
+  "size"?: "16:9" | "4:3" | "a4-landscape" | "letter-landscape" | "custom";
+  "width"?: number;
+  "height"?: number;
+  "fit"?: "page" | "width" | "actual";
+  "background"?: SolidFill | GradientFill | ImageFill | null;
+  "grid"?: CanvasGrid;
+};
+
+export type PageCanvasSet = {
+  "op"?: "page.canvas.set";
+  "page_id": string;
+  "canvas": PageCanvas;
+};
+
+export type PageMobileSet = {
+  "op"?: "page.mobile.set";
+  "page_id": string;
+  "mobile": MobileProjection;
 };
 
 export type PageOrder = {
@@ -598,6 +863,18 @@ export type PageRename = {
   "op"?: "page.rename";
   "page_id": string;
   "title": string;
+};
+
+export type PageTabOrderSet = {
+  "op"?: "page.tab_order.set";
+  "page_id": string;
+  "element_ids": Array<string>;
+};
+
+export type PageV2 = {
+  "page_id": string;
+  "title": string;
+  "widgets"?: Array<ChartWidget | TextWidget | ImageWidget | FilterWidget | SpacerWidget>;
 };
 
 export type Parameter = {
@@ -629,6 +906,12 @@ export type ParameterInput = {
 export type Placement = {
   "widget_id": string;
   "layout": Layout;
+};
+
+export type PointEndpoint = {
+  "kind"?: "point";
+  "x": number;
+  "y": number;
 };
 
 export type Predicate = {
@@ -738,6 +1021,10 @@ export type RevisionSummary = {
   "created_at": string;
 };
 
+export type RichText = {
+  "runs"?: Array<TextRun | ValueRun>;
+};
+
 export type ScatterEncoding = {
   "kind"?: "scatter";
   "x": string;
@@ -798,11 +1085,29 @@ export type SemanticSource = {
   "dependencies": Array<ObjectSource>;
 };
 
+export type ShapeElement = {
+  "element_id": string;
+  "name"?: string;
+  "geometry": Geometry;
+  "locked"?: boolean;
+  "hidden"?: boolean;
+  "decorative"?: boolean;
+  "style"?: ElementStyle;
+  "kind"?: "shape";
+  "shape"?: "rect" | "ellipse" | "line" | "pill" | "triangle";
+};
+
 export type SingleMeasureEncoding = {
   "kind"?: "single_measure";
   "measure": Measure;
   "comparison"?: Measure | null;
   "target"?: string | null;
+};
+
+export type SolidFill = {
+  "kind"?: "solid";
+  "token": "background" | "card" | "muted" | "accent" | "brand" | "primary" | "foreground" | "muted-foreground" | "border" | "surface-border" | "success" | "warning" | "destructive" | "chart-1" | "chart-2" | "chart-3" | "chart-4" | "chart-5" | "chart-6" | "chart-7" | "chart-8" | "chart-9";
+  "opacity"?: number;
 };
 
 export type SpacerWidget = {
@@ -863,9 +1168,19 @@ export type SqlSource = {
   "dependencies": Array<ObjectSource>;
 };
 
+export type StackAbove = {
+  "above": string;
+};
+
 export type StringValue = {
   "type"?: "string";
   "value": string;
+};
+
+export type Stroke = {
+  "token": "background" | "card" | "muted" | "accent" | "brand" | "primary" | "foreground" | "muted-foreground" | "border" | "surface-border" | "success" | "warning" | "destructive" | "chart-1" | "chart-2" | "chart-3" | "chart-4" | "chart-5" | "chart-6" | "chart-7" | "chart-8" | "chart-9";
+  "width"?: 0 | 1 | 2 | 3 | 4;
+  "dash"?: "solid" | "dash" | "dot";
 };
 
 export type TableCalculation = {
@@ -888,6 +1203,26 @@ export type TableEncoding = {
   "subtotals"?: boolean;
   "grand_total"?: boolean;
   "page_size"?: number;
+};
+
+export type TextElement = {
+  "element_id": string;
+  "name"?: string;
+  "geometry": Geometry;
+  "locked"?: boolean;
+  "hidden"?: boolean;
+  "decorative"?: boolean;
+  "style"?: ElementStyle;
+  "kind"?: "text";
+  "title"?: string;
+  "role"?: "title" | "heading" | "body" | "caption";
+  "text"?: RichText;
+};
+
+export type TextRun = {
+  "kind"?: "text";
+  "text": string;
+  "weight"?: 400 | 500 | 600 | null;
 };
 
 export type TextWidget = {
@@ -919,6 +1254,34 @@ export type TopN = {
   "ties"?: "include" | "stable_first";
   "remainder"?: "omit" | "other";
   "other_label"?: string;
+};
+
+export type ValueBinding = {
+  "element_id": string;
+  "measure_id": string;
+  "match"?: Array<DatumMatch>;
+  "rule"?: "max" | "min" | "first" | "last" | "total" | null;
+  "format"?: "number" | "currency" | "percent";
+};
+
+export type ValueRun = {
+  "kind"?: "value";
+  "value": ValueBinding;
+};
+
+export type VisualElement = {
+  "element_id": string;
+  "name"?: string;
+  "geometry": Geometry;
+  "locked"?: boolean;
+  "hidden"?: boolean;
+  "decorative"?: boolean;
+  "style"?: ElementStyle;
+  "kind"?: "visual";
+  "title"?: string;
+  "chart_ref": ChartReference;
+  "overrides"?: ChartOverrides;
+  "filters"?: FilterTree | null;
 };
 
 export type WidgetAdd = {

@@ -5,12 +5,12 @@ import { cdp, page, userEvent } from 'vitest/browser'
 import { cleanup, render } from 'vitest-browser-react'
 import { ThemeProvider } from '@/context/theme-provider'
 import { useAuthStore } from '@/stores/auth-store'
-import type { DashboardDefinition, DatasetQueryRequest, FilterTree } from '../contracts'
+import type { DashboardDefinition, DatasetQueryRequest, FilterTree, PageV2 } from '../contracts'
 import { cellLabel, periodEnd, type DateGrain } from '../charts/chart-query'
 import { DashboardDataTab } from '../dashboard-data-tab'
 import { DashboardCanvas } from './canvas'
 import { FilterBar } from './filters'
-import type { Page } from './layout'
+import { upcastPage, type Page } from './layout'
 import '@/styles/index.css'
 
 // Release QA for dashboard reading: drill, back, and long labels (docs/reports/native-dataviz/QA_MATRIX.csv).
@@ -76,11 +76,11 @@ async function route(input: RequestInfo | URL, options: RequestInit = {}) {
 }
 
 const BASE: FilterTree = { expression: { type: 'predicate', field: binding('channel'), op: 'eq', values: [{ type: 'string', value: 'Online' }], source: 'global', stage: 'row' } as FilterTree['expression'] }
-const pageWith = (title = ''): Page => ({ page_id: PAGE, title: 'Overview', widgets: [
+const pageWith = (title = ''): Page => upcastPage({ page_id: PAGE, title: 'Overview', widgets: [
   { kind: 'chart', widget_id: WIDGET, title, locked: false, layout: { x: 0, y: 0, w: 12, h: 5 }, chart_ref: { chart_id: CHART, revision: 1 } },
-] } as unknown as Page)
-const dashboardDefinition = { schema_version: 2, dashboard_id: DASHBOARD, title: 'Sales', columns: 12, filters: [], actions: [],
-  datasets: [{ dataset_id: DATASET, revision: 1 }], pages: [pageWith()] } as unknown as DashboardDefinition
+] } as unknown as PageV2)
+const dashboardDefinition: DashboardDefinition = { schema_version: 3, dashboard_id: DASHBOARD, title: 'Sales', description: '', filters: [], actions: [],
+  datasets: [{ dataset_id: DATASET, revision: 1 }], pages: [pageWith()] }
 const clients: QueryClient[] = []
 const onSelectValue = vi.fn()
 

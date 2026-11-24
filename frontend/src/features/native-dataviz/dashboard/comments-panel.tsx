@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { api, ApiError } from '@/lib/api-client'
 import { useAuthStore } from '@/stores/auth-store'
 import type { DashboardDefinition } from '../contracts'
+import { gridWidgets } from './layout'
 import { commentsKey, MAX_COMMENT, useComments, type DashboardComment } from './comments'
 
 function when(iso: string): string {
@@ -40,8 +41,9 @@ export function CommentsPanel({ open, onOpenChange, dashboardId, definition, pag
   const refresh = () => client.invalidateQueries({ queryKey: commentsKey(epoch, dashboardId) })
 
   const pages = useMemo(() => new Map(definition.pages.map(page => [page.page_id, page])), [definition])
+  const widgets = useMemo(() => new Map(definition.pages.map(page => [page.page_id, gridWidgets(page)])), [definition])
   const widgetTitle = (comment: Pick<DashboardComment, 'page_id' | 'widget_id'>) => {
-    const widget = pages.get(comment.page_id ?? '')?.widgets?.find(item => item.widget_id === comment.widget_id)
+    const widget = widgets.get(comment.page_id ?? '')?.find(item => item.widget_id === comment.widget_id)
     return widget ? widget.title || (widget.kind === 'text' ? 'Text' : 'Chart') : 'A removed widget'
   }
   const place = (comment: DashboardComment) => !comment.page_id ? 'Dashboard'

@@ -8,7 +8,7 @@ import type { VizTokens } from '../charts/echart-host'
 import { capacityRetry, MAX_CONCURRENT_QUERIES, queuedQuery } from '../charts/query-queue'
 import { chartDataQuery, freshChartData } from '../charts/chart-data'
 import { chartContext, defaultValue, targetBinding, type FilterDefinition } from './filter-model'
-import { firstFreeSlot, slotAt, validPlacements, type Widget } from './layout'
+import { firstFreeSlot, gridWidgets, slotAt, upcastDashboard, validPlacements, type Widget } from './layout'
 import { applyLocal, inverse, sameLayout } from './operations'
 
 const DATASET = 'aaaaaaaa-0000-4000-8000-000000000001'
@@ -193,7 +193,7 @@ describe('dashboard filters', () => {
 describe('layout and operations', () => {
   const widget = (id: string, x: number, y: number, w = 6, h = 4): Widget => ({ kind: 'text', widget_id: id, text: id, layout: { x, y, w, h } } as Widget)
   const dashboard = (widgets: Widget[]): DashboardDefinition =>
-    ({ dashboard_id: 'd', title: 'Before', pages: [{ page_id: 'p', title: 'P', widgets }], filters: [] } as unknown as DashboardDefinition)
+    upcastDashboard({ dashboard_id: 'd', title: 'Before', pages: [{ page_id: 'p', title: 'P', widgets }], filters: [] })
 
   it('places new widgets in the first free slot without overlap', () => {
     expect(firstFreeSlot([widget('a', 0, 0)], 6, 4)).toEqual({ x: 6, y: 0, w: 6, h: 4 })
@@ -208,7 +208,7 @@ describe('layout and operations', () => {
     expect(sameLayout(after.pages[0], moves[0].placements)).toBe(true)
     expect(applyLocal(after, inverse(moves[0], before)!)).toEqual(before)
     const removal = { op: 'widget.remove' as const, page_id: 'p', widget_id: 'a' }
-    expect(applyLocal(applyLocal(before, removal), inverse(removal, before)!).pages[0].widgets).toHaveLength(2)
+    expect(gridWidgets(applyLocal(applyLocal(before, removal), inverse(removal, before)!).pages[0])).toHaveLength(2)
     const rename = { op: 'dashboard.rename' as const, title: 'After' }
     expect(applyLocal(applyLocal(before, rename), inverse(rename, before)!).title).toBe('Before')
   })
@@ -378,8 +378,8 @@ describe('dashboard links', () => {
   it('replaces actions locally and undoes back to the previous set', () => {
     const link = { action_id: 'a1', kind: 'navigate' as const, source_widget_id: 'w1', target_dashboard_id: 'd2',
       target_workspace_id: 'personal', mappings: [], run_on: 'menu' as const }
-    const before = { schema_version: 2, dashboard_id: 'd1', title: 'Sales', columns: 12, filters: [], datasets: [],
-      actions: [], pages: [{ page_id: 'p1', title: 'Overview', widgets: [] }] } as unknown as DashboardDefinition
+    const before = upcastDashboard({ dashboard_id: 'd1', title: 'Sales', filters: [], datasets: [],
+      actions: [], pages: [{ page_id: 'p1', title: 'Overview', widgets: [] }] })
     const change = { op: 'actions.replace' as const, actions: [link] }
     expect(applyLocal(before, change).actions).toEqual([link])
     expect(inverse(change, before)).toEqual({ op: 'actions.replace', actions: [] })

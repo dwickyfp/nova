@@ -88,7 +88,7 @@ class NativeContracts(BaseModel):
     grant_state: GrantState
     operation_receipt: OperationReceipt
     revision_summary: RevisionSummary
-    contract_version: int = Field(default=2)
+    contract_version: int = Field(default=3)
 
 
 def typescript(node: dict[str, Any]) -> str:

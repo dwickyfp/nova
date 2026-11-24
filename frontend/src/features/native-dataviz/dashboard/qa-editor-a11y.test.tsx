@@ -4,7 +4,9 @@ import { cdp, page, userEvent } from 'vitest/browser'
 import { cleanup, render } from 'vitest-browser-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAuthStore } from '@/stores/auth-store'
+import type { DashboardDefinitionV2 } from '../contracts'
 import { DashboardEditor } from './editor'
+import { upcastDashboard } from './layout'
 import '@/styles/index.css'
 
 /* Release-QA accessibility and responsive scenarios for the dashboard editor (QA_MATRIX.csv). */
@@ -41,7 +43,7 @@ async function route(url: string, options: RequestInit = {}) {
     return json({ operation_id: key, resource_id: DASHBOARD, base_revision: revision - 1, new_revision: revision, event_sequence: revision, committed_at: '2026-11-16T00:00:00Z' })
   }
   if (url.includes(`/viz/dashboards/${DASHBOARD}?`)) {
-    return json({ resource_id: DASHBOARD, revision, metadata_revision: revision, grants_revision: 1, publication_id: publicationId, definition })
+    return json({ resource_id: DASHBOARD, revision, metadata_revision: revision, grants_revision: 1, publication_id: publicationId, definition: upcastDashboard(definition as unknown as DashboardDefinitionV2) })
   }
   if (url.includes(`/viz/charts/${CHART}?`)) return json({ resource_id: CHART, revision: 1, metadata_revision: 1, grants_revision: 1, publication_id: null, definition: kpi })
   if (url.includes(`/viz/datasets/${DATASET}?`)) {

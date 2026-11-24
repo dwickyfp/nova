@@ -1,0 +1,342 @@
+{
+  "actions": [],
+  "dashboard_id": "00000000-0000-4000-8000-00000000000a",
+  "datasets": [
+    {
+      "dataset_id": "00000000-0000-4000-8000-000000000384",
+      "revision": 3
+    }
+  ],
+  "description": "All v2 widget kinds and appearances",
+  "filters": [
+    {
+      "allow_all": true,
+      "defaults": [],
+      "depends_on": [],
+      "field": {
+        "dataset_id": "00000000-0000-4000-8000-000000000384",
+        "dataset_revision": 3,
+        "field_id": "region"
+      },
+      "filter_id": "00000000-0000-4000-8000-000000000011",
+      "include_null": false,
+      "kind": "single_value",
+      "mappings": [],
+      "parameter": null,
+      "relative": null,
+      "scope": {
+        "kind": "global",
+        "page_id": null,
+        "widget_ids": []
+      },
+      "searchable": true,
+      "title": "Region"
+    }
+  ],
+  "pages": [
+    {
+      "canvas": {
+        "background": null,
+        "fit": "width",
+        "grid": {
+          "baseline": 8,
+          "columns": 12,
+          "gutter": 12,
+          "margin": 6,
+          "show": true,
+          "snap": true,
+          "snap_to_elements": true
+        },
+        "height": 864,
+        "size": "custom",
+        "width": 1200
+      },
+      "elements": [
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000000c",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 1188,
+            "x": 6,
+            "y": 6
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "title",
+          "style": {
+            "fill": null,
+            "opacity": 100,
+            "padding": 0,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": null
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": ""
+        },
+        {
+          "chart_ref": {
+            "chart_id": "00000000-0000-4000-8000-000000000385",
+            "revision": 2
+          },
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000000d",
+          "filters": null,
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 150
+          },
+          "hidden": false,
+          "kind": "visual",
+          "locked": false,
+          "name": "",
+          "overrides": {
+            "palette": "single_tone",
+            "show_labels": null,
+            "show_legend": null,
+            "show_title": false
+          },
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "title": "Revenue"
+        },
+        {
+          "chart_ref": {
+            "chart_id": "00000000-0000-4000-8000-000000000385",
+            "revision": 2
+          },
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000000e",
+          "filters": {
+            "expression": {
+              "field": {
+                "dataset_id": "00000000-0000-4000-8000-000000000384",
+                "dataset_revision": 3,
+                "field_id": "region"
+              },
+              "op": "eq",
+              "relative": null,
+              "source": "chart",
+              "stage": "row",
+              "type": "predicate",
+              "values": [
+                {
+                  "type": "string",
+                  "value": "Jakarta"
+                }
+              ]
+            }
+          },
+          "geometry": {
+            "h": 348,
+            "rotation": 0,
+            "w": 888,
+            "x": 306,
+            "y": 150
+          },
+          "hidden": false,
+          "kind": "visual",
+          "locked": true,
+          "name": "",
+          "overrides": {
+            "palette": null,
+            "show_labels": null,
+            "show_legend": null,
+            "show_title": null
+          },
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 16,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "title": ""
+        },
+        {
+          "alt": "Company logo",
+          "asset_id": "00000000-0000-4000-8000-000000000387",
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-00000000000f",
+          "fit": "cover",
+          "geometry": {
+            "h": 204,
+            "rotation": 0,
+            "w": 288,
+            "x": 6,
+            "y": 294
+          },
+          "hidden": false,
+          "kind": "image",
+          "locked": false,
+          "name": "",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "title": ""
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000010",
+          "filter_id": "00000000-0000-4000-8000-000000000011",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 388,
+            "x": 6,
+            "y": 510
+          },
+          "hidden": false,
+          "kind": "filter",
+          "locked": false,
+          "name": "",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "title": "Region"
+        },
+        {
+          "decorative": false,
+          "element_id": "00000000-0000-4000-8000-000000000013",
+          "geometry": {
+            "h": 204,
+            "rotation": 0,
+            "w": 588,
+            "x": 6,
+            "y": 654
+          },
+          "hidden": false,
+          "kind": "text",
+          "locked": false,
+          "name": "",
+          "role": "body",
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": null
+          },
+          "text": {
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Quarterly revenue\nby region",
+                "weight": null
+              }
+            ]
+          },
+          "title": "Notes"
+        }
+      ],
+      "legacy_spacers": [
+        {
+          "element_id": "00000000-0000-4000-8000-000000000012",
+          "geometry": {
+            "h": 132,
+            "rotation": 0,
+            "w": 788,
+            "x": 406,
+            "y": 510
+          },
+          "locked": false,
+          "style": {
+            "fill": {
+              "kind": "solid",
+              "opacity": 100,
+              "token": "card"
+            },
+            "opacity": 100,
+            "padding": 12,
+            "radius": 8,
+            "shadow": "none",
+            "stroke": {
+              "dash": "solid",
+              "token": "surface-border",
+              "width": 1
+            }
+          },
+          "title": ""
+        }
+      ],
+      "mobile": {
+        "hidden": [],
+        "order": []
+      },
+      "page_id": "00000000-0000-4000-8000-00000000000b",
+      "tab_order": [],
+      "title": "Page 1"
+    }
+  ],
+  "schema_version": 3,
+  "title": "Every kind"
+}

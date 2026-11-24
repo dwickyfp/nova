@@ -24,6 +24,11 @@
      --brand fill is 5.2:1. */
   --brand: #2f6fb0;
   --brand-foreground: #ffffff;
+  /* The phoenix mark: the only red in the interface (owner decision
+     2026-11-24). Raster colours, not a UI accent; the Logo PNGs are exported
+     from these values and theme-contrast.test.ts checks them. */
+  --brand-mark: #c93f2a;
+  --brand-mark-accent: #d78c55;
   --secondary: oklch(0.968 0.007 247.896);
   --secondary-foreground: var(--foreground);
   --muted: oklch(0.968 0.007 247.896);
@@ -68,8 +73,9 @@
   --surface-border: oklch(0.929 0.013 255.508);
 
   /* Categorical series in drawing order: steel blue first, then hues that
-     never sit next to a look-alike (coral comes fifth, sky eighth, far from
-     blue). Every slot keeps 3:1 against --card; theme-contrast.test.ts
+     never sit next to a look-alike (coral fifth, olive eighth). Every pair
+     differs by at least 0.08 in OKLab, so even a nine-series chart has no
+     near-twins. Every slot keeps 3:1 against --card; theme-contrast.test.ts
      enforces it. */
   --chart-1: #2f6fb0;
   --chart-2: #12897d;
@@ -78,7 +84,7 @@
   --chart-5: #d4503f;
   --chart-6: #c03f84;
   --chart-7: #4f8a2b;
-  --chart-8: #1a86b4;
+  --chart-8: #6e6a1c;
   --chart-9: #a0612f;
 
   /* Tool kinds under an answer: icon tiles, chip accents and detail rules.
@@ -142,7 +148,7 @@
   --shell-backdrop:
     radial-gradient(90% 70% at 0% 0%, #8fb4c4 0%, rgb(143 180 196 / 0%) 70%),
     radial-gradient(80% 70% at 100% 100%, #ecd3a0 0%, rgb(236 211 160 / 0%) 70%),
-    radial-gradient(60% 60% at 0% 100%, #f0c4ae 0%, rgb(240 196 174 / 0%) 70%),
+    radial-gradient(60% 60% at 0% 100%, #c8cfe0 0%, rgb(200 207 224 / 0%) 70%),
     linear-gradient(160deg, #cfdbe4 0%, #e9edf1 100%);
   /* The light pane stays fully opaque: --primary and the -strong status tokens
      are measured as text on --background with no margin for a tint (B4). */
@@ -185,7 +191,7 @@
   --shell-backdrop:
     radial-gradient(90% 70% at 0% 0%, #2c5360 0%, rgb(44 83 96 / 0%) 70%),
     radial-gradient(80% 70% at 100% 100%, #6a5330 0%, rgb(106 83 48 / 0%) 70%),
-    radial-gradient(60% 60% at 0% 100%, #5c3a2b 0%, rgb(92 58 43 / 0%) 70%),
+    radial-gradient(60% 60% at 0% 100%, #2a3346 0%, rgb(42 51 70 / 0%) 70%),
     linear-gradient(160deg, #1a2733 0%, #0d1217 100%);
   /* Both tints are --background (#0b0f14) so chrome and pane differ only in
      how much backdrop they let through. */
@@ -231,6 +237,9 @@
   --primary-foreground: #0b0f14;
   --brand: #6aa5e0;
   --brand-foreground: #0b0f14;
+  /* Lifted so the mark keeps 3:1 on the dark navigation glass. */
+  --brand-mark: #da614e;
+  --brand-mark-accent: #e1a980;
   --secondary: #171d26;
   --secondary-foreground: #f7f8fa;
   --muted: #171d26;
@@ -272,7 +281,7 @@
   --chart-5: #f36b5b;
   --chart-6: #e36a9a;
   --chart-7: #7cc35a;
-  --chart-8: #38bdf8;
+  --chart-8: #d2c49a;
   --chart-9: #d0915a;
 
   --tool-mcp: #b4a0fb;

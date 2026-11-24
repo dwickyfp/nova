@@ -2,18 +2,19 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { cleanup, render } from 'vitest-browser-react'
-import type { DashboardDefinition } from '../contracts'
+import type { DashboardDefinitionV2 } from '../contracts'
 import { CommentsPanel } from './comments-panel'
 import type { DashboardComment } from './comments'
+import { upcastDashboard } from './layout'
 import '@/styles/index.css'
 
 const DASHBOARD = 'dddddddd-0000-4000-8000-000000000001'
 const PAGE = 'eeeeeeee-0000-4000-8000-000000000001'
 const WIDGET = 'ffffffff-0000-4000-8000-000000000001'
-const definition = {
+const definition = upcastDashboard({
   dashboard_id: DASHBOARD, title: 'Sales', pages: [{ page_id: PAGE, title: 'Overview', widgets: [
     { kind: 'chart', widget_id: WIDGET, title: 'Revenue by region', layout: { x: 0, y: 0, w: 6, h: 4 } }] }],
-} as unknown as DashboardDefinition
+} as unknown as DashboardDefinitionV2)
 
 let stored: DashboardComment[] = []
 const requests: { method: string; url: string; body: unknown }[] = []
