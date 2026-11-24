@@ -154,9 +154,7 @@
    "CONFIG_AGENT_VERSIONS"
   ]
  },
- "pending": [
-  "31b7696e53262ccc"
- ],
+ "pending": [],
  "references": {
   "00a6728749e32dbf": {
    "admin": {
@@ -179,7 +177,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT payment_method, AVG(total_amount) FROM NOVA_DEMO.orders WHERE payment_method IN ('DANA','GoPay','QRIS') GROUP BY 1",
    "user": {
@@ -216,7 +214,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": false,
    "sql": "SELECT product_name, price FROM NOVA_CATALOG.products ORDER BY price DESC LIMIT 1",
    "user": {
@@ -240,7 +238,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value ASC LIMIT 2",
    "user": {
@@ -277,7 +275,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": false,
    "sql": "SELECT id, amount FROM analytics.sales WHERE city = 'Bandung'",
    "user": {
@@ -305,7 +303,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT DATE_TRUNC('month', order_date), SUM(total_amount) FROM NOVA_DEMO.orders GROUP BY 1",
    "user": {
@@ -358,7 +356,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE status = 'completed' GROUP BY shipping_city ORDER BY value DESC",
    "user": {
@@ -405,7 +403,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) / COUNT(DISTINCT customer_id) AS value FROM NOVA_DEMO.orders",
    "user": {
@@ -430,7 +428,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-06-08'",
    "user": {
@@ -473,7 +471,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT payment_method AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY payment_method ORDER BY value DESC LIMIT 5",
    "user": {
@@ -516,7 +514,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": false,
    "sql": "SELECT SUM(amount) FROM NOVA_ANALYTICS.invoices WHERE status = 'unpaid'",
    "user": {
@@ -592,7 +590,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT DATE(order_date), SUM(total_amount) FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY 1",
    "user": {
@@ -693,7 +691,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT order_id, total_amount AS value FROM NOVA_DEMO.orders WHERE status <> 'completed'",
    "user": {
@@ -758,7 +756,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE status = 'completed' GROUP BY shipping_city ORDER BY value DESC",
    "user": {
@@ -805,7 +803,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) * 1.1 AS value FROM NOVA_DEMO.orders",
    "user": {
@@ -832,7 +830,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount), COUNT(*) FROM NOVA_DEMO.orders WHERE shipping_city='Jakarta'",
    "user": {
@@ -861,7 +859,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(CASE WHEN shipping_city='Bandung' THEN 1 ELSE 0 END) AS bandung, SUM(CASE WHEN shipping_city='Yogyakarta' THEN 1 ELSE 0 END) AS yogyakarta FROM NOVA_DEMO.orders",
    "user": {
@@ -926,7 +924,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT customer_id AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY customer_id ORDER BY value DESC",
    "user": {
@@ -989,7 +987,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE payment_method = 'Bank Transfer'",
    "user": {
@@ -1016,7 +1014,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS revenue, COUNT(*) AS orders FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01'",
    "user": {
@@ -1043,7 +1041,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(CASE WHEN status <> 'completed' THEN total_amount END) / SUM(total_amount) * 100 AS pct FROM NOVA_DEMO.orders",
    "user": {
@@ -1074,7 +1072,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT DATE(order_date) AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY value DESC LIMIT 2",
    "user": {
@@ -1119,7 +1117,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT status AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01' GROUP BY status ORDER BY value DESC",
    "user": {
@@ -1162,7 +1160,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS revenue, COUNT(*) AS orders, AVG(total_amount) AS aov FROM NOVA_DEMO.orders",
    "user": {
@@ -1203,7 +1201,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT payment_method, SUM(total_amount), COUNT(*), AVG(total_amount) FROM NOVA_DEMO.orders WHERE payment_method IN ('QRIS','DANA') GROUP BY 1",
    "user": {
@@ -1244,7 +1242,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount), COUNT(*), AVG(total_amount) FROM NOVA_DEMO.orders WHERE payment_method='QRIS'",
    "user": {
@@ -1297,7 +1295,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT payment_method, SUM(total_amount), COUNT(*) FROM NOVA_DEMO.orders GROUP BY 1",
    "user": {
@@ -1384,7 +1382,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01' GROUP BY shipping_city ORDER BY value DESC",
    "user": {
@@ -1469,7 +1467,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT DATE_TRUNC('week', order_date) AS label, COUNT(*) AS value FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY 1",
    "user": {
@@ -1516,7 +1514,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT COUNT(DISTINCT customer_id) AS value FROM NOVA_DEMO.orders",
    "user": {
@@ -1541,7 +1539,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT PERCENTILE_APPROX(total_amount, 0.5) AS value FROM NOVA_DEMO.orders",
    "user": {
@@ -1576,7 +1574,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT customer_id, COUNT(*) FROM NOVA_DEMO.orders WHERE customer_id IN (1,5,4) GROUP BY 1",
    "user": {
@@ -1615,7 +1613,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount), COUNT(*), AVG(total_amount) FROM NOVA_DEMO.orders WHERE order_date >= '2025-07-01' AND order_date < '2025-08-01'",
    "user": {
@@ -1658,7 +1656,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT order_id, total_amount AS value FROM NOVA_DEMO.orders WHERE total_amount > 20000000",
    "user": {
@@ -1699,7 +1697,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT DATE(order_date), SUM(total_amount) v FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01' GROUP BY 1 ORDER BY v DESC LIMIT 1",
    "user": {
@@ -1732,7 +1730,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-07-01' AND order_date < '2025-08-01' GROUP BY shipping_city ORDER BY value DESC",
    "user": {
@@ -1769,7 +1767,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT DATE_TRUNC('month', order_date), SUM(total_amount) FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY 1",
    "user": {
@@ -1846,7 +1844,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT product_id, SUM(quantity) FROM NOVA_DEMO.order_items GROUP BY 1",
    "user": {
@@ -1927,7 +1925,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT customer_id AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY customer_id ORDER BY value DESC LIMIT 3",
    "user": {
@@ -1962,7 +1960,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-21' AND order_date < '2025-07-01'",
    "user": {
@@ -1987,7 +1985,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE status NOT IN ('pending','processing')",
    "user": {
@@ -2070,7 +2068,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT DATE(order_date) AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY DATE(order_date) ORDER BY label",
    "user": {
@@ -2155,7 +2153,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT payment_method AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY payment_method ORDER BY value DESC LIMIT 1",
    "user": {
@@ -2232,7 +2230,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT DATE(order_date) AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01' GROUP BY 1 ORDER BY 1",
    "user": {
@@ -2313,7 +2311,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC LIMIT 2",
    "user": {
@@ -2346,7 +2344,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT customer_id, COUNT(*) n FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY n DESC LIMIT 1",
    "user": {
@@ -2358,6 +2356,31 @@
      [
       1,
       3
+     ]
+    ]
+   }
+  },
+  "31b7696e53262ccc": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      2
+     ]
+    ]
+   },
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(DISTINCT customer_id) AS value FROM NOVA_DEMO.orders WHERE payment_method = 'GoPay'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      2
      ]
     ]
    }
@@ -2375,7 +2398,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value ASC LIMIT 1",
    "user": {
@@ -2404,7 +2427,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS revenue, COUNT(*) AS orders FROM NOVA_DEMO.orders",
    "user": {
@@ -2437,7 +2460,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT order_id, total_amount AS value FROM NOVA_DEMO.orders ORDER BY total_amount ASC LIMIT 2",
    "user": {
@@ -2468,7 +2491,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": false,
    "sql": "SELECT SUM(spend) FROM NOVA_ANALYTICS.channel_performance WHERE channel='Google Ads'",
    "user": {
@@ -2486,7 +2509,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE status = 'shipped'",
    "user": {
@@ -2525,7 +2548,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT status AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01' GROUP BY status ORDER BY value DESC",
    "user": {
@@ -2564,7 +2587,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE status = 'pending'",
    "user": {
@@ -2589,7 +2612,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE payment_method = 'GoPay'",
    "user": {
@@ -2616,7 +2639,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC LIMIT 1",
    "user": {
@@ -2661,7 +2684,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC LIMIT 5",
    "user": {
@@ -2706,7 +2729,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT payment_method AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY payment_method ORDER BY value DESC LIMIT 1",
    "user": {
@@ -2735,7 +2758,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS total, SUM(CASE WHEN shipping_city='Jakarta' THEN total_amount ELSE 0 END) AS jakarta FROM NOVA_DEMO.orders",
    "user": {
@@ -2764,7 +2787,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT status AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY status ORDER BY value DESC LIMIT 1",
    "user": {
@@ -2829,7 +2852,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01' GROUP BY shipping_city ORDER BY value DESC",
    "user": {
@@ -2851,6 +2874,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -2860,10 +2887,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -2892,7 +2915,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE shipping_city = 'Semarang'",
    "user": {
@@ -2917,7 +2940,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE shipping_city = 'Jakarta'",
    "user": {
@@ -2980,7 +3003,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value ASC",
    "user": {
@@ -3043,7 +3066,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE payment_method = 'Credit Card'",
    "user": {
@@ -3090,7 +3113,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders WHERE status = 'completed' GROUP BY shipping_city ORDER BY value DESC",
    "user": {
@@ -3137,7 +3160,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE payment_method = 'QRIS'",
    "user": {
@@ -3167,20 +3190,20 @@
       3
      ],
      [
-      "GoPay",
-      3
-     ],
-     [
       "DANA",
       3
      ],
      [
       "QRIS",
       3
+     ],
+     [
+      "GoPay",
+      3
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT payment_method AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders GROUP BY payment_method ORDER BY value DESC",
    "user": {
@@ -3223,7 +3246,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT AVG(total_amount) AS value FROM NOVA_DEMO.orders WHERE status = 'shipped'",
    "user": {
@@ -3248,7 +3271,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(CASE WHEN payment_method='Credit Card' THEN total_amount END) / SUM(total_amount) * 100 AS pct FROM NOVA_DEMO.orders",
    "user": {
@@ -3275,7 +3298,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount), SUM(total_amount) / (SELECT SUM(total_amount) FROM NOVA_DEMO.orders) * 100 FROM NOVA_DEMO.orders WHERE customer_id IN (SELECT customer_id FROM NOVA_DEMO.orders GROUP BY 1 HAVING COUNT(*) > 1)",
    "user": {
@@ -3302,7 +3325,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01'",
    "user": {
@@ -3327,7 +3350,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) + SUM(CASE WHEN shipping_city='Jakarta' THEN total_amount ELSE 0 END) FROM NOVA_DEMO.orders",
    "user": {
@@ -3356,7 +3379,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(CASE WHEN payment_method='DANA' THEN total_amount END) AS dana, SUM(CASE WHEN payment_method='GoPay' THEN total_amount END) AS gopay, SUM(CASE WHEN payment_method='DANA' THEN total_amount END) - SUM(CASE WHEN payment_method='GoPay' THEN total_amount END) AS diff FROM NOVA_DEMO.orders",
    "user": {
@@ -3403,7 +3426,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC LIMIT 5",
    "user": {
@@ -3472,7 +3495,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": false,
    "sql": "SELECT report_month, net_revenue FROM NOVA_ANALYTICS.monthly_revenue",
    "user": {
@@ -3548,7 +3571,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT order_id, total_amount AS value FROM NOVA_DEMO.orders ORDER BY order_date",
    "user": {
@@ -3635,7 +3658,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS revenue, COUNT(order_id) AS orders, AVG(total_amount) AS aov FROM NOVA_DEMO.orders",
    "user": {
@@ -3664,7 +3687,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-07-01' AND order_date < '2025-08-01'",
    "user": {
@@ -3703,7 +3726,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT status AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY status ORDER BY value DESC",
    "user": {
@@ -3760,7 +3783,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT payment_method AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY payment_method ORDER BY value DESC",
    "user": {
@@ -3809,7 +3832,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": false,
    "sql": "SELECT id, phone FROM analytics.customers",
    "user": {
@@ -3840,7 +3863,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE shipping_city = 'Bandung' AND status = 'completed'",
    "user": {
@@ -3867,7 +3890,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT COUNT(*) AS repeaters, SUM(v) AS value FROM (SELECT customer_id, COUNT(*) n, SUM(total_amount) v FROM NOVA_DEMO.orders GROUP BY 1 HAVING COUNT(*) > 1) r",
    "user": {
@@ -3908,7 +3931,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT status AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY status ORDER BY value DESC",
    "user": {
@@ -3957,7 +3980,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city, COUNT(*) FROM NOVA_DEMO.orders WHERE payment_method='DANA' GROUP BY 1",
    "user": {
@@ -4030,7 +4053,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT email, phone FROM NOVA_DEMO.customers",
    "user": {
@@ -4095,7 +4118,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY 1 HAVING COUNT(*) > 1 ORDER BY value DESC LIMIT 1",
    "user": {
@@ -4126,7 +4149,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount), COUNT(*), AVG(total_amount) FROM NOVA_DEMO.orders",
    "user": {
@@ -4157,7 +4180,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT payment_method AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders GROUP BY payment_method ORDER BY value DESC, label LIMIT 1",
    "user": {
@@ -4184,7 +4207,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-01-01'",
    "user": {
@@ -4213,7 +4236,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount), COUNT(*), AVG(total_amount) FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01'",
    "user": {
@@ -4246,7 +4269,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(CASE WHEN shipping_city='Jakarta' THEN total_amount END) AS jakarta, SUM(CASE WHEN shipping_city='Surabaya' THEN total_amount END) AS surabaya, SUM(CASE WHEN shipping_city='Jakarta' THEN total_amount END) - SUM(CASE WHEN shipping_city='Surabaya' THEN total_amount END) AS diff FROM NOVA_DEMO.orders",
    "user": {
@@ -4309,7 +4332,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT payment_method, DATE_TRUNC('month', order_date), SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY 1, 2",
    "user": {
@@ -4386,7 +4409,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE status <> 'completed' GROUP BY shipping_city ORDER BY value DESC",
    "user": {
@@ -4426,11 +4449,11 @@
     ],
     "rows": [
      [
-      1005,
+      1015,
       "24999000.00"
      ],
      [
-      1015,
+      1005,
       "24999000.00"
      ],
      [
@@ -4439,7 +4462,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT order_id, total_amount FROM NOVA_DEMO.orders ORDER BY total_amount DESC LIMIT 3",
    "user": {
@@ -4449,11 +4472,11 @@
     ],
     "rows": [
      [
-      1005,
+      1015,
       "24999000.00"
      ],
      [
-      1015,
+      1005,
       "24999000.00"
      ],
      [
@@ -4492,7 +4515,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT customer_id AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY customer_id ORDER BY value DESC LIMIT 5",
    "user": {
@@ -4539,7 +4562,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS revenue, COUNT(order_id) AS orders, AVG(total_amount) AS aov FROM NOVA_DEMO.orders WHERE shipping_city = 'Surabaya'",
    "user": {
@@ -4578,7 +4601,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC LIMIT 3",
    "user": {
@@ -4613,7 +4636,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT AVG(total_amount) AS value FROM NOVA_DEMO.orders WHERE payment_method = (SELECT payment_method FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY SUM(total_amount) DESC LIMIT 1)",
    "user": {
@@ -4638,7 +4661,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE status = 'completed'",
    "user": {
@@ -4663,7 +4686,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT AVG(total_amount) AS value FROM NOVA_DEMO.orders WHERE shipping_city = 'Bandung'",
    "user": {
@@ -4688,7 +4711,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-07-01' AND order_date < '2025-08-01'",
    "user": {
@@ -4713,7 +4736,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-01-01' AND order_date < '2025-07-01'",
    "user": {
@@ -4760,7 +4783,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT DATE_TRUNC('week', order_date) AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY 1",
    "user": {
@@ -4807,7 +4830,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE customer_id = 1",
    "user": {
@@ -4834,7 +4857,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(CASE WHEN shipping_city='Semarang' THEN 1 ELSE 0 END), SUM(CASE WHEN shipping_city='Medan' THEN 1 ELSE 0 END) FROM NOVA_DEMO.orders",
    "user": {
@@ -4863,7 +4886,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(CASE WHEN shipping_city='Jakarta' THEN total_amount END), SUM(total_amount) / COUNT(DISTINCT shipping_city) FROM NOVA_DEMO.orders",
    "user": {
@@ -4890,7 +4913,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders",
    "user": {
@@ -4915,7 +4938,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT (SUM(total_amount) - SUM(CASE WHEN shipping_city='Medan' THEN total_amount ELSE 0 END)) * 1.15 FROM NOVA_DEMO.orders",
    "user": {
@@ -5014,7 +5037,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT DATE_TRUNC('week', order_date), shipping_city, SUM(total_amount) FROM NOVA_DEMO.orders GROUP BY 1, 2",
    "user": {
@@ -5115,7 +5138,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(CASE WHEN payment_method='Credit Card' THEN total_amount END) AS cc, SUM(CASE WHEN payment_method='Bank Transfer' THEN total_amount END) AS bt FROM NOVA_DEMO.orders",
    "user": {
@@ -5160,7 +5183,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT payment_method AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01' GROUP BY payment_method ORDER BY value DESC",
    "user": {
@@ -5207,7 +5230,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS revenue, COUNT(order_id) AS orders, AVG(total_amount) AS aov FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01'",
    "user": {
@@ -5236,7 +5259,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-29'",
    "user": {
@@ -5261,7 +5284,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE payment_method = 'DANA'",
    "user": {
@@ -5300,7 +5323,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT status AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders GROUP BY status ORDER BY value DESC",
    "user": {
@@ -5341,7 +5364,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT MAX(v), MAX(v)/SUM(v)*100 FROM (SELECT shipping_city, SUM(total_amount) v FROM NOVA_DEMO.orders GROUP BY 1) s",
    "user": {
@@ -5372,7 +5395,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS revenue, COUNT(order_id) AS orders, AVG(total_amount) AS aov FROM NOVA_DEMO.orders WHERE payment_method = 'QRIS'",
    "user": {
@@ -5406,12 +5429,12 @@
       "22499000.00000000"
      ],
      [
-      "Jakarta",
-      "10165333.33333333"
-     ],
-     [
       "Bandung",
       "11149000.00000000"
+     ],
+     [
+      "Jakarta",
+      "10165333.33333333"
      ],
      [
       "Yogyakarta",
@@ -5419,8 +5442,8 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
-   "same_for_admin": false,
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
    "sql": "SELECT shipping_city, AVG(total_amount) FROM NOVA_DEMO.orders WHERE shipping_city IN (SELECT shipping_city FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY SUM(total_amount) DESC LIMIT 5) GROUP BY 1",
    "user": {
     "columns": [
@@ -5429,20 +5452,20 @@
     ],
     "rows": [
      [
-      "Bandung",
-      "11149000.00000000"
-     ],
-     [
-      "Jakarta",
-      "10165333.33333333"
-     ],
-     [
       "Semarang",
       "24999000.00000000"
      ],
      [
       "Malang",
       "22499000.00000000"
+     ],
+     [
+      "Bandung",
+      "11149000.00000000"
+     ],
+     [
+      "Jakarta",
+      "10165333.33333333"
      ],
      [
       "Yogyakarta",
@@ -5526,7 +5549,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city, payment_method, COUNT(*) AS value FROM NOVA_DEMO.orders GROUP BY 1, 2 ORDER BY value DESC",
    "user": {
@@ -5537,13 +5560,13 @@
     ],
     "rows": [
      [
-      "Surabaya",
-      "GoPay",
+      "Jakarta",
+      "QRIS",
       2
      ],
      [
-      "Jakarta",
-      "QRIS",
+      "Surabaya",
+      "GoPay",
       2
      ],
      [
@@ -5562,16 +5585,6 @@
       1
      ],
      [
-      "Medan",
-      "Bank Transfer",
-      1
-     ],
-     [
-      "Bandung",
-      "DANA",
-      1
-     ],
-     [
       "Jakarta",
       "DANA",
       1
@@ -5579,6 +5592,16 @@
      [
       "Palembang",
       "GoPay",
+      1
+     ],
+     [
+      "Medan",
+      "Bank Transfer",
+      1
+     ],
+     [
+      "Bandung",
+      "DANA",
       1
      ],
      [
@@ -5615,7 +5638,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT AVG(total_amount) AS value FROM NOVA_DEMO.orders WHERE shipping_city = 'Medan'",
    "user": {
@@ -5659,7 +5682,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": false,
    "sql": "SELECT warehouse_name, capacity, manager FROM NOVA_CATALOG.warehouses",
    "user": {
@@ -5677,7 +5700,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01'",
    "user": {
@@ -5712,7 +5735,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT order_id, total_amount AS value FROM NOVA_DEMO.orders ORDER BY total_amount DESC LIMIT 3",
    "user": {
@@ -5747,7 +5770,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-23' AND order_date < '2025-07-01'",
    "user": {
@@ -5776,7 +5799,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT first_name, last_name, phone FROM NOVA_DEMO.customers WHERE customer_id = 1",
    "user": {
@@ -5811,7 +5834,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT DATE_TRUNC('month', order_date) AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY 1",
    "user": {
@@ -5880,7 +5903,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC",
    "user": {
@@ -5945,7 +5968,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT MAX(v) AS top_value, MAX(v) / SUM(v) * 100 AS share FROM (SELECT shipping_city, SUM(total_amount) AS v FROM NOVA_DEMO.orders GROUP BY 1) s",
    "user": {
@@ -6030,7 +6053,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT DATE(order_date) AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY 1",
    "user": {
@@ -6123,7 +6146,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT order_id, total_amount FROM NOVA_DEMO.orders WHERE payment_method='Credit Card'",
    "user": {
@@ -6158,7 +6181,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-04-01' AND order_date < '2025-07-01'",
    "user": {
@@ -6183,7 +6206,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE status <> 'completed'",
    "user": {
@@ -6208,7 +6231,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) * 1.2 AS value FROM NOVA_DEMO.orders",
    "user": {
@@ -6282,7 +6305,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT customer_id AS label, SUM(total_amount) AS value, COUNT(*) AS n FROM NOVA_DEMO.orders GROUP BY customer_id ORDER BY value DESC",
    "user": {
@@ -6374,7 +6397,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT payment_method AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders WHERE status = 'completed' GROUP BY payment_method ORDER BY value DESC",
    "user": {
@@ -6419,7 +6442,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT status AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE status = 'completed' GROUP BY status ORDER BY value DESC",
    "user": {
@@ -6500,7 +6523,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city, status, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY 1, 2 ORDER BY value DESC",
    "user": {
@@ -6579,7 +6602,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount)*1.15 FROM NOVA_DEMO.orders",
    "user": {
@@ -6604,7 +6627,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(CASE WHEN payment_method <> 'Credit Card' THEN total_amount END) AS value FROM NOVA_DEMO.orders",
    "user": {
@@ -6643,7 +6666,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT status AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01' GROUP BY status ORDER BY value DESC",
    "user": {
@@ -6684,7 +6707,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT AVG(CASE WHEN order_date >= '2025-06-01' AND order_date < '2025-07-01' THEN total_amount END), AVG(CASE WHEN order_date >= '2025-07-01' AND order_date < '2025-08-01' THEN total_amount END) FROM NOVA_DEMO.orders",
    "user": {
@@ -6713,7 +6736,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT status AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE status = 'completed' GROUP BY status ORDER BY value DESC",
    "user": {
@@ -6740,7 +6763,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE shipping_city = 'Semarang'",
    "user": {
@@ -6765,7 +6788,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(CASE WHEN status<>'completed' THEN 1 ELSE 0 END) / COUNT(*) * 100 FROM NOVA_DEMO.orders",
    "user": {
@@ -6790,7 +6813,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE total_amount > 10000000",
    "user": {
@@ -6816,10 +6839,6 @@
       3
      ],
      [
-      "GoPay",
-      2
-     ],
-     [
       "Bank Transfer",
       2
      ],
@@ -6828,13 +6847,17 @@
       2
      ],
      [
+      "GoPay",
+      2
+     ],
+     [
       "Credit Card",
       1
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
-   "same_for_admin": false,
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
    "sql": "SELECT payment_method AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE status = 'completed' GROUP BY payment_method ORDER BY value DESC",
    "user": {
     "columns": [
@@ -6876,7 +6899,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT AVG(total_amount) FROM NOVA_DEMO.orders WHERE payment_method='Credit Card' AND order_id <> 1005",
    "user": {
@@ -6901,7 +6924,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE shipping_city = 'Yogyakarta'",
    "user": {
@@ -6926,7 +6949,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT MIN(total_amount) AS value FROM NOVA_DEMO.orders",
    "user": {
@@ -6953,7 +6976,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS total, SUM(CASE WHEN status <> 'pending' THEN total_amount END) AS without_pending FROM NOVA_DEMO.orders",
    "user": {
@@ -6982,7 +7005,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT payment_method AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders GROUP BY payment_method ORDER BY value ASC, label LIMIT 1",
    "user": {
@@ -7039,7 +7062,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": false,
    "sql": "SELECT campaign_name, budget FROM NOVA_ANALYTICS.campaigns",
    "user": {
@@ -7057,7 +7080,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders",
    "user": {
@@ -7128,7 +7151,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": false,
    "sql": "SELECT product_name, price FROM NOVA_CATALOG.products",
    "user": {
@@ -7148,7 +7171,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT AVG(CASE WHEN status='completed' THEN total_amount END) AS completed, AVG(CASE WHEN status='shipped' THEN total_amount END) AS shipped FROM NOVA_DEMO.orders",
    "user": {
@@ -7175,7 +7198,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(CASE WHEN status IN ('completed','pending','processing') THEN total_amount END) AS value FROM NOVA_DEMO.orders",
    "user": {
@@ -7249,7 +7272,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city, COUNT(*), SUM(total_amount) FROM NOVA_DEMO.orders GROUP BY 1",
    "user": {
@@ -7332,7 +7355,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT payment_method AS label, COUNT(*) AS n, SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE payment_method IN ('QRIS','DANA') GROUP BY 1",
    "user": {
@@ -7384,7 +7407,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT DATE_TRUNC('week', order_date), SUM(total_amount) FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01' GROUP BY 1 ORDER BY 1",
    "user": {
@@ -7433,7 +7456,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT payment_method AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-07-01' AND order_date < '2025-08-01' GROUP BY payment_method ORDER BY value DESC",
    "user": {
@@ -7464,7 +7487,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": false,
    "sql": "SELECT SUM(amount) FROM analytics.sales",
    "user": {
@@ -7491,7 +7514,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT MAX(a) AS top_aov, MAX(a) - (SELECT AVG(total_amount) FROM NOVA_DEMO.orders) AS diff FROM (SELECT shipping_city, AVG(total_amount) AS a FROM NOVA_DEMO.orders GROUP BY 1) s",
    "user": {
@@ -7518,7 +7541,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT ROUND((SUM(CASE WHEN order_date >= '2025-07-01' AND order_date < '2025-08-01' THEN total_amount END) / SUM(CASE WHEN order_date >= '2025-06-01' AND order_date < '2025-07-01' THEN total_amount END) - 1) * 100, 1) AS pct FROM NOVA_DEMO.orders",
    "user": {
@@ -7561,7 +7584,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT payment_method AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE status = 'completed' GROUP BY payment_method ORDER BY value DESC",
    "user": {
@@ -7604,7 +7627,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE payment_method = 'Bank Transfer' AND order_date >= '2025-06-01' AND order_date < '2025-07-01'",
    "user": {
@@ -7629,7 +7652,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE status = 'processing'",
    "user": {
@@ -7656,7 +7679,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(CASE WHEN order_date >= '2025-06-01' AND order_date < '2025-07-01' THEN total_amount END) AS june, SUM(CASE WHEN order_date >= '2025-07-01' AND order_date < '2025-08-01' THEN total_amount END) AS july FROM NOVA_DEMO.orders",
    "user": {
@@ -7683,7 +7706,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE shipping_city = 'Bandung'",
    "user": {
@@ -7708,7 +7731,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE payment_method = 'Credit Card' AND order_date >= '2025-06-01' AND order_date < '2025-07-01'",
    "user": {
@@ -8399,7 +8422,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": false,
    "sql": "SELECT table_schema, table_name FROM information_schema.tables WHERE table_schema LIKE 'NOVA_%'",
    "user": {
@@ -8436,7 +8459,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT status AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders WHERE status = 'completed' GROUP BY status ORDER BY value DESC",
    "user": {
@@ -8501,7 +8524,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC, label LIMIT 10",
    "user": {
@@ -8564,7 +8587,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT AVG(total_amount) AS value FROM NOVA_DEMO.orders WHERE payment_method = 'Credit Card'",
    "user": {
@@ -8627,7 +8650,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC",
    "user": {
@@ -8708,7 +8731,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT payment_method AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01' GROUP BY payment_method ORDER BY value DESC",
    "user": {
@@ -8751,7 +8774,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE shipping_city = 'Surabaya'",
    "user": {
@@ -8782,7 +8805,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT order_id, total_amount AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-07-01' AND order_date < '2025-08-01'",
    "user": {
@@ -8813,7 +8836,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE status = 'completed' AND shipping_city = 'Jakarta'",
    "user": {
@@ -8838,7 +8861,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE shipping_city = 'Jakarta'",
    "user": {
@@ -8869,7 +8892,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(CASE WHEN order_date < '2025-06-16' THEN total_amount END) AS h1, SUM(CASE WHEN order_date >= '2025-06-16' AND order_date < '2025-07-01' THEN total_amount END) AS h2, SUM(CASE WHEN order_date < '2025-06-16' THEN 1 ELSE 0 END) AS h1_orders, SUM(CASE WHEN order_date >= '2025-06-16' AND order_date < '2025-07-01' THEN 1 ELSE 0 END) AS h2_orders FROM NOVA_DEMO.orders",
    "user": {
@@ -8902,7 +8925,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT DATE_TRUNC('week', order_date) AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY value DESC LIMIT 1",
    "user": {
@@ -8931,7 +8954,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders WHERE shipping_city IN (SELECT shipping_city FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY SUM(total_amount) DESC LIMIT 3) GROUP BY 1 ORDER BY value ASC LIMIT 1",
    "user": {
@@ -8958,7 +8981,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) + SUM(CASE WHEN shipping_city='Jakarta' THEN total_amount ELSE 0 END) AS value FROM NOVA_DEMO.orders",
    "user": {
@@ -8985,7 +9008,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC, label LIMIT 1",
    "user": {
@@ -9018,7 +9041,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT DATE(order_date), SUM(total_amount) v FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY v DESC LIMIT 2",
    "user": {
@@ -9053,7 +9076,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS revenue, COUNT(order_id) AS orders, AVG(total_amount) AS aov FROM NOVA_DEMO.orders WHERE shipping_city = 'Jakarta'",
    "user": {
@@ -9082,7 +9105,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT COUNT(*) FROM (SELECT customer_id FROM NOVA_DEMO.orders GROUP BY 1 HAVING COUNT(*) > 1) r",
    "user": {
@@ -9107,7 +9130,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-30'",
    "user": {
@@ -9132,7 +9155,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE shipping_city = 'Surabaya'",
    "user": {
@@ -9179,7 +9202,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT DATE_TRUNC('week', order_date) AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY 1",
    "user": {
@@ -9226,7 +9249,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT MAX(total_amount) AS value FROM NOVA_DEMO.orders",
    "user": {
@@ -9264,10 +9287,6 @@
       2
      ],
      [
-      "Medan",
-      1
-     ],
-     [
       "Semarang",
       1
      ],
@@ -9284,12 +9303,16 @@
       1
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Bali",
       1
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC",
    "user": {
@@ -9315,10 +9338,6 @@
       2
      ],
      [
-      "Medan",
-      1
-     ],
-     [
       "Semarang",
       1
      ],
@@ -9332,6 +9351,10 @@
      ],
      [
       "Palembang",
+      1
+     ],
+     [
+      "Medan",
       1
      ],
      [
@@ -9356,7 +9379,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS revenue, COUNT(order_id) AS orders, AVG(total_amount) AS aov FROM NOVA_DEMO.orders WHERE status = 'completed'",
    "user": {
@@ -9385,7 +9408,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE shipping_city IN ('Jakarta','Bandung')",
    "user": {
@@ -9416,7 +9439,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS revenue, COUNT(*) AS orders, SUM(CASE WHEN order_date >= '2025-06-01' AND order_date < '2025-07-01' THEN total_amount END) AS june, SUM(CASE WHEN order_date >= '2025-07-01' AND order_date < '2025-08-01' THEN total_amount END) AS july FROM NOVA_DEMO.orders",
    "user": {
@@ -9447,7 +9470,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE status <> 'completed'",
    "user": {
@@ -9490,7 +9513,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT payment_method AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY payment_method ORDER BY value DESC",
    "user": {
@@ -9535,7 +9558,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT order_id, total_amount FROM NOVA_DEMO.orders WHERE DATE(order_date)='2025-06-07'",
    "user": {
@@ -9562,7 +9585,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT AVG(total_amount) AS value FROM NOVA_DEMO.orders",
    "user": {
@@ -9587,7 +9610,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT COUNT(DISTINCT shipping_city) AS value FROM NOVA_DEMO.orders",
    "user": {
@@ -9650,7 +9673,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01' GROUP BY shipping_city ORDER BY value DESC",
    "user": {
@@ -9713,7 +9736,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE shipping_city = 'Bandung'",
    "user": {
@@ -9796,7 +9819,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT label, SUM(value) OVER (ORDER BY label) AS value FROM (SELECT DATE(order_date) AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY 1) d ORDER BY label",
    "user": {
@@ -9883,7 +9906,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT SUM(total_amount) AS revenue, COUNT(order_id) AS orders, AVG(total_amount) AS aov FROM NOVA_DEMO.orders WHERE order_date >= '2025-07-01' AND order_date < '2025-08-01'",
    "user": {
@@ -9930,8 +9953,8 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
-   "same_for_admin": false,
+   "computed_by": "nova_sql",
+   "same_for_admin": true,
    "sql": "SELECT payment_method AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01' GROUP BY payment_method ORDER BY value DESC",
    "user": {
     "columns": [
@@ -9940,15 +9963,15 @@
     ],
     "rows": [
      [
-      "GoPay",
-      3
-     ],
-     [
       "Bank Transfer",
       3
      ],
      [
       "DANA",
+      3
+     ],
+     [
+      "GoPay",
       3
      ],
      [
@@ -10019,7 +10042,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": false,
    "sql": "SELECT product_name, stock_qty FROM NOVA_CATALOG.products",
    "user": {
@@ -10086,7 +10109,7 @@
      ]
     ]
    },
-   "computed_by": "imported:v1-2026-11-24.1",
+   "computed_by": "nova_sql",
    "same_for_admin": true,
    "sql": "SELECT shipping_city AS label, COUNT(*) AS n, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY 1 ORDER BY value DESC",
    "user": {

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import copy
 import json
 from pathlib import Path
 from typing import Any
@@ -135,10 +136,10 @@ def test_session_bind_uses_the_earlier_reference_not_a_constant() -> None:
     assert city != "Jakarta"
 
 
-def test_new_primary_reading_is_pending_until_computed() -> None:
+def test_typo_006_counts_people_and_accepts_orders() -> None:
     # typo-006: distinct customers became primary (demo_sales v2); orders stay accepted
     refs = resolve(UNITS["typo-006"], GT, UNITS)
-    assert refs.numeric[0] is None and refs.numeric[1] is not None
+    assert [r["rows"] if r else None for r in refs.numeric] == [[[2]], [[3]]]
     assert UNITS["typo-006"].numeric.semantic_measures == ["customer_count"]
 
 
@@ -232,11 +233,19 @@ def test_leaks_ignore_small_numbers() -> None:
 
 # ── expectations and the corpus linter ─────────────────────────────────
 
-def test_committed_corpus_lints_clean_offline_and_blocks_a_live_run() -> None:
+def test_committed_corpus_lints_clean_for_offline_and_live_runs() -> None:
     offline = corpus_v3.lint(for_run=False)
     assert offline.ok, offline.errors[:5]
     live = corpus_v3.lint(for_run=True)
-    assert not live.ok  # references imported from v1 must be recomputed through Nova
+    assert live.ok, live.errors[:5]
+
+
+def test_imported_references_block_a_live_run() -> None:
+    gt = copy.deepcopy(GT)
+    for ref in gt["references"].values():
+        ref["computed_by"] = "imported:v1-test"
+    assert corpus_v3.lint(ground_truth=gt, for_run=False).ok
+    live = corpus_v3.lint(ground_truth=gt, for_run=True)
     assert any("not computed through Nova" in e for e in live.errors)
 
 
