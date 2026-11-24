@@ -101,6 +101,10 @@ def matches(expected: float, candidates: list[Candidate], *, rel_tol: float = 0.
         allowed = max(candidate.resolution, abs(expected) * rel_tol, 1e-9)
         if abs(candidate.value - expected) <= allowed:
             return True
+        # A decline may be written "-79.9%" or "turun 79,9%".
+        if candidate.percent and expected < 0 < candidate.value and abs(
+                candidate.value + expected) <= allowed:
+            return True
         # A share may be written as 0.25 or 25%.
         if candidate.percent and abs(candidate.value / 100 - expected) <= max(
             candidate.resolution / 100, abs(expected) * rel_tol, 1e-9

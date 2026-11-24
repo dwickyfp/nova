@@ -23,6 +23,8 @@ HitlPolicy = Callable[[str, dict[str, Any]], tuple[str, dict[str, Any] | None]]
 
 #: Bound on one turn's event stream, so a runaway turn cannot fill the disk.
 MAX_STREAM_BYTES = 12_000_000
+#: Sign in again after this long; Nova access tokens expire after about an hour.
+SESSION_REFRESH_S = 30 * 60
 
 
 class StudioError(RuntimeError):
@@ -55,12 +57,28 @@ class StudioClient:
         )
         self.username: str | None = None
         self.role: str | None = None
+        self._credentials: tuple[str, str, str | None] | None = None
+        self._signed_in_at = 0.0
+        self._relogin = asyncio.Lock()
 
     async def close(self) -> None:
         await self.http.aclose()
 
+    async def fresh_session(self, *, force: bool = False) -> None:
+        """Sign in again before the session token expires, or after a 401."""
+        if self._credentials is None:
+            return
+        async with self._relogin:
+            if force or time.monotonic() - self._signed_in_at > SESSION_REFRESH_S:
+                await self.login(*self._credentials)
+
     async def request(self, method: str, path: str, body: Any = None) -> Any:
+        if not path.startswith("auth/"):
+            await self.fresh_session()
         response = await self.http.request(method, f"/api/v1/{path.lstrip('/')}", json=body)
+        if response.status_code == 401 and self._credentials and not path.startswith("auth/"):
+            await self.fresh_session(force=True)
+            response = await self.http.request(method, f"/api/v1/{path.lstrip('/')}", json=body)
         if response.is_error:
             raise StudioError(
                 f"Studio API {method} {path.split('?')[0]}: HTTP {response.status_code}",
@@ -84,6 +102,8 @@ class StudioClient:
         if identity.get("username") != username or (wanted and active != wanted):
             raise StudioError("The benchmark identity did not activate the requested role")
         self.username, self.role = username, identity.get("active_role")
+        self._credentials = (username, password, role)
+        self._signed_in_at = time.monotonic()
         return identity
 
     # ── agents and threads ──────────────────────────────────────────────
@@ -154,6 +174,7 @@ class StudioClient:
         Human-input requests are answered as they arrive, through the same
         answer route as the Studio card. ``stop_after_s`` presses Stop.
         """
+        await self.fresh_session()
         result = TurnResult(thread_id=thread_id, question=content)
         started = time.monotonic()
         result.started_at = time.time()

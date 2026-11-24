@@ -14,10 +14,12 @@ import html
 import json
 import statistics
 from collections import Counter, defaultdict
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 from tests.benchmark.studio_capability import settings
+from tests.benchmark.studio_capability.checks import outcome_matches
 from tests.benchmark.studio_capability.judge import DIMENSIONS
 
 LABEL_ID = {"accuracy": "Akurasi", "intelligence": "Kecerdasan", "ui": "UI",
@@ -62,7 +64,67 @@ CAPABILITIES: dict[str, set[str]] = {
     "Follow-up & konteks sesi": {"session:follow_up", "session:topic_switch", "session:long"},
     "Koreksi di tengah sesi": {"session:correction"},
     "Ubah grafik & simpan dari sesi": {"session:chart_edit"},
+    "Halaman (layout F5)": {"layout_page"},
+    "What-if dengan slider/kontrol": {"what_if_slider"},
+    "Peta data per kota": {"data_map"},
+    "Peta tempat publik": {"place_map"},
+    "Rute jalan (+ alternatif)": {"route", "session:route"},
+    "Rute multi-titik": {"route_multistop"},
+    "Rute lintas pulau (ditolak)": {"route_overwater"},
+    "Optimasi urutan rute": {"route_optimize"},
+    "Gambar (Picture)": {"picture"},
+    "Chip alat & sitasi": {"chips"},
+    "Pratinjau artefak & saran simpan (F4)": {"artifact_save", "session:artifact"},
+    "MCP (layanan eksternal)": {"mcp"},
+    "Skill unggahan": {"skill"},
+    "Pertanyaan sederhana tetap sederhana": {"simple", "session:simple"},
 }
+LATENCY_KEYS = ("first_activity_s", "first_section_s", "first_answer_token_s", "total_s")
+LATENCY_NAMES = {"first_activity_s": "Aktivitas pertama",
+                 "first_section_s": "Bagian halaman/komponen pertama",
+                 "first_answer_token_s": "Token jawaban pertama", "total_s": "Total"}
+BUCKETS = (3, 6, 12, 25, 60, 120)
+
+
+def _histogram(values: list[float]) -> list[tuple[str, int]]:
+    edges = [0.0, *BUCKETS]
+    out = [(f"{lo:g}–{hi:g}", sum(lo <= v < hi for v in values))
+           for lo, hi in zip(edges, BUCKETS, strict=False)]
+    out.append((f"≥{BUCKETS[-1]}", sum(v >= BUCKETS[-1] for v in values)))
+    return out
+
+
+def _findings(rows: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """Turns with a deterministic defect, by kind (no judge involved)."""
+    found: dict[str, list[str]] = {}
+
+    def add(kind: str, uid: str) -> None:
+        found.setdefault(kind, []).append(uid)
+
+    for row in rows:
+        checks, uid = row["checks"], row["id"]
+        shown = checks.get("tool_identifiers_shown") or {}
+        if shown.get("answer"):
+            add("nama alat di jawaban", uid)
+        if shown.get("suggestions"):
+            add("nama alat di saran lanjutan", uid)
+        if checks.get("citation_duplicates"):
+            add("sitasi ganda", uid)
+        for name in checks.get("ui_absent_violations") or []:
+            add(f"muncul padahal tidak boleh: {name}", uid)
+        if checks.get("approval_card_shown"):
+            add("kartu persetujuan muncul", uid)
+        if checks.get("paragraph_duplicates") or checks.get("block_duplicates"):
+            add("konten ganda", uid)
+        if checks.get("empty_reasoning_rows"):
+            add("baris aktivitas kosong", uid)
+        if checks.get("tool_failures"):
+            add("alat gagal", uid)
+        if checks.get("errors"):
+            add("error run", uid)
+        if (row.get("replay") or {}).get("ok") is False:
+            add("replay berbeda", uid)
+    return found
 
 
 def _load(out: Path) -> list[dict[str, Any]]:
@@ -79,7 +141,7 @@ def _load(out: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def _mean(values: list[float]) -> float | None:
+def _mean(values: Sequence[float]) -> float | None:
     return round(statistics.mean(values), 2) if values else None
 
 
@@ -104,7 +166,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     overall = {d: _mean([r["judgment"]["final"][d] for r in judged]) for d in DIMENSIONS}
     latency = {key: [r["checks"]["latency"][key] for r in rows
                      if r["checks"]["latency"].get(key) is not None]
-               for key in ("first_activity_s", "first_answer_token_s", "total_s")}
+               for key in LATENCY_KEYS}
     tags: Counter[str] = Counter()
     for record in judged:
         tags.update(record["judgment"]["llm"].get("tags") or [])
@@ -144,6 +206,8 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "latency": {k: {"p50": _pct(v, 0.5), "p90": _pct(v, 0.9), "max": _pct(v, 1.0),
                         "n": len(v)} for k, v in latency.items()},
         "latency_raw": latency,
+        "latency_histogram": {k: _histogram(v) for k, v in latency.items()},
+        "findings": _findings(rows),
         "tags": tags.most_common(),
         "failures": failures[:20],
         "pairs": pairs,
@@ -241,11 +305,23 @@ def write_markdown(out: Path, summary: dict[str, Any], manifest: dict[str, Any])
         ]
     lines += ["## Distribusi latensi (detik)", "",
               "| Ukuran | p50 | p90 | maks | n |", "|---|---|---|---|---|"]
-    names = {"first_activity_s": "Aktivitas pertama", "first_answer_token_s": "Token jawaban "
-             "pertama", "total_s": "Total"}
     for key, row in s["latency"].items():
-        lines.append(f"| {names[key]} | {_fmt(row['p50'])} | {_fmt(row['p90'])} | "
+        lines.append(f"| {LATENCY_NAMES[key]} | {_fmt(row['p50'])} | {_fmt(row['p90'])} | "
                      f"{_fmt(row['max'])} | {row['n']} |")
+    hist = s.get("latency_histogram") or {}
+    if hist:
+        edges = [label for label, _ in next(iter(hist.values()))]
+        lines += ["", "Sebaran jumlah giliran per rentang (detik):", "",
+                  "| Ukuran | " + " | ".join(edges) + " |",
+                  "|---|" + "---|" * len(edges)]
+        for key, bins in hist.items():
+            lines.append(f"| {LATENCY_NAMES[key]} | "
+                         + " | ".join(str(n) for _, n in bins) + " |")
+    lines += ["", "## Temuan deterministik", "",
+              "Dihitung dari jurnal event tanpa juri.", ""]
+    for kind, ids in sorted((s.get("findings") or {}).items(), key=lambda kv: -len(kv[1])):
+        lines.append(f"- **{kind}** ({len(ids)}): " + ", ".join(f"`{i}`" for i in ids[:12])
+                     + (" …" if len(ids) > 12 else ""))
     lines += ["", "## Sesi vs sesi baru", ""] + _pair_section(s["pairs"])
     path = out / "REPORT.md"
     path.write_text("\n".join(lines) + "\n")
@@ -276,6 +352,8 @@ td.n{text-align:right}.s5,.s4{color:var(--good,#2f7d4f)}.s3{color:var(--weak,#b7
 .s2,.s1{color:var(--bad,#b3362f)}.berfungsi{color:var(--good,#2f7d4f)}
 .lemah{color:var(--weak,#b7791f)}.rusak{color:var(--bad,#b3362f)}
 ol li{margin-bottom:6px}code{font-size:12px}
+.bar{display:inline-block;height:8px;margin-right:6px;border-radius:2px;
+background:var(--accent,#2b5c8a);vertical-align:middle}
 """
 
 
@@ -313,9 +391,23 @@ def write_html(out: Path, summary: dict[str, Any], manifest: dict[str, Any]) -> 
         f"{esc((r['judgment']['llm'].get('summary') or '')[:220])}</small></li>"
         for r in s["failures"])
     latency = "".join(
-        f"<tr><td>{esc(k)}</td><td class='n'>{_fmt(v['p50'])}</td><td class='n'>"
-        f"{_fmt(v['p90'])}</td><td class='n'>{_fmt(v['max'])}</td></tr>"
+        f"<tr><td>{esc(LATENCY_NAMES.get(k, k))}</td><td class='n'>{_fmt(v['p50'])}</td>"
+        f"<td class='n'>{_fmt(v['p90'])}</td><td class='n'>{_fmt(v['max'])}</td></tr>"
         for k, v in s["latency"].items())
+    hist = s.get("latency_histogram") or {}
+    hist_rows = ""
+    for key, bins in hist.items():
+        top = max([n for _, n in bins] or [1]) or 1
+        cells = "".join(
+            f"<td class='n'><span class='bar' style='width:{round(40 * n / top)}px'></span>"
+            f"{n}</td>" for _, n in bins)
+        hist_rows += f"<tr><td>{esc(LATENCY_NAMES.get(key, key))}</td>{cells}</tr>"
+    hist_head = "".join(f"<th>{esc(label)}</th>" for label, _ in
+                        (next(iter(hist.values())) if hist else []))
+    findings = "".join(
+        f"<li><b>{esc(kind)}</b> ({len(ids)}): {esc(', '.join(ids[:12]))}"
+        f"{' …' if len(ids) > 12 else ''}</li>"
+        for kind, ids in sorted((s.get("findings") or {}).items(), key=lambda kv: -len(kv[1])))
     page = f"""<!doctype html><html lang="id"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Benchmark Nova Studio</title><style>{CSS}</style></head><body><main>
@@ -330,6 +422,9 @@ def write_html(out: Path, summary: dict[str, Any], manifest: dict[str, Any]) -> 
 </tr></thead><tbody>{categories}</tbody></table></div>
 <h2>Latensi (detik)</h2><div class="wrap"><table><thead><tr><th>Ukuran</th><th>p50</th>
 <th>p90</th><th>maks</th></tr></thead><tbody>{latency}</tbody></table></div>
+<h3>Sebaran (jumlah giliran per rentang detik)</h3><div class="wrap"><table><thead><tr>
+<th>Ukuran</th>{hist_head}</tr></thead><tbody>{hist_rows}</tbody></table></div>
+<h2>Temuan deterministik</h2><ul>{findings}</ul>
 <h2>20 kegagalan teratas</h2><ol>{failures}</ol>
 </main></body></html>"""
     path = out / "summary.html"
@@ -339,9 +434,174 @@ def write_html(out: Path, summary: dict[str, Any], manifest: dict[str, Any]) -> 
     return path
 
 
+def _by_unit(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {r["id"]: r for r in rows}
+
+
+# Outcome as the server reports it in ``run.finished.finish_reason``. Kept beside the
+# text-based outcome (not replacing it) so a comparison with an older run stays fair.
+FINISH_OUTCOMES = {"out_of_scope": "limitation", "clarification": "clarify",
+                   "denied": "refuse", "required_capability_unavailable": "limitation",
+                   "required_capability_incomplete": "error"}
+
+
+def reported_outcome_ok(checks: dict[str, Any]) -> bool:
+    """Whether the finish reason (falling back to the detected outcome) is right."""
+    detected = FINISH_OUTCOMES.get(str(checks.get("finish_reason") or ""), checks["outcome"])
+    if checks["outcome"] in {"error", "cancelled"}:
+        detected = checks["outcome"]
+    return outcome_matches(str(checks.get("expected_outcome") or "answer"), detected,
+                           checks.get("clarify_mode"))
+
+
+def _category_stats(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        groups[row["unit"]["category"]].append(row)
+    out: dict[str, dict[str, Any]] = {}
+    for category, members in groups.items():
+        judged = [r for r in members if r.get("judgment")]
+        out[category] = {
+            "n": len(members),
+            "outcome_ok": _mean([float(r["checks"]["outcome_ok"]) for r in members]),
+            "outcome_reported_ok": _mean([float(reported_outcome_ok(r["checks"]))
+                                          for r in members]),
+            "errors": sum(r["checks"]["outcome"] == "error" for r in members),
+            **{d: _mean([r["judgment"]["final"][d] for r in judged]) for d in DIMENSIONS},
+        }
+    return out
+
+
+def deterministic_worse(old: dict[str, Any], new: dict[str, Any]) -> bool:
+    """Whether a unit's deterministic checks got worse from ``old`` to ``new``."""
+    def recall(checks: dict[str, Any], key: str) -> float:
+        value = checks.get(key)
+        if isinstance(value, dict):
+            value = value.get("recall")
+        return 1.0 if value is None else float(value)
+
+    return ((old["outcome_ok"] and not new["outcome_ok"])
+            or recall(new, "numeric") < recall(old, "numeric")
+            or recall(new, "ui_recall") < recall(old, "ui_recall")
+            or len(new.get("tool_failures") or []) > len(old.get("tool_failures") or [])
+            or len(new.get("errors") or []) > len(old.get("errors") or []))
+
+
+def compare(current: list[dict[str, Any]], baseline: list[dict[str, Any]],
+            subset: Sequence[str] | None = None) -> dict[str, Any]:
+    """Per-category and per-unit change from a baseline run of the same corpus.
+
+    With ``subset``, both runs are limited to the units run in both, paired by id.
+    """
+    if subset is not None:
+        wanted = set(subset)
+        both = wanted & {r["id"] for r in current} & {r["id"] for r in baseline}
+        judged = {r["id"] for r in current if r.get("judgment")} & {
+            r["id"] for r in baseline if r.get("judgment")}
+        # Judge scores count only where both runs were judged, so the pairs stay fair.
+        current = [{**r, "judgment": r.get("judgment") if r["id"] in judged else None}
+                   for r in current if r["id"] in both]
+        baseline = [{**r, "judgment": r.get("judgment") if r["id"] in judged else None}
+                    for r in baseline if r["id"] in both]
+    now, before = _category_stats(current), _category_stats(baseline)
+    rows = []
+    for category in sorted(set(now) | set(before)):
+        a, b = before.get(category, {}), now.get(category, {})
+        row: dict[str, Any] = {"category": category, "n": b.get("n", 0)}
+        for key in ("outcome_ok", "outcome_reported_ok", "errors", *DIMENSIONS):
+            old, new = a.get(key), b.get(key)
+            row[key] = {"baseline": old, "now": new,
+                        "delta": round(new - old, 2) if isinstance(old, int | float)
+                        and isinstance(new, int | float) else None}
+        rows.append(row)
+    base_units, cur_units = _by_unit(baseline), _by_unit(current)
+
+    def floor(row: dict[str, Any]) -> int | None:
+        final = (row.get("judgment") or {}).get("final")
+        return min(final[d] for d in ("accuracy", "intelligence", "ui")) if final else None
+
+    fixed, broken, changed, pairs = [], [], [], []
+    for uid in sorted(set(base_units) & set(cur_units)):
+        old, new = base_units[uid], cur_units[uid]
+        pairs.append({"id": uid, "category": new["unit"]["category"],
+                      "outcome": [old["checks"]["outcome"], new["checks"]["outcome"]],
+                      "outcome_ok": [old["checks"]["outcome_ok"], new["checks"]["outcome_ok"]],
+                      "floor": [floor(old), floor(new)]})
+        o_ok, n_ok = old["checks"]["outcome_ok"], new["checks"]["outcome_ok"]
+        if not o_ok and n_ok:
+            fixed.append(uid)
+        elif o_ok and not n_ok:
+            broken.append(uid)
+        f_old, f_new = floor(old), floor(new)
+        if f_old is not None and f_new is not None and abs(f_new - f_old) >= 2:
+            changed.append({"id": uid, "baseline_floor": f_old, "now_floor": f_new})
+    latency = {}
+    for key in LATENCY_KEYS:
+        values = {name: [r["checks"]["latency"][key] for r in group
+                         if r["checks"]["latency"].get(key) is not None]
+                  for name, group in (("baseline", baseline), ("now", current))}
+        latency[key] = {name: _pct(v, 0.5) for name, v in values.items()}
+    return {"categories": rows, "outcome_fixed": fixed, "outcome_broken": broken,
+            "floor_changed_by_2": changed, "latency_p50": latency,
+            "units": {"baseline": len(baseline), "now": len(current)},
+            "subset": subset is not None, "pairs": pairs if subset is not None else []}
+
+
+def write_comparison(out: Path, result: dict[str, Any], baseline_dir: Path) -> Path:
+    def delta(cell: dict[str, Any]) -> str:
+        d = cell["delta"]
+        return "–" if d is None else (f"+{d}" if d > 0 else str(d))
+
+    lines = ["# Perbandingan dengan baseline", ""]
+    if result.get("subset"):
+        lines += ["> **Subset, bukan korpus penuh.** Hanya unit yang dijalankan ulang (lihat "
+                  "`subset.json`), dipasangkan per unit dengan baseline. Angka per kategori "
+                  "tidak sebanding dengan laporan korpus penuh.", ""]
+    lines += [f"Baseline: `{baseline_dir}` ({result['units']['baseline']} giliran); "
+              f"sekarang: {result['units']['now']} giliran. Korpus dan model sama. "
+              "“Hasil benar” memakai deteksi teks yang sama dengan baseline; “Hasil "
+              "(finish_reason)” membaca alasan selesai dari server (out_of_scope, "
+              "clarification, denied, required_capability_*) dan dihitung ulang untuk "
+              "kedua run.", "",
+              "| Kategori | n | Hasil benar | Δ | Hasil (finish_reason) | Δ | Error | Δ "
+              "| Akurasi | Δ | Kecerdasan | Δ | UI | Δ "
+              "| Proses | Δ | Keamanan | Δ |",
+              "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    for row in result["categories"]:
+        cells = [row["category"], str(row["n"])]
+        for key in ("outcome_ok", "outcome_reported_ok", "errors", *DIMENSIONS):
+            cells += [_fmt(row[key]["now"]), delta(row[key])]
+        lines.append("| " + " | ".join(cells) + " |")
+    lines += ["", "## Latensi p50 (detik)", "", "| Ukuran | Baseline | Sekarang |", "|---|---|---|"]
+    for key, values in result["latency_p50"].items():
+        lines.append(f"| {LATENCY_NAMES[key]} | {_fmt(values['baseline'])} | "
+                     f"{_fmt(values['now'])} |")
+    lines += ["", f"## Hasil yang membaik ({len(result['outcome_fixed'])})", "",
+              ", ".join(f"`{u}`" for u in result["outcome_fixed"]) or "–", "",
+              f"## Hasil yang memburuk ({len(result['outcome_broken'])})", "",
+              ", ".join(f"`{u}`" for u in result["outcome_broken"]) or "–", "",
+              "## Skor dasar (min akurasi/kecerdasan/UI) berubah ≥ 2", ""]
+    lines += [f"- `{c['id']}`: {c['baseline_floor']} → {c['now_floor']}"
+              for c in result["floor_changed_by_2"]] or ["–"]
+    if result.get("pairs"):
+        lines += ["", "## Per unit (baseline → sekarang)", "",
+                  "| Unit | Kategori | Hasil | Benar | Skor dasar |", "|---|---|---|---|---|"]
+        for p in result["pairs"]:
+            ok = "→".join("ya" if v else "tidak" for v in p["outcome_ok"])
+            fl = "→".join("–" if v is None else str(v) for v in p["floor"])
+            lines.append(f"| `{p['id']}` | {p['category']} | {' → '.join(p['outcome'])} "
+                         f"| {ok} | {fl} |")
+    path = out / "COMPARISON.md"
+    path.write_text("\n".join(lines) + "\n")
+    (out / "comparison.json").write_text(json.dumps(result, indent=1, default=str))
+    return path
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out")
+    parser.add_argument("--baseline", help="an earlier results directory to compare with")
+    parser.add_argument("--subset", help="JSON file whose \"ids\" limit the comparison")
     args = parser.parse_args()
     out = settings.out_dir(args.out)
     manifest_path = out / "manifest.json"
@@ -352,6 +612,11 @@ def main() -> None:
         default=str))
     print(write_markdown(out, summary, manifest))
     print(write_html(out, summary, manifest))
+    if args.baseline:
+        baseline_dir = Path(args.baseline)
+        subset = json.loads(Path(args.subset).read_text())["ids"] if args.subset else None
+        print(write_comparison(out, compare(_load(out), _load(baseline_dir), subset),
+                               baseline_dir))
 
 
 if __name__ == "__main__":

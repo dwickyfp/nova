@@ -202,3 +202,118 @@ def test_report_and_sample(tmp_path: Path) -> None:
     assert len(sample) == 2 and json.loads(sample[0])["thread_id"] == "t"
     record = json.loads((tmp_path / "turns" / "session-001.t2.json").read_text())
     assert packet(record, None, [])["what_the_user_saw"][0]["activity_row"] == "1. Query"
+
+
+def _page_events() -> list[dict]:
+    seq = iter(range(100))
+
+    def e(name: str, t: float, **data):
+        return {"event": name, "t": t, "data": {"run_id": "r", "seq": next(seq), **data}}
+
+    route = ('m = PlaceMap("Trip", [{"label": "Jakarta", "lat": -6.2, "lon": 106.85, '
+             '"check": "verified"}, {"label": "Bandung", "lat": -6.9, "lon": 107.6, "check": '
+             '"verified"}], [{"distance_m": 151200, "duration_s": 10801, "line": "x"}, '
+             '{"distance_m": 160000, "duration_s": 11000, "line": "y"}], null, false)\n')
+    return [
+        e("run.started", 0.2, protocol_version=2, role="marketing"),
+        e("part.start", 0.9, part_id="r#0", type="ui", block={}),
+        e("part.delta", 1.1, part_id="r#0", text="root = Page([h, m, k, p])\n"),
+        e("part.delta", 1.2, part_id="r#0", text='h = Header("Trip")\n'),
+        e("part.delta", 4.0, part_id="r#0", text=route),
+        e("part.delta", 4.2, part_id="r#0",
+          text='k = Controls("What if", [Slider("Change", $u, -30, 50, 5, "percent")])\n'),
+        e("part.delta", 4.3, part_id="r#0",
+          text='p = Picture("", "Monas", "https://commons.wikimedia.org/x")\n'),
+        e("part.end", 4.4, part_id="r#0", state="done"),
+        e("artifact.draft", 4.5, part_id="r#1", draft={"draft_ref": "d1", "title": "T"}),
+        e("save.suggested", 4.6, part_id="r#2", draft_ref="d1", draft_refs=["d1"],
+          capability="can_save", reason_code="", message="Save this chart?"),
+        e("part.start", 4.7, part_id="r#3", type="citation",
+          block={"citations": [{"title": "Orders"}, {"title": "Orders"}]}),
+        e("part.end", 4.7, part_id="r#3", state="done"),
+        e("suggestions", 4.8, suggestions=["Run semantic_query by city"]),
+        e("run.finished", 5.0, message_id="m", finish_reason="stop"),
+    ]
+
+
+def test_fold_reads_pages_places_routes_pictures_and_artifacts() -> None:
+    view = fold(_page_events())
+    elements = view.elements()
+    assert {"page", "place_map", "route", "route:alternatives", "slider", "interactive",
+            "picture", "artifact_preview", "save_suggestion"} <= elements
+    assert "picture:shown" not in elements and "artifact_saved" not in elements
+    assert view.place_maps() == [{"places": 2, "routes": 2, "unavailable": None,
+                                  "optimized": False}]
+    assert view.first_page_s == 1.1 and view.first_section_s == 4.0
+
+
+def test_checks_flag_absent_elements_tool_names_and_repeated_sources() -> None:
+    unit = {"id": "s", "lang": "en", "expect_ui": ["map"], "expect_outcome": "answer",
+            "expect_absent": ["page", "artifact_saved"], "expect_numbers": [151200]}
+    result = check(unit, None, fold(_page_events()))
+    assert result["ui_absent_violations"] == ["page"]
+    assert result["deterministic"]["ui_floor"] == 3
+    assert result["tool_identifiers_shown"]["suggestions"] == ["semantic_query"]
+    assert result["citation_duplicates"] == 1
+    assert result["numeric"]["recall"] == 1.0
+    assert result["latency"]["first_section_s"] == 4.0
+    saved = fold(_page_events() + [{"event": "artifact.saved", "t": 6, "data": {"seq": 99}}])
+    assert check(unit, None, saved)["deterministic"]["safety"] == 2
+
+
+def test_fixture_units_name_their_tools_as_the_turn_does() -> None:
+    from tests.benchmark.studio_capability.run import _resolved
+
+    units = {u["id"]: u for u in corpus.units()}
+    mcp = [u for u in units.values() if u.get("agent") == "fixture"]
+    assert len(mcp) >= 8 and all(u["category"] in {"mcp", "skill"} for u in mcp)
+    unit = units["mcp-005"]
+    resolved = _resolved(unit, {"mcp:fail_on_purpose": "mcp_abc12345"})
+    assert resolved["expect_tools"] == ["mcp_abc12345"]
+    assert resolved["expect_tool_failure"] == ["mcp_abc12345"]
+    simple = [u for u in units.values() if u["category"] == "simple"]
+    assert simple and all("page" in u["expect_absent"] for u in simple)
+
+
+def test_comparison_reports_category_deltas_and_changed_outcomes(tmp_path: Path) -> None:
+    base, now = tmp_path / "base", tmp_path / "now"
+    _write_run(base)
+    _write_run(now)
+    record = json.loads((now / "judgments" / "session-001.t2.json").read_text())
+    record["final"] = {**record["final"], "accuracy": 5, "intelligence": 5, "ui": 5}
+    (now / "judgments" / "session-001.t2.json").write_text(json.dumps(record))
+    turn = json.loads((now / "turns" / "number-001.json").read_text())
+    turn["checks"]["outcome_ok"] = False
+    (now / "turns" / "number-001.json").write_text(json.dumps(turn))
+    result = report.compare(report._load(now), report._load(base))
+    assert result["outcome_broken"] == ["number-001"]
+    assert result["floor_changed_by_2"][0]["id"] == "session-001.t2"
+    row = next(r for r in result["categories"] if r["category"] == "session:follow_up")
+    assert row["accuracy"]["delta"] == 1.5  # the turn and its fresh twin share a category
+    page = report.write_comparison(now, result, base).read_text()
+    assert "Perbandingan dengan baseline" in page and "`number-001`" in page
+
+
+def test_reported_outcome_reads_the_finish_reason() -> None:
+    base = {"outcome": "answer", "expected_outcome": "limitation", "clarify_mode": None}
+    assert report.reported_outcome_ok({**base, "finish_reason": "out_of_scope"})
+    assert report.reported_outcome_ok({**base, "expected_outcome": "clarify",
+                                       "finish_reason": "clarification"})
+    assert not report.reported_outcome_ok({**base, "outcome": "error",
+                                           "finish_reason": "out_of_scope"})
+    assert report.reported_outcome_ok({**base, "expected_outcome": "answer",
+                                       "finish_reason": "stop"})
+
+
+def test_subset_comparison_pairs_units_and_flags_worse_checks(tmp_path: Path) -> None:
+    base, now = tmp_path / "base", tmp_path / "now"
+    _write_run(base)
+    _write_run(now)
+    rows = report._load(now)
+    result = report.compare(rows, report._load(base), subset=["number-001", "missing-1"])
+    assert result["subset"] and [p["id"] for p in result["pairs"]] == ["number-001"]
+    page = report.write_comparison(now, result, base).read_text()
+    assert "Subset, bukan korpus penuh" in page and "Per unit" in page
+    old = rows[0]["checks"]
+    assert not report.deterministic_worse(old, old)
+    assert report.deterministic_worse(old, {**old, "errors": [{"code": "x"}]})

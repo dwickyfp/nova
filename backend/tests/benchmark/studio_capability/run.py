@@ -21,13 +21,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
 
 import httpx
 
-from tests.benchmark.studio_capability import corpus, settings
+from tests.benchmark.studio_capability import corpus, fixtures, settings
 from tests.benchmark.studio_capability.checks import check
 from tests.benchmark.studio_capability.client import StudioClient, TurnResult, with_retry
 from tests.benchmark.studio_capability.journal import Part, TurnView, fold
@@ -86,11 +87,28 @@ def hitl_policy(unit: dict[str, Any]):  # noqa: ANN201 - returns a client.HitlPo
 
 # ── one unit ───────────────────────────────────────────────────────────
 
+#: Back-off after the model gateway refuses a turn (usage limits reset in minutes).
+OUTAGE_WAIT_S = int(os.environ.get("NOVA_BENCH_OUTAGE_WAIT_S", "300"))
+
+
+def _resolved(unit: dict[str, Any], aliases: dict[str, str]) -> dict[str, Any]:
+    """The unit with ``mcp:<tool>`` expectations named as the turn's tool parts name them."""
+    if not aliases:
+        return unit
+    out = dict(unit)
+    for key in ("expect_tools", "expect_tool_failure"):
+        if unit.get(key):
+            out[key] = [aliases.get(name, name) for name in unit[key]]
+    return out
+
+
 class Runner:
     def __init__(self, client: StudioClient, agent: dict[str, Any], out: Path, *,
-                 pause: float, max_failures: int, replay: bool):
+                 pause: float, max_failures: int, replay: bool,
+                 fixture: dict[str, Any] | None = None):
         self.client = client
         self.agent = agent
+        self.fixture = fixture
         self.out = out
         self.pause = pause
         self.max_failures = max_failures
@@ -107,6 +125,10 @@ class Runner:
         return (self.out / "turns" / f"{unit_id}.json").is_file()
 
     async def _paced(self) -> None:
+        # A ``PAUSE`` file in the results directory holds new turns (for example while
+        # a resource monitor sees the engine near its memory limit); turns in flight end.
+        while (self.out / "PAUSE").exists():
+            await asyncio.sleep(10)
         async with self._pace:
             wait = self._last_start + self.pause - time.monotonic()
             if wait > 0:
@@ -120,9 +142,20 @@ class Runner:
         except httpx.HTTPError:
             return False
 
+    def agent_for(self, unit: dict[str, Any]) -> dict[str, Any] | None:
+        """The benchmark agent, or the disposable fixture agent (None when not set up)."""
+        if unit.get("agent") != "fixture":
+            return self.agent
+        if not self.fixture:
+            return None
+        return {"agent_id": self.fixture["agent_id"], "name": self.fixture.get("agent_name"),
+                "model_name": self.fixture.get("model_name"),
+                "aliases": self.fixture.get("aliases") or {}}
+
     async def turn(self, unit: dict[str, Any], thread_id: str | None) -> dict[str, Any]:
         await self._paced()
-        agent_id = self.agent["agent_id"]
+        agent = self.agent_for(unit) or self.agent
+        agent_id = agent["agent_id"]
         if unit.get("mode") == "deep_research":
             return await self._deep_research(unit)
         if thread_id is None:
@@ -133,7 +166,7 @@ class Runner:
             stop_after_s=unit.get("stop_after_s"),
         )
         view = fold(result.events)
-        record = self._record(unit, result, view)
+        record = self._record(_resolved(unit, agent.get("aliases") or {}), result, view, agent)
         if self.replay and result.run_id and not result.transport_error:
             record["replay"] = await self._replay_check(agent_id, thread_id, result.run_id, view)
         return record
@@ -150,14 +183,16 @@ class Runner:
                 "live_parts": len(shape), "replayed_parts": len(replayed),
                 "same_text": stored.answer_text == live.answer_text}
 
-    def _record(self, unit: dict[str, Any], result: TurnResult, view: TurnView) -> dict[str, Any]:
+    def _record(self, unit: dict[str, Any], result: TurnResult, view: TurnView,
+                agent: dict[str, Any] | None = None) -> dict[str, Any]:
+        agent = agent or self.agent
         checks = check(unit, self.gt.get(unit["id"]), view,
                        transport_error=result.transport_error, total_s=result.total_s)
         return {
             "id": unit["id"],
             "unit": unit,
-            "agent": {"agent_id": self.agent["agent_id"], "name": self.agent.get("name"),
-                      "model": self.agent.get("model_name")},
+            "agent": {"agent_id": agent["agent_id"], "name": agent.get("name"),
+                      "model": agent.get("model_name")},
             "identity": {"user": self.client.username, "role": self.client.role},
             "thread_id": result.thread_id,
             "run_id": result.run_id,
@@ -201,8 +236,23 @@ class Runner:
               f"num={checks['numeric']['recall']} ui={checks['ui_recall']} "
               f"t={record.get('total_s')}s tools={','.join(checks['tools'])[:60]}", flush=True)
 
+    @staticmethod
+    def provider_outage(record: dict[str, Any]) -> bool:
+        """A turn the model gateway refused at once (quota, 5xx): not a Studio result."""
+        checks = record.get("checks") or {}
+        return checks.get("outcome") == "error" and (record.get("total_s") or 0) < 10 and any(
+            (e or {}).get("code") == "provider_error" for e in checks.get("errors") or [])
+
     async def guard(self, record: dict[str, Any]) -> None:
-        if record.get("transport_error") or (record.get("http_status") or 200) >= 500:
+        if self.provider_outage(record):
+            self.failures += 1
+            print(f"Provider unavailable ({record['id']}); waiting {OUTAGE_WAIT_S}s.", flush=True)
+            if self.failures >= self.max_failures:
+                print("Stopping: the model provider stays unavailable.", flush=True)
+                self.stopped = True
+            else:
+                await asyncio.sleep(OUTAGE_WAIT_S)
+        elif record.get("transport_error") or (record.get("http_status") or 200) >= 500:
             self.failures += 1
             if not await self._healthy():
                 await asyncio.sleep(30)
@@ -217,7 +267,7 @@ class Runner:
             return
         record = await self.turn(unit, None)
         await self.guard(record)
-        if not record.get("transport_error"):
+        if not record.get("transport_error") and not self.provider_outage(record):
             self.save(record)
 
     async def session(self, session: dict[str, Any], turns: list[dict[str, Any]]) -> None:
@@ -236,6 +286,13 @@ class Runner:
                 state_path.write_text(json.dumps(state))
             record = await self.turn(unit, thread_id)
             await self.guard(record)
+            if self.provider_outage(record):
+                # The failed message stays in that thread's history: start the session
+                # again in a new thread next time.
+                for done in turns:
+                    (self.out / "turns" / f"{done['id']}.json").unlink(missing_ok=True)
+                state_path.unlink(missing_ok=True)
+                return
             if record.get("transport_error"):
                 return  # resume this session from this turn next time
             self.save(record)
@@ -276,8 +333,15 @@ async def main_async(args: argparse.Namespace) -> None:
                     "user": identity.username, "role": client.role,
                     "started_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
         (out / "manifest.json").write_text(json.dumps(manifest, indent=1))
+        fixture = fixtures.load(out)
+        skipped = [u["id"] for u in units if u.get("agent") == "fixture" and not fixture]
+        if skipped:
+            print(f"{len(skipped)} fixture units skipped: run fixtures setup first")
+            units = [u for u in units if u["id"] not in set(skipped)]
+        manifest["fixture_agent"] = (fixture or {}).get("agent_name")
+        (out / "manifest.json").write_text(json.dumps(manifest, indent=1))
         runner = Runner(client, agent, out, pause=args.pause, max_failures=args.max_failures,
-                        replay=not args.no_replay)
+                        replay=not args.no_replay, fixture=fixture)
         sessions = {s["id"]: s for s in corpus.sessions()}
         jobs: list[Any] = []
         grouped: dict[str, list[dict[str, Any]]] = {}
