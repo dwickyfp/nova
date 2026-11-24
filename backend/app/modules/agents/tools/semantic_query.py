@@ -45,6 +45,7 @@ from app.modules.agents.semantic.compiler import SemanticCompiler
 from app.modules.agents.semantic.coverage import (
     DATA_PERIOD,
     DataAnchor,
+    DataWindow,
     anchor_to_data,
     covered_period,
     future_period,
@@ -945,6 +946,32 @@ class SemanticQueryTool:
             list(getattr(last, "columns", None) or []),
             list(getattr(last, "rows", None) or []),
             list(results),
+        )
+
+    async def data_window_of(self, model: dict[str, Any], context: Any) -> DataWindow | None:
+        """The first and last day with data in one view, read as the caller.
+
+        Uses the first metric with a default time field; ``None`` when there is
+        none or the dates cannot be read. Row filters and masks apply as for
+        any query the caller runs.
+        """
+        user = getattr(context, "user", None) or {}
+        username, encrypted_password = user.get("username"), user.get("encrypted_password")
+        semantic_ir = model.get("_scoped_ir")
+        if semantic_ir is None:
+            definition = model.get("definition") or {}
+            if not isinstance(definition, dict) or not definition.get("datasets"):
+                return None
+            semantic_ir = SemanticModelIR.from_ossie(definition)
+        metric = next((item for item in semantic_ir.metrics if item.default_time_dimension), None)
+        if not username or not encrypted_password or metric is None:
+            return None
+        security = session_security(user)
+        return await covered_period(
+            SemanticPlan(metrics=(metric.name,)), semantic_ir,
+            lambda window_plan: self._window_rows(
+                semantic_ir, window_plan, username, encrypted_password, context, security,
+            ),
         )
 
     async def _window_rows(
