@@ -162,6 +162,78 @@
               },
               "additionalProperties": {}
             }
+          },
+          "options": {
+            "type": "object",
+            "properties": {
+              "controls": {
+                "type": "boolean"
+              },
+              "advanced": {
+                "type": "boolean"
+              },
+              "locate": {
+                "type": "boolean"
+              },
+              "editable": {
+                "type": "boolean"
+              },
+              "simulation": {
+                "type": "boolean"
+              },
+              "popupFields": {
+                "maxItems": 8,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "layer": {
+                "type": "string",
+                "enum": [
+                  "geometry",
+                  "route",
+                  "arc"
+                ]
+              },
+              "progress": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "toLongitude": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "toLatitude": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "sequence": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "group": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "routeFields": {
+                "maxItems": 4,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              }
+            },
+            "additionalProperties": false
           }
         },
         "required": [
@@ -286,5 +358,928 @@
         "additionalProperties": false
       }
     }
+  },
+  "layout": {
+    "catalog": "nova-layout-1",
+    "root": "Page",
+    "components": {
+      "Page": {
+        "author": "both",
+        "description": "The root: root = Page([...]).",
+        "props": {
+          "type": "object",
+          "properties": {
+            "children": {
+              "maxItems": 24,
+              "type": "array",
+              "items": {},
+              "description": "The page's blocks in reading order: Header first, then sections."
+            }
+          },
+          "required": [
+            "children"
+          ]
+        }
+      },
+      "Header": {
+        "author": "both",
+        "description": "Page title and a one-line subtitle.",
+        "props": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160,
+              "description": "A short page title, e.g. 'Sales overview'."
+            },
+            "subtitle": {
+              "description": "One sentence on what the page shows.",
+              "type": "string",
+              "maxLength": 240
+            }
+          },
+          "required": [
+            "title"
+          ]
+        }
+      },
+      "Section": {
+        "author": "both",
+        "description": "A titled group of blocks.",
+        "props": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 160
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The section heading, or null."
+            },
+            "children": {
+              "maxItems": 24,
+              "type": "array",
+              "items": {}
+            },
+            "note": {
+              "description": "A short caption under the section.",
+              "type": "string",
+              "maxLength": 400
+            }
+          },
+          "required": [
+            "title",
+            "children"
+          ]
+        }
+      },
+      "Row": {
+        "author": "both",
+        "description": "Blocks side by side, e.g. two charts.",
+        "props": {
+          "type": "object",
+          "properties": {
+            "children": {
+              "maxItems": 24,
+              "type": "array",
+              "items": {},
+              "description": "Two or three blocks shown side by side on wide screens."
+            }
+          },
+          "required": [
+            "children"
+          ]
+        }
+      },
+      "KpiTiles": {
+        "author": "both",
+        "description": "A row of headline figures.",
+        "props": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "minItems": 1,
+              "maxItems": 6,
+              "type": "array",
+              "items": {},
+              "description": "Metric(...) nodes."
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 160
+            }
+          },
+          "required": [
+            "items"
+          ]
+        }
+      },
+      "Metric": {
+        "author": "both",
+        "description": "One KPI tile inside KpiTiles.",
+        "props": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "value": {
+              "description": "A verified figure: @Value(...), a statement holding one, or arithmetic over them and $variables.",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "format": {
+              "default": "number",
+              "type": "string",
+              "enum": [
+                "number",
+                "currency",
+                "percent"
+              ]
+            },
+            "delta": {
+              "description": "Relative change as a fraction (0.12 is +12%), computed from verified figures. Shown as a coloured sublabel.",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "badge": {
+              "description": "A short sublabel such as '6 months' or 'Held constant'.",
+              "type": "string",
+              "maxLength": 80
+            },
+            "currency": {
+              "description": "ISO code, only when the data states it.",
+              "type": "string",
+              "pattern": "^[A-Z]{3}$"
+            },
+            "decimals": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 6
+            }
+          },
+          "required": [
+            "label",
+            "value"
+          ]
+        }
+      },
+      "Chart": {
+        "author": "model",
+        "description": "A native chart of one verified result. Nova binds it to the result's governed query.",
+        "props": {
+          "type": "object",
+          "properties": {
+            "evidence": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.:-]{1,128}$",
+              "description": "The verified result id the chart draws."
+            },
+            "visual": {
+              "type": "string",
+              "enum": [
+                "bar",
+                "line",
+                "area",
+                "pie",
+                "scatter"
+              ]
+            },
+            "x": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "The category or date column, exactly as in the result."
+            },
+            "y": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                {
+                  "minItems": 1,
+                  "maxItems": 4,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                }
+              ],
+              "description": "The measure column(s)."
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "date_grain": {
+              "type": "string",
+              "enum": [
+                "day",
+                "week",
+                "month",
+                "quarter",
+                "year"
+              ]
+            },
+            "color": {
+              "description": "A second category that splits the series.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "top_n": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          },
+          "required": [
+            "evidence",
+            "visual",
+            "x",
+            "y",
+            "title"
+          ]
+        }
+      },
+      "DatavizChart": {
+        "author": "server",
+        "description": "A native Dataviz chart.",
+        "props": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "chart": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            "draft_ref": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 2048
+            }
+          },
+          "required": [
+            "title",
+            "chart",
+            "draft_ref"
+          ]
+        }
+      },
+      "Table": {
+        "author": "model",
+        "description": "Rows of one verified result (up to 50).",
+        "props": {
+          "type": "object",
+          "properties": {
+            "evidence": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+            },
+            "columns": {
+              "description": "Columns to show; null for all.",
+              "anyOf": [
+                {
+                  "maxItems": 12,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 160
+            }
+          },
+          "required": [
+            "evidence"
+          ]
+        }
+      },
+      "ResultTable": {
+        "author": "server",
+        "description": "Rows of a verified result.",
+        "props": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 160
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "columns": {
+              "maxItems": 12,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "rows": {
+              "maxItems": 50,
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {}
+              }
+            }
+          },
+          "required": [
+            "title",
+            "columns",
+            "rows"
+          ]
+        }
+      },
+      "Text": {
+        "author": "both",
+        "description": "A short paragraph of narrative.",
+        "props": {
+          "type": "object",
+          "properties": {
+            "markdown": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000,
+              "description": "Short narrative in Markdown. State only verified figures."
+            }
+          },
+          "required": [
+            "markdown"
+          ]
+        }
+      },
+      "DataMap": {
+        "author": "model",
+        "description": "A map of a verified result's located rows (latitude/longitude columns).",
+        "props": {
+          "type": "object",
+          "properties": {
+            "evidence": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.:-]{1,128}$",
+              "description": "The verified result whose rows are mapped."
+            },
+            "latitude": {
+              "description": "Latitude column; null to find it.",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "longitude": {
+              "description": "Longitude column; null to find it.",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "label": {
+              "description": "Column naming each place.",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "measure": {
+              "description": "A figure shown for each place.",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 160
+            }
+          },
+          "required": [
+            "evidence"
+          ]
+        }
+      },
+      "GeoMap": {
+        "author": "server",
+        "description": "A map of verified rows.",
+        "props": {
+          "type": "object",
+          "properties": {
+            "map": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "required": [
+            "map"
+          ]
+        }
+      },
+      "RouteMap": {
+        "author": "model",
+        "description": "Public places (cities, landmarks) on a map, optionally with the road route between them.",
+        "props": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "places": {
+              "minItems": 1,
+              "maxItems": 25,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "lat": {
+                    "type": "number",
+                    "minimum": -90,
+                    "maximum": 90
+                  },
+                  "lon": {
+                    "type": "number",
+                    "minimum": -180,
+                    "maximum": 180
+                  }
+                },
+                "required": [
+                  "label",
+                  "lat",
+                  "lon"
+                ]
+              },
+              "description": "Public places in visiting order: {label, lat, lon}. Name each city or landmark."
+            },
+            "route": {
+              "description": "Draw the road route through the places in order (default false).",
+              "type": "boolean"
+            },
+            "optimize": {
+              "description": "Visit the places in the shortest road order, starting from the first.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "title",
+            "places"
+          ]
+        }
+      },
+      "PlaceMap": {
+        "author": "server",
+        "description": "Checked public places and road routes.",
+        "props": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "places": {
+              "minItems": 1,
+              "maxItems": 25,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "lat": {
+                    "type": "number",
+                    "minimum": -90,
+                    "maximum": 90
+                  },
+                  "lon": {
+                    "type": "number",
+                    "minimum": -180,
+                    "maximum": 180
+                  },
+                  "check": {
+                    "type": "string",
+                    "enum": [
+                      "verified",
+                      "corrected",
+                      "approximate"
+                    ]
+                  }
+                },
+                "required": [
+                  "label",
+                  "lat",
+                  "lon",
+                  "check"
+                ]
+              }
+            },
+            "routes": {
+              "maxItems": 3,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "line": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60000
+                  },
+                  "distance_m": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "duration_s": {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "line",
+                  "distance_m",
+                  "duration_s"
+                ]
+              }
+            },
+            "unavailable": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 240
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "optimized": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "title",
+            "places",
+            "routes"
+          ]
+        }
+      },
+      "Image": {
+        "author": "model",
+        "description": "A Wikimedia Commons image by its upload URL.",
+        "props": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "maxLength": 2048,
+              "format": "uri",
+              "description": "An https://upload.wikimedia.org/ image."
+            },
+            "alt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 240
+            }
+          },
+          "required": [
+            "url",
+            "alt"
+          ]
+        }
+      },
+      "SearchImage": {
+        "author": "model",
+        "description": "A public Wikimedia Commons image found by a search.",
+        "props": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "What the picture shows, e.g. 'Borobudur temple'."
+            },
+            "alt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 240
+            }
+          },
+          "required": [
+            "query",
+            "alt"
+          ]
+        }
+      },
+      "Picture": {
+        "author": "server",
+        "description": "A checked public image.",
+        "props": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "maxLength": 2048
+            },
+            "alt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 240
+            },
+            "source": {
+              "type": "string",
+              "maxLength": 2048
+            }
+          },
+          "required": [
+            "url",
+            "alt",
+            "source"
+          ]
+        }
+      },
+      "Controls": {
+        "author": "both",
+        "description": "A panel of what-if controls whose $variables drive Metric values below it.",
+        "props": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160,
+              "description": "e.g. 'What-if scenario'."
+            },
+            "children": {
+              "maxItems": 24,
+              "type": "array",
+              "items": {},
+              "description": "Slider, Segmented and Toggle nodes."
+            },
+            "note": {
+              "description": "What the controls change, e.g. 'Order volume stays constant.'",
+              "type": "string",
+              "maxLength": 400
+            }
+          },
+          "required": [
+            "title",
+            "children"
+          ]
+        }
+      },
+      "Slider": {
+        "author": "both",
+        "description": "A numeric control.",
+        "props": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "value": {
+              "description": "A $variable."
+            },
+            "min": {
+              "type": "number"
+            },
+            "max": {
+              "type": "number"
+            },
+            "step": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "format": {
+              "description": "How the value reads: percent shows 10 as 10%.",
+              "type": "string",
+              "enum": [
+                "number",
+                "currency",
+                "percent"
+              ]
+            }
+          },
+          "required": [
+            "label",
+            "value",
+            "min",
+            "max"
+          ]
+        },
+        "reactive": [
+          "value"
+        ]
+      },
+      "Segmented": {
+        "author": "both",
+        "description": "A choice between 2 to 6 options.",
+        "props": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "value": {
+              "description": "A $variable."
+            },
+            "options": {
+              "minItems": 2,
+              "maxItems": 6,
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 160
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "maxLength": 160
+                      },
+                      "value": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 160
+                          },
+                          {
+                            "type": "number"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "value"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "required": [
+            "label",
+            "value",
+            "options"
+          ]
+        },
+        "reactive": [
+          "value"
+        ]
+      },
+      "Toggle": {
+        "author": "both",
+        "description": "An on/off switch.",
+        "props": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "value": {
+              "description": "A $variable."
+            }
+          },
+          "required": [
+            "label",
+            "value"
+          ]
+        },
+        "reactive": [
+          "value"
+        ]
+      }
+    },
+    "functions": {
+      "Value": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "evidence": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+            },
+            "column": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "aggregation": {
+              "default": "value",
+              "type": "string",
+              "enum": [
+                "value",
+                "sum",
+                "avg",
+                "min",
+                "max",
+                "count"
+              ]
+            },
+            "where": {
+              "description": "Only rows whose columns equal these values, e.g. {month: \"2025-07\"}.",
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean"
+                ]
+              }
+            }
+          },
+          "required": [
+            "evidence",
+            "column"
+          ]
+        }
+      }
+    },
+    "prompt": "<PAGE_LAYOUT>\nYou can answer with a page: an OpenUI Lang program of `name = Component(args)` statements, one per line. Arguments are positional in the order shown; `?` marks optional ones.\n- Write a layout only when the person asks for a dashboard, an overview, a page, a comparison of several figures, a what-if/scenario, a map, a route or a picture. Answer a single figure, a short list or a plain question in Markdown without a layout: one number never becomes a page.\n- A layout replaces the Markdown answer. Write it in exactly one ```openui fence. After the fence write at most one plain sentence; put the narrative in Text blocks inside the page.\n- Start with `root = Page([...])`, then define each referenced statement on its own line, top to bottom in reading order: Header first, then sections. Nova shows each statement as soon as its line is complete, so define blocks in the order they appear.\n- Every figure comes from a verified result: write @Value(\"result-id\", \"column\", \"sum\") or a statement holding one, never a number you typed. Derived figures (differences, shares, scenarios) are arithmetic over those values and $variables, e.g. scenario = base * (1 + $uplift / 100). Use exact result ids and column names.\n- Charts are Chart(\"result-id\", \"line\", \"month\", \"revenue\", \"Revenue by month\"): name the visual and exact result columns. Each chart draws one verified result; do not chart a scenario.\n- Metric(label, value, format, delta, badge): delta is a fraction computed from verified values, e.g. (jul - jun) / jun. badge is a few words such as \"6 months\". Use format \"currency\" with a currency code only when the data states one; otherwise use \"number\". Do not remark on a missing currency.\n- Comparing periods or groups: show the latest period's figures once, each with its delta against the earlier one and a badge such as \"vs. June\", rather than one row of tiles per period. Chart the full series beside them.\n- What-if: declare each control's state with a literal default ($uplift = 10), put Slider/Segmented/Toggle nodes in a Controls panel above the figures they change, and label scenario values as scenarios. Controls only recompute values already on the page; they never fetch data.\n- Maps: DataMap(\"result-id\", \"latitude\", \"longitude\", \"city\", \"revenue\", \"Revenue by city\") maps verified rows that have coordinates; when the result has none, name its city column instead, DataMap(\"result-id\", null, null, \"city\", \"revenue\", \"Revenue by city\"), and Nova places each row at that city's centre. RouteMap(title, [{label: \"Jakarta\", lat: -6.2088, lon: 106.8456}, ...], true) shows public places such as cities and, with true, the road route through them in order, with distance and travel time; add true as the fourth argument to visit them in the shortest order from the first. Use RouteMap only for public places by name, never for customer addresses or other private locations. A map asked for on its own is still one block: root = Page([map]).\n- Images: SearchImage(\"Borobudur temple\", \"Borobudur temple at sunrise\") shows a public Wikimedia Commons picture; use one only when the person asks for a picture of a public place or thing.\n- Keep it to one Header, at most four sections, at most six KPI tiles per row and at most three charts. Text blocks are one to three sentences and state only figures shown on the page.\nComponents:\n- Page(children): The root: root = Page([...]).\n- Header(title, subtitle?): Page title and a one-line subtitle.\n- Section(title, children, note?): A titled group of blocks.\n- Row(children): Blocks side by side, e.g. two charts.\n- KpiTiles(items, title?): A row of headline figures.\n- Metric(label, value, format?, delta?, badge?, currency?, decimals?): One KPI tile inside KpiTiles.\n- Chart(evidence, visual, x, y, title, date_grain?, color?, top_n?): A native chart of one verified result. Nova binds it to the result's governed query.\n- Table(evidence, columns?, title?): Rows of one verified result (up to 50).\n- Text(markdown): A short paragraph of narrative.\n- DataMap(evidence, latitude?, longitude?, label?, measure?, title?): A map of a verified result's located rows (latitude/longitude columns).\n- RouteMap(title, places, route?, optimize?): Public places (cities, landmarks) on a map, optionally with the road route between them.\n- Image(url, alt): A Wikimedia Commons image by its upload URL.\n- SearchImage(query, alt): A public Wikimedia Commons image found by a search.\n- Controls(title, children, note?): A panel of what-if controls whose $variables drive Metric values below it.\n- Slider(label, value, min, max, step?, format?): A numeric control.\n- Segmented(label, value, options): A choice between 2 to 6 options.\n- Toggle(label, value): An on/off switch.\n- @Value(evidence, column, aggregation?, where?): a verified figure from a result. aggregation: value (first matching row), sum, avg, min, max or count.\nExample (use the real result ids and columns):\n```openui\nroot = Page([header, kpis, trend, scenario, outcome, summary])\nheader = Header(\"Sales overview\", \"Revenue for June and July 2025, with a revenue what-if.\")\njun = @Value(\"evidence_1\", \"revenue\", \"value\", {month: \"2025-06\"})\njul = @Value(\"evidence_1\", \"revenue\", \"value\", {month: \"2025-07\"})\nkpis = KpiTiles([Metric(\"July revenue\", jul, \"number\", (jul - jun) / jun, \"vs. June\"), Metric(\"Orders\", @Value(\"evidence_1\", \"orders\", \"value\", {month: \"2025-07\"}), \"number\", null, \"July\")])\ntrend = Section(\"Trend\", [Chart(\"evidence_1\", \"line\", \"month\", \"revenue\", \"Revenue by month\")])\n$uplift = 10\nscenario = Controls(\"What-if scenario\", [Slider(\"Revenue change\", $uplift, -30, 50, 5, \"percent\")], \"The change applies to every order; order volume stays constant.\")\noutcome = KpiTiles([Metric(\"Scenario July revenue\", jul * (1 + $uplift / 100), \"number\", $uplift / 100, \"Scenario\")])\nsummary = Text(\"One or two sentences on what the figures show, naming only figures on the page.\")\n```\n</PAGE_LAYOUT>"
   }
 }

@@ -134,9 +134,6 @@ from app.modules.assistant.schemas import (
     ThreadListResponse,
     ThreadUpdateRequest,
     ThreadView,
-    UiMapMetricInput,
-    UiMediaInput,
-    UiStateInput,
 )
 from app.modules.assistant.security import (
     observation_context,
@@ -2026,70 +2023,6 @@ async def replay_agent_run(
     )
 
 
-async def _ui_denied(user: dict, resource: str, reason: str, status: int = 422) -> HTTPException:
-    from app.modules.assistant.ui_access import ui_denied
-
-    return await ui_denied(user, resource, reason, status)
-
-
-async def _ui_owner(agent_id: str, thread_id: str, user: dict) -> None:
-    """The caller may open this agent and owns this agent thread."""
-    await _require_agent(agent_id, user, platform=True)
-    await _require_agent_thread(thread_id, agent_id, user["username"])
-
-
-async def _ui_source(agent_id: str, thread_id: str, message_id: str,
-                     content_id: str, user: dict) -> dict:
-    from app.modules.assistant.ui_access import ui_source
-
-    await _ui_owner(agent_id, thread_id, user)
-    return await ui_source(thread_id, message_id, content_id, user)
-
-
-@router.get("/{agent_id}/threads/{thread_id}/messages/{message_id}/ui-state/{content_id}")
-async def get_agent_ui_state(agent_id: str, thread_id: str, message_id: str, content_id: str,
-                             user: dict = Depends(get_current_user)):
-    from app.modules.assistant import ui_access
-
-    await _ui_owner(agent_id, thread_id, user)
-    return await ui_access.get_state(thread_id, message_id, content_id, user)
-
-
-@router.put("/{agent_id}/threads/{thread_id}/messages/{message_id}/ui-state/{content_id}")
-async def put_agent_ui_state(agent_id: str, thread_id: str, message_id: str, content_id: str,
-                             body: UiStateInput, user: dict = Depends(get_current_user)):
-    from app.modules.assistant import ui_access
-
-    await _ui_owner(agent_id, thread_id, user)
-    return await ui_access.put_state(
-        thread_id, message_id, content_id, user, program_sha256=body.program_sha256,
-        revision=body.revision, state=body.state,
-    )
-
-
-@router.post("/{agent_id}/threads/{thread_id}/messages/{message_id}/ui-state/{content_id}/media")
-async def get_agent_ui_media(agent_id: str, thread_id: str, message_id: str, content_id: str,
-                             body: UiMediaInput, user: dict = Depends(get_current_user)):
-    from app.modules.assistant import ui_access
-
-    await _ui_owner(agent_id, thread_id, user)
-    return await ui_access.media(
-        thread_id, message_id, content_id, user, media_type=body.type, props=body.props,
-    )
-
-
-@router.post("/{agent_id}/threads/{thread_id}/messages/{message_id}/ui-state/{content_id}/map-metric")
-async def record_agent_map_metric(agent_id: str, thread_id: str, message_id: str,
-                                  content_id: str, body: UiMapMetricInput,
-                                  user: dict = Depends(get_current_user)):
-    from app.modules.assistant import ui_access
-
-    await _ui_owner(agent_id, thread_id, user)
-    return await ui_access.map_metric(
-        thread_id, message_id, content_id, user, event=body.event, elapsed_ms=body.elapsed_ms,
-    )
-
-
 async def _business_terms_note(text: str, user: dict, views: list[str]) -> str:
     """Name a term with several approved meanings in this agent's business.
 
@@ -2152,19 +2085,6 @@ async def send_agent_message(
         )
     user_name = user["username"]
     thread_row = await _require_agent_thread(thread_id, agent_id, user_name)
-    ui_trace = []
-    if body.ui_action is not None:
-        from app.modules.assistant.ui_access import accept_action
-
-        await _ui_owner(agent_id, thread_id, user)
-        action_content, ui_step = await accept_action(
-            thread_id, body.ui_action, body.content, user,
-        )
-        ui_trace.append(ui_step)
-        # The validated source provides context, not tool authority. Its form data
-        # is ordinary untrusted user input and never becomes a system instruction.
-        body.content = action_content
-        prompt = attachment_prompt(body.content, attachments)
     learning_enabled = agent_id != SKILL_AUTHOR_ID and await assistant_repository.learning_enabled(
         thread_id, user_name=user_name)
     registry, system_prompt, budget, token_budget = await agent_service.build_loop_inputs(agent)
@@ -2271,7 +2191,6 @@ async def send_agent_message(
         thread_id,
         user_name=user_name,
         role="user",
-        steps=ui_trace,
         content=body.content,
         security_context=stamp,
         attachments=attachments,
@@ -2324,10 +2243,6 @@ async def send_agent_message(
         # The Dataviz assistant answers in text and tables: its visuals are
         # the dashboard beside it.
         intelligent_ui=agent_id != SKILL_AUTHOR_ID and not is_dataviz_assistant(agent_id),
-        ui_action_accepted=body.ui_action is not None,
-        ui_private_context=bool(body.ui_action) or any(
-            step.get("kind") == "ui_action" for row in history for step in row.get("steps") or []
-        ),
         execution_timezone=configured_timezone(),
         database=await _resolve_database(agent, user),
         schema_name=agent.get("schema_name"),

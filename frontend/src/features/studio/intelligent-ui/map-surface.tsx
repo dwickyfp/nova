@@ -16,7 +16,6 @@ import {
 import { motionDuration } from "@/components/ui/map/tokens";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/context/theme-provider";
-import { useMapMetrics } from "./map-metrics";
 import { mapView, type MapOptions } from "./map-options";
 import {
   businessMapStyle,
@@ -228,7 +227,6 @@ export function MapSurface({
   basemap?: "bundled" | "configured";
 }) {
   const { resolvedTheme } = useTheme();
-  const metric = useMapMetrics();
   const follow = useRef(true);
   const mapRef = useRef<MapRef | null>(null);
   // Business and public maps both show the online street basemap; "bundled"
@@ -272,12 +270,9 @@ export function MapSurface({
             theme={resolvedTheme}
             viewport={view}
             onMapError={() => {
-              metric("failed");
-              metric("fallback");
               onError();
             }}
             onReady={() => {
-              metric("ready");
               onReady?.();
             }}
             transformRequest={streets ? undefined : localMapRequest}

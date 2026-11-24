@@ -273,7 +273,14 @@ at `ROUTING_OSRM_URL` (default: the public `https://router.project-osrm.org`, wh
 receives the stops' coordinates). Point it at a self-hosted OSRM to keep them inside
 the deployment, or set it empty for straight-line distances. When the server does
 not answer, the run falls back to straight lines and says so in its warnings and in
-`metrics.distance`. Studio route maps draw road lines from the same public service.
+`metrics.distance`. Studio route maps on answer pages use the same `ROUTING_OSRM_URL`
+and send only city-level positions (two decimals); when it is empty, route maps keep
+the places and say that road routes are not set up.
+
+Studio pictures come from Wikimedia Commons, which refuses unidentified clients.
+Requests send a generic User-Agent; set `PUBLIC_CONTENT_CONTACT_URL` to an https URL
+or an email address for your deployment to have it appended. When Commons refuses
+or does not answer, the page keeps an "Image unavailable" placeholder.
 
 The repeatable local smoke benchmark is:
 

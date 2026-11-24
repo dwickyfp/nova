@@ -264,7 +264,9 @@ def _v1_frame(entry: dict[str, Any]) -> str:
 
 def encode_case(case: dict[str, Any]) -> list[dict[str, Any]]:
     """Encode one case and number it as ``send_agent_message`` does."""
-    encoder = StudioStreamEncoder(case["run_id"])
+    # A fixed clock: every call takes 1.5 s, so durations are reproducible.
+    ticks = iter(float(index) * 1.5 for index in range(10_000))
+    encoder = StudioStreamEncoder(case["run_id"], clock=lambda: next(ticks))
     frames = [encoder.start(role=case["role"])]
     for entry in case["v1"]:
         frames.extend(encoder.translate(_v1_frame(entry)))
@@ -593,3 +595,15 @@ def test_numbered_frames_are_accepted_by_the_run_event_store() -> None:
         frames = _frames(records)
         assert [stored_sequence(frame) for frame in frames] == list(range(len(records)))
         assert [events_v2.frame_sequence(frame) for frame in frames] == list(range(len(records)))
+
+
+def test_a_finished_call_carries_how_long_it_ran() -> None:
+    records = encode_case(CASES[0])
+    statuses = [r["data"] for r in records if r["event"] == "tool.status"]
+    timed = [data for data in statuses if "duration_ms" in data]
+    assert timed, "a call that ran and finished reports its duration"
+    assert all(data["status"] in {"done", "failed", "denied", "cancelled"} for data in timed)
+    # The fixed test clock reads 1.5 s apart, so every duration is a positive multiple.
+    assert all(data["duration_ms"] > 0 and data["duration_ms"] % 1500 == 0 for data in timed)
+    assert not any("duration_ms" in data for data in statuses if data["status"] == "running")
+

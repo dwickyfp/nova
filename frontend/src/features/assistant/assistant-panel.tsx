@@ -14,7 +14,7 @@ import type { SelectedModel } from "./assistant-provider";
 import { ASSISTANT_DEFAULT_WIDTH } from "./assistant-panel-state";
 import { AssistantComposer } from "./assistant-composer";
 import { AssistantEmptyState } from "./assistant-empty-state";
-import { MessageList, type UiContext } from "./message-list";
+import { MessageList } from "./message-list";
 import type { TurnContext } from "./stream-client";
 import type { NevaSuggestedAction } from "./surface-registry";
 import type { NevaEventInput } from "./app-context";
@@ -34,7 +34,6 @@ export type AssistantPanelProps = {
   children?: React.ReactNode;
   onSendMessage?: (message: string, files?: SentFile[]) => void;
   /** Where interactive answers keep state and send their actions. */
-  uiContext?: UiContext;
   disabled?: boolean;
   /** Transcript state. When omitted the panel shows the empty state. */
   messages?: TranscriptMessage[];
@@ -107,7 +106,6 @@ function AssistantBody({
   suggestedActions,
   onExecutionEvent,
   onFixWithNeva,
-  uiContext,
 }: AssistantPanelProps) {
   const hasTranscript = Boolean(children) || Boolean(messages?.length);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -171,7 +169,6 @@ function AssistantBody({
                 activeContext={activeContext}
                 onExecutionEvent={onExecutionEvent}
                 onFixWithNeva={onFixWithNeva}
-                uiContext={uiContext}
               />
             ) : (
               <AssistantEmptyState

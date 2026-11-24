@@ -28,7 +28,7 @@ import {
 import type { ThinkingPhase, ToolCallStatus } from "@/features/assistant/types";
 import { TextShimmer } from "./text-shimmer";
 import { StreamingMarkdown } from "./streaming-markdown";
-import { formatSpan, isFailedStatus, isLiveStatus, isStoppedStatus, reasoningPreview, recordedSpan } from "./rail-model";
+import { formatSpan, isFailedStatus, isLiveStatus, isStoppedStatus, reasoningPreview, recordedSpan, REVEAL_STEP_EVENT } from "./rail-model";
 
 /**
  * The agentic process, rendered as one collapsible run per turn.
@@ -69,6 +69,8 @@ export type RailStep = {
   detail?: string;
   /** When the run journal recorded this row. */
   at?: string;
+  /** How long a finished tool call ran. */
+  durationMs?: number;
 };
 
 const PHASE_ICON: Record<ThinkingPhase, LucideIcon> = {
@@ -290,6 +292,32 @@ export function ProcessRail({
     return () => window.clearTimeout(timer);
   }, [settling]);
 
+  // A tool chip under the answer asks for one of this rail's steps: open the
+  // rail, then bring that row into view and focus it.
+  const [target, setTarget] = useState<string | null>(null);
+  useEffect(() => {
+    const onReveal = (event: Event) => {
+      const stepId = (event as CustomEvent<{ stepId?: string }>).detail?.stepId;
+      if (!stepId || !steps.some((step) => step.id === stepId)) return;
+      setPinned(true);
+      setSettling(false);
+      setOpen(true);
+      setTarget(stepId);
+    };
+    window.addEventListener(REVEAL_STEP_EVENT, onReveal);
+    return () => window.removeEventListener(REVEAL_STEP_EVENT, onReveal);
+  }, [steps]);
+  useEffect(() => {
+    if (!target || !open) return;
+    const frame = window.requestAnimationFrame(() => {
+      const row = document.querySelector<HTMLElement>(`[data-step-id="${CSS.escape(target)}"]`);
+      row?.scrollIntoView({ block: "center", behavior: "smooth" });
+      row?.focus({ preventScroll: true });
+      setTarget(null);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [target, open]);
+
   // A reveal (a decision just made) re-opens the rail and releases the pin,
   // because the new row is the thing the user needs to see.
   useEffect(() => {
@@ -374,7 +402,9 @@ export function ProcessRail({
           {steps.map((step, index) => (
             <li
               key={step.id}
-              className="nova-rail-item"
+              data-step-id={step.id}
+              tabIndex={-1}
+              className="nova-rail-item focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
               data-live={isLiveStatus(step.status) || undefined}
               style={{ "--i": Math.min(index, 8) } as CSSProperties}
             >

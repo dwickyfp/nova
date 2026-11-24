@@ -13,7 +13,6 @@ import {
 import type { Agent } from "@/features/agents/api";
 import { signInNavigation } from "@/lib/api-client";
 import { StudioChat } from "./studio-chat";
-import { registerUiFlush } from "./intelligent-ui/state";
 import { v2Sse } from "./runtime/v2-test-encoder";
 import "@/styles/index.css";
 
@@ -507,24 +506,15 @@ it("explains that Studio needs an agent when the user has none", async () => {
   await expect.element(screen.getByRole("textbox", { name: "Message Nova" })).toBeDisabled();
 });
 
-it("sends once when repeated Enter waits for an interactive state flush", async () => {
-  let release!: () => void;
-  const pending = new Promise<void>((resolve) => { release = resolve; });
-  const unregister = registerUiFlush(() => pending);
-  try {
-    const screen = await renderStudio();
-    await userEvent.fill(screen.getByRole("textbox", { name: "Message Nova" }), "Review results");
-    await userEvent.keyboard("{Enter}{Enter}");
-    release();
-    await expect.element(screen.getByText("Omzet tertinggi ada di", { exact: false })).toBeVisible();
-    const sent = vi.mocked(globalThis.fetch).mock.calls.filter(([input, init]) =>
-      String(input).endsWith("/messages") && init?.method === "POST",
-    );
-    expect(sent).toHaveLength(1);
-  } finally {
-    release();
-    unregister();
-  }
+it("sends once when Enter is pressed twice", async () => {
+  const screen = await renderStudio();
+  await userEvent.fill(screen.getByRole("textbox", { name: "Message Nova" }), "Review results");
+  await userEvent.keyboard("{Enter}{Enter}");
+  await expect.element(screen.getByText("Omzet tertinggi ada di", { exact: false })).toBeVisible();
+  const sent = vi.mocked(globalThis.fetch).mock.calls.filter(([input, init]) =>
+    String(input).endsWith("/messages") && init?.method === "POST",
+  );
+  expect(sent).toHaveLength(1);
 });
 
 /**

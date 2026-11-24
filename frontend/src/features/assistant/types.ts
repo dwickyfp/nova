@@ -124,8 +124,8 @@ export type AssistantEvent = (
     }
   | ({ type: "text_delta"; text: string } & ContentPosition)
   | ({ type: "dashboard"; payload: import("../viz/types").DashboardArtifactBlock } & ContentPosition)
-  | ({ type: "ui"; payload: Omit<import('../studio/intelligent-ui/types').UiBlock, 'program'> } & ContentPosition)
-  | ({ type: "ui_delta"; text: string } & ContentPosition)
+  | ({ type: "ui"; payload: Omit<import('../studio/runtime/components/block').UiBlock, 'program'> } & ContentPosition)
+  | ({ type: "ui_delta"; text: string; replace?: true } & ContentPosition)
   | {
       type: "thinking";
       phase: ThinkingPhase;

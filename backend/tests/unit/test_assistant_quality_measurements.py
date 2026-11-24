@@ -494,32 +494,16 @@ async def test_a_turn_answers_when_another_slow_query_would_pass_its_deadline():
     assert TurnResult(frames=frames).finish_reason == "stop"
 
 
-async def test_first_useful_content_and_validated_ui_action_are_observed():
+async def test_first_useful_content_is_observed():
     from app.observability.metrics import STUDIO_FIRST_USEFUL_RESPONSE
 
     metric = STUDIO_FIRST_USEFUL_RESPONSE.labels("direct")
     before = metric._sum.get()
     context, frames = await run(
         ScriptedProvider([text_frame("Ready.")], turn_plan=PLAN),
-        context=LoopContext(user_name="alice", agent_id="agent", steps=[], ui_action_accepted=True),
+        context=LoopContext(user_name="alice", agent_id="agent", steps=[]),
     )
     assert TurnResult(frames=frames).finish_reason == "stop"
     record = observation(context)
     assert record["facts"]["presentation"]["first_useful_response_ms"] >= 0
     assert metric._sum.get() >= before
-    assert score_assertion(
-        Assertion(scorer="ui_action_success", expected={"accepted": True, "completed": True}),
-        record,
-    ).status == "pass"
-
-
-@pytest.mark.parametrize("finish_reason", ["cancelled", "error", "interrupted", "token_budget"])
-def test_interrupted_ui_actions_do_not_score_as_completed(monkeypatch, finish_reason):
-    from app.modules.assistant.service import _record_quality_observation
-
-    context = LoopContext(user_name="alice", agent_id="agent", steps=[], ui_action_accepted=True)
-    _record_quality_observation(context, "Continue", finish_reason)
-    assert score_assertion(
-        Assertion(scorer="ui_action_success", expected={"completed": True}),
-        observation(context),
-    ).status == "fail"

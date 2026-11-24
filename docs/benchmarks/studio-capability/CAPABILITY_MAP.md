@@ -7,7 +7,7 @@ Sources: `backend/app/modules/agents/registry.py` (tool selection),
 `router.py` (turn, HITL, cancel, replay, deep research routes),
 `backend/app/modules/assistant/events_v2.py` (stream protocol),
 `backend/app/modules/assistant/human_input.py` (cards),
-`frontend/src/features/studio/intelligent-ui/catalog-v2.ts` (components),
+`frontend/src/features/studio/runtime/components/layout.ts` (page components),
 `frontend/src/features/studio/studio-composer.tsx` (`/` command) and the
 Studio user docs under `frontend/src/features/docs/content/studio/`.
 
@@ -27,9 +27,9 @@ dimensions `order_date`, `status`, `payment_method`, `shipping_city`,
 | Single number | Answer text (`text` part), or a `Kpi` component | `number`, `date_relative`, `typo` |
 | Table | `table` part from a governed result, or `Table` component | `table`, `breakdown` |
 | Chart: bar, line, area, pie/donut, scatter | `chart` part (Vega mirror from `data_to_chart`; chart types include stacked/side bars, bubble, heatmap) or `Chart` component (`bar`, `line`, `area`, `pie`, `donut`, `scatter`) | `chart_*`, `trend` |
-| KPI tiles | `Kpi` component in a `ui` part | `kpi` |
-| Map | `GeoMap` (governed, needs coordinates or geometry) or `Map` (public itinerary) | `map` |
-| What-if / simulation | `compute_metrics`, and interactive `Slider`/`Input` components bound to state | `what_if` |
+| KPI tiles | `KpiTiles` component, or `Metric` tiles on a page | `kpi` |
+| Map | `GeoMap` (governed, needs coordinates or geometry), or `DataMap` on a page; public places and road routes with distance, time and alternatives via page `RouteMap` | `map` |
+| What-if / simulation | `compute_metrics`, and page `Slider`/`Segmented`/`Toggle` controls that recompute locally | `what_if` |
 | Narrative / summary / insight | Answer text | `narrative` |
 | Comparison, ranking, trend | Text + table/chart | `comparison`, `ranking`, `trend` |
 | Diagnosis of a change | `diagnose_change` (exact two-period decomposition) | `diagnosis` |

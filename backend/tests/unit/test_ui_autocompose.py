@@ -8,7 +8,7 @@ from decimal import Decimal
 import pytest
 
 from app.modules.assistant import ui_autocompose as ac
-from app.modules.assistant.intelligent_ui import UiValidationError
+from app.modules.assistant import ui_layout
 
 SALES = {"columns": ["salesperson", "region", "revenue"], "rows": [
     ["Budi", "Jakarta", Decimal("1200.50")], ["Rizky", "Bandung", "3200.00"],
@@ -19,16 +19,24 @@ ROUTES = {"columns": ["route", "geom"], "rows": [["R1", "LINESTRING(106.79 -6.24
 TOTAL = {"columns": ["total_revenue"], "rows": [[Decimal("356805054.00")]]}
 
 
+def _props(component):
+    assert component is not None and component["name"] == "GeoMap"
+    return component["props"]
+
+
 def test_maps_prefer_exact_coordinates_then_geometry():
-    program = ac.map_program("evidence_2", OUTLETS, "Outlets") or ""
-    assert '"longitude", "latitude", null, "outlet_name", "Outlets"' in program
-    assert 'popupFields: ["district", "depot_latitude"]' in program
+    outlets = _props(ac.map_component("evidence_2", OUTLETS, "Outlets"))
+    assert (outlets["longitude"], outlets["latitude"], outlets["label"], outlets["title"]) == (
+        "longitude", "latitude", "outlet_name", "Outlets")
+    assert outlets["options"] == {"popupFields": ["district", "depot_latitude"]}
     suffixed = {"columns": ["store", "store_lat", "store_lng"], "rows": [["A", "-6.2", "106.8"]]}
-    assert '"store_lng", "store_lat"' in (ac.map_program("e", suffixed, "Stores") or "")
-    routes = ac.map_program("e", ROUTES, "Routes") or ""
-    assert 'null, null, "geom", "route"' in routes
+    stores = _props(ac.map_component("e", suffixed, "Stores"))
+    assert (stores["longitude"], stores["latitude"]) == ("store_lng", "store_lat")
+    routes = _props(ac.map_component("e", ROUTES, "Routes"))
+    assert (routes["geometry"], routes["label"]) == ("geom", "route")
+    assert "longitude" not in routes
     # Lines are an ordered route: drawn as one, not as shapes.
-    assert 'layer: "route"' in routes
+    assert routes["options"]["layer"] == "route"
 
 
 @pytest.mark.parametrize("table", [
@@ -38,7 +46,7 @@ def test_maps_prefer_exact_coordinates_then_geometry():
     {"columns": ["name", "latitude", "longitude"], "rows": []},
 ])
 def test_results_without_valid_locations_get_no_map(table):
-    assert ac.map_program("e", table, "Places") is None
+    assert ac.map_component("e", table, "Places") is None
 
 
 def test_single_metric_is_a_kpi_tile_read_from_its_row():
@@ -81,8 +89,8 @@ async def test_planned_routes_are_the_map_before_their_stops():
         {"evidence_2": OUTLETS, "evidence_3": ROUTES},
         {"evidence_2": "Outlets", "evidence_3": "Optimized routes"},
     )
-    # A route stays an OpenUI route map; only places become a GeoMap component.
-    assert [payload["fallback"] for _, payload in composed] == ["**Optimized routes**"]
+    assert _kinds(composed) == ["GeoMap"]
+    assert composed[0][1]["props"]["title"] == "Optimized routes"
 
 
 async def test_metrics_come_first_and_other_results_get_their_own_view():
@@ -91,7 +99,13 @@ async def test_metrics_come_first_and_other_results_get_their_own_view():
     assert skipped == []
     assert _kinds(composed) == ["KpiTiles", "grid"]
     assert composed[0][1]["props"]["items"][0]["evidence_id"] == "evidence_1"
-    assert set(composed[1][1]["evidence"]) == {"evidence_2"}
+    grid = composed[1][1]
+    # A grid is a deterministic page holding the verified rows.
+    assert grid["catalog_version"] == ui_layout.CATALOG
+    assert grid["provenance"]["evidence_ids"] == ["evidence_2"]
+    assert grid["program"].startswith("root = Page([grid])\ngrid = ResultTable(")
+    assert '["salesperson", "region", "revenue"]' in grid["program"]
+    assert '["Budi", "Jakarta", 1200.5]' in grid["program"]
 
 
 REGION = {"columns": ["region", "revenue_total"], "rows": [
@@ -110,27 +124,19 @@ WIDE = {"columns": ["region", "a", "b", "c", "d", "e"], "rows": [["Jakarta", 1, 
 YEARLY = {"columns": ["year", "orders_count"], "rows": [[2024, 10], [2025, 12], [2026, 15]]}
 
 
-@pytest.mark.parametrize(("table", "auto", "fragment"), [
-    (WEEKLY, "trend", 'Chart(@Sort(@Evidence("e"), "week_start", "asc"), "week_start", '
-                      '"revenue", "line"'),
-    (YEARLY, "trend", '"year", "orders_count", "line"'),
-    (REGION, "ranking", 'Chart(@Sort(@Evidence("e"), "revenue_total", "desc"), "region", '
-                        '"revenue_total", "bar"'),
-    (OUTLET_SALES, "ranking", 'Chart(@Top(@Evidence("e"), "revenue", 10)'),
-    (CROSSTAB, "grid", 'Table(@Evidence("e"), null'),
-    (SALES, "grid", 'Table(@Evidence("e"), null'),
-    (VISITS, "grid", 'Table(@Evidence("e"), null'),
+@pytest.mark.parametrize(("table", "visual"), [
+    (WEEKLY, "line"), (YEARLY, "line"), (REGION, "bar"), (OUTLET_SALES, "bar"),
 ])
-def test_result_shape_chooses_the_data_view(table, auto, fragment):
-    program, chosen = ac.data_program("e", table, None) or ("", "")
-    assert chosen == auto
-    assert fragment in program
+def test_trends_and_rankings_get_a_native_chart_plan(table, visual):
+    chosen = ac.chart_plan(table)
+    assert chosen is not None and chosen[0]["visual"] == visual
+    assert not ac.is_grid(table)
 
 
-def test_long_rankings_say_they_cover_only_these_rows():
-    program, _ = ac.data_program("e", OUTLET_SALES, "Sales by outlet") or ("", "")
-    assert 'Caption("Highest values within these result rows")' in program
-    assert 'Table(@Evidence("e"), null, "Sales by outlet")' in program
+@pytest.mark.parametrize("table", [CROSSTAB, SALES, VISITS])
+def test_detail_results_are_grids(table):
+    assert ac.chart_plan(table) is None
+    assert ac.is_grid(table)
 
 
 @pytest.mark.parametrize("table", [
@@ -140,8 +146,8 @@ def test_long_rankings_say_they_cover_only_these_rows():
     {"columns": [f"c{index}" for index in range(51)], "rows": [list(range(51))]},
     {"columns": ["note"], "rows": [[None], [""]]},
 ])
-def test_unrecognised_or_empty_shapes_get_no_view(table):
-    assert ac.data_program("e", table, None) is None
+def test_unrecognised_or_empty_shapes_get_no_grid(table):
+    assert not ac.is_grid(table)
 
 
 def test_columns_are_classified_by_values_and_names():
@@ -197,10 +203,9 @@ async def test_at_most_two_results_get_a_view_and_charts_leave_only_maps():
 
 async def test_validation_failure_is_reported_not_raised(monkeypatch):
     async def reject(*_args, **_kwargs):
-        raise UiValidationError("rejected")
+        raise ui_layout.LayoutError("rejected")
 
-    monkeypatch.setattr(ac, "parse_program", reject)
-    assert await ac.compose({"evidence_3": ROUTES}, {}) == ([], ["map_validation"])
+    monkeypatch.setattr(ui_layout, "check_statement", reject)
     assert await ac.compose({"evidence_1": SALES}, {}) == ([], ["grid_validation"])
 
 
@@ -212,13 +217,17 @@ STOPS = {"columns": ["route", "stop_seq", "stop", "latitude", "longitude", "dema
 
 
 async def test_ordered_stops_are_drawn_as_numbered_routes():
-    program = ac.map_program("e", STOPS, "Delivery routes") or ""
-    assert '"longitude", "latitude", null, "stop", "Delivery routes"' in program
-    assert 'layer: "route", sequence: "stop_seq", group: "route"' in program
-    assert 'routeFields: ["route_km", "saving_pct"]' in program
+    stops = _props(ac.map_component("e", STOPS, "Delivery routes"))
+    assert (stops["longitude"], stops["latitude"], stops["label"]) == (
+        "longitude", "latitude", "stop")
+    assert stops["options"] == {
+        "layer": "route", "sequence": "stop_seq", "group": "route",
+        "routeFields": ["route_km", "saving_pct"], "popupFields": ["demand", "leg_km"],
+    }
     composed, skipped = await ac.compose(
         {"evidence_2": OUTLETS, "evidence_4": STOPS},
         {"evidence_2": "Outlets", "evidence_4": "Delivery routes"},
     )
     assert skipped == []
-    assert [payload["fallback"] for _, payload in composed] == ["**Delivery routes**"]
+    assert _kinds(composed) == ["GeoMap"]
+    assert composed[0][1]["props"]["title"] == "Delivery routes"

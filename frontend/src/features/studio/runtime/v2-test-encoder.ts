@@ -49,6 +49,9 @@ export class TestStudioEncoder {
   private count = 0;
   private tools = new Map<string, string>();
   private toolState = new Map<string, string>();
+  // The server's test clock: each reading is 1.5 s after the previous one.
+  private ticks = 0;
+  private toolStarted = new Map<string, number>();
   private content = new Map<string, string>();
   private inputs = new Map<string, string>();
   private open = new Map<string, string>();
@@ -59,6 +62,10 @@ export class TestStudioEncoder {
   private finished = false;
 
   constructor(private readonly runId: string) {}
+
+  private clock(): number {
+    return this.ticks++ * 1.5;
+  }
 
   private partId(): string {
     return `${this.runId}#${this.count++}`;
@@ -143,7 +150,10 @@ export class TestStudioEncoder {
       case "ui_delta": {
         const partId = this.content.get(str(b.content_id));
         if (!partId || !this.open.has(partId)) return [];
-        return [{ event: "part.delta", data: { part_id: partId, text: str(b.text) } }];
+        return [{
+          event: "part.delta",
+          data: { part_id: partId, text: str(b.text), ...(b.replace === true ? { replace: true } : {}) },
+        }];
       }
       case "content_block_done": {
         const partId = this.content.get(str(b.content_id));
@@ -294,7 +304,22 @@ export class TestStudioEncoder {
     const [partId, frames] = this.toolPart(toolKey);
     if (!this.open.has(partId)) return frames;
     this.toolState.set(toolKey, status);
-    frames.push({ event: "tool.status", data: { part_id: partId, status, ...(preview ? { preview } : {}) } });
+    let duration: number | undefined;
+    if (status === "running") {
+      if (!this.toolStarted.has(toolKey)) this.toolStarted.set(toolKey, this.clock());
+    } else if (TERMINAL_TOOL.has(status) && this.toolStarted.has(toolKey)) {
+      duration = Math.max(0, Math.round((this.clock() - this.toolStarted.get(toolKey)!) * 1000));
+      this.toolStarted.delete(toolKey);
+    }
+    frames.push({
+      event: "tool.status",
+      data: {
+        part_id: partId,
+        status,
+        ...(preview ? { preview } : {}),
+        ...(duration !== undefined ? { duration_ms: duration } : {}),
+      },
+    });
     if (TERMINAL_TOOL.has(status))
       frames.push(this.end(partId, status === "failed" ? "error" : status === "denied" || status === "cancelled" ? "cancelled" : "done"));
     return frames;

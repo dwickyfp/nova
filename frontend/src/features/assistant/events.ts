@@ -95,54 +95,39 @@ export function parseAssistantEvent(
         };
       }
       case "ui": {
+        // A page answer opens with its payload; the program follows in deltas.
         const value = record.payload;
-        if (!value || typeof value !== "object" || Array.isArray(value))
-          return null;
-        const block = value as Record<string, unknown>;
         const plain = (v: unknown): v is Record<string, unknown> =>
           !!v && typeof v === "object" && !Array.isArray(v);
         if (
-          !plain(block.state_defaults) ||
-          !plain(block.evidence) ||
-          !plain(block.provenance) ||
-          !Array.isArray(block.provenance.evidence_ids) ||
-          !block.provenance.evidence_ids.every(
-            (id) => typeof id === "string",
-          ) ||
-          typeof block.provenance.scope !== "string" ||
-          typeof block.provenance.assumption !== "boolean" ||
-          !Array.isArray(block.actions) ||
-          block.actions.length > 50 ||
-          !block.actions.every(
-            (a) =>
-              plain(a) &&
-              typeof a.id === "string" &&
-              typeof a.assistant === "boolean",
-          ) ||
-          !/^[a-f0-9]{64}$/.test(String(block.program_sha256)) ||
-          JSON.stringify(block).length > 512000
-        )
-          return null;
-        if (
-          typeof block.catalog_version !== "string" ||
-          typeof block.program_sha256 !== "string" ||
-          typeof block.fallback !== "string" ||
-          !block.state_defaults ||
-          !block.evidence ||
-          !block.provenance ||
-          !Array.isArray(block.actions) ||
+          !plain(value) ||
+          typeof value.catalog_version !== "string" ||
+          typeof value.fallback !== "string" ||
+          (value.state_defaults !== undefined && !plain(value.state_defaults)) ||
+          (value.provenance !== undefined && !plain(value.provenance)) ||
+          (value.charts !== undefined && !Array.isArray(value.charts)) ||
+          JSON.stringify(value).length > 512000 ||
           typeof record.content_id !== "string" ||
           !Number.isInteger(record.content_index)
         )
           return null;
-        return { type: "ui", payload: block, ...contentPosition(record) };
+        return {
+          type: "ui",
+          payload: value as unknown as import("../studio/runtime/components/block").LayoutBlock,
+          ...contentPosition(record),
+        };
       }
       case "ui_delta":
         return typeof record.text === "string" &&
           record.text.length <= 64000 &&
           typeof record.content_id === "string" &&
           Number.isInteger(record.content_index)
-          ? { type: "ui_delta", text: record.text, ...contentPosition(record) }
+          ? {
+              type: "ui_delta",
+              text: record.text,
+              ...(record.replace === true ? { replace: true as const } : {}),
+              ...contentPosition(record),
+            }
           : null;
       case "thinking":
         return parseThinking(record);

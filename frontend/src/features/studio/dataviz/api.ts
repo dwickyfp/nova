@@ -5,15 +5,19 @@ export type DatavizLocator = {
   thread_id: string;
   message_id: string;
   content_id: string;
-  node?: {
-    component: "Chart" | "Table" | "Kpi" | "GeoMap";
-    evidence_id: string;
-    x?: string;
-    y?: string;
-    type?: string;
-    title?: string;
-    column?: string;
-  };
+  node?:
+    /** A native chart on an answer page, by its position among the page's charts. */
+    | { component: "DatavizChart"; position: number }
+    /** A view of an answer from a retired catalog. */
+    | {
+        component: "Chart" | "Table" | "Kpi" | "GeoMap";
+        evidence_id: string;
+        x?: string;
+        y?: string;
+        type?: string;
+        title?: string;
+        column?: string;
+      };
 };
 
 export type DatavizConcept = {

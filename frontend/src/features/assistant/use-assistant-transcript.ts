@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import type { AttachedQuery } from "./query-attach";
-import type { UiBlock } from "@/features/studio/intelligent-ui/types";
+import type { UiBlock } from "@/features/studio/runtime/components/block";
 import type {
   AssistantEvent,
   AssistantMessage,
@@ -357,7 +357,11 @@ function applyEvent(
     case "ui_delta":
       return updateUiBlock(state, event.content_id, (item) => ({
         ...item,
-        block: { ...item.block, program: (item.block.program + event.text).slice(0, 64000) },
+        // ``replace`` empties a page that turned out not to be the answer.
+        block: {
+          ...item.block,
+          program: ((event.replace ? "" : item.block.program) + event.text).slice(0, 64000),
+        },
       }));
     case "mission_updated":
     case "mission_continuation":

@@ -64,6 +64,8 @@ recorded steps (protocol 1, read-only).
 from __future__ import annotations
 
 import json
+import time
+from collections.abc import Callable
 from typing import Any
 
 from app.modules.assistant import events
@@ -180,9 +182,13 @@ class StudioStreamEncoder:
     a frame it has no mapping for is dropped rather than passed on unnumbered.
     """
 
-    def __init__(self, run_id: str) -> None:
+    def __init__(self, run_id: str, *, clock: Callable[[], float] = time.monotonic) -> None:
         self.run_id = run_id
         self._count = 0
+        # Each call's run time, sent with its terminal status so a replay shows
+        # the same duration as the live run.
+        self._clock = clock
+        self._tool_started: dict[tuple[str, str], float] = {}
         # Keyed by (originating run, tool call id): a Mission's nested runs share
         # this stream, and their call ids are only unique within each run.
         self._tools: dict[tuple[str, str], str] = {}
@@ -215,8 +221,11 @@ class StudioStreamEncoder:
         self._open[part_id] = part_type
         return part_id, self._frame(PART_START, {"part_id": part_id, "type": part_type, **fields})
 
-    def _delta(self, part_id: str, text: Any) -> str:
-        return self._frame(PART_DELTA, {"part_id": part_id, "text": str(text or "")})
+    def _delta(self, part_id: str, text: Any, *, replace: bool = False) -> str:
+        payload: dict[str, Any] = {"part_id": part_id, "text": str(text or "")}
+        if replace:
+            payload["replace"] = True
+        return self._frame(PART_DELTA, payload)
 
     def _end(self, part_id: str, state: str = "done", final: Any = None) -> str:
         self._open.pop(part_id, None)
@@ -308,7 +317,8 @@ class StudioStreamEncoder:
             if target is None or target not in self._open:
                 return []
             if name == "ui_delta":
-                return [self._delta(target, body.get("text"))]
+                # ``replace`` empties a page that turned out not to be the answer.
+                return [self._delta(target, body.get("text"), replace=bool(body.get("replace")))]
             return [self._end(target)]
         if name == events.EVENT_INPUT_REQUIRED:
             return self._input_required(origin, body)
@@ -478,6 +488,12 @@ class StudioStreamEncoder:
         payload: dict[str, Any] = {"part_id": part_id, "status": status}
         if preview:
             payload["preview"] = preview
+        if status == "running":
+            if key not in self._tool_started:
+                self._tool_started[key] = self._clock()
+        elif status in _TERMINAL_TOOL and key in self._tool_started:
+            elapsed = self._clock() - self._tool_started.pop(key)
+            payload["duration_ms"] = max(0, round(elapsed * 1000))
         frames.append(self._frame(TOOL_STATUS, payload))
         if status in _TERMINAL_TOOL:
             frames.append(self._end(part_id, "error" if status == "failed" else (

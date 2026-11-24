@@ -46,7 +46,7 @@ export type OrderedContent =
       id: string;
       index: number;
       type: "ui";
-      block: import("./intelligent-ui/types").UiBlock;
+      block: import("./runtime/components/block").UiBlock;
       complete: boolean;
       /** The streamed program passed the size limit; it is shown as its fallback. */
       tooLarge?: true;
@@ -262,6 +262,7 @@ export function stepsFromParts(parts: TurnPart[]): RailStep[] {
           status: part.status,
           preview: part.toolName === "load_skill" ? undefined : part.preview,
           detail: showsToolDetail(part.toolName) ? part.detail : undefined,
+          ...(part.durationMs !== undefined ? { durationMs: part.durationMs } : {}),
         });
         break;
       case "guard":

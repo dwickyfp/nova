@@ -119,13 +119,13 @@ def _output_instructions(schema: dict[str, Any]) -> str:
             rules.append("intent: exactly one of " + ", ".join(definition["enum"]) + ".")
         elif name == "presentation":
             rules.append(
-                "presentation: interactive when the answer needs a composed data view over "
-                "verified rows: a comparison, local filter or drill-down control, several "
-                "results side by side, or a dashboard combining results; also for a "
-                "calculator, checklist, form, simulation, diagram, route/itinerary map, "
-                "flashcards, timer or canvas. Use text otherwise; Nova draws a single chart, "
-                "ranking, trend, grid, located result or metric from verified rows by itself. "
-                "This affects final presentation only and never expands tools or agent scope."
+                "presentation: interactive when the person asks for a page of verified "
+                "results: a dashboard, an overview, a comparison of several figures, several "
+                "results side by side, or a what-if or scenario over verified figures. Use "
+                "text otherwise: a single figure, a short list or a plain question is a "
+                "sentence, and Nova draws a single chart, ranking, trend, grid, located "
+                "result or metric from verified rows by itself. This affects final "
+                "presentation only and never expands tools or agent scope."
             )
         elif name in {"tools", "required_tools"}:
             rules.append(name + ": an array of exact tool names from the supplied catalog.")

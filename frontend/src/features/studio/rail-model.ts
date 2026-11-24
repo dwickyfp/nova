@@ -45,3 +45,6 @@ export function reasoningPreview(body: string, live: boolean): string {
   const first = body.split("\n").map((line) => line.replace(/[*_`#>]+/g, "").trim()).find(Boolean) ?? "";
   return first.length > PREVIEW_CHARS ? `${first.slice(0, PREVIEW_CHARS - 1)}…` : first;
 }
+
+/** Window event that opens the rail holding a step and brings the step into view. */
+export const REVEAL_STEP_EVENT = "nova:reveal-step";

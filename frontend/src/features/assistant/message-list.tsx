@@ -8,11 +8,10 @@ import type { AttachedQuery } from "./query-attach";
 import type { TurnContext } from "./stream-client";
 import type { NevaEventInput } from "./app-context";
 import { ToolCallCard, type ToolCallCardProps } from "./tool-call-card";
-import { IntelligentUi } from "@/features/studio/intelligent-ui/renderer";
-import type { UiAction } from "@/features/studio/intelligent-ui/types";
 import type { TranscriptMessage } from "./use-assistant-transcript";
 import type { AnswerSource } from "./types";
 import { ComponentView } from "@/features/studio/runtime/components/registry";
+import { LayoutView } from "@/features/studio/runtime/components/layout-view";
 
 export type MessageListProps = {
   messages: TranscriptMessage[];
@@ -25,13 +24,6 @@ export type MessageListProps = {
   activeContext?: TurnContext;
   onExecutionEvent?: (event: NevaEventInput) => void;
   onFixWithNeva?: (prompt: string) => void;
-  /** The conversation interactive answers belong to, and how their actions are sent. */
-  uiContext?: UiContext;
-};
-
-export type UiContext = {
-  threadId: string;
-  onAction: (message: string, action: UiAction) => Promise<void>;
 };
 
 export function MessageList({
@@ -42,7 +34,6 @@ export function MessageList({
   activeContext,
   onExecutionEvent,
   onFixWithNeva,
-  uiContext,
 }: MessageListProps) {
   return (
     <div className="flex flex-col gap-3">
@@ -58,7 +49,6 @@ export function MessageList({
           runContext={activeContext}
           onExecutionEvent={onExecutionEvent}
           onFixWithNeva={onFixWithNeva}
-          uiContext={uiContext}
         />
       ))}
     </div>
@@ -112,7 +102,6 @@ function MessageBubble({
   runContext,
   onExecutionEvent,
   onFixWithNeva,
-  uiContext,
 }: {
   message: TranscriptMessage;
   onDecide?: ToolCallCardProps["onDecide"];
@@ -120,7 +109,6 @@ function MessageBubble({
   runContext?: TurnContext;
   onExecutionEvent?: (event: NevaEventInput) => void;
   onFixWithNeva?: (prompt: string) => void;
-  uiContext?: UiContext;
 }) {
   if (message.role === "activity") {
     return <ActivityTrace message={message} />;
@@ -188,7 +176,7 @@ function MessageBubble({
         ) : (
           <Markdown runContext={runContext} onExecutionEvent={onExecutionEvent} onFixWithNeva={onFixWithNeva}>{message.content}</Markdown>
         )}
-        {!isUser ? <AnswerBlocks message={message} uiContext={uiContext} /> : null}
+        {!isUser ? <AnswerBlocks message={message} /> : null}
         {message.turn_state === "streaming" && !isUser ? (
           <span className="mt-1 inline-block h-3 w-1.5 animate-pulse bg-foreground/60 align-middle" />
         ) : null}
@@ -209,19 +197,13 @@ function MessageBubble({
 }
 
 /** The tables, charts and sources an answer produced, in the order they came. */
-function AnswerBlocks({
-  message,
-  uiContext,
-}: {
-  message: TranscriptMessage;
-  uiContext?: UiContext;
-}) {
+function AnswerBlocks({ message }: { message: TranscriptMessage }) {
   const blocks = message.blocks ?? [];
   if (!blocks.length) return null;
   const citations = blocks.flatMap((item) =>
     item.kind === "citation" ? [item.block] : [],
   );
-  // A stored answer has its server id; only then can its blocks keep state.
+  // A stored answer has its server id; only then can its draft charts read their rows.
   const stored = message.turn_state === "done" && !message.message_id.startsWith("assistant-");
   return (
     <div className="mt-2 flex min-w-0 flex-col gap-2">
@@ -233,29 +215,13 @@ function AnswerBlocks({
         ) : item.kind === "component" ? (
           <ComponentView key={`component-${index}`} block={item.block} ready={stored} />
         ) : item.kind === "ui" ? (
-          message.turn_state === "cancelled" ||
-          message.turn_state === "error" ||
-          (message.turn_state === "done" && !item.complete) ? (
-            <Markdown key={item.id} offline>
-              {item.block.fallback}
-            </Markdown>
-          ) : (
-            <IntelligentUi
-              key={item.id}
-              block={item.block}
-              complete={item.complete}
-              source={
-                uiContext && stored
-                  ? {
-                      threadId: uiContext.threadId,
-                      messageId: message.message_id,
-                      contentId: item.id,
-                    }
-                  : undefined
-              }
-              onAction={uiContext?.onAction}
-            />
-          )
+          <LayoutView
+            key={item.id}
+            block={item.block}
+            program={item.block.program}
+            streaming={!item.complete && message.turn_state === "streaming"}
+            ready={stored}
+          />
         ) : null,
       )}
       <CitationList citations={citations} />

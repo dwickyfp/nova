@@ -438,6 +438,7 @@
           "data": {
             "part_id": "run-a#2",
             "status": "done",
+            "duration_ms": 1500,
             "run_id": "run-a",
             "seq": 9
           }
@@ -619,6 +620,7 @@
           "data": {
             "part_id": "run-a#4",
             "status": "done",
+            "duration_ms": 1500,
             "run_id": "run-a",
             "seq": 22
           }
@@ -2179,6 +2181,7 @@
           "data": {
             "part_id": "run-e#4",
             "status": "done",
+            "duration_ms": 1500,
             "run_id": "run-e",
             "seq": 14
           }

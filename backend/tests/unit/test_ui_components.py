@@ -111,28 +111,6 @@ def _evidence(tables):
     return type("Evidence", (), {"business_tables": tables})()
 
 
-def test_a_table_of_one_row_of_measures_becomes_key_figure_tiles():
-    from app.modules.assistant.service import _key_figures
-    from app.modules.assistant.ui_autocompose import key_figures
-
-    program = ('root = Col([Table(@Evidence("evidence_1"), ["revenue", "order_count", '
-               '"average_order_value"], "Key figures")])')
-    tiles = key_figures(program, {"evidence_1": TOTALS})
-    assert tiles is not None and tiles["name"] == "KpiTiles"
-    items = tiles["props"]["items"]
-    assert [item["column"] for item in items] == TOTALS["columns"]
-    assert [item["value"] for item in items] == [175184000.0, 15.0, 11678933.333333]
-    assert all(item["evidence_id"] == "evidence_1" for item in items)
-    # Several rows, or a program that does more than tabulate, stay as written.
-    assert key_figures(program, {"evidence_1": BY_CITY}) is None
-    assert key_figures('root = Col([Text("x"), Table(@Evidence("evidence_1"))])',
-                       {"evidence_1": TOTALS}) is None
-
-    ui = PendingArtifact("ui", {"program": program, "fallback": "x"})
-    [replaced] = _key_figures([ui], _evidence({"evidence_1": TOTALS}))
-    assert replaced.kind == "component" and replaced.payload["name"] == "KpiTiles"
-
-
 def test_charts_without_tiles_gain_the_key_figures_of_one_row_results():
     from app.modules.assistant.service import _key_figures
 
@@ -146,28 +124,6 @@ def test_charts_without_tiles_gain_the_key_figures_of_one_row_results():
     assert _key_figures([chart], _evidence({"evidence_1": BY_CITY})) == [chart]
 
 
-def test_a_program_that_repeats_native_charts_is_dropped():
-    from app.modules.assistant.service import _key_figures
-    from app.modules.assistant.ui_autocompose import charts_only
-
-    program = ('root = Col([a, b])\n'
-               'a = Chart(@Sort(@Evidence("evidence_1"), "revenue", "desc"), "city", "revenue", '
-               '"bar", "Revenue by city")\n'
-               'b = Chart(@Evidence("evidence_3"), "month", "orders", "line", "Orders")')
-    assert charts_only(program)
-    assert not charts_only('root = Col([Chart(@Evidence("e"), "a", "b", "bar", "t"), '
-                           'Slider("x", 0, 10)])')
-    charts = [PendingArtifact("component", {"name": "DatavizChart", "props": {},
-                                            "source": {"evidence_id": key}}, f"call-{key}")
-              for key in ("evidence_1", "evidence_3")]
-    ui = PendingArtifact("ui", {"program": program,
-                                "provenance": {"evidence_ids": ["evidence_1", "evidence_3"]}})
-    tables = {"evidence_1": BY_CITY, "evidence_3": BY_CITY}
-    assert _key_figures([*charts, ui], _evidence(tables)) == charts
-    # A program charting a result no native chart shows is kept.
-    assert _key_figures([charts[0], ui], _evidence(tables)) == [charts[0], ui]
-
-
 def test_result_columns_read_as_field_labels():
     from app.modules.assistant.ui_components import field_label
 
@@ -178,35 +134,3 @@ def test_result_columns_read_as_field_labels():
     assert field_label("orders.total_amount") == "Total amount"
     assert field_label("revenue") == "Revenue"
     assert field_label("Revenue (IDR)") == "Revenue (IDR)"
-
-
-def test_a_program_that_repeats_native_key_figures_is_dropped():
-    from app.modules.assistant.service import _key_figures
-
-    tiles = PendingArtifact("component", {"name": "KpiTiles", "props": {"items": [
-        {"label": "Revenue", "value": 1, "format": "number", "aggregation": "value",
-         "evidence_id": "evidence_1", "column": "revenue"}]}}, "call-1")
-    program = ('root = Col([Row([revenue, orders])])\n'
-               'revenue = Kpi(sales, "revenue", "Total revenue", 0)\n'
-               'orders = Kpi(sales, "order_count", "Number of orders", 0)\n'
-               'sales = @Evidence("evidence_1")')
-    ui = PendingArtifact("ui", {"program": program,
-                                "provenance": {"evidence_ids": ["evidence_1"]}})
-    assert _key_figures([tiles, ui], _evidence({"evidence_1": TOTALS})) == [tiles]
-    # Figures of another result are kept.
-    other = PendingArtifact("ui", {"program": program,
-                                   "provenance": {"evidence_ids": ["evidence_2"]}})
-    assert _key_figures([tiles, other], _evidence({})) == [tiles, other]
-
-
-def test_a_view_of_prose_alone_is_dropped():
-    from app.modules.assistant.service import _key_figures
-
-    note = PendingArtifact("ui", {"program": 'root = Col([Caption("No currency is given.")])',
-                                  "provenance": {"evidence_ids": []}})
-    assert _key_figures([note], _evidence({})) == []
-    empty = PendingArtifact("ui", {"program": "root = Col([])", "provenance": {}})
-    assert _key_figures([empty], _evidence({})) == []
-    form = PendingArtifact("ui", {"program": 'root = Col([Caption("Rate"), Slider("r", 0, 9)])',
-                                  "provenance": {"evidence_ids": []}})
-    assert _key_figures([form], _evidence({})) == [form]

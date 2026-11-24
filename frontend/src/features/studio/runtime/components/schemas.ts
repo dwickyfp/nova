@@ -13,6 +13,8 @@
  * it for Node.
  */
 import { z } from "zod";
+import { mapOptionsSchema } from "../../intelligent-ui/map-options";
+import { layoutContract } from "./layout";
 
 export const COMPONENTS_VERSION = "nova-components-1";
 
@@ -67,6 +69,8 @@ export const geoMapProps = z
     label: columnName.optional(),
     /** Up to 200 rows of the result, already redacted by the server. */
     rows: z.array(z.record(z.string(), z.unknown())).max(200),
+    /** How the rows are drawn: ordered stops as routes, popup fields, arcs. */
+    options: mapOptionsSchema.optional(),
   })
   .strict();
 
@@ -171,5 +175,6 @@ export function componentContract() {
         { description: entry.description, parameters: jsonSchema(entry.schema) },
       ]),
     ),
+    layout: layoutContract(),
   };
 }

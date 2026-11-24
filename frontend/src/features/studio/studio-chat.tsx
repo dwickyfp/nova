@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import {
   FileText,
   ImageIcon,
+  CornerDownRight,
   RefreshCcw,
   RotateCcw,
   X,
@@ -33,11 +34,11 @@ import {
   type DatavizTurnContext,
 } from "@/features/agents/api";
 import { ProcessRail, StopNotice, type RailStep } from "./thought-turn";
+import { ToolChips } from "./tool-chips";
+import { followUpQuestions, toolChips } from "./tool-chip-model";
 import { HitlRequest } from "./runtime/hitl/hitl-request";
 import type { HitlAnswerBody } from "./runtime/hitl/types";
 import { TurnContent } from "./turn-content";
-import { flushUiStates } from './intelligent-ui/state';
-import type { UiAction } from './intelligent-ui/types';
 import {
   CREATE_SKILL_COMMAND,
   SKILL_AUTHOR_ID,
@@ -106,7 +107,7 @@ const STOP_GRACE_MS = 3000;
 type ActiveRun = { agentId: string; threadId: string; runId: string };
 
 /** What a sent turn needs to be sent again exactly: its text, files and UI action. */
-type TurnRequest = { content: string; attachments: PendingAttachment[]; uiAction?: UiAction };
+type TurnRequest = { content: string; attachments: PendingAttachment[] };
 
 let turnSeq = 0;
 function nextTurnId(): string {
@@ -163,7 +164,6 @@ export function StudioChat({
   const queryClient = useQueryClient();
   const selectComposerAgent = async (id: string) => {
     if (streaming || readingFiles || abortRef.current) return;
-    try { await flushUiStates(); } catch (error) { toast.error((error as Error).message); return; }
     preserveDraft.current = true;
     try {
       const changed = await onSelectAgent(id);
@@ -563,21 +563,18 @@ export function StudioChat({
   );
 
   const send = useCallback(
-    async (override?: string, uiAction?: UiAction, retry?: TurnRequest) => {
+    async (override?: string, retry?: TurnRequest) => {
       // A retry re-sends an earlier request and leaves the composer's draft alone.
       const content = (retry?.content ?? override ?? input).trim();
       const pending = retry ? retry.attachments : attachments;
-      uiAction = retry ? retry.uiAction : uiAction;
       if (openingConversation || (!content && !pending.length) || streaming || readingFiles || abortRef.current || !agent) return;
-      try { await flushUiStates(); } catch (error) { toast.error((error as Error).message); return; }
-      if (abortRef.current) return;
 
       const controller = new AbortController();
       abortRef.current = controller;
       // Sending is a request to see the reply, wherever the reader had scrolled.
       followOutputRef.current = true;
       const turnId = nextTurnId();
-      turnRequestsRef.current.set(turnId, { content, attachments: pending, uiAction });
+      turnRequestsRef.current.set(turnId, { content, attachments: pending });
       setTurns((prev) => [
         ...prev,
         newTurn({
@@ -606,7 +603,6 @@ export function StudioChat({
         // Stop pressed while the conversation was being created: send nothing.
         if (controller.signal.aborted || stopRequestedRef.current) return;
         await streamAgentTurn(agent.agent_id, thread, content, {
-          uiAction,
           dataviz: datavizContext?.() ?? null,
           signal: controller.signal,
           role: currentRole,
@@ -682,15 +678,7 @@ export function StudioChat({
   useLayoutEffect(() => {
     sendRef.current = send;
   }, [send]);
-  const sendFromTurn = useCallback(
-    (message: string, action?: UiAction) => sendRef.current(message, action),
-    [],
-  );
   const askFollowUp = useCallback((question: string) => void sendRef.current(question), []);
-  const uiContext = useMemo(
-    () => (threadId && agent ? { agentId: agent.agent_id, threadId, onAction: sendFromTurn } : undefined),
-    [agent, sendFromTurn, threadId],
-  );
 
   // Every run (a sent message, a reconnected run, a reconsider pass) registers
   // its server run here, so Stop cancels whichever one is streaming. A run not
@@ -791,7 +779,7 @@ export function StudioChat({
   const retry = useCallback((turn: TranscriptTurn) => {
     if (turn.origin === "reconsider") return void deepen(turn);
     const request = retryRequest(turn);
-    if (request) void send(undefined, undefined, request);
+    if (request) void send(undefined, request);
   }, [deepen, send]);
   const retryRef = useRef(retry);
   useLayoutEffect(() => {
@@ -942,7 +930,7 @@ export function StudioChat({
                   <TurnView
                     key={turn.id}
                     turn={turn}
-                    uiContext={uiContext}
+                    datavizThreadId={threadId}
                     onAsk={index === turns.length - 1 && !streaming ? askFollowUp : undefined}
                     agent={agent}
                     deepenable={
@@ -1057,9 +1045,9 @@ const TurnView = memo(function TurnView({
   onFeedback,
   onAnswer,
   onReviewSkill,
-  uiContext,
   onArtifactEvent,
   onOpenArtifact,
+  datavizThreadId,
 }: {
   turn: TranscriptTurn;
   /** Apply an event a chart edit or save returned to this turn. */
@@ -1078,7 +1066,8 @@ const TurnView = memo(function TurnView({
   onFeedback: (turn: TranscriptTurn, feedback: AnswerFeedback) => Promise<void>;
   onAnswer: (turn: TranscriptTurn, part: HitlPart, body: HitlAnswerBody) => Promise<void>;
   onReviewSkill?: (document: string) => void;
-  uiContext?: { agentId: string; threadId: string; onAction: (message: string, action: UiAction) => Promise<void> };
+  /** The stored thread, so the turn's results can be added to Dataviz. */
+  datavizThreadId?: string | null;
 }) {
   const running = turn.state === "streaming";
   const segments = useMemo(() => turnSegments(turn.run.parts), [turn.run.parts]);
@@ -1091,6 +1080,20 @@ const TurnView = memo(function TurnView({
   const runContext = useMemo(
     () => ({ database: agent.database_name ?? undefined }),
     [agent.database_name],
+  );
+  // The tools the turn used and the sources they cited, shown under the answer.
+  const used = useMemo(() => {
+    const content = contentFromParts(turn.run.parts);
+    return {
+      steps: stepsFromParts(turn.run.parts),
+      citations: content.flatMap((item) => (item.type === "citation" ? [item.block] : [])),
+      dataCalls: new Set(content.flatMap((item) =>
+        item.type === "table" && item.block.tool_call_id ? [item.block.tool_call_id] : [])),
+    };
+  }, [turn.run.parts]);
+  const followUps = useMemo(
+    () => followUpQuestions(turn.suggestions, toolChips(used.steps).chips),
+    [turn.suggestions, used.steps],
   );
   const stored = Boolean(turn.messageId) && turn.state === "done";
   const artifacts = useMemo(
@@ -1158,10 +1161,9 @@ const TurnView = memo(function TurnView({
             key={segment.id}
             turn={turn}
             content={contentFromParts(segment.parts)}
-            uiContext={uiContext}
             runContext={runContext}
             running={running}
-            datavizThreadId={uiContext?.threadId ?? null}
+            datavizThreadId={datavizThreadId ?? null}
           />
         ),
       )}
@@ -1202,6 +1204,10 @@ const TurnView = memo(function TurnView({
         </div>
       ) : null}
 
+      {!running ? (
+        <ToolChips steps={used.steps} citations={used.citations} dataCalls={used.dataCalls} />
+      ) : null}
+
       {!running && (turn.answer || turn.content.length > 0) ? (
         <AnswerFooter
           answer={turn.answer}
@@ -1217,19 +1223,21 @@ const TurnView = memo(function TurnView({
         />
       ) : null}
 
-      {!running && onAsk && turn.suggestions?.length ? (
-        <nav aria-label="Suggested follow-up questions" className="nova-chat-item flex flex-wrap gap-2">
-          {turn.suggestions.map((question) => (
-            <Button
+      {!running && onAsk && followUps.length ? (
+        <nav aria-label="Suggested follow-up questions" className="nova-chat-item flex flex-col items-start gap-1">
+          {followUps.map((question) => (
+            <button
               key={question}
               type="button"
-              variant="outline"
-              size="sm"
-              className="h-auto max-w-full py-1.5 text-left whitespace-normal"
+              className="group inline-flex max-w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               onClick={() => onAsk(question)}
             >
-              {question}
-            </Button>
+              <CornerDownRight
+                aria-hidden="true"
+                className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground motion-reduce:transition-none motion-reduce:group-hover:translate-x-0"
+              />
+              <span className="min-w-0 break-words">{question}</span>
+            </button>
           ))}
         </nav>
       ) : null}

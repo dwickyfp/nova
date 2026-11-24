@@ -7,9 +7,9 @@ call, into the same Studio registry components the model uses:
 * a trend or ranking becomes a native ``DatavizChart`` over the result's
   governed query (built by the caller-supplied ``chart`` callback);
 * one-row metrics become ``KpiTiles`` whose values are read from the rows;
-* a located result becomes a ``GeoMap``; ordered stops stay an OpenUI route
-  map, validated by the OpenUI runtime like model programs;
-* a multi-column grid stays an OpenUI table.
+* a located result becomes a ``GeoMap``; ordered stops are drawn as routes;
+* a multi-column grid becomes a page layout (``nova-layout-1``) holding a
+  ``ResultTable``, checked by the same statement checker as model pages.
 
 Results with no recognisable shape get no view.
 """
@@ -24,7 +24,6 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from app.modules.assistant.intelligent_ui import UiValidationError, block_dict, parse_program
 from app.modules.assistant.ui_components import ComponentError, field_label, validate_props
 
 #: An artifact for the answer: ``("ui", block)`` or ``("component", payload)``.
@@ -151,10 +150,11 @@ def _route_first(tables: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]
     return dict(sorted(tables.items(), key=lambda item: not routes(item[1])))
 
 
-def map_program(evidence_id: str, table: dict[str, Any], title: str) -> str | None:
-    """A governed GeoMap for a result that carries coordinates or shapes."""
+def map_component(evidence_id: str, table: dict[str, Any], title: str) -> dict[str, Any] | None:
+    """A ``GeoMap`` for a located result: places, route lines, or ordered stops as routes."""
     names = _names(table)
-    if not table.get("rows"):
+    rows = table.get("rows") or []
+    if not rows:
         return None
     latitude, longitude = _coordinate(names, _LATITUDE), _coordinate(names, _LONGITUDE)
     geometry = None
@@ -176,85 +176,35 @@ def map_program(evidence_id: str, table: dict[str, Any], title: str) -> str | No
         (name for name in rest
          if all(_number(value) is None for value in _column(table, name)[:20])), None,
     )
+    options: dict[str, Any] = {}
     route = _route_columns(table) if latitude and longitude else None
     if route:
+        # Ordered stops: one numbered, coloured line per route.
         sequence, group = route
         rest = [name for name in rest if name not in {sequence, group}]
         label = next((name for name in rest if name.rsplit(".", 1)[-1] == "stop"), label)
         totals = [name for name in rest
                   if name.rsplit(".", 1)[-1] in {"route_km", "saving_pct", "original_order_km"}]
+        options = {"layer": "route", "sequence": sequence,
+                   **({"group": group} if group else {}),
+                   **({"routeFields": totals[:4]} if totals else {})}
         popup = [name for name in rest if name != label and name not in totals
                  and name.rsplit(".", 1)[-1] not in {"route_stops"}][:_POPUP_FIELDS]
-        settings = ['layer: "route"', f"sequence: {_text(sequence)}"]
-        if group:
-            settings.append(f"group: {_text(group)}")
-        if totals:
-            settings.append("routeFields: [" + ", ".join(_text(name) for name in totals) + "]")
-        if popup:
-            settings.append("popupFields: [" + ", ".join(_text(name) for name in popup) + "]")
-        options = "{" + ", ".join(settings) + "}"
-        args = [
-            f"@Evidence({_text(evidence_id)})", _text(str(longitude)), _text(str(latitude)), "null",
-            _text(label) if label else "null", _text(title or "Routes"),
-            "$selected", options, "$viewport",
-        ]
-        return ("$selected = -1\n$viewport = null\n"
-                f"root = Col([GeoMap({', '.join(args)})])")
-    popup = [name for name in rest if name != label][:_POPUP_FIELDS]
-    settings = []
-    if popup:
-        settings.append("popupFields: [" + ", ".join(_text(name) for name in popup) + "]")
-    if geometry and _lines(table, geometry):
-        settings.append('layer: "route"')
-    options = "{" + ", ".join(settings) + "}"
-    args = [
-        f"@Evidence({_text(evidence_id)})",
-        _text(longitude) if longitude else "null",
-        _text(latitude) if latitude else "null",
-        _text(geometry) if geometry else "null",
-        _text(label) if label else "null",
-        _text(title or "Locations"),
-        "$selected", options, "$viewport",
-    ]
-    return ("$selected = -1\n$viewport = null\n"
-            f"root = Col([GeoMap({', '.join(args)})])")
-
-
-def map_component(evidence_id: str, table: dict[str, Any], title: str) -> dict[str, Any] | None:
-    """A ``GeoMap`` component for a located result that is not an ordered route."""
-    names = _names(table)
-    rows = table.get("rows") or []
-    if not rows:
-        return None
-    latitude, longitude = _coordinate(names, _LATITUDE), _coordinate(names, _LONGITUDE)
-    geometry = None
-    if latitude and longitude:
-        if not _located(_column(table, latitude), _column(table, longitude)):
-            return None
-        if _route_columns(table):
-            return None
     else:
-        latitude = longitude = None
-        geometry = next((
-            name for name in names
-            if any(isinstance(value, str) and (_GEOMETRY.match(value) or _GEOJSON.match(value))
-                   for value in _column(table, name)[:20])
-        ), None)
-        if geometry is None or _lines(table, geometry):
-            return None
-    located = {latitude, longitude, geometry}
-    rest = [name for name in names if name not in located]
-    label = next((name for name in rest if _LABEL.search(name)), None) or next(
-        (name for name in rest
-         if all(_number(value) is None for value in _column(table, name)[:20])), None,
-    )
+        popup = [name for name in rest if name != label][:_POPUP_FIELDS]
+        if geometry and _lines(table, geometry):
+            options["layer"] = "route"
+    if popup:
+        options["popupFields"] = popup
     records = [
         {name: _plain(value) for name, value in zip(names, row, strict=False)}
         if isinstance(row, list | tuple) else {name: _plain(row.get(name)) for name in names}
         for row in rows[:200]
     ]
-    props: dict[str, Any] = {"title": title or "Locations", "evidence_id": evidence_id,
-                             "rows": records}
+    props: dict[str, Any] = {"title": title or ("Routes" if route else "Locations"),
+                             "evidence_id": evidence_id, "rows": records}
+    if options:
+        props["options"] = options
     for key, value in (("longitude", longitude), ("latitude", latitude),
                        ("geometry", geometry), ("label", label)):
         if value:
@@ -296,51 +246,11 @@ def kpi_component(metrics: list[tuple[str, str, dict[str, Any]]]) -> dict[str, A
     return {"name": "KpiTiles", "props": props}
 
 
-#: A program that only lists one result as a table: ``Col([Table(@Evidence(...)...)])``.
-_LONE_TABLE = re.compile(
-    r'^\s*root\s*=\s*Col\(\[\s*Table\(@Evidence\("([^"\\]+)"\)[^()]*\)\s*\]\)\s*$'
-)
-
-
-#: Component calls in a program; ``@Sort(...)`` and other functions are not.
-_CALL = re.compile(r"(?<![@\w])([A-Z]\w*)\(")
-_LAYOUT = frozenset({"Col", "Row", "Stack"})
-
-
-def program_nodes(program: str) -> set[str]:
-    """The component nodes a program lays out, without its layout containers."""
-    return set(_CALL.findall(program or "")) - _LAYOUT
-
-
-#: Nodes that only carry prose, which belongs in the answer text.
-TEXT_NODES = frozenset({"Caption", "Text", "Markdown", "Heading", "Label", "Divider"})
-
-
-def charts_only(program: str) -> bool:
-    """The program only lays out ``Chart`` nodes."""
-    return program_nodes(program) == {"Chart"}
-
-
 def metric_tiles(tables: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
     """One ``KpiTiles`` for every one-row metric result, up to the tile limit."""
     metrics = [(evidence_id, column, table) for evidence_id, table in tables.items()
                for column in kpi_columns(table)][:_MAX_KPIS]
     return kpi_component(metrics) if metrics else None
-
-
-def key_figures(program: str, tables: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
-    """``KpiTiles`` for a program that only tabulates one row of measures.
-
-    Key figures read as tiles, not as a one-line grid of raw numbers; the rows
-    stay under Source data. Any other program is left as written.
-    """
-    match = _LONE_TABLE.match(program or "")
-    evidence_id = match.group(1) if match else ""
-    table = tables.get(evidence_id)
-    columns = kpi_columns(table) if table is not None else []
-    if table is None or not columns:
-        return None
-    return kpi_component([(evidence_id, column, table) for column in columns])
 
 
 def chart_plan(table: dict[str, Any]) -> tuple[dict[str, Any], str] | None:
@@ -413,47 +323,44 @@ def shape(table: dict[str, Any]) -> dict[str, list[str]]:
     return groups
 
 
-def data_program(evidence_id: str, table: dict[str, Any],
-                 title: str | None) -> tuple[str, str] | None:
-    """A trend, ranking or grid for a verified result, with the reason chosen.
+def is_grid(table: dict[str, Any]) -> bool:
+    """Several rows of a few measures by a category, date or key: a grid reads best.
 
-    Returns None for a result with fewer than two rows, too many columns or
-    measures, or a shape this composer does not recognise.
+    One row reads better as prose (or KPI tiles) than as a one-line grid, and a
+    trend or ranking is a chart, never a grid in its place.
     """
     names, rows = _names(table), table.get("rows") or []
-    if not rows or not names or len(names) > _MAX_COLUMNS:
-        return None
+    if not rows or not names or len(names) > _MAX_COLUMNS or chart_plan(table) is not None:
+        return False
     kinds = shape(table)
-    temporal, measures, categories = kinds["temporal"], kinds["measure"], kinds["category"]
-    source = f"@Evidence({_text(evidence_id)})"
-    if (len(temporal) == 1 and len(measures) == 1 and not categories
-            and len(rows) >= _TREND_MIN_ROWS):
-        x, y = temporal[0], measures[0]
-        heading = _text(title or _label(y))
-        return (f"root = Col([Chart(@Sort({source}, {_text(x)}, \"asc\"), {_text(x)}, "
-                f"{_text(y)}, \"line\", {heading})])", "trend")
-    if len(categories) == 1 and len(measures) == 1 and not temporal and len(rows) >= 2:
-        x, y = categories[0], measures[0]
-        heading = _text(title or _label(y))
-        if len(rows) <= _RANKING_MAX_ROWS:
-            return (f"root = Col([Chart(@Sort({source}, {_text(y)}, \"desc\"), {_text(x)}, "
-                    f"{_text(y)}, \"bar\", {heading})])", "ranking")
-        return (f"root = Col([Chart(@Top({source}, {_text(y)}, {_TOP}), {_text(x)}, "
-                f"{_text(y)}, \"bar\", {heading}), "
-                f"Caption(\"Highest values within these result rows\"), "
-                f"Table({source}, null, {heading})])", "ranking")
-    # One row reads better as prose than as a one-line grid.
-    if (len(rows) >= 2 and len(measures) <= _MAX_GRID_MEASURES
-            and (categories or temporal or kinds["key"])):
-        return f"root = Col([Table({source}, null, {_text(title or 'Result')})])", "grid"
-    return None
+    return (len(rows) >= 2 and len(kinds["measure"]) <= _MAX_GRID_MEASURES
+            and bool(kinds["category"] or kinds["temporal"] or kinds["key"]))
 
 
-async def _block(program: str, tables: dict[str, dict[str, Any]], fallback: str,
-                 auto: str) -> dict[str, Any]:
-    result = await parse_program(program, tables=tables, business=True)
-    return block_dict(program, fallback, result, tables,
-                      provenance={"composer": "deterministic", "auto": auto})
+async def grid_block(evidence_id: str, table: dict[str, Any], title: str) -> dict[str, Any] | None:
+    """A page holding one result's rows, checked like a model page; None if it fails."""
+    from app.modules.assistant.ui_layout import (
+        CATALOG,
+        LayoutContext,
+        LayoutError,
+        check_statement,
+    )
+
+    ctx = LayoutContext(tables={evidence_id: table})
+    try:
+        grid = await check_statement(
+            f"grid = Table({_text(evidence_id)}, null, {_text(title)})", ctx,
+            state_names=set(), defined=set(),
+        )
+    except LayoutError:
+        return None
+    return {
+        "catalog_version": CATALOG,
+        "program": f"root = Page([grid])\n{grid.text}",
+        "fallback": f"**{title}**",
+        "provenance": {"composer": "deterministic", "auto": "grid",
+                       "evidence_ids": [evidence_id], "scope": "verified_result_rows"},
+    }
 
 
 async def compose(
@@ -480,15 +387,6 @@ async def compose(
         if located is not None:
             artifacts.append(("component", located))
             return artifacts, skipped
-        program = map_program(evidence_id, table, title)
-        if program is None:
-            continue
-        try:
-            artifacts.append(("ui", await _block(program, {evidence_id: table},
-                                                 f"**{title}**", "map")))
-        except UiValidationError:
-            skipped.append("map_validation")
-        return artifacts, skipped
     if maps_only:
         return artifacts, skipped
 
@@ -519,14 +417,12 @@ async def compose(
                 artifacts.append(("component", built))
                 continue
             skipped.append(f"{auto}_native")
-        chosen = data_program(evidence_id, table, summary)
-        if chosen is None or chosen[1] != "grid":
+        if not is_grid(table):
             continue
-        program, auto = chosen
         drawn += 1
-        fallback = f"**{summary or 'Result'}**"
-        try:
-            artifacts.append(("ui", await _block(program, {evidence_id: table}, fallback, auto)))
-        except UiValidationError:
-            skipped.append(f"{auto}_validation")
+        block = await grid_block(evidence_id, table, summary or "Result")
+        if block is None:
+            skipped.append("grid_validation")
+        else:
+            artifacts.append(("ui", block))
     return artifacts, skipped

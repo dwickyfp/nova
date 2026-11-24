@@ -1063,7 +1063,6 @@ const FAILURE_TEXT: Record<string, string> = {
   ACTION_VERIFICATION_FAILED: "It did not confirm an action it took.",
   INVALID_UI: "Its chart or table was not valid.",
   UNGROUNDED_UI: "Its chart or table was not backed by the data.",
-  UI_ACTION_INCOMPLETE: "An action in its answer did not complete.",
   GUARD_EXPECTATION_UNMET: "A safety rule did not behave as expected.",
   TOO_SLOW: "It took too long.",
   INEFFICIENT_EXECUTION: "It used more steps than needed.",

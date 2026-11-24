@@ -27,7 +27,6 @@ import { useAssistantConversation } from "./use-assistant-conversation";
 import type { UiAction } from "./use-assistant-turn";
 import type { AssistantPanelProps } from "./assistant-panel";
 import type { SentFile } from "./stream-client";
-import type { UiAction as UiBlockAction } from "@/features/studio/intelligent-ui/types";
 import {
   nextAttachmentId,
   type AttachContext,
@@ -576,14 +575,6 @@ export function useAssistantPanelProps(): AssistantPanelProps {
       activeContext,
       suggestedActions,
       onExecutionEvent: publishApplicationEvent,
-      // Interactive answers keep state in, and send actions to, this thread.
-      uiContext: conversation.threadId
-        ? {
-            threadId: conversation.threadId,
-            onAction: (message: string, action: UiBlockAction) =>
-              conversation.sendMessage(message, [], [], action),
-          }
-        : undefined,
       onFixWithNeva: (prompt: string) => { void askNeva(prompt); },
     }),
     [

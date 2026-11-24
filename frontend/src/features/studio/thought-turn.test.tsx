@@ -3,6 +3,7 @@ import { render } from "vitest-browser-react";
 import { page } from "vitest/browser";
 import { ProcessRail, SqlDisclosure, ToolPreview, type RailStep } from "./thought-turn";
 import { isSqlPreview } from "./tool-preview";
+import { REVEAL_STEP_EVENT } from "./rail-model";
 
 describe("SQL disclosure", () => {
   const preview =
@@ -154,5 +155,21 @@ describe("tool result detail", () => {
     await render(<ProcessRail steps={[tool]} running={false} defaultOpen />);
     await page.getByRole("button", { name: "Forecast revenue", exact: true }).click();
     await expect.element(page.getByText("12 months forecast, MAPE 4.1%")).toBeVisible();
+  });
+});
+
+describe("revealing a step from a tool chip", () => {
+  it("opens the rail that holds the step and focuses its row", async () => {
+    const steps: RailStep[] = [
+      { id: "c1", kind: "tool", label: "query_execute", text: "Ran a SQL query", status: "done" },
+    ];
+    await render(<ProcessRail steps={steps} running={false} />);
+    const toggle = page.getByTestId("process-rail-toggle");
+    await expect.element(toggle).toHaveAttribute("aria-expanded", "false");
+    window.dispatchEvent(new CustomEvent(REVEAL_STEP_EVENT, { detail: { stepId: "other" } }));
+    await expect.element(toggle).toHaveAttribute("aria-expanded", "false");
+    window.dispatchEvent(new CustomEvent(REVEAL_STEP_EVENT, { detail: { stepId: "c1" } }));
+    await expect.element(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect.poll(() => document.activeElement?.getAttribute("data-step-id")).toBe("c1");
   });
 });
