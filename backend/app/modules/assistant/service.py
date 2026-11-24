@@ -90,6 +90,7 @@ from app.modules.assistant.state import AssistantThread
 from app.modules.assistant.stream_guard import LiveReasoning
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome, ToolRegistry
 from app.modules.assistant.tools.client_capability import SENT_PLAINLY
+from app.modules.assistant.turn_outcome import OutcomeLedger, derive_outcome, outcome_label
 from app.modules.assistant.workflow_provenance import workflow_provenance
 
 logger = logging.getLogger(__name__)
@@ -336,6 +337,9 @@ class LoopContext:
     evidence_count: int = 0
     prompt_telemetry: dict[str, int] | None = None
     state_machine: list[str] | None = None
+    #: Facts the turn's outcome is decided from (``turn_outcome``). Per request;
+    #: never sent upstream.
+    outcome_ledger: OutcomeLedger = field(default_factory=OutcomeLedger, repr=False)
 
     @property
     def audit_session_id(self) -> str | None:
@@ -858,9 +862,11 @@ class AssistantLoop:
                             "first_useful_response_ms": round(elapsed * 1000),
                         }
                         first_useful = True
+                    context.outcome_ledger.observe_frame(frame)
                     if frame.startswith("event: done\n"):
                         payload = json.loads(frame.split("data: ", 1)[1])
                         finish_reason = payload.get("finish_reason", "error")
+                        frame = _with_outcome(context, payload, frame)
                         _record_quality_observation(context, user_content, finish_reason)
                 yield frame
         except Exception:
@@ -1414,6 +1420,7 @@ class AssistantLoop:
             tool_uses = resume_state.get("tool_uses", {})
             context.usage = resume_state.get("usage")
             evidence.restore(resume_state.get("evidence", {}))
+            context.outcome_ledger = OutcomeLedger.restore(resume_state.get("outcome"))
             completed_capabilities = set(resume_state.get("completed_capabilities", []))
             deferred_calls = resume_state.get("deferred_calls", [])
             pending_artifacts = [
@@ -1447,6 +1454,7 @@ class AssistantLoop:
                     "messages": messages, "iteration": _iteration,
                     "seen_calls": seen_calls, "tool_uses": tool_uses,
                     "usage": context.usage, "evidence": evidence.snapshot(),
+                    "outcome": context.outcome_ledger.snapshot(),
                     "consumed_tokens": (
                         context.quality_measurements.reported_total_tokens
                         if context.quality_measurements is not None else None
@@ -1788,6 +1796,7 @@ class AssistantLoop:
                     continue
                 # The model states what each number means in a trailing claims
                 # block; it is checked below and never shown.
+                context.outcome_ledger.label = outcome_label("".join(buffered_text))
                 draft_text, answer_claims = split_claims("".join(buffered_text))
                 # A page is published as it streams; the answer text is what
                 # the model wrote around it.
@@ -1835,10 +1844,15 @@ class AssistantLoop:
                     context.agent_scope is not None
                     and governed_attempted
                     and not evidence.business_tables
-                    and _is_scope_answer("".join(buffered_text))
+                    and _governed_query_failed(context.outcome_ledger)
+                    and _states_no_figures(
+                        "".join(buffered_text), question=_asked(thread, user_content),
+                        periods=context.period_facts, claims=answer_claims, language=language,
+                    )
                 ):
-                    # The governed tool ran and the request is outside the catalog:
-                    # stating the limit, with no numbers, is the answer.
+                    # The governed tool ran and failed: stating what could not be
+                    # answered is the answer. It may name the periods a query reported
+                    # and nothing else, since no result backs any other number.
                     scope_text, redaction = GuardChain.screen_answer(
                         "".join(buffered_text).strip()
                     )
@@ -2171,11 +2185,13 @@ class AssistantLoop:
                             "semantic_sources": semantic_sources,
                         },
                     )
+                    stated = {claim.text: claim for claim in answer_claims or ()}
                     context.quality_facts["numeric_consistency"] = {
                         "accepted": not answer_check.unsupported,
                         "unsupported_count": len(answer_check.unsupported),
                         "claims": [{"text": claim.text, "evidence_id": claim.evidence_id,
-                                    "column": claim.column, "supported": bool(claim.evidence_id)}
+                                    "column": claim.column, "supported": bool(claim.evidence_id),
+                                    **_stated_claim(stated.get(claim.text))}
                                    for claim in answer_check.claims],
                     }
                     if any(claim.kind == "hypothesis" for claim in answer_claims or ()):
@@ -2459,6 +2475,7 @@ class AssistantLoop:
             )
             if classification == "denied":
                 view.status = "denied"
+                context.outcome_ledger.denied = "policy"
                 yield events.tool_call(view)
                 yield events.error(
                     "policy_denied", "The proposed operation is blocked by Nova policy."
@@ -2528,6 +2545,7 @@ class AssistantLoop:
             guard_block = self._guards.before_tool(invocation.tool_name, invocation.arguments)
             if guard_block is not None:
                 guard_blocked.add(invocation.tool_name)
+                context.outcome_ledger.denied = context.outcome_ledger.denied or "guard"
                 guard_reason = guard_block.message
                 tool_uses[usage_key] = tool_uses.get(usage_key, 0) + 1
                 view.status = "denied"
@@ -2551,6 +2569,7 @@ class AssistantLoop:
             if fingerprint in denied_calls:
                 # The same call the user already declined is not asked again.
                 view.status = "denied"
+                context.outcome_ledger.denied = "consent"
                 yield events.tool_call(view)
                 _transition(context, TurnState.FAILED)
                 yield events.done(str(uuid4()), finish_reason="denied")
@@ -2645,6 +2664,7 @@ class AssistantLoop:
                 view.status = "denied"
                 yield events.tool_status(invocation.tool_call_id, "denied")
                 denials += 1
+                context.outcome_ledger.denied = "consent"
                 denied_calls.add(fingerprint)
                 recover = self._iterative and denials == 1
                 messages.append(
@@ -2885,7 +2905,7 @@ class AssistantLoop:
                     status="done",
                 )
             if (
-                not outcome.ok and outcome.error_class == "CLARIFICATION_REQUIRED"
+                not outcome.ok and outcome.error_class == "CATALOG_UNSUPPORTED"
                 and (
                     # A turn with steps after its query (a model, a chart, a computation)
                     # or with several analyses asks its first query with all of them in
@@ -2925,6 +2945,7 @@ class AssistantLoop:
                     "missing_inputs": (outcome.repair_context or {}).get("missing_inputs", []),
                 }
                 clarification_requested = True
+                context.outcome_ledger.not_answered = outcome.error_class
                 clarification_context = dict(outcome.repair_context or {})
                 context.period_facts.extend(
                     period for key in ("data_window", "missing")
@@ -2945,6 +2966,7 @@ class AssistantLoop:
                     reason=failure_reason(outcome.error, outcome.error_class),
                 )
                 _finish_tool_step(context, "failed", outcome.error)
+                _record_tool_result(context, invocation, classification, outcome)
                 failed_capabilities.add(invocation.tool_name)
                 failure_reasons[invocation.tool_name] = failure_reason(
                     outcome.error, outcome.error_class,
@@ -3031,6 +3053,8 @@ class AssistantLoop:
                     reason=failure_reason(verification_error, "VERIFICATION_FAILED"),
                 )
                 _finish_tool_step(context, "failed", verification_error)
+                _record_tool_result(context, invocation, classification, replace(
+                    outcome, ok=False, error_class="VERIFICATION_FAILED"))
                 yield events.error("verification_failed", verification_error)
                 _transition(context, TurnState.FAILED)
                 yield events.done(str(uuid4()), finish_reason="error")
@@ -3062,6 +3086,7 @@ class AssistantLoop:
                 deferred_calls.clear()
                 pending_artifacts.clear()
                 evidence = EvidenceTracker()
+                context.outcome_ledger.reset_evidence()
                 completed_capabilities.clear()
                 context.last_result = None
                 context.active_state = None
@@ -3098,6 +3123,7 @@ class AssistantLoop:
             seen_calls[fingerprint] = outcome.summary
             tool_uses[usage_key] = tool_uses.get(usage_key, 0) + 1
             _finish_tool_step(context, "done", None)
+            _record_tool_result(context, invocation, classification, outcome)
             # Keep the skill body available to the model without sending it to
             # the panel or storing it in the replay trace.
             detail = _tool_detail(invocation.tool_name, outcome)
@@ -3179,6 +3205,12 @@ class AssistantLoop:
                 metadata=evidence_metadata,
                 table=evidence_table,
             )
+            shown_table = evidence.business_tables.get(evidence_item.evidence_id)
+            if shown_table is not None:
+                context.outcome_ledger.shown(
+                    evidence_item.evidence_id, invocation.tool_call_id,
+                    rows=bool(shown_table.get("rows")),
+                )
             if outcome.business_hook_result and outcome.business_hook_result.provider_observation:
                 observation = evidence.add_business_result(
                     outcome.business_hook_result.provider_observation,
@@ -3958,9 +3990,11 @@ def _missing_required_prompt(missing: list[str], evidence: EvidenceTracker) -> s
     return prompt
 
 
-#: Tool outcomes the user is answered from without data: a question back, or a period
-#: outside the data with the range that exists.
-ANSWERED_WITHOUT_DATA = frozenset({"CLARIFICATION_REQUIRED", "OUTSIDE_DATA_WINDOW"})
+#: Tool outcomes the user is answered from without data: a question back, a request
+#: the catalog cannot express, or a period outside the data with the range that exists.
+ANSWERED_WITHOUT_DATA = frozenset({
+    "CLARIFICATION_REQUIRED", "CATALOG_UNSUPPORTED", "OUTSIDE_DATA_WINDOW",
+})
 
 
 def _clarification_text(repair_context: dict[str, Any], language: str | None) -> str:
@@ -4543,13 +4577,63 @@ def _tag_tokens(text: str, tag: str) -> int:
     return len(match.group(0)) // 4 if match else 0
 
 
-_DIGIT = re.compile(r"\d")
 _CODE_SPAN = re.compile(r"`[^`\n]*`")
 
 
-def _is_scope_answer(text: str) -> bool:
-    """A non-empty answer without any number (identifiers in backticks aside)."""
-    return bool(text.strip()) and not _DIGIT.search(_CODE_SPAN.sub("", text))
+def _record_tool_result(
+    context: LoopContext, invocation: ToolInvocation, classification: str, outcome: Any,
+) -> None:
+    """What the turn's outcome needs from one finished call."""
+    ledger = context.outcome_ledger
+    error_class = None if outcome.ok else (outcome.error_class or None)
+    if classification in {"destructive", "session_change"}:
+        ledger.actions.append({
+            "tool_call_id": invocation.tool_call_id, "tool": invocation.tool_name,
+            "ok": bool(outcome.ok), "error_class": error_class,
+        })
+    if not outcome.ok:
+        ledger.failed(invocation.tool_name, error_class)
+    elif outcome.table is None and invocation.tool_name not in ledger.informational:
+        ledger.informational.append(invocation.tool_name)
+
+
+def _stated_claim(claim: Any) -> dict[str, Any]:
+    """The value and kind the model stated for a checked number, when it did."""
+    if claim is None:
+        return {}
+    stated: dict[str, Any] = {}
+    if claim.value is not None:
+        stated["value"] = float(claim.value)
+    if claim.kind:
+        stated["kind"] = claim.kind
+    return stated
+
+
+def _governed_query_failed(ledger: OutcomeLedger) -> bool:
+    """A governed data tool reported a failure this turn."""
+    from app.modules.assistant.turn_outcome import DATA_TOOLS
+
+    return any(item.get("tool") in DATA_TOOLS for item in ledger.failures)
+
+
+def _states_no_figures(
+    text: str, *, question: str, periods: list[dict[str, str]],
+    claims: Any, language: str,
+) -> bool:
+    """A non-empty answer whose numbers are only those no result is needed for:
+    dates, the periods a query reported, and numbers in the question."""
+    if not text.strip():
+        return False
+    from app.modules.assistant.answer_contract import check_numeric_answer, with_period_facts
+
+    # An empty result stands in for "no rows": with no table at all the check
+    # would accept any number.
+    no_rows: dict[str, dict[str, Any]] = {"no_result": {"columns": [], "rows": []}}
+    check = check_numeric_answer(
+        _CODE_SPAN.sub("", text), question=question, tables=with_period_facts(no_rows, periods),
+        claims=claims, language=language,
+    )
+    return not check.unsupported
 
 
 def _transition(context: LoopContext, state: TurnState) -> None:
@@ -6032,6 +6116,27 @@ def _measure_tool_dispatch(context: LoopContext, tool: Any) -> None:
         # the measurement complete; any other tool leaves it unmeasured.
         if getattr(tool, "nested_requests_measured", False) is not True:
             measured.unavailable_provider("nested_tool_requests_unmeasured")
+
+
+def _with_outcome(context: LoopContext, payload: dict[str, Any], frame: str) -> str:
+    """The terminal frame with the turn's outcome added (``finish_reason`` is kept)."""
+    try:
+        outcome = derive_outcome(
+            str(payload.get("finish_reason") or "error"), context.outcome_ledger,
+            context.quality_facts,
+        ).model_dump(mode="json")
+    except Exception:  # noqa: BLE001 - the outcome is a report, never a reason to fail a turn
+        logger.exception("Turn outcome could not be derived")
+        return frame
+    if context.quality_facts is not None:
+        context.quality_facts["outcome"] = outcome
+    # Re-encoded as it was, numbered as it was: the frame is the same event.
+    return (
+        f"event: {events.EVENT_DONE}\ndata: "
+        + json.dumps({**payload, "outcome": outcome}, separators=(",", ":"),
+                     default=events._json_default)
+        + "\n\n"
+    )
 
 
 def _record_quality_observation(

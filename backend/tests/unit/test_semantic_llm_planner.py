@@ -120,7 +120,7 @@ async def test_unresolved_concept_becomes_a_clarification_not_a_query(monkeypatc
     ]))
     outcome = await _run(tool, "Berapa biaya payroll tim sales?")
     assert not outcome.ok
-    assert outcome.error_class == "CLARIFICATION_REQUIRED"
+    assert outcome.error_class == "CATALOG_UNSUPPORTED"
     assert outcome.recoverable
     assert "payroll" in outcome.safe_detail
     assert "total_revenue" in outcome.repair_context["available_metrics"]
@@ -131,7 +131,7 @@ async def test_a_plan_that_names_nothing_asks_instead_of_failing(monkeypatch):
     # Seen live: for "show sales by supplier name" the model left every field empty.
     tool, provider, execute = setup_tool(monkeypatch, _plan(metrics=[]))
     outcome = await _run(tool, "Tampilkan penjualan berdasarkan nama pemasok.")
-    assert outcome.error_class == "CLARIFICATION_REQUIRED"
+    assert outcome.error_class == "CATALOG_UNSUPPORTED"
     assert "total_revenue" in outcome.repair_context["available_metrics"]
     provider.complete.assert_awaited_once()  # not a repair target
     execute.assert_not_awaited()
@@ -423,7 +423,7 @@ async def test_a_multi_step_turn_runs_the_resolved_data_and_names_the_rest(monke
     # A plain data question with an unresolved constraint still asks back.
     tool, _provider, execute = setup_tool(monkeypatch, with_steps)
     asked = await _run(tool, "revenue by city, then a route")
-    assert not asked.ok and asked.error_class == "CLARIFICATION_REQUIRED"
+    assert not asked.ok and asked.error_class == "CATALOG_UNSUPPORTED"
     execute.assert_not_awaited()
 
 

@@ -331,6 +331,34 @@
               "prompt_tokens": 10,
               "completion_tokens": 5,
               "total_tokens": 15
+            },
+            "outcome": {
+              "schema_version": 1,
+              "kind": "answer",
+              "reason": "governed_data",
+              "basis": "facts",
+              "evidence_ids": [
+                "c1"
+              ],
+              "claims": [
+                {
+                  "text": "12%",
+                  "value": 12.0,
+                  "evidence_id": "c1",
+                  "column": "revenue",
+                  "kind": "derived",
+                  "supported": true
+                }
+              ],
+              "alternatives_shown": false,
+              "hitl": [
+                {
+                  "kind": "approval",
+                  "status": "allowed"
+                }
+              ],
+              "action_receipts": [],
+              "finish_reason": "stop"
             }
           }
         }
@@ -889,6 +917,34 @@
               "prompt_tokens": 10,
               "completion_tokens": 5,
               "total_tokens": 15
+            },
+            "outcome": {
+              "schema_version": 1,
+              "kind": "answer",
+              "reason": "governed_data",
+              "basis": "facts",
+              "evidence_ids": [
+                "c1"
+              ],
+              "claims": [
+                {
+                  "text": "12%",
+                  "value": 12.0,
+                  "evidence_id": "c1",
+                  "column": "revenue",
+                  "kind": "derived",
+                  "supported": true
+                }
+              ],
+              "alternatives_shown": false,
+              "hitl": [
+                {
+                  "kind": "approval",
+                  "status": "allowed"
+                }
+              ],
+              "action_receipts": [],
+              "finish_reason": "stop"
             },
             "run_id": "run-a",
             "seq": 44

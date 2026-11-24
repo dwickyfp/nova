@@ -52,7 +52,7 @@ monotonic `seq`; part ids are `<run_id>#<n>` in production order (content blocks
 | `input.required` | `part_id`, `request_id`, `kind`, `request`, `expires_at` | The run waits for a person; opens a `hitl_request` part |
 | `input.resolved` | `part_id`, `status`, `summary`, `answer?` | How the request ended; seals its part |
 | `role.changed` | `active_role` | Work under the previous role is withdrawn; earlier turns stay hidden |
-| `run.finished` | `message_id`, `finish_reason`, `usage?`, `source?` | Terminal event; seals parts left open |
+| `run.finished` | `message_id`, `finish_reason`, `usage?`, `source?`, `outcome?` | Terminal event; seals parts left open |
 | `run.error` | `code`, `message` | A failure the turn reports |
 | `ping` | — | Keep-alive |
 
@@ -62,6 +62,36 @@ Side-effect events (`suggestions`, `mission_updated`, `mission_continuation`,
 sequence. A tool part from a Mission's nested run carries `origin_run_id`.
 Content parts keep `content_index` and `content_id`, the identity Add to Dataviz
 and interactive-UI state use.
+
+### Turn outcome
+
+`run.finished.outcome` (schema version 1, additive) says what the person got;
+`finish_reason` still says how the loop stopped and is unchanged. The loop
+decides it from facts it already holds, never from the answer's words
+([`turn_outcome.py`](../backend/app/modules/assistant/turn_outcome.py)):
+
+| Field | Meaning |
+| --- | --- |
+| `kind` | `answer`, `refuse`, `limitation`, `clarify`, `action_done`, `action_failed`, `error` or `cancelled` |
+| `reason` | A code for the kind, for example `governed_data`, `write_not_allowed`, `catalog_unsupported`, `outside_data_window`, `tool_failed`, `ambiguous_term`, `hitl_pending`, `action_committed`, `action_invalid_args` |
+| `basis` | `facts` (tool error classes, denials, guards, human input, evidence), `model_label` (the model's own label, consistent with the facts) or `unverified` (nothing decides it; a reviewer does) |
+| `evidence_ids` | Tool call ids whose verified results the turn showed |
+| `claims` | Each number the answer states: `text`, `value`, `evidence_id` (a tool call id), `column`, `kind` (`figure`, `derived`, `hypothesis`) and `supported` |
+| `alternatives_shown` | A refusal or stated limit that also showed a labelled figure from the turn's own data |
+| `hitl` | Each human-input request of the turn: `kind` and final `status` |
+| `action_receipts` | Tool call ids whose action committed |
+
+The governed query reports why it ran nothing: `CATALOG_UNSUPPORTED` (the
+Semantic View cannot express the request), `OUTSIDE_DATA_WINDOW` (the period
+has no data) or `CLARIFICATION_REQUIRED` (a business term with several approved
+meanings). A turn whose governed query failed may end by stating that, as
+`out_of_scope`, only when its numbers are dates, the periods a query reported or
+numbers from the question. A refusal no tool decided (a write, a source the
+agent cannot use) is labelled by the model in its claims block
+(`{"kind": "outcome", "outcome": "refuse", "reason": "write_not_allowed"}`);
+the label stands only where the facts allow it. The outcome is stored with the
+turn (`quality_observation` facts and the `turn_outcome` step), so a reopened
+turn's rebuilt `run.finished` carries it too.
 
 The run journal stores the same v2 frames, so a reconnect replays from its
 `seq` cursor and the client ignores events at or below the last applied `seq`.

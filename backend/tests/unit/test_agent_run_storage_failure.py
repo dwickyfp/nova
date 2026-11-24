@@ -105,6 +105,9 @@ async def test_storage_failure_closes_stream_and_loop_without_another_effect(
         done = [json.loads(frame.split("data: ", 1)[1]) for frame in frames
                 if frame.startswith("event: run.finished\n")]
         assert len(done) == 1 and done[0]["finish_reason"] == "interrupted"
+        # The outcome says why: the run's progress could not be saved.
+        assert (done[0]["outcome"]["kind"], done[0]["outcome"]["reason"]) == (
+            "error", "persistence_unavailable")
         assert any('"code":"run_persistence_unavailable"' in frame for frame in frames)
         finish.assert_awaited_once()
         assert finish.await_args.args[1] == "interrupted"

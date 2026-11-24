@@ -19,6 +19,7 @@ import type {
   ThinkingPhase,
   ToolCallStatus,
   ToolCallView,
+  TurnOutcome,
 } from "@/features/assistant/types";
 import type { GuardDecision } from "@/features/agents/api";
 import type { DashboardArtifactBlock } from "@/features/viz/types";
@@ -137,6 +138,8 @@ export type StudioEvent = Envelope &
         totalTokens?: number;
         promptTokens?: number;
         completionTokens?: number;
+        /** What the turn ended as; absent from servers and stored turns before it. */
+        outcome?: TurnOutcome;
       }
     | { type: "run.error"; code: string; message: string }
     | { type: "ping" }
@@ -428,6 +431,7 @@ export function parseStudioRecord(name: string, data: Record<string, unknown>): 
             ...(done.total_tokens !== undefined ? { totalTokens: done.total_tokens } : {}),
             ...(done.prompt_tokens !== undefined ? { promptTokens: done.prompt_tokens } : {}),
             ...(done.completion_tokens !== undefined ? { completionTokens: done.completion_tokens } : {}),
+            ...(done.outcome ? { outcome: done.outcome } : {}),
           }
         : null;
     }

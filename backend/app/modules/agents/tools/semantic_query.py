@@ -182,7 +182,9 @@ class SemanticQueryTool:
                 "failed" if outcome.error_class == "SEMANTIC_EXECUTION_ERROR" else "not_run"
             ),
             semantic_ambiguity=(
-                "unresolved" if outcome.error_class == "CLARIFICATION_REQUIRED" else "unknown"
+                "unresolved"
+                if outcome.error_class in {"CLARIFICATION_REQUIRED", "CATALOG_UNSUPPORTED"}
+                else "unknown"
             ),
         )
         return attach_evidence_health(
@@ -1464,12 +1466,16 @@ def _metric_phrase(model: SemanticModelIR, name: str) -> str:
 
 
 def _clarification(model: SemanticModelIR, unresolved: list[str]) -> ToolOutcome:
-    """A request the catalog cannot express is a question back, not a failure."""
+    """A request the catalog cannot express is stated to the user, not a failure.
+
+    ``CATALOG_UNSUPPORTED`` (not ``CLARIFICATION_REQUIRED``, which is a business
+    term with several approved meanings): the turn's outcome is a limitation.
+    """
     return ToolOutcome(
         ok=False,
         summary="",
         error="The question needs clarification.",
-        error_class="CLARIFICATION_REQUIRED",
+        error_class="CATALOG_UNSUPPORTED",
         recoverable=True,
         safe_detail=(
             "These parts of the request are not covered by the Semantic View: "

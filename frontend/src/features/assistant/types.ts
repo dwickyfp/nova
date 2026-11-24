@@ -194,6 +194,8 @@ export type AssistantEvent = (
       completion_tokens?: number;
       /** Where the answer's facts came from; absent for a general answer. */
       source?: AnswerSource;
+      /** What the turn ended as, decided by Nova from the turn's facts. */
+      outcome?: TurnOutcome;
     }
   | { type: "error"; code: string; message: string }
   | { type: "ping" }
@@ -227,6 +229,56 @@ export type AnswerSource = {
 };
 
 const SOURCE_KINDS = new Set(["semantic_view", "glossary", "query", "catalog", "guide"]);
+
+/**
+ * What a turn ended as (`run.finished.outcome`, schema version 1). `finish_reason`
+ * still says how the loop stopped; this says what the person got, with a reason
+ * code. Mirrors `backend/app/modules/assistant/turn_outcome.py`.
+ */
+export type TurnOutcomeKind =
+  | "answer"
+  | "refuse"
+  | "limitation"
+  | "clarify"
+  | "action_done"
+  | "action_failed"
+  | "error"
+  | "cancelled";
+
+export type TurnOutcome = {
+  schema_version: 1;
+  kind: TurnOutcomeKind;
+  reason: string;
+  /** `facts`: Nova's state decided it; `model_label`: the model's checked label; `unverified`: nothing decided it. */
+  basis: "facts" | "model_label" | "unverified";
+  evidence_ids: string[];
+  claims: {
+    text: string;
+    value: number | null;
+    evidence_id: string | null;
+    column: string | null;
+    kind: "figure" | "derived" | "hypothesis";
+    supported: boolean;
+  }[];
+  alternatives_shown: boolean;
+  hitl: { kind: string; status: string }[];
+  action_receipts: string[];
+  finish_reason: string;
+};
+
+const OUTCOME_KINDS = new Set<string>([
+  "answer", "refuse", "limitation", "clarify", "action_done", "action_failed", "error", "cancelled",
+]);
+
+/** A server outcome, or `undefined` for a turn without one (older servers and stored turns). */
+export function turnOutcome(value: unknown): TurnOutcome | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const outcome = value as Partial<TurnOutcome>;
+  return outcome.schema_version === 1 && typeof outcome.kind === "string" && OUTCOME_KINDS.has(outcome.kind)
+    && typeof outcome.reason === "string" && typeof outcome.finish_reason === "string"
+    ? (outcome as TurnOutcome)
+    : undefined;
+}
 
 export function answerSource(value: unknown): AnswerSource | undefined {
   if (!value || typeof value !== "object") return undefined;
