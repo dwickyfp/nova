@@ -100,7 +100,7 @@ describe("StudioSidebar", () => {
 
     const button = screen.getByRole("button", { name: "New chat" }).first();
     await expect
-      .element(screen.getByText("nova", { exact: true }))
+      .element(screen.getByRole("img", { name: "Nova Studio" }))
       .toBeVisible();
     await expect
       .element(screen.getByText("Studio", { exact: true }))

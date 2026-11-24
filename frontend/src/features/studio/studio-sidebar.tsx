@@ -1,4 +1,5 @@
 import { Logo } from "@/assets/logo";
+import { Wordmark } from "@/assets/wordmark";
 import { useEffect, useRef, useState } from "react";
 import {
   LayoutGrid,
@@ -105,14 +106,7 @@ export function StudioSidebar({
                 className="size-full"
               />
             </span>
-            <span className="flex min-w-0 flex-1 items-baseline gap-1.5 text-start">
-              <span className="truncate text-lg leading-none font-medium text-primary">
-                nova
-              </span>
-              <span className="truncate text-base leading-none font-medium text-foreground">
-                Studio
-              </span>
-            </span>
+            <Wordmark label="Studio" size={18} className="flex-1" />
             <Button
               variant="ghost"
               size="icon"

@@ -40,7 +40,7 @@ mendefinisikan warna.
 | `--primary`, `--primary-foreground` | Aksi utama, graphite netral | Tombol primer, fill aksi, tooltip, gelembung pesan |
 | `--brand`, `--brand-foreground` | Aksen interaktif biru-baja, satu keluarga dengan backdrop `#8fb4c4` | Tautan, focus ring (`--ring`), tab/toggle aktif, checkbox/switch tercentang, seleksi, rute peta, `--viz-highlight` |
 | `--editor-selection` | Seleksi teks di editor SQL | Monaco `editor.selectionBackground` |
-| `--brand-mark`, `--brand-mark-accent` | Merah bata dan tembaga phoenix; satu-satunya merah di antarmuka | Hanya logo (`Logo`, favicon). Bukan warna UI, bukan `--primary` |
+| `--brand-mark`, `--brand-mark-accent` | Merah bata dan tembaga phoenix; satu-satunya merah di antarmuka | Hanya logo (`Logo`, bintang di `Wordmark`, favicon). Bukan warna UI, bukan `--primary` |
 
 ### 2.2 Warna status
 
@@ -502,6 +502,12 @@ di gelap" tidak berlaku lagi. Aturannya sekarang:
   `--brand-mark`. Di tema gelap merahnya diangkat (`#da614e`) agar 3:1 di atas
   kaca navigasi; `Logo` menukar ke raster `-dark` pada `.dark`. Merah ini tidak
   dipakai untuk elemen UI lain.
+- Wordmark "nova" (`src/assets/wordmark.tsx`, opsi A "Orbit spark", keputusan
+  pemilik 2026-11-24) digambar sebagai SVG, bukan font: garis `currentColor`
+  sehingga ikut tema, dan bintang empat sudut merah `--brand-mark` di orbit
+  huruf "o". Label di sampingnya (`STUDIO` di sidebar Studio, "Enterprise
+  Intelligence OS" di Console dan sign-in) kecil, renggang, dan `muted`. Saat
+  sidebar diciutkan hanya phoenix yang tampil.
 - `src/styles/theme-contrast.test.ts` mengukur pasangan teks (4.5:1), focus ring
   dan seri chart (3:1) dari stylesheet asli di kedua tema.
 

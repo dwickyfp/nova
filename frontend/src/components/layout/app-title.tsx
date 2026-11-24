@@ -1,4 +1,5 @@
 import { Logo } from '@/assets/logo'
+import { Wordmark } from '@/assets/wordmark'
 import { Link } from '@tanstack/react-router'
 import {
   SidebarMenu,
@@ -24,14 +25,13 @@ export function AppTitle() {
                 className='size-full'
               />
             </span>
-            <span className='grid min-w-0 flex-1 gap-1 text-start leading-tight group-data-[collapsible=icon]:hidden'>
-              <span className='truncate text-lg font-medium leading-none text-primary'>
-                nova
-              </span>
-              <span className='truncate text-xs leading-none text-sidebar-navigation-muted-foreground'>
-                Enterprise Intelligence OS
-              </span>
-            </span>
+            <Wordmark
+              size={18}
+              label='Enterprise Intelligence OS'
+              layout='stacked'
+              className='flex-1 gap-1.5 group-data-[collapsible=icon]:hidden'
+              labelClassName='font-medium tracking-[0.04em] text-sidebar-navigation-muted-foreground normal-case'
+            />
           </Link>
         </SidebarMenuButton>
       </SidebarMenuItem>
