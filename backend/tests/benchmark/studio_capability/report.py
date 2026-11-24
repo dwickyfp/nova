@@ -472,8 +472,37 @@ def _category_stats(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return out
 
 
-def compare(current: list[dict[str, Any]], baseline: list[dict[str, Any]]) -> dict[str, Any]:
-    """Per-category and per-unit change from a baseline run of the same corpus."""
+def deterministic_worse(old: dict[str, Any], new: dict[str, Any]) -> bool:
+    """Whether a unit's deterministic checks got worse from ``old`` to ``new``."""
+    def recall(checks: dict[str, Any], key: str) -> float:
+        value = checks.get(key)
+        if isinstance(value, dict):
+            value = value.get("recall")
+        return 1.0 if value is None else float(value)
+
+    return ((old["outcome_ok"] and not new["outcome_ok"])
+            or recall(new, "numeric") < recall(old, "numeric")
+            or recall(new, "ui_recall") < recall(old, "ui_recall")
+            or len(new.get("tool_failures") or []) > len(old.get("tool_failures") or [])
+            or len(new.get("errors") or []) > len(old.get("errors") or []))
+
+
+def compare(current: list[dict[str, Any]], baseline: list[dict[str, Any]],
+            subset: Sequence[str] | None = None) -> dict[str, Any]:
+    """Per-category and per-unit change from a baseline run of the same corpus.
+
+    With ``subset``, both runs are limited to the units run in both, paired by id.
+    """
+    if subset is not None:
+        wanted = set(subset)
+        both = wanted & {r["id"] for r in current} & {r["id"] for r in baseline}
+        judged = {r["id"] for r in current if r.get("judgment")} & {
+            r["id"] for r in baseline if r.get("judgment")}
+        # Judge scores count only where both runs were judged, so the pairs stay fair.
+        current = [{**r, "judgment": r.get("judgment") if r["id"] in judged else None}
+                   for r in current if r["id"] in both]
+        baseline = [{**r, "judgment": r.get("judgment") if r["id"] in judged else None}
+                    for r in baseline if r["id"] in both]
     now, before = _category_stats(current), _category_stats(baseline)
     rows = []
     for category in sorted(set(now) | set(before)):
@@ -491,9 +520,13 @@ def compare(current: list[dict[str, Any]], baseline: list[dict[str, Any]]) -> di
         final = (row.get("judgment") or {}).get("final")
         return min(final[d] for d in ("accuracy", "intelligence", "ui")) if final else None
 
-    fixed, broken, changed = [], [], []
+    fixed, broken, changed, pairs = [], [], [], []
     for uid in sorted(set(base_units) & set(cur_units)):
         old, new = base_units[uid], cur_units[uid]
+        pairs.append({"id": uid, "category": new["unit"]["category"],
+                      "outcome": [old["checks"]["outcome"], new["checks"]["outcome"]],
+                      "outcome_ok": [old["checks"]["outcome_ok"], new["checks"]["outcome_ok"]],
+                      "floor": [floor(old), floor(new)]})
         o_ok, n_ok = old["checks"]["outcome_ok"], new["checks"]["outcome_ok"]
         if not o_ok and n_ok:
             fixed.append(uid)
@@ -510,7 +543,8 @@ def compare(current: list[dict[str, Any]], baseline: list[dict[str, Any]]) -> di
         latency[key] = {name: _pct(v, 0.5) for name, v in values.items()}
     return {"categories": rows, "outcome_fixed": fixed, "outcome_broken": broken,
             "floor_changed_by_2": changed, "latency_p50": latency,
-            "units": {"baseline": len(baseline), "now": len(current)}}
+            "units": {"baseline": len(baseline), "now": len(current)},
+            "subset": subset is not None, "pairs": pairs if subset is not None else []}
 
 
 def write_comparison(out: Path, result: dict[str, Any], baseline_dir: Path) -> Path:
@@ -518,17 +552,21 @@ def write_comparison(out: Path, result: dict[str, Any], baseline_dir: Path) -> P
         d = cell["delta"]
         return "–" if d is None else (f"+{d}" if d > 0 else str(d))
 
-    lines = ["# Perbandingan dengan baseline", "",
-             f"Baseline: `{baseline_dir}` ({result['units']['baseline']} giliran); "
-             f"sekarang: {result['units']['now']} giliran. Korpus dan model sama. "
-             "“Hasil benar” memakai deteksi teks yang sama dengan baseline; “Hasil "
-             "(finish_reason)” membaca alasan selesai dari server (out_of_scope, "
-             "clarification, denied, required_capability_*) dan dihitung ulang untuk "
-             "kedua run.", "",
-             "| Kategori | n | Hasil benar | Δ | Hasil (finish_reason) | Δ | Error | Δ "
-             "| Akurasi | Δ | Kecerdasan | Δ | UI | Δ "
-             "| Proses | Δ | Keamanan | Δ |",
-             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    lines = ["# Perbandingan dengan baseline", ""]
+    if result.get("subset"):
+        lines += ["> **Subset, bukan korpus penuh.** Hanya unit yang dijalankan ulang (lihat "
+                  "`subset.json`), dipasangkan per unit dengan baseline. Angka per kategori "
+                  "tidak sebanding dengan laporan korpus penuh.", ""]
+    lines += [f"Baseline: `{baseline_dir}` ({result['units']['baseline']} giliran); "
+              f"sekarang: {result['units']['now']} giliran. Korpus dan model sama. "
+              "“Hasil benar” memakai deteksi teks yang sama dengan baseline; “Hasil "
+              "(finish_reason)” membaca alasan selesai dari server (out_of_scope, "
+              "clarification, denied, required_capability_*) dan dihitung ulang untuk "
+              "kedua run.", "",
+              "| Kategori | n | Hasil benar | Δ | Hasil (finish_reason) | Δ | Error | Δ "
+              "| Akurasi | Δ | Kecerdasan | Δ | UI | Δ "
+              "| Proses | Δ | Keamanan | Δ |",
+              "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for row in result["categories"]:
         cells = [row["category"], str(row["n"])]
         for key in ("outcome_ok", "outcome_reported_ok", "errors", *DIMENSIONS):
@@ -545,6 +583,14 @@ def write_comparison(out: Path, result: dict[str, Any], baseline_dir: Path) -> P
               "## Skor dasar (min akurasi/kecerdasan/UI) berubah ≥ 2", ""]
     lines += [f"- `{c['id']}`: {c['baseline_floor']} → {c['now_floor']}"
               for c in result["floor_changed_by_2"]] or ["–"]
+    if result.get("pairs"):
+        lines += ["", "## Per unit (baseline → sekarang)", "",
+                  "| Unit | Kategori | Hasil | Benar | Skor dasar |", "|---|---|---|---|---|"]
+        for p in result["pairs"]:
+            ok = "→".join("ya" if v else "tidak" for v in p["outcome_ok"])
+            fl = "→".join("–" if v is None else str(v) for v in p["floor"])
+            lines.append(f"| `{p['id']}` | {p['category']} | {' → '.join(p['outcome'])} "
+                         f"| {ok} | {fl} |")
     path = out / "COMPARISON.md"
     path.write_text("\n".join(lines) + "\n")
     (out / "comparison.json").write_text(json.dumps(result, indent=1, default=str))
@@ -555,6 +601,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out")
     parser.add_argument("--baseline", help="an earlier results directory to compare with")
+    parser.add_argument("--subset", help="JSON file whose \"ids\" limit the comparison")
     args = parser.parse_args()
     out = settings.out_dir(args.out)
     manifest_path = out / "manifest.json"
@@ -567,7 +614,9 @@ def main() -> None:
     print(write_html(out, summary, manifest))
     if args.baseline:
         baseline_dir = Path(args.baseline)
-        print(write_comparison(out, compare(_load(out), _load(baseline_dir)), baseline_dir))
+        subset = json.loads(Path(args.subset).read_text())["ids"] if args.subset else None
+        print(write_comparison(out, compare(_load(out), _load(baseline_dir), subset),
+                               baseline_dir))
 
 
 if __name__ == "__main__":

@@ -303,3 +303,17 @@ def test_reported_outcome_reads_the_finish_reason() -> None:
                                            "finish_reason": "out_of_scope"})
     assert report.reported_outcome_ok({**base, "expected_outcome": "answer",
                                        "finish_reason": "stop"})
+
+
+def test_subset_comparison_pairs_units_and_flags_worse_checks(tmp_path: Path) -> None:
+    base, now = tmp_path / "base", tmp_path / "now"
+    _write_run(base)
+    _write_run(now)
+    rows = report._load(now)
+    result = report.compare(rows, report._load(base), subset=["number-001", "missing-1"])
+    assert result["subset"] and [p["id"] for p in result["pairs"]] == ["number-001"]
+    page = report.write_comparison(now, result, base).read_text()
+    assert "Subset, bukan korpus penuh" in page and "Per unit" in page
+    old = rows[0]["checks"]
+    assert not report.deterministic_worse(old, old)
+    assert report.deterministic_worse(old, {**old, "errors": [{"code": "x"}]})
