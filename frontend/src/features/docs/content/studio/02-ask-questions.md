@@ -139,10 +139,18 @@ AI model work the answer used.
 - **A date without a year** means the year in the data. "Revenue in July"
   uses July of the year the data covers. When the data covers more than one
   year, the agent asks which one and offers only the years in the data.
+- **Recent periods in older data**: "the last 7 days of the data" or "last
+  week in the data" counts back from the last day the data has, not from
+  today. The same happens when a recent period such as "this month" has no
+  data yet. The answer names the dates it used. To keep today's dates, say so,
+  for example "the last 7 days up to today".
 - **Comparing periods**: name both periods, such as "June 2025 and July 2025",
   "this week against last week", or ask for "the trend by month". When the
   agent cannot read a comparison, it says "Nova could not compare those
-  periods as asked" and asks you to name both periods.
+  periods as asked" and asks you to name both periods. A comparison with no
+  period at all ("week over week" on its own) gets "A comparison needs a
+  period to compare". After a query that cannot run as planned, the agent
+  plans it again instead of repeating the same query.
 - **Median and percentiles**: ask for "the median order value" or "the 90th
   percentile of order value". These work for measures that add up, average or
   take the highest or lowest of one value per record. A median of a count is

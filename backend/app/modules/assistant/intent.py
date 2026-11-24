@@ -19,6 +19,7 @@ COMPARISONS = (
     "week_over_week",
 )
 OPERATORS = (">", ">=", "<", "<=")
+ANCHORS = ("data", "today")
 #: BCP-47 shape only ("id", "pt-BR", "zh-Hant"); the model names the language.
 _LANGUAGE_TAG = re.compile(r"[a-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,2}")
 
@@ -52,6 +53,9 @@ class IntentFrame:
     refers_to_previous_answer: bool = False
     #: The user compares items or groups against each other ("compare the channels").
     compares_groups: bool = False
+    #: Where a period is counted from: "data" when the user counts from the data or
+    #: names a month or day without a year, "today" when they tie it to today.
+    anchor: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -81,6 +85,7 @@ class IntentFrame:
             refers_to_screen=bool(value.get("refers_to_screen")),
             refers_to_previous_answer=bool(value.get("refers_to_previous_answer")),
             compares_groups=bool(value.get("compares_groups")),
+            anchor=value.get("anchor") if value.get("anchor") in ANCHORS else None,
         )
 
 
@@ -142,11 +147,12 @@ def intent_frame_schema() -> dict[str, Any]:
             "refers_to_screen": {"type": "boolean"},
             "refers_to_previous_answer": {"type": "boolean"},
             "compares_groups": {"type": "boolean"},
+            "anchor": {"type": ["string", "null"], "enum": [*ANCHORS, None]},
         },
         "required": [
             "language", "range", "compare", "grain", "asks_series", "top_n", "order",
             "per_group_dimension", "threshold", "refers_to_screen", "compares_groups",
-            "refers_to_previous_answer",
+            "refers_to_previous_answer", "anchor",
         ],
         "additionalProperties": False,
     }
@@ -176,6 +182,9 @@ INTENT_FRAME_RULES = (
     "threshold: a condition on a metric value ('above 1 billion', '10億を超えた'), with "
     "the value as a plain number and the exact metric name. refers_to_screen: the "
     "request points at something on the user's screen. compares_groups: the user asks "
-    "to compare items or groups against each other. Use null or false for "
-    "anything the user did not say."
+    "to compare items or groups against each other. anchor: 'data' when the user "
+    "counts from the data itself ('the last 7 days in the data', 'the latest month "
+    "available') or names a month or day without a year ('July'); 'today' when they "
+    "name a year or count from today ('the last 7 days up to today'). Use null or "
+    "false for anything the user did not say."
 )

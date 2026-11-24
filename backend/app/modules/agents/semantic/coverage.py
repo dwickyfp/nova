@@ -16,14 +16,16 @@ same window, so it can name the dates it covers.
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from dataclasses import replace as dataclass_replace
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from app.modules.agents.semantic.ir import SemanticModelIR
 from app.modules.agents.semantic.planning import SemanticPlan, SemanticPlanError
-from app.modules.agents.semantic.time_ranges import resolve_time_range
+from app.modules.agents.semantic.time_ranges import is_relative_range, resolve_time_range
 
 #: The planner's mark for a request to see which dates the data covers.
 DATA_PERIOD = "data_period"
@@ -56,6 +58,75 @@ class CoverageGap:
             f"{self.window.last.isoformat()}. Tell the user the period is outside the data "
             "and give the covered range. Do not present an empty or zero result as the answer."
         )
+
+
+@dataclass(frozen=True)
+class DataAnchor:
+    """The same question asked of the dates the data has, and how to say so."""
+
+    plan: SemanticPlan
+    #: For a range counted from the clock: the day after the last day with data.
+    clock_day: date | None
+    note: str
+
+
+#: How many years back a month named without a year may be moved.
+_MAX_YEAR_SHIFT = 50
+
+
+def anchor_to_data(
+    plan: SemanticPlan, gap: CoverageGap, anchor: str | None
+) -> DataAnchor | None:
+    """Ask a period that fell outside the data again, inside it, when the user meant that.
+
+    ``anchor`` is the turn planner's reading of the user: ``"data"`` when they count
+    from the data or name a month or day without a year, ``"today"`` when they name a
+    year or count from today. A range counted from the clock ("the last 7 days") is
+    counted from the last day with data instead, unless the user tied it to today. An
+    explicit period moves by whole years only when the user named no year and exactly
+    one such year lies in the data. Anything else stays a gap the agent reports.
+    """
+    if anchor == "today" or gap.period != "requested" or plan.time is None:
+        return None
+    value = plan.time.range
+    if not value:
+        return None
+    last = gap.window.last
+    if is_relative_range(value):
+        return DataAnchor(plan=plan, clock_day=last + timedelta(days=1), note=(
+            f" The data ends on {last.isoformat()}, so this period is counted back from "
+            "that day, not from today. Say so first, naming the dates the figures cover."
+        ))
+    if anchor != "data":
+        return None
+    try:
+        window = resolve_time_range(value)
+    except SemanticPlanError:
+        return None
+    if window.start_date is None or window.end_date is None:
+        return None
+    fits = []
+    for years in range(1, _MAX_YEAR_SHIFT + 1):
+        shifted = _shift_years(value, years)
+        try:
+            moved = resolve_time_range(shifted)
+        except SemanticPlanError:
+            continue
+        if moved.start_date is None or moved.end_date is None:
+            continue
+        if moved.start_date <= gap.window.last and moved.end_date > gap.window.first:
+            fits.append(shifted)
+    if len(fits) != 1:
+        return None
+    time = dataclass_replace(plan.time, range=fits[0])
+    return DataAnchor(plan=dataclass_replace(plan, time=time), clock_day=None, note=(
+        f" The user named no year; the only matching period in the data is {fits[0]}, "
+        "so that year is used. Name the year in the answer."
+    ))
+
+
+def _shift_years(value: str, years: int) -> str:
+    return re.sub(r"\d{4}", lambda match: str(int(match[0]) - years), value)
 
 
 def future_period(plan: SemanticPlan, today: date | None) -> str | None:

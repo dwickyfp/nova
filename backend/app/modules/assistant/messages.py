@@ -53,6 +53,11 @@ MESSAGES: dict[str, str] = {
         "guessing. Ask about a narrower part, such as one table, one period or one "
         "report, and I'll answer that."
     ),
+    "loop.iteration_cap_partial": (
+        "I reached the step limit for this answer before I could finish. The verified "
+        "results shown here are what I could confirm; ask about the rest on its own and "
+        "I'll continue from them."
+    ),
     "loop.incomplete": (
         "I couldn't finish the check this question needs, so I won't guess an answer. "
         "Try asking again with a little more detail, such as the table, report or "
