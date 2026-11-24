@@ -1,0 +1,234 @@
+{
+  "ai_context": null,
+  "conformed_dimensions": [],
+  "datasets": [
+    {
+      "ai_context": null,
+      "description": "One row per customer order in the demo store.",
+      "fields": [
+        {
+          "ai_context": null,
+          "datatype": "String",
+          "description": "Order number.",
+          "dimension": {
+            "is_time": false
+          },
+          "expression": "order_id",
+          "kind": null,
+          "name": "order_id",
+          "sample_values": [],
+          "search_strategy": "exact",
+          "synonyms": []
+        },
+        {
+          "ai_context": null,
+          "datatype": "String",
+          "description": "Customer who placed the order.",
+          "dimension": {
+            "is_time": false
+          },
+          "expression": "customer_id",
+          "kind": null,
+          "name": "customer_id",
+          "sample_values": [],
+          "search_strategy": "exact",
+          "synonyms": []
+        },
+        {
+          "ai_context": null,
+          "datatype": "Timestamp",
+          "description": "When the order was placed.",
+          "dimension": {
+            "is_time": true
+          },
+          "expression": "order_date",
+          "kind": null,
+          "name": "order_date",
+          "sample_values": [],
+          "search_strategy": "range",
+          "synonyms": [
+            "date",
+            "month"
+          ]
+        },
+        {
+          "ai_context": null,
+          "datatype": "String",
+          "description": "Order status.",
+          "dimension": {
+            "is_time": false
+          },
+          "expression": "status",
+          "kind": null,
+          "name": "status",
+          "sample_values": [
+            "completed",
+            "pending",
+            "cancelled",
+            "shipped"
+          ],
+          "search_strategy": "exact",
+          "synonyms": []
+        },
+        {
+          "ai_context": null,
+          "datatype": "String",
+          "description": "How the order was paid.",
+          "dimension": {
+            "is_time": false
+          },
+          "expression": "payment_method",
+          "kind": null,
+          "name": "payment_method",
+          "sample_values": [],
+          "search_strategy": "exact",
+          "synonyms": []
+        },
+        {
+          "ai_context": null,
+          "datatype": "String",
+          "description": "City the order ships to.",
+          "dimension": {
+            "is_time": false
+          },
+          "expression": "shipping_city",
+          "kind": null,
+          "name": "shipping_city",
+          "sample_values": [],
+          "search_strategy": "exact",
+          "synonyms": [
+            "city"
+          ]
+        },
+        {
+          "ai_context": null,
+          "datatype": "Decimal",
+          "description": "Order value in USD.",
+          "dimension": {},
+          "expression": "total_amount",
+          "kind": null,
+          "name": "total_amount",
+          "sample_values": [],
+          "search_strategy": "exact",
+          "synonyms": []
+        }
+      ],
+      "grain": {
+        "keys": [
+          "order_id"
+        ]
+      },
+      "name": "orders",
+      "primary_key": [
+        "order_id"
+      ],
+      "source": "NOVA_DEMO.orders",
+      "synonyms": [],
+      "unique_keys": []
+    }
+  ],
+  "description": "Demo store orders: revenue and order counts by date, city, status and payment method.",
+  "entities": {},
+  "hierarchies": {},
+  "metrics": [
+    {
+      "additivity": "additive",
+      "ai_context": null,
+      "allowed_dimensions": [],
+      "authority": null,
+      "base_dataset": "orders",
+      "currency": null,
+      "datatype": "Decimal",
+      "default_time_dimension": "order_date",
+      "dependencies": [],
+      "description": "Total order value.",
+      "expression": "SUM(orders.total_amount)",
+      "filters": [],
+      "format": null,
+      "grain": {},
+      "name": "revenue",
+      "non_additive_dimensions": [],
+      "owner_domain": null,
+      "preferred_relationship_path": [],
+      "supporting_domains": [],
+      "synonyms": [
+        "sales",
+        "total revenue"
+      ],
+      "unit": "USD",
+      "visibility": "public"
+    },
+    {
+      "additivity": "additive",
+      "ai_context": null,
+      "allowed_dimensions": [],
+      "authority": null,
+      "base_dataset": "orders",
+      "currency": null,
+      "datatype": "Integer",
+      "default_time_dimension": "order_date",
+      "dependencies": [],
+      "description": "Number of orders.",
+      "expression": "COUNT(orders.order_id)",
+      "filters": [],
+      "format": null,
+      "grain": {},
+      "name": "order_count",
+      "non_additive_dimensions": [],
+      "owner_domain": null,
+      "preferred_relationship_path": [],
+      "supporting_domains": [],
+      "synonyms": [
+        "orders"
+      ],
+      "unit": null,
+      "visibility": "public"
+    },
+    {
+      "additivity": "non_additive",
+      "ai_context": null,
+      "allowed_dimensions": [
+        "customer_id",
+        "order_date",
+        "order_id",
+        "orders.customer_id",
+        "orders.order_date",
+        "orders.order_id",
+        "orders.payment_method",
+        "orders.shipping_city",
+        "orders.status",
+        "payment_method",
+        "shipping_city",
+        "status"
+      ],
+      "authority": null,
+      "base_dataset": "orders",
+      "currency": null,
+      "datatype": "Decimal",
+      "default_time_dimension": "order_date",
+      "dependencies": [],
+      "description": "Average order value.",
+      "expression": "AVG(orders.total_amount)",
+      "filters": [],
+      "format": null,
+      "grain": {},
+      "name": "average_order_value",
+      "non_additive_dimensions": [],
+      "owner_domain": null,
+      "preferred_relationship_path": [],
+      "supporting_domains": [],
+      "synonyms": [
+        "AOV"
+      ],
+      "unit": null,
+      "visibility": "public"
+    }
+  ],
+  "name": "demo_sales",
+  "named_filters": [],
+  "query_generation_instructions": "Revenue is total_amount. Use order_date for time.",
+  "question_routing_instructions": "Use for any question about demo store sales, revenue or orders.",
+  "relationships": [],
+  "verified_queries": [],
+  "version": "0.1.1"
+}
