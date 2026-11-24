@@ -387,7 +387,7 @@ function VersionHistoryWorkspace({
                             {change.before}
                           </pre>
                         </div>
-                        <div className="min-w-0 rounded-md border border-primary/40 bg-accent p-3">
+                        <div className="min-w-0 rounded-md border border-brand/40 bg-accent p-3">
                           <p className="mb-2 text-xs font-medium">
                             Selected version
                           </p>

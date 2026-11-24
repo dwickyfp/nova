@@ -23,7 +23,7 @@ function RefreshBanner({
     >
       <div className='w-full max-w-xs overflow-hidden rounded-full border bg-surface-2 shadow-sm'>
         <div className='h-1.5 w-full overflow-hidden bg-muted'>
-          <div className='h-full w-1/3 animate-pulse rounded-full bg-primary motion-reduce:animate-none' />
+          <div className='h-full w-1/3 animate-pulse rounded-full bg-brand motion-reduce:animate-none' />
         </div>
         <div className='px-3 py-2 text-center text-xs font-medium text-foreground'>
           {label}

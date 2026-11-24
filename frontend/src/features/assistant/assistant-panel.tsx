@@ -242,7 +242,7 @@ function AssistantHeader({
                 href="https://docs.starrocks.io"
                 target="_blank"
                 rel="noreferrer"
-                className="block font-medium text-primary underline underline-offset-2"
+                className="block font-medium text-brand underline underline-offset-2"
               >
                 Enterprise data protection
               </a>

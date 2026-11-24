@@ -22,7 +22,7 @@ export const BEAT_MS = 1000
 export const ROW_PX = 72
 
 // Theme series tokens, so each person keeps one colour on every screen.
-const COLOURS = [4, 2, 3, 1, 5, 6, 8, 9, 7].map(index => `var(--chart-${index})`)
+const COLOURS = [1, 2, 3, 4, 5, 6, 7, 8, 9].map(index => `var(--chart-${index})`)
 
 export function colourFor(viewer: string): string {
   let hash = 0

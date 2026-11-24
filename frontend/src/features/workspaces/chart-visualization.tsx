@@ -39,25 +39,26 @@ import {
 
 function readSeriesPalette() {
   return [
-    readToken("--chart-4", "#4f7ee8"),
-    readToken("--chart-2", "#14a89a"),
-    readToken("--chart-3", "#e89b17"),
-    readToken("--chart-1", "#f05a47"),
-    readToken("--chart-6", "#a78bfa"),
-    readToken("--chart-7", "#f472b6"),
-    readToken("--chart-8", "#38bdf8"),
-    readToken("--chart-9", "#34d399"),
+    readToken("--chart-1", "#2f6fb0"),
+    readToken("--chart-2", "#12897d"),
+    readToken("--chart-3", "#b8790f"),
+    readToken("--chart-4", "#7a5bd0"),
+    readToken("--chart-5", "#d4503f"),
+    readToken("--chart-6", "#c03f84"),
+    readToken("--chart-7", "#4f8a2b"),
+    readToken("--chart-8", "#1a86b4"),
+    readToken("--chart-9", "#a0612f"),
   ];
 }
 
 function readTonePalette() {
   return [
-    readToken("--chart-tone-1", "#5b8def"),
-    readToken("--chart-tone-2", "#76a0ef"),
-    readToken("--chart-tone-3", "#90b4f2"),
-    readToken("--chart-tone-4", "#aac7f5"),
-    readToken("--chart-tone-5", "#c4daf8"),
-    readToken("--chart-tone-6", "#deedfb"),
+    readToken("--chart-tone-1", "#2f6fb0"),
+    readToken("--chart-tone-2", "#4a85c0"),
+    readToken("--chart-tone-3", "#6b9ccc"),
+    readToken("--chart-tone-4", "#8fb4d9"),
+    readToken("--chart-tone-5", "#b5cde6"),
+    readToken("--chart-tone-6", "#d9e6f2"),
   ];
 }
 const CHART_EMPTY_OPTION = "__none__";
@@ -940,7 +941,7 @@ export const ChartVisualization = memo(function ChartVisualization({
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <BarChart3 className="size-4 text-primary" />
+              <BarChart3 className="size-4 text-brand" />
               <h3 className="text-sm font-semibold text-foreground">
                 {chartTitle}
               </h3>

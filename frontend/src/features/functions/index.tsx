@@ -448,7 +448,7 @@ export default function FunctionsPage() {
             onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
               tab === t
-                ? 'border-primary text-foreground'
+                ? 'border-brand text-foreground'
                 : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >

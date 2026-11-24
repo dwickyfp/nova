@@ -2810,13 +2810,13 @@ export function WorkspacesPage() {
                         className={cn(
                           "flex items-center gap-1.5 whitespace-nowrap rounded-t-md px-3 py-1 text-xs transition-colors",
                           resultsTab === "results"
-                            ? "z-10 -mb-px border-x border-t-2 border-x-border border-t-primary border-b-0 bg-background text-primary"
+                            ? "z-10 -mb-px border-x border-t-2 border-x-border border-t-brand border-b-0 bg-background text-brand"
                             : "border-b border-b-border text-muted-foreground hover:bg-muted/50",
                         )}
                       >
                         Results
                         {activeExplainPlan !== null && (
-                          <span className="rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
+                          <span className="rounded bg-brand/10 px-1.5 py-0.5 text-xs font-medium text-brand">
                             Explain
                           </span>
                         )}
@@ -2850,7 +2850,7 @@ export function WorkspacesPage() {
                         className={cn(
                           "flex items-center gap-1.5 rounded-t-md px-3 py-1 text-xs transition-colors",
                           resultsTab === "history"
-                            ? "z-10 -mb-px border-x border-t-2 border-x-border border-t-primary border-b-0 bg-background text-primary"
+                            ? "z-10 -mb-px border-x border-t-2 border-x-border border-t-brand border-b-0 bg-background text-brand"
                             : "border-b border-b-border text-muted-foreground hover:bg-muted/50",
                         )}
                       >
@@ -2863,7 +2863,7 @@ export function WorkspacesPage() {
                         className={cn(
                           "flex items-center gap-1.5 rounded-t-md px-3 py-1 text-xs transition-colors",
                           resultsTab === "chart"
-                            ? "z-10 -mb-px border-x border-t-2 border-x-border border-t-primary border-b-0 bg-background text-primary"
+                            ? "z-10 -mb-px border-x border-t-2 border-x-border border-t-brand border-b-0 bg-background text-brand"
                             : "border-b border-b-border text-muted-foreground hover:bg-muted/50",
                         )}
                       >
@@ -2893,7 +2893,7 @@ export function WorkspacesPage() {
                               className={cn(
                                 "rounded-md px-2.5 py-0.5 transition-colors",
                                 historyFilter === "file"
-                                  ? "bg-primary text-primary-foreground"
+                                  ? "bg-brand text-brand-foreground"
                                   : "text-muted-foreground hover:bg-muted",
                               )}
                               onClick={() => setHistoryFilter("file")}
@@ -2905,7 +2905,7 @@ export function WorkspacesPage() {
                               className={cn(
                                 "rounded-md px-2.5 py-0.5 transition-colors",
                                 historyFilter === "all"
-                                  ? "bg-primary text-primary-foreground"
+                                  ? "bg-brand text-brand-foreground"
                                   : "text-muted-foreground hover:bg-muted",
                               )}
                               onClick={() => setHistoryFilter("all")}
@@ -2974,7 +2974,7 @@ export function WorkspacesPage() {
                               onClick={() => setActiveResultIdx(idx)}
                               className={`rounded px-2 py-0.5 text-xs font-medium transition-colors ${
                                 activeResultIdx === idx
-                                  ? "bg-primary/10 text-primary"
+                                  ? "bg-brand/10 text-brand"
                                   : "text-muted-foreground hover:bg-muted/50"
                               }`}
                             >
@@ -3162,7 +3162,7 @@ const DatabaseNode = memo(function DatabaseNode({
                 expanded && "rotate-90",
               )}
             />
-            <Database className="size-4 shrink-0 text-primary" />
+            <Database className="size-4 shrink-0 text-brand" />
             <span className="truncate font-medium">{database}</span>
           </button>
         </CollapsibleTrigger>
@@ -3553,7 +3553,7 @@ const QueryResults = memo(function QueryResults({
                       </span>
                       {column}
                       {isSorted && (
-                        <span className="ml-1 text-primary">
+                        <span className="ml-1 text-brand">
                           {sortDir === "asc" ? "↑" : "↓"}
                         </span>
                       )}

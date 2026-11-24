@@ -14,7 +14,7 @@ export function SignInVisual() {
         />
       </div>
       <div className="max-w-md shrink-0">
-        <p className="mb-4 text-xs font-semibold text-primary">
+        <p className="mb-4 text-xs font-semibold text-brand">
           Enterprise Intelligence OS
         </p>
         <p className="text-2xl font-semibold tracking-tight text-foreground">

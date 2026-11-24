@@ -97,7 +97,7 @@ function MapcnGeoMap({ p }: { p: Record<string, unknown> }) {
     setPopup(row);
     setFocusBounds(geoBounds([feature]));
   };
-  const primary = mapColor("--primary");
+  const accent = mapColor("--brand");
   const fail = () => {
     setError(true);
     setTableExpanded(true);
@@ -133,7 +133,7 @@ function MapcnGeoMap({ p }: { p: Record<string, unknown> }) {
             promoteId="row"
             interactive={!readOnly}
             fillPaint={{
-              "fill-color": primary,
+              "fill-color": accent,
               "fill-opacity": [
                 "case",
                 [
@@ -146,7 +146,7 @@ function MapcnGeoMap({ p }: { p: Record<string, unknown> }) {
               ],
             }}
             linePaint={{
-              "line-color": primary,
+              "line-color": accent,
               "line-width": [
                 "case",
                 [
@@ -168,7 +168,7 @@ function MapcnGeoMap({ p }: { p: Record<string, unknown> }) {
                 <MapRoute
                   key={f.id}
                   coordinates={f.geometry.coordinates as [number, number][]}
-                  color={primary}
+                  color={accent}
                   active={selected.value === f.id}
                   progress={
                     options.progress
@@ -178,15 +178,15 @@ function MapcnGeoMap({ p }: { p: Record<string, unknown> }) {
                   onClick={() => choose(Number(f.id))}
                   interactive={!readOnly}
                 >
-                  <RouteProgress color={primary} width={6} />
+                  <RouteProgress color={accent} width={6} />
                   <RouteMarker at="start">
                     <MarkerContent>
-                      <span className="block size-3 rounded-full border-2 border-primary bg-primary/25" />
+                      <span className="block size-3 rounded-full border-2 border-brand bg-brand/25" />
                     </MarkerContent>
                   </RouteMarker>
                   <RouteMarker at="end">
                     <MarkerContent>
-                      <span className="block size-3 rounded-full border-2 border-primary bg-primary/25" />
+                      <span className="block size-3 rounded-full border-2 border-brand bg-brand/25" />
                     </MarkerContent>
                   </RouteMarker>
                 </MapRoute>
@@ -207,7 +207,7 @@ function MapcnGeoMap({ p }: { p: Record<string, unknown> }) {
                 row: f.id,
               }))}
             interactive={!readOnly}
-            paint={{ "line-color": primary, "line-width": 3 }}
+            paint={{ "line-color": accent, "line-width": 3 }}
             onClick={(e) => choose(Number(e.arc.row))}
           />
         )}

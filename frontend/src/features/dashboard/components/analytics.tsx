@@ -124,7 +124,7 @@ export function Analytics() {
                 { name: 'Twitter', value: 174 },
                 { name: 'Blog', value: 104 },
               ]}
-              barClass='bg-primary'
+              barClass='bg-brand'
               valueFormatter={(n) => `${n}`}
             />
           </CardContent>

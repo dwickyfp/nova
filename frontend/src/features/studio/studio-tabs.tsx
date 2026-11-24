@@ -87,7 +87,7 @@ export function StudioTabSwitch({
             className={cn(
               "relative h-8 w-24 rounded-full text-sm font-medium transition-colors duration-200",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              selected ? "text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+              selected ? "text-brand-foreground" : "text-muted-foreground hover:text-foreground",
             )}
           >
             {item.label}

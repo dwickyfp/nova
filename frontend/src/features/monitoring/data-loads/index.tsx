@@ -85,7 +85,7 @@ const PROGRESS_TONE_CLASS = {
   danger: 'bg-destructive',
   info: 'bg-info',
   neutral: 'bg-muted-foreground',
-  primary: 'bg-primary',
+  primary: 'bg-brand',
 } as const
 
 export function MonitoringDataLoads() {

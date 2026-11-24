@@ -71,8 +71,8 @@ describe('conditional formatting', () => {
   it('shades by position in the range, and a matching rule wins', () => {
     const range = ranges([{ field_id: 'units', value: 2 }, { field_id: 'units', value: 12 }, { field_id: null, value: 99 }]).get('units')
     expect(range).toEqual({ min: 2, max: 12 })
-    expect(cellStyle(formats, 'units', 12, range)?.backgroundColor).toBe('color-mix(in oklab, var(--chart-4) 40%, transparent)')
-    expect(cellStyle(formats, 'units', 7, range)?.backgroundColor).toBe('color-mix(in oklab, var(--chart-4) 23%, transparent)')
+    expect(cellStyle(formats, 'units', 12, range)?.backgroundColor).toBe('color-mix(in oklab, var(--chart-1) 40%, transparent)')
+    expect(cellStyle(formats, 'units', 7, range)?.backgroundColor).toBe('color-mix(in oklab, var(--chart-1) 23%, transparent)')
     expect(cellStyle(formats, 'units', 2, range)).toEqual({ backgroundColor: 'color-mix(in oklab, var(--destructive) 22%, transparent)', fontWeight: 600 })
   })
 

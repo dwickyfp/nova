@@ -24,7 +24,9 @@ export type PlaceMapProps = {
   optimized?: boolean;
 };
 
-const ROUTE_TOKEN = "--chart-4";
+/** The chosen route and the stops in steel blue; alternatives in slate, thinner. */
+const ROUTE_TOKEN = "--brand";
+const ALTERNATIVE_TOKEN = "--viz-line";
 
 function formatDistance(metres: number): string {
   const km = metres / 1000;
@@ -52,6 +54,7 @@ export default function PlaceMap({ title, places, routes, unavailable, optimized
   // Every route, so Show all frames whichever alternative is drawn.
   const bounds = useMemo(() => placeBounds(places, lines), [places, lines]);
   const color = mapColor(ROUTE_TOKEN);
+  const alternative = mapColor(ALTERNATIVE_TOKEN);
   const routed = routes.length > 0;
   const approximate = places.some((place) => place.check === "approximate");
   const chosen = routes[active];
@@ -83,8 +86,8 @@ export default function PlaceMap({ title, places, routes, unavailable, optimized
           <span className="flex items-center gap-2 text-sm font-medium">
             <span
               aria-hidden="true"
-              className={cn("h-1 w-4 shrink-0 rounded-full", active !== index && "opacity-40")}
-              style={{ background: `var(${ROUTE_TOKEN})` }}
+              className="h-1 w-4 shrink-0 rounded-full"
+              style={{ background: `var(${active === index ? ROUTE_TOKEN : ALTERNATIVE_TOKEN})` }}
             />
             {index === 0 ? "Fastest route" : `Alternative ${index}`}
           </span>
@@ -126,9 +129,9 @@ export default function PlaceMap({ title, places, routes, unavailable, optimized
               key={`alt-${index}`}
               id={`place-alt-${index}`}
               coordinates={line}
-              color={color}
+              color={alternative}
               width={3}
-              opacity={0.35}
+              opacity={0.6}
               interactive
               onClick={() => setActive(index)}
             />
@@ -151,7 +154,7 @@ export default function PlaceMap({ title, places, routes, unavailable, optimized
               <span
                 aria-label={`${routed ? `Stop ${index + 1}: ` : ""}${place.label}${place.check === "approximate" ? ", approximate position" : ""}`}
                 className={cn(
-                  "flex size-5 items-center justify-center rounded-full border-2 border-card text-[10px] leading-none font-semibold text-white tabular-nums shadow-sm",
+                  "flex size-5 items-center justify-center rounded-full border-2 border-card text-[10px] leading-none font-semibold text-brand-foreground tabular-nums shadow-sm",
                   place.check === "approximate" && "outline-2 outline-offset-1 outline-dashed outline-foreground/60",
                 )}
                 style={{ background: `var(${ROUTE_TOKEN})` }}

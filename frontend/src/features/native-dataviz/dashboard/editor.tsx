@@ -772,7 +772,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
             return <button key={item.page_id} type='button' aria-current={current ? 'page' : undefined}
               onClick={() => { setPageId(item.page_id); setSelected(null) }}
               className={cn('h-8 shrink-0 border-b-2 px-2 text-sm transition-colors focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-                current ? 'border-primary font-medium text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground')}>
+                current ? 'border-brand font-medium text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground')}>
               {item.title}
             </button>
           })}

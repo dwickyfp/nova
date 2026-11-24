@@ -283,7 +283,7 @@ export function ExplorerDetail({
                         <td className='py-2 pr-4 text-muted-foreground'>{col.is_nullable}</td>
                         <td className='py-2 pr-4'>
                           {col.column_key === 'PRI' ? (
-                            <span title='Primary Key'><KeyRound className='h-4 w-4 text-primary' /></span>
+                            <span title='Primary Key'><KeyRound className='h-4 w-4 text-brand' /></span>
                           ) : col.column_key === 'UNI' ? (
                             <span title='Unique Key'><KeyRound className='h-4 w-4 text-warning-strong' /></span>
                           ) : col.column_key === 'MUL' ? (
@@ -555,7 +555,7 @@ export function ExplorerDetail({
                                   <button
                                     type='button'
                                     onClick={() => open('tables', t.name)}
-                                    className='rounded-sm font-medium hover:text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none'
+                                    className='rounded-sm font-medium hover:text-brand hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none'
                                   >
                                     {t.name}
                                   </button>
@@ -1109,7 +1109,7 @@ export function ExplorerDetail({
       </div>
 
       <div className='border-b border-border'>
-        <div className='inline-flex border-b-2 border-primary px-1 py-3 text-sm font-medium text-primary dark:text-foreground'>
+        <div className='inline-flex border-b-2 border-brand px-1 py-3 text-sm font-medium text-brand dark:text-foreground'>
           Object Details
         </div>
       </div>

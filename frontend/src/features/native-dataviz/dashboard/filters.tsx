@@ -68,7 +68,7 @@ function MembersControl({ filter, value, onChange, field, draft, narrowing }: Co
     const active = selected.some(item => key(item) === key(cell))
     return <button key={key(cell)} type='button' role='option' aria-selected={active} onClick={() => toggle(cell)}
       className='flex min-h-9 w-full items-center gap-2 rounded px-2 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none'>
-      <span className={cn('flex size-4 shrink-0 items-center justify-center rounded-sm border', active && 'border-primary bg-primary text-primary-foreground')}>
+      <span className={cn('flex size-4 shrink-0 items-center justify-center rounded-sm border', active && 'border-brand bg-brand text-brand-foreground')}>
         {active && <Check className='size-3' />}
       </span>
       <span className='min-w-0 truncate'>{cellLabel(cell)}</span>
@@ -339,7 +339,7 @@ export function FilterBuilder({ open, onOpenChange, definition, datasets, saving
             {usable.map(item => <button key={item.value} type='button' role='radio' aria-checked={kind === item.value}
               onClick={() => setKind(item.value)}
               className={cn('rounded-md border p-2 text-left text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-                kind === item.value ? 'border-primary bg-primary/10' : 'hover:bg-muted')}>
+                kind === item.value ? 'border-brand bg-brand/10' : 'hover:bg-muted')}>
               <span className='block font-medium'>{item.label}</span>
               <span className='block text-xs text-muted-foreground'>{item.description}</span>
             </button>)}

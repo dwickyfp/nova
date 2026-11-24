@@ -170,7 +170,7 @@ function WidgetFrame({ widget, title, props, chart, download, canImage = false, 
     appearance?.padding === 'none' ? 'p-0' : appearance?.padding === 'comfortable' ? 'p-4' : 'p-3',
     props.editing && 'cursor-grab active:cursor-grabbing',
     selected && 'outline-2 outline-offset-2 outline-ring',
-    highlighted && 'ring-2 ring-primary/60 motion-safe:transition-shadow')}
+    highlighted && 'ring-2 ring-brand/60 motion-safe:transition-shadow')}
   onClick={event => { if (props.editing) { event.stopPropagation(); props.onSelect(widget.widget_id) } }}
   // In Edit, Tab reaches every widget and focusing one selects it, so Alt+arrows can move it.
   tabIndex={props.editing ? 0 : undefined}
@@ -211,7 +211,7 @@ function WidgetFrame({ widget, title, props, chart, download, canImage = false, 
       </div>
     </div>}
     <div className='flex min-h-0 flex-1 flex-col'>{children}</div>
-    {highlighted && <span role='status' className='pointer-events-none absolute top-1 right-1 flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground motion-safe:animate-in motion-safe:fade-in'>
+    {highlighted && <span role='status' className='pointer-events-none absolute top-1 right-1 flex items-center gap-1 rounded-full bg-brand px-2 py-0.5 text-xs text-brand-foreground motion-safe:animate-in motion-safe:fade-in'>
       <Sparkles className='size-3' aria-hidden />Changed by the assistant
     </span>}
   </div>
