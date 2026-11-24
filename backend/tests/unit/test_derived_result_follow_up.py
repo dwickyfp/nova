@@ -151,3 +151,20 @@ async def test_a_column_no_result_holds_is_a_recoverable_error():
     assert not outcome.ok
     assert outcome.recoverable
     assert "order_id" not in (outcome.safe_detail or "")
+
+
+async def test_a_column_named_twice_is_reported_once():
+    """session-030.t3 re-bench: "no column 'order_id', 'order_id', 'revenue', 'revenue'"."""
+    context = SimpleNamespace(
+        last_result={"columns": ["from", "to", "revenue_pct_change"],
+                     "rows": [["1008", "1013", "-60.0400%"]]},
+        evidence_tables={}, steps=[],
+    )
+    outcome = await data_to_chart_tool.run(ToolInvocation(
+        "t3", "data_to_chart",
+        {"intent": "distribusi", "visual": "bar", "x": "order_id", "color": "order_id",
+         "y": ["revenue"], "sort": {"field": "revenue", "direction": "asc"}},
+    ), context)
+
+    assert not outcome.ok and outcome.recoverable
+    assert "no column 'order_id', 'revenue'." in (outcome.error or "")

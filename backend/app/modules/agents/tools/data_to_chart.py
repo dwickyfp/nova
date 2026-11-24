@@ -132,7 +132,8 @@ class DataToChartTool:
                             for row in last.get("rows") or []]
         evidence_id = chosen or _evidence_of(last, tables)
         title = str(arguments.get("title") or last.get("title") or intent).strip()[:120]
-        unknown = [name for name in _named_columns(arguments) if name not in columns]
+        unknown = [name for name in dict.fromkeys(_named_columns(arguments))
+                   if name not in columns]
         if unknown:
             # Recoverable: the agent names a column the result has, or fetches
             # the data the chart needs. The column names stay with the agent.
