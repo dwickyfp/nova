@@ -16,7 +16,12 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from tests.benchmark.studio_capability.v2 import ui_tree
-from tests.benchmark.studio_capability.v2.outcome import Claim, TurnOutcome, product_outcome
+from tests.benchmark.studio_capability.v2.outcome import (
+    Claim,
+    TurnOutcome,
+    claims_of,
+    product_outcome,
+)
 
 PUBLIC_COMPONENTS = frozenset({"PlaceMap", "Picture", "Image", "SearchImage", "RouteMap"})
 DATA_COMPONENTS = frozenset({"DatavizChart", "GeoMap", "DataMap"})
@@ -73,6 +78,8 @@ class Signals:
     evidence: list[Evidence] = field(default_factory=list)
     elements: set[str] = field(default_factory=set)
     product_outcome: TurnOutcome | None = None
+    #: run.finished carried an outcome the contract model rejected.
+    outcome_invalid: bool = False
     claims: list[Claim] = field(default_factory=list)
     trace_facts: dict[str, Any] = field(default_factory=dict)
     datasets_bound: list[str] = field(default_factory=list)
@@ -171,6 +178,7 @@ def fold(record: dict[str, Any]) -> Signals:
             sig.finish_reason = data.get("finish_reason")
             sig.usage = data.get("usage") or {}
             sig.product_outcome = product_outcome(data.get("outcome"))
+            sig.outcome_invalid = data.get("outcome") is not None and sig.product_outcome is None
 
     for part in order:
         _fold_part(sig, part, call_tool)
@@ -286,7 +294,7 @@ def _attachments(sig: Signals, record: dict[str, Any]) -> None:
     if facts:
         sig.trace_facts = facts
     if sig.product_outcome is not None and sig.product_outcome.claims:
-        sig.claims = list(sig.product_outcome.claims)
+        sig.claims = claims_of(sig.product_outcome)
     elif facts.get("claims"):
         sig.claims = list(facts["claims"])
     for claim in sig.claims:

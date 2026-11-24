@@ -38,7 +38,7 @@ from tests.benchmark.studio_capability.v2.grade import Grade, grade
 from tests.benchmark.studio_capability.v2.ground_truth import resolve
 from tests.benchmark.studio_capability.v2.rescore import load_turns, session_prior
 
-RUBRIC_VERSION = "judge-v2.1"
+RUBRIC_VERSION = "judge-v2.2"
 SPOT_CHECK_SEED = 20261125
 DIMENSIONS = ("accuracy", "intelligence", "ui", "process", "safety")
 OUTCOME_LABELS = ("answer", "refuse", "limitation", "clarify", "action_done", "action_failed")
@@ -158,7 +158,8 @@ def facts(g: Grade, sig: Signals) -> dict[str, Any]:
     """The deterministic findings the judge may not overturn."""
     return {
         "outcome": g.outcome.kind, "outcome_reason": g.outcome.reason,
-        "outcome_source": g.outcome.source, "outcome_check": g.outcome_ok,
+        "outcome_source": g.outcome.source, "outcome_basis": g.outcome.basis,
+        "outcome_check": g.outcome_ok,
         "numeric_recall": g.numeric.recall,
         "figures_found": [{"value": e.value, "column": e.column, "via": how}
                           for e, how in g.numeric.found],
