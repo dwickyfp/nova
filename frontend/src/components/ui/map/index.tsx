@@ -973,7 +973,7 @@ function ControlButton({
             "flex size-8 items-center justify-center transition-colors pointer-coarse:size-10",
             "first:rounded-t-md last:rounded-b-md",
             "hover:bg-accent hover:text-accent-foreground",
-            "aria-pressed:bg-primary aria-pressed:text-primary-foreground aria-pressed:hover:bg-primary/90",
+            "aria-pressed:bg-brand aria-pressed:text-brand-foreground aria-pressed:hover:bg-brand/90",
             "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset",
             "aria-disabled:cursor-not-allowed aria-disabled:text-muted-foreground aria-disabled:hover:bg-transparent",
           )}
