@@ -1284,4 +1284,7 @@ by a recorded decision and 3 are blocked.
   - chart suites alone: 97 passed;
   - `/docs/dataviz/native-dashboards` viewed live.
   - No backend change.
+- **CI frontend attempts (PR #268):**
+  - Attempt 1 failed only the 60-item snap-drag gate: three drags, p95 5.7–6.8 ms, single worst frames 11.4, 11.5 and 9.1 ms. 2,109 of 2,110 passed.
+  - Attempt 2 (rerun) failed the same gate: p95 6.0–6.1 ms, worst frames 8.9–10.3 ms; 2,109 of 2,110 passed. This is the known runner hiccup on the old rule, which #269 replaces. The gate was not loosened on this branch; it rebases onto #269 once that is merged.
 
