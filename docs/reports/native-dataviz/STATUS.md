@@ -1237,3 +1237,16 @@ by a recorded decision and 3 are blocked.
   - frontend lint (0 errors), `tsc` and build pass;
   - full `pnpm test:coverage`: 243 files, 2,111 tests passed.
 - **Open:** CI is the run of record on shared runners.
+
+## Flaky dataset object picker test: root cause fixed (2026-11-24)
+
+- **Symptom:** `dataset-object-picker.test.tsx` failed in CI on #259 and #267 (and in round 1). Clicking **Revenue** in the table list timed out: the button was "not stable", then "detached from the DOM", and never came back.
+- **Root cause (product, not test):** `SearchableSelect` uses a Radix popover. After a list closes, Radix moves focus back to its trigger on a zero-delay timer, once the list's content is removed. On a busy runner, the test could open the next list between the removal and that timer. The removed list no longer counts that click as an interaction outside it, so its late focus return went to the first trigger. That is outside the newly opened list, so the list closed. A person who picks a database and immediately opens the table list can hit the same race.
+- **Fix:** `SearchableSelect` returns focus to its trigger only when nothing else has taken focus since. Focus still returns after an ordinary choice, including one made from the keyboard. No timeout was raised, and the picker test is unchanged.
+- **Tests (`searchable-select.test.tsx`):**
+  - opening the second list at the moment the first list's content is removed keeps it open. Without the fix this fails 3 of 3, with no list open; opening 50 ms later passes either way, which confirms the timer is the cause;
+  - a keyboard choice still returns focus to its trigger.
+- **Local stress (before the fix):** five full native-dataviz and Studio runs with 10 CPU burners did not reproduce the race. That is why the race test sets up the ordering directly instead of relying on load.
+- **Gates (local, final source):**
+  - lint, `tsc` and build pass;
+  - full `pnpm test:coverage`: 244 files, 2,113 tests passed.
