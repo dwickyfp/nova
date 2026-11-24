@@ -320,6 +320,20 @@ async def test_credentials_are_refused_without_being_echoed(agents, caplog):
 # ── Run journals ─────────────────────────────────────────────────────────
 
 
+async def test_run_frames_with_unstorable_characters_are_kept(agents):
+    raw = "data: " + json.dumps({"sequence": 0, "text": "a"})[:-1] + ',"raw":"b\x00\udc80"}\n\n'
+    async with agents.transaction("agent") as (repo, _):
+        await repo.start_run("run-nul", "agent-1", "thread-1")
+        assert await repo.append_events("run-nul", [raw], generation=1) == 0
+    # A resend of the same frame after an unknown commit is still accepted.
+    async with agents.transaction("agent") as (repo, _):
+        assert await repo.append_events("run-nul", [raw], generation=1) == 0
+    rows = await agents.admin(
+        "SELECT frame FROM nova_meta.config_agent_run_events WHERE run_id='run-nul'")
+    assert [row["frame"] for row in rows] == [raw.replace("\x00", "\ufffd").replace(
+        "\udc80", "\ufffd")]
+
+
 async def test_event_batches_and_their_high_water_commit_together(agents):
     async with agents.transaction("agent") as (repo, _):
         run = await repo.start_run("run-1", "agent-1", "thread-1")

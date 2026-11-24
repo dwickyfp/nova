@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -32,6 +33,28 @@ from app.modules.access_control.security_context import SecurityContext
 # epoch. Application transactions hold the shared lock through their last read.
 METADATA_DEPLOYMENT_LOCK = 0x4E4F56414D455441
 logger = logging.getLogger(__name__)
+
+# PostgreSQL text cannot hold NUL, and jsonb refuses the escaped ``\u0000``
+# (SQLSTATE 22P05). A lone UTF-16 surrogate cannot be encoded as UTF-8 at all.
+_UNSTORABLE = re.compile("[\x00\ud800-\udfff]")
+
+
+def storable_text(value: Any) -> Any:
+    """Replace characters PostgreSQL text and jsonb cannot store with U+FFFD.
+
+    Recurses through dict keys and values, lists and tuples; other values pass
+    through unchanged. Call it on generated content (agent replies, tool output,
+    run frames) before writing it, so one stray character from a data source or
+    a model cannot cost the whole write. It is not a validator: identifiers and
+    credentials must still reject NUL instead of being rewritten.
+    """
+    if isinstance(value, str):
+        return _UNSTORABLE.sub("\ufffd", value)
+    if isinstance(value, dict):
+        return {storable_text(key): storable_text(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [storable_text(item) for item in value]
+    return value
 
 
 def _log_database_failure(category: str, error: BaseException) -> None:

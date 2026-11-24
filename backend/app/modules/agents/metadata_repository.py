@@ -36,7 +36,7 @@ from psycopg.pq import TransactionStatus
 from psycopg.types.json import Jsonb
 
 from app.core.metadata_actor import actor_for, current_actor, metadata_transaction
-from app.core.metadata_db import MetadataConflict, MetadataPermissionDenied
+from app.core.metadata_db import MetadataConflict, MetadataPermissionDenied, storable_text
 from app.modules.access_control.security_context import SecurityContext
 
 SKILL_BODY_PREFIX = "nova-skill-body:v1:"
@@ -782,6 +782,7 @@ class AgentMetadataRepository:
         await self._bound()
         if not frames or len(frames) > 32:
             raise ValueError("A run event batch must contain 1–32 frames.")
+        frames = [storable_text(frame) for frame in frames]
         sequences = [frame_sequence(frame) for frame in frames]
         if any(b <= a for a, b in zip(sequences, sequences[1:], strict=False)):
             raise ValueError("Run event sequence is not increasing.")

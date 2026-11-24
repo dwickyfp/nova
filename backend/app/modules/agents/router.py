@@ -167,6 +167,16 @@ def _run_in_background(coroutine: Coroutine[object, object, object], *, label: s
 _active_run_tasks: set[asyncio.Task[None]] = set()
 RUN_STORAGE_TIMEOUT_SECONDS = 15.0
 
+
+class _RunStepTimedOut(Exception):
+    """A step outside the run's own storage did not answer in time.
+
+    The Mission projection re-checks the caller's access to the thread's agent,
+    which can wait on the authorization service. Running out of time there says
+    nothing about whether the run's progress was saved, so it is reported apart
+    from a journal or reply write that failed.
+    """
+
 router = APIRouter()
 
 #: The v1 tool surface an agent may bundle. A name outside this set is rejected
@@ -2562,18 +2572,26 @@ async def send_agent_message(
         heartbeat_task = asyncio.create_task(keep_alive())
 
         async def flush(*, project_mission: bool = True) -> None:
-            async with asyncio.timeout(RUN_STORAGE_TIMEOUT_SECONDS):
-                if batch:
-                    await run_journal.append_batch(run_id, list(batch))
-                    batch.clear()
-                    if project_mission and context.mission_id:
-                        from app.modules.agents.mission import mission_service
+            if not batch:
+                return
+            # One deadline bounds the whole flush; each part keeps its own cause.
+            deadline = asyncio.get_running_loop().time() + RUN_STORAGE_TIMEOUT_SECONDS
+            async with asyncio.timeout_at(deadline):
+                await run_journal.append_batch(run_id, list(batch))
+            batch.clear()
+            if project_mission and context.mission_id:
+                from app.modules.agents.mission import mission_service
 
+                try:
+                    async with asyncio.timeout_at(deadline):
                         update = await mission_service.stream_update(run_id, user)
-                        if update:
-                            update = sequence_frame(update)
-                            await run_journal.append_batch(run_id, [update])
-                            queue_frame(update)
+                except TimeoutError:
+                    raise _RunStepTimedOut() from None
+                if update:
+                    update = sequence_frame(update)
+                    async with asyncio.timeout_at(deadline):
+                        await run_journal.append_batch(run_id, [update])
+                    queue_frame(update)
 
         iterator = generate()
         try:
@@ -2613,23 +2631,34 @@ async def send_agent_message(
                 queue_frame(frame)
                 batch.append(frame)
         except Exception as exc:
-            logger.warning("Agent run persistence failed (%s)", type(exc).__name__)
             status = "interrupted"
             interruption_reason = "interrupted"
+            stop_reason = ReasonCode.PERSISTENCE_UNAVAILABLE
+            if isinstance(exc, _RunStepTimedOut):
+                logger.warning("Agent run stopped: a progress step timed out")
+                stop_reason = ReasonCode.TIMEOUT
+                stop_error = events.error(
+                    "run_timed_out",
+                    "The run stopped because a check took too long to respond. "
+                    "Review saved steps and check any actions before trying again.",
+                )
+            else:
+                logger.warning("Agent run persistence failed (%s)", type(exc).__name__)
+                stop_error = events.error(
+                    "run_persistence_unavailable",
+                    "The run stopped because its progress could not be saved. "
+                    "Review saved steps and check any actions before trying again.",
+                )
             # An uncertain journal write must stop iteration before another tool
             # can run. Preserve the error even if storage remains unavailable.
             batch.clear()
             for raw in [
-                *encoder.translate(events.error(
-                    "run_persistence_unavailable",
-                    "The run stopped because its progress could not be saved. "
-                    "Review saved steps and check any actions before trying again.",
-                )),
+                *encoder.translate(stop_error),
                 *encoder.finish(
                     {"message_id": "", "finish_reason": "interrupted",
-                     # The run did not fail in its work: its progress could not be saved.
-                     "outcome": stopped_outcome(
-                         "interrupted", ReasonCode.PERSISTENCE_UNAVAILABLE)},
+                     # The run did not fail in its work: its progress could not be
+                     # saved, or a check it waited on did not answer in time.
+                     "outcome": stopped_outcome("interrupted", stop_reason)},
                     force=not terminal_delivered(),
                 ),
             ]:

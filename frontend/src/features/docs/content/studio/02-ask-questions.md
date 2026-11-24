@@ -270,3 +270,7 @@ request cannot be answered from another login, even for the same account.
   screen. Waiting requests close, and an unfinished tool is marked **Result
   not confirmed**. Review **History** and check any actions before trying
   again; an action may have completed even if its result could not be saved.
+- "The run stopped because a check took too long to respond." means a
+  security check while Nova was updating the Mission did not answer in time.
+  The steps so far were saved. Review **History** and check any actions, then
+  ask again in a moment.

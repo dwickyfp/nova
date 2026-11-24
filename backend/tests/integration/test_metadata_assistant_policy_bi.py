@@ -149,6 +149,32 @@ async def test_structured_reply_roundtrips_engine_values_and_retries_without_pre
             )
 
 
+async def test_a_reply_with_nul_or_lone_surrogates_is_kept_with_placeholders(meta):
+    # jsonb refuses an escaped NUL (SQLSTATE 22P05) and text refuses a raw one;
+    # either used to fail the write and lose the whole reply.
+    bad = "North\x00 \ud83d region"
+    steps = [{"kind": "table", "rows": [[bad, 3]], bad: "key"}]
+    async with meta.transaction() as (repo, _):
+        thread = await repo.create_thread(title="Synthetic unstorable text")
+        saved, created = await repo.append_message(
+            thread["thread_id"], role="assistant", content=f"Top: {bad}",
+            message_id="nul-reply", steps=steps, instructions=bad,
+        )
+        clean = "North\ufffd \ufffd region"
+        assert created and saved["content"] == f"Top: {clean}"
+        assert saved["instructions"] == clean
+        assert saved["steps"] == [{"kind": "table", "rows": [[clean, 3]], clean: "key"}]
+        # The retry of the same turn matches the stored, cleaned turn.
+        same, created = await repo.append_message(
+            thread["thread_id"], role="assistant", content=f"Top: {bad}",
+            message_id="nul-reply", steps=steps, instructions=bad,
+        )
+        assert not created and same == saved
+        assert [m["content"] for m in await repo.list_messages(thread["thread_id"])] == [
+            f"Top: {clean}"
+        ]
+
+
 async def test_people_see_and_change_only_their_own_conversations(meta):
     thread, _ = await thread_with_answer(meta)
     async with meta.transaction(name="bob") as (repo, conn):
