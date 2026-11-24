@@ -97,11 +97,31 @@ function common(tokens: VizTokens, style: Style | undefined, legend: boolean) {
  * `remainder` is the exact value of the slices a capped pie leaves out, drawn
  * as Other; without it a capped pie shows no shares of a whole it does not have.
  */
+/**
+ * A gauge sized to its box. Until the box is measured it is the usual ring;
+ * once it is, a box wider than it is tall gets a half ring standing on the
+ * bottom edge, and the ring, its band and the value shrink together, so the
+ * value sits inside the ring's opening instead of over the ring.
+ */
+export function gaugeLayout(width?: number, height?: number): {
+  band: number; size: number; place: Record<string, unknown>; offset: [number, number | string]
+} {
+  if (!width || !height) return { band: 12, size: 24, place: {}, offset: [0, '40%'] }
+  const half = width > height * 1.25
+  const radius = Math.max(16, half ? Math.min(width / 2 - 8, height - 12) : Math.min(width, height) / 2 - 8)
+  const band = Math.round(Math.min(12, Math.max(4, radius * 0.16)))
+  // A compact value such as "175.18M" is about 4.2 em wide; it gets 90% of the opening.
+  const size = Math.round(Math.min(24, Math.max(10, ((radius - band) * 2 * 0.9) / 4.2)))
+  return half
+    ? { band, size, place: { startAngle: 180, endAngle: 0, radius, center: ['50%', Math.round((height + radius) / 2)] }, offset: [0, -Math.round(size * 0.6)] }
+    : { band, size, place: { radius, center: ['50%', '50%'] }, offset: [0, 0] }
+}
+
 export function buildChartOption(chart: ChartDefinition, result: Result, tokens: VizTokens,
-  selected: string | readonly string[] | null = null, width?: number, remainder: number | null = null): EChartsCoreOption {
+  selected: string | readonly string[] | null = null, width?: number, remainder: number | null = null, height?: number): EChartsCoreOption {
   // One or more selected labels: the rest are dimmed.
   const chosen = selected === null ? null : new Set(typeof selected === 'string' ? [selected] : selected)
-  if (chosen && !chosen.size) return buildChartOption(chart, result, tokens, null, width, remainder)
+  if (chosen && !chosen.size) return buildChartOption(chart, result, tokens, null, width, remainder, height)
   const columns = result.columns
   const rows = result.rows
   const style = chart.style
@@ -386,11 +406,13 @@ export function buildChartOption(chart: ChartDefinition, result: Result, tokens:
   if (encoding.kind === 'single_measure' && chart.visual === 'gauge') {
     const value = cellNumber(rows[0]?.[0] ?? null) ?? 0
     const target = encoding.target ? Number(encoding.target) : Math.max(value * 1.25, 1)
+    const gauge = gaugeLayout(width, height)
     return {
-      series: [{ type: 'gauge', min: 0, max: target, progress: { show: true, width: 12 },
-        axisLine: { lineStyle: { width: 12, color: [[1, tokens.grid]] } }, itemStyle: { color: tokens.series[0] },
+      series: [{ type: 'gauge', min: 0, max: target, ...gauge.place, progress: { show: true, width: gauge.band },
+        axisLine: { lineStyle: { width: gauge.band, color: [[1, tokens.grid]] } }, itemStyle: { color: tokens.series[0] },
         pointer: { show: false }, axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false },
-        detail: { valueAnimation: true, color: tokens.text, fontSize: 24, formatter: (v: number) => formatNumber(v, 'compact') },
+        detail: { valueAnimation: true, color: tokens.text, fontSize: gauge.size, offsetCenter: gauge.offset,
+          formatter: (v: number) => formatNumber(v, 'compact') },
         data: [{ value }] }],
     }
   }

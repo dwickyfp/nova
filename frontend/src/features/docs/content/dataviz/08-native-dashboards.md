@@ -87,7 +87,10 @@ A few rules apply to every chart:
   current filters** under its dash.
 - A KPI value too wide for its box is shortened, such as **175.2M** for
   175,184,000, rather than cut off. Point at it to see the full value; screen
-  readers read the full value.
+  readers read the full value. In a short box the value is drawn smaller, so
+  the whole digits stay in view.
+- A gauge in a box wider than it is tall is drawn as a half ring, and the ring
+  and its value shrink with the box so the value always sits inside the ring.
 - A pie or funnel shows the values with the largest totals, up to the number
   in **Show the top** under **Slices** (12 unless you change it). On a pie of
   a Sum or Count, **Combine the rest into Other** (on for new pies) adds one

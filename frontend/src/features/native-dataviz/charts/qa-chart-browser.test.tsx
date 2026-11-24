@@ -37,10 +37,10 @@ function respond(...list: { status: number; body: unknown }[]) {
   vi.stubGlobal('fetch', fetchMock)
 }
 
-async function show(chart: ChartDefinition, onSelectValue?: (selection: ValueSelection) => void, width = 480) {
+async function show(chart: ChartDefinition, onSelectValue?: (selection: ValueSelection) => void, width = 480, height = 320) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<QueryClientProvider client={client}>
-    <div style={{ width, height: 320, display: 'flex' }}><NativeChart chart={chart} draft={false} onSelectValue={onSelectValue} /></div>
+    <div style={{ width, height, display: 'flex' }}><NativeChart chart={chart} draft={false} onSelectValue={onSelectValue} /></div>
   </QueryClientProvider>)
 }
 
@@ -68,6 +68,44 @@ afterEach(async () => {
   vi.unstubAllGlobals()
   document.documentElement.classList.remove('dark')
   delete (window as { __ndvXss?: unknown }).__ndvXss
+})
+
+describe('KPI value in a short tile', () => {
+  const kpi = definition('kpi', { kind: 'single_measure',
+    measure: { field_id: 'revenue', aggregation: 'sum', format: { kind: 'number', decimals: 0, locale: 'en-US' } } }, 'Revenue')
+  const comparing = definition('kpi', {
+    kind: 'single_measure', measure: { field_id: 'revenue', aggregation: 'sum', format: { kind: 'number', decimals: 0, locale: 'en-US' } },
+    comparison: { field_id: 'revenue_prior', aggregation: 'sum', format: { kind: 'number', decimals: 0, locale: 'en-US' } },
+  }, 'Revenue')
+  const PRIOR = { ...REVENUE, key: 'm1', name: 'revenue_prior', field_id: 'revenue_prior' } as Column
+  const whole = (node: HTMLElement) => node.scrollHeight <= node.clientHeight + 1
+  const px = (node: HTMLElement) => parseFloat(getComputedStyle(node).fontSize)
+
+  it('keeps whole digits in view when the tile leaves the value 28 px, and the usual size when there is room', async () => {
+    respond({ status: 200, body: body([REVENUE], [[d('599000')]]) })
+    const short = await show(kpi, undefined, 200, 28)
+    await expect.element(short.getByTestId('kpi-value')).toHaveTextContent('599,000')
+    const value = short.getByTestId('kpi-value').element() as HTMLElement
+    expect(px(value)).toBeLessThan(30)
+    expect(px(value)).toBeGreaterThanOrEqual(14)
+    expect(whole(value)).toBe(true)
+    await cleanup()
+    respond({ status: 200, body: body([REVENUE], [[d('599000')]]) })
+    const roomy = await show(kpi)
+    await expect.element(roomy.getByTestId('kpi-value')).toHaveTextContent('599,000')
+    expect(px(roomy.getByTestId('kpi-value').element() as HTMLElement)).toBe(30)
+  })
+
+  it('leaves room for the change line under the value', async () => {
+    respond({ status: 200, body: body([REVENUE, PRIOR], [[d('120'), d('100')]]) })
+    const screen = await show(comparing, undefined, 200, 56)
+    await expect.element(screen.getByText('+20.0%')).toBeVisible()
+    const value = screen.getByTestId('kpi-value').element() as HTMLElement
+    expect(whole(value)).toBe(true)
+    const box = value.parentElement!.getBoundingClientRect()
+    const line = screen.getByText('+20.0%').element().closest('p')!.getBoundingClientRect()
+    expect(line.bottom).toBeLessThanOrEqual(box.bottom + 1)
+  })
 })
 
 describe('NDV-FILTER-019 KPI with no data', () => {

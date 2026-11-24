@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useCallback, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -64,16 +64,20 @@ function Kpi({ chart, result }: { chart: ChartDefinition; result: DatasetQueryRe
   const formatter = measureFormatter(chart, 0)
   const base = comparison ?? target
   const delta = value !== null && base ? (value - base) / Math.abs(base) : null
-  return <div className='flex min-h-0 min-w-0 flex-1 flex-col justify-center gap-1 px-1'>
+  const showDelta = delta !== null && Number.isFinite(delta)
+  // The value takes the height the box leaves it; a short tile shows it smaller
+  // instead of cutting the bottom of the digits off.
+  const size = valueSize(value === null || showDelta)
+  return <div className='relative flex min-h-0 min-w-0 flex-1 flex-col justify-center gap-1 px-1 [container-type:size]'>
     {value === null
-      ? <p className='viz-numerals truncate text-3xl font-medium tabular-nums' data-testid='kpi-value'><span aria-hidden>–</span></p>
-      : <KpiValue full={formatter.format(value)} short={measureFormatter(chart, 0, true).format(value)} />}
-    {value === null && <p className='text-sm text-muted-foreground' role='status'>No data for the current filters</p>}
-    {delta !== null && Number.isFinite(delta) && <p className={cn('flex items-center gap-1 text-sm',
+      ? <p className='viz-numerals shrink-0 truncate text-3xl font-medium tabular-nums' style={size} data-testid='kpi-value'><span aria-hidden>–</span></p>
+      : <KpiValue full={formatter.format(value)} short={measureFormatter(chart, 0, true).format(value)} size={size} />}
+    {value === null && <p className='shrink-0 text-sm text-muted-foreground' role='status'>No data for the current filters</p>}
+    {showDelta && <p className={cn('flex min-w-0 shrink-0 items-center gap-1 overflow-hidden text-sm whitespace-nowrap',
       delta >= 0 ? 'text-success-strong' : 'text-destructive')}>
       {delta >= 0 ? <ArrowUp className='size-4' aria-hidden /> : <ArrowDown className='size-4' aria-hidden />}
       <span>{`${delta >= 0 ? '+' : ''}${(delta * 100).toFixed(1)}%`}</span>
-      <span className='text-muted-foreground'>{comparison !== null ? `vs ${columnLabel(result.columns[1]).toLowerCase()}` : 'vs target'}</span>
+      <span className='min-w-0 truncate text-muted-foreground'>{comparison !== null ? `vs ${columnLabel(result.columns[1]).toLowerCase()}` : 'vs target'}</span>
     </p>}
   </div>
 }
@@ -83,7 +87,16 @@ function Kpi({ chart, result }: { chart: ChartDefinition; result: DatasetQueryRe
  * the box. Cutting a number short would misread it. Screen readers and the
  * tooltip keep the full value.
  */
-function KpiValue({ full, short }: { full: string; short: string }) {
+/**
+ * The value's font size from the height of the KPI box: up to the usual
+ * 1.875rem, down to 0.875rem, leaving room for the line under it. The line
+ * height is 1.2, so 0.8 of the room keeps whole digits in view.
+ */
+function valueSize(line: boolean): CSSProperties {
+  return { fontSize: `clamp(0.875rem, calc((100cqh - ${line ? 24 : 0}px) * 0.8), 1.875rem)` }
+}
+
+function KpiValue({ full, short, size }: { full: string; short: string; size: CSSProperties }) {
   const box = useRef<HTMLParagraphElement>(null)
   const probe = useRef<HTMLSpanElement>(null)
   const [compact, setCompact] = useState(false)
@@ -98,8 +111,8 @@ function KpiValue({ full, short }: { full: string; short: string }) {
     return () => observer.disconnect()
   }, [full, short])
   return <>
-    <span ref={probe} aria-hidden className='viz-numerals pointer-events-none invisible absolute text-3xl font-medium whitespace-nowrap tabular-nums'>{full}</span>
-    <p ref={box} className='viz-numerals truncate text-3xl font-medium tabular-nums' data-testid='kpi-value' title={compact ? full : undefined}>
+    <span ref={probe} aria-hidden className='viz-numerals pointer-events-none invisible absolute text-3xl font-medium whitespace-nowrap tabular-nums' style={size}>{full}</span>
+    <p ref={box} className='viz-numerals shrink-0 truncate text-3xl font-medium tabular-nums' style={size} data-testid='kpi-value' title={compact ? full : undefined}>
       {compact ? <><span aria-hidden>{short}</span><span className='sr-only'>{full}</span></> : full}
     </p>
   </>
@@ -336,7 +349,7 @@ export function NativeChart({ chart, draft, context, parameters, onSelectValue, 
   const combine = combinesOther(chart) && Boolean(result?.truncated)
   const whole = useTableTotals({ chart, draft, context, parameters, enabled: combine, draftRef })
   const remainder = combine && result ? remainderOf(result, whole.data) : null
-  const build = useCallback((tokens: VizTokens, width: number) => buildChartOption(chart, result!, tokens, selectedLabel ?? null, width || undefined, remainder),
+  const build = useCallback((tokens: VizTokens, width: number, height: number) => buildChartOption(chart, result!, tokens, selectedLabel ?? null, width || undefined, remainder, height || undefined),
     [chart, result, selectedLabel, remainder])
   const select = useCallback((mark: MarkSelection) => {
     if (!result || !onSelectValue) return
