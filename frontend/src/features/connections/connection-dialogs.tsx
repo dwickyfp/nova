@@ -77,7 +77,7 @@ function SourcePicker({
             htmlFor={id}
             className={cn(
               'flex cursor-pointer flex-col items-start gap-1 rounded-lg border border-surface-border p-3 font-normal transition-colors hover:bg-surface-1',
-              value === source.type && 'border-primary bg-surface-1',
+              value === source.type && 'border-brand bg-surface-1',
             )}
           >
             <span className='flex items-center gap-2 text-sm font-medium'>

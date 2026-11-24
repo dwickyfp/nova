@@ -89,7 +89,7 @@ export const DatabaseSchemaSelector = memo(function DatabaseSchemaSelector({
                   value={dbSearch}
                   onChange={(e) => setDbSearch(e.target.value)}
                   placeholder='Databases'
-                  className='h-7 w-full rounded-md border border-border bg-background pl-8 pr-2 text-xs outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-primary'
+                  className='h-7 w-full rounded-md border border-border bg-background pl-8 pr-2 text-xs outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring'
                 />
               </div>
             </div>
@@ -108,13 +108,13 @@ export const DatabaseSchemaSelector = memo(function DatabaseSchemaSelector({
                     onClick={() => onSelectDatabase(db)}
                     className={cn(
                       'flex w-full items-center gap-2 px-3 py-1.5 text-sm transition-colors hover:bg-muted/50',
-                      isActive ? 'text-primary' : 'text-foreground'
+                      isActive ? 'text-brand' : 'text-foreground'
                     )}
                   >
                     <Database className='size-3.5 shrink-0' />
                     <span className='truncate'>{db}</span>
                     {isActive && (
-                      <Check className='ml-auto size-3.5 shrink-0 text-primary' />
+                      <Check className='ml-auto size-3.5 shrink-0 text-brand' />
                     )}
                   </button>
                 )
@@ -131,7 +131,7 @@ export const DatabaseSchemaSelector = memo(function DatabaseSchemaSelector({
                   value={schemaSearch}
                   onChange={(e) => setSchemaSearch(e.target.value)}
                   placeholder='Schemas'
-                  className='h-7 w-full rounded-md border border-border bg-background pl-8 pr-2 text-xs outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-primary'
+                  className='h-7 w-full rounded-md border border-border bg-background pl-8 pr-2 text-xs outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring'
                 />
               </div>
             </div>
@@ -153,13 +153,13 @@ export const DatabaseSchemaSelector = memo(function DatabaseSchemaSelector({
                     }}
                     className={cn(
                       'flex w-full items-center gap-2 px-3 py-1.5 text-sm transition-colors hover:bg-muted/50',
-                      isActive ? 'text-primary' : 'text-foreground'
+                      isActive ? 'text-brand' : 'text-foreground'
                     )}
                   >
                     <FolderOpen className='size-3.5 shrink-0' />
                     <span className='truncate'>{schema.name}</span>
                     {isActive && (
-                      <Check className='ml-auto size-3.5 shrink-0 text-primary' />
+                      <Check className='ml-auto size-3.5 shrink-0 text-brand' />
                     )}
                   </button>
                 )

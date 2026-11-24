@@ -105,7 +105,7 @@ export function pivotModel(chart: ChartDefinition, result: DatasetQueryResult): 
 }
 
 const TONES: Record<ConditionalFormat['tone'] & string, string> = {
-  accent: 'var(--chart-4)', positive: 'var(--success)', negative: 'var(--destructive)', warning: 'var(--warning)',
+  accent: 'var(--chart-1)', positive: 'var(--success)', negative: 'var(--destructive)', warning: 'var(--warning)',
 }
 
 function matches(format: ConditionalFormat, value: number): boolean {

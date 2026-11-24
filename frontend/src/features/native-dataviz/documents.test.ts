@@ -43,8 +43,10 @@ describe('native document transport', () => {
   it('reads an immutable revision only in the authorized draft scope', async () => {
     const snapshot = { resource_id: id(1), revision: 2, metadata_revision: 6,
       grants_revision: 1, publication_id: null, definition: { ...document,
-        schema_version: 2, columns: 12, description: '', datasets: [], filters: [], actions: [],
-        pages: document.pages.map(item => ({ ...item, widgets: [] })),
+        schema_version: 3, description: '', datasets: [], filters: [], actions: [],
+        pages: document.pages.map(item => ({ ...item, elements: [], tab_order: [], legacy_spacers: [], mobile: { order: [], hidden: [] },
+          canvas: { size: '16:9', width: 1280, height: 720, fit: 'page', background: null,
+            grid: { columns: 12, gutter: 16, margin: 24, baseline: 8, show: true, snap: true, snap_to_elements: true } } })),
       } }
     fetchMock.mockResolvedValueOnce(response(snapshot))
     await expect(client().read('dashboards', id(1), { draft: true, revision: 2 })).resolves.toEqual(snapshot)

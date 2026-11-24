@@ -59,7 +59,7 @@ function Entry({
       onClick={() => onOpen(story.id)}
     >
       {lead && story.head !== false && (
-        <p className="mb-4 text-xs font-medium tracking-wide text-primary uppercase">
+        <p className="mb-4 text-xs font-medium tracking-wide text-brand uppercase">
           Top story for you
           {story.reason ? (
             <span className="text-muted-foreground normal-case"> · {story.reason}</span>

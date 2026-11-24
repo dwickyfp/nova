@@ -240,7 +240,7 @@ function SurfaceSummary({ surface }: { surface: HarnessSurface }) {
           className="h-2 overflow-hidden rounded-full bg-muted"
         >
           <div
-            className={share > 85 ? "h-full bg-warning" : "h-full bg-primary"}
+            className={share > 85 ? "h-full bg-warning" : "h-full bg-brand"}
             style={{ width: `${share}%` }}
           />
         </div>

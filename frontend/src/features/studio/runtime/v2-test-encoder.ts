@@ -130,7 +130,7 @@ export class TestStudioEncoder {
       case "tool_call":
         return this.toolCall(key(b.tool_call_id), b);
       case "tool_status":
-        return b.tool_call_id ? this.toolStatus(key(b.tool_call_id), str(b.status)) : [];
+        return b.tool_call_id ? this.toolStatus(key(b.tool_call_id), str(b.status), undefined, b.reason) : [];
       case "tool_progress":
         return this.toolProgress(key(b.tool_call_id), b);
       case "tool_detail":
@@ -299,7 +299,7 @@ export class TestStudioEncoder {
     return frames;
   }
 
-  private toolStatus(toolKey: string, status: string, preview?: unknown): V2Record[] {
+  private toolStatus(toolKey: string, status: string, preview?: unknown, reason?: unknown): V2Record[] {
     if (!status) return [];
     const [partId, frames] = this.toolPart(toolKey);
     if (!this.open.has(partId)) return frames;
@@ -317,6 +317,7 @@ export class TestStudioEncoder {
         part_id: partId,
         status,
         ...(preview ? { preview } : {}),
+        ...(status === "failed" && typeof reason === "string" && reason ? { reason } : {}),
         ...(duration !== undefined ? { duration_ms: duration } : {}),
       },
     });

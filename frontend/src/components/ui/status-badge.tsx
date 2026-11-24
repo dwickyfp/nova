@@ -24,7 +24,7 @@ const statusBadgeVariants = cva(
           'border-destructive/25 bg-destructive/10 text-destructive dark:border-destructive/35 dark:bg-destructive/15',
         neutral: 'border-border bg-muted text-muted-foreground',
         primary:
-          'border-primary/25 bg-primary/10 text-primary dark:border-primary/35 dark:bg-primary/15',
+          'border-brand/25 bg-brand/10 text-brand dark:border-brand/35 dark:bg-brand/15',
       },
     },
     defaultVariants: {

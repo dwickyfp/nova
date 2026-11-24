@@ -2489,6 +2489,137 @@
           }
         }
       ]
+    },
+    {
+      "name": "a failed call carries its short reason",
+      "run_id": "run-f",
+      "role": "ANALYST",
+      "v1": [
+        {
+          "event": "tool_call",
+          "data": {
+            "tool_call_id": "c1",
+            "tool_name": "query_execute",
+            "sql_preview": "SELECT 1",
+            "classification": "read_only",
+            "status": "running"
+          }
+        },
+        {
+          "event": "tool_status",
+          "data": {
+            "tool_call_id": "c1",
+            "status": "failed",
+            "reason": "Nova could not compare those periods as asked."
+          }
+        },
+        {
+          "event": "text_delta",
+          "data": {
+            "text": "Name both periods.",
+            "content_index": 0,
+            "content_id": "content-0"
+          }
+        },
+        {
+          "event": "done",
+          "data": {
+            "message_id": "m6",
+            "finish_reason": "stop"
+          }
+        }
+      ],
+      "v2": [
+        {
+          "event": "run.started",
+          "data": {
+            "protocol_version": 2,
+            "role": "ANALYST",
+            "run_id": "run-f",
+            "seq": 0
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-f#0",
+            "type": "tool",
+            "tool_call_id": "c1",
+            "tool_name": "query_execute",
+            "classification": "read_only",
+            "run_id": "run-f",
+            "seq": 1
+          }
+        },
+        {
+          "event": "tool.status",
+          "data": {
+            "part_id": "run-f#0",
+            "status": "running",
+            "preview": "SELECT 1",
+            "run_id": "run-f",
+            "seq": 2
+          }
+        },
+        {
+          "event": "tool.status",
+          "data": {
+            "part_id": "run-f#0",
+            "status": "failed",
+            "reason": "Nova could not compare those periods as asked.",
+            "duration_ms": 1500,
+            "run_id": "run-f",
+            "seq": 3
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-f#0",
+            "state": "error",
+            "run_id": "run-f",
+            "seq": 4
+          }
+        },
+        {
+          "event": "part.start",
+          "data": {
+            "part_id": "run-f#1",
+            "type": "text",
+            "content_index": 0,
+            "content_id": "content-0",
+            "run_id": "run-f",
+            "seq": 5
+          }
+        },
+        {
+          "event": "part.delta",
+          "data": {
+            "part_id": "run-f#1",
+            "text": "Name both periods.",
+            "run_id": "run-f",
+            "seq": 6
+          }
+        },
+        {
+          "event": "part.end",
+          "data": {
+            "part_id": "run-f#1",
+            "state": "done",
+            "run_id": "run-f",
+            "seq": 7
+          }
+        },
+        {
+          "event": "run.finished",
+          "data": {
+            "message_id": "m6",
+            "finish_reason": "stop",
+            "run_id": "run-f",
+            "seq": 8
+          }
+        }
+      ]
     }
   ]
 }

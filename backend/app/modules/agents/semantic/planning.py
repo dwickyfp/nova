@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import calendar
 import re
 from collections import deque
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from dataclasses import field as dataclass_field
+from datetime import date, timedelta
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
@@ -140,7 +140,7 @@ class SemanticPlan:
         raw_time = value.get("time")
         time = None
         if isinstance(raw_time, dict) and raw_time.get("dimension"):
-            time = _two_named_months(SemanticTime(
+            time = harmonize_time(SemanticTime(
                 dimension=str(raw_time["dimension"]),
                 grain=_optional(raw_time.get("grain")),
                 range=_optional(raw_time.get("range")),
@@ -385,24 +385,122 @@ def validate_plan(model: SemanticModelIR, plan: SemanticPlan) -> list[str]:
 _DATE_SPAN = re.compile(r"(\d{4})-(\d{2})-(\d{2})\.\.(\d{4})-(\d{2})-(\d{2})")
 
 
-def _two_named_months(time: SemanticTime) -> SemanticTime:
-    """A previous-period comparison over exactly two whole months is those two months.
+#: Comparison -> the calendar unit it steps by.
+_COMPARISON_UNITS = {
+    "week_over_week": "week", "month_over_month": "month",
+    "quarter_over_quarter": "quarter", "year_over_year": "year",
+}
 
-    "May against April" planned as one range of both months would otherwise be
-    compared with the 61 days before it, a window that starts mid-month and
-    answers neither question. The two months become two groups instead.
+
+#: The longest a single calendar unit can be, in days.
+_UNIT_DAYS = {"week": 7, "month": 31, "quarter": 92}
+
+
+def _whole_units(start: date, end: date, unit: str) -> int | None:
+    """How many whole calendar ``unit``s ``start``..``end`` (inclusive) covers, if exact."""
+    if unit == "week":
+        days = (end - start).days + 1
+        return days // 7 if days % 7 == 0 and start.weekday() == 0 else None
+    months = {"month": 1, "quarter": 3, "year": 12}[unit]
+    if start.day != 1 or (start.month - 1) % months:
+        return None
+    following = end + timedelta(days=1)
+    if following.day != 1:
+        return None
+    span = (following.year - start.year) * 12 + following.month - start.month
+    if span <= 0 or span % months or (following.month - 1) % months:
+        return None
+    return span // months
+
+
+def _range_token(start: date, unit: str) -> str:
+    if unit == "month":
+        return f"{start.year:04d}-{start.month:02d}"
+    if unit == "quarter":
+        return f"{start.year:04d}-Q{(start.month - 1) // 3 + 1}"
+    return f"{start.year:04d}"
+
+
+def harmonize_time(time: SemanticTime | None) -> SemanticTime | None:
+    """A period comparison in the shape the compiler can answer.
+
+    Plans and intent frames name comparisons the compiler cannot run as written;
+    each was a "could not be compiled safely" failure in the benchmark:
+
+    * two named periods ("June and July", one range with previous_period or
+      month_over_month) are those two periods as groups, not the range against
+      the one before it;
+    * a range that is one whole month, quarter or year written as dates
+      (2025-07-01..2025-07-31) with that unit's comparison is that period;
+    * a unit comparison over several periods ("week over week" for the last 8
+      weeks) is a series by that unit; the change per period is computed from it.
     """
-    if time.compare != TimeComparison.PREVIOUS_PERIOD.value or time.grain or not time.range:
+    if time is None or not time.range or not time.compare:
         return time
+    from app.modules.agents.semantic.time_ranges import resolve_time_range
+
+    compare = time.compare
+    unit = _COMPARISON_UNITS.get(compare)
     span = _DATE_SPAN.fullmatch(time.range.strip())
-    if not span:
+    if span is not None:
+        try:
+            start = date(*(int(part) for part in span.groups()[:3]))
+            end = date(*(int(part) for part in span.groups()[3:]))
+        except ValueError:
+            return time
+        units = [unit] if unit else ["month", "quarter", "year"]
+        for candidate in units:
+            count = _whole_units(start, end, candidate) if end >= start else None
+            if count == 2 and (unit or not time.grain):
+                # Two named periods: each is its own group.
+                return SemanticTime(time.dimension, grain=candidate, range=time.range)
+            if count == 1 and unit and candidate != "week":
+                return SemanticTime(time.dimension, grain=time.grain,
+                                    range=_range_token(start, candidate), compare=compare)
+            if count and count > 2 and unit:
+                return SemanticTime(time.dimension, grain=unit, range=time.range)
+        if not unit:
+            return time
+    if unit is None or unit == "year":
         return time
-    year, month, day, end_year, end_month, end_day = (int(part) for part in span.groups())
-    following = (year + month // 12, month % 12 + 1)
-    whole = day == 1 and end_day == calendar.monthrange(end_year, end_month)[1]
-    if not whole or (end_year, end_month) != following:
+    try:
+        window = resolve_time_range(time.range)
+    except SemanticPlanError:
         return time
-    return SemanticTime(dimension=time.dimension, grain="month", range=time.range)
+    if window.granularity == unit:
+        return time
+    recent = re.fullmatch(r"(?:last|past|previous)[_ -](\d{1,4})[_ -]([a-z]+?)s?",
+                          time.range.strip().lower())
+    longer = (
+        (recent is not None and recent[2] == unit and int(recent[1]) > 1)
+        or (span is not None and (end - start).days + 1 > _UNIT_DAYS[unit])
+    )
+    if longer:
+        # last_8_weeks, or June to early July, week over week: the weekly series
+        # answers it, and the change per week is computed from that series.
+        return SemanticTime(time.dimension, grain=unit, range=time.range)
+    if window.period is not None:
+        # A range of another length: compare it with the period just before it.
+        return SemanticTime(time.dimension, grain=time.grain, range=time.range,
+                            compare="previous_period")
+    return time
+
+
+def harmonize_plan(plan: SemanticPlan) -> SemanticPlan:
+    """The plan with its comparison harmonized and no ordering on an unselected period.
+
+    A two-period comparison groups by period, so the time dimension is no output
+    column: an ``order_by`` on it ("Order field 'order_date' is not selected")
+    failed every retry once the user's period replaced the plan's grain.
+    """
+    time = harmonize_time(plan.time)
+    order_by = plan.order_by
+    if time is not None and not time.grain and time.dimension not in plan.dimensions:
+        hidden = {time.dimension, plan.time_output}
+        order_by = tuple(item for item in order_by if item.field not in hidden)
+    if time == plan.time and order_by == plan.order_by:
+        return plan
+    return replace(plan, time=time, order_by=order_by)
 
 
 def _normalise_comparison(value: Any) -> str | None:

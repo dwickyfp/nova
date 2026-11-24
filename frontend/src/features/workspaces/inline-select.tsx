@@ -58,7 +58,7 @@ export function InlineSelect({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={label}
-              className='h-7 w-full rounded-md border border-border bg-background pl-8 pr-2 text-xs outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-primary'
+              className='h-7 w-full rounded-md border border-border bg-background pl-8 pr-2 text-xs outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring'
             />
           </div>
         </div>
@@ -80,12 +80,12 @@ export function InlineSelect({
                 }}
                 className={cn(
                   'flex w-full items-center gap-2 px-3 py-1.5 text-sm transition-colors hover:bg-muted/50',
-                  isActive ? 'text-primary' : 'text-foreground'
+                  isActive ? 'text-brand' : 'text-foreground'
                 )}
               >
                 <span className='truncate'>{option}</span>
                 {isActive && (
-                  <Check className='ml-auto size-3.5 shrink-0 text-primary' />
+                  <Check className='ml-auto size-3.5 shrink-0 text-brand' />
                 )}
               </button>
             )

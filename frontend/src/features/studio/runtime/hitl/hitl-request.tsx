@@ -104,7 +104,7 @@ export function HitlRequest({
       >
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1.5 font-medium">
-            <Icon aria-hidden="true" className="size-4 text-primary" />
+            <Icon aria-hidden="true" className="size-4 text-brand" />
             {definition.label}
           </span>
           {expiry ? <span>{expiry}</span> : null}

@@ -83,7 +83,8 @@ When the agent finishes you see:
   a connected tool, with **×2** when it ran more than once and a dot for how
   it ended (green: succeeded, red: failed, grey: not finished). Click a chip
   to see each call: what it was asked, a short result and how long it took.
-  **Show in steps** opens that step above the answer and **Show data** opens
+  A failed call also shows why, in one short line, such as "Nova could not
+  compare those periods as asked." **Show in steps** opens that step above the answer and **Show data** opens
   the rows it returned. Web pages the agent read are listed under the web
   search chip.
 - **Follow-up suggestions**: related questions under the answer, each with a
@@ -133,6 +134,31 @@ Under each answer:
 The token count next to the buttons (for example "13,189 tokens") is how much
 AI model work the answer used.
 
+## How the agent works out figures
+
+- **A date without a year** means the year in the data. "Revenue in July"
+  uses July of the year the data covers. When the data covers more than one
+  year, the agent asks which one and offers only the years in the data.
+- **Comparing periods**: name both periods, such as "June 2025 and July 2025",
+  "this week against last week", or ask for "the trend by month". When the
+  agent cannot read a comparison, it says "Nova could not compare those
+  periods as asked" and asks you to name both periods.
+- **Median and percentiles**: ask for "the median order value" or "the 90th
+  percentile of order value". These work for measures that add up, average or
+  take the highest or lowest of one value per record. A median of a count is
+  not available.
+- **What if**: "What if revenue grew 10%?" or "What if it doubled?" The agent
+  takes the current figure from the data and works out the new figure and the
+  change exactly. It does not estimate them.
+- **Conditions that match nothing**: "orders shipped to Bandung" means orders
+  whose shipping city is Bandung. If a combination of conditions matches no
+  record, the agent says so, then gives the figure without the condition that
+  left nothing, labelled as such.
+- **A table the agent cannot use**: if you name a table or schema that this
+  agent does not use, such as `analytics.sales`, the agent says first that it
+  is not available here. Any figure it gives instead names the data it came
+  from. It never shows data your active role cannot read.
+
 ## What the agent does on its own
 
 A Studio agent works without asking permission. When your question needs it,
@@ -151,6 +177,12 @@ What stays in place:
   any tool off.
 - Every tool call is recorded in the audit log under your name and role, with
   its inputs (passwords, tokens and keys are hidden).
+
+When the agent schedules an automation, for example "Send a revenue summary
+every morning at 7", the answer states only the next run and the time zone
+that Nova's scheduler returned, for example 07:00 in Asia/Jakarta. If the
+schedule could not be created, the answer says "Nothing was scheduled." and
+why. Each run appears in **History**.
 
 A scheduled automation runs with nobody there, so it only reads: it answers
 from data and can call an outside tool whose server says it only reads, but it

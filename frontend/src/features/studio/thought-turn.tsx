@@ -67,6 +67,8 @@ export type RailStep = {
   body?: string;
   /** A tool result summary, shown when the row is open. */
   detail?: string;
+  /** Why a failed tool call failed, short and redacted. */
+  reason?: string;
   /** When the run journal recorded this row. */
   at?: string;
   /** How long a finished tool call ran. */
@@ -172,7 +174,7 @@ function StatusMark({ state, strong = false, settle = false }: { state: MarkStat
   if (state === "running") {
     return (
       <span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center">
-        <svg viewBox="0 0 16 16" className="size-4 animate-spin text-primary motion-reduce:animate-none">
+        <svg viewBox="0 0 16 16" className="size-4 animate-spin text-brand motion-reduce:animate-none">
           <circle cx="8" cy="8" r="6" fill="none" stroke="var(--border)" strokeWidth="1.5" />
           <path d="M8 2a6 6 0 0 1 6 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
         </svg>
@@ -182,7 +184,7 @@ function StatusMark({ state, strong = false, settle = false }: { state: MarkStat
   if (state === "live") {
     return (
       <span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center">
-        <span className="nova-live-dot relative size-2 rounded-full bg-primary" />
+        <span className="nova-live-dot relative size-2 rounded-full bg-brand" />
       </span>
     );
   }

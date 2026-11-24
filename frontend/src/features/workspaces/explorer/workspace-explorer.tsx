@@ -319,7 +319,7 @@ export function WorkspaceExplorer({
               path={key}
               name={entry.name}
               icon={entryIcon(entry)}
-              className={entry.id === activeEntryId ? "[&>button]:bg-primary/10 [&>button]:text-primary" : undefined}
+              className={entry.id === activeEntryId ? "[&>button]:bg-brand/10 [&>button]:text-brand" : undefined}
               actions={<RowMenuButton items={items} label={`Actions for ${entry.name}`} />}
               onOpen={() => {
                 controller.setPlace({ space, parentPath: entry.parent_path });

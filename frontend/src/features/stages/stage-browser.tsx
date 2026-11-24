@@ -391,12 +391,12 @@ export function StageBrowser({ stage, onBack }: StageBrowserProps) {
               className={cn(
                 'flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-10 text-center transition-colors',
                 dragOver
-                  ? 'border-primary bg-primary/5'
+                  ? 'border-brand bg-brand/5'
                   : 'border-border hover:border-muted-foreground/50'
               )}
             >
               <Upload
-                className={cn('mb-3 size-7', dragOver ? 'text-primary' : 'text-muted-foreground')}
+                className={cn('mb-3 size-7', dragOver ? 'text-brand' : 'text-muted-foreground')}
               />
               <p className='text-sm font-medium'>Drop files here or click to browse</p>
               <p className='mt-1 text-xs text-muted-foreground'>CSV, JSON, Parquet, ORC, Avro</p>

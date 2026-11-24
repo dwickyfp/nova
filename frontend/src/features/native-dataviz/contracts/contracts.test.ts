@@ -3,38 +3,48 @@ import { chartSchema, dashboardSchema, datasetPreviewSchema, operationSchema } f
 
 const id = (last: number) => `00000000-0000-4000-8000-${String(last).padStart(12, '0')}`
 const dashboard = {
+  schema_version: 3,
   dashboard_id: id(1),
   title: 'Sales',
   pages: [{
-    page_id: id(2), title: 'Page 1', widgets: [{
-      widget_id: id(3), kind: 'chart',
+    page_id: id(2), title: 'Page 1', elements: [{
+      element_id: id(3), kind: 'visual',
       chart_ref: { chart_id: id(4), revision: 7 },
-      layout: { x: 0, y: 0, w: 6, h: 4 },
+      geometry: { x: 24, y: 24, w: 600, h: 320 },
     }],
   }],
 }
 
 describe('canonical native BI wire contracts', () => {
-  it('reads a pinned chart reference and canonical desktop layout', () => {
+  it('reads a pinned chart reference and canvas geometry', () => {
     const result = dashboardSchema.parse(dashboard)
-    expect(result.columns).toBe(12)
-    expect(result.schema_version).toBe(2)
-    expect(result.pages[0].widgets?.[0]).toMatchObject({
+    expect(result.schema_version).toBe(3)
+    expect(result.pages[0].elements?.[0]).toMatchObject({
       chart_ref: { chart_id: id(4), revision: 7 },
-      layout: { x: 0, y: 0, w: 6, h: 4 },
+      geometry: { x: 24, y: 24, w: 600, h: 320 },
     })
+  })
+
+  it('reads a page canvas with its grid settings and refuses an unknown grid key', () => {
+    const canvas = { size: 'custom', width: 1200, height: 4000, fit: 'width', background: null,
+      grid: { columns: 12, gutter: 12, margin: 6, baseline: 8, show: false, snap: true, snap_to_elements: false } }
+    const value = structuredClone(dashboard)
+    Object.assign(value.pages[0], { canvas })
+    expect(dashboardSchema.parse(value).pages[0].canvas).toEqual(canvas)
+    Object.assign(value.pages[0], { canvas: { ...canvas, grid: { ...canvas.grid, script: 'x' } } })
+    expect(dashboardSchema.safeParse(value).success).toBe(false)
   })
 
   it.each(['html', 'callback', 'owner_name', 'actor'])('refuses injected %s', (key) => {
     const value = structuredClone(dashboard)
-    Object.assign(value.pages[0].widgets[0], { [key]: 'untrusted' })
+    Object.assign(value.pages[0].elements[0], { [key]: 'untrusted' })
     expect(dashboardSchema.safeParse(value).success).toBe(false)
   })
 
-  it('rejects unsupported version and a floating-point grid cell', () => {
-    expect(dashboardSchema.safeParse({ ...dashboard, schema_version: 3 }).success).toBe(false)
+  it('rejects another version and fractional geometry', () => {
+    expect(dashboardSchema.safeParse({ ...dashboard, schema_version: 2 }).success).toBe(false)
     const value = structuredClone(dashboard)
-    value.pages[0].widgets[0].layout.x = 1.5
+    value.pages[0].elements[0].geometry.x = 1.5
     expect(dashboardSchema.safeParse(value).success).toBe(false)
   })
 

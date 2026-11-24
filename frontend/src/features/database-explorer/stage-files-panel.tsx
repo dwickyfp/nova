@@ -172,7 +172,7 @@ export function StageFilesPanel({ node }: { node: ExplorerNode }) {
 
       {/* Tab */}
       <div className='border-b border-border'>
-        <div className='inline-flex border-b-2 border-primary px-1 py-3 text-sm font-medium text-primary dark:text-foreground'>
+        <div className='inline-flex border-b-2 border-brand px-1 py-3 text-sm font-medium text-brand dark:text-foreground'>
           Stage Files
         </div>
       </div>
@@ -344,11 +344,11 @@ export function StageFilesPanel({ node }: { node: ExplorerNode }) {
               className={cn(
                 'flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-10 transition-colors',
                 dragOver
-                  ? 'border-primary bg-primary/5'
+                  ? 'border-brand bg-brand/5'
                   : 'border-border hover:border-muted-foreground/50',
               )}
             >
-              <Upload className={cn('mb-3 h-8 w-8', dragOver ? 'text-primary' : 'text-muted-foreground/60')} />
+              <Upload className={cn('mb-3 h-8 w-8', dragOver ? 'text-brand' : 'text-muted-foreground/60')} />
               <p className='text-sm font-medium'>Drop files here or click to browse</p>
               <p className='mt-1 text-xs text-muted-foreground'>CSV, JSON, Parquet, ORC, Avro</p>
               <input

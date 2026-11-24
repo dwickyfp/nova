@@ -4,8 +4,10 @@ import { page, userEvent } from 'vitest/browser'
 import { cleanup, render } from 'vitest-browser-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAuthStore } from '@/stores/auth-store'
+import type { DashboardDefinitionV2 } from '../contracts'
 import { DashboardEditor } from './editor'
 import { NATIVE_DASHBOARD_CHANGED } from './events'
+import { upcastDashboard } from './layout'
 import '@/styles/index.css'
 
 const DASHBOARD = 'dddddddd-0000-4000-8000-000000000001'
@@ -29,7 +31,7 @@ let definition: Record<string, unknown>
 const operations: Record<string, unknown>[] = []
 
 function dashboard() {
-  return { resource_id: DASHBOARD, revision, metadata_revision: revision, grants_revision: 1, publication_id: null, definition }
+  return { resource_id: DASHBOARD, revision, metadata_revision: revision, grants_revision: 1, publication_id: null, definition: upcastDashboard(definition as unknown as DashboardDefinitionV2) }
 }
 
 async function route(url: string, options: RequestInit = {}) {

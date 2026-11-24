@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { GeoJSONSource, MapLayerMouseEvent } from 'maplibre-gl'
-import { Map, MapPopup, useMap, type MapRef } from '@/components/ui/map'
-import { mapColor } from '@/components/ui/map/tokens'
+import { Scan } from 'lucide-react'
+import { Map, MapControlButton, MapControlGroup, MapControlStack, MapPopup, useMap, type MapRef } from '@/components/ui/map'
+import { mapColor, motionDuration } from '@/components/ui/map/tokens'
 import { useTheme } from '@/context/theme-provider'
 import type { ChartDefinition, DatasetQueryResult } from '../contracts'
 import { PUBLIC_MAP_STYLES } from '../../studio/intelligent-ui/map-style'
@@ -10,8 +11,9 @@ import { mapFeatures, mapModel, type MapModel } from './map-points'
 
 const SOURCE = 'native-map-points'
 const LAYER = 'native-map-circles'
-const PADDING = { top: 32, right: 32, bottom: 32, left: 32 }
-const SERIES = [4, 2, 3, 1, 5, 6, 8, 9, 7]
+// The right side also clears the in-map controls.
+const PADDING = { top: 32, right: 48, bottom: 32, left: 32 }
+const SERIES = [1, 2, 3, 4, 5, 6, 7, 8, 9]
 // More groups than this are named in the point popups instead of the legend.
 const LEGEND = 8
 
@@ -84,7 +86,27 @@ function Points({ model, chart, selected, onPick }: { model: MapModel; chart: Ch
       map.off('movestart', takeOver)
     }
   }, [map, isLoaded, model.bounds])
-  return null
+
+  // Show all returns to the data and follows it again, as on first load.
+  const showAll = () => {
+    if (!map || !model.bounds) return
+    const bounds = model.bounds
+    const canvas = map.getCanvas()
+    const size = `${canvas.clientWidth}x${canvas.clientHeight}`
+    map.once('moveend', () => {
+      touched.current = false
+      // A resize during the animation would otherwise land on a stale frame.
+      if (`${canvas.clientWidth}x${canvas.clientHeight}` !== size) map.fitBounds(bounds, { padding: PADDING, maxZoom: 12, animate: false })
+    })
+    map.fitBounds(bounds, { padding: PADDING, maxZoom: 12, pitch: 0, bearing: 0, duration: motionDuration(300) })
+  }
+  return <MapControlStack>
+    <MapControlGroup>
+      <MapControlButton label='Show all locations' onClick={showAll} disabled={!model.bounds}>
+        <Scan className='size-4' aria-hidden />
+      </MapControlButton>
+    </MapControlGroup>
+  </MapControlStack>
 }
 
 /** A governed point map: each row placed at its coordinates, sized by its value. */

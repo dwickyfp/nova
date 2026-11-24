@@ -36,6 +36,7 @@ OPERATIONS = (
     "contribution",
     "ratio",
     "combine",
+    "scale",
 )
 
 PARAMETERS: dict[str, Any] = {
@@ -74,7 +75,22 @@ PARAMETERS: dict[str, Any] = {
         "periods": {
             "type": "integer",
             "minimum": 1,
-            "description": "Number of periods between from_label and to_label for cagr.",
+            "description": "Number of periods between from_label and to_label for cagr; "
+            "for scale, how many times the factor compounds (5% a week for 4 weeks).",
+        },
+        "factor": {
+            "type": "number",
+            "description": "scale: the multiplier (1.1 for 10% more, 2 for double).",
+        },
+        "percent": {
+            "type": "number",
+            "description": "scale: the change in percent instead of factor (10 for +10%, "
+            "-5 for 5% less).",
+        },
+        "only_label": {
+            "type": "string",
+            "description": "scale: change only this row (Jakarta) and keep the others, "
+            "so the total shows the scenario.",
         },
     },
     "required": ["operation"],
@@ -279,6 +295,32 @@ def _named_column(given: str, columns: list[str]) -> str:
     return max(named, key=len) if named else given
 
 
+def _value_column(given: str, columns: list[str], rows: list[list[Any]]) -> str:
+    """The numeric column ``given`` names; the only numeric column when none is named.
+
+    Case and a dataset prefix do not matter ("Revenue", "orders.revenue").
+    """
+    if given in columns:
+        return given
+    folded = {column.casefold(): column for column in columns}
+    for candidate in (given, given.rsplit(".", 1)[-1]):
+        if candidate and candidate.casefold() in folded:
+            return folded[candidate.casefold()]
+    named = _named_column(given, columns) if given else given
+    if named in columns:
+        return named
+    numeric = [
+        column for index, column in enumerate(columns)
+        if rows and all(_is_numeric(row[index]) for row in rows)
+    ]
+    if not given and len(numeric) == 1:
+        return numeric[0]
+    raise ComputeError(
+        f"Column {given!r} is not in the result. Numeric columns: {numeric or columns}."
+        if given else f"Name value_column, one of: {numeric or columns}."
+    )
+
+
 def compute(table: dict[str, Any], arguments: dict[str, Any]) -> dict[str, Any]:
     """Pure computation; returns ``{"columns", "rows", "summary"}``."""
     columns = [str(column) for column in table.get("columns") or []]
@@ -290,9 +332,7 @@ def compute(table: dict[str, Any], arguments: dict[str, Any]) -> dict[str, Any]:
     operation = str(arguments.get("operation") or "")
     if operation not in OPERATIONS:
         raise ComputeError(f"Unsupported operation {operation!r}.")
-    value_column = str(arguments.get("value_column") or "")
-    if value_column not in columns:
-        raise ComputeError(f"Column {value_column!r} is not in the result: {columns}.")
+    value_column = _value_column(str(arguments.get("value_column") or ""), columns, rows)
     value_index = columns.index(value_column)
     label_column = arguments.get("label_column")
     if label_column:
@@ -450,6 +490,8 @@ def _compute(
             "rows": [[labels[start], labels[end], periods, _percent(growth * 100)]],
             "summary": f"{value_column} CAGR {_round(growth * 100)}% over {periods} period(s).",
         }
+    if operation == "scale":
+        return _scale(arguments, value_column, label_name, labels, values)
     compare_column = str(arguments.get("compare_column") or "")
     if operation == "ratio":
         # One column per unit of another, row by row (expense per employee).
@@ -487,6 +529,66 @@ def _compute(
         "rows": out,
         "summary": f"Total change {_round(total_change)} split across {len(out)} row(s). "
         "These are arithmetic contributions, not proven causes.",
+    }
+
+
+def _scale_factor(arguments: dict[str, Any]) -> Decimal:
+    factor, percent = arguments.get("factor"), arguments.get("percent")
+    if factor is not None and percent is not None:
+        raise ComputeError("scale takes factor or percent, not both.")
+    if factor is None and percent is None:
+        raise ComputeError("scale needs factor (1.1) or percent (10).")
+    raw = factor if factor is not None else percent
+    if isinstance(raw, bool):
+        raise ComputeError("scale factor must be a number.")
+    number = _decimal(raw, column="factor" if factor is not None else "percent")
+    step = number if factor is not None else 1 + number / 100
+    periods = 1 if arguments.get("periods") is None else arguments["periods"]
+    if not isinstance(periods, int) or isinstance(periods, bool) or not 1 <= periods <= 520:
+        raise ComputeError("scale periods must be a whole number from 1 to 520.")
+    return step ** periods
+
+
+def _scale(
+    arguments: dict[str, Any], value_column: str, label_name: str, labels: list[str],
+    values: list[Decimal],
+) -> dict[str, Any]:
+    """A what-if: the result with a factor applied, and the scenario total.
+
+    Every row is scaled, or only the row ``only_label`` names while the others
+    keep their value ("if Jakarta doubled, what is the total?").
+    """
+    factor = _scale_factor(arguments)
+    only = str(arguments.get("only_label") or "").strip()
+    target = None
+    if only:
+        matches = [index for index, label in enumerate(labels)
+                   if _label_key(label) == _label_key(only)]
+        if len(matches) != 1:
+            raise ComputeError(
+                f"only_label {only!r} must match exactly one {label_name} value. "
+                f"Available: {', '.join(repr(item) for item in labels[:20])}.")
+        target = matches[0]
+    scenario = [value * factor if target is None or index == target else value
+                for index, value in enumerate(values)]
+    name = f"{value_column}_scenario"
+    rows: list[list[Any]] = [
+        [label, _round(value), _round(changed), _round(changed - value)]
+        for label, value, changed in zip(labels, values, scenario, strict=True)
+    ]
+    baseline_total, scenario_total = sum(values, Decimal(0)), sum(scenario, Decimal(0))
+    if len(rows) > 1:
+        rows.append(["total", _round(baseline_total), _round(scenario_total),
+                     _round(scenario_total - baseline_total)])
+    scope = f" for {labels[target]} only" if target is not None else ""
+    return {
+        "columns": [label_name, value_column, name, f"{value_column}_change"],
+        "rows": rows,
+        "summary": (
+            f"Scenario{scope} with factor {_round(factor)}: {value_column} total "
+            f"{_round(baseline_total)} becomes {_round(scenario_total)} "
+            f"(change {_round(scenario_total - baseline_total)}). State these figures."
+        ),
     }
 
 
@@ -541,7 +643,8 @@ class ComputeMetricsTool:
     name = "compute_metrics"
     description = (
         "Compute growth (pct_change), difference, share_of_total, sum/avg/min/max, rank, CAGR, "
-        "contribution to change, or a ratio of two columns from a data result already returned "
+        "contribution to change, a what-if scale (a factor or percent on every row or one row), "
+        "or a ratio of two columns from a data result already returned "
         "in this conversation; combine joins two such results on the label column they share. "
         "A ratio may divide by one figure from another result (with_evidence_id, a one-row "
         "result such as a target from an external source); it also gives the percentage. "
@@ -564,6 +667,10 @@ class ComputeMetricsTool:
         evidence_id = args.get("evidence_id")
         if evidence_id:
             table = tables.get(str(evidence_id))
+            if table is None and not tables:
+                # An evidence id from an earlier turn: that turn's result is the one
+                # this conversation restored as the latest data result.
+                table = getattr(context, "last_result", None)
             if table is None:
                 return ToolOutcome(
                     ok=False, summary="", error="Unknown evidence_id.",

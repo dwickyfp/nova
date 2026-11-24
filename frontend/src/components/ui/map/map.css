@@ -36,3 +36,7 @@
 .dark .nova-map .maplibregl-ctrl-attrib-button {
   filter: invert(1);
 }
+/* An open popup reads above the in-map controls, never beneath them. */
+.nova-map .maplibregl-popup {
+  z-index: 20;
+}

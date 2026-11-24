@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { geoBounds, geoFeatures, geometryPositions, MAX_GEO_FEATURES, parseGeometry } from "./geometry";
+import { geoBounds, geoFeatures, geometryPositions, MAX_GEO_FEATURES, parseGeometry, placeBounds } from "./geometry";
 
 describe("business geometry", () => {
   it("accepts explicit engine geometry without swapping coordinates", () => {
@@ -48,5 +48,18 @@ describe("business geometry", () => {
     const { collection } = geoFeatures([{ x: 179, y: -2 }, { x: -179, y: 3 }], { longitude: "x", latitude: "y" });
     expect(geoBounds(collection.features)).toEqual([[179, -2], [181, 3]]);
     expect(geoBounds([])).toBeNull();
+  });
+});
+
+describe("place map frame", () => {
+  const places = [{ lat: -6.2, lon: 106.8 }, { lat: -6.9, lon: 107.6 }];
+  it("includes every alternative route, not only the fastest", () => {
+    const fastest: [number, number][] = [[106.8, -6.2], [107.6, -6.9]];
+    const detour: [number, number][] = [[106.8, -6.2], [106.5, -7.4], [107.6, -6.9]];
+    expect(placeBounds(places, [fastest, detour])).toEqual([[106.5, -7.4], [107.6, -6.2]]);
+  });
+  it("frames one place on its own and ignores an empty route", () => {
+    expect(placeBounds([places[0]], [[]])).toEqual([[106.8, -6.2], [106.8, -6.2]]);
+    expect(placeBounds([], [])).toBeNull();
   });
 });

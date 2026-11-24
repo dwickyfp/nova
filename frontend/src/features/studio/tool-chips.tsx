@@ -250,6 +250,7 @@ function CallRow({ call, index, hasData }: { call: ToolChipCall; index?: number;
           {call.input}
         </pre>
       ) : null}
+      {call.reason ? <p className="text-xs text-destructive break-words">{call.reason}</p> : null}
       {call.result ? <p className="line-clamp-4 text-xs text-muted-foreground">{call.result}</p> : null}
     </li>
   );

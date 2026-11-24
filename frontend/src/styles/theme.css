@@ -2,6 +2,9 @@
   /* Monaco takes hex colors only: a transparent editor surface lets a
      notebook cell's own muted background show through in both modes. */
   --editor-surface-clear: #00000000;
+  /* Selected text in the SQL editor: a --brand tint that stays visible on
+     --card without hiding the syntax colours. */
+  --editor-selection: #cfe0f1;
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   /* Slate rather than near-black: 14.6:1 on white, well above AA, without
@@ -11,21 +14,34 @@
   --card-foreground: var(--foreground);
   --popover: oklch(1 0 0);
   --popover-foreground: var(--foreground);
-  --primary: #d04738;
+  /* Graphite: the primary action is neutral (14.7:1 on white), so colour is
+     saved for state and data. --brand carries every interactive accent. */
+  --primary: #1f2937;
   --primary-foreground: #ffffff;
+  /* Steel blue, the same family as the shell backdrop's #8fb4c4: links, focus
+     ring, active tab and toggle, selection, map routes and --viz-highlight.
+     AA as text on --background (5.2:1) and on --accent (4.6:1); white on a
+     --brand fill is 5.2:1. */
+  --brand: #2f6fb0;
+  --brand-foreground: #ffffff;
+  /* The phoenix mark: the only red in the interface (owner decision
+     2026-11-24). Raster colours, not a UI accent; the Logo PNGs are exported
+     from these values and theme-contrast.test.ts checks them. */
+  --brand-mark: #c93f2a;
+  --brand-mark-accent: #d78c55;
   --secondary: oklch(0.968 0.007 247.896);
   --secondary-foreground: var(--foreground);
   --muted: oklch(0.968 0.007 247.896);
   --tooltip-neutral: color-mix(in srgb, var(--foreground) 20%, var(--background));
   /* Darkened from oklch(0.554 0.046 257.417) so muted text clears AA on both
-     --background and the warmer --accent surface. */
+     --background and the cool --accent surface. */
   --muted-foreground: oklch(0.532 0.046 257.417);
-  --accent: #fff0ed;
-  --accent-foreground: #a53126;
+  --accent: #eef2f6;
+  --accent-foreground: #1f4b7a;
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.929 0.013 255.508);
   --input: oklch(0.929 0.013 255.508);
-  --ring: #e45a49;
+  --ring: var(--brand);
   --inset-border: rgb(255 255 255 / 80%);
   --inset-shadow:
     0 0 0 1px rgb(15 23 42 / 5%), 0 1px 2px rgb(15 23 42 / 6%),
@@ -56,18 +72,20 @@
   --surface-3: oklch(1 0 0);
   --surface-border: oklch(0.929 0.013 255.508);
 
-  --chart-1: #f05a47;
-  --chart-2: #14a89a;
-  --chart-3: #e89b17;
-  --chart-4: #4f7ee8;
-  --chart-5: #d94f86;
-
-  /* Multi-series charts need more hues than the five status-adjacent chart
-     slots above; these carry the categorical palette and its single-tone ramp. */
-  --chart-6: #a78bfa;
-  --chart-7: #f472b6;
-  --chart-8: #38bdf8;
-  --chart-9: #34d399;
+  /* Categorical series in drawing order: steel blue first, then hues that
+     never sit next to a look-alike (coral fifth, olive eighth). Every pair
+     differs by at least 0.08 in OKLab, so even a nine-series chart has no
+     near-twins. Every slot keeps 3:1 against --card; theme-contrast.test.ts
+     enforces it. */
+  --chart-1: #2f6fb0;
+  --chart-2: #12897d;
+  --chart-3: #b8790f;
+  --chart-4: #7a5bd0;
+  --chart-5: #d4503f;
+  --chart-6: #c03f84;
+  --chart-7: #4f8a2b;
+  --chart-8: #6e6a1c;
+  --chart-9: #a0612f;
 
   /* Tool kinds under an answer: icon tiles, chip accents and detail rules.
      Strong enough for small text on the page background. */
@@ -78,12 +96,13 @@
   --tool-web: var(--info-strong);
   --tool-other: var(--muted-foreground);
 
-  --chart-tone-1: #5b8def;
-  --chart-tone-2: #76a0ef;
-  --chart-tone-3: #90b4f2;
-  --chart-tone-4: #aac7f5;
-  --chart-tone-5: #c4daf8;
-  --chart-tone-6: #deedfb;
+  /* Single-tone ramp from --chart-1, strongest first. */
+  --chart-tone-1: #2f6fb0;
+  --chart-tone-2: #4a85c0;
+  --chart-tone-3: #6b9ccc;
+  --chart-tone-4: #8fb4d9;
+  --chart-tone-5: #b5cde6;
+  --chart-tone-6: #d9e6f2;
 
   /* Viz shelf pills, discrete pills make headers,
      continuous pills make axes. Data-semantic colors, not decoration: tinted
@@ -100,13 +119,13 @@
      headings) and --muted-foreground (meta, units, axes). */
   --ink-secondary: #475569;
 
-  /* Viz marks. Data draws in neutral slate; --viz-highlight (the brand red)
+  /* Viz marks. Data draws in neutral slate; --viz-highlight (steel blue)
      marks only the one value the view's answer talks about, so the accent
      points at the finding instead of painting every bar. --viz-mark keeps
      3:1 against the card for non-text contrast. */
   --viz-mark: #7b8da4;
   --viz-line: #5b7088;
-  --viz-highlight: var(--primary);
+  --viz-highlight: var(--brand);
   --viz-reference: #64748b;
   --viz-grid: #eef2f6;
   --viz-axis: #cbd5e1;
@@ -114,7 +133,7 @@
   /* Code highlighting (highlight.js token roles). Kept as explicit tokens so
      the markdown renderer never carries raw hex, and so both themes read from
      the same vocabulary the charts already use. */
-  --code-keyword: #a53126;
+  --code-keyword: #1f5f99;
   --code-string: #107c70;
   --code-number: #986411;
   --code-comment: var(--muted-foreground);
@@ -129,7 +148,7 @@
   --shell-backdrop:
     radial-gradient(90% 70% at 0% 0%, #8fb4c4 0%, rgb(143 180 196 / 0%) 70%),
     radial-gradient(80% 70% at 100% 100%, #ecd3a0 0%, rgb(236 211 160 / 0%) 70%),
-    radial-gradient(60% 60% at 0% 100%, #f0c4ae 0%, rgb(240 196 174 / 0%) 70%),
+    radial-gradient(60% 60% at 0% 100%, #c8cfe0 0%, rgb(200 207 224 / 0%) 70%),
     linear-gradient(160deg, #cfdbe4 0%, #e9edf1 100%);
   /* The light pane stays fully opaque: --primary and the -strong status tokens
      are measured as text on --background with no margin for a tint (B4). */
@@ -172,7 +191,7 @@
   --shell-backdrop:
     radial-gradient(90% 70% at 0% 0%, #2c5360 0%, rgb(44 83 96 / 0%) 70%),
     radial-gradient(80% 70% at 100% 100%, #6a5330 0%, rgb(106 83 48 / 0%) 70%),
-    radial-gradient(60% 60% at 0% 100%, #5c3a2b 0%, rgb(92 58 43 / 0%) 70%),
+    radial-gradient(60% 60% at 0% 100%, #2a3346 0%, rgb(42 51 70 / 0%) 70%),
     linear-gradient(160deg, #1a2733 0%, #0d1217 100%);
   /* Both tints are --background (#0b0f14) so chrome and pane differ only in
      how much backdrop they let through. */
@@ -202,7 +221,7 @@
   --ink-secondary: #c2cbd6;
   --viz-mark: #62758d;
   --viz-line: #93a8c0;
-  --viz-highlight: #f05a47;
+  --viz-highlight: var(--brand);
   --viz-reference: #a3adba;
   --viz-grid: rgb(255 255 255 / 7%);
   --viz-axis: rgb(255 255 255 / 18%);
@@ -213,19 +232,25 @@
   --card-foreground: #f7f8fa;
   --popover: #171d26;
   --popover-foreground: #f7f8fa;
-  --primary: #d04738;
-  --primary-foreground: #ffffff;
+  --editor-selection: #24405f;
+  --primary: #e5e7eb;
+  --primary-foreground: #0b0f14;
+  --brand: #6aa5e0;
+  --brand-foreground: #0b0f14;
+  /* Lifted so the mark keeps 3:1 on the dark navigation glass. */
+  --brand-mark: #da614e;
+  --brand-mark-accent: #e1a980;
   --secondary: #171d26;
   --secondary-foreground: #f7f8fa;
   --muted: #171d26;
   --tooltip-neutral: color-mix(in srgb, var(--foreground) 20%, var(--background));
   --muted-foreground: #9ca8b8;
-  --accent: #202833;
-  --accent-foreground: #ff8274;
+  --accent: #1c2531;
+  --accent-foreground: #9cc4ec;
   --destructive: oklch(0.704 0.191 22.216);
   --border: #28313d;
   --input: #28313d;
-  --ring: #e45a49;
+  --ring: var(--brand);
   --inset-border: var(--sidebar-navigation-edge);
   --inset-shadow:
     0 1px 2px rgb(0 0 0 / 40%), 0 10px 30px rgb(0 0 0 / 24%);
@@ -249,16 +274,15 @@
   --surface-3: #171d26;
   --surface-border: #28313d;
 
-  --chart-1: #f36b5b;
+  --chart-1: #6aa5e0;
   --chart-2: #2cc6b6;
   --chart-3: #f0ad3d;
-  --chart-4: #7398ed;
-  --chart-5: #e36a9a;
-
-  --chart-6: #a78bfa;
-  --chart-7: #f472b6;
-  --chart-8: #38bdf8;
-  --chart-9: #34d399;
+  --chart-4: #a78bfa;
+  --chart-5: #f36b5b;
+  --chart-6: #e36a9a;
+  --chart-7: #7cc35a;
+  --chart-8: #d2c49a;
+  --chart-9: #d0915a;
 
   --tool-mcp: #b4a0fb;
   --tool-skill: var(--warning-strong);
@@ -267,14 +291,15 @@
   --tool-web: var(--info-strong);
   --tool-other: var(--muted-foreground);
 
-  --chart-tone-1: #5b8def;
-  --chart-tone-2: #76a0ef;
-  --chart-tone-3: #90b4f2;
-  --chart-tone-4: #aac7f5;
-  --chart-tone-5: #c4daf8;
-  --chart-tone-6: #deedfb;
+  /* Brightest first: on a dark card the strongest tone is the lightest. */
+  --chart-tone-1: #6aa5e0;
+  --chart-tone-2: #5a92cc;
+  --chart-tone-3: #4b7fb7;
+  --chart-tone-4: #3e6c9f;
+  --chart-tone-5: #335a86;
+  --chart-tone-6: #2a4a6e;
 
-  --code-keyword: #f36b5b;
+  --code-keyword: #7fb2e5;
   --code-string: #2cc6b6;
   --code-number: #f0ad3d;
   --code-comment: var(--muted-foreground);
@@ -310,6 +335,8 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);

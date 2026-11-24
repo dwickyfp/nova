@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { GridStack, type GridItemHTMLElement, type GridStackNode } from 'gridstack'
 import 'gridstack/dist/gridstack.css'
 import { ArrowLeft, ChevronsDown, Copy, Download, ExternalLink, FileSpreadsheet, FileText, Filter, ImageIcon, Link2, MoreHorizontal, Pencil, Sparkles, Trash2 } from 'lucide-react'
@@ -14,7 +14,7 @@ import { useChartDocument } from './hooks'
 import { useDatasetDefinition } from '../charts/chart-data'
 import { drillContext, drillDimension, drilledChart, drillOptions, type DrillStep } from '../charts/drill'
 import { NativeChart, type ValueSelection } from '../charts/native-chart'
-import { activeDrop, DROP_TYPE, dropSize, slotAt, type DropItem, type Layout, type Page, type Widget } from './layout'
+import { activeDrop, DROP_TYPE, dropSize, gridWidgets, slotAt, type DropItem, type Layout, type Page, type Widget } from './layout'
 import { ROW_PX, type CanvasPoint, type Collaborator } from './presence'
 import { PresenceCursors } from './presence-ui'
 import { NevaPointer, type NevaActivity } from './neva-pointer'
@@ -170,7 +170,7 @@ function WidgetFrame({ widget, title, props, chart, download, canImage = false, 
     appearance?.padding === 'none' ? 'p-0' : appearance?.padding === 'comfortable' ? 'p-4' : 'p-3',
     props.editing && 'cursor-grab active:cursor-grabbing',
     selected && 'outline-2 outline-offset-2 outline-ring',
-    highlighted && 'ring-2 ring-primary/60 motion-safe:transition-shadow')}
+    highlighted && 'ring-2 ring-brand/60 motion-safe:transition-shadow')}
   onClick={event => { if (props.editing) { event.stopPropagation(); props.onSelect(widget.widget_id) } }}
   // In Edit, Tab reaches every widget and focusing one selects it, so Alt+arrows can move it.
   tabIndex={props.editing ? 0 : undefined}
@@ -211,7 +211,7 @@ function WidgetFrame({ widget, title, props, chart, download, canImage = false, 
       </div>
     </div>}
     <div className='flex min-h-0 flex-1 flex-col'>{children}</div>
-    {highlighted && <span role='status' className='pointer-events-none absolute top-1 right-1 flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground motion-safe:animate-in motion-safe:fade-in'>
+    {highlighted && <span role='status' className='pointer-events-none absolute top-1 right-1 flex items-center gap-1 rounded-full bg-brand px-2 py-0.5 text-xs text-brand-foreground motion-safe:animate-in motion-safe:fade-in'>
       <Sparkles className='size-3' aria-hidden />Changed by the assistant
     </span>}
   </div>
@@ -269,7 +269,7 @@ export function DashboardCanvas(props: CanvasProps) {
   const [columns, setColumns] = useState<1 | 6 | 12>(12)
   const narrow = columns !== 12
   useEffect(() => { commit.current = props.onLayout }, [props.onLayout])
-  const widgets = props.page.widgets ?? []
+  const widgets = useMemo(() => gridWidgets(props.page), [props.page])
   const layoutsRef = useRef(widgets)
   layoutsRef.current = widgets
   const signature = widgets.map(item => `${item.widget_id}:${item.layout.x},${item.layout.y},${item.layout.w},${item.layout.h}:${item.locked}`).join('|')

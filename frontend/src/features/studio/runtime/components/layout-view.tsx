@@ -299,7 +299,7 @@ function Slider({ props }: { props: Props }) {
         disabled={streaming}
         aria-valuetext={sliderText(value, format)}
         onChange={(event) => field.setValue(Number(event.target.value))}
-        className="mt-2 h-11 w-full cursor-pointer accent-primary disabled:cursor-default"
+        className="mt-2 h-11 w-full cursor-pointer accent-brand disabled:cursor-default"
       />
       <div className="flex justify-between text-xs text-muted-foreground tabular-nums" aria-hidden="true">
         <span>{sliderText(min, format)}</span>
@@ -350,7 +350,7 @@ function Segmented({ props }: { props: Props }) {
               onClick={() => field.setValue(choice.value)}
               className={cn(
                 "min-h-9 rounded-md px-3 text-sm focus-visible:outline-2 focus-visible:outline-ring",
-                selected ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
+                selected ? "bg-brand text-brand-foreground" : "text-muted-foreground hover:bg-muted",
               )}
             >
               {choice.label}
@@ -381,7 +381,7 @@ function Toggle({ props }: { props: Props }) {
         onClick={() => field.setValue(!on)}
         className={cn(
           "relative h-6 w-11 shrink-0 rounded-full border transition-colors focus-visible:outline-2 focus-visible:outline-ring",
-          on ? "bg-primary" : "bg-muted",
+          on ? "bg-brand" : "bg-muted",
         )}
       >
         <span

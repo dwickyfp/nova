@@ -39,7 +39,7 @@ import { FilterBar, FilterBuilder } from './filters'
 import { describeFilterValue } from './filter-describe'
 import { viewFilters } from './view-filters'
 import { chartContext, defaultValue, type CrossFilter, type FilterDefinition, type FilterValue } from './filter-model'
-import { activeDrop, DROP_TYPE, firstFreeSlot, sizeFor, slotAt, type DropItem, type Layout, type Widget } from './layout'
+import { activeDrop, DROP_TYPE, firstFreeSlot, gridWidgets, sizeFor, slotAt, type DropItem, type Layout, type Widget } from './layout'
 import { NATIVE_DASHBOARD_ACTIVITY, NATIVE_DASHBOARD_CHANGED, NATIVE_DASHBOARD_OPEN, type LinkedSelection, type NativeDashboardActivity, type NativeDashboardChanged, type NativeDashboardOpen } from './events'
 import { nevaWords, type NevaActivity } from './neva-pointer'
 import { applyLocal, inverse, sameLayout, type Change } from './operations'
@@ -257,7 +257,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
   }, [dashboardId])
   const nevaText = useMemo(() => {
     if (!neva || !definition) return null
-    const widgets = definition.pages.flatMap(item => item.widgets ?? [])
+    const widgets = definition.pages.flatMap(gridWidgets)
     return nevaWords(neva, id => {
       const widget = widgets.find(item => item.widget_id === id)
       if (!widget) return undefined
@@ -288,8 +288,8 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
         void reload().then(after => {
           // Point at what the assistant changed: new widgets and widgets whose content or place moved.
           if (!before || !after) return
-          const previous = new Map(before.pages.flatMap(item => item.widgets ?? []).map(widget => [widget.widget_id, JSON.stringify(widget)]))
-          setNevaChanged(after.pages.flatMap(item => item.widgets ?? [])
+          const previous = new Map(before.pages.flatMap(gridWidgets).map(widget => [widget.widget_id, JSON.stringify(widget)]))
+          setNevaChanged(after.pages.flatMap(gridWidgets)
             .filter(widget => previous.get(widget.widget_id) !== JSON.stringify(widget)).map(widget => widget.widget_id))
         })
         void datasets.refetch()
@@ -415,12 +415,12 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
       }
       if (event.key === 'Escape') { setSelected(null) }
       if ((event.key === 'Delete' || event.key === 'Backspace') && selected && page) {
-        const widget = page.widgets?.find(item => item.widget_id === selected)
+        const widget = gridWidgets(page).find(item => item.widget_id === selected)
         if (widget) { event.preventDefault(); void apply([{ op: 'widget.remove', page_id: page.page_id, widget_id: widget.widget_id }]); setSelected(null) }
       }
       if (selected && page && event.altKey && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
         event.preventDefault()
-        const widgets = page.widgets ?? []
+        const widgets = gridWidgets(page)
         const moved = widgets.map(widget => {
           if (widget.widget_id !== selected) return { widget_id: widget.widget_id, layout: widget.layout }
           const l = widget.layout
@@ -452,7 +452,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
   const pageIdRef = useRef(pageId)
   useEffect(() => { pageIdRef.current = page?.page_id ?? null }, [page])
 
-  const pageFull = (page?.widgets?.length ?? 0) >= MAX_WIDGETS
+  const pageFull = (page ? gridWidgets(page).length : 0) >= MAX_WIDGETS
 
   async function saveChart(chart: ChartDefinition) {
     if (!page) return
@@ -473,7 +473,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
         await documents.createChart({ workspace_id: workspaceId, definition: chart }, crypto.randomUUID())
         const size = sizeFor(chart.visual)
         const widget = { kind: 'chart', widget_id: crypto.randomUUID(), title: '', locked: false,
-          layout: slotAt(page.widgets ?? [], size.w, size.h, inspector?.mode === 'new' ? inspector.at : null), chart_ref: { chart_id: chart.chart_id, revision: 1 } } as Widget
+          layout: slotAt(gridWidgets(page), size.w, size.h, inspector?.mode === 'new' ? inspector.at : null), chart_ref: { chart_id: chart.chart_id, revision: 1 } } as Widget
         if (await apply([{ op: 'widget.add', page_id: page.page_id, widget }])) {
           setInspector(null)
           setSelected(widget.widget_id)
@@ -491,7 +491,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
     if (!page) return
     if (pageFull) { toast.info(PAGE_FULL); return }
     const widget = { kind: 'text', widget_id: crypto.randomUUID(), title: '', locked: false, text, style,
-      layout: slotAt(page.widgets ?? [], 12, 2, textAt) } as Widget
+      layout: slotAt(gridWidgets(page), 12, 2, textAt) } as Widget
     setTextAt(null)
     void apply([{ op: 'widget.add', page_id: page.page_id, widget }])
   }
@@ -499,7 +499,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
   function duplicate(widget: Widget) {
     if (!page) return
     if (pageFull) { toast.info(PAGE_FULL); return }
-    const copy = { ...widget, widget_id: crypto.randomUUID(), layout: firstFreeSlot(page.widgets ?? [], widget.layout.w, widget.layout.h) } as Widget
+    const copy = { ...widget, widget_id: crypto.randomUUID(), layout: firstFreeSlot(gridWidgets(page), widget.layout.w, widget.layout.h) } as Widget
     void apply([{ op: 'widget.add', page_id: page.page_id, widget: copy }])
   }
 
@@ -616,7 +616,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
     try {
       await authorizeExport(dashboardId, 'xlsx')
       const sheets: { title: string; table: ResultTable }[] = []
-      for (const widget of page.widgets ?? []) {
+      for (const widget of gridWidgets(page)) {
         if (widget.kind !== 'chart' || !('chart_ref' in widget)) continue
         const chart = await client.fetchQuery(chartDocumentQuery(epoch, widget.chart_ref.chart_id, widget.chart_ref.revision, editing))
         const request = chartRequest({ chart, draft: editing, context: contextFor(widget, chart) })
@@ -641,7 +641,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
       const many = definition.pages.length > 1
       for (const sheet of definition.pages) {
       if (many) items.push({ kind: 'page', title: sheet.title })
-      const ordered = [...(sheet.widgets ?? [])].sort((a, b) => a.layout.y - b.layout.y || a.layout.x - b.layout.x)
+      const ordered = [...gridWidgets(sheet)].sort((a, b) => a.layout.y - b.layout.y || a.layout.x - b.layout.x)
       for (const widget of ordered) {
         if (widget.kind === 'text' && 'text' in widget) {
           items.push({ kind: 'text', title: widget.title ?? '', text: widget.text })
@@ -772,7 +772,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
             return <button key={item.page_id} type='button' aria-current={current ? 'page' : undefined}
               onClick={() => { setPageId(item.page_id); setSelected(null) }}
               className={cn('h-8 shrink-0 border-b-2 px-2 text-sm transition-colors focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-                current ? 'border-primary font-medium text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground')}>
+                current ? 'border-brand font-medium text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground')}>
               {item.title}
             </button>
           })}

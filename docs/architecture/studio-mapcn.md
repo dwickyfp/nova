@@ -19,6 +19,7 @@ Nova adapts [mapcn](https://github.com/AnmolSaini16/mapcn/tree/40c790f739c058f0f
 | --- | --- |
 | Map, MapRef, useMap | Lazy shared map surface, controlled camera, trusted application layers |
 | MapControls | Not rendered: Studio maps show no zoom, compass, locate or fullscreen buttons |
+| MapControlStack, MapControlGroup, MapControlButton | The in-map action stack: top-right icon buttons with a tooltip, `aria-pressed` toggles and focusable unavailable state |
 | MapMarker, MarkerContent | Public numbered places, route endpoints and progress markers |
 | MarkerLabel, MarkerTooltip | Public place names, hover and keyboard descriptions |
 | MarkerPopup, MapPopup | Public place details and selected business-row fields |
@@ -38,7 +39,8 @@ These primitives live under `frontend/src/components/ui/map/`. The model receive
 - Noto glyphs and their license originate from the [MapLibre demo font distribution](https://github.com/maplibre/demotiles/tree/gh-pages/font/Noto%20Sans%20Regular); only the 0–255 range used by cluster counts is bundled.
 - Public maps use the CARTO basemaps from the mapcn examples: Positron for light and Dark Matter for dark, with CARTO and OpenStreetMap attribution from the tile source. Business maps load them too (see above). Public and business maps also offer a 3D view toggle, matching mapcn's "OpenStreetMap 3D" example: it switches to OpenFreeMap Liberty, which carries extruded buildings from zoom 14, and eases to pitch 60° and at least zoom 15. Show all and Reset leave 3D, and a saved camera at 60° reopens in 3D. Liberty has no dark variant. The legacy renderer behind the rollback flag keeps OpenFreeMap. Public driving routes retain the existing bounded OSRM adapter.
 - Colors resolve Nova semantic tokens to MapLibre-compatible RGBA. Popup and attribution CSS is scoped to `.nova-map`; controls use Nova surfaces and visible keyboard focus.
-- Map actions (show all, map view, tilt, reset) render above the canvas so they never cover evidence. The canvas has no navigation buttons; pan, scroll/pinch zoom and keyboard navigation remain. Camera fits pad for the attribution and half a numbered marker. Show all returns to a flat, north-up overview.
+- Map actions render inside the map as one icon stack in the top-right corner, clear of the bottom-right attribution: Show all locations, 3D view (a pressed toggle) and, with `advanced`, Tilt view and Reset view. Dashboard maps show Show all locations. Each button has an accessible name and a tooltip and is at least 32 px (40 px on coarse pointers); open popups draw above the stack. Camera fits pad for the attribution, the stack and half a numbered marker. Show all returns to a flat, north-up overview, saves that camera and then follows the data again on resize. When the 3D basemap fails to load, the map returns to the street basemap and the 3D control stays disabled with a tooltip instead of reporting the whole map unavailable.
+- Maps use MapLibre cooperative gestures: a plain wheel scrolls the page, Ctrl/⌘ + wheel zooms, touch pans with two fingers, and keyboard navigation remains.
 - Camera animation respects reduced motion. Popup Escape handling restores its trigger's focus. Failed initialization and resources provide visible outcomes.
 - The bundled overview basemap stays an overview. A different React component does not add street-level cartographic detail.
 

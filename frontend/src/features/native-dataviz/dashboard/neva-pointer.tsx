@@ -85,12 +85,12 @@ export function NevaPointer({ activity, host, short }: { activity: NevaActivity;
     className='pointer-events-none absolute z-30 flex -translate-x-full -translate-y-1/2 items-center gap-0.5 select-none motion-safe:transition-[left,top,opacity] motion-safe:duration-700 motion-safe:ease-out'
     style={arrived ? { left: spot.left, top: spot.top } : { left: '100%', top: spot.top, opacity: 0 }}>
     <span className={cn('flex max-w-56 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] leading-4 font-medium shadow-sm',
-      failed ? 'border border-border bg-background text-foreground' : 'bg-primary text-primary-foreground')}>
+      failed ? 'border border-border bg-background text-foreground' : 'bg-brand text-brand-foreground')}>
       {failed ? <CircleAlert className='size-3 shrink-0 text-destructive' aria-hidden /> : <Sparkles className='size-3 shrink-0' aria-hidden />}
       <span className='truncate'>Assistant · {short}</span>
     </span>
     <svg viewBox='0 0 16 16' className='size-4 shrink-0 -rotate-90 drop-shadow-sm' aria-hidden>
-      <path d='M2 1.5 13.5 7 8 8.5 5.5 14z' className={failed ? 'fill-muted-foreground' : 'fill-primary'} stroke='var(--background)' strokeWidth='1.2' strokeLinejoin='round' />
+      <path d='M2 1.5 13.5 7 8 8.5 5.5 14z' className={failed ? 'fill-muted-foreground' : 'fill-brand'} stroke='var(--background)' strokeWidth='1.2' strokeLinejoin='round' />
     </svg>
   </div>
 }

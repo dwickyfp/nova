@@ -136,11 +136,11 @@ function formatPeriodLabel(period: string, groupBy: 'hour' | 'day') {
 
 function getChartColors() {
   return {
-    barTop: readToken('--chart-1', '#f05a47'),
-    barBottom: readToken('--chart-4', '#4f7ee8'),
-    line: readToken('--chart-2', '#14a89a'),
+    barTop: readToken('--chart-1', '#2f6fb0'),
+    barBottom: readToken('--chart-4', '#7a5bd0'),
+    line: readToken('--chart-2', '#12897d'),
     dotFill: readToken('--card', '#ffffff'),
-    dotStroke: readToken('--chart-2', '#14a89a'),
+    dotStroke: readToken('--chart-2', '#12897d'),
     activeDotStroke: readToken('--foreground', '#0f172a'),
     axis: readToken('--muted-foreground', '#64748b'),
     grid: readToken('--border', '#d9e2ec'),

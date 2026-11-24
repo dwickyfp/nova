@@ -413,3 +413,77 @@ async def test_a_skipped_clarification_stays_a_clarification() -> None:
     result = TurnResult(frames=frames)
     assert [r["status"] for r in _named(result, "input_resolved")] == ["declined"]
     assert provider.tools_offered[-1] == [human_input.TOOL_NAME]
+
+
+YEAR_FORM = {
+    "kind": "form", "title": "Juli tahun berapa?",
+    "fields": [{"name": "tahun_juli", "title": "Tahun", "type": "integer",
+                "minimum": 1900, "maximum": 9999, "required": True}],
+}
+JUNE_JULY_2025 = {
+    "title": "revenue", "columns": ["revenue"], "rows": [["175184000.00"]],
+    "period": {"first": "2025-06-01", "last": "2025-07-05"},
+}
+
+
+@pytest.mark.asyncio
+async def test_a_year_the_data_decides_is_not_asked() -> None:
+    """Benchmark what_if-006: "Juli" became July 1900 from a year form's minimum."""
+    query = EvalTool("query_execute", table=JUNE_JULY_2025)
+    provider = RecordingProvider(
+        [
+            tool_call_frame("q1", sql="SELECT SUM(total_amount) FROM orders"),
+            tool_call_frame("ask", name=human_input.TOOL_NAME, arguments=YEAR_FORM),
+            text_frame("Target Juli 2025."),
+        ],
+        turn_plan=PLAN,
+    )
+    asked: list[dict[str, Any]] = []
+
+    async def ask(_request_id: str, request: dict[str, Any]) -> HumanAnswer:
+        asked.append(request)
+        return human_input.validate_answer(request, {"values": {"tahun_juli": 1900}})
+
+    result = await _run(AssistantLoop(provider=provider, registry=_registry(query)),
+                        ask_human=ask)
+    assert asked == []  # nobody is asked a year the data already decides
+    settled = next(item for item in _tool_results(provider)
+                   if item.get("tool") == human_input.TOOL_NAME)
+    assert settled["data"]["status"] == "settled_by_data"
+    assert settled["data"]["answer"] == {"values": {"tahun_juli": 2025}}
+    assert not _named(result, "input_required")
+
+
+def test_year_fields_offer_only_the_data_years() -> None:
+    request = human_input.normalize_request({
+        **YEAR_FORM,
+        "fields": [*YEAR_FORM["fields"],
+                   {"name": "growth", "title": "Weekly growth %", "type": "number"}],
+    })
+    years = human_input.data_years({"e1": {"period": {"first": "2024-11-01",
+                                                      "last": "2025-07-05"}}})
+    assert years == [2024, 2025]
+    assert human_input.year_settled_by_data(request, years) is None  # two fields
+    fitted = human_input.fit_year_fields(request, years)
+    year = fitted["fields"][0]
+    assert (year["widget"], year["values"], year["default"]) == ("select", ["2025", "2024"],
+                                                                  "2025")
+    assert "minimum" not in year
+    assert fitted["fields"][1]["widget"] == "number"
+    with pytest.raises(human_input.HumanInputError):
+        human_input.validate_answer(fitted, {"values": {"tahun_juli": "1900", "growth": 5}})
+    assert human_input.validate_answer(
+        fitted, {"values": {"tahun_juli": "2025", "growth": 5}}).value["values"]["tahun_juli"] \
+        == "2025"
+    # No verified data yet: the form is left as the model wrote it.
+    assert human_input.fit_year_fields(request, []) == request
+
+
+def test_a_year_field_is_read_from_its_bounds_not_its_label() -> None:
+    from app.modules.assistant.human_input import _is_year_field
+
+    assert _is_year_field({"widget": "integer", "minimum": 1900, "maximum": 9999})
+    assert _is_year_field({"widget": "number", "default": 2025})
+    assert not _is_year_field({"widget": "integer", "minimum": 1, "maximum": 12})
+    assert not _is_year_field({"widget": "integer", "minimum": 5000, "maximum": 9000})
+    assert not _is_year_field({"widget": "text", "minimum": 1900})

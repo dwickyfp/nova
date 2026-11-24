@@ -11,6 +11,7 @@ import { ApiError } from '@/lib/api-client'
 import { useAuthStore } from '@/stores/auth-store'
 import type { DashboardDefinition, GrantSummary } from '../contracts'
 import { nativeDocuments } from '../documents'
+import { gridWidgets } from './layout'
 
 type Permission = GrantSummary['permission']
 type Subject = { subject_type: 'user' | 'role'; subject_id: string; preset: Preset; export: boolean }
@@ -69,7 +70,7 @@ export function ShareDialog({ open, onOpenChange, dashboardId, workspaceId, defi
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const charts = [...new Set(definition.pages.flatMap(page => (page.widgets ?? []).flatMap(widget =>
+  const charts = [...new Set(definition.pages.flatMap(page => gridWidgets(page).flatMap(widget =>
     widget.kind === 'chart' && 'chart_ref' in widget ? [widget.chart_ref.chart_id] : [])))]
   const datasets = [...new Set((definition.datasets ?? []).map(item => item.dataset_id))]
 

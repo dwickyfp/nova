@@ -90,6 +90,8 @@ export type StudioEvent = Envelope &
         preview?: string;
         progress?: { stage: string; text: string };
         detail?: string;
+        /** Why a failed call failed: one short, redacted line. */
+        reason?: string;
         evidence?: Record<string, unknown>;
         /** How long the call ran, sent with its terminal status. */
         durationMs?: number;
@@ -336,6 +338,9 @@ export function parseStudioRecord(name: string, data: Record<string, unknown>): 
           ? { progress: { stage: progress.stage, text: progress.text } }
           : {}),
         ...(typeof data.detail === "string" ? { detail: data.detail } : {}),
+        ...(status.status === "failed" && typeof data.reason === "string" && data.reason.trim()
+          ? { reason: data.reason.trim() }
+          : {}),
         ...(evidence ? { evidence } : {}),
         ...(typeof data.duration_ms === "number" && Number.isFinite(data.duration_ms) && data.duration_ms >= 0
           ? { durationMs: data.duration_ms }

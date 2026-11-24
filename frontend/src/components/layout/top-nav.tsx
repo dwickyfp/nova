@@ -59,7 +59,7 @@ export function TopNav({ className, links, ...props }: TopNavProps) {
             key={`${title}-${href}`}
             to={href}
             disabled={disabled}
-            className={`text-sm font-medium transition-colors hover:text-primary ${isActive ? '' : 'text-muted-foreground'}`}
+            className={`text-sm font-medium transition-colors hover:text-brand ${isActive ? '' : 'text-muted-foreground'}`}
           >
             {title}
           </Link>

@@ -138,7 +138,10 @@ latitude and longitude are picked for you, and you can change them under
 - Rows without a valid latitude and longitude are not placed. The map says how
   many it left out.
 
-Drag to move the map and scroll to zoom. Clicking a point with a group narrows
+Drag to move the map. To zoom, hold Ctrl (⌘ on a Mac) while you scroll, or
+pinch on a touch screen, where you move the map with two fingers; plain
+scrolling scrolls the dashboard. **Show all locations**, in the top-right
+corner of the map, brings every point back into view. Clicking a point with a group narrows
 the other charts to that group, like clicking a bar. The street map is loaded
 from an online map service, which sees the area you are looking at but none of
 your data. If it cannot load, the chart says so and its data can still be

@@ -389,7 +389,7 @@ input:-webkit-autofill:active {
 /* Studio run rail. Each step hangs off the rail on an elbow; the elbow draws
    itself and the rail grows to the next row as steps arrive, so a live run
    reads as work accumulating rather than lines swapping. The elbow into a live
-   row takes the primary colour. One curve for everything: the same
+   row takes the --brand accent. One curve for everything: the same
    cubic-bezier(0.16, 1, 0.3, 1) the subagent panel opens with. */
 .nova-rail-item {
   --rail-mid: 16px;
@@ -422,7 +422,7 @@ input:-webkit-autofill:active {
 }
 
 .nova-rail-item[data-live]::before {
-  border-color: var(--primary);
+  border-color: var(--brand);
 }
 
 .nova-rail-item:not(:last-child)::after {
@@ -504,7 +504,7 @@ input:-webkit-autofill:active {
   content: "";
   position: absolute;
   inset: -3px;
-  border: 1px solid var(--primary);
+  border: 1px solid var(--brand);
   border-radius: 9999px;
   animation: nova-live-ring 1.6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
 }
@@ -527,7 +527,7 @@ input:-webkit-autofill:active {
 }
 
 /* Studio workspace switch. A frosted track floating over the workspace; the
-   selected plate is lacquered brick red: a tonal shift within --primary, a
+   selected plate is lacquered steel blue: a tonal shift within --brand, a
    lit top edge, and a soft neutral shadow, so it reads as a pressed key. */
 .nova-mode-switch {
   background: color-mix(in oklab, var(--card) 72%, transparent);
@@ -542,9 +542,9 @@ input:-webkit-autofill:active {
 .nova-mode-plate {
   background: linear-gradient(
     180deg,
-    color-mix(in oklab, var(--primary), white 14%) 0%,
-    var(--primary) 55%,
-    color-mix(in oklab, var(--primary), black 12%) 100%
+    color-mix(in oklab, var(--brand), white 8%) 0%,
+    var(--brand) 55%,
+    color-mix(in oklab, var(--brand), black 12%) 100%
   );
   box-shadow:
     inset 0 1px 0 color-mix(in oklab, white 35%, transparent),
@@ -554,13 +554,13 @@ input:-webkit-autofill:active {
 }
 
 /* Studio greeting ink: the sky of the client's hour, drawn from the chart
-   palette. Sunrise warms from amber into Nova's coral, daylight is a clear
-   blue sky into teal, dusk goes rose to violet to blue. Light theme deepens each stop so
+   palette. Sunrise warms from amber into coral and rose, daylight is a clear
+   steel-blue sky into teal and green, dusk goes rose to violet to blue. Light theme deepens each stop so
    the text keeps 3:1 against the page. */
 .nova-greeting-ink {
   --g1: var(--chart-3);
-  --g2: var(--chart-1);
-  --g3: var(--chart-5);
+  --g2: var(--chart-5);
+  --g3: var(--chart-6);
   background-image: linear-gradient(
     in oklch 100deg,
     color-mix(in oklch, var(--g1), black var(--g-depth, 12%)) 0%,
@@ -580,15 +580,15 @@ input:-webkit-autofill:active {
 }
 
 .nova-greeting-ink[data-daypart="afternoon"] {
-  --g1: var(--chart-4);
-  --g2: var(--chart-8);
-  --g3: var(--chart-2);
+  --g1: var(--chart-1);
+  --g2: var(--chart-2);
+  --g3: var(--chart-7);
 }
 
 .nova-greeting-ink[data-daypart="evening"] {
-  --g1: var(--chart-5);
-  --g2: var(--chart-6);
-  --g3: var(--chart-4);
+  --g1: var(--chart-6);
+  --g2: var(--chart-4);
+  --g3: var(--chart-1);
 }
 
 /*
@@ -817,7 +817,7 @@ input:-webkit-autofill:active {
 .nova-dataviz-cells > span {
   margin: 6px;
   border-radius: calc(var(--radius) - 2px);
-  background: color-mix(in oklab, var(--primary) 7%, var(--muted));
+  background: color-mix(in oklab, var(--brand) 7%, var(--muted));
 }
 /* Where a widget dragged from the toolbar will land. */
 .nova-dataviz-drop {
@@ -828,7 +828,7 @@ input:-webkit-autofill:active {
 }
 /* The widget a change Neva proposes would touch. */
 .grid-stack-item[data-neva-target] > .grid-stack-item-content {
-  outline: 2px dashed var(--primary);
+  outline: 2px dashed var(--brand);
   outline-offset: 2px;
 }
 .grid-stack-item[data-neva-target="failed"] > .grid-stack-item-content,
@@ -841,12 +841,12 @@ input:-webkit-autofill:active {
   height: 100%;
   border: 1px dashed var(--ring);
   border-radius: var(--radius);
-  background: color-mix(in oklab, var(--primary) 8%, transparent);
+  background: color-mix(in oklab, var(--brand) 8%, transparent);
 }
 .nova-dataviz-canvas .grid-stack-placeholder > .placeholder-content {
   border: 1px dashed var(--ring);
   border-radius: var(--radius);
-  background: color-mix(in oklab, var(--primary) 8%, transparent);
+  background: color-mix(in oklab, var(--brand) 8%, transparent);
 }
 .nova-dataviz-canvas .grid-stack-item > .ui-resizable-se {
   opacity: 0;

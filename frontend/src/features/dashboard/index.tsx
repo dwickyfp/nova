@@ -237,10 +237,10 @@ export function Dashboard() {
                   <Link
                     key={action.title}
                     to={action.href}
-                    className="group flex min-h-28 rounded-lg border border-border/75 bg-card p-4 transition-colors hover:border-primary/35 hover:bg-primary/3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="group flex min-h-28 rounded-lg border border-border/75 bg-card p-4 transition-colors hover:border-brand/35 hover:bg-brand/3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <div className="flex min-w-0 flex-col gap-3">
-                      <action.icon className="size-4 text-primary" />
+                      <action.icon className="size-4 text-brand" />
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
                           <span className="truncate text-sm font-medium">
@@ -273,7 +273,7 @@ export function Dashboard() {
                       <TabsTrigger
                         key={tab.value}
                         value={tab.value}
-                        className="rounded-none border-0 bg-transparent px-0 me-7 text-muted-foreground shadow-none data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none"
+                        className="rounded-none border-0 bg-transparent px-0 me-7 text-muted-foreground shadow-none data-[state=active]:bg-transparent data-[state=active]:text-brand data-[state=active]:shadow-none"
                       >
                         {tab.label}
                       </TabsTrigger>
@@ -320,10 +320,10 @@ export function Dashboard() {
                       key={template.id}
                       to="/workspaces"
                       search={{ template: template.id }}
-                      className="group flex min-h-20 items-center justify-between gap-4 rounded-lg border border-border/75 bg-card px-4 py-3 transition-colors hover:border-primary/35 hover:bg-primary/3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="group flex min-h-20 items-center justify-between gap-4 rounded-lg border border-border/75 bg-card px-4 py-3 transition-colors hover:border-brand/35 hover:bg-brand/3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <div className="flex min-w-0 items-start gap-3">
-                        <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground group-hover:text-primary" />
+                        <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground group-hover:text-brand" />
                         <div className="min-w-0 space-y-2">
                           <p className="truncate text-sm font-medium">
                             {template.title}
@@ -335,7 +335,7 @@ export function Dashboard() {
                           </div>
                         </div>
                       </div>
-                      <Plus className="size-4 shrink-0 text-muted-foreground group-hover:text-primary" />
+                      <Plus className="size-4 shrink-0 text-muted-foreground group-hover:text-brand" />
                     </Link>
                   );
                 })}

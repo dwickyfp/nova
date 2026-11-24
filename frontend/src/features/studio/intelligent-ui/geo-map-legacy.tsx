@@ -76,7 +76,7 @@ export default function GeoMap({ p }: { p: Record<string, unknown> }) {
         map.addLayer({ id: "outlines", source: "geometry", type: "line",
           paint: { "line-color": token("--chart-1"), "line-width": 2 } });
         map.addLayer({ id: "points", source: "points", type: "circle",
-          paint: { "circle-color": token("--primary"), "circle-radius": ["case", ["has", "point_count"], 14, 7],
+          paint: { "circle-color": token("--brand"), "circle-radius": ["case", ["has", "point_count"], 14, 7],
             "circle-stroke-color": token("--background"), "circle-stroke-width": 2 } });
         map.on("click", "points", async (event) => {
           const feature = event.features?.[0];

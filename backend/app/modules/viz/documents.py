@@ -22,6 +22,8 @@ from .bindings import (
     validate_relationship_binding,
     validate_widget_bindings,
 )
+from .canvas import current as current_dashboard
+from .canvas import dashboard_definition
 from .contracts.authoring import DashboardDatasetCreate, DatasetCreate, DatasetUpdate
 from .contracts.charts import ChartDefinition
 from .contracts.commands import (
@@ -32,11 +34,14 @@ from .contracts.commands import (
     RestoreRequest,
 )
 from .contracts.common import Contract, Permission
-from .contracts.dashboards import ChartWidget, DashboardDefinition, DatasetReference
+from .contracts.dashboards import DashboardDefinition, DatasetReference
+from .contracts.dashboards_v2 import DashboardDefinitionV2
 from .contracts.datasets import DatasetDefinition, LocalMetricSource
 from .operations import apply_operation
 
 Document = DatasetDefinition | ChartDefinition | DashboardDefinition
+#: What a create or replace request may carry; a v2 dashboard is upcast before it is stored.
+Submitted = Document | DashboardDefinitionV2
 Kind = Literal["dataset", "chart", "dashboard"]
 
 
@@ -70,7 +75,7 @@ def dashboard_dataset_intent(
             "request": request.model_dump(mode="json", exclude_defaults=True)}
 
 
-def document_identity(document: Document) -> tuple[Kind, UUID]:
+def document_identity(document: Submitted) -> tuple[Kind, UUID]:
     if isinstance(document, DatasetDefinition):
         return "dataset", document.dataset_id
     if isinstance(document, ChartDefinition):
@@ -85,8 +90,15 @@ def parse_document(kind: str, payload: dict[str, Any]) -> Document:
     if kind == "chart":
         return ChartDefinition.model_validate(payload)
     if kind == "dashboard":
-        return DashboardDefinition.model_validate(payload)
+        return dashboard_definition(payload)
     raise ValueError("Unknown native document kind")
+
+
+def _current(document: Submitted) -> Document:
+    """The stored form: the digest keeps the submitted shape so old receipts replay."""
+    if isinstance(document, DashboardDefinitionV2):
+        return current_dashboard(document)
+    return document
 
 
 class VizDocumentRepository(WorkspaceMetadataScope):
@@ -504,8 +516,9 @@ class VizDocumentRepository(WorkspaceMetadataScope):
         payload = canonical(document)
         await self.connection.execute(
             "INSERT INTO nova_meta.viz_revisions "
-            "(resource_id,revision,schema_version,definition,digest) VALUES (%s,%s,2,%s,%s)",
-            (identity, revision, Jsonb(json.loads(payload)), hashlib.sha256(payload).hexdigest()),
+            "(resource_id,revision,schema_version,definition,digest) VALUES (%s,%s,%s,%s,%s)",
+            (identity, revision, 3 if kind == "dashboard" else 2,
+             Jsonb(json.loads(payload)), hashlib.sha256(payload).hexdigest()),
         )
 
     async def _references(
@@ -537,9 +550,8 @@ class VizDocumentRepository(WorkspaceMetadataScope):
             elif isinstance(current_document, DashboardDefinition):
                 requested.extend((item.dataset_id, item.revision, "dataset")
                                  for item in current_document.datasets)
-                requested.extend((widget.chart_ref.chart_id, widget.chart_ref.revision, "chart")
-                                 for page in current_document.pages for widget in page.widgets
-                                 if isinstance(widget, ChartWidget))
+                requested.extend((visual.chart_ref.chart_id, visual.chart_ref.revision, "chart")
+                                 for _, visual in current_document.visuals())
             bindings = list(document_bindings(current_document))
             requested.extend((binding.dataset_id, binding.dataset_revision, "dataset")
                              for binding in bindings)
@@ -603,7 +615,7 @@ class VizDocumentRepository(WorkspaceMetadataScope):
         return sorted(references, key=lambda item: (str(item[0]), item[1]))
 
     async def create(
-        self, workspace_id: str, document: Document, *, operation_id: UUID,
+        self, workspace_id: str, document: Submitted, *, operation_id: UUID,
         intent: DatasetCreate | None = None,
     ) -> dict[str, Any]:
         kind, identity = document_identity(document)
@@ -620,7 +632,7 @@ class VizDocumentRepository(WorkspaceMetadataScope):
                                          legacy_payload=legacy if intent is not None else None)
         if prior is not None:
             return prior
-        return await self._create(workspace_id, document, operation_id, digest)
+        return await self._create(workspace_id, _current(document), operation_id, digest)
 
     async def _create(
         self, workspace_id: str, document: Document, operation_id: UUID, digest: str,
@@ -681,7 +693,7 @@ class VizDocumentRepository(WorkspaceMetadataScope):
         return head
 
     async def replace(
-        self, document: Document, *, operation_id: UUID, expected_revision: int,
+        self, document: Submitted, *, operation_id: UUID, expected_revision: int,
         intent: DatasetUpdate | None = None,
     ) -> dict[str, Any]:
         kind, identity = document_identity(document)
@@ -700,8 +712,9 @@ class VizDocumentRepository(WorkspaceMetadataScope):
         await self._permission(identity, "edit")
         if head["draft_revision"] != expected_revision or head["kind"] != kind:
             raise MetadataConflict()
-        await self._references(document, head["workspace_id"])
-        return await self._replace(head, document, operation_id, digest)
+        stored = _current(document)
+        await self._references(stored, head["workspace_id"])
+        return await self._replace(head, stored, operation_id, digest)
 
     async def _replace(
         self, head: dict[str, Any], document: Document, operation_id: UUID, digest: str,
