@@ -112,6 +112,8 @@ class DataToChartTool:
             # A follow-up ("show that as a pie chart") names an evidence id of an
             # earlier turn; that turn's result is the one restored as the latest.
             last, chosen = latest, ""
+        if not chosen:
+            last, chosen = _holding(_named_columns(arguments), latest, tables)
         if not last or not last.get("columns"):
             detail = (
                 "There is no recent data to chart in this conversation. Fetch "
@@ -132,9 +134,17 @@ class DataToChartTool:
         title = str(arguments.get("title") or last.get("title") or intent).strip()[:120]
         unknown = [name for name in _named_columns(arguments) if name not in columns]
         if unknown:
-            return ToolOutcome(ok=False, summary="", error=(
-                f"The result has no column {', '.join(map(repr, unknown))}. "
-                f"Its columns: {', '.join(columns[:30])}."))
+            # Recoverable: the agent names a column the result has, or fetches
+            # the data the chart needs. The column names stay with the agent.
+            return ToolOutcome(
+                ok=False, summary="", error=(
+                    f"The result has no column {', '.join(map(repr, unknown))}. "
+                    f"Its columns: {', '.join(columns[:30])}. Name columns of this "
+                    "result, or query the data the chart needs first."),
+                error_class="INVALID_TOOL_ARGUMENTS", recoverable=True,
+                safe_detail="The chart asked for data this result does not hold.",
+                repair_context={"columns": columns[:30], "evidence_ids": list(tables)[-8:]},
+            )
         started = time.perf_counter()
         report_tool_progress(context, stage="generating_chart",
                              text="Designing a view of the retrieved data")
@@ -433,6 +443,32 @@ def _producer(context: Any, sql: str) -> str | None:
             tool_call_id = step.get("tool_call_id")
             return str(tool_call_id) if tool_call_id else None
     return None
+
+
+def _holding(
+    names: list[str], latest: dict[str, Any] | None, tables: dict[str, dict[str, Any]],
+) -> tuple[dict[str, Any] | None, str]:
+    """The result a chart without an evidence id draws: the latest data result,
+    unless only another result holds the columns the chart names.
+
+    A calculation (a percent change, a what-if) is its own result; it never
+    replaces the data it was computed from. A chart of the calculated column
+    finds it here, newest first, and so does a calculation an earlier answer
+    kept beside its data result (``derived``).
+    """
+    def holds(table: Any) -> bool:
+        columns = {str(name) for name in (table or {}).get("columns") or []}
+        return bool(columns) and all(name in columns for name in names)
+
+    if not names or latest is None or holds(latest):
+        return latest, ""
+    for key in reversed(list(tables)):
+        if holds(tables[key]):
+            return tables[key], key
+    for derived in reversed(list(latest.get("derived") or [])):
+        if holds(derived):
+            return derived, ""
+    return latest, ""
 
 
 def _evidence_of(table: dict[str, Any], tables: dict[str, dict[str, Any]]) -> str | None:

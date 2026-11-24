@@ -189,7 +189,20 @@ async def test_the_tool_combines_two_held_results_and_continues_from_the_new_tab
                    "with_evidence_id": "evidence_4"},
     ), context)
     assert outcome.ok and outcome.table["columns"][-1] == "active_headcount"
-    assert context.last_result["rows"] == outcome.table["rows"]
+    # The combined table is its own evidence; the data result is not replaced.
+    assert context.last_result is None
+    context.evidence_tables["evidence_5"] = {
+        "columns": outcome.table["columns"], "rows": outcome.table["rows"],
+    }
+    context.last_result = EXPENSE
+    per_head = await compute_metrics_tool.run(ToolInvocation(
+        tool_call_id="c", tool_name="compute_metrics",
+        arguments={"operation": "ratio", "value_column": "total_expense",
+                   "compare_column": "active_headcount"},
+    ), context)
+    # Only the combined table holds both columns, so the ratio continues from it.
+    assert per_head.ok, per_head.error
+    assert per_head.table["columns"][-1] == "total_expense_per_active_headcount"
     missing = await compute_metrics_tool.run(ToolInvocation(
         tool_call_id="c", tool_name="compute_metrics",
         arguments={"operation": "combine", "evidence_id": "evidence_3",
@@ -249,3 +262,122 @@ async def test_an_earlier_turns_evidence_id_uses_the_restored_result():
     )
     assert outcome.ok, outcome.error
     assert outcome.table["rows"][0][2] == "192702400.0000"
+
+
+@pytest.mark.parametrize(("arguments", "scenario"), [
+    # Benchmark what_if-001: the model fills both fields with the same change.
+    ({"factor": 1.1, "percent": 10}, "192702400.0000"),
+    # A neutral value for the field it did not mean.
+    ({"factor": 1.1, "percent": 0}, "192702400.0000"),
+    ({"factor": 1, "percent": 10}, "192702400.0000"),
+    ({"factor": 2, "percent": 100}, "350368000.0000"),
+])
+def test_scale_accepts_a_redundant_factor_and_percent(arguments, scenario):
+    assert run(TOTAL, operation="scale", value_column="revenue", **arguments)["rows"][0][2] \
+        == scenario
+
+
+def test_scale_refuses_two_different_changes_and_says_how_to_fix_it():
+    with pytest.raises(ComputeError, match="one of them"):
+        run(TOTAL, operation="scale", value_column="revenue", factor=1.2, percent=10)
+
+
+async def test_the_tool_records_which_redundant_scale_argument_it_dropped():
+    outcome = await compute_metrics_tool.run(
+        ToolInvocation("c1", "compute_metrics", {
+            "operation": "scale", "value_column": "revenue", "factor": 1.1, "percent": 10,
+        }),
+        SimpleNamespace(last_result=dict(TOTAL), evidence_tables={}),
+    )
+    assert outcome.ok, outcome.error
+    assert outcome.metadata["dropped_arguments"] == {"percent": 10}
+
+
+async def test_a_calculation_never_replaces_the_data_result():
+    """Benchmark session-030: a percent change replaced the order list, so the
+    chart of the order values that followed found only from/to/pct_change."""
+    orders = {"columns": ["order_id", "revenue"],
+              "rows": [[1008, "1499000.00"], [1013, "599000.00"]]}
+    context = SimpleNamespace(last_result=orders, evidence_tables={"evidence_1": orders})
+    outcome = await compute_metrics_tool.run(
+        ToolInvocation("c1", "compute_metrics", {
+            "operation": "pct_change", "value_column": "revenue",
+            "label_column": "order_id", "from_label": "1008", "to_label": "1013",
+        }),
+        context,
+    )
+    assert outcome.ok, outcome.error
+    assert context.last_result is orders
+    # The loop shows the calculation as its own table part.
+    assert outcome.table["columns"] == ["from", "to", "revenue_pct_change"]
+    assert outcome.metadata["evidence_kind"] == "derived"
+
+
+CITY_AOV = {"columns": ["shipping_city", "average_order_value"],
+            "rows": [["Semarang", "24999000.00000000"], ["Medan", "3999000.00000000"]]}
+OVERALL_AOV = {"columns": ["average_order_value"], "rows": [["11678933.33333333"]]}
+
+
+async def test_difference_against_one_figure_of_another_result():
+    """Benchmark multi_step-002: the top city's AOV against the overall AOV,
+    the same measure in two results."""
+    context = SimpleNamespace(
+        last_result=OVERALL_AOV,
+        evidence_tables={"evidence_1": CITY_AOV, "evidence_2": OVERALL_AOV},
+    )
+    outcome = await compute_metrics_tool.run(
+        ToolInvocation("c1", "compute_metrics", {
+            "operation": "difference", "value_column": "average_order_value",
+            "evidence_id": "evidence_1", "with_evidence_id": "evidence_2",
+            "to_label": "Semarang",
+        }),
+        context,
+    )
+    assert outcome.ok, outcome.error
+    assert outcome.table["columns"] == [
+        "shipping_city", "average_order_value", "average_order_value_reference",
+        "average_order_value_difference",
+    ]
+    assert outcome.table["rows"] == [
+        ["Semarang", "24999000.0000", "11678933.3333", "13320066.6667"],
+    ]
+    pct = await compute_metrics_tool.run(
+        ToolInvocation("c2", "compute_metrics", {
+            "operation": "pct_change", "evidence_id": "evidence_1",
+            "with_evidence_id": "evidence_2",
+        }),
+        context,
+    )
+    assert pct.ok, pct.error
+    assert [row[-1] for row in pct.table["rows"]] == ["114.0521%", "-65.7589%"]
+
+
+async def test_comparing_with_a_figure_needs_a_one_row_result():
+    context = SimpleNamespace(
+        last_result=None, evidence_tables={"evidence_1": CITY_AOV, "evidence_2": CITY_AOV},
+    )
+    outcome = await compute_metrics_tool.run(
+        ToolInvocation("c1", "compute_metrics", {
+            "operation": "difference", "evidence_id": "evidence_1",
+            "with_evidence_id": "evidence_2",
+        }),
+        context,
+    )
+    assert not outcome.ok and outcome.recoverable
+    assert "one-row result" in (outcome.error or "")
+
+
+async def test_ratio_to_a_figure_of_the_same_measure_is_allowed():
+    context = SimpleNamespace(
+        last_result=None,
+        evidence_tables={"evidence_1": CITY_AOV, "evidence_2": OVERALL_AOV},
+    )
+    outcome = await compute_metrics_tool.run(
+        ToolInvocation("c1", "compute_metrics", {
+            "operation": "ratio", "value_column": "average_order_value",
+            "evidence_id": "evidence_1", "with_evidence_id": "evidence_2",
+        }),
+        context,
+    )
+    assert outcome.ok, outcome.error
+    assert outcome.table["rows"][0][-1] == "214.0521"

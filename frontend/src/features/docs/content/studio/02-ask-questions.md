@@ -150,6 +150,12 @@ AI model work the answer used.
 - **What if**: "What if revenue grew 10%?" or "What if it doubled?" The agent
   takes the current figure from the data and works out the new figure and the
   change exactly. It does not estimate them.
+- **Against an overall figure**: "Which city has the highest average order
+  value, and how far is it above the overall average?" The agent fetches both
+  figures and works out the difference or the percentage between them.
+- **Worked-out figures** (a percent change, a difference, a what-if total)
+  appear as their own table under the answer. A follow-up about the data, such
+  as "Show the distribution", still uses the rows those figures came from.
 - **Conditions that match nothing**: "orders shipped to Bandung" means orders
   whose shipping city is Bandung. If a combination of conditions matches no
   record, the agent says so, then gives the figure without the condition that
