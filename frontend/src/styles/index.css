@@ -555,7 +555,7 @@ input:-webkit-autofill:active {
 
 /* Studio greeting ink: the sky of the client's hour, drawn from the chart
    palette. Sunrise warms from amber into coral and rose, daylight is a clear
-   steel-blue sky into teal, dusk goes rose to violet to blue. Light theme deepens each stop so
+   steel-blue sky into teal and green, dusk goes rose to violet to blue. Light theme deepens each stop so
    the text keeps 3:1 against the page. */
 .nova-greeting-ink {
   --g1: var(--chart-3);
@@ -581,8 +581,8 @@ input:-webkit-autofill:active {
 
 .nova-greeting-ink[data-daypart="afternoon"] {
   --g1: var(--chart-1);
-  --g2: var(--chart-8);
-  --g3: var(--chart-2);
+  --g2: var(--chart-2);
+  --g3: var(--chart-7);
 }
 
 .nova-greeting-ink[data-daypart="evening"] {

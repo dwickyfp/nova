@@ -40,6 +40,7 @@ mendefinisikan warna.
 | `--primary`, `--primary-foreground` | Aksi utama, graphite netral | Tombol primer, fill aksi, tooltip, gelembung pesan |
 | `--brand`, `--brand-foreground` | Aksen interaktif biru-baja, satu keluarga dengan backdrop `#8fb4c4` | Tautan, focus ring (`--ring`), tab/toggle aktif, checkbox/switch tercentang, seleksi, rute peta, `--viz-highlight` |
 | `--editor-selection` | Seleksi teks di editor SQL | Monaco `editor.selectionBackground` |
+| `--brand-mark`, `--brand-mark-accent` | Merah bata dan tembaga phoenix; satu-satunya merah di antarmuka | Hanya logo (`Logo`, favicon). Bukan warna UI, bukan `--primary` |
 
 ### 2.2 Warna status
 
@@ -103,7 +104,7 @@ memakai `backdrop-filter`; material bukan tingkat `--surface-4`.
 
 | Token | Arti |
 |---|---|
-| `--shell-backdrop` | Lukisan latar shell: teal-slate di kiri atas, bata dan amber di bawah |
+| `--shell-backdrop` | Lukisan latar shell: teal-slate di kiri atas, slate-biru di kiri bawah, amber di kanan bawah |
 | `--shell-pane-tint` | Tint workspace di atas backdrop; 100% di tema terang, 82% di tema gelap |
 | `--sidebar-navigation-tint` | Tint chrome di atas backdrop atau konten di belakang drawer |
 | `--sidebar-navigation-tint-opacity` | Alpha tint chrome; 45% terang, 46% gelap |
@@ -119,7 +120,7 @@ memakai `backdrop-filter`; material bukan tingkat `--surface-4`.
 
 **Backdrop harus punya variasi hue.** Kaca hanya terbaca kalau ada sesuatu di
 belakangnya. Gradien abu-abu netral di bawah tint terlihat sama dengan warna
-solid, jadi backdrop memakai teal-slate dan bata/amber dari palet Nova sendiri.
+solid, jadi backdrop memakai teal-slate, slate-biru dan amber dari palet Nova sendiri.
 Blur tidak menggantikan variasi itu.
 
 **Plate dan hairline transparan, bukan hex opak.** Hover, selected, dan edge
@@ -211,9 +212,9 @@ warna UI, dan `--success` diambil dari `--chart-2` supaya bahasa status dan
 bahasa grafik tidak bercabang.
 
 - `--chart-1..9` adalah palet kategori dalam urutan gambar: biru-baja,
-  teal, amber, violet, coral, magenta, hijau, langit, cokelat. Konsumen memakai
+  teal, amber, violet, coral, magenta, hijau, zaitun, cokelat. Konsumen memakai
   urutan 1..9 apa adanya; jangan mengurutkan ulang di komponen. Dua slot
-  bersebelahan tidak boleh mirip, dan setiap slot lolos 3:1 terhadap `--card`
+  mana pun tidak boleh mirip (ΔE OKLab > 0,08 untuk setiap pasangan), dan setiap slot lolos 3:1 terhadap `--card`
   di kedua tema (`src/styles/theme-contrast.test.ts`).
 - `--chart-1` sama dengan `--brand`; "aksen" di Dataviz (format kondisional,
   rute) memakai `--chart-1`/`--brand`, bukan slot lain.
@@ -497,6 +498,10 @@ di gelap" tidak berlaku lagi. Aturannya sekarang:
   text-brand-foreground`. Jangan memakai `--primary` untuk keadaan, karena
   graphite tidak terbaca sebagai "aktif".
 - Destructive tetap merah dan sekarang jelas berbeda dari aksi utama.
+- Logo phoenix tetap merah bata (keputusan pemilik, 2026-11-24) lewat
+  `--brand-mark`. Di tema gelap merahnya diangkat (`#da614e`) agar 3:1 di atas
+  kaca navigasi; `Logo` menukar ke raster `-dark` pada `.dark`. Merah ini tidak
+  dipakai untuk elemen UI lain.
 - `src/styles/theme-contrast.test.ts` mengukur pasangan teks (4.5:1), focus ring
   dan seri chart (3:1) dari stylesheet asli di kedua tema.
 
