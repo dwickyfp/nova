@@ -264,7 +264,10 @@ ASK_INSTRUCTION = (
     "options in your answer: kind question with 2-4 suggested answers, kind "
     "choice for options to pick, or kind form for a few values. Then continue "
     "the work with their answer. Never end your answer with a question or a "
-    "list of options for the user to reply to."
+    "list of options for the user to reply to. Do not ask when a sensible default "
+    "exists: the full data range for a trend, the verified figure for a what-if. When "
+    "an interactive page with controls already lets the user choose, never add a "
+    "question or form beside it."
 )
 
 

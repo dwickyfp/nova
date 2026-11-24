@@ -219,6 +219,11 @@ request appears in the answer, in the place where the agent stopped, and waits
 for you. Only you can answer it: other people, and you under another role or
 another sign-in, cannot.
 
+The agent does not ask when a sensible default answers the question: a trend
+covers all the dates in the data, and a what-if starts from the verified
+figure. When an answer page already has controls, such as a slider, you
+choose there instead of in a separate card.
+
 | Card | What it asks | How to answer |
 | --- | --- | --- |
 | **Question** | Which of a few things you mean | Click a suggested answer, or type in **Your answer** and press **Enter** |
