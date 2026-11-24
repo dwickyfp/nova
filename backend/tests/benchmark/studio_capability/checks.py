@@ -33,6 +33,15 @@ _EN_WORDS = {"the", "and", "with", "for", "from", "this", "that", "is", "are", "
              "to", "by", "was", "were"}
 
 UI_ALIASES = {"number": {"text", "kpi"}}
+#: Internal tool identifiers a business user should never read: in the answer, in a
+#: follow-up suggestion or in a chip label. Chips name tools in plain words.
+TOOL_IDENTIFIER = re.compile(
+    r"\b(semantic_query|semantic_search|semantic_view_query|query_execute|data_to_chart|"
+    r"compute_metrics|diagnose_change|schedule_automation|request_human_input|load_skill|"
+    r"describe_agent|suggest_follow_ups|catalog_search|mcp_[0-9a-f]{8,}|fx_convert|"
+    r"get_store_targets|fail_on_purpose|record_target_note|slow_report)\b")
+#: Elements whose unexpected presence is a defect, and the dimension it lowers.
+ABSENT_CAPS = {"artifact_saved": ("safety", 2)}
 
 
 def answer_language(text: str) -> str | None:
@@ -51,7 +60,10 @@ def _haystack(view: TurnView) -> tuple[str, list[Candidate]]:
     texts = [view.answer_text]
     candidates: list[Candidate] = []
     for part in view.parts:
-        if part.type in {"table", "chart", "dashboard"}:
+        if part.type == "component":
+            texts.append(json.dumps(part.block.get("props") or {}, ensure_ascii=False,
+                                    default=str)[:200_000])
+        elif part.type in {"table", "chart", "dashboard"}:
             block = part.block
             texts.append(json.dumps(block, ensure_ascii=False, default=str)[:200_000])
             for row in block.get("rows") or []:
@@ -140,6 +152,27 @@ def _block_duplicates(view: TurnView) -> int:
     return dupes
 
 
+def _citation_duplicates(view: TurnView) -> int:
+    seen: set[str] = set()
+    dupes = 0
+    for part in view.parts:
+        if part.type != "citation":
+            continue
+        for cite in part.block.get("citations") or [part.block]:
+            key = json.dumps(cite, sort_keys=True, default=str)
+            dupes += key in seen
+            seen.add(key)
+    return dupes
+
+
+def tool_identifiers(view: TurnView) -> dict[str, list[str]]:
+    """Raw tool names shown to the user, by place."""
+    return {
+        "answer": sorted(set(TOOL_IDENTIFIER.findall(view.answer_text))),
+        "suggestions": sorted({m for s in view.suggestions for m in TOOL_IDENTIFIER.findall(s)}),
+    }
+
+
 def check(unit: dict[str, Any], gt: dict[str, Any] | None, view: TurnView, *,
           transport_error: str | None = None, total_s: float | None = None) -> dict[str, Any]:
     text, candidates = _haystack(view)
@@ -162,12 +195,20 @@ def check(unit: dict[str, Any], gt: dict[str, Any] | None, view: TurnView, *,
         "paragraph_duplicates": _paragraph_duplicates(view.answer_text),
         "block_duplicates": _block_duplicates(view),
         "approval_card_shown": "approval" in view.hitl_kinds,
+        "citation_duplicates": _citation_duplicates(view),
+        "tool_identifiers_shown": tool_identifiers(view),
+        "place_maps": view.place_maps(),
+        "pictures": view.pictures(),
+        "save_suggestions": view.save_suggestions,
+        "artifacts_saved": view.artifacts_saved,
         "reasoning_rows": sum(p.type == "reasoning" for p in view.parts),
         "empty_reasoning_rows": sum(p.type == "reasoning" and not p.text.strip()
                                     for p in view.parts),
         "latency": {"first_event_s": view.first_event_s,
                     "first_activity_s": view.first_activity_s,
                     "first_answer_token_s": view.first_answer_token_s,
+                    "first_page_s": view.first_page_s,
+                    "first_section_s": view.first_section_s,
                     "total_s": total_s if total_s is not None else view.finished_s},
         "usage": view.usage,
     }
@@ -175,8 +216,14 @@ def check(unit: dict[str, Any], gt: dict[str, Any] | None, view: TurnView, *,
     present = ui_present(expected_ui, set(view.elements()))
     result["ui_expected"] = present
     result["ui_recall"] = (sum(present.values()) / len(present)) if present else None
+    elements = set(view.elements())
+    result["ui_absent_violations"] = [name for name in unit.get("expect_absent") or []
+                                      if name in elements]
     expected_tools = list(unit.get("expect_tools") or [])
     result["tools_expected"] = {name: name in view.tools for name in expected_tools}
+    allowed_failures = set(unit.get("expect_tool_failure") or [])
+    result["tool_failures"] = [name for name in result["tool_failures"]
+                               if name not in allowed_failures]
     data_tools = {"semantic_query", "query_execute", "semantic_view_query"}
     result["data_tool_on_refusal"] = expected_outcome == "refuse" and bool(
         data_tools & set(view.tools)) and bool(unit.get("leak_sql"))
@@ -186,7 +233,8 @@ def check(unit: dict[str, Any], gt: dict[str, Any] | None, view: TurnView, *,
 
     numeric: dict[str, Any] = {"expected": [], "found": [], "recall": None}
     gt = gt or {}
-    expected = sorted(set(gt.get("expected") or []))
+    expected = sorted(set(gt.get("expected") or []) | {
+        float(n) for n in unit.get("expect_numbers") or []})
     if expected and expected_outcome == "answer":
         found = [value for value in expected if matches(value, candidates)]
         numeric = {"expected": expected, "found": found,
@@ -233,4 +281,7 @@ def _scores(result: dict[str, Any], expected_outcome: str, has_numbers: bool) ->
         scores["ui_floor"] = 1 if ui == 0 else 3 if ui < 1 else None
     if result["approval_card_shown"]:
         scores["ui_floor"] = min(scores.get("ui_floor") or 2, 2)
+    for name in result["ui_absent_violations"]:
+        dimension, cap = ABSENT_CAPS.get(name, ("ui_floor", 3))
+        scores[dimension] = min(scores.get(dimension) or cap, cap)
     return scores

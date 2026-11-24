@@ -1,5 +1,5 @@
 {
- "corpus_version": "2026-11-23.2",
+ "corpus_version": "2026-11-24.1",
  "data_facts": {
   "columns": [
    "first_order",
@@ -28,11 +28,11 @@
     ],
     "rows": [
      [
-      1005,
+      1015,
       "24999000.00"
      ],
      [
-      1015,
+      1005,
       "24999000.00"
      ],
      [
@@ -57,11 +57,11 @@
     ],
     "rows": [
      [
-      1005,
+      1015,
       "24999000.00"
      ],
      [
-      1015,
+      1005,
       "24999000.00"
      ],
      [
@@ -145,11 +145,11 @@
     ],
     "rows": [
      [
-      "2025-06-07",
+      "2025-07-05",
       "24999000.00"
      ],
      [
-      "2025-07-05",
+      "2025-06-07",
       "24999000.00"
      ]
     ]
@@ -187,11 +187,11 @@
     ],
     "rows": [
      [
-      "2025-06-07",
+      "2025-07-05",
       "24999000.00"
      ],
      [
-      "2025-07-05",
+      "2025-06-07",
       "24999000.00"
      ]
     ]
@@ -235,6 +235,408 @@
      [
       "Malang",
       "22499000.00000000"
+     ]
+    ]
+   }
+  },
+  "artifact_save-001": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      "30496000.00"
+     ],
+     [
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "Bandung",
+      "22298000.00"
+     ],
+     [
+      "Medan",
+      "19999000.00"
+     ],
+     [
+      "Makassar",
+      "12999000.00"
+     ],
+     [
+      "Surabaya",
+      "5798000.00"
+     ],
+     [
+      "Bali",
+      "3999000.00"
+     ],
+     [
+      "Palembang",
+      "599000.00"
+     ]
+    ]
+   },
+   "expected": [
+    31498000.0,
+    30496000.0,
+    24999000.0,
+    22499000.0,
+    22298000.0,
+    19999000.0,
+    12999000.0,
+    5798000.0,
+    3999000.0,
+    599000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      "30496000.00"
+     ],
+     [
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "Bandung",
+      "22298000.00"
+     ],
+     [
+      "Medan",
+      "19999000.00"
+     ],
+     [
+      "Makassar",
+      "12999000.00"
+     ],
+     [
+      "Surabaya",
+      "5798000.00"
+     ],
+     [
+      "Bali",
+      "3999000.00"
+     ],
+     [
+      "Palembang",
+      "599000.00"
+     ]
+    ]
+   }
+  },
+  "artifact_save-002": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "2025-06-01",
+      "23298000.00"
+     ],
+     [
+      "2025-06-02",
+      "4299000.00"
+     ],
+     [
+      "2025-06-03",
+      "18999000.00"
+     ],
+     [
+      "2025-06-05",
+      "2899000.00"
+     ],
+     [
+      "2025-06-07",
+      "24999000.00"
+     ],
+     [
+      "2025-06-10",
+      "6499000.00"
+     ],
+     [
+      "2025-06-12",
+      "19999000.00"
+     ],
+     [
+      "2025-06-15",
+      "1499000.00"
+     ],
+     [
+      "2025-06-18",
+      "12999000.00"
+     ],
+     [
+      "2025-06-20",
+      "3999000.00"
+     ],
+     [
+      "2025-06-22",
+      "3299000.00"
+     ],
+     [
+      "2025-06-25",
+      "22499000.00"
+     ],
+     [
+      "2025-06-28",
+      "599000.00"
+     ],
+     [
+      "2025-07-01",
+      "4299000.00"
+     ],
+     [
+      "2025-07-05",
+      "24999000.00"
+     ]
+    ]
+   },
+   "expected": [
+    23298000.0,
+    4299000.0,
+    18999000.0,
+    2899000.0,
+    24999000.0,
+    6499000.0,
+    19999000.0,
+    1499000.0,
+    12999000.0,
+    3999000.0,
+    3299000.0,
+    22499000.0,
+    599000.0,
+    4299000.0,
+    24999000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT DATE(order_date) AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY DATE(order_date) ORDER BY label",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "2025-06-01",
+      "23298000.00"
+     ],
+     [
+      "2025-06-02",
+      "4299000.00"
+     ],
+     [
+      "2025-06-03",
+      "18999000.00"
+     ],
+     [
+      "2025-06-05",
+      "2899000.00"
+     ],
+     [
+      "2025-06-07",
+      "24999000.00"
+     ],
+     [
+      "2025-06-10",
+      "6499000.00"
+     ],
+     [
+      "2025-06-12",
+      "19999000.00"
+     ],
+     [
+      "2025-06-15",
+      "1499000.00"
+     ],
+     [
+      "2025-06-18",
+      "12999000.00"
+     ],
+     [
+      "2025-06-20",
+      "3999000.00"
+     ],
+     [
+      "2025-06-22",
+      "3299000.00"
+     ],
+     [
+      "2025-06-25",
+      "22499000.00"
+     ],
+     [
+      "2025-06-28",
+      "599000.00"
+     ],
+     [
+      "2025-07-01",
+      "4299000.00"
+     ],
+     [
+      "2025-07-05",
+      "24999000.00"
+     ]
+    ]
+   }
+  },
+  "artifact_save-003": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Credit Card",
+      "62997000.00"
+     ],
+     [
+      "Bank Transfer",
+      "61497000.00"
+     ],
+     [
+      "DANA",
+      "33096000.00"
+     ],
+     [
+      "QRIS",
+      "11197000.00"
+     ],
+     [
+      "GoPay",
+      "6397000.00"
+     ]
+    ]
+   },
+   "expected": [
+    62997000.0,
+    61497000.0,
+    33096000.0,
+    11197000.0,
+    6397000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT payment_method AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY payment_method ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Credit Card",
+      "62997000.00"
+     ],
+     [
+      "Bank Transfer",
+      "61497000.00"
+     ],
+     [
+      "DANA",
+      "33096000.00"
+     ],
+     [
+      "QRIS",
+      "11197000.00"
+     ],
+     [
+      "GoPay",
+      "6397000.00"
+     ]
+    ]
+   }
+  },
+  "artifact_save-004": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "completed",
+      10
+     ],
+     [
+      "shipped",
+      3
+     ],
+     [
+      "processing",
+      1
+     ],
+     [
+      "pending",
+      1
+     ]
+    ]
+   },
+   "expected": [
+    10.0,
+    3.0,
+    1.0,
+    1.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT status AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders GROUP BY status ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "completed",
+      10
+     ],
+     [
+      "shipped",
+      3
+     ],
+     [
+      "processing",
+      1
+     ],
+     [
+      "pending",
+      1
      ]
     ]
    }
@@ -1198,6 +1600,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -1207,10 +1613,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -1339,8 +1741,8 @@
     "GoPay",
     "Bank Transfer",
     "DANA",
-    "QRIS",
-    "Credit Card"
+    "Credit Card",
+    "QRIS"
    ],
    "leak_values": [],
    "same_for_admin": true,
@@ -1364,11 +1766,11 @@
       3
      ],
      [
-      "QRIS",
+      "Credit Card",
       2
      ],
      [
-      "Credit Card",
+      "QRIS",
       2
      ]
     ]
@@ -1386,11 +1788,11 @@
       3
      ],
      [
-      "Bank Transfer",
+      "GoPay",
       2
      ],
      [
-      "GoPay",
+      "Bank Transfer",
       2
      ],
      [
@@ -3966,6 +4368,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -3975,10 +4381,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -6737,6 +7139,248 @@
     ]
    }
   },
+  "chips-001": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "completed",
+      "113289000.00"
+     ],
+     [
+      "shipped",
+      "38597000.00"
+     ],
+     [
+      "processing",
+      "19999000.00"
+     ],
+     [
+      "pending",
+      "3299000.00"
+     ]
+    ]
+   },
+   "expected": [
+    113289000.0,
+    38597000.0,
+    19999000.0,
+    3299000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT status AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY status ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "completed",
+      "113289000.00"
+     ],
+     [
+      "shipped",
+      "38597000.00"
+     ],
+     [
+      "processing",
+      "19999000.00"
+     ],
+     [
+      "pending",
+      "3299000.00"
+     ]
+    ]
+   }
+  },
+  "chips-002": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Semarang",
+      "24999000.00000000"
+     ],
+     [
+      "Malang",
+      "22499000.00000000"
+     ],
+     [
+      "Medan",
+      "19999000.00000000"
+     ],
+     [
+      "Yogyakarta",
+      "15749000.00000000"
+     ],
+     [
+      "Makassar",
+      "12999000.00000000"
+     ],
+     [
+      "Bandung",
+      "11149000.00000000"
+     ],
+     [
+      "Jakarta",
+      "10165333.33333333"
+     ],
+     [
+      "Bali",
+      "3999000.00000000"
+     ],
+     [
+      "Surabaya",
+      "2899000.00000000"
+     ],
+     [
+      "Palembang",
+      "599000.00000000"
+     ]
+    ]
+   },
+   "expected": [
+    24999000.0,
+    22499000.0,
+    19999000.0,
+    15749000.0,
+    12999000.0,
+    11149000.0,
+    10165333.333333,
+    3999000.0,
+    2899000.0,
+    599000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, AVG(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Semarang",
+      "24999000.00000000"
+     ],
+     [
+      "Malang",
+      "22499000.00000000"
+     ],
+     [
+      "Medan",
+      "19999000.00000000"
+     ],
+     [
+      "Yogyakarta",
+      "15749000.00000000"
+     ],
+     [
+      "Makassar",
+      "12999000.00000000"
+     ],
+     [
+      "Bandung",
+      "11149000.00000000"
+     ],
+     [
+      "Jakarta",
+      "10165333.33333333"
+     ],
+     [
+      "Bali",
+      "3999000.00000000"
+     ],
+     [
+      "Surabaya",
+      "2899000.00000000"
+     ],
+     [
+      "Palembang",
+      "599000.00000000"
+     ]
+    ]
+   }
+  },
+  "chips-003": {
+   "admin": {
+    "columns": [
+     "revenue",
+     "orders"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15
+     ]
+    ]
+   },
+   "expected": [
+    175184000.0,
+    15.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS revenue, COUNT(*) AS orders FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "revenue",
+     "orders"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15
+     ]
+    ]
+   }
+  },
+  "chips-004": {
+   "admin": {
+    "columns": [
+     "june",
+     "july"
+    ],
+    "rows": [
+     [
+      "145886000.00",
+      "29298000.00"
+     ]
+    ]
+   },
+   "expected": [
+    145886000.0,
+    29298000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT SUM(CASE WHEN order_date >= '2025-06-01' AND order_date < '2025-07-01' THEN total_amount END) AS june, SUM(CASE WHEN order_date >= '2025-07-01' AND order_date < '2025-08-01' THEN total_amount END) AS july FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "june",
+     "july"
+    ],
+    "rows": [
+     [
+      "145886000.00",
+      "29298000.00"
+     ]
+    ]
+   }
+  },
   "comparison-001": {
    "admin": {
     "columns": [
@@ -7172,6 +7816,478 @@
      [
       "30496000.00",
       "17518400.00000000"
+     ]
+    ]
+   }
+  },
+  "data_map-001": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      "30496000.00"
+     ],
+     [
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "Bandung",
+      "22298000.00"
+     ],
+     [
+      "Medan",
+      "19999000.00"
+     ],
+     [
+      "Makassar",
+      "12999000.00"
+     ],
+     [
+      "Surabaya",
+      "5798000.00"
+     ],
+     [
+      "Bali",
+      "3999000.00"
+     ],
+     [
+      "Palembang",
+      "599000.00"
+     ]
+    ]
+   },
+   "expected": [
+    31498000.0,
+    30496000.0,
+    24999000.0,
+    22499000.0,
+    22298000.0,
+    19999000.0,
+    12999000.0,
+    5798000.0,
+    3999000.0,
+    599000.0
+   ],
+   "labels": [
+    "Yogyakarta",
+    "Jakarta",
+    "Semarang"
+   ],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      "30496000.00"
+     ],
+     [
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "Bandung",
+      "22298000.00"
+     ],
+     [
+      "Medan",
+      "19999000.00"
+     ],
+     [
+      "Makassar",
+      "12999000.00"
+     ],
+     [
+      "Surabaya",
+      "5798000.00"
+     ],
+     [
+      "Bali",
+      "3999000.00"
+     ],
+     [
+      "Palembang",
+      "599000.00"
+     ]
+    ]
+   }
+  },
+  "data_map-002": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Jakarta",
+      3
+     ],
+     [
+      "Surabaya",
+      2
+     ],
+     [
+      "Bandung",
+      2
+     ],
+     [
+      "Yogyakarta",
+      2
+     ],
+     [
+      "Medan",
+      1
+     ],
+     [
+      "Semarang",
+      1
+     ],
+     [
+      "Makassar",
+      1
+     ],
+     [
+      "Malang",
+      1
+     ],
+     [
+      "Palembang",
+      1
+     ],
+     [
+      "Bali",
+      1
+     ]
+    ]
+   },
+   "expected": [
+    3.0,
+    2.0,
+    2.0,
+    2.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+   ],
+   "labels": [
+    "Jakarta",
+    "Surabaya",
+    "Bandung"
+   ],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, COUNT(order_id) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Jakarta",
+      3
+     ],
+     [
+      "Surabaya",
+      2
+     ],
+     [
+      "Bandung",
+      2
+     ],
+     [
+      "Yogyakarta",
+      2
+     ],
+     [
+      "Medan",
+      1
+     ],
+     [
+      "Semarang",
+      1
+     ],
+     [
+      "Makassar",
+      1
+     ],
+     [
+      "Malang",
+      1
+     ],
+     [
+      "Palembang",
+      1
+     ],
+     [
+      "Bali",
+      1
+     ]
+    ]
+   }
+  },
+  "data_map-003": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      "30496000.00"
+     ],
+     [
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "Bandung",
+      "22298000.00"
+     ],
+     [
+      "Medan",
+      "19999000.00"
+     ],
+     [
+      "Makassar",
+      "12999000.00"
+     ],
+     [
+      "Surabaya",
+      "5798000.00"
+     ],
+     [
+      "Bali",
+      "3999000.00"
+     ],
+     [
+      "Palembang",
+      "599000.00"
+     ]
+    ]
+   },
+   "expected": [
+    31498000.0,
+    30496000.0,
+    24999000.0,
+    22499000.0,
+    22298000.0,
+    19999000.0,
+    12999000.0,
+    5798000.0,
+    3999000.0,
+    599000.0
+   ],
+   "labels": [
+    "Yogyakarta",
+    "Jakarta",
+    "Semarang"
+   ],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      "30496000.00"
+     ],
+     [
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "Bandung",
+      "22298000.00"
+     ],
+     [
+      "Medan",
+      "19999000.00"
+     ],
+     [
+      "Makassar",
+      "12999000.00"
+     ],
+     [
+      "Surabaya",
+      "5798000.00"
+     ],
+     [
+      "Bali",
+      "3999000.00"
+     ],
+     [
+      "Palembang",
+      "599000.00"
+     ]
+    ]
+   }
+  },
+  "data_map-004": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      "30496000.00"
+     ],
+     [
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "Bandung",
+      "22298000.00"
+     ],
+     [
+      "Medan",
+      "19999000.00"
+     ],
+     [
+      "Makassar",
+      "12999000.00"
+     ],
+     [
+      "Surabaya",
+      "5798000.00"
+     ],
+     [
+      "Bali",
+      "3999000.00"
+     ],
+     [
+      "Palembang",
+      "599000.00"
+     ]
+    ]
+   },
+   "expected": [
+    31498000.0,
+    30496000.0,
+    24999000.0,
+    22499000.0,
+    22298000.0,
+    19999000.0,
+    12999000.0,
+    5798000.0,
+    3999000.0,
+    599000.0
+   ],
+   "labels": [
+    "Yogyakarta",
+    "Jakarta",
+    "Semarang"
+   ],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      "30496000.00"
+     ],
+     [
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "Bandung",
+      "22298000.00"
+     ],
+     [
+      "Medan",
+      "19999000.00"
+     ],
+     [
+      "Makassar",
+      "12999000.00"
+     ],
+     [
+      "Surabaya",
+      "5798000.00"
+     ],
+     [
+      "Bali",
+      "3999000.00"
+     ],
+     [
+      "Palembang",
+      "599000.00"
      ]
     ]
    }
@@ -10172,6 +11288,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -10181,10 +11301,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -10406,6 +11522,498 @@
      [
       "30496000.00",
       3
+     ]
+    ]
+   }
+  },
+  "layout_page-001": {
+   "admin": {
+    "columns": [
+     "revenue",
+     "orders",
+     "june",
+     "july"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15,
+      "145886000.00",
+      "29298000.00"
+     ]
+    ]
+   },
+   "expected": [
+    175184000.0,
+    15.0,
+    145886000.0,
+    29298000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS revenue, COUNT(*) AS orders, SUM(CASE WHEN order_date >= '2025-06-01' AND order_date < '2025-07-01' THEN total_amount END) AS june, SUM(CASE WHEN order_date >= '2025-07-01' AND order_date < '2025-08-01' THEN total_amount END) AS july FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "revenue",
+     "orders",
+     "june",
+     "july"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15,
+      "145886000.00",
+      "29298000.00"
+     ]
+    ]
+   }
+  },
+  "layout_page-002": {
+   "admin": {
+    "columns": [
+     "revenue",
+     "orders",
+     "june",
+     "july"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15,
+      "145886000.00",
+      "29298000.00"
+     ]
+    ]
+   },
+   "expected": [
+    175184000.0,
+    15.0,
+    145886000.0,
+    29298000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS revenue, COUNT(*) AS orders, SUM(CASE WHEN order_date >= '2025-06-01' AND order_date < '2025-07-01' THEN total_amount END) AS june, SUM(CASE WHEN order_date >= '2025-07-01' AND order_date < '2025-08-01' THEN total_amount END) AS july FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "revenue",
+     "orders",
+     "june",
+     "july"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15,
+      "145886000.00",
+      "29298000.00"
+     ]
+    ]
+   }
+  },
+  "layout_page-003": {
+   "admin": {
+    "columns": [
+     "revenue",
+     "orders",
+     "june",
+     "july"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15,
+      "145886000.00",
+      "29298000.00"
+     ]
+    ]
+   },
+   "expected": [
+    175184000.0,
+    15.0,
+    145886000.0,
+    29298000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS revenue, COUNT(*) AS orders, SUM(CASE WHEN order_date >= '2025-06-01' AND order_date < '2025-07-01' THEN total_amount END) AS june, SUM(CASE WHEN order_date >= '2025-07-01' AND order_date < '2025-08-01' THEN total_amount END) AS july FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "revenue",
+     "orders",
+     "june",
+     "july"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15,
+      "145886000.00",
+      "29298000.00"
+     ]
+    ]
+   }
+  },
+  "layout_page-004": {
+   "admin": {
+    "columns": [
+     "revenue",
+     "orders",
+     "june",
+     "july"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15,
+      "145886000.00",
+      "29298000.00"
+     ]
+    ]
+   },
+   "expected": [
+    175184000.0,
+    15.0,
+    145886000.0,
+    29298000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS revenue, COUNT(*) AS orders, SUM(CASE WHEN order_date >= '2025-06-01' AND order_date < '2025-07-01' THEN total_amount END) AS june, SUM(CASE WHEN order_date >= '2025-07-01' AND order_date < '2025-08-01' THEN total_amount END) AS july FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "revenue",
+     "orders",
+     "june",
+     "july"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15,
+      "145886000.00",
+      "29298000.00"
+     ]
+    ]
+   }
+  },
+  "layout_page-005": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      "30496000.00"
+     ],
+     [
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "Bandung",
+      "22298000.00"
+     ],
+     [
+      "Medan",
+      "19999000.00"
+     ],
+     [
+      "Makassar",
+      "12999000.00"
+     ],
+     [
+      "Surabaya",
+      "5798000.00"
+     ],
+     [
+      "Bali",
+      "3999000.00"
+     ],
+     [
+      "Palembang",
+      "599000.00"
+     ]
+    ]
+   },
+   "expected": [
+    31498000.0,
+    30496000.0,
+    24999000.0,
+    22499000.0,
+    22298000.0,
+    19999000.0,
+    12999000.0,
+    5798000.0,
+    3999000.0,
+    599000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      "30496000.00"
+     ],
+     [
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "Bandung",
+      "22298000.00"
+     ],
+     [
+      "Medan",
+      "19999000.00"
+     ],
+     [
+      "Makassar",
+      "12999000.00"
+     ],
+     [
+      "Surabaya",
+      "5798000.00"
+     ],
+     [
+      "Bali",
+      "3999000.00"
+     ],
+     [
+      "Palembang",
+      "599000.00"
+     ]
+    ]
+   }
+  },
+  "layout_page-006": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      "30496000.00"
+     ],
+     [
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "Bandung",
+      "22298000.00"
+     ],
+     [
+      "Medan",
+      "19999000.00"
+     ],
+     [
+      "Makassar",
+      "12999000.00"
+     ],
+     [
+      "Surabaya",
+      "5798000.00"
+     ],
+     [
+      "Bali",
+      "3999000.00"
+     ],
+     [
+      "Palembang",
+      "599000.00"
+     ]
+    ]
+   },
+   "expected": [
+    31498000.0,
+    30496000.0,
+    24999000.0,
+    22499000.0,
+    22298000.0,
+    19999000.0,
+    12999000.0,
+    5798000.0,
+    3999000.0,
+    599000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      "30496000.00"
+     ],
+     [
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "Bandung",
+      "22298000.00"
+     ],
+     [
+      "Medan",
+      "19999000.00"
+     ],
+     [
+      "Makassar",
+      "12999000.00"
+     ],
+     [
+      "Surabaya",
+      "5798000.00"
+     ],
+     [
+      "Bali",
+      "3999000.00"
+     ],
+     [
+      "Palembang",
+      "599000.00"
+     ]
+    ]
+   }
+  },
+  "layout_page-007": {
+   "admin": {
+    "columns": [
+     "revenue",
+     "orders",
+     "june",
+     "july"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15,
+      "145886000.00",
+      "29298000.00"
+     ]
+    ]
+   },
+   "expected": [
+    175184000.0,
+    15.0,
+    145886000.0,
+    29298000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS revenue, COUNT(*) AS orders, SUM(CASE WHEN order_date >= '2025-06-01' AND order_date < '2025-07-01' THEN total_amount END) AS june, SUM(CASE WHEN order_date >= '2025-07-01' AND order_date < '2025-08-01' THEN total_amount END) AS july FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "revenue",
+     "orders",
+     "june",
+     "july"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15,
+      "145886000.00",
+      "29298000.00"
+     ]
+    ]
+   }
+  },
+  "layout_page-008": {
+   "admin": {
+    "columns": [
+     "revenue",
+     "orders",
+     "june",
+     "july"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15,
+      "145886000.00",
+      "29298000.00"
+     ]
+    ]
+   },
+   "expected": [
+    175184000.0,
+    15.0,
+    145886000.0,
+    29298000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS revenue, COUNT(*) AS orders, SUM(CASE WHEN order_date >= '2025-06-01' AND order_date < '2025-07-01' THEN total_amount END) AS june, SUM(CASE WHEN order_date >= '2025-07-01' AND order_date < '2025-08-01' THEN total_amount END) AS july FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "revenue",
+     "orders",
+     "june",
+     "july"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15,
+      "145886000.00",
+      "29298000.00"
      ]
     ]
    }
@@ -10684,6 +12292,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -10693,10 +12305,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -10809,6 +12417,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -10818,10 +12430,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -10934,6 +12542,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -10943,10 +12555,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -17990,12 +19598,12 @@
       "22499000.00000000"
      ],
      [
-      "Bandung",
-      "11149000.00000000"
-     ],
-     [
       "Jakarta",
       "10165333.33333333"
+     ],
+     [
+      "Bandung",
+      "11149000.00000000"
      ],
      [
       "Yogyakarta",
@@ -18004,10 +19612,10 @@
     ]
    },
    "expected": [
-    24999000.0,
-    22499000.0,
     11149000.0,
     10165333.333333,
+    24999000.0,
+    22499000.0,
     15749000.0
    ],
    "labels": [],
@@ -18021,20 +19629,20 @@
     ],
     "rows": [
      [
-      "Semarang",
-      "24999000.00000000"
-     ],
-     [
-      "Malang",
-      "22499000.00000000"
-     ],
-     [
       "Bandung",
       "11149000.00000000"
      ],
      [
       "Jakarta",
       "10165333.33333333"
+     ],
+     [
+      "Semarang",
+      "24999000.00000000"
+     ],
+     [
+      "Malang",
+      "22499000.00000000"
      ],
      [
       "Yogyakarta",
@@ -18059,12 +19667,12 @@
       "22499000.00000000"
      ],
      [
-      "Bandung",
-      "11149000.00000000"
-     ],
-     [
       "Jakarta",
       "10165333.33333333"
+     ],
+     [
+      "Bandung",
+      "11149000.00000000"
      ],
      [
       "Yogyakarta",
@@ -18073,10 +19681,10 @@
     ]
    },
    "expected": [
-    24999000.0,
-    22499000.0,
     11149000.0,
     10165333.333333,
+    24999000.0,
+    22499000.0,
     15749000.0
    ],
    "labels": [],
@@ -18090,20 +19698,20 @@
     ],
     "rows": [
      [
-      "Semarang",
-      "24999000.00000000"
-     ],
-     [
-      "Malang",
-      "22499000.00000000"
-     ],
-     [
       "Bandung",
       "11149000.00000000"
      ],
      [
       "Jakarta",
       "10165333.33333333"
+     ],
+     [
+      "Semarang",
+      "24999000.00000000"
+     ],
+     [
+      "Malang",
+      "22499000.00000000"
      ],
      [
       "Yogyakarta",
@@ -18830,6 +20438,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -18839,10 +20451,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -18944,6 +20552,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -18953,10 +20565,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -19058,6 +20666,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -19067,10 +20679,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -19991,6 +21599,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -20000,10 +21612,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -20105,6 +21713,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -20114,10 +21726,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -20219,6 +21827,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -20228,10 +21840,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -20609,11 +22217,11 @@
     ],
     "rows": [
      [
-      1015,
+      1005,
       "24999000.00"
      ],
      [
-      1005,
+      1015,
       "24999000.00"
      ],
      [
@@ -20623,9 +22231,9 @@
     ]
    },
    "expected": [
-    1015.0,
-    24999000.0,
     1005.0,
+    24999000.0,
+    1015.0,
     24999000.0,
     1001.0,
     23298000.0
@@ -20641,11 +22249,11 @@
     ],
     "rows": [
      [
-      1015,
+      1005,
       "24999000.00"
      ],
      [
-      1005,
+      1015,
       "24999000.00"
      ],
      [
@@ -21596,6 +23204,613 @@
     ]
    }
   },
+  "session-037.t1": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      "30496000.00"
+     ],
+     [
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "Bandung",
+      "22298000.00"
+     ],
+     [
+      "Medan",
+      "19999000.00"
+     ],
+     [
+      "Makassar",
+      "12999000.00"
+     ],
+     [
+      "Surabaya",
+      "5798000.00"
+     ],
+     [
+      "Bali",
+      "3999000.00"
+     ],
+     [
+      "Palembang",
+      "599000.00"
+     ]
+    ]
+   },
+   "expected": [
+    31498000.0,
+    30496000.0,
+    24999000.0,
+    22499000.0,
+    22298000.0,
+    19999000.0,
+    12999000.0,
+    5798000.0,
+    3999000.0,
+    599000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ],
+     [
+      "Jakarta",
+      "30496000.00"
+     ],
+     [
+      "Semarang",
+      "24999000.00"
+     ],
+     [
+      "Malang",
+      "22499000.00"
+     ],
+     [
+      "Bandung",
+      "22298000.00"
+     ],
+     [
+      "Medan",
+      "19999000.00"
+     ],
+     [
+      "Makassar",
+      "12999000.00"
+     ],
+     [
+      "Surabaya",
+      "5798000.00"
+     ],
+     [
+      "Bali",
+      "3999000.00"
+     ],
+     [
+      "Palembang",
+      "599000.00"
+     ]
+    ]
+   }
+  },
+  "session-037.t2": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Credit Card",
+      "62997000.00"
+     ],
+     [
+      "Bank Transfer",
+      "61497000.00"
+     ],
+     [
+      "DANA",
+      "33096000.00"
+     ],
+     [
+      "QRIS",
+      "11197000.00"
+     ],
+     [
+      "GoPay",
+      "6397000.00"
+     ]
+    ]
+   },
+   "expected": [
+    62997000.0,
+    61497000.0,
+    33096000.0,
+    11197000.0,
+    6397000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT payment_method AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY payment_method ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Credit Card",
+      "62997000.00"
+     ],
+     [
+      "Bank Transfer",
+      "61497000.00"
+     ],
+     [
+      "DANA",
+      "33096000.00"
+     ],
+     [
+      "QRIS",
+      "11197000.00"
+     ],
+     [
+      "GoPay",
+      "6397000.00"
+     ]
+    ]
+   }
+  },
+  "session-037.t2.fresh": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Credit Card",
+      "62997000.00"
+     ],
+     [
+      "Bank Transfer",
+      "61497000.00"
+     ],
+     [
+      "DANA",
+      "33096000.00"
+     ],
+     [
+      "QRIS",
+      "11197000.00"
+     ],
+     [
+      "GoPay",
+      "6397000.00"
+     ]
+    ]
+   },
+   "expected": [
+    62997000.0,
+    61497000.0,
+    33096000.0,
+    11197000.0,
+    6397000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT payment_method AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY payment_method ORDER BY value DESC",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Credit Card",
+      "62997000.00"
+     ],
+     [
+      "Bank Transfer",
+      "61497000.00"
+     ],
+     [
+      "DANA",
+      "33096000.00"
+     ],
+     [
+      "QRIS",
+      "11197000.00"
+     ],
+     [
+      "GoPay",
+      "6397000.00"
+     ]
+    ]
+   }
+  },
+  "session-038.t1": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "175184000.00"
+     ]
+    ]
+   },
+   "expected": [
+    175184000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "175184000.00"
+     ]
+    ]
+   }
+  },
+  "session-038.t2": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "145886000.00"
+     ]
+    ]
+   },
+   "expected": [
+    145886000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "145886000.00"
+     ]
+    ]
+   }
+  },
+  "session-038.t2.fresh": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "145886000.00"
+     ]
+    ]
+   },
+   "expected": [
+    145886000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-06-01' AND order_date < '2025-07-01'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "145886000.00"
+     ]
+    ]
+   }
+  },
+  "session-038.t3": {
+   "admin": {
+    "columns": [
+     "revenue",
+     "orders",
+     "june",
+     "july"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15,
+      "145886000.00",
+      "29298000.00"
+     ]
+    ]
+   },
+   "expected": [
+    175184000.0,
+    15.0,
+    145886000.0,
+    29298000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS revenue, COUNT(*) AS orders, SUM(CASE WHEN order_date >= '2025-06-01' AND order_date < '2025-07-01' THEN total_amount END) AS june, SUM(CASE WHEN order_date >= '2025-07-01' AND order_date < '2025-08-01' THEN total_amount END) AS july FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "revenue",
+     "orders",
+     "june",
+     "july"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15,
+      "145886000.00",
+      "29298000.00"
+     ]
+    ]
+   }
+  },
+  "session-038.t3.fresh": {
+   "admin": {
+    "columns": [
+     "revenue",
+     "orders",
+     "june",
+     "july"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15,
+      "145886000.00",
+      "29298000.00"
+     ]
+    ]
+   },
+   "expected": [
+    175184000.0,
+    15.0,
+    145886000.0,
+    29298000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS revenue, COUNT(*) AS orders, SUM(CASE WHEN order_date >= '2025-06-01' AND order_date < '2025-07-01' THEN total_amount END) AS june, SUM(CASE WHEN order_date >= '2025-07-01' AND order_date < '2025-08-01' THEN total_amount END) AS july FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "revenue",
+     "orders",
+     "june",
+     "july"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      15,
+      "145886000.00",
+      "29298000.00"
+     ]
+    ]
+   }
+  },
+  "simple-001": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "175184000.00"
+     ]
+    ]
+   },
+   "expected": [
+    175184000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "175184000.00"
+     ]
+    ]
+   }
+  },
+  "simple-002": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      15
+     ]
+    ]
+   },
+   "expected": [
+    15.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      15
+     ]
+    ]
+   }
+  },
+  "simple-003": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      10
+     ]
+    ]
+   },
+   "expected": [
+    10.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(DISTINCT shipping_city) AS value FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      10
+     ]
+    ]
+   }
+  },
+  "simple-004": {
+   "admin": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ]
+    ]
+   },
+   "expected": [
+    31498000.0
+   ],
+   "labels": [
+    "Yogyakarta"
+   ],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT shipping_city AS label, SUM(total_amount) AS value FROM NOVA_DEMO.orders GROUP BY shipping_city ORDER BY value DESC LIMIT 1",
+   "user": {
+    "columns": [
+     "label",
+     "value"
+    ],
+    "rows": [
+     [
+      "Yogyakarta",
+      "31498000.00"
+     ]
+    ]
+   }
+  },
+  "simple-005": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "11678933.33333333"
+     ]
+    ]
+   },
+   "expected": [
+    11678933.333333
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT AVG(total_amount) AS value FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "11678933.33333333"
+     ]
+    ]
+   }
+  },
+  "simple-006": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      1
+     ]
+    ]
+   },
+   "expected": [
+    1.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT COUNT(order_id) AS value FROM NOVA_DEMO.orders WHERE status = 'pending'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      1
+     ]
+    ]
+   }
+  },
   "table-001": {
    "admin": {
     "columns": [
@@ -21885,6 +24100,10 @@
       2
      ],
      [
+      "Medan",
+      1
+     ],
+     [
       "Semarang",
       1
      ],
@@ -21894,10 +24113,6 @@
      ],
      [
       "Malang",
-      1
-     ],
-     [
-      "Medan",
       1
      ],
      [
@@ -24484,6 +26699,190 @@
     "rows": [
      [
       "112187000.00"
+     ]
+    ]
+   }
+  },
+  "what_if_slider-001": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "175184000.00"
+     ]
+    ]
+   },
+   "expected": [
+    175184000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "175184000.00"
+     ]
+    ]
+   }
+  },
+  "what_if_slider-002": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "175184000.00"
+     ]
+    ]
+   },
+   "expected": [
+    175184000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "175184000.00"
+     ]
+    ]
+   }
+  },
+  "what_if_slider-003": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "29298000.00"
+     ]
+    ]
+   },
+   "expected": [
+    29298000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders WHERE order_date >= '2025-07-01' AND order_date < '2025-08-01'",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "29298000.00"
+     ]
+    ]
+   }
+  },
+  "what_if_slider-004": {
+   "admin": {
+    "columns": [
+     "total",
+     "jakarta"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      "30496000.00"
+     ]
+    ]
+   },
+   "expected": [
+    175184000.0,
+    30496000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS total, SUM(CASE WHEN shipping_city='Jakarta' THEN total_amount ELSE 0 END) AS jakarta FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "total",
+     "jakarta"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      "30496000.00"
+     ]
+    ]
+   }
+  },
+  "what_if_slider-005": {
+   "admin": {
+    "columns": [
+     "total",
+     "without_pending"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      "171885000.00"
+     ]
+    ]
+   },
+   "expected": [
+    175184000.0,
+    171885000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS total, SUM(CASE WHEN status <> 'pending' THEN total_amount END) AS without_pending FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "total",
+     "without_pending"
+    ],
+    "rows": [
+     [
+      "175184000.00",
+      "171885000.00"
+     ]
+    ]
+   }
+  },
+  "what_if_slider-006": {
+   "admin": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "175184000.00"
+     ]
+    ]
+   },
+   "expected": [
+    175184000.0
+   ],
+   "labels": [],
+   "leak_values": [],
+   "same_for_admin": true,
+   "sql": "SELECT SUM(total_amount) AS value FROM NOVA_DEMO.orders",
+   "user": {
+    "columns": [
+     "value"
+    ],
+    "rows": [
+     [
+      "175184000.00"
      ]
     ]
    }

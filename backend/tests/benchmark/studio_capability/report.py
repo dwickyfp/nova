@@ -14,6 +14,7 @@ import html
 import json
 import statistics
 from collections import Counter, defaultdict
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -62,7 +63,67 @@ CAPABILITIES: dict[str, set[str]] = {
     "Follow-up & konteks sesi": {"session:follow_up", "session:topic_switch", "session:long"},
     "Koreksi di tengah sesi": {"session:correction"},
     "Ubah grafik & simpan dari sesi": {"session:chart_edit"},
+    "Halaman (layout F5)": {"layout_page"},
+    "What-if dengan slider/kontrol": {"what_if_slider"},
+    "Peta data per kota": {"data_map"},
+    "Peta tempat publik": {"place_map"},
+    "Rute jalan (+ alternatif)": {"route", "session:route"},
+    "Rute multi-titik": {"route_multistop"},
+    "Rute lintas pulau (ditolak)": {"route_overwater"},
+    "Optimasi urutan rute": {"route_optimize"},
+    "Gambar (Picture)": {"picture"},
+    "Chip alat & sitasi": {"chips"},
+    "Pratinjau artefak & saran simpan (F4)": {"artifact_save", "session:artifact"},
+    "MCP (layanan eksternal)": {"mcp"},
+    "Skill unggahan": {"skill"},
+    "Pertanyaan sederhana tetap sederhana": {"simple", "session:simple"},
 }
+LATENCY_KEYS = ("first_activity_s", "first_section_s", "first_answer_token_s", "total_s")
+LATENCY_NAMES = {"first_activity_s": "Aktivitas pertama",
+                 "first_section_s": "Bagian halaman/komponen pertama",
+                 "first_answer_token_s": "Token jawaban pertama", "total_s": "Total"}
+BUCKETS = (3, 6, 12, 25, 60, 120)
+
+
+def _histogram(values: list[float]) -> list[tuple[str, int]]:
+    edges = [0.0, *BUCKETS]
+    out = [(f"{lo:g}–{hi:g}", sum(lo <= v < hi for v in values))
+           for lo, hi in zip(edges, BUCKETS, strict=False)]
+    out.append((f"≥{BUCKETS[-1]}", sum(v >= BUCKETS[-1] for v in values)))
+    return out
+
+
+def _findings(rows: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """Turns with a deterministic defect, by kind (no judge involved)."""
+    found: dict[str, list[str]] = {}
+
+    def add(kind: str, uid: str) -> None:
+        found.setdefault(kind, []).append(uid)
+
+    for row in rows:
+        checks, uid = row["checks"], row["id"]
+        shown = checks.get("tool_identifiers_shown") or {}
+        if shown.get("answer"):
+            add("nama alat di jawaban", uid)
+        if shown.get("suggestions"):
+            add("nama alat di saran lanjutan", uid)
+        if checks.get("citation_duplicates"):
+            add("sitasi ganda", uid)
+        for name in checks.get("ui_absent_violations") or []:
+            add(f"muncul padahal tidak boleh: {name}", uid)
+        if checks.get("approval_card_shown"):
+            add("kartu persetujuan muncul", uid)
+        if checks.get("paragraph_duplicates") or checks.get("block_duplicates"):
+            add("konten ganda", uid)
+        if checks.get("empty_reasoning_rows"):
+            add("baris aktivitas kosong", uid)
+        if checks.get("tool_failures"):
+            add("alat gagal", uid)
+        if checks.get("errors"):
+            add("error run", uid)
+        if (row.get("replay") or {}).get("ok") is False:
+            add("replay berbeda", uid)
+    return found
 
 
 def _load(out: Path) -> list[dict[str, Any]]:
@@ -79,7 +140,7 @@ def _load(out: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def _mean(values: list[float]) -> float | None:
+def _mean(values: Sequence[float]) -> float | None:
     return round(statistics.mean(values), 2) if values else None
 
 
@@ -104,7 +165,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     overall = {d: _mean([r["judgment"]["final"][d] for r in judged]) for d in DIMENSIONS}
     latency = {key: [r["checks"]["latency"][key] for r in rows
                      if r["checks"]["latency"].get(key) is not None]
-               for key in ("first_activity_s", "first_answer_token_s", "total_s")}
+               for key in LATENCY_KEYS}
     tags: Counter[str] = Counter()
     for record in judged:
         tags.update(record["judgment"]["llm"].get("tags") or [])
@@ -144,6 +205,8 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "latency": {k: {"p50": _pct(v, 0.5), "p90": _pct(v, 0.9), "max": _pct(v, 1.0),
                         "n": len(v)} for k, v in latency.items()},
         "latency_raw": latency,
+        "latency_histogram": {k: _histogram(v) for k, v in latency.items()},
+        "findings": _findings(rows),
         "tags": tags.most_common(),
         "failures": failures[:20],
         "pairs": pairs,
@@ -241,11 +304,23 @@ def write_markdown(out: Path, summary: dict[str, Any], manifest: dict[str, Any])
         ]
     lines += ["## Distribusi latensi (detik)", "",
               "| Ukuran | p50 | p90 | maks | n |", "|---|---|---|---|---|"]
-    names = {"first_activity_s": "Aktivitas pertama", "first_answer_token_s": "Token jawaban "
-             "pertama", "total_s": "Total"}
     for key, row in s["latency"].items():
-        lines.append(f"| {names[key]} | {_fmt(row['p50'])} | {_fmt(row['p90'])} | "
+        lines.append(f"| {LATENCY_NAMES[key]} | {_fmt(row['p50'])} | {_fmt(row['p90'])} | "
                      f"{_fmt(row['max'])} | {row['n']} |")
+    hist = s.get("latency_histogram") or {}
+    if hist:
+        edges = [label for label, _ in next(iter(hist.values()))]
+        lines += ["", "Sebaran jumlah giliran per rentang (detik):", "",
+                  "| Ukuran | " + " | ".join(edges) + " |",
+                  "|---|" + "---|" * len(edges)]
+        for key, bins in hist.items():
+            lines.append(f"| {LATENCY_NAMES[key]} | "
+                         + " | ".join(str(n) for _, n in bins) + " |")
+    lines += ["", "## Temuan deterministik", "",
+              "Dihitung dari jurnal event tanpa juri.", ""]
+    for kind, ids in sorted((s.get("findings") or {}).items(), key=lambda kv: -len(kv[1])):
+        lines.append(f"- **{kind}** ({len(ids)}): " + ", ".join(f"`{i}`" for i in ids[:12])
+                     + (" …" if len(ids) > 12 else ""))
     lines += ["", "## Sesi vs sesi baru", ""] + _pair_section(s["pairs"])
     path = out / "REPORT.md"
     path.write_text("\n".join(lines) + "\n")
@@ -276,6 +351,8 @@ td.n{text-align:right}.s5,.s4{color:var(--good,#2f7d4f)}.s3{color:var(--weak,#b7
 .s2,.s1{color:var(--bad,#b3362f)}.berfungsi{color:var(--good,#2f7d4f)}
 .lemah{color:var(--weak,#b7791f)}.rusak{color:var(--bad,#b3362f)}
 ol li{margin-bottom:6px}code{font-size:12px}
+.bar{display:inline-block;height:8px;margin-right:6px;border-radius:2px;
+background:var(--accent,#2b5c8a);vertical-align:middle}
 """
 
 
@@ -313,9 +390,23 @@ def write_html(out: Path, summary: dict[str, Any], manifest: dict[str, Any]) -> 
         f"{esc((r['judgment']['llm'].get('summary') or '')[:220])}</small></li>"
         for r in s["failures"])
     latency = "".join(
-        f"<tr><td>{esc(k)}</td><td class='n'>{_fmt(v['p50'])}</td><td class='n'>"
-        f"{_fmt(v['p90'])}</td><td class='n'>{_fmt(v['max'])}</td></tr>"
+        f"<tr><td>{esc(LATENCY_NAMES.get(k, k))}</td><td class='n'>{_fmt(v['p50'])}</td>"
+        f"<td class='n'>{_fmt(v['p90'])}</td><td class='n'>{_fmt(v['max'])}</td></tr>"
         for k, v in s["latency"].items())
+    hist = s.get("latency_histogram") or {}
+    hist_rows = ""
+    for key, bins in hist.items():
+        top = max([n for _, n in bins] or [1]) or 1
+        cells = "".join(
+            f"<td class='n'><span class='bar' style='width:{round(40 * n / top)}px'></span>"
+            f"{n}</td>" for _, n in bins)
+        hist_rows += f"<tr><td>{esc(LATENCY_NAMES.get(key, key))}</td>{cells}</tr>"
+    hist_head = "".join(f"<th>{esc(label)}</th>" for label, _ in
+                        (next(iter(hist.values())) if hist else []))
+    findings = "".join(
+        f"<li><b>{esc(kind)}</b> ({len(ids)}): {esc(', '.join(ids[:12]))}"
+        f"{' …' if len(ids) > 12 else ''}</li>"
+        for kind, ids in sorted((s.get("findings") or {}).items(), key=lambda kv: -len(kv[1])))
     page = f"""<!doctype html><html lang="id"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Benchmark Nova Studio</title><style>{CSS}</style></head><body><main>
@@ -330,6 +421,9 @@ def write_html(out: Path, summary: dict[str, Any], manifest: dict[str, Any]) -> 
 </tr></thead><tbody>{categories}</tbody></table></div>
 <h2>Latensi (detik)</h2><div class="wrap"><table><thead><tr><th>Ukuran</th><th>p50</th>
 <th>p90</th><th>maks</th></tr></thead><tbody>{latency}</tbody></table></div>
+<h3>Sebaran (jumlah giliran per rentang detik)</h3><div class="wrap"><table><thead><tr>
+<th>Ukuran</th>{hist_head}</tr></thead><tbody>{hist_rows}</tbody></table></div>
+<h2>Temuan deterministik</h2><ul>{findings}</ul>
 <h2>20 kegagalan teratas</h2><ol>{failures}</ol>
 </main></body></html>"""
     path = out / "summary.html"

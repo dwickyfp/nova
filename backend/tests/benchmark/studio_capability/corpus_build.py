@@ -30,7 +30,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-CORPUS_VERSION = "2026-11-23.2"
+CORPUS_VERSION = "2026-11-24.1"
 CORPUS_DIR = Path(__file__).resolve().parent / "corpus"
 T = "NOVA_DEMO.orders"
 
@@ -86,7 +86,9 @@ class Corpus:
             hitl: dict[str, Any] | None = None, mode: str = "chat",
             stop_after_s: float | None = None, note: str | None = None,
             leak_sql: str | None = None, clarify: str | None = None,
-            insight: str | None = None) -> dict[str, Any]:
+            insight: str | None = None, absent: list[str] | None = None,
+            numbers: list[float] | None = None, agent: str | None = None,
+            tool_failure: list[str] | None = None) -> dict[str, Any]:
         n = self.counters[category] = self.counters.get(category, 0) + 1
         item: dict[str, Any] = {
             "id": f"{category}-{n:03d}",
@@ -114,6 +116,14 @@ class Corpus:
             item["clarify"] = clarify
         if insight:
             item["expect_insight"] = insight
+        if absent:
+            item["expect_absent"] = absent
+        if numbers:
+            item["expect_numbers"] = numbers
+        if agent:
+            item["agent"] = agent
+        if tool_failure:
+            item["expect_tool_failure"] = tool_failure
         if hitl:
             item["hitl"] = hitl
         if stop_after_s is not None:
@@ -876,11 +886,224 @@ def build_singles(c: Corpus) -> None:  # noqa: C901 - a flat list of question fa
 
 # ── multi-turn sessions ────────────────────────────────────────────────
 
+# ── F1-F5 and #242 (added in 2026-11-24.1) ─────────────────────────────
+#: Figures from the MCP test fixture (backend/tests/fixtures/mcp): fixed rates per
+#: USD (IDR 16000, SGD 1.35, EUR 0.92) and monthly store targets in IDR.
+TARGET_JUNE = 131_000_000
+TARGET_JULY = 30_000_000
+FIXTURE = "fixture"
+#: Elements a plain one-figure answer must not grow into.
+SIMPLE_ABSENT = ["page", "chart", "map", "slider"]
+OVERVIEW_SQL = (f"SELECT SUM(total_amount) AS revenue, COUNT(*) AS orders, "
+                f"SUM(CASE WHEN {JUNE} THEN total_amount END) AS june, "
+                f"SUM(CASE WHEN {JULY} THEN total_amount END) AS july FROM {T}")
+PAGE_NOTE = ("F5 page: header, KPI tiles from verified figures and at least one chart or "
+             "table section; figures come from @Value, never typed.")
+SLIDER_NOTE = ("What-if page: the baseline is a verified figure and a slider (or segmented "
+               "control) recomputes the scenario in the browser; no new query per move.")
+ROUTE_NOTE = ("Public places and road routes are checked and fetched by Nova (OSRM); no "
+              "business data is needed.")
+SAVE_NOTE = ("F4: a chart in the answer is a draft with a save suggestion; nothing is saved "
+             "during the turn (artifact.saved must not appear).")
+CHIP_NOTE = ("Tool chips and sources: one chip per distinct tool, no repeated citation, and "
+             "no raw tool names (semantic_query, mcp_...) in the answer or follow-ups.")
+MCP_NOTE = ("Disposable fixture agent: Sales Analyst's tools plus the MCP test service "
+            "(fx_convert, get_store_targets, fail_on_purpose, record_target_note) and the "
+            "monthly-revenue-review skill. Studio runs tools without approval cards.")
+
+
+def build_f5(c: Corpus) -> None:  # noqa: C901 - a flat list of question families
+    # ── page layouts (F5) ──────────────────────────────────────────────
+    for lang, q in [
+        ("en", "Give me a one-page overview of our sales: headline numbers and the trend."),
+        ("id", "Buatkan halaman ringkasan penjualan: angka utama dan tren pendapatan."),
+        ("en", "Build me a sales dashboard: revenue, orders, June vs July and top cities."),
+        ("id", "Tolong buat dashboard performa toko: pendapatan, pesanan, Juni vs Juli."),
+        ("en", "Put revenue by city and revenue by payment method side by side."),
+        ("id", "Tampilkan berdampingan: pendapatan per kota dan per metode pembayaran."),
+        ("en", "Prepare a management page comparing June and July 2025."),
+        ("id", "Siapkan satu halaman untuk rapat: ringkasan Juni dibanding Juli 2025."),
+    ]:
+        side = "side by side" in q or "berdampingan" in q
+        c.add("layout_page", lang, q, ui=["page", "chart"] if side else ["page", "kpi", "chart"],
+              difficulty="hard", tags=["f5", "page"],
+              sql=(grouped("revenue", "city") if side else OVERVIEW_SQL),
+              numeric="col:value" if side else "all",
+              insight=None if side else INSIGHT_OVERVIEW, note=PAGE_NOTE)
+
+    # ── what-if sliders (F5 controls) ──────────────────────────────────
+    for lang, q, sql in [
+        ("en", "Let me play with a price increase between 0% and 30%: what happens to "
+               "revenue?", scalar("revenue")),
+        ("id", "Buat simulasi dengan slider: kalau jumlah pesanan naik 0-50%, pendapatan "
+               "jadi berapa?", scalar("revenue")),
+        ("en", "What-if: July revenue if each remaining week of July matched the first five "
+               "days. Give me a control for the growth rate.", scalar("revenue", JULY)),
+        ("id", "Skenario: kalau Jakarta turun sampai 40%, total pendapatan jadi berapa? Pakai "
+               "slider.", f"SELECT SUM(total_amount) AS total, SUM(CASE WHEN "
+                          f"shipping_city='Jakarta' THEN total_amount ELSE 0 END) AS jakarta "
+                          f"FROM {T}"),
+        ("en", "Show a scenario toggle: revenue with and without pending orders.",
+         f"SELECT SUM(total_amount) AS total, SUM(CASE WHEN status <> 'pending' THEN "
+         f"total_amount END) AS without_pending FROM {T}"),
+        ("id", "Simulasi interaktif: diskon 0-20% untuk semua pesanan, berapa pendapatan "
+               "bersihnya?", scalar("revenue")),
+    ]:
+        ui = ["page", "interactive"] if "toggle" in q else ["page", "slider"]
+        c.add("what_if_slider", lang, q, ui=ui, tools=["semantic_query"], difficulty="hard",
+              tags=["f5", "what_if", "controls"], sql=sql, numeric="all", note=SLIDER_NOTE)
+
+    # ── data map (rows placed by city) ─────────────────────────────────
+    for lang, q, metric in [("en", "Plot revenue by shipping city on a map.", "revenue"),
+                            ("id", "Tampilkan sebaran pesanan per kota di peta.", "orders"),
+                            ("en", "Which regions buy the most? Show it on a map with "
+                                   "revenue.", "revenue"),
+                            ("id", "Peta pendapatan per kota tujuan, mana yang terbesar?",
+                             "revenue")]:
+        c.add("data_map", lang, q, ui=["map"], difficulty="medium", tags=["f5", "map"],
+              sql=grouped(metric, "city"), numeric="col:value", labels="col:label", top=3,
+              note="F5 DataMap places rows without coordinates at the city they name.")
+
+    # ── public places, routes and pictures ─────────────────────────────
+    for lang, q, ui, absent, note in [
+        ("en", "Show Monas, Kota Tua and Ancol on a map of Jakarta.", ["place_map"], None, ""),
+        ("id", "Tandai Candi Borobudur, Prambanan dan Malioboro di peta.", ["place_map"],
+         None, ""),
+        ("en", "Where are Bandung, Semarang and Surabaya? Put them on a map.", ["place_map"],
+         ["route"], "Places only; no route was asked for."),
+        ("en", "Driving route from Jakarta to Bandung.", ["place_map", "route"], None, ""),
+        ("id", "Rute mobil dari Surabaya ke Malang, ada alternatif jalannya?",
+         ["place_map", "route", "route:alternatives"], None,
+         "Up to three alternatives, each with distance and driving time."),
+        ("en", "Show me alternative driving routes from Semarang to Yogyakarta with their "
+               "times.", ["place_map", "route", "route:alternatives"], None, ""),
+        ("en", "Plan a road trip Jakarta -> Bandung -> Semarang -> Yogyakarta.",
+         ["place_map", "route", "places:3+"], None, "Multi-stop route in the given order."),
+        ("id", "Rute perjalanan darat Surabaya - Malang - Yogyakarta - Semarang.",
+         ["place_map", "route", "places:3+"], None, "Multi-stop route in the given order."),
+        ("en", "Driving route from Jakarta to Makassar.", ["place_map", "route:unavailable"],
+         ["route"], "Different islands: places stay on the map, the answer says no road "
+                    "joins them; no ferry or road line is drawn."),
+        ("id", "Rute darat dari Medan ke Bali?", ["place_map", "route:unavailable"], ["route"],
+         "Sumatra and Bali: no road route; explain instead of drawing one."),
+        ("en", "Starting in Jakarta, what's the fastest order to visit Semarang, Bandung, "
+               "Yogyakarta and Surabaya by car?", ["place_map", "route", "route:optimized"],
+         None, "Route optimisation: the visit order is computed from the duration table."),
+        ("id", "Dari Jakarta, urutan kunjungan tercepat ke Malang, Bandung dan Semarang?",
+         ["place_map", "route", "route:optimized"], None, "Route optimisation."),
+        ("en", "Show me a picture of Monas.", ["picture"], None, ""),
+        ("id", "Tampilkan foto Candi Borobudur.", ["picture"], None, ""),
+        ("en", "What does Jam Gadang in Bukittinggi look like? Show an image.", ["picture"],
+         None, ""),
+        ("id", "Peta Bandung dan Yogyakarta, plus satu foto ikonik tiap kota.",
+         ["place_map", "picture"], None, "A page with a map and pictures."),
+    ]:
+        category = ("picture" if ui == ["picture"] else
+                    "route_optimize" if "route:optimized" in ui else
+                    "route_overwater" if "route:unavailable" in ui else
+                    "route_multistop" if "places:3+" in ui else
+                    "route" if "route" in ui else
+                    "place_map" if "picture" not in ui else "picture")
+        c.add(category, lang, q, ui=ui, tools=[], difficulty="medium",
+              tags=["f5", "public"], absent=absent, note=(ROUTE_NOTE + " " + note).strip())
+
+    # ── tool chips and citations ───────────────────────────────────────
+    for lang, q, sql in [
+        ("en", "Revenue by city, then by payment method, then by status.",
+         grouped("revenue", "status")),
+        ("id", "Cek pendapatan per kota, lalu per metode pembayaran, lalu rata-rata nilai "
+               "pesanan per kota.", grouped("aov", "city")),
+        ("en", "Where did each number in your answer come from? Total revenue and order "
+               "count, with sources.", f"SELECT SUM(total_amount) AS revenue, COUNT(*) AS "
+                                       f"orders FROM {T}"),
+        ("id", "Berapa pendapatan Juni dan Juli 2025? Sebutkan sumber datanya.",
+         f"SELECT SUM(CASE WHEN {JUNE} THEN total_amount END) AS june, "
+         f"SUM(CASE WHEN {JULY} THEN total_amount END) AS july FROM {T}"),
+    ]:
+        c.add("chips", lang, q, ui=["text"], difficulty="medium", tags=["chips", "citations"],
+              sql=sql, numeric="col:value" if "label" in sql else "all", note=CHIP_NOTE)
+
+    # ── F4 artifact preview and save suggestion ────────────────────────
+    for lang, q, absent in [
+        ("en", "Chart revenue by city.", ["artifact_saved"]),
+        ("id", "Grafik garis pendapatan harian.", ["artifact_saved"]),
+        ("en", "Make a chart of revenue by payment method and save it for me.",
+         ["artifact_saved"]),
+        ("id", "Buat grafik pesanan per status lalu langsung simpan saja.", ["artifact_saved"]),
+    ]:
+        dim = ("city" if "city" in q else "payment" if "payment" in q else
+               "status" if "status" in q else None)
+        sql = (grouped("orders" if "pesanan" in q else "revenue", dim) if dim else
+               f"SELECT DATE(order_date) AS label, SUM(total_amount) AS value FROM {T} "
+               f"GROUP BY DATE(order_date) ORDER BY label")
+        c.add("artifact_save", lang, q, ui=["chart", "artifact_preview", "save_suggestion"],
+              difficulty="medium", tags=["f4", "artifact"], absent=absent, sql=sql,
+              numeric="col:value", top=None,
+              note=SAVE_NOTE + (" The user asked to save: the agent offers the Save action "
+                                "rather than saving by itself." if "save" in q or "simpan"
+                                in q else ""))
+
+    # ── MCP and uploaded skill (#242), on the disposable fixture agent ─
+    mcp: list[tuple[str, str, list[str], list[float] | None, list[str] | None, str]] = [
+        ("en", "What is our total revenue in US dollars? Use the currency service.",
+         ["semantic_query", "mcp:fx_convert"], [175_184_000, 10_949.0], None, "answer"),
+        ("id", "Konversikan pendapatan Juni 2025 ke dolar Singapura.",
+         ["semantic_query", "mcp:fx_convert"], [145_886_000, 12_309.13], None, "answer"),
+        ("en", "Did each month hit its store revenue target?",
+         ["semantic_query", "mcp:get_store_targets"],
+         [145_886_000, TARGET_JUNE, 29_298_000, TARGET_JULY], None, "answer"),
+        ("id", "Berapa target pendapatan toko bulan Juni 2025 dan apakah tercapai?",
+         ["semantic_query", "mcp:get_store_targets"], [TARGET_JUNE, 145_886_000, 111.4],
+         None, "answer"),
+        ("en", "Run the target service health check (fail_on_purpose) and tell me what "
+               "happened.", ["mcp:fail_on_purpose"], None, ["mcp:fail_on_purpose"],
+         "limitation"),
+        ("id", "Catat di layanan target untuk 2025-07: 'Yogyakarta perlu ditinjau'.",
+         ["mcp:record_target_note"], None, None, "answer"),
+        ("en", "Give me the monthly revenue review for July 2025.",
+         ["load_skill", "semantic_query", "mcp:get_store_targets"],
+         [29_298_000, 145_886_000, -79.9, TARGET_JULY, 97.7], None, "answer"),
+        ("id", "Tolong buat monthly revenue review untuk Juni 2025.",
+         ["load_skill", "semantic_query", "mcp:get_store_targets"],
+         [145_886_000, TARGET_JUNE, 111.4], None, "answer"),
+        ("en", "Monthly revenue review for July, please.",
+         ["load_skill"], None, None, "clarify"),
+    ]
+    for lang, q, tools, numbers, failure, outcome in mcp:
+        is_skill = "load_skill" in tools
+        extra = ("The skill says to ask for the year when only a month is named; the data "
+                 "holds 2025 only, so a stated assumption also works." if outcome == "clarify"
+                 else "")
+        c.add("skill" if is_skill else "mcp", lang, q,
+              ui=["kpi"] if is_skill and outcome == "answer" else ["text"],
+              tools=tools, outcome=outcome, difficulty="hard",
+              tags=["mcp" if not is_skill else "skill", "fixture"], numbers=numbers,
+              agent=FIXTURE, tool_failure=failure,
+              clarify="either" if outcome == "clarify" else None,
+              note=(MCP_NOTE + " " + extra).strip())
+
+    # ── simple questions stay simple ───────────────────────────────────
+    for lang, q, sql in [
+        ("en", "Total revenue?", scalar("revenue")),
+        ("id", "Jumlah pesanan berapa?", scalar("orders")),
+        ("en", "How many cities do we ship to?",
+         f"SELECT COUNT(DISTINCT shipping_city) AS value FROM {T}"),
+        ("id", "Kota dengan pendapatan tertinggi apa?", grouped("revenue", "city", limit=1)),
+        ("en", "What's the average order value?", scalar("aov")),
+        ("id", "Berapa pesanan yang masih pending?", scalar("orders", "status = 'pending'")),
+    ]:
+        c.add("simple", lang, q, ui=["text"], difficulty="easy", tags=["simple"],
+              sql=sql, numeric="col:value" if "label" in sql else "all",
+              labels="col:label" if "label" in sql else None, absent=SIMPLE_ABSENT,
+              note="A one-figure question: a sentence (optionally one KPI tile), no page, "
+                   "chart or map.")
+
+
 def turn(q: str, *, ui: list[str], lang: str, sql: str | None = None, numeric: str = "all",
          outcome: str = "answer", tools: list[str] | None = None, fresh: str | None = None,
          tags: list[str] | None = None, hitl: dict[str, Any] | None = None,
          stop_after_s: float | None = None, clarify: str | None = None,
-         insight: str | None = None) -> dict[str, Any]:
+         insight: str | None = None, absent: list[str] | None = None) -> dict[str, Any]:
     out: dict[str, Any] = {"question": q, "expect_ui": ui, "lang": lang,
                            "expect_outcome": outcome,
                            "expect_tools": tools if tools is not None else (
@@ -898,6 +1121,8 @@ def turn(q: str, *, ui: list[str], lang: str, sql: str | None = None, numeric: s
         out["clarify"] = clarify
     if insight:
         out["expect_insight"] = insight
+    if absent:
+        out["expect_absent"] = absent
     return out
 
 
@@ -1316,12 +1541,45 @@ def build_sessions() -> list[dict[str, Any]]:  # noqa: C901 - a flat list of ses
         turn("Dan bulan sebelumnya?", ui=["text"], lang="id", sql=scalar("revenue", JUNE),
              fresh="Pendapatan Juni 2025 berapa?"),
     ])
+    add("Road trip planning", "en", "route", [
+        turn("Driving route from Jakarta to Bandung.", ui=["place_map", "route"], lang="en",
+             tools=[], tags=["f5", "public"]),
+        turn("Add Semarang after Bandung.", ui=["place_map", "route", "places:3+"],
+             lang="en", tools=[], tags=["f5", "public"],
+             fresh="Driving route Jakarta -> Bandung -> Semarang."),
+        turn("And continue to Makassar.", ui=["place_map", "route:unavailable"], lang="en",
+             tools=[], tags=["f5", "public"],
+             fresh="Driving route Jakarta -> Bandung -> Semarang -> Makassar."),
+    ])
+    add("Chart, change it, save", "id", "artifact", [
+        turn("Grafik batang pendapatan per kota.", ui=["chart", "artifact_preview",
+                                                       "save_suggestion"], lang="id",
+             sql=grouped("revenue", "city"), numeric="col:value", tags=["f4"],
+             absent=["artifact_saved"]),
+        turn("Ganti jadi per metode pembayaran.", ui=["chart", "artifact_preview"],
+             lang="id", sql=grouped("revenue", "payment"), numeric="col:value", tags=["f4"],
+             absent=["artifact_saved"], fresh="Grafik batang pendapatan per metode "
+                                              "pembayaran."),
+        turn("Oke simpan grafiknya.", ui=["text"], lang="id", tools=[], tags=["f4"],
+             absent=["artifact_saved"],
+             fresh="Simpan grafik pendapatan per metode pembayaran ke Dataviz."),
+    ])
+    add("Simple stays simple", "id", "simple", [
+        turn("Total pendapatan berapa?", ui=["text"], lang="id", sql=scalar("revenue"),
+             absent=SIMPLE_ABSENT),
+        turn("Kalau Juni saja?", ui=["text"], lang="id", sql=scalar("revenue", JUNE),
+             absent=SIMPLE_ABSENT, fresh="Pendapatan Juni 2025 berapa?"),
+        turn("Sekarang buat halaman ringkasan Juni vs Juli.", ui=["page", "kpi"], lang="id",
+             sql=OVERVIEW_SQL, tags=["f5", "page"],
+             fresh="Buat halaman ringkasan pendapatan Juni vs Juli 2025."),
+    ])
     return s
 
 
 def main() -> None:
     corpus = Corpus()
     build_singles(corpus)
+    build_f5(corpus)
     sessions = build_sessions()
     CORPUS_DIR.mkdir(parents=True, exist_ok=True)
     with (CORPUS_DIR / "questions.jsonl").open("w") as handle:
