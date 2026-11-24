@@ -1792,6 +1792,11 @@ class AssistantLoop:
                 # A page is published as it streams; the answer text is what
                 # the model wrote around it.
                 layout_shown = live_layout is not None and live_layout.stream.found
+                # A map of public places and their road routes answers by itself:
+                # what the governed data lacks is not what was asked (route_optimize).
+                public_page = (layout_shown and live_layout is not None
+                               and live_layout.stream.shows("PlaceMap")
+                               and not evidence.business_tables)
                 fallback_markdown = (split_claims(live_layout.stream.prose())[0]
                                      if layout_shown else draft_text)
                 if answer_claims is not None or fallback_markdown != draft_text:
@@ -1799,7 +1804,7 @@ class AssistantLoop:
                 language = _turn_language(context)
                 # A turn that already holds results answers from them, verified like any
                 # other answer, even when a later step could not be expressed.
-                if clarification_requested and not evidence.business_tables:
+                if clarification_requested and not evidence.business_tables and not public_page:
                     answer_text = "".join(buffered_text).strip() or _clarification_text(
                         clarification_context, language
                     )
@@ -2023,7 +2028,7 @@ class AssistantLoop:
                 if (
                     business_request and not denials and not guard_blocked
                     and not evidence.business_tables and not lineage_answer
-                    and not context.question_back
+                    and not context.question_back and not public_page
                 ):
                     detail = (
                         "No business query result is available. Catalog listings do not "

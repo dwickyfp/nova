@@ -1196,6 +1196,11 @@ class LayoutStream:
 
         visit(expression)
 
+    def shows(self, component: str) -> bool:
+        """Whether a published statement draws ``component`` (checked, as shown)."""
+        pattern = re.compile(rf"^[A-Za-z_]\w*\s*=\s*{re.escape(component)}\(")
+        return any(pattern.match(line) for line in self._published)
+
     def prose(self) -> str:
         """The answer text outside the program."""
         if self._start is None:

@@ -80,6 +80,8 @@ for the shortest order to let the agent choose it, starting from the first
 place. Questions in Indonesian work the same way ("rute tercepat dari Semarang
 ke Malang lewat jalan").
 
+- An agent built for business data, such as a sales agent, answers these
+  questions with the map too. It does not ask which of its measures to use.
 - Only the city names and their rough positions are used to find the route.
   The customers, figures and other data on your page are not sent anywhere.
 - When there is no road between the places, for example between two islands,
