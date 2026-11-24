@@ -1216,4 +1216,5 @@ by a recorded decision and 3 are blocked.
 - **Coverage attempts:**
   - Attempt 1: 2 failed, `navigation-material.integration` (Studio) and `qa-editor-a11y` NDV-A11Y-006. It ran alongside the backend unit suite and the scorecard. Both pass alone twice.
   - Attempt 2: 1 failed, the keyboard-only editor test. Radix select typeahead picked "Accent" instead of "Brand" because its buffer resets after one second under load. The test now arrows down to Brand and checks focus before Enter.
-  - Attempt 3: see below.
+  - Attempt 3: 1 failed, `dataset-create.test.tsx` (SQL parameters). A click timed out after 113 ms, once the test's time budget ran out. The file and its feature have not changed since #227, and it passes alone twice.
+  - Each local attempt failed a different unrelated test on a timeout. The full-suite pass of record is the CI frontend job on the final commit of PR #253.
