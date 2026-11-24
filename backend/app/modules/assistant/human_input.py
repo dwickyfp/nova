@@ -308,6 +308,87 @@ def normalize_request(arguments: dict[str, Any]) -> dict[str, Any]:
     return request
 
 
+def _is_year_field(spec: dict[str, Any]) -> bool:
+    """A number field bounded to four-digit values asks for a calendar year.
+
+    Read from the field's bounds, not its label, so it holds in every language.
+    """
+    if spec.get("widget") not in {"integer", "number"}:
+        return False
+    low, high, default = spec.get("minimum"), spec.get("maximum"), spec.get("default")
+
+    def year(value: Any, top: int = 9999) -> bool:
+        return isinstance(value, int | float) and 1000 <= value <= top
+
+    # A lower bound up to 2100 (1900, 2000): a count or amount floor is rarely one.
+    first = low if isinstance(low, int | float) else default
+    return year(first, 2100) and (high is None or year(high))
+
+
+def data_years(tables: Any) -> list[int]:
+    """The calendar years the verified results of this turn cover, oldest first.
+
+    A result records the dates its rows are about as ``period``; a month or day
+    the user names without a year is one of these years, never a default.
+    """
+    years: set[int] = set()
+    for table in (tables or {}).values() if isinstance(tables, dict) else ():
+        period = table.get("period") if isinstance(table, dict) else None
+        if not isinstance(period, dict):
+            continue
+        found = [
+            int(str(period[key])[:4]) for key in ("first", "last", "compared_first",
+                                                   "compared_last")
+            if re.match(r"^\d{4}-\d{2}", str(period.get(key) or ""))
+        ]
+        if found:
+            years.update(range(min(found), max(found) + 1))
+    return sorted(years)
+
+
+def year_settled_by_data(request: dict[str, Any], years: list[int]) -> dict[str, Any] | None:
+    """The tool result for a form that only asks the one year the data covers.
+
+    Asking "July of which year?" when every verified row is from 2025 is not a
+    real question; an answer such as the field's minimum (1900) would send the
+    analysis to a year with no data. The year is taken from the data instead,
+    and the model is told so.
+    """
+    fields = request.get("fields") or []
+    if request.get("kind") != "form" or len(fields) != 1 or len(years) != 1:
+        return None
+    if not _is_year_field(fields[0]):
+        return None
+    year = years[0]
+    return {
+        "ok": True,
+        "tool": TOOL_NAME,
+        "data": {
+            "status": "settled_by_data",
+            "answer": {"values": {fields[0]["name"]: year}},
+            "summary": (
+                f"Not asked: the verified data covers only {year}, so a month or day "
+                f"named without a year is in {year}. Continue with {year} and say so."
+            ),
+        },
+    }
+
+
+def fit_year_fields(request: dict[str, Any], years: list[int]) -> dict[str, Any]:
+    """Year fields offer the years the verified data covers, latest first."""
+    if request.get("kind") != "form" or not years or len(years) > MAX_ENUM:
+        return request
+    fields = []
+    for spec in request.get("fields") or []:
+        if _is_year_field(spec):
+            spec = {key: value for key, value in spec.items()
+                    if key not in {"minimum", "maximum", "default"}}
+            values = [str(year) for year in reversed(years)]
+            spec.update(widget="select", values=values, default=values[0])
+        fields.append(spec)
+    return {**request, "fields": fields}
+
+
 # ── answers ────────────────────────────────────────────────────────────────
 
 

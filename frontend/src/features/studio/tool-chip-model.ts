@@ -17,6 +17,8 @@ export type ToolChipCall = {
   sql: boolean;
   /** The result summary, redacted and bounded. */
   result?: string;
+  /** Why a failed call failed, redacted and bounded. */
+  reason?: string;
   durationMs?: number;
 };
 
@@ -75,6 +77,7 @@ function sentenceCase(name: string): string {
 
 const INPUT_LIMIT = 600;
 const RESULT_LIMIT = 400;
+const REASON_LIMIT = 200;
 
 type ToolLike = {
   stepId: string;
@@ -84,6 +87,7 @@ type ToolLike = {
   status: string;
   preview?: string;
   detail?: string;
+  reason?: string;
   durationMs?: number;
 };
 
@@ -174,6 +178,7 @@ function toolLikes(steps: RailStep[]): ToolLike[] {
       status: step.status,
       preview: step.label === "load_skill" ? undefined : step.preview,
       detail: step.detail,
+      reason: step.reason,
       durationMs: step.durationMs,
     }));
 }
@@ -198,12 +203,14 @@ export function toolChips(
     const status = statusLabel(tool.status);
     const input = tool.preview?.trim() ? redact(tool.preview) : undefined;
     const result = tool.detail?.trim() ? redact(plain(tool.detail), RESULT_LIMIT) : undefined;
+    const reason = status === "error" && tool.reason?.trim() ? redact(tool.reason, REASON_LIMIT) : undefined;
     chip.calls.push({
       stepId: tool.stepId,
       status,
       input,
       sql: Boolean(input && looksLikeSql(input)),
       result: result && result !== input ? result : undefined,
+      ...(reason ? { reason } : {}),
       durationMs: tool.durationMs,
     });
     if (SEVERITY[status] > SEVERITY[chip.status]) chip.status = status;

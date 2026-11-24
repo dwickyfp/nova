@@ -21,7 +21,7 @@ const tool = (id: string, label: string, extra: Partial<RailStep> = {}): RailSte
 const STEPS: RailStep[] = [
   { id: "t0", kind: "thinking", label: "act", text: "Thinking", status: "done" },
   tool("c1", "mcp_3f2a9b0c4d5e", { displayName: "Nova test tools: fx convert", preview: '{"amount": 10, "api_key": "sk-live-abc123"}', durationMs: 640 }),
-  tool("c2", "mcp_3f2a9b0c4d5e", { displayName: "Nova test tools: fx convert", status: "failed", detail: "Rate limit" }),
+  tool("c2", "mcp_3f2a9b0c4d5e", { displayName: "Nova test tools: fx convert", status: "failed", detail: "Rate limit", reason: "The connector refused: token=abc123secret" }),
   tool("c3", "semantic_view_query", { preview: "SELECT region, SUM(revenue) FROM sales GROUP BY region", durationMs: 2400 }),
   tool("c4", "load_skill", { skillName: "Sales playbook" }),
   tool("c5", "request_human_input"),
@@ -94,6 +94,14 @@ describe("tool chip model", () => {
     expect(chips[0].calls[0].result).toBe('{"month": "2025-07"}');
   });
 
+  it("keeps a short, redacted reason on a failed call only", () => {
+    const { chips } = toolChips([
+      tool("f1", "semantic_query", { status: "failed", reason: "Nova could not compare those periods as asked." }),
+      tool("f2", "semantic_query", { status: "done", reason: "ignored" }),
+    ]);
+    expect(chips[0].calls.map((call) => call.reason)).toEqual(["Nova could not compare those periods as asked.", undefined]);
+  });
+
   it("formats durations", () => {
     expect(formatDuration(640)).toBe("640 ms");
     expect(formatDuration(2400)).toBe("2.4 s");
@@ -120,6 +128,7 @@ describe("ToolChips", () => {
     expect(region.element().textContent).not.toContain("sk-live-abc123");
     expect(region.element().textContent).toContain("640 ms");
     expect(region.element().textContent).toContain("Rate limit");
+    expect(region.element().textContent).toContain("The connector refused: token=[redacted]");
 
     await view.click();
     await expect.element(fx).toHaveAttribute("aria-expanded", "false");

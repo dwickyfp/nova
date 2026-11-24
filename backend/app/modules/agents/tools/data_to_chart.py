@@ -106,13 +106,23 @@ class DataToChartTool:
         intent = _arg(invocation, "intent") or _arg(invocation, "title") or "visualise the data"
         chosen = _arg(invocation, "evidence_id")
         tables = getattr(context, "evidence_tables", None) or {}
-        last = tables.get(chosen) if chosen else getattr(context, "last_result", None)
+        latest = getattr(context, "last_result", None)
+        last = tables.get(chosen) if chosen else latest
+        if chosen and last is None and latest and not tables:
+            # A follow-up ("show that as a pie chart") names an evidence id of an
+            # earlier turn; that turn's result is the one restored as the latest.
+            last, chosen = latest, ""
         if not last or not last.get("columns"):
             detail = (
                 "There is no recent data to chart in this conversation. Fetch "
                 "the data first (a query or semantic_query), then chart it."
             )
-            return ToolOutcome(ok=False, summary="", error=detail)
+            # Recoverable: the agent queries the data, then charts it.
+            return ToolOutcome(
+                ok=False, summary="", error=detail, error_class="NO_DATA_RESULT",
+                recoverable=True, safe_detail=detail,
+                repair_context={"evidence_ids": list(tables)[-8:]},
+            )
 
         columns: list[str] = [str(name) for name in last.get("columns") or []]
         rows: list[list] = [list(row) if isinstance(row, list | tuple) else

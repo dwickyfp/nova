@@ -19,7 +19,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 #: Bump when any source text changes, so cached translations are redone.
-VERSION = 5
+VERSION = 6
 
 MESSAGES: dict[str, str] = {
     "render.lead": "Here is what the results show.",
@@ -69,6 +69,10 @@ MESSAGES: dict[str, str] = {
     "loop.publish_unconfirmed": (
         "The dashboard was not published in this reply, so I won't say it was. Ask me "
         "to publish it, and I'll ask for your approval first."
+    ),
+    "loop.not_scheduled": "Nothing was scheduled. {reason}",
+    "loop.not_done": (
+        "The step this request needs did not complete, so it was not done. {reason}"
     ),
     "loop.lookup_failed": (
         "I couldn't look this up in Nova just now, so I won't guess. Try again, or "
@@ -157,6 +161,11 @@ BUILTIN: dict[str, dict[str, str]] = {
             "Dasbor belum diterbitkan dalam balasan ini, jadi saya tidak akan mengatakan "
             "sebaliknya. Minta saya menerbitkannya, dan saya akan meminta persetujuan Anda "
             "terlebih dahulu."
+        ),
+        "loop.not_scheduled": "Tidak ada yang dijadwalkan. {reason}",
+        "loop.not_done": (
+            "Langkah yang dibutuhkan permintaan ini tidak selesai, jadi belum dikerjakan. "
+            "{reason}"
         ),
         "loop.lookup_failed": (
             "Saya belum bisa mencarinya di Nova saat ini, jadi saya tidak akan menebak. "

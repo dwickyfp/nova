@@ -51,6 +51,9 @@ function getInitials(username: string): string {
  * on this route. Switching a role is a session operation, exactly as it is in
  * the main console, and the caller reloads Studio's identity afterwards.
  */
+/** Up to this many roles are listed in the menu itself. */
+const INLINE_ROLES = 5;
+
 export function StudioAccountMenu({
   identity,
   onIdentityChange,
@@ -145,6 +148,23 @@ export function StudioAccountMenu({
               Switch Role
             </span>
           </div>
+          {availableRoles.length <= INLINE_ROLES ? (
+            // A few roles are listed in place, so every role is visible when the
+            // menu opens; a longer list sits in a searchable submenu.
+            availableRoles.map((role) => (
+              <DropdownMenuItem
+                key={role}
+                className="gap-2"
+                title={role}
+                aria-current={role === activeRole ? "true" : undefined}
+                onSelect={() => void handleSwitchRole(role)}
+              >
+                <SquareUser className="size-4 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">{role}</span>
+                {role === activeRole && <Check className="size-4 shrink-0 text-sidebar-accent-foreground" />}
+              </DropdownMenuItem>
+            ))
+          ) : (
           <DropdownMenuSub>
             <DropdownMenuSubTrigger className="gap-2 [&_svg]:shrink-0" title={activeRole}>
               <SquareUser className="size-4" />
@@ -187,6 +207,7 @@ export function StudioAccountMenu({
               )}
             </DropdownMenuSubContent>
           </DropdownMenuSub>
+          )}
 
           <DropdownMenuSeparator />
 

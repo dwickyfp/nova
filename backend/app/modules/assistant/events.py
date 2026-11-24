@@ -16,7 +16,7 @@ Wire format: ``event: <name>\\ndata: <json>\\n\\n``. Payloads are JSON objects.
    redacted and without figures (those are only stated in a verified answer)
  * ``tool_call``   — a ``ToolCallView`` with ``status:"pending"``
  * ``tool_progress`` — a live, redacted stage inside one tool execution
- * ``tool_status`` — ``{"tool_call_id", "status"}``
+ * ``tool_status`` — ``{"tool_call_id", "status", "reason"?}`` (reason: failed only)
  * ``dashboard_changed`` — ``{"tool_call_id", "dashboard_id", "revision"}``
    after a tool committed a native Dataviz dashboard revision
  * ``content_block_done`` — closes one ordered response content block
@@ -198,8 +198,12 @@ def tool_call(view: ToolCallView) -> str:
     return format_sse(EVENT_TOOL_CALL, view.model_dump(mode="json"))
 
 
-def tool_status(tool_call_id: str, status: str) -> str:
-    return format_sse(EVENT_TOOL_STATUS, {"tool_call_id": tool_call_id, "status": status})
+def tool_status(tool_call_id: str, status: str, *, reason: str | None = None) -> str:
+    """A tool call's state. ``reason`` is a short, redacted line for a failure."""
+    payload: dict[str, Any] = {"tool_call_id": tool_call_id, "status": status}
+    if reason:
+        payload["reason"] = reason
+    return format_sse(EVENT_TOOL_STATUS, payload)
 
 
 def input_required(

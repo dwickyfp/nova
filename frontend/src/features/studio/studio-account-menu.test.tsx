@@ -12,11 +12,31 @@ vi.mock("@/context/theme-provider", () => ({
 const LONG_ROLE = "NOVA_TASK_DEMO_RUNTIME_ANALYST_WITH_A_VERY_LONG_NAME";
 
 describe("StudioAccountMenu role switcher", () => {
+  it("lists a few roles in the menu itself, so every role shows when it opens", async () => {
+    await render(<StudioAccountMenu
+      identity={{
+        username: "alice",
+        roles: ["finance", "marketing", "regional_manager"],
+        active_role: "marketing",
+        warehouses: [],
+        active_warehouse: null,
+      }}
+      onIdentityChange={() => {}}
+    />);
+
+    await page.getByRole("button", { name: /alice/ }).click();
+    for (const role of ["finance", "marketing", "regional_manager"]) {
+      await expect.element(page.getByRole("menuitem", { name: role, exact: true })).toBeVisible();
+    }
+    await expect.element(page.getByRole("menuitem", { name: "marketing", exact: true })).toHaveAttribute("aria-current", "true");
+    expect(page.getByPlaceholder("Search roles...").elements()).toHaveLength(0);
+  });
+
   it("keeps long role names inside the menu and exposes the full name", async () => {
     await render(<StudioAccountMenu
       identity={{
         username: "role_owner",
-        roles: ["ACCOUNTADMIN", LONG_ROLE],
+        roles: ["ACCOUNTADMIN", "FINANCE", "MARKETING", "OPS", "SALES", LONG_ROLE],
         active_role: LONG_ROLE,
         warehouses: [],
         active_warehouse: null,

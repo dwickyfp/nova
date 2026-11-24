@@ -67,6 +67,8 @@ export type RailStep = {
   body?: string;
   /** A tool result summary, shown when the row is open. */
   detail?: string;
+  /** Why a failed tool call failed, short and redacted. */
+  reason?: string;
   /** When the run journal recorded this row. */
   at?: string;
   /** How long a finished tool call ran. */

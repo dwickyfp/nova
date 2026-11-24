@@ -977,6 +977,8 @@ class AssistantLoop:
         dashboard_receipts: list[dict[str, Any]] = []
         #: Capabilities that ran in this turn and failed (not ones the model skipped).
         failed_capabilities: set[str] = set()
+        #: The last short, redacted reason each tool failed with this turn.
+        failure_reasons: dict[str, str] = {}
         composing_final = False
         #: The page layout the current iteration is writing, published as it streams.
         live_layout: Any = None
@@ -1671,6 +1673,21 @@ class AssistantLoop:
             # new proposal gets a fresh Nova identity; deferred calls retain theirs.
             tool_calls = (list(decision.tool_calls) if from_deferred
                           else [dict(call) for call in decision.tool_calls])
+            # Tool arguments written as a bare JSON object are planner text,
+            # never part of the answer (they leaked as "{"question": ...}").
+            unwritten, argument_text = _without_argument_json(
+                "".join(buffered_text), self._tool_schemas()
+            )
+            if argument_text:
+                buffered_text = [unwritten] if unwritten else []
+                if not tool_calls and not unwritten and repairs.take("composer_tool_call"):
+                    messages.append({"role": "system", "content": (
+                        "Tools are disabled during final composition. Answer from the "
+                        "recorded evidence only." if composing_final else
+                        "Call a tool through the tool interface, never as text. If no "
+                        "tool is needed, write the answer."
+                    )})
+                    continue
             if not tool_calls and _TOOL_MARKUP.search("".join(buffered_text)):
                 # The model wrote a tool call as text. It is never an answer. Outside
                 # final composition a well-formed call to an offered tool is the call
@@ -1932,6 +1949,14 @@ class AssistantLoop:
                         "Turn incomplete: required %s not run (intent %s)",
                         sorted(missing_required), route.intent.value,
                     )
+                    not_done = _not_done_text(
+                        missing_required, failure_reasons, self._registry,
+                        _turn_language(context),
+                    )
+                    if not_done:
+                        # The model's draft is not shown here; an action that failed
+                        # is said in Nova's words, with its reason, instead of nothing.
+                        yield events.text_delta(not_done)
                     yield events.error(
                         "required_capability_incomplete",
                         "The required capability was not executed, so Nova cannot "
@@ -2339,6 +2364,7 @@ class AssistantLoop:
             if getattr(tool, "human_input", False):
                 # The turn pauses for its user; the answer is this call's result.
                 asked = _HumanOutcome()
+                context.evidence_tables = evidence.business_tables
                 async for frame in _ask_human(invocation, context, asked):
                     yield frame
                 deadline += asked.waited
@@ -2719,7 +2745,10 @@ class AssistantLoop:
                                 context, tool, invocation, classification, "TIMEOUT",
                                 error="time budget exceeded",
                             )
-                        yield events.tool_status(invocation.tool_call_id, "failed")
+                        yield events.tool_status(
+                            invocation.tool_call_id, "failed",
+                            reason="The step ran out of time.",
+                        )
                         yield _timeout_frame(context)
                         yield events.done(str(uuid4()), finish_reason="timeout")
                         return
@@ -2787,7 +2816,10 @@ class AssistantLoop:
                 await asyncio.gather(
                     *(task for task, _ in prefetched.values()), return_exceptions=True,
                 )
-                yield events.tool_status(invocation.tool_call_id, "failed")
+                yield events.tool_status(
+                    invocation.tool_call_id, "failed",
+                    reason=failure_reason(outcome.error, outcome.error_class),
+                )
                 _finish_tool_step(context, "failed", outcome.error)
                 yield events.error(
                     "release_drift", outcome.error or "Pinned release resources changed."
@@ -2903,9 +2935,15 @@ class AssistantLoop:
                 )
                 continue
             if not outcome.ok:
-                yield events.tool_status(invocation.tool_call_id, "failed")
+                yield events.tool_status(
+                    invocation.tool_call_id, "failed",
+                    reason=failure_reason(outcome.error, outcome.error_class),
+                )
                 _finish_tool_step(context, "failed", outcome.error)
                 failed_capabilities.add(invocation.tool_name)
+                failure_reasons[invocation.tool_name] = failure_reason(
+                    outcome.error, outcome.error_class,
+                ) or ""
                 terminal = (outcome.error_class or "").upper() in {
                     "PERMISSION_DENIED",
                     "AUTHORIZATION_FAILURE",
@@ -2968,6 +3006,14 @@ class AssistantLoop:
                     _transition(context, TurnState.FAILED)
                     yield events.done(str(uuid4()), finish_reason="error")
                     return
+                if getattr(tool, "not_done_message", None):
+                    # An action that did not happen is said plainly, with its reason.
+                    not_done = _not_done_text(
+                        [invocation.tool_name], failure_reasons, self._registry,
+                        _turn_language(context),
+                    )
+                    if not_done:
+                        yield events.text_delta(not_done)
                 yield events.error("tool_failed", outcome.error or "The tool call failed.")
                 _transition(context, TurnState.FAILED)
                 yield events.done(str(uuid4()), finish_reason="error")
@@ -2975,7 +3021,10 @@ class AssistantLoop:
 
             verification_error = _verify_tool_outcome(invocation.tool_name, outcome)
             if verification_error:
-                yield events.tool_status(invocation.tool_call_id, "failed")
+                yield events.tool_status(
+                    invocation.tool_call_id, "failed",
+                    reason=failure_reason(verification_error, "VERIFICATION_FAILED"),
+                )
                 _finish_tool_step(context, "failed", verification_error)
                 yield events.error("verification_failed", verification_error)
                 _transition(context, TurnState.FAILED)
@@ -3608,6 +3657,14 @@ async def _ask_human(
         )
         refuse("INVALID_HUMAN_INPUT", str(exc))
         return
+    # A year the verified data decides is not asked; a year field offers the
+    # data's years, so no placeholder year (1900) can become the period.
+    years = human_input.data_years(context.evidence_tables)
+    settled = human_input.year_settled_by_data(request, years)
+    if settled is not None:
+        outcome.result = settled
+        return
+    request = human_input.fit_year_fields(request, years)
     context.human_requests += 1
     request_id = invocation.tool_call_id
     started = _budget_time()
@@ -4360,6 +4417,59 @@ _MARKUP_PARAMETER = re.compile(
 )
 
 
+def _without_argument_json(
+    text: str, schemas: list[dict[str, Any]],
+) -> tuple[str, bool]:
+    """``text`` without bare tool arguments the model wrote as prose.
+
+    With tools withheld (final composition, a clarification), a model can still
+    try to call one and write its arguments as a plain JSON object, e.g.
+    ``{"question": "..."}`` before the answer. Such an object is internal
+    planner text, never part of an answer. An object counts as tool arguments
+    when it starts a line, parses as a JSON object, and every key is a parameter
+    of one offered tool whose required parameters it holds.
+    """
+    shapes: list[tuple[frozenset[str], frozenset[str]]] = []
+    for schema in schemas:
+        parameters = (schema.get("function") or {}).get("parameters") or {}
+        properties = parameters.get("properties")
+        if isinstance(properties, dict) and properties:
+            shapes.append((frozenset(properties), frozenset(parameters.get("required") or ())))
+    if not shapes or "{" not in text:
+        return text, False
+    decoder = json.JSONDecoder()
+    kept: list[str] = []
+    removed = False
+    index = 0
+    while index < len(text):
+        start = text.find("{", index)
+        if start < 0:
+            break
+        line_start = text.rfind("\n", 0, start) + 1
+        # Only an object on its own line, outside a code block the answer shows.
+        if text[line_start:start].strip() or text.count("```", 0, start) % 2:
+            kept.append(text[index:start + 1])
+            index = start + 1
+            continue
+        try:
+            value, end = decoder.raw_decode(text, start)
+        except ValueError:
+            kept.append(text[index:start + 1])
+            index = start + 1
+            continue
+        keys = frozenset(value) if isinstance(value, dict) else frozenset()
+        if keys and any(keys <= names and required <= keys for names, required in shapes):
+            kept.append(text[index:start])
+            removed = True
+        else:
+            kept.append(text[index:end])
+        index = end
+    kept.append(text[index:])
+    if not removed:
+        return text, False
+    return re.sub(r"\n{3,}", "\n\n", "".join(kept)).strip(), True
+
+
 def _markup_tool_call(text: str) -> dict[str, Any] | None:
     """The one tool call a provider wrote as markup, or ``None`` when it is not one call."""
     names = _MARKUP_INVOKE.findall(text)
@@ -5029,6 +5139,39 @@ def _redacted_arguments(arguments: dict[str, Any]) -> dict[str, str]:
     return out
 
 
+_REASON_LIMIT = 160
+_INTERNAL_DETAIL = re.compile(
+    r"traceback|exception|\bselect\b.+\bfrom\b|https?://|\b\w+\.py\b"
+    r"|/[a-z_]+/[a-z_]+|\(\d{3,}\)",
+    re.I | re.S,
+)
+
+
+def failure_reason(error: str | None, error_class: str | None = None) -> str | None:
+    """A failed tool's reason for its chip: one short line, never internals.
+
+    A failure a tool classified (``error_class``) carries a message written for
+    the reader. An unclassified one is an engine or provider message, with codes,
+    names and SQL, and becomes a generic line; so does any message that still
+    looks internal or holds a credential.
+    """
+    from app.modules.assistant.skills import contains_credential_shape
+    from app.modules.assistant.tools.redaction import redact_row
+
+    text = " ".join(str(error or "").split())
+    if not text:
+        return None
+    if (
+        not error_class or _INTERNAL_DETAIL.search(text) or contains_credential_shape(text)
+        or redact_row(["reason"], [text])[0] != text
+    ):
+        return "The step could not be completed."
+    if len(text) > _REASON_LIMIT:
+        cut = text[: _REASON_LIMIT - 1]
+        text = (cut.rsplit(" ", 1)[0] if " " in cut else cut).rstrip(",;:") + "…"
+    return text
+
+
 def _finish_tool_step(context: Any, status: str, error: str | None) -> None:
     """Mark the most recent tool step's outcome. Best-effort."""
     steps = getattr(context, "steps", None)
@@ -5154,6 +5297,19 @@ def _chosen_tools_phrase(lookup: Any, names: Iterable[str]) -> str:
         _tool_label(lookup(name), name) if name.startswith("mcp_") else name
         for name in names
     )
+
+
+def _not_done_text(
+    missing: Any, reasons: dict[str, str], registry: Any, language: str,
+) -> str | None:
+    """Nova's sentence for a required step that failed, with its short reason."""
+    failed = [name for name in sorted(missing) if name in reasons]
+    if not failed:
+        return None
+    name = failed[0]
+    message = getattr(registry.get(name), "not_done_message", None) or "loop.not_done"
+    reason = reasons[name] or "The step could not be completed."
+    return say(message, language, reason=reason).strip()
 
 
 def _tool_label(tool: Any, name: str) -> str:
