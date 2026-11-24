@@ -1250,3 +1250,13 @@ by a recorded decision and 3 are blocked.
 - **Gates (local, final source):**
   - lint, `tsc` and build pass;
   - full `pnpm test:coverage`: 244 files, 2,113 tests passed.
+
+## Drag frame budget measured alone (2026-11-25)
+
+- **Why:** after #269 merged, main's frontend job (run 45449852192) failed the pooled gate. In the snapping test: median 2.6 ms, p95 6.6 ms, max 18.2 ms, and 12 of 445 frames over 8 ms. #268's rebased run failed it too (one drag at p95 8.3 ms, 10 frames over). The same test alone, locally, on main and on #268: median 1.0–2.3 ms, p95 at most 3.3 ms, no frame over budget. On a shared runner, the full suite runs many browser test files in parallel, which slows every frame rather than one now and then. No threshold can separate that from a regression, so the measurement moved instead of the threshold.
+- **Change:**
+  - The two drag tests moved to `drag-budget.perf.test.tsx`, in a new Vitest project `perf` (no file parallelism), with the shared canvas harness in `canvas-harness.tsx`.
+  - `pnpm test` and `pnpm test:coverage` run the `browser` and `node` projects. `pnpm test:perf` runs `perf` alone.
+  - CI runs a step "Drag frame budget (alone)" after coverage.
+  - The gate (`frame-budget.ts`) is unchanged.
+

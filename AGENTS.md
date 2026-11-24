@@ -198,7 +198,7 @@ behavior gates; focused tests do not replace applicable suites.
 | SQL grammar/generated parser | Pin/drift check, regeneration/artifact diff, SQL and consumer regressions |
 | Agent behavior | Backend gates plus affected `tests/eval/` trajectories; benchmarks when overhead changes |
 | Ranger/security/engine patch | Applicable backend/integration checks plus patched-FE policy and role acceptance |
-| Frontend code | `pnpm lint`, `pnpm build`, `pnpm test:coverage`, browser setup and affected layout/state checks |
+| Frontend code | `pnpm lint`, `pnpm build`, `pnpm test:coverage`, `pnpm test:perf`, browser setup and affected layout/state checks |
 | Notebook runtime image | Image build/kernel tests and affected governed notebook flows |
 | Runtime or deployment | Applicable code checks, Compose validation, affected startup/readiness/shutdown and recovery/replica checks |
 
