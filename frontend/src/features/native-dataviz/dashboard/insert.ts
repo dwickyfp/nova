@@ -1,4 +1,4 @@
-import type { ElementPatch, ElementStyle, GradientFill, IconElement, PageCanvas, ShapeElement, SolidFill } from '../contracts'
+import type { ElementPatch, ElementStyle, GradientFill, IconElement, ImageFill, PageCanvas, ShapeElement, SolidFill } from '../contracts'
 import { index } from './authoring'
 import { chosen, type Command } from './commands'
 import { absoluteBoxes, clampBox, columnEdges, frameGrid, pageSize, tabOrder, toGeometry, type Box } from './frame'
@@ -14,7 +14,7 @@ import type { Element, Page } from './layout'
 export type ShapeKind = NonNullable<ShapeElement['shape']>
 export type IconName = IconElement['icon']
 export type Token = SolidFill['token']
-export type Fill = SolidFill | GradientFill
+export type Fill = SolidFill | GradientFill | ImageFill
 
 const FLAGS = { locked: false, hidden: false, decorative: false }
 const none = (message: string): Command => ({ changes: null, message })
@@ -148,7 +148,7 @@ export function decorativeCommand(page: Page, selection: readonly string[], deco
   return { changes, message: decorative ? `The ${what} now decorative and skipped by screen readers` : `The ${what} now read by screen readers` }
 }
 
-/** The page behind every item: a theme colour, a gradient between two, or none. */
+/** The page behind every item: a theme colour, a gradient between two, a picture, or none. */
 export function backgroundCommand(page: Page, background: Fill | null): Command {
   const canvas: PageCanvas = { ...(page.canvas ?? {}), background }
   return { changes: [{ op: 'page.canvas.set', page_id: page.page_id, canvas }],

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { ChevronDown, ChevronUp, Eye, EyeOff, Lock, LockOpen, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ChevronDown, ChevronUp, Eye, EyeOff, ImagePlus, Lock, LockOpen, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -7,22 +7,26 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
-import type { ConnectorElement, ElementStyle, ShapeElement, Stroke, TextElement } from '../contracts'
+import type { ConnectorElement, ElementStyle, ImageElement, ImageFill, ShapeElement, Stroke, TextElement } from '../contracts'
 import { index } from './authoring'
 import * as commands from './commands'
 import { tabOrder } from './frame'
 import { ICONS } from './icons'
+import { backgroundImage, IMAGE_ACCEPT, imageProblem, type UploadedImage } from './images'
 import { IconPicker } from './insert-menu'
 import * as insert from './insert'
 import type { Element, Page } from './layout'
 
 type Run = (command: commands.Command) => void
+type Upload = (file: File) => Promise<UploadedImage>
 const NONE = 'none'
 type Props = {
   page: Page
   selection: string[]
   onSelect: (selection: string[]) => void
   run: Run
+  /** Sends a picture to this dashboard, for an image's Replace and a background photo. */
+  upload: Upload
   disabled: boolean
   onClose: () => void
 }
@@ -65,7 +69,7 @@ function CommitInput({ id, value, onCommit, maxLength, disabled, placeholder }: 
     }} />
 }
 
-export function ItemPanel({ page, selection, onSelect, run, disabled, onClose }: Props) {
+export function ItemPanel({ page, selection, onSelect, run, upload, disabled, onClose }: Props) {
   const [tab, setTab] = useState('format')
   return <aside aria-label='Format and layers' className='flex min-h-0 w-full flex-col'>
     <header className='flex h-12 shrink-0 items-center justify-between gap-2 border-b pr-2 pl-3'>
@@ -79,7 +83,7 @@ export function ItemPanel({ page, selection, onSelect, run, disabled, onClose }:
         <TabsTrigger value='tab-order'>Tab order</TabsTrigger>
       </TabsList>
       <TabsContent value='format' className='min-h-0 flex-1 overflow-y-auto px-3 py-3'>
-        <FormatTab page={page} selection={selection} run={run} disabled={disabled} />
+        <FormatTab page={page} selection={selection} run={run} upload={upload} disabled={disabled} />
       </TabsContent>
       <TabsContent value='layers' className='min-h-0 flex-1 overflow-y-auto py-2'>
         <LayersTab page={page} selection={selection} onSelect={onSelect} run={run} disabled={disabled} />
@@ -104,10 +108,10 @@ const RADII: { value: NonNullable<ElementStyle['radius']>; label: string }[] = [
   { value: 16, label: 'Extra large' }, { value: 9999, label: 'Round' },
 ]
 
-function FormatTab({ page, selection, run, disabled }: { page: Page; selection: string[]; run: Run; disabled: boolean }) {
+function FormatTab({ page, selection, run, upload, disabled }: { page: Page; selection: string[]; run: Run; upload: Upload; disabled: boolean }) {
   const found = index(page)
   const items = selection.flatMap(id => found.get(id)?.element ?? [])
-  if (!items.length) return <PageFormat page={page} run={run} disabled={disabled} />
+  if (!items.length) return <PageFormat page={page} run={run} upload={upload} disabled={disabled} />
   const one = items.length === 1 ? items[0] : null
   const style: ElementStyle = one?.style ?? {}
   const fill = style.fill
@@ -132,6 +136,7 @@ function FormatTab({ page, selection, run, disabled }: { page: Page; selection: 
       </Select>
     </Field>}
     {one?.kind === 'icon' && <IconFields page={page} element={one} run={run} disabled={disabled} />}
+    {one?.kind === 'image' && <ImageFields page={page} element={one as ImageElement} run={run} upload={upload} disabled={disabled} />}
     {one?.kind === 'connector' && <ConnectorFields page={page} element={one as ConnectorElement} run={run} disabled={disabled} />}
     {one?.kind !== 'connector' && one?.kind !== 'icon' && <Field id='format-fill' label='Fill'>
       <TokenSelect id='format-fill' value={solid} disabled={disabled}
@@ -236,6 +241,63 @@ function withLabel(page: Page, id: string, label: string): commands.Command {
     message: `Label set to ${label}; screen readers now read this icon` }
 }
 
+/**
+ * A button that sends a picture from this computer to the dashboard. The
+ * server decides from the file's contents; a refusal is shown beside it.
+ */
+function PicturePick({ id, label, upload, onPicked, disabled }: {
+  id: string; label: string; upload: Upload; onPicked: (image: UploadedImage) => void; disabled: boolean
+}) {
+  const input = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+  const send = async (file: File | undefined) => {
+    if (!file) return
+    const refused = imageProblem(file)
+    setProblem(refused)
+    if (refused) return
+    setBusy(true)
+    try { onPicked(await upload(file)) } catch (error) {
+      setProblem(error instanceof Error && error.message ? error.message : 'The picture could not be added. Try again.')
+    } finally {
+      setBusy(false)
+      if (input.current) input.current.value = ''
+    }
+  }
+  return <div className='grid gap-1.5'>
+    <Button id={id} variant='outline' size='sm' className='justify-start' disabled={disabled || busy}
+      aria-describedby={problem ? `${id}-problem` : undefined} onClick={() => input.current?.click()}>
+      <ImagePlus aria-hidden />{busy ? 'Uploading…' : label}
+    </Button>
+    <input ref={input} type='file' accept={IMAGE_ACCEPT} className='hidden' tabIndex={-1} aria-hidden
+      onChange={event => void send(event.target.files?.[0])} />
+    {problem && <p id={`${id}-problem`} role='alert' className='text-xs text-destructive'>{problem}</p>}
+  </div>
+}
+
+const FITS: Record<'contain' | 'cover', string> = { contain: 'Show the whole picture', cover: 'Fill the box' }
+
+function ImageFields({ page, element, run, upload, disabled }: { page: Page; element: ImageElement; run: Run; upload: Upload; disabled: boolean }) {
+  return <>
+    <Field id='format-alt' label='Description for screen readers'>
+      <CommitInput id='format-alt' value={element.alt} maxLength={1000} disabled={disabled}
+        onCommit={alt => run(alt
+          ? insert.propertyCommand(page, element.element_id, { alt }, `Description set to ${alt}`)
+          : { changes: null, message: 'An image needs a description. Mark it decorative if it only decorates the page.' })} />
+    </Field>
+    <Field id='format-fit' label='Fit'>
+      <Select value={element.fit ?? 'contain'} disabled={disabled}
+        onValueChange={value => run(insert.propertyCommand(page, element.element_id, { fit: value as 'contain' | 'cover' },
+          value === 'cover' ? 'The picture now fills its box' : 'The whole picture now shows'))}>
+        <SelectTrigger id='format-fit' className='h-8 w-full'><SelectValue /></SelectTrigger>
+        <SelectContent>{Object.entries(FITS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
+      </Select>
+    </Field>
+    <PicturePick id='format-replace' label='Replace picture' upload={upload} disabled={disabled}
+      onPicked={image => run(insert.propertyCommand(page, element.element_id, { asset_id: image.asset_id }, 'Picture replaced'))} />
+  </>
+}
+
 function ConnectorFields({ page, element, run, disabled }: { page: Page; element: ConnectorElement; run: Run; disabled: boolean }) {
   return <div className='grid grid-cols-2 gap-2'>
     <Field id='format-head' label='Ending'>
@@ -255,16 +317,25 @@ function ConnectorFields({ page, element, run, disabled }: { page: Page; element
   </div>
 }
 
+const DIMS = [0, 10, 20, 30, 40, 50, 60, 70] as const
+
 /** With nothing selected, Format sets the page background. */
-function PageFormat({ page, run, disabled }: { page: Page; run: Run; disabled: boolean }) {
+function PageFormat({ page, run, upload, disabled }: { page: Page; run: Run; upload: Upload; disabled: boolean }) {
   const background = page.canvas?.background
   const mode = !background ? NONE : background.kind
   const gradient = background?.kind === 'gradient' ? background : null
   const solid = background?.kind === 'solid' ? background : null
+  const photo = background?.kind === 'image' ? background : null
+  // Choosing Image asks for a picture first; the background changes once it is uploaded.
+  const [choosing, setChoosing] = useState(false)
+  useEffect(() => { if (photo) setChoosing(false) }, [photo])
+  const setPhoto = (change: Partial<ImageFill>, message: string) => photo && run({ ...insert.backgroundCommand(page, { ...photo, ...change }), message })
   return <div className='grid gap-4'>
     <p className='type-meta'>Nothing selected. Select an item to format it, or set the page background.</p>
     <Field id='page-background' label='Page background'>
-      <Select value={mode} disabled={disabled} onValueChange={value => {
+      <Select value={choosing ? 'image' : mode} disabled={disabled} onValueChange={value => {
+        setChoosing(value === 'image' && !photo)
+        if (value === 'image') return
         if (value === NONE) run(insert.backgroundCommand(page, null))
         else if (value === 'solid') run(insert.backgroundCommand(page, { kind: 'solid', token: gradient?.start ?? 'muted', opacity: 100 }))
         else if (value === 'gradient') run(insert.backgroundCommand(page, { kind: 'gradient', start: solid?.token ?? 'background', end: 'muted', angle: 180 }))
@@ -272,10 +343,28 @@ function PageFormat({ page, run, disabled }: { page: Page; run: Run; disabled: b
         <SelectTrigger id='page-background' className='h-8 w-full'><SelectValue /></SelectTrigger>
         <SelectContent>
           <SelectItem value={NONE}>None</SelectItem><SelectItem value='solid'>Colour</SelectItem><SelectItem value='gradient'>Gradient</SelectItem>
-          {background?.kind === 'image' && <SelectItem value='image' disabled>Image</SelectItem>}
+          <SelectItem value='image'>Image</SelectItem>
         </SelectContent>
       </Select>
     </Field>
+    {(choosing || photo) && <PicturePick id='page-picture' label={photo ? 'Replace picture' : 'Choose a picture'} upload={upload} disabled={disabled}
+      onPicked={image => run({ ...insert.backgroundCommand(page, backgroundImage(image, photo)), message: photo ? 'Background picture replaced' : 'Background picture added' })} />}
+    {photo && <div className='grid grid-cols-2 gap-2'>
+      <Field id='page-fit' label='Fit'>
+        <Select value={photo.fit ?? 'cover'} disabled={disabled}
+          onValueChange={value => setPhoto({ fit: value as ImageFill['fit'] }, value === 'cover' ? 'The picture now fills the page' : 'The whole picture now shows')}>
+          <SelectTrigger id='page-fit' className='h-8 w-full'><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value='cover'>Fill the page</SelectItem><SelectItem value='contain'>Show the whole picture</SelectItem></SelectContent>
+        </Select>
+      </Field>
+      <Field id='page-dim' label='Darken'>
+        <Select value={String(photo.dim ?? 0)} disabled={disabled}
+          onValueChange={value => setPhoto({ dim: Number(value) }, Number(value) ? `Picture darkened by ${value}%` : 'Picture no longer darkened')}>
+          <SelectTrigger id='page-dim' className='h-8 w-full'><SelectValue /></SelectTrigger>
+          <SelectContent>{DIMS.map(value => <SelectItem key={value} value={String(value)}>{value ? `${value}%` : 'None'}</SelectItem>)}</SelectContent>
+        </Select>
+      </Field>
+    </div>}
     {solid && <Field id='page-colour' label='Colour'>
       <TokenSelect id='page-colour' value={solid.token} allowNone={false} disabled={disabled}
         onChange={token => token && run(insert.backgroundCommand(page, { ...solid, token }))} />
@@ -331,7 +420,7 @@ function pickKey(event: React.KeyboardEvent, id: string, selection: string[], on
   return true
 }
 
-function LayersTab({ page, selection, onSelect, run, disabled }: Omit<Props, 'onClose'>) {
+function LayersTab({ page, selection, onSelect, run, disabled }: Omit<Props, 'onClose' | 'upload'>) {
   const rows = layerRows(page.elements ?? [])
   const top = (page.elements ?? []).length
   if (!rows.length) return <p className='type-meta px-3'>Nothing on this page yet.</p>
@@ -379,7 +468,7 @@ function LayersTab({ page, selection, onSelect, run, disabled }: Omit<Props, 'on
   </>
 }
 
-function TabOrderTab({ page, selection, onSelect, run, disabled }: Omit<Props, 'onClose'>) {
+function TabOrderTab({ page, selection, onSelect, run, disabled }: Omit<Props, 'onClose' | 'upload'>) {
   const order = tabOrder(page, { includeHidden: true })
   const custom = (page.tab_order ?? []).length > 0
   if (!order.length) return <p className='type-meta px-3'>Nothing on this page can be reached with the keyboard yet.</p>

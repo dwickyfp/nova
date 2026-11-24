@@ -12,6 +12,7 @@ import type {
   Interaction, LegacySpacer, RichText, ShapeElement, TextElement,
 } from '../contracts'
 import { hasImage, type ChartFileFormat } from './export'
+import { DashboardPicture, PageBackgroundImage } from './picture'
 import { useChartDocument } from './hooks'
 import { useDatasetDefinition } from '../charts/chart-data'
 import { drillContext, drillDimension, drilledChart, drillOptions, type DrillStep } from '../charts/drill'
@@ -470,7 +471,8 @@ const ElementView = memo(function ElementView({ element, origin, props, gesture,
         return widget ? <TextBody element={element} widget={widget} props={props} /> : null
       case 'image':
         return widget ? <WidgetFrame element={element} widget={widget} title={element.title ?? ''} props={props}>
-          <span role='img' aria-label={element.alt} />
+          <DashboardPicture dashboardId={props.definition.dashboard_id} assetId={element.asset_id}
+            alt={decorative ? '' : element.alt} fit={element.fit ?? 'contain'} />
         </WidgetFrame> : null
       case 'filter':
       case 'spacer':
@@ -955,6 +957,7 @@ export function DashboardCanvas(props: CanvasProps) {
             if (point) props.onPointer?.({ x: point.x / width, y: point.y / ROW_PX })
           } : undefined}
           onPointerLeave={props.onPointer ? () => props.onPointer?.(null) : undefined}>
+          {page.canvas?.background?.kind === 'image' && <PageBackgroundImage dashboardId={props.definition.dashboard_id} fill={page.canvas.background} />}
           {columns && <div aria-hidden data-testid='canvas-grid' className='nova-dataviz-grid'>
             {columns.starts.map((start, index) => <span key={index}
               style={{ left: start * scale, width: (columns.ends[index] - start) * scale }} />)}

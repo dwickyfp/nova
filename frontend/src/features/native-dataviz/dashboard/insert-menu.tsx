@@ -1,11 +1,14 @@
-import { useMemo, useState } from 'react'
-import { Circle, Minus, RectangleHorizontal, Shapes, Square, Sticker, Triangle, type LucideIcon } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Circle, ImagePlus, Minus, RectangleHorizontal, Shapes, Square, Sticker, Triangle, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { ICONS } from './icons'
+import { IMAGE_ACCEPT, imageProblem, type UploadedImage } from './images'
 import * as insert from './insert'
 
 /**
@@ -89,6 +92,78 @@ export function IconPicker({ open, onOpenChange, onPick, current }: {
           </button>
         })}
       </div> : <p className='type-meta py-6 text-center'>No icon matches “{query.trim()}”. Try a simpler word, such as cart or chart.</p>}
+    </DialogContent>
+  </Dialog>
+}
+
+type Upload = (file: File) => Promise<UploadedImage>
+
+/** The Image tool: pick a picture, describe it, and it is added to the page. */
+export function ImageButton({ disabled, upload, onAdd }: {
+  disabled: boolean; upload: Upload; onAdd: (image: UploadedImage, alt: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  return <>
+    <Button variant='ghost' size='sm' disabled={disabled} onClick={() => setOpen(true)}><ImagePlus /><ToolLabel>Image</ToolLabel></Button>
+    {open && <ImageDialog open onOpenChange={setOpen} upload={upload} onAdd={onAdd} />}
+  </>
+}
+
+/** A picture from this computer, with the description screen readers announce. */
+export function ImageDialog({ open, onOpenChange, upload, onAdd }: {
+  open: boolean; onOpenChange: (open: boolean) => void; upload: Upload; onAdd: (image: UploadedImage, alt: string) => void
+}) {
+  const [file, setFile] = useState<File | null>(null)
+  const [alt, setAlt] = useState('')
+  const [problem, setProblem] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const preview = useMemo(() => file ? URL.createObjectURL(file) : null, [file])
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview) }, [preview])
+  const choose = (picked: File | undefined) => {
+    setFile(null)
+    setProblem(picked ? imageProblem(picked) : null)
+    if (picked && !imageProblem(picked)) setFile(picked)
+  }
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!file || !alt.trim() || busy) return
+    setBusy(true)
+    setProblem(null)
+    try {
+      onAdd(await upload(file), alt.trim())
+      onOpenChange(false)
+    } catch (error) {
+      setProblem(error instanceof Error && error.message ? error.message : 'The picture could not be added. Try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return <Dialog open={open} onOpenChange={next => { if (!busy) onOpenChange(next) }}>
+    <DialogContent className='sm:max-w-md'>
+      <DialogHeader>
+        <DialogTitle>Add an image</DialogTitle>
+        <DialogDescription>A PNG, JPEG or WebP picture up to 2 MB. Everyone who can view this dashboard sees it.</DialogDescription>
+      </DialogHeader>
+      <form className='grid gap-4' onSubmit={submit}>
+        <div className='grid gap-1.5'>
+          <Label htmlFor='image-file'>Picture</Label>
+          <Input id='image-file' type='file' accept={IMAGE_ACCEPT} disabled={busy}
+            aria-describedby={problem ? 'image-problem' : undefined}
+            onChange={event => choose(event.target.files?.[0])} />
+        </div>
+        {preview && <img src={preview} alt='' className='max-h-40 w-full rounded-md border bg-muted object-contain' />}
+        <div className='grid gap-1.5'>
+          <Label htmlFor='image-alt'>Description for screen readers</Label>
+          <Textarea id='image-alt' value={alt} maxLength={1000} rows={2} disabled={busy} required
+            placeholder='What the picture shows, such as “Jakarta warehouse at night”'
+            onChange={event => setAlt(event.target.value)} />
+        </div>
+        {problem && <p id='image-problem' role='alert' className='text-sm text-destructive'>{problem}</p>}
+        <DialogFooter>
+          <Button type='button' variant='outline' disabled={busy} onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button type='submit' disabled={!file || !alt.trim() || busy}>{busy ? 'Adding…' : 'Add image'}</Button>
+        </DialogFooter>
+      </form>
     </DialogContent>
   </Dialog>
 }

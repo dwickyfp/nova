@@ -47,7 +47,8 @@ import { countElements, tabOrder, type Arrow } from './frame'
 import { ArrangeMenu } from './arrange-menu'
 import * as commands from './commands'
 import * as insert from './insert'
-import { IconButton, ShapeMenu, ToolLabel } from './insert-menu'
+import { IconButton, ImageButton, ShapeMenu, ToolLabel } from './insert-menu'
+import { addImageCommand, uploadImage } from './images'
 import { ItemPanel } from './item-panel'
 import { ShareDialog } from './share-dialog'
 import { ScheduleDialog } from './schedule-dialog'
@@ -415,6 +416,8 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
       if (ok) { setRedo(stack => stack.slice(0, -1)); setUndo(stack => [...stack, entry]) }
     })
   }
+  // A picture goes to the dashboard first; the item or background that shows it is the undoable step.
+  const upload = useCallback((file: File) => uploadImage(dashboardId, file, epoch), [dashboardId, epoch])
   // Runs an editor command: its changes as one undoable step, its sentence for screen readers.
   const run = (command: commands.Command) => {
     setAnnouncement(command.message)
@@ -814,6 +817,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
         <Button variant='ghost' size='sm' disabled={pageFull} {...dragged({ kind: 'text' })} onClick={() => { setTextAt(null); setTextOpen(true) }}><Type /><ToolLabel>Text</ToolLabel></Button>
         <ShapeMenu disabled={pageFull || status === 'saving'} onAdd={shape => run(insert.addShapeCommand(page, shape, crypto.randomUUID()))} />
         <IconButton disabled={pageFull || status === 'saving'} onAdd={icon => run(insert.addIconCommand(page, icon, crypto.randomUUID()))} />
+        <ImageButton disabled={pageFull || status === 'saving'} upload={upload} onAdd={(image, alt) => run(addImageCommand(page, image, alt, crypto.randomUUID()))} />
         <Button variant='ghost' size='sm' onClick={openFilters}><Filter /><ToolLabel>Filters</ToolLabel></Button>
         <span className='mx-1 h-5 w-px bg-border' aria-hidden />
         <ArrangeMenu page={page} selection={selection} disabled={status === 'saving'} run={run} />
@@ -870,7 +874,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
         </div>}
         {!inspector && panelOpen && editing && page && <div className={cn('flex min-h-0 border-l bg-card',
           sideInspector ? 'w-80 shrink-0' : 'absolute inset-y-0 right-0 z-20 w-[min(20rem,100%)] shadow-xl')}>
-          <ItemPanel page={page} selection={selection} onSelect={setSelection} run={run} disabled={status === 'saving'} onClose={() => setPanelOpen(false)} />
+          <ItemPanel page={page} selection={selection} onSelect={setSelection} run={run} upload={upload} disabled={status === 'saving'} onClose={() => setPanelOpen(false)} />
         </div>}
       </div>}
 

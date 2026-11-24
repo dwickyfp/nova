@@ -1,5 +1,6 @@
 """NDV-STORE-009: orphaned Workspace objects are removed only after the retention,
-only when no live metadata references them, and only under ``.objects``."""
+only when no live metadata references them, and only under ``.objects`` or
+``.viz-assets``."""
 
 from __future__ import annotations
 
@@ -66,11 +67,15 @@ async def test_a_recent_object_is_never_considered():
     assert store.deleted == [] and asked == [] and result.examined == 0
 
 
-def test_only_objects_keys_are_candidates():
-    """Imported files, version snapshots and notebook outputs are never touched."""
+def test_only_objects_and_dashboard_image_keys_are_candidates():
+    """Imported files, version snapshots and notebook outputs are never touched;
+    saved objects and dashboard images (0064) are."""
+    image = "workspaces/~ws/w1/.viz-assets/d1/a1"
     keys = ["workspaces/alice/report.sql", "workspaces/alice/.versions/e1/1",
-            "workspaces/alice/.notebook-outputs/n1/x.json", "workspaces/alice/.objects/e1/aa"]
-    assert candidates([obj(key) for key in keys], now=NOW) == ["workspaces/alice/.objects/e1/aa"]
+            "workspaces/alice/.notebook-outputs/n1/x.json", "workspaces/alice/.objects/e1/aa",
+            "workspaces/alice/viz-assets/d1/a1", image]
+    assert candidates([obj(key) for key in keys], now=NOW) == [
+        "workspaces/alice/.objects/e1/aa", image]
 
 
 async def test_a_failed_removal_is_counted_and_retried_on_a_later_pass():

@@ -280,6 +280,26 @@ page is kept for larger screens.
   them. To have an icon read out, give it a **Label for screen readers** in
   **Format and layers**; that makes it readable.
 
+### Add images
+
+- **Image** in the toolbar opens **Add an image**. Choose a PNG, JPEG or WebP
+  picture of up to 2 MB under **Picture**, then describe it under
+  **Description for screen readers**, such as "Jakarta warehouse at night".
+  Click **Add image**. The picture goes into free space on the page, up to
+  320 × 240 pixels, in its own proportions; resize it like any other item.
+- Nova checks the file itself, not its name. Other files, including SVG
+  drawings, are refused with the reason, and nothing is added.
+- A picture belongs to its dashboard. Everyone who can view the dashboard sees
+  it, and nobody else does: each time the page shows a picture, Nova checks
+  that the person can still view the dashboard.
+- In [Format and layers](#format-and-layers), an image has a **Description
+  for screen readers**, a **Fit** (**Show the whole picture** or **Fill the
+  box**, which crops the edges) and **Replace picture**. An image always keeps
+  a description; if it only decorates the page, turn on **Decorative** so
+  screen readers skip it.
+- If a picture cannot be shown, its box says **Image unavailable** instead of
+  staying empty.
+
 ### Format and layers
 
 Click **Format and layers** in the toolbar to open the panel beside the page.
@@ -306,8 +326,13 @@ applies to all of them.
   item.
 
 With nothing selected, **Format** sets the **Page background**: **None**, a
-**Colour**, or a **Gradient** from one colour to another, with a
-**Direction**.
+**Colour**, a **Gradient** from one colour to another, with a
+**Direction**, or an **Image**. For an image, click **Choose a picture**; the
+background changes once the picture is uploaded. **Fit** is **Fill the page**
+or **Show the whole picture**, and **Darken** (**None** to 70%) dims the photo
+so text and charts on top stay readable. **Replace picture** swaps it. A
+background picture is drawn on screens wider than a phone; a phone shows the
+items in one column without it.
 
 **Layers** lists every item on the page, front to back. Click a name to select
 the item; Shift+click, Ctrl+click, Shift+Enter or Shift+Space adds it to the
@@ -457,6 +482,9 @@ shown exactly as written and never change the dashboard or its data.
   **Arrange** menu opens with Enter. A screen reader announces what each one
   did, such as the new position and size, "Grouped 2 items" or "3 items
   selected", or why it could not, such as an item being locked.
+- An image always has a description, which screen readers read in its place,
+  unless it is marked **Decorative**. A background picture is decoration and
+  is never read.
 - Closing the **Filters** window returns you to the button that opened it.
 - Every button, field and widget you reach with Tab shows a focus ring and has
   a name a screen reader can read. With a high-contrast theme (forced colours)
@@ -605,6 +633,10 @@ an administrator, can remove a schedule.
   make the change again.
 - Charts show up to the row limit you choose. A note under the chart says when
   more rows exist.
+- "Pictures can be up to 2 MB" and "Use a PNG, JPEG or WebP picture" come from
+  **Add an image**, **Replace picture** or **Choose a picture**. A picture can
+  also be at most 8192 pixels on a side and 40 megapixels. Make the picture
+  smaller or save it in one of those formats, and try again.
 - On a long page, a chart loads once you scroll near it, so a page with many
   charts opens quickly.
 - "The chart is still updating" means a download was asked for while a chart
