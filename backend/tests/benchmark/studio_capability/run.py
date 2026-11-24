@@ -120,6 +120,10 @@ class Runner:
         return (self.out / "turns" / f"{unit_id}.json").is_file()
 
     async def _paced(self) -> None:
+        # A ``PAUSE`` file in the results directory holds new turns (for example while
+        # a resource monitor sees the engine near its memory limit); turns in flight end.
+        while (self.out / "PAUSE").exists():
+            await asyncio.sleep(10)
         async with self._pace:
             wait = self._last_start + self.pause - time.monotonic()
             if wait > 0:
