@@ -77,8 +77,8 @@ export function loadEcharts() {
  * theme changes, and the instance follows its container's size.
  */
 export function EChartHost({ build, label, onSelect, className }: {
-  /** Receives the drawing width, rounded so small resizes do not rebuild. */
-  build: (tokens: VizTokens, width: number) => EChartsCoreOption
+  /** Receives the drawing size, rounded so small resizes do not rebuild. */
+  build: (tokens: VizTokens, width: number, height: number) => EChartsCoreOption
   label: string
   onSelect?: (selection: MarkSelection) => void
   className?: string
@@ -88,6 +88,7 @@ export function EChartHost({ build, label, onSelect, className }: {
   const select = useRef(onSelect)
   const [failed, setFailed] = useState(false)
   const [width, setWidth] = useState(0)
+  const [height, setHeight] = useState(0)
   const theme = useThemeVersion()
   useEffect(() => { select.current = onSelect }, [onSelect])
 
@@ -118,6 +119,7 @@ export function EChartHost({ build, label, onSelect, className }: {
       observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
         chart.resize()
         setWidth(Math.round(node.clientWidth / 16) * 16)
+        setHeight(Math.round(node.clientHeight / 8) * 8)
       })
       observer?.observe(node)
       setFailed(false)
@@ -137,14 +139,14 @@ export function EChartHost({ build, label, onSelect, className }: {
       try {
         // Reduced motion: charts appear without their entry and update animation.
         const still = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-        instance.current.setOption({ aria: { enabled: true, label: { description: label } }, ...build(readTokens(), width),
+        instance.current.setOption({ aria: { enabled: true, label: { description: label } }, ...build(readTokens(), width, height),
           ...(still ? { animation: false } : {}) }, true)
       } catch {
         setFailed(true)
       }
     }).catch(() => { if (!cancelled) setFailed(true) })
     return () => { cancelled = true }
-  }, [build, label, theme, width])
+  }, [build, label, theme, width, height])
 
   // Keyboard: the arrow keys move between marks and Enter or Space acts as a click on the mark.
   const [active, setActive] = useState<{ index: number; text: string } | null>(null)

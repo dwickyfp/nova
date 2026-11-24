@@ -298,3 +298,41 @@ describe('Studio answer charts: numeric identifiers', () => {
     expect((option.yAxis as Axis[])[0].name).toBeUndefined()
   })
 })
+
+describe('gauge sized to its box', () => {
+  const gauge = chart('gauge', { kind: 'single_measure', measure: { field_id: 'revenue', aggregation: 'sum' } })
+  const total = result([meas('m0', 'revenue')], [[d('175184000')]])
+  const series = (width?: number, height?: number) =>
+    (buildChartOption(gauge, total, tokens, null, width, null, height) as { series: Record<string, unknown>[] }).series[0]
+
+  it('keeps the usual ring until the box is measured', () => {
+    const ring = series()
+    expect(ring.startAngle).toBeUndefined()
+    expect((ring.detail as { fontSize: number }).fontSize).toBe(24)
+  })
+
+  it('stands a half ring on a short wide tile, with the value inside its opening', () => {
+    // A 224 × 136 dashboard tile leaves the chart about 200 × 72 once its title and padding are drawn.
+    const half = series(200, 72)
+    expect([half.startAngle, half.endAngle]).toEqual([180, 0])
+    const radius = half.radius as number
+    const band = (half.progress as { width: number }).width
+    const size = (half.detail as { fontSize: number }).fontSize
+    const centre = (half.center as [string, number])[1]
+    expect(centre - radius).toBeGreaterThanOrEqual(0)
+    expect(centre).toBeLessThanOrEqual(72)
+    expect(radius).toBeLessThanOrEqual(100)
+    // "175.18M" is about 4.2 em wide; it fits between the ring's inner edges.
+    expect(size * 4.2).toBeLessThanOrEqual((radius - band) * 2)
+    expect(size).toBeGreaterThanOrEqual(10)
+  })
+
+  it('uses a full ring in a square tile and keeps the value inside it', () => {
+    const full = series(160, 160)
+    expect(full.startAngle).toBeUndefined()
+    const radius = full.radius as number
+    const size = (full.detail as { fontSize: number }).fontSize
+    expect(radius).toBeLessThanOrEqual(80)
+    expect(size * 4.2).toBeLessThanOrEqual((radius - (full.progress as { width: number }).width) * 2)
+  })
+})

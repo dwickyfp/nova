@@ -1203,7 +1203,7 @@ by a recorded decision and 3 are blocked.
   - per-request View-checked serving with digest verification and `no-store`;
   - reconciler coverage of `.viz-assets` keys;
   - editor Image tool, image Format fields, and the background photo with Fit and Darken.
-- **Not active yet:** 0064 is not applied to the shared development database. The coordinator gives the window after merge. Reference 9 and live checks as alice follow.
+- **Active (2026-11-24):** 0064 is applied to the shared development database. See "Reference 9 and the 0064 rollout" below.
 - **Changed during the work:** responses first used `private, max-age=300`. This was changed to `private, no-store`, because a browser cache hit would skip the per-request View check. The page keeps its own copy only until the role changes.
 - **Gates (local, final source):**
   - backend unit: 13,628 passed;
@@ -1250,3 +1250,41 @@ by a recorded decision and 3 are blocked.
 - **Gates (local, final source):**
   - lint, `tsc` and build pass;
   - full `pnpm test:coverage`: 244 files, 2,113 tests passed.
+
+## Reference 9 and the 0064 rollout (2026-11-24)
+
+- **0064 rollout on the shared development database:**
+  - Frozen from 15:57:01 to 15:59:00 UTC. The migrator ran from main 055869a2 and took 6 s.
+  - Epoch kept. Row counts unchanged in all 198 existing tables, and all 456 viz revision digests unchanged (counts digest `139aa92e…`, revisions digest `a9427219…`).
+  - The only new table is `viz_assets`: 0 rows, forced row security, 4 policies, web SELECT/INSERT and maintenance SELECT.
+  - A private pg_dump (23,755,420 bytes) passed a table-of-contents check. It is kept outside the Nova data directory.
+  - The bowhead dev stack and my 8360/8361 were restarted on main 7b485691 with schema 64. #255 and #258 have no migration. No container was touched.
+- **Live checks as alice and bob (no LLM):**
+  - Upload of the photo and the logo returns 201 `no-store`.
+  - alice reading the image gets 200 `image/jpeg`, `private, no-store`, `nosniff`, CSP `default-src 'none'; sandbox`, inline.
+  - A request without a session gets 401.
+  - bob, who cannot view the dashboard, gets 404 on read and on upload, and the dashboard is not in his list.
+  - An unknown image id gets 404.
+  - Refusals: SVG and SVG sent as `image/png` get 415; 2 MB + 10 bytes gets 413.
+- **Reference scenario 9 by hand** ("Performance targets"):
+  - Built live through the editor in light and in dark, with clicks, typing, file picks and drags only.
+  - The 16:9 page has a background photo darkened 40%, a title, an icon, a logo picture, four KPIs and a gauge (aligned and spaced with **Arrange**), two tables, a line chart, a combo chart and a City filter.
+  - 37 steps, 33–34 s automated, with no refused save. Every drag was checked against its target.
+  - A keystroke-level estimate for a person is 4.8 minutes (gate: under 15). That is a model estimate, not a stopwatch of a person.
+  - The background photo and logo were generated for this test; no brand from the reference was copied.
+- **Found building reference 9, fixed with tests:**
+  1. KPI values were cut through the digits when the tile left them less than their 36 px line, for example a 224 × 104 tile in Edit. The value now takes its size from the box's height (0.875–1.875rem), and the change line stays on one row. Both new tests fail on the old code.
+  2. A gauge in a short tile drew its 24 px value over a tiny ring. The chart host now passes the drawing height as well as the width. A wider-than-tall gauge is a half ring, and its band and value shrink with the box.
+- **Open:**
+  - Text has no colour of its own, so an icon or text on a photo follows the theme. The **Card**-coloured icon is light on the photo in light mode but dark in dark mode.
+  - Snapping can leave KPI heights a few pixels apart. Arrange aligns and spaces items but has no "same size".
+- **Gates (local, final source):**
+  - frontend lint (0 errors), build and bundle;
+  - full `pnpm test:coverage`: 242 files, 2,110 tests passed, first attempt;
+  - chart suites alone: 97 passed;
+  - `/docs/dataviz/native-dashboards` viewed live.
+  - No backend change.
+- **CI frontend attempts (PR #268):**
+  - Attempt 1 failed only the 60-item snap-drag gate: three drags, p95 5.7–6.8 ms, single worst frames 11.4, 11.5 and 9.1 ms. 2,109 of 2,110 passed.
+  - Attempt 2 (rerun) failed the same gate: p95 6.0–6.1 ms, worst frames 8.9–10.3 ms; 2,109 of 2,110 passed. This is the known runner hiccup on the old rule, which #269 replaces. The gate was not loosened on this branch. It was rebased onto main after #269 (ee3d7046) merged. On the rebased source, lint, `tsc`, build and full coverage pass: 244 files, 2,121 tests.
+

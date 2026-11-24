@@ -643,10 +643,10 @@ upcaster against the same goldens, the PG17 upgrade from schema 62 (CI),
 60-item drag frame budget, judged over five drags by `frame-budget.ts`), `insert.test.ts`, `item-panel.test.tsx`, the
 keyboard-only editor test and the editor browser suites. Part 3 is tested by
 `test_native_viz_assets.py`, `test_metadata_viz_assets.py` (PG17, CI) and the
-image browser tests; it is active only where migration 0064 is applied. Open:
-reference scenario 9 on the shared development database after 0064 is applied,
-resolving data-point anchors and value bindings, and P3 Neva on canvas
-operations.
+image browser tests; it is active wherever migration 0064 is applied,
+including the shared development database since 2026-11-24. Reference scenarios
+9 and 10 were built by hand there. Open: resolving data-point anchors and value
+bindings, and P3 Neva on canvas operations.
 
 ## Dataviz assistant tools
 

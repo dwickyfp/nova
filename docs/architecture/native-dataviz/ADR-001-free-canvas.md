@@ -3,9 +3,9 @@
 - Status: accepted. P0 (contract and upcaster), P1 (frame renderer) and P2
   parts 1 (selection, snapping, arrange commands) and 2 (shapes, icons, lines,
   formatting, layers and tab order) are implemented. P2 part 3 (images and
-  background photos, migration 0064) is implemented on its branch; it is not
-  active on the shared development database until 0064 is applied there, and
-  reference scenario 9 is built after that. P3 is open.
+  background photos, migration 0064) is implemented and active on the shared
+  development database, and reference scenarios 9 and 10 have been built by
+  hand. P3 is open.
 - Owner decisions: one free-form canvas engine replaces GridStack, with no
   hybrid mode or feature flag. Grid assistance is an authoring aid only. The
   Dataviz assistant becomes Neva with per-batch approval (P3).
@@ -355,8 +355,8 @@ to a dashboard picture by `asset_id`, never by URL.
 - Reference scenario 10 (financial analysis: sidebar, logo, navigation, title,
   five KPIs, a bar chart and a table) was built live through the editor UI with
   clicks, typing and drags only: 63 steps, 51 s automated, 8.2 minutes by a
-  keystroke-level estimate. Reference 9 needs a photo background and is built in
-  part 3.
+  keystroke-level estimate. Reference 9 needs a photo background and was built
+  in part 3 (below).
 
 ## Acceptance evidence for P2 part 3
 
@@ -382,3 +382,16 @@ to a dashboard picture by `asset_id`, never by URL.
   background, the dialog's required description and server refusal, image
   description/fit/replace, the background photo with **Fit** and **Darken**, and
   adding an image from the toolbar with the picture shown from the viewer's copy.
+- Live, after 0064 was applied to the shared development database (counts and
+  revision digests unchanged): alice reads her pictures with `private,
+  no-store`, a request without a session gets 401, and bob, who cannot view the
+  dashboard, gets 404 on read and upload. SVG, including SVG sent as PNG, gets
+  415 and an oversized file gets 413.
+- Reference scenario 9 ("Performance targets": a darkened background photo, a
+  title, an icon, a logo picture, four KPIs and a gauge, two tables, a line and
+  a combo chart, and a City filter) was built live through the editor UI in
+  light and dark: 37 steps, 34 s automated, 4.8 minutes by the same
+  keystroke-level estimate. Building it found KPI values cut in short tiles and
+  a gauge value drawn over its ring. Both were fixed with tests:
+  `qa-chart-browser.test.tsx` "KPI value in a short tile" and `qa-charts.test.ts`
+  "gauge sized to its box".
