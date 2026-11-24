@@ -44,6 +44,8 @@ from app.modules.agents.repository import agent_repository
 from app.modules.agents.semantic.compiler import SemanticCompiler
 from app.modules.agents.semantic.coverage import (
     DATA_PERIOD,
+    DataAnchor,
+    anchor_to_data,
     covered_period,
     future_period,
     looks_empty,
@@ -345,6 +347,7 @@ class SemanticQueryTool:
                     item for item in plan.unresolved_concepts if not item.material
                 ))
             elif material:
+                _spend_turn_plan(context)
                 return _clarification(semantic_ir, material)
             if grounding.status == "none":
                 official = await _official_view(plan, model_id, context)
@@ -369,6 +372,8 @@ class SemanticQueryTool:
             if errors:
                 raise SemanticPlanError("; ".join(errors))
             time_context = None
+            execution_now: datetime | None = None
+            execution_timezone: str | None = None
             if plan.time and plan.time.range:
                 execution_now = getattr(context, "execution_now", None) or datetime.now(UTC)
                 if callable(getattr(context, "business_clock_hook", None)):
@@ -379,6 +384,7 @@ class SemanticQueryTool:
                     configured_timezone() if execution_timezone is None else execution_timezone,
                 ))
                 if not_yet:
+                    _spend_turn_plan(context)
                     return ToolOutcome(
                         ok=False,
                         summary="",
@@ -416,6 +422,7 @@ class SemanticQueryTool:
             )
         except SemanticPlanError as exc:
             generation_duration_ms = (time.perf_counter() - generation_started) * 1000
+            _spend_turn_plan(context)
             return ToolOutcome(
                 ok=False,
                 summary="",
@@ -627,7 +634,23 @@ class SemanticQueryTool:
             )
 
         gap = await period_without_data(plan, last_columns, last_rows, time_context, run_window)
+        anchored = (anchor_to_data(plan, gap, getattr(frame, "anchor", None))
+                    if gap is not None else None)
+        if anchored is not None:
+            # The user meant the dates the data has ("the last 7 days in the data",
+            # "July" with no year): ask once more there, labelled as such.
+            rerun = await self._run_anchored(
+                semantic_ir, anchored, invocation, context, username, encrypted_password,
+                security, execution_now, execution_timezone,
+            )
+            if rerun is not None:
+                plan, time_context, safe_sql, last_columns, last_rows, results = rerun
+                explanation += anchored.note
+                gap = await period_without_data(
+                    plan, last_columns, last_rows, time_context, run_window,
+                )
         if gap is not None:
+            _spend_turn_plan(context)
             await _record_usage(
                 security, semantic_model, semantic_ir, plan, execution_duration_ms,
                 succeeded=True, context=context,
@@ -848,6 +871,79 @@ class SemanticQueryTool:
             "time_dimension": plan.time.dimension if plan.time else None,
         })
         return attach_evidence_health(outcome, health)
+
+    async def _run_anchored(
+        self,
+        semantic_ir: SemanticModelIR,
+        anchored: DataAnchor,
+        invocation: Any,
+        context: Any,
+        username: str,
+        encrypted_password: str,
+        security: Any,
+        execution_now: datetime | None,
+        execution_timezone: str | None,
+    ) -> tuple[SemanticPlan, Any, str, list, list, list] | None:
+        """Run the plan once more on the data's own dates, as the caller.
+
+        Returns the plan, its time context, the SQL preview, the last result's
+        columns and rows and all results; ``None`` when it cannot run, so the
+        caller reports the original gap.
+        """
+        from app.common.sql_guard import split_sql_statements
+        from app.modules.query.service import query_service
+
+        plan = anchored.plan
+        if plan.time is None or not plan.time.range:
+            return None
+        timezone = configured_timezone() if execution_timezone is None else execution_timezone
+        try:
+            if anchored.clock_day is not None:
+                now = datetime.combine(anchored.clock_day, datetime.min.time(), ZoneInfo(timezone))
+            else:
+                now = execution_now or datetime.now(UTC)
+            time_context = resolve_execution_time(
+                plan.time.range, plan.time.compare, now=now, timezone=timezone,
+            )
+            sql = self._compiler.compile(semantic_ir, plan, time_context=time_context).sql
+        except (SemanticPlanError, KeyError, ValueError):
+            return None
+        classification, _decisions = policy.classify_statements(split_sql_statements(sql))
+        if classification != "read_only":
+            return None
+        if callable(getattr(context, "execution_time_sink", None)):
+            from app.modules.intelligence.contracts import fingerprint
+
+            await context.execution_time_sink({
+                "validated_plan_fingerprint": fingerprint(plan.as_dict()),
+                "execution_time": time_context.as_dict(),
+            })
+        try:
+            results = await query_service.execute_statements(
+                sql=sql,
+                username=username,
+                encrypted_password=encrypted_password,
+                database=_context_value(context, "database"),
+                schema=_context_value(context, "schema_name"),
+                role=_active_role(context),
+                security_context_version=security.security_context_version,
+                max_rows=self.max_rows,
+                session_id=_context_value(context, "audit_session_id"),
+                confirm_destructive=False,
+                file_id=_context_value(context, "workspace_file_id"),
+            )
+        except Exception as exc:  # noqa: BLE001 - the original gap is still reported
+            logger.info("Anchored semantic query skipped: %s", type(exc).__name__)
+            return None
+        if not results or any(result.error for result in results):
+            return None
+        last = results[-1]
+        return (
+            plan, time_context, _safe_sql_preview(sql),
+            list(getattr(last, "columns", None) or []),
+            list(getattr(last, "rows", None) or []),
+            list(results),
+        )
 
     async def _window_rows(
         self,
@@ -1096,14 +1192,33 @@ def unavailable_sources(question: str | None, model: SemanticModelIR) -> list[st
     return names[:3]
 
 
+def _spend_turn_plan(context: Any) -> None:
+    """A first query that cannot run as planned is not planned that way again.
+
+    The turn planner's plan and the user's period from the intent frame are
+    reused only on the first attempt. A deterministic failure (an invalid plan,
+    a missing concept, a period outside the data) would fail the same way on
+    every retry, so the retry plans from the agent's rewritten request instead.
+    A transient execution error keeps them for the retry.
+    """
+    if hasattr(context, "primary_query_done"):
+        context.primary_query_done = True
+
+
 def _plan_error_message(detail: str) -> str:
     """What the person can do when a plan cannot be compiled, in plain words.
 
     The detail (field and metric names) stays with the agent for its repair.
     """
     text = detail.lower()
+    if "no elapsed observations" in text:
+        return ("That period has no days that have passed yet. Ask about a period that "
+                "has already ended, such as last month.")
+    if "needs an explicit time range" in text or "no previous period" in text:
+        return ("A comparison needs a period to compare. Name the period (for example "
+                "July 2025), or ask for the trend by week or by month.")
     if any(word in text for word in ("comparison", "compare", "incompatible", "overlap",
-                                     "previous period", "execution window")):
+                                     "previous period")):
         return ("Nova could not compare those periods as asked. Name both periods "
                 "(for example June 2025 and July 2025), or ask for the trend by week "
                 "or by month.")

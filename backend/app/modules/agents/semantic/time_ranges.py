@@ -219,6 +219,17 @@ def resolve_time_range(value: str) -> TimeWindow:
     raise SemanticPlanError(f"Unsupported time range {raw!r}. {RANGE_GRAMMAR_HELP}")
 
 
+def is_relative_range(value: str) -> bool:
+    """A range counted from the clock ("last_7_days", "current_month", "ytd")."""
+    text = _word_form(str(value or ""))
+    position, _, unit = text.partition("_")
+    if text in _TODATE or (position in {"current", "previous"} and unit in UNITS):
+        return True
+    return re.fullmatch(
+        r"(?:last|past|previous)_(\d{1,4})_(" + "|".join(UNITS) + ")s?", text
+    ) is not None
+
+
 def is_supported_time_range(value: str) -> bool:
     try:
         resolve_time_range(value)

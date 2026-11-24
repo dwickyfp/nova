@@ -33,12 +33,26 @@ def test_leading_argument_object_is_removed():
     assert cleaned == "Total pendapatan untuk pekan terakhir belum terverifikasi."
 
 
+def test_an_empty_call_before_the_arguments_is_removed_too():
+    # Re-bench date_relative-002: the answer began '{}{"question":"Gunakan Semantic View ..."}'.
+    text = (
+        '{}{"question":"Gunakan Semantic View demo_sales: pendapatan 29 Juni sampai '
+        '5 Juli 2025"}Pendapatan 7 hari terakhir dalam data adalah Rp29.298.000.'
+    )
+    cleaned, removed = _without_argument_json(text, _SCHEMAS)
+    assert removed
+    assert cleaned == "Pendapatan 7 hari terakhir dalam data adalah Rp29.298.000."
+    assert _without_argument_json("{}\nNo figures yet.", _SCHEMAS) == ("No figures yet.", True)
+
+
 def test_other_json_and_inline_braces_stay():
     for text in (
         'Use {"question": "x"} inline.',  # not at a line start
         '{"metric": "revenue"}\nAn example object.',  # keys of no tool
         "```json\n{\"question\": \"x\"}\n```",  # fenced code the user asked for
         "Revenue {grew} in July.",
+        "Pass {} when there are no options.",  # an empty object inside a sentence
+        'Revenue {} {"question": "x"} inline.',  # not at a line start
     ):
         assert _without_argument_json(text, _SCHEMAS) == (text, False)
 

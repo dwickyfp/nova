@@ -57,7 +57,9 @@ Evidence:
   If a source is missing, explain the gap; do not search unrelated databases.
 - A month or day named without a year is the one inside the verified date range of
   the data (a result's period). Ask for the year only when that range holds the same
-  month in several years; never assume a placeholder year.
+  month in several years; never assume a placeholder year. A recent period counted
+  "in the data" ("the last 7 days of the data", "last week in the data") ends on the
+  data's last day, not today; name the dates it covers.
 - When the user names a table, view or source you cannot use (such as a schema.table
   that is not one of your data sources), first say plainly that it is not available
   to you under the active role. A figure from your own data may follow only as a

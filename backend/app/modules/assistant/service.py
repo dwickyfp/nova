@@ -3392,6 +3392,12 @@ class AssistantLoop:
                 yield frame
             pending_artifacts.clear()
             context.pending_output = []
+        if evidence.business_tables:
+            # Verified results are in: say plainly the answer is partial rather than
+            # end on a bare limit error (re-bench diagnosis-001).
+            yield events.text_delta(
+                say("loop.iteration_cap_partial", _turn_language(context))
+            )
         yield events.error(
             "iteration_cap",
             f"The assistant reached its {max_iterations}-step limit for this turn.",
@@ -4445,14 +4451,19 @@ def _without_argument_json(
     decoder = json.JSONDecoder()
     kept: list[str] = []
     removed = False
+    removed_end = -1
     index = 0
     while index < len(text):
         start = text.find("{", index)
         if start < 0:
             break
         line_start = text.rfind("\n", 0, start) + 1
-        # Only an object on its own line, outside a code block the answer shows.
-        if text[line_start:start].strip() or text.count("```", 0, start) % 2:
+        # Only an object on its own line, or right after arguments just removed
+        # ("{}{"question": ...}"), outside a code block the answer shows.
+        after_removed = removed_end >= line_start and not text[removed_end:start].strip()
+        if (text[line_start:start].strip() and not after_removed) or (
+            text.count("```", 0, start) % 2
+        ):
             kept.append(text[index:start + 1])
             index = start + 1
             continue
@@ -4463,9 +4474,13 @@ def _without_argument_json(
             index = start + 1
             continue
         keys = frozenset(value) if isinstance(value, dict) else frozenset()
-        if keys and any(keys <= names and required <= keys for names, required in shapes):
+        # An empty object is a tool call with no arguments, never answer text.
+        if value == {} or (
+            keys and any(keys <= names and required <= keys for names, required in shapes)
+        ):
             kept.append(text[index:start])
             removed = True
+            removed_end = end
         else:
             kept.append(text[index:end])
         index = end
