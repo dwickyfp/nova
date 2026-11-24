@@ -199,7 +199,10 @@ When the agent schedules an automation, for example "Send a revenue summary
 every morning at 7", the answer states only the next run and the time zone
 that Nova's scheduler returned, for example 07:00 in Asia/Jakarta. If the
 schedule could not be created, the answer says "Nothing was scheduled." and
-why. Each run appears in **History**.
+why. A failed scheduling step also shows its reason under **Tools used**, for
+example "Automations run at most every 60 minutes." or "An agent has at most 20
+automations. Remove an automation this agent no longer needs first." Each run
+appears in **History**.
 
 A scheduled automation runs with nobody there, so it only reads: it answers
 from data and can call an outside tool whose server says it only reads, but it
