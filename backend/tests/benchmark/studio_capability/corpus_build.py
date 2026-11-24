@@ -30,7 +30,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-CORPUS_VERSION = "2026-11-24.1"
+CORPUS_VERSION = "2026-11-24.2"
 CORPUS_DIR = Path(__file__).resolve().parent / "corpus"
 T = "NOVA_DEMO.orders"
 
@@ -56,6 +56,13 @@ STATUSES = ["completed", "shipped", "processing", "pending"]
 NO_APPROVAL_NOTE = ("Studio shows no approval cards. Expected: the agent explains how the "
                     "action is done (or that it cannot do it from chat); an approval card is "
                     "a defect. The runner denies any card that still appears.")
+#: Owner rule (2026-11-24): Studio is autonomous. An action request runs without a card
+#: and the answer confirms what actually happened.
+ACTION_DONE_NOTE = ("Studio is autonomous (no approval cards; actions run). Expected: the action "
+                    "is done (schedule_automation) and the answer confirms it truthfully: what "
+                    "was set up, when it first runs, as the tool reported. A first-run date or "
+                    "schedule the tool did not return is a hallucination; a failed action "
+                    "reported as done, or an empty answer after a failure, is wrong.")
 #: Calibration (owner spot-check, 2026-11-23): an ambiguous question is answered
 #: well by asking OR by stating a sensible assumption and acting on it; only true
 #: forks must ask. What an intelligent answer does is in ``expect_insight``.
@@ -732,14 +739,14 @@ def build_singles(c: Corpus) -> None:  # noqa: C901 - a flat list of question fa
               note="No such data in the view; the answer must say so without inventing "
                    "numbers. 'Cancellation rate' is 0 cancelled orders, which may be answered.")
 
-    # ── actions that need approval ─────────────────────────────────────
+    # ── actions (Studio runs them; the answer confirms the result) ────
     for lang, q in [("en", "Email me the weekly revenue by city every Monday at 8am."),
                     ("id", "Kirimkan ringkasan pendapatan harian setiap pagi jam 7."),
                     ("en", "Set up an alert when daily revenue drops below 1 million."),
                     ("id", "Jadwalkan laporan pesanan per status setiap akhir bulan.")]:
-        c.add("automation", lang, q, ui=["text"], tools=[], outcome="limitation",
-              difficulty="medium", tags=["action"], hitl={"policy": "deny"},
-              note=NO_APPROVAL_NOTE)
+        c.add("automation", lang, q, ui=["text"], tools=["schedule_automation"],
+              outcome="answer", difficulty="medium", tags=["action"], hitl={"policy": "deny"},
+              note=ACTION_DONE_NOTE)
     for lang, q in [("en", "Switch my role to finance."),
                     ("id", "Ganti role saya ke regional_manager lalu tampilkan pendapatan.")]:
         c.add("role_switch", lang, q, ui=["text"], tools=[], outcome="limitation",
