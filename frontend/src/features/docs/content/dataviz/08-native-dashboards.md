@@ -85,6 +85,9 @@ A few rules apply to every chart:
   out **North** does not repaint **West**.
 - A KPI with nothing to show for the current filters says **No data for the
   current filters** under its dash.
+- A KPI value too wide for its box is shortened, such as **175.2M** for
+  175,184,000, rather than cut off. Point at it to see the full value; screen
+  readers read the full value.
 - A pie or funnel shows the values with the largest totals, up to the number
   in **Show the top** under **Slices** (12 unless you change it). On a pie of
   a Sum or Count, **Combine the rest into Other** (on for new pies) adds one
@@ -165,9 +168,11 @@ Click **Text** to add a heading or paragraph. Text is shown exactly as typed.
 
 ## Arrange the canvas
 
-Each page has a size, and the whole page is scaled to fit your window, so it
-looks the same at any width, only larger or smaller. A dashboard made before
-pages had sizes is 1,200 pixels wide and grows downwards; it scrolls as before.
+Each page has a size, and the whole page is scaled to fit your window, so items
+keep their places at any width, only larger or smaller. Text keeps its own
+size so it stays sharp, which means text in a small box can be cut off in a
+small window. A dashboard made before pages had sizes is 1,200 pixels wide and
+grows downwards; it scrolls as before.
 
 - In **Edit**, the page shows its grid as light bands: 12 columns with a gap
   between them, and some room below the lowest widget to move things into. The
@@ -228,6 +233,12 @@ pages had sizes is 1,200 pixels wide and grows downwards; it scrolls as before.
   slide up on their own.
 
 - Open a widget's **…** menu for **Edit chart**, **Duplicate** or **Remove**.
+  On an item without a title, the menu sits in its top-right corner and shows
+  when you point at the item or select it.
+- A new chart, KPI, table or text goes into the first free space on the page.
+  On a page with a fixed size (**Whole page** or **Actual size**), it goes into
+  the first free space that fits. When there is none, it goes to the top-left
+  corner, over what is there, for you to move.
 - Click **+** next to the page name to add a page. A page holds up to 150
   items; when it is full, the add buttons are turned off and a note says
   so. Add another page for more.
@@ -247,11 +258,67 @@ Keyboard shortcuts in **Edit**:
 | Ctrl+Shift+L | ⌘⇧L | Lock or unlock |
 | Ctrl+Shift+H | ⌘⇧H | Hide or show |
 | Alt+arrow / Alt+Shift+arrow | ⌥+arrow / ⌥⇧+arrow | Move / Resize |
+| Shift+Space or Ctrl+Space | ⇧Space or ⌘Space | Add the focused item to the selection, or take it out |
 | Ctrl+Z / Ctrl+Shift+Z | ⌘Z / ⌘⇧Z | Undo / Redo |
 
 On a phone-width window, the widgets stack in one column, in reading order: top
 to bottom, then left to right. The layout cannot be changed there, and the saved
 page is kept for larger screens.
+
+### Add shapes, icons and lines
+
+- **Shape** in the toolbar adds a **Rectangle**, **Ellipse**, **Pill**,
+  **Triangle** or **Line**. A new shape goes into free space on the page,
+  drawn as a card with a thin outline. Use shapes for panels, bands and
+  dividers, such as a coloured sidebar behind your navigation.
+- **Icon** opens a list of icons. Type in **Search icons** to narrow it, move
+  with the arrow keys and press Enter, or click one.
+- To join two items with a line, select both and choose **Arrange** >
+  **Connect with a line**. The line is attached to the items: when you move or
+  resize either of them, the line follows.
+- Shapes, icons and lines are decorative: screen readers and the keyboard skip
+  them. To have an icon read out, give it a **Label for screen readers** in
+  **Format and layers**; that makes it readable.
+
+### Format and layers
+
+Click **Format and layers** in the toolbar to open the panel beside the page.
+It has three tabs.
+
+**Format** changes the selected items. With several selected, each change
+applies to all of them.
+
+- **Name in the layers list** names the item in **Layers**.
+- **Fill** and **Outline colour** take a colour from the theme, so the
+  dashboard follows light and dark mode. Choose **None** for no fill or no
+  outline. **Line width** and **Line style** (**Solid**, **Dashed** or
+  **Dotted**) shape the outline.
+- **Corners** (from **Square** to **Round**), **Shadow** (**None**, **Soft** or
+  **Raised**) and **Opacity (%)**, a whole number from 0 to 100.
+- **Padding** sets the space inside a chart or text box, from **None** to
+  24 px. Text with no fill, no outline and little padding reads as a plain
+  label.
+- For text, **Text style** is **Title**, **Heading**, **Body** or **Caption**.
+- For a shape, **Shape** changes its form. For an icon, **Icon** picks another
+  and **Icon colour** colours it. For a line, **Ending** is **Arrow**, **Dot**
+  or **None**, and **Path** is **Straight**, **Elbow** or **Curved**.
+- **Decorative** decides whether screen readers and the keyboard skip the
+  item.
+
+With nothing selected, **Format** sets the **Page background**: **None**, a
+**Colour**, or a **Gradient** from one colour to another, with a
+**Direction**.
+
+**Layers** lists every item on the page, front to back. Click a name to select
+the item; Shift+click, Ctrl+click, Shift+Enter or Shift+Space adds it to the
+selection. **Bring forward** and **Send backward** on a row, or Alt+Up and
+Alt+Down on a focused name, move the item one step. Each row also has
+**Hide**/**Show** and **Lock**/**Unlock**.
+
+**Tab order** lists the items that Tab and screen readers reach, in order.
+Decorative items are not listed. **Move earlier** and **Move later** change
+the order. **Follow the page** goes back to reading order: top to bottom,
+then left to right.
 
 ## Filters and selections
 
@@ -380,7 +447,11 @@ shown exactly as written and never change the dashboard or its data.
 - Tab and screen readers go through the widgets in reading order: top to
   bottom, then left to right, whatever order they were added in.
 - In **Edit**, press Tab to move from item to item; the focused item is
-  selected. Press **Alt** with an arrow key to move it, or **Alt** and
+  selected. Press Shift+Space to add it to the selection instead. While
+  several items are selected, Tab moves the focus without changing the
+  selection, so you can collect items from the keyboard and then arrange them.
+  **Format and layers** works from the keyboard too; see
+  [Format and layers](#format-and-layers). Press **Alt** with an arrow key to move it, or **Alt** and
   **Shift** with an arrow key to resize it. Every shortcut in
   [Arrange the canvas](#arrange-the-canvas) works from the keyboard, and the
   **Arrange** menu opens with Enter. A screen reader announces what each one

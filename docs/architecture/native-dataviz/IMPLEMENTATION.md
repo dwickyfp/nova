@@ -619,13 +619,22 @@ the inverse of every canvas operation (`inverseAll` in `operations.ts`). A move
 of items on the page translates their nodes each animation frame instead of
 re-rendering them, so a drag costs the same with 6 or 60 items.
 
+Authoring (P2, part 2) adds shapes, icons and connectors attached to two
+items (`insert.ts`, `insert-menu.tsx`), and the **Format and layers** panel
+(`item-panel.tsx`): token fills and outlines, corners, shadow, opacity,
+padding, text style, icon and connector options, decorative flag, page
+background, a layers list that restacks one step at a time, and a tab-order
+list. New charts and text on a fixed-size page land inside it (`slotOnPage`).
+Untitled items keep their actions in a corner overlay. KPI values that do not
+fit switch to compact notation.
+
 Active: the contract, upcaster, adapters, migration, the frame renderer and
-P2 part 1. Tested: server golden, property and digest tests, the browser
+P2 parts 1 and 2. Tested: server golden, property and digest tests, the browser
 upcaster against the same goldens, the PG17 upgrade from schema 62 (CI),
 `frame.test.ts`, `authoring.test.ts`, `qa-authoring.test.tsx` (including the
-60-item drag frame budget) and the editor browser suites. Open: P2 part 2
-(selection pane with layer and tab order, creating text, shapes, icons,
-backgrounds and connectors, keyboard-only scenario), P2 part 3 (images),
+60-item drag frame budget), `insert.test.ts`, `item-panel.test.tsx`, the
+keyboard-only editor test and the editor browser suites. Open: P2 part 3
+(images and photo backgrounds),
 resolving data-point anchors and value bindings, and P3 Neva on canvas
 operations.
 

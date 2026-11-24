@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowLeft, BarChart3, CalendarClock, Check, Download, FileSpreadsheet, Filter, Hash, History, Loader2, Pencil, Plus,
+  ArrowLeft, BarChart3, CalendarClock, Check, Download, FileSpreadsheet, Filter, Hash, History, Layers, Loader2, Pencil, Plus,
   MessageSquare, Printer, Redo2, RefreshCw, Share2, Sparkles, Table2, Type, Undo2, Upload,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -39,13 +39,16 @@ import { FilterBar, FilterBuilder } from './filters'
 import { describeFilterValue } from './filter-describe'
 import { viewFilters } from './view-filters'
 import { chartContext, defaultValue, type CrossFilter, type FilterDefinition, type FilterValue } from './filter-model'
-import { activeDrop, DROP_TYPE, firstFreeSlot, gridWidgets, sizeFor, slotAt, type DropItem, type Widget } from './layout'
+import { activeDrop, DROP_TYPE, gridWidgets, sizeFor, slotOnPage, type DropItem, type Widget } from './layout'
 import { NATIVE_DASHBOARD_ACTIVITY, NATIVE_DASHBOARD_CHANGED, NATIVE_DASHBOARD_OPEN, type LinkedSelection, type NativeDashboardActivity, type NativeDashboardChanged, type NativeDashboardOpen } from './events'
 import { nevaWords, type NevaActivity } from './neva-pointer'
 import { applyLocal, inverseAll, type Change } from './operations'
 import { countElements, tabOrder, type Arrow } from './frame'
 import { ArrangeMenu } from './arrange-menu'
 import * as commands from './commands'
+import * as insert from './insert'
+import { IconButton, ShapeMenu, ToolLabel } from './insert-menu'
+import { ItemPanel } from './item-panel'
 import { ShareDialog } from './share-dialog'
 import { ScheduleDialog } from './schedule-dialog'
 import { CommentsPanel } from './comments-panel'
@@ -158,6 +161,8 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
   const clearSelection = () => setSelection([])
   const [status, setStatus] = useState<Status>('saved')
   const [inspector, setInspector] = useState<Inspector | null>(null)
+  // The Format and layers panel; a chart's inspector takes its place while open.
+  const [panelOpen, setPanelOpen] = useState(false)
   // The cell a Text item was dropped on, until the text is added or the dialog closes.
   const [textAt, setTextAt] = useState<{ x: number; y: number } | null>(null)
   const [inspectorError, setInspectorError] = useState<string>()
@@ -437,6 +442,12 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
       })
       // A focused item that is not selected is what the keyboard acts on.
       const focused = target?.closest<HTMLElement>('[data-element-id]')?.dataset.elementId
+      // Shift+Space (or Ctrl/Cmd+Space) adds the focused item to the selection, or takes it out.
+      if (focused && event.key === ' ' && (event.shiftKey || command)) return shortcut(() => {
+        const next = selection.includes(focused) ? selection.filter(id => id !== focused) : [...selection, focused]
+        setSelection(next)
+        setAnnouncement(`${next.length} item${next.length === 1 ? '' : 's'} selected`)
+      })
       const targets = focused && !selection.includes(focused) ? [focused] : selection
       if (!targets.length) return
       const id = () => crypto.randomUUID()
@@ -486,7 +497,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
         await documents.createChart({ workspace_id: workspaceId, definition: chart }, crypto.randomUUID())
         const size = sizeFor(chart.visual)
         const widget = { kind: 'chart', widget_id: crypto.randomUUID(), title: '', locked: false,
-          layout: slotAt(gridWidgets(page), size.w, size.h, inspector?.mode === 'new' ? inspector.at : null), chart_ref: { chart_id: chart.chart_id, revision: 1 } } as Widget
+          layout: slotOnPage(page, size.w, size.h, inspector?.mode === 'new' ? inspector.at : null), chart_ref: { chart_id: chart.chart_id, revision: 1 } } as Widget
         if (await apply([{ op: 'widget.add', page_id: page.page_id, widget }])) {
           setInspector(null)
           setSelection([widget.widget_id])
@@ -504,7 +515,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
     if (!page) return
     if (pageFull) { toast.info(PAGE_FULL); return }
     const widget = { kind: 'text', widget_id: crypto.randomUUID(), title: '', locked: false, text, style,
-      layout: slotAt(gridWidgets(page), 12, 2, textAt) } as Widget
+      layout: slotOnPage(page, 12, 2, textAt) } as Widget
     setTextAt(null)
     void apply([{ op: 'widget.add', page_id: page.page_id, widget }])
   }
@@ -512,7 +523,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
   function duplicate(widget: Widget) {
     if (!page) return
     if (pageFull) { toast.info(PAGE_FULL); return }
-    const copy = { ...widget, widget_id: crypto.randomUUID(), layout: firstFreeSlot(gridWidgets(page), widget.layout.w, widget.layout.h) } as Widget
+    const copy = { ...widget, widget_id: crypto.randomUUID(), layout: slotOnPage(page, widget.layout.w, widget.layout.h) } as Widget
     void apply([{ op: 'widget.add', page_id: page.page_id, widget: copy }])
   }
 
@@ -775,7 +786,7 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
       </div>
     </header>
 
-    <div className='flex min-h-12 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b px-4 py-1.5'>
+    <div className='@container/toolbar flex min-h-12 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b px-4 py-1.5'>
       {canEdit && <Tabs value={tab} onValueChange={value => setTab(value as 'canvas' | 'data')}>
         <TabsList className='h-8'><TabsTrigger value='canvas'>Canvas</TabsTrigger><TabsTrigger value='data'>Data</TabsTrigger></TabsList>
       </Tabs>}
@@ -797,13 +808,19 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
         </nav>
       </>}
       {tab === 'canvas' && editing && <div role='toolbar' aria-label='Add to dashboard' className='flex flex-wrap items-center gap-1'>
-        <Button variant='ghost' size='sm' disabled={pageFull} {...dragged({ kind: 'chart', visual: 'bar' })} onClick={() => setInspector({ mode: 'new', visual: 'bar' })}><BarChart3 />Chart</Button>
-        <Button variant='ghost' size='sm' disabled={pageFull} {...dragged({ kind: 'chart', visual: 'kpi' })} onClick={() => setInspector({ mode: 'new', visual: 'kpi' })}><Hash />KPI</Button>
-        <Button variant='ghost' size='sm' disabled={pageFull} {...dragged({ kind: 'chart', visual: 'table' })} onClick={() => setInspector({ mode: 'new', visual: 'table' })}><Table2 />Table</Button>
-        <Button variant='ghost' size='sm' disabled={pageFull} {...dragged({ kind: 'text' })} onClick={() => { setTextAt(null); setTextOpen(true) }}><Type />Text</Button>
-        <Button variant='ghost' size='sm' onClick={openFilters}><Filter />Filters</Button>
+        <Button variant='ghost' size='sm' disabled={pageFull} {...dragged({ kind: 'chart', visual: 'bar' })} onClick={() => setInspector({ mode: 'new', visual: 'bar' })}><BarChart3 /><ToolLabel>Chart</ToolLabel></Button>
+        <Button variant='ghost' size='sm' disabled={pageFull} {...dragged({ kind: 'chart', visual: 'kpi' })} onClick={() => setInspector({ mode: 'new', visual: 'kpi' })}><Hash /><ToolLabel>KPI</ToolLabel></Button>
+        <Button variant='ghost' size='sm' disabled={pageFull} {...dragged({ kind: 'chart', visual: 'table' })} onClick={() => setInspector({ mode: 'new', visual: 'table' })}><Table2 /><ToolLabel>Table</ToolLabel></Button>
+        <Button variant='ghost' size='sm' disabled={pageFull} {...dragged({ kind: 'text' })} onClick={() => { setTextAt(null); setTextOpen(true) }}><Type /><ToolLabel>Text</ToolLabel></Button>
+        <ShapeMenu disabled={pageFull || status === 'saving'} onAdd={shape => run(insert.addShapeCommand(page, shape, crypto.randomUUID()))} />
+        <IconButton disabled={pageFull || status === 'saving'} onAdd={icon => run(insert.addIconCommand(page, icon, crypto.randomUUID()))} />
+        <Button variant='ghost' size='sm' onClick={openFilters}><Filter /><ToolLabel>Filters</ToolLabel></Button>
         <span className='mx-1 h-5 w-px bg-border' aria-hidden />
         <ArrangeMenu page={page} selection={selection} disabled={status === 'saving'} run={run} />
+        <Tooltip><TooltipTrigger asChild>
+          <Button variant='ghost' size='icon' className={cn('size-8', panelOpen && 'bg-accent text-accent-foreground')} aria-label='Format and layers'
+            aria-pressed={panelOpen} onClick={() => setPanelOpen(!panelOpen)}><Layers /></Button>
+        </TooltipTrigger><TooltipContent>Format and layers</TooltipContent></Tooltip>
         <span className='mx-1 h-5 w-px bg-border' aria-hidden />
         <Tooltip><TooltipTrigger asChild><Button variant='ghost' size='icon' className='size-8' aria-label='Undo' disabled={!undo.length || status === 'saving'} onClick={undoLast}><Undo2 /></Button></TooltipTrigger><TooltipContent>Undo</TooltipContent></Tooltip>
         <Tooltip><TooltipTrigger asChild><Button variant='ghost' size='icon' className='size-8' aria-label='Redo' disabled={!redo.length || status === 'saving'} onClick={redoLast}><Redo2 /></Button></TooltipTrigger><TooltipContent>Redo</TooltipContent></Tooltip>
@@ -850,6 +867,10 @@ function Editor({ dashboardId, workspaceId, onBack, refreshToken, onContextChang
           <ChartInspector key={inspector.mode === 'edit' ? inspector.chart.chart_id : `new-${inspector.visual}`}
             datasets={sources} chart={inspector.mode === 'edit' ? inspector.chart : null} initialVisual={inspector.mode === 'new' ? inspector.visual : undefined}
             saving={savingChart} error={inspectorError} onSave={chart => void saveChart(chart)} onClose={() => { setInspector(null); setInspectorError(undefined) }} />
+        </div>}
+        {!inspector && panelOpen && editing && page && <div className={cn('flex min-h-0 border-l bg-card',
+          sideInspector ? 'w-80 shrink-0' : 'absolute inset-y-0 right-0 z-20 w-[min(20rem,100%)] shadow-xl')}>
+          <ItemPanel page={page} selection={selection} onSelect={setSelection} run={run} disabled={status === 'saving'} onClose={() => setPanelOpen(false)} />
         </div>}
       </div>}
 

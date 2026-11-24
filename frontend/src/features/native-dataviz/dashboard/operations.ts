@@ -61,7 +61,7 @@ export function inverse(change: Change, before: DashboardDefinition): Change | n
  * them cannot be reverted (the editor then does not offer Undo for it).
  */
 /** What an element has when a property was never set; undo restores these rather than null, which the server refuses. */
-const PATCH_DEFAULTS: Record<string, unknown> = { name: '', locked: false, hidden: false, decorative: false }
+const PATCH_DEFAULTS: Record<string, unknown> = { name: '', locked: false, hidden: false, decorative: false, style: {} }
 
 export function inverseAll(changes: readonly Change[], before: DashboardDefinition): Change[] | null {
   let state = before

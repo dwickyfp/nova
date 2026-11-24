@@ -23,8 +23,7 @@ import {
 import {
   absoluteBoxes, boxStyle, clampBox, columnEdges, connectorPath, dashArray, fillCss, frameGrid, HANDLES, mobileHeight,
   mobileOrder, opacityOf, PHONE_WIDTH, themeRadius, pageSize, readingOrder, resizeBox, sameBox, scaleFor, SNAP_DISTANCE, strokeColor, tabOrder,
-  toGeometry, type Box, type Edges,
-} from './frame'
+  toGeometry, dropShadowOf, type Box, type Edges } from './frame'
 import { bounds, index, otherBoxes, smartSnap, type Guide } from './authoring'
 import { ICONS } from './icons'
 import { ROW_PX, type CanvasPoint, type Collaborator } from './presence'
@@ -195,9 +194,37 @@ function WidgetFrame({ element, widget, title, props, chart, download, canImage 
 }) {
   const root = useRef<HTMLDivElement>(null)
   const highlighted = props.highlighted?.includes(widget.widget_id) ?? false
+  // Untitled items keep their actions in a corner overlay, so a short text box
+  // still shows its words while you edit.
+  const header = Boolean(title || drill)
+  const actions = (className: string) => <div className={className}>
+    {props.onAskNeva && <Button variant='ghost' size='icon' className='size-7' aria-label={`Ask the assistant about ${title || 'this widget'}`}
+      onClick={event => { event.stopPropagation(); props.onAskNeva?.(widget, chart) }}><Sparkles className='size-4' /></Button>}
+    {download && <DropdownMenu>
+      <DropdownMenuTrigger asChild><Button variant='ghost' size='icon' className='size-7' aria-label={`Download ${title || 'chart'}`}
+        onClick={event => event.stopPropagation()}><Download className='size-4' /></Button></DropdownMenuTrigger>
+      <DropdownMenuContent align='end'>
+        <DropdownMenuLabel className='text-xs font-normal text-muted-foreground'>Download</DropdownMenuLabel>
+        {canImage && <DropdownMenuItem onSelect={() => root.current && download('png', root.current)}><ImageIcon />Image (PNG)</DropdownMenuItem>}
+        <DropdownMenuItem onSelect={() => root.current && download('csv', root.current)}><FileText />Data (CSV)</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => root.current && download('xlsx', root.current)}><FileSpreadsheet />Data (Excel)</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>}
+    {props.editing && <DropdownMenu>
+      <DropdownMenuTrigger asChild><Button variant='ghost' size='icon' className='size-7' aria-label={`${title || 'Widget'} actions`}
+        onClick={event => event.stopPropagation()}><MoreHorizontal className='size-4' /></Button></DropdownMenuTrigger>
+      <DropdownMenuContent align='end'>
+        {widget.kind === 'chart' && chart && <DropdownMenuItem onSelect={() => props.onEditChart(widget, chart)}><Pencil />Edit chart</DropdownMenuItem>}
+        {widget.kind === 'chart' && chart && props.onEditLink && <DropdownMenuItem onSelect={() => props.onEditLink?.(widget, chart)}><Link2 />Link to a dashboard…</DropdownMenuItem>}
+        <DropdownMenuItem onSelect={() => props.onDuplicate(widget)}><Copy />Duplicate</DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem variant='destructive' onSelect={() => props.onRemove(widget)}><Trash2 />Remove</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>}
+  </div>
   return <div ref={root} data-element-body='' className={cn('relative flex size-full flex-col overflow-hidden',
     highlighted && 'ring-2 ring-brand/60 motion-safe:transition-shadow')} style={boxStyle(element.style)}>
-    {(title || props.editing) && <div className='flex h-7 shrink-0 items-center justify-between gap-2'>
+    {header && <div className='flex h-7 shrink-0 items-center justify-between gap-2'>
       <div className='flex min-w-0 items-center gap-1'>
         {drill && <Button variant='ghost' size='icon' className='-ml-1 size-7 shrink-0' aria-label='Back up one level'
           onClick={event => { event.stopPropagation(); drill.back() }}><ArrowLeft className='size-4' /></Button>}
@@ -205,32 +232,9 @@ function WidgetFrame({ element, widget, title, props, chart, download, canImage 
         {drill && drill.depth > 1 && <Button variant='link' size='sm' className='h-7 shrink-0 px-1 text-xs text-muted-foreground'
           onClick={event => { event.stopPropagation(); drill.reset() }}>Reset</Button>}
       </div>
-      <div className={cn('flex shrink-0 items-center gap-0.5', !props.editing && 'opacity-0 focus-within:opacity-100 group-hover/widget:opacity-100')}>
-        {props.onAskNeva && <Button variant='ghost' size='icon' className='size-7' aria-label={`Ask the assistant about ${title || 'this widget'}`}
-          onClick={event => { event.stopPropagation(); props.onAskNeva?.(widget, chart) }}><Sparkles className='size-4' /></Button>}
-        {download && <DropdownMenu>
-          <DropdownMenuTrigger asChild><Button variant='ghost' size='icon' className='size-7' aria-label={`Download ${title || 'chart'}`}
-            onClick={event => event.stopPropagation()}><Download className='size-4' /></Button></DropdownMenuTrigger>
-          <DropdownMenuContent align='end'>
-            <DropdownMenuLabel className='text-xs font-normal text-muted-foreground'>Download</DropdownMenuLabel>
-            {canImage && <DropdownMenuItem onSelect={() => root.current && download('png', root.current)}><ImageIcon />Image (PNG)</DropdownMenuItem>}
-            <DropdownMenuItem onSelect={() => root.current && download('csv', root.current)}><FileText />Data (CSV)</DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => root.current && download('xlsx', root.current)}><FileSpreadsheet />Data (Excel)</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>}
-        {props.editing && <DropdownMenu>
-          <DropdownMenuTrigger asChild><Button variant='ghost' size='icon' className='size-7' aria-label={`${title || 'Widget'} actions`}
-            onClick={event => event.stopPropagation()}><MoreHorizontal className='size-4' /></Button></DropdownMenuTrigger>
-          <DropdownMenuContent align='end'>
-            {widget.kind === 'chart' && chart && <DropdownMenuItem onSelect={() => props.onEditChart(widget, chart)}><Pencil />Edit chart</DropdownMenuItem>}
-            {widget.kind === 'chart' && chart && props.onEditLink && <DropdownMenuItem onSelect={() => props.onEditLink?.(widget, chart)}><Link2 />Link to a dashboard…</DropdownMenuItem>}
-            <DropdownMenuItem onSelect={() => props.onDuplicate(widget)}><Copy />Duplicate</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant='destructive' onSelect={() => props.onRemove(widget)}><Trash2 />Remove</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>}
-      </div>
+      {actions(cn('flex shrink-0 items-center gap-0.5', !props.editing && 'opacity-0 focus-within:opacity-100 group-hover/widget:opacity-100'))}
     </div>}
+    {!header && props.editing && actions('absolute top-1 right-1 z-10 flex items-center gap-0.5 rounded-md bg-card opacity-0 shadow-sm focus-within:opacity-100 group-hover/widget:opacity-100 group-data-selected/widget:opacity-100')}
     <div className='flex min-h-0 flex-1 flex-col'>{children}</div>
     {highlighted && <span role='status' className='pointer-events-none absolute top-1 right-1 flex items-center gap-1 rounded-full bg-brand px-2 py-0.5 text-xs text-brand-foreground motion-safe:animate-in motion-safe:fade-in'>
       <Sparkles className='size-3' aria-hidden />Changed by the assistant
@@ -287,7 +291,7 @@ function ShapeBody({ element, w: width, h: height }: { element: ShapeElement; w:
   else if (kind === 'line') shape = <line x1={0} y1={h / 2} x2={w} y2={h / 2} {...common} stroke={strokeColor(stroke) ?? fillCss(fill) ?? 'var(--foreground)'} strokeWidth={Math.max(1, sw)} />
   else shape = <rect x={inset} y={inset} width={Math.max(0, w - sw)} height={Math.max(0, h - sw)} rx={corner}
     style={corner === undefined ? { rx: themeRadius(style?.radius), ry: themeRadius(style?.radius) } as React.CSSProperties : undefined} {...common} />
-  return <svg aria-hidden width={w} height={h} className='block overflow-visible' style={{ opacity: opacityOf(style) }}>
+  return <svg aria-hidden width={w} height={h} className='block overflow-visible' style={{ opacity: opacityOf(style), filter: dropShadowOf(style) }}>
     {fill && 'start' in fill && <defs><linearGradient id={gradientId} {...gradientEnds(fill.angle ?? 180)}>
       <stop offset='0' style={{ stopColor: `var(--${fill.start})` }} /><stop offset='1' style={{ stopColor: `var(--${fill.end})` }} />
     </linearGradient></defs>}
@@ -506,9 +510,12 @@ const ElementView = memo(function ElementView({ element, origin, props, gesture,
       ? `${label}${element.hidden ? ', hidden' : ''}${element.locked ? ', locked' : editable ? ', press Alt and an arrow key to move it' : ''}`
       : label}
     tabIndex={props.editing ? 0 : undefined}
-    // Tabbing to an item selects it; a press selects it through the pointer gesture instead.
+    // Tabbing to an item selects it, unless several items are selected: then Tab
+    // passes over items on the way to a command without losing that selection.
+    // A press selects through the pointer gesture instead.
     onFocus={props.editing ? event => {
-      if (event.target === event.currentTarget && event.currentTarget.matches(':focus-visible') && !selection.has(element.element_id)) select(element.element_id, false)
+      if (event.target === event.currentTarget && event.currentTarget.matches(':focus-visible') && !selection.has(element.element_id)
+        && selection.size <= 1) select(element.element_id, false)
     } : undefined}
     onClick={props.editing && reachable ? event => event.stopPropagation() : undefined}
     onDoubleClick={editable && element.kind === 'group' ? event => {

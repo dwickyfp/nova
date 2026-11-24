@@ -2,7 +2,7 @@ import { useState } from 'react'
 import {
   AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceAround,
   AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceAround, ArrowDownToLine, ArrowUpToLine, ChevronDown,
-  Copy, Eye, Grid3x3, Group, LayoutGrid, Lock, Magnet, MoveDown, MoveUp, Settings2, Trash2, Ungroup,
+  Copy, Eye, Grid3x3, Group, LayoutGrid, Lock, Magnet, MoveDown, MoveUp, Settings2, Spline, Trash2, Ungroup,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -17,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils'
 import type { PageCanvas } from '../contracts'
 import * as commands from './commands'
+import * as insert from './insert'
 import { frameGrid, pageSize } from './frame'
 import type { Page } from './layout'
 
@@ -86,6 +87,7 @@ export function ArrangeMenu({ page, selection, disabled, run }: Props) {
         <DropdownMenuSeparator />
         {item('Group', <Group />, () => commands.groupCommand(page, selection, crypto.randomUUID()), count > 1, `${MOD}G`)}
         {item('Ungroup', <Ungroup />, () => commands.ungroupCommand(page, selection), groups, `${SHIFT}${MOD}G`)}
+        {item('Connect with a line', <Spline />, () => insert.connectCommand(page, selection, crypto.randomUUID()), count === 2)}
         {item(count && items.every(entry => entry.locked) ? 'Unlock' : 'Lock', <Lock />, () => commands.toggleCommand(page, selection, 'locked'), count > 0, `${SHIFT}${MOD}L`)}
         {item(count && items.every(entry => entry.element?.hidden) ? 'Show' : 'Hide', <Eye />, () => commands.toggleCommand(page, selection, 'hidden'), count > 0, `${SHIFT}${MOD}H`)}
         {item('Duplicate', <Copy />, () => commands.duplicateCommand(page, selection, () => crypto.randomUUID()), count > 0, `${MOD}D`)}

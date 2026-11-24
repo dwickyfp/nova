@@ -1,8 +1,9 @@
 # ADR-001: Free-form dashboard canvas (dashboard schema 3)
 
 - Status: accepted. P0 (contract and upcaster), P1 (frame renderer) and P2
-  part 1 (selection, snapping, arrange commands) are implemented; the rest of
-  P2 and P3 are open.
+  parts 1 (selection, snapping, arrange commands) and 2 (shapes, icons, lines,
+  formatting, layers and tab order) are implemented; P2 part 3 (images) and P3
+  are open.
 - Owner decisions: one free-form canvas engine replaces GridStack, with no
   hybrid mode or feature flag. Grid assistance is an authoring aid only. The
   Dataviz assistant becomes Neva with per-batch approval (P3).
@@ -169,6 +170,40 @@ command returns one operation and a sentence for the screen-reader announcement.
   in 120 px steps to follow a drag downwards. Resizes and moves inside a group
   re-render the affected items only.
 
+### Authoring (P2, part 2)
+
+Item creation and formatting build schema-3 operations in `insert.ts`; the
+toolbar menus are in `insert-menu.tsx` and the **Format and layers** panel in
+`item-panel.tsx`.
+
+- Shapes (rectangle, ellipse, pill, triangle, line) and icons (the closed lucide
+  set in `icons.ts`) are added with `elements.add` at the first free spot on the
+  grid that keeps a gutter from everything else, or the top-left margin. They
+  are decorative. Labelling an icon makes it non-decorative in the same patch.
+- **Connect with a line** joins exactly two items with a connector whose ends
+  are attached to those items (`kind: element`), so it follows moves and
+  resizes. The server already refuses ends that are not on the page.
+- Formatting is one `elements.update` per change, and it merges into the item's
+  `style`. Fill and outline colours are theme tokens, never raw colours. The
+  panel also sets padding, text role, shape, icon, connector ending and path,
+  and the decorative flag. Making items decorative also removes them from
+  `tab_order`. With nothing selected, the panel sets the page background
+  (`page.canvas.set`, solid or two-token gradient).
+- **Layers** lists items front to back and restacks one step with
+  `elements.reorder`. **Tab order** lists the non-decorative items and writes
+  `page.tab_order.set`; **Follow the page** clears it back to reading order.
+- Keyboard: Shift/Ctrl/⌘+Space adds the focused canvas item to the selection,
+  and Tab keeps a multi-selection. Layer rows take Shift/Ctrl+Enter or Space to
+  add to the selection and Alt+Up/Down to restack; they stop the editor's own
+  Alt+arrow move.
+- Charts, KPIs, tables and text still enter through `widget.add` (grid cells).
+  On a page that does not scroll, the cell is chosen so the item lands inside
+  the page, and when no free cell fits it goes to the top-left (`slotOnPage`).
+  Untitled items show their actions in a corner overlay, not a header row, so
+  short text boxes keep their words visible in Edit.
+- A KPI value that does not fit its box is drawn in compact notation (175.2M)
+  with the full value in the tooltip and for screen readers, never truncated.
+
 ## Consequences
 
 - Readers always receive schema 3. Integrations may keep creating schema-2
@@ -178,7 +213,8 @@ command returns one operation and a sentence for the screen-reader announcement.
 - The editor draws pages with the frame renderer (P1). Elements a grid cannot
   express (shapes, icons, connectors, annotations) are drawn when an
   integration creates them; the editor groups and ungroups items (P2 part 1)
-  but cannot create the other kinds until P2 part 2.
+  and creates shapes, icons and connectors (P2 part 2). Images arrive in P2
+  part 3. Annotations and data-point anchors are not authored yet.
 - The metadata schema moves to 63. A shared development database must be
   upgraded by the operator procedure (maintenance, backup, migrator, then the
   application's configured schema) before this code runs there.
@@ -249,3 +285,25 @@ command returns one operation and a sentence for the screen-reader announcement.
 - `backend/tests/unit/test_native_viz_canvas.py`: grouping keeps positions,
   stacking and interactions; refusals for nested, unknown and repeated members;
   ungrouping keeps hidden/locked.
+
+## Acceptance evidence for P2 part 2
+
+- `insert.test.ts`: free-spot placement with gutter clearance, shape, icon and
+  connector creation, decorative flags leaving tab order, style merges, page
+  background, layer and tab-order commands and their messages.
+- `item-panel.test.tsx`: page gradient background, shape fill/outline
+  colour/shadow/opacity validation, text style and padding, labelling an icon,
+  layers by button and Alt+arrow, hide and lock, tab order and **Follow the page**.
+- `editor.test.tsx`: a keyboard-only build (add a shape, format it, add to the
+  selection from **Layers**, connect, restack with Alt+Down, undo), and untitled
+  items keep their words at the top in Edit (fails at 41 px with the old header
+  row).
+- `model.test.ts`: `slotOnPage` keeps new items inside a fixed-size page.
+- `qa-chart-browser.test.tsx`: a KPI too wide for its box shows 175.2M, with
+  the full value in the tooltip and for screen readers, and no clipping. The
+  test fails without the compact form.
+- Reference scenario 10 (financial analysis: sidebar, logo, navigation, title,
+  five KPIs, a bar chart and a table) was built live through the editor UI with
+  clicks, typing and drags only: 63 steps, 51 s automated, 8.2 minutes by a
+  keystroke-level estimate. Reference 9 needs a photo background and is built in
+  part 3.

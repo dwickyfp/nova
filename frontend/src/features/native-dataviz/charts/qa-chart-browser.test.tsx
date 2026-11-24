@@ -37,10 +37,10 @@ function respond(...list: { status: number; body: unknown }[]) {
   vi.stubGlobal('fetch', fetchMock)
 }
 
-async function show(chart: ChartDefinition, onSelectValue?: (selection: ValueSelection) => void) {
+async function show(chart: ChartDefinition, onSelectValue?: (selection: ValueSelection) => void, width = 480) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<QueryClientProvider client={client}>
-    <div style={{ width: 480, height: 320, display: 'flex' }}><NativeChart chart={chart} draft={false} onSelectValue={onSelectValue} /></div>
+    <div style={{ width, height: 320, display: 'flex' }}><NativeChart chart={chart} draft={false} onSelectValue={onSelectValue} /></div>
   </QueryClientProvider>)
 }
 
@@ -180,6 +180,24 @@ describe('NDV-CHART-014 theme switch', () => {
 const NO_CATEGORY = 'This chart shows totals only, so clicking it cannot filter other charts.'
 
 describe('NDV-INTER-003 measure-only charts', () => {
+  it('shows a KPI value that does not fit in its compact form, never cut short', async () => {
+    respond({ status: 200, body: body([REVENUE], [[d('175184000')]]) })
+    const kpi = definition('kpi', { kind: 'single_measure', measure: { field_id: 'revenue', aggregation: 'sum' } }, 'Revenue')
+    const narrow = await show(kpi, undefined, 150)
+    const value = narrow.getByTestId('kpi-value')
+    await expect.element(value).toBeVisible()
+    await expect.poll(() => value.element().querySelector('[aria-hidden="true"]')?.textContent).toBe('175.2M')
+    // Screen readers and the tooltip keep the full value; nothing is clipped.
+    expect(value.element().querySelector('.sr-only')?.textContent).toBe('175,184,000')
+    expect(value.element().getAttribute('title')).toBe('175,184,000')
+    expect(value.element().scrollWidth).toBeLessThanOrEqual(value.element().clientWidth)
+    await cleanup()
+    respond({ status: 200, body: body([REVENUE], [[d('175184000')]]) })
+    const wide = await show(kpi)
+    await expect.element(wide.getByTestId('kpi-value')).toHaveTextContent('175,184,000')
+    expect(wide.getByTestId('kpi-value').element().textContent).toBe('175,184,000')
+  })
+
   it('emits no selection when a KPI is clicked', async () => {
     const onSelect = vi.fn()
     respond({ status: 200, body: body([REVENUE], [[d('15257')]]) })

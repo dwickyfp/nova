@@ -256,6 +256,10 @@ export function dashArray(stroke: Stroke | null | undefined): string | undefined
 
 const SHADOW = { none: undefined, sm: 'var(--shadow-sm, 0 1px 2px rgb(0 0 0 / 0.08))', md: 'var(--shadow-md, 0 4px 12px rgb(0 0 0 / 0.12))' } as const
 
+/** The same shadows for drawn shapes (SVG), which follow the outline: an ellipse casts a round shadow. */
+const DROP_SHADOW = { none: undefined, sm: 'drop-shadow(0 1px 2px rgb(0 0 0 / 0.08))', md: 'drop-shadow(0 4px 12px rgb(0 0 0 / 0.12))' } as const
+export const dropShadowOf = (style: ElementStyle | undefined) => DROP_SHADOW[style?.shadow ?? 'none']
+
 /**
  * Corner radius on the theme's scale: 8 is the theme's own card radius
  * (`--radius`), the others are in proportion and 9999 is a pill. Upcast
