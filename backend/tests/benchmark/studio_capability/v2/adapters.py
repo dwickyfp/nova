@@ -1,8 +1,9 @@
 """Runner adapters (H2): what the harness reads beside the event stream.
 
-* ``TurnOutcome`` and its claims arrive on ``run.finished.outcome`` once PR-0
-  ships; :mod:`fold` reads them. Until then the derived outcome is used, and
-  claims may come from the thread's ``quality_observation`` step (below).
+* ``TurnOutcome`` and its claims arrive on ``run.finished.outcome`` (PR-0);
+  :mod:`fold` reads them with the product's model. Recordings made before PR-0
+  use the derived outcome, and their claims may come from the thread's
+  ``quality_observation`` step (below).
 * A chart bound to a governed dataset carries no rows on the wire. After the
   turn the runner previews that dataset **as the user under test** and stores
   the rows in the record (``datasets``), so the grader sees what the chart drew.

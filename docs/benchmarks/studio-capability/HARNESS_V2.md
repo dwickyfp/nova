@@ -23,11 +23,15 @@ decide; the LLM judge or a person does). Two layers are reported:
 | Module | Role |
 | --- | --- |
 | `fold.py` | Folds the protocol-v2 event journal into `Signals`: tools, cards, parts, tables, components, and evidence values with their source |
-| `outcome.py` | Uses `run.finished.outcome` (TurnOutcome, D1) when present; otherwise derives the outcome from signals and marks it `derived` |
+| `outcome.py` | Reads `run.finished.outcome` (TurnOutcome, D1) with the product's own model, including `basis`, `hitl` and `action_receipts`; recordings made before the contract, or with an outcome that does not validate, get an outcome derived from signals and marked `derived` |
 | `ui_tree.py` | Parses OpenUI pages with the product parser, evaluates them, and checks each component against `ui_components.json` (JSON Schema 2020-12) |
 | `provenance.py` | Matches expected figures against evidence: exact, then x100 or /100, then sign; small figures never match an aggregate |
 | `adapters.py` | Attaches dataset previews and the thread trace after a live turn (as the user); reads deep-research findings |
 | `grade.py` | Combines the above; tool selection and numeric consistency reuse `app/modules/agents/quality_scoring.py` |
+
+When Studio marks its outcome `basis: unverified` (nothing in the turn's facts
+decides it) and that outcome does not match the expectation, the unit goes to
+the judge instead of failing.
 
 ## Corpus v3
 

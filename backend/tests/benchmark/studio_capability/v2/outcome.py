@@ -1,76 +1,40 @@
 """How a turn ended, from structured signals only.
 
-Studio's ``TurnOutcome`` contract (PR-0, DESIGN §3.2) is mirrored here so the
-harness reads it from ``run.finished.outcome`` once the product sends it. Until
-then :func:`derive_outcome` derives the same kind/reason from typed events
-(the prototype's rules, DESIGN §3.4). Both paths return :class:`Outcome`, which
-names its ``source`` so a report can tell product facts from derivations.
+Studio sends its ``TurnOutcome`` contract on ``run.finished.outcome`` (PR-0,
+DESIGN §3.2). The harness validates it with the product's own model
+(:mod:`app.modules.assistant.turn_outcome`), so a new kind or reason code is
+read as sent rather than mirrored by hand. Recordings made before PR-0 carry
+no outcome; for them :func:`derive_outcome` derives kind/reason from typed
+events (the prototype's rules, DESIGN §3.4). Both paths return
+:class:`Outcome`, which names its ``source`` so a report can tell product facts
+from derivations.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
+
+from app.modules.assistant.turn_outcome import OutcomeKind, ReasonCode, TurnOutcome
 
 if TYPE_CHECKING:
     from tests.benchmark.studio_capability.v2.fold import Signals
 
-
-class OutcomeKind(StrEnum):
-    ANSWER = "answer"
-    REFUSE = "refuse"
-    LIMITATION = "limitation"
-    CLARIFY = "clarify"
-    ACTION_DONE = "action_done"
-    ACTION_FAILED = "action_failed"
-
-
-class ReasonCode(StrEnum):
-    GOVERNED_DATA = "governed_data"
-    PUBLIC_CONTENT = "public_content"
-    AGENT_META = "agent_meta"
-    POLICY_DENIED = "policy_denied"
-    ROLE_NOT_PERMITTED = "role_not_permitted"
-    WRITE_NOT_ALLOWED = "write_not_allowed"
-    SOURCE_NOT_AVAILABLE = "source_not_available"
-    CATALOG_UNSUPPORTED = "catalog_unsupported"
-    OUTSIDE_DATA_WINDOW = "outside_data_window"
-    NO_ROWS = "no_rows"
-    TOOL_FAILED = "tool_failed"
-    GENERAL_KNOWLEDGE = "general_knowledge"
-    AMBIGUOUS_TERM = "ambiguous_term"
-    MISSING_INPUT = "missing_input"
-    HITL_PENDING = "hitl_pending"
-    ACTION_COMMITTED = "action_committed"
-    ACTION_INVALID_ARGS = "action_invalid_args"
-    REQUIRED_CAPABILITY_MISSING = "required_capability_missing"
+__all__ = ["Claim", "Outcome", "OutcomeKind", "ReasonCode", "TurnOutcome", "derive_outcome",
+           "outcome_of", "product_outcome"]
 
 
 class Claim(BaseModel):
+    """A figure the turn stated, bound (or not) to the evidence it came from."""
+
     model_config = ConfigDict(extra="ignore")
     value: float | None = None
     evidence_id: str | None = None
     column: str | None = None
     kind: Literal["figure", "derived", "hypothesis"] = "figure"
     supported: bool = False
-
-
-class TurnOutcome(BaseModel):
-    """The product contract (additive on ``run.finished``; finish_reason stays)."""
-
-    model_config = ConfigDict(extra="ignore")
-    schema_version: Literal[1] = 1
-    kind: OutcomeKind
-    reason: ReasonCode
-    evidence_ids: list[str] = Field(default_factory=list)
-    claims: list[Claim] = Field(default_factory=list)
-    alternatives_shown: bool = False
-    hitl: list[dict[str, Any]] = Field(default_factory=list)
-    action_receipts: list[str] = Field(default_factory=list)
-    finish_reason: str | None = None
 
 
 #: Kinds the harness adds when it cannot read a product outcome: the turn broke,
@@ -91,6 +55,11 @@ class Outcome:
     alternatives_shown: bool | None = None
     evidence_ids: tuple[str, ...] = ()
     notes: tuple[str, ...] = field(default=())
+    #: The product's ``basis``: ``facts``, ``model_label`` or ``unverified``
+    #: (nothing in the loop decides it; a reviewer does). None when derived.
+    basis: str | None = None
+    hitl: tuple[dict[str, str], ...] = ()
+    action_receipts: tuple[str, ...] = ()
 
 
 def product_outcome(payload: Any) -> TurnOutcome | None:
@@ -103,6 +72,10 @@ def product_outcome(payload: Any) -> TurnOutcome | None:
         return None
 
 
+def claims_of(outcome: TurnOutcome) -> list[Claim]:
+    return [Claim.model_validate(c.model_dump()) for c in outcome.claims]
+
+
 def outcome_of(sig: Signals) -> Outcome:
     """The product outcome when Studio sent one, else the derived outcome.
 
@@ -113,8 +86,14 @@ def outcome_of(sig: Signals) -> Outcome:
     product = sig.product_outcome
     if product is not None:
         return Outcome(product.kind.value, product.reason.value, "product",
-                       tuple(product.claims), product.alternatives_shown,
-                       tuple(product.evidence_ids))
+                       tuple(claims_of(product)), product.alternatives_shown,
+                       tuple(product.evidence_ids), basis=product.basis,
+                       hitl=tuple(h.model_dump() for h in product.hitl),
+                       action_receipts=tuple(product.action_receipts))
+    if sig.outcome_invalid:
+        derived = derive_outcome(sig)
+        return Outcome(derived.kind, derived.reason, "derived", derived.claims,
+                       notes=("run.finished.outcome did not validate",))
     return derive_outcome(sig)
 
 

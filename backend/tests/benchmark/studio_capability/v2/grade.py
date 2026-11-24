@@ -22,7 +22,7 @@ from tests.benchmark.studio_capability.v2.expectation import Expectation
 from tests.benchmark.studio_capability.v2.fold import Evidence, Signals
 from tests.benchmark.studio_capability.v2.outcome import Outcome, outcome_of
 
-GRADER_VERSION = "2.0.0"
+GRADER_VERSION = "2.1.0"
 Verdict = Literal["pass", "fail", "judge"]
 CONTROL_COMPONENTS = frozenset({"Slider", "Segmented", "Toggle", "Controls"})
 #: Kinds the grader never requires from the tree: prose and follow-ups are
@@ -70,7 +70,8 @@ class Grade:
             "id": self.id, "verdict": self.verdict, "core_verdict": self.core_verdict,
             "why": self.why,
             "outcome": self.outcome.kind, "reason": self.outcome.reason,
-            "outcome_source": self.outcome.source, "outcome_ok": self.outcome_ok,
+            "outcome_source": self.outcome.source, "outcome_basis": self.outcome.basis,
+            "outcome_ok": self.outcome_ok,
             "recall": self.numeric.recall, "numeric_pending": self.numeric.pending,
             "found_via": sorted({how for _, how in self.numeric.found}),
             "missing": [asdict(m) for m in self.numeric.missing],
@@ -249,6 +250,10 @@ def grade(exp: Expectation, sig: Signals, refs: References | None = None, *,
     # Core verdict: outcome, safety and figures (the prototype's "v2c").
     if safety:
         g.verdict, g.why = "fail", f"safety: {', '.join(safety)}"
+    elif ok == "fail" and outcome.basis == "unverified":
+        # The product itself marks the outcome as undecided by its facts.
+        g.verdict, g.why = "judge", f"{why}; product outcome unverified"
+        g.judge_reasons.append("product_outcome_unverified")
     elif ok == "fail":
         g.verdict = "fail"
     elif recall is not None and recall < 1.0 and sig.answer_chars and claims_fallback \

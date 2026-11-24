@@ -31,6 +31,7 @@ from tests.benchmark.studio_capability.v2.expectation import Expectation, Numeri
 from tests.benchmark.studio_capability.v2.fold import Evidence, fold
 from tests.benchmark.studio_capability.v2.grade import References, grade
 from tests.benchmark.studio_capability.v2.ground_truth import resolve
+from tests.benchmark.studio_capability.v2.outcome import outcome_of
 
 V2_DIR = Path(rescore.__file__).parent
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "studio_bench_v2"
@@ -314,21 +315,71 @@ def _finished(outcome: Any) -> dict[str, Any]:
                                                                      "outcome": outcome}}]}
 
 
+def _contract(kind: str, reason: str, **fields: Any) -> dict[str, Any]:
+    """A ``run.finished.outcome`` payload built with the product's own model."""
+    from app.modules.assistant import turn_outcome as product
+
+    return product.TurnOutcome(kind=product.OutcomeKind(kind), reason=product.ReasonCode(reason),
+                               finish_reason="stop", **fields).model_dump(mode="json")
+
+
 def test_product_turn_outcome_wins_over_derivation() -> None:
-    sig = fold(_finished({"kind": "refuse", "reason": "write_not_allowed",
-                          "alternatives_shown": True,
-                          "claims": [{"value": 5.0, "evidence_id": "c1", "supported": True}]}))
+    sig = fold(_finished(_contract(
+        "refuse", "write_not_allowed", alternatives_shown=True,
+        claims=[{"text": "5 orders", "value": 5.0, "evidence_id": "c1", "supported": True}])))
     unit = UNITS["governance-010"]
     g = grade(unit, sig)
     assert (g.outcome.source, g.outcome.kind, g.verdict) == ("product", "refuse", "pass")
+    assert g.outcome.basis == "facts"
     assert any(e.source == "claim" for e in sig.evidence)
-    assert fold(_finished({"kind": "nonsense"})).product_outcome is None
+
+
+def test_every_product_kind_and_reason_is_read_as_sent() -> None:
+    from app.modules.assistant import turn_outcome as product
+
+    for kind, reasons in product.KIND_REASONS.items():
+        for reason in reasons:
+            outcome = outcome_of(fold(_finished(_contract(kind.value, reason.value))))
+            assert (outcome.source, outcome.kind, outcome.reason) == (
+                "product", kind.value, reason.value)
+
+
+def test_full_contract_fields_reach_the_outcome() -> None:
+    outcome = outcome_of(fold(_finished(_contract(
+        "action_done", "action_committed", evidence_ids=["e1"], action_receipts=["call_7"],
+        hitl=[{"kind": "question", "status": "answered"}], basis="model_label"))))
+    assert outcome.action_receipts == ("call_7",) and outcome.evidence_ids == ("e1",)
+    assert outcome.hitl == ({"kind": "question", "status": "answered"},)
+    assert outcome.basis == "model_label"
+    error = grade(UNITS["number-001"], fold(_finished(_contract("error", "timeout"))))
+    assert (error.outcome.source, error.verdict) == ("product", "fail")
+
+
+def test_an_invalid_outcome_falls_back_to_derivation_and_says_so() -> None:
+    sig = fold(_finished({"kind": "nonsense"}))
+    assert sig.product_outcome is None and sig.outcome_invalid
+    outcome = outcome_of(sig)
+    assert outcome.source == "derived" and outcome.notes
+
+
+def test_recordings_before_the_contract_use_the_derived_outcome() -> None:
+    for scored in SCORED.values():
+        assert {g.outcome.source for g in scored.values()} == {"derived"}
+
+
+def test_unverified_product_outcome_goes_to_the_judge_not_a_fail() -> None:
+    unit = UNITS["governance-010"]
+    facts = grade(unit, fold(_finished(_contract("action_done", "action_committed"))))
+    label = grade(unit, fold(_finished(_contract("action_done", "action_committed",
+                                                 basis="unverified"))))
+    assert (facts.verdict, label.verdict) == ("fail", "judge")
+    assert "product_outcome_unverified" in label.judge_reasons
 
 
 def test_reason_codes_are_checked_against_the_product_outcome() -> None:
     unit = UNITS["governance-005"].model_copy(update={"reason_codes": ["catalog_unsupported"]})
-    ok = grade(unit, fold(_finished({"kind": "limitation", "reason": "catalog_unsupported"})))
-    off = grade(unit, fold(_finished({"kind": "limitation", "reason": "no_rows"})))
+    ok = grade(unit, fold(_finished(_contract("limitation", "catalog_unsupported"))))
+    off = grade(unit, fold(_finished(_contract("limitation", "no_rows"))))
     assert (ok.verdict, off.verdict) == ("pass", "fail")
 
 
