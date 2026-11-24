@@ -295,6 +295,7 @@ class StudioStreamEncoder:
         if name == events.EVENT_TOOL_STATUS:
             return self._tool_status(
                 (origin, str(body.get("tool_call_id") or "")), str(body.get("status") or ""),
+                reason=body.get("reason"),
             )
         if name == events.EVENT_TOOL_PROGRESS:
             return self._tool_progress(origin, body)
@@ -478,7 +479,9 @@ class StudioStreamEncoder:
         frames.extend(self._tool_status(key, status, preview=preview))
         return frames
 
-    def _tool_status(self, key: tuple[str, str], status: str, *, preview: Any = None) -> list[str]:
+    def _tool_status(
+        self, key: tuple[str, str], status: str, *, preview: Any = None, reason: Any = None,
+    ) -> list[str]:
         if not key[1] or not status:
             return []
         part_id, frames = self._tool_part(key)
@@ -488,6 +491,8 @@ class StudioStreamEncoder:
         payload: dict[str, Any] = {"part_id": part_id, "status": status}
         if preview:
             payload["preview"] = preview
+        if status == "failed" and isinstance(reason, str) and reason:
+            payload["reason"] = reason
         if status == "running":
             if key not in self._tool_started:
                 self._tool_started[key] = self._clock()

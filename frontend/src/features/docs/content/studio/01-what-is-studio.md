@@ -58,8 +58,10 @@ the icons stay, which gives charts and editors more room.
 
 Click your name at the bottom of the rail to open the account menu:
 
-- **Switch role**: choose which of your roles is active. Answers, artifacts and
-  dashboards follow the active role. Role-based shares appear only while that
+- **Switch role**: choose which of your roles is active. If you have up to five
+  roles, they are all listed in the menu, with a check mark on the active one.
+  With more, point at the active role name to open a list you can search.
+  Answers, artifacts and dashboards follow the active role. Role-based shares appear only while that
   role is active; a share addressed directly to you stays visible across role
   switches. Shared results still use your own data permissions.
 - **Appearance**: light, dark, or follow your system.

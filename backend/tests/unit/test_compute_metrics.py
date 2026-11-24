@@ -196,3 +196,56 @@ async def test_the_tool_combines_two_held_results_and_continues_from_the_new_tab
                    "with_evidence_id": "someone-else"},
     ), context)
     assert not missing.ok and missing.recoverable
+
+
+TOTAL = {"columns": ["revenue"], "rows": [["175184000.00"]]}
+
+
+def test_scale_computes_a_what_if_total():
+    """Benchmark what_if-001: "175,184,000 plus 10%" instead of 192,702,400."""
+    result = run(TOTAL, operation="scale", value_column="revenue", percent=10)
+    assert result["rows"] == [["1", "175184000.0000", "192702400.0000", "17518400.0000"]]
+    assert "192702400.0000" in result["summary"]
+    assert run(TOTAL, operation="scale", value_column="revenue", factor=1.1)["rows"][0][2] \
+        == "192702400.0000"
+
+
+def test_scale_one_row_reports_the_scenario_total():
+    """Benchmark session-016.t2: Jakarta doubled, every other city unchanged."""
+    cities = {"columns": ["shipping_city", "revenue"],
+              "rows": [["Jakarta", "30496000"], ["Bandung", "22298000"], ["Medan", "100"]]}
+    result = run(cities, operation="scale", value_column="revenue", factor=2,
+                 only_label="jakarta")
+    assert result["rows"][0] == ["Jakarta", "30496000.0000", "60992000.0000", "30496000.0000"]
+    assert result["rows"][1][2] == "22298000.0000"
+    assert result["rows"][-1] == ["total", "52794100.0000", "83290100.0000", "30496000.0000"]
+
+
+def test_scale_compounds_over_periods_and_refuses_guesses():
+    weekly = run(TOTAL, operation="scale", value_column="revenue", percent=5, periods=2)
+    assert weekly["rows"][0][2] == "193140360.0000"  # 175,184,000 x 1.05^2
+    for arguments in ({}, {"factor": 2, "percent": 5}, {"factor": 2, "only_label": "Bali"},
+                      {"factor": 2, "periods": 0}):
+        with pytest.raises(ComputeError):
+            run(TOTAL, operation="scale", value_column="revenue", **arguments)
+
+
+def test_value_column_matching_is_forgiving_but_never_guesses_between_columns():
+    assert run(TOTAL, operation="sum", value_column="Revenue")["rows"][0][0] == "175184000.0000"
+    assert run(TOTAL, operation="sum", value_column="orders.revenue")["rows"][0][0] \
+        == "175184000.0000"
+    assert run(TOTAL, operation="sum")["rows"][0][0] == "175184000.0000"
+    with pytest.raises(ComputeError):
+        run(CITIES, operation="sum")  # two numeric columns: name one
+
+
+async def test_an_earlier_turns_evidence_id_uses_the_restored_result():
+    outcome = await compute_metrics_tool.run(
+        ToolInvocation("c1", "compute_metrics", {
+            "operation": "scale", "value_column": "revenue", "evidence_id": "evidence_1",
+            "percent": 10,
+        }),
+        SimpleNamespace(last_result=dict(TOTAL), evidence_tables={}),
+    )
+    assert outcome.ok, outcome.error
+    assert outcome.table["rows"][0][2] == "192702400.0000"

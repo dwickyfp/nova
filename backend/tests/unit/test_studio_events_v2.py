@@ -255,6 +255,18 @@ CASES: list[dict[str, Any]] = [
             _f("done", message_id="m-e", finish_reason="stop"),
         ],
     },
+    {
+        "name": "a failed call carries its short reason",
+        "run_id": "run-f",
+        "role": "ANALYST",
+        "v1": [
+            _call("c1", "running"),
+            _f("tool_status", tool_call_id="c1", status="failed",
+               reason="Nova could not compare those periods as asked."),
+            _f("text_delta", text="Name both periods.", content_index=0, content_id="content-0"),
+            _f("done", message_id="m6", finish_reason="stop"),
+        ],
+    },
 ]
 
 
@@ -557,7 +569,7 @@ def test_human_input_parts_sit_where_asked_and_record_how_they_settled() -> None
 
 
 def test_a_chart_draft_and_its_suggestion_are_parts_of_their_own():
-    records = encode_case(CASES[-1])
+    records = encode_case(CASES[-2])
     names = _events(records)
     draft = records[names.index("artifact.draft")]["data"]
     suggestion = records[names.index("save.suggested")]["data"]
@@ -607,3 +619,33 @@ def test_a_finished_call_carries_how_long_it_ran() -> None:
     assert all(data["duration_ms"] > 0 and data["duration_ms"] % 1500 == 0 for data in timed)
     assert not any("duration_ms" in data for data in statuses if data["status"] == "running")
 
+
+
+def test_a_failed_call_carries_its_short_reason() -> None:
+    records = encode_case(CASES[-1])
+    status = next(
+        record["data"] for record in records
+        if record["event"] == "tool.status" and record["data"]["status"] == "failed"
+    )
+    assert status["reason"] == "Nova could not compare those periods as asked."
+
+
+def test_a_reason_is_only_kept_for_a_failure() -> None:
+    from app.modules.assistant.service import failure_reason
+
+    assert failure_reason(None) is None
+    assert failure_reason("  The period has   no data. ", "NO_DATA") == "The period has no data."
+    # An unclassified failure is an engine or provider message: never shown.
+    assert failure_reason("(5502) Unknown table 'information_schema.users'.") == (
+        "The step could not be completed.")
+    for internal in (
+        "Traceback (most recent call last): ...",
+        "SELECT secret FROM analytics.sales.orders failed",
+        "connect to https://fe.internal:9030 refused",
+        "error in /app/modules/agents/tools/semantic_query.py",
+        "password='hunter2' rejected",
+    ):
+        assert failure_reason(internal, "QUERY_FAILED") == "The step could not be completed."
+    long = "word " * 80
+    reason = failure_reason(long, "INVALID_SEMANTIC_PLAN")
+    assert reason is not None and len(reason) <= 160 and reason.endswith("…")

@@ -53,6 +53,8 @@ from app.modules.agents.semantic.ir import SemanticModelIR
 from app.modules.agents.semantic.planning import (
     SemanticPlan,
     SemanticPlanError,
+    harmonize_plan,
+    harmonize_time,
     validate_plan,
 )
 from app.modules.agents.semantic.runtime import (
@@ -354,6 +356,10 @@ class SemanticQueryTool:
             notes: list[str] = []
             if first_query and frame is not None:
                 plan, notes = reconcile_with_frame(plan, frame, semantic_ir)
+            # Comparisons the compiler cannot run as written are put in a shape it
+            # can (two named periods, a whole month written as dates, week over
+            # week across many weeks), on every attempt, so a retry can succeed.
+            plan = harmonize_plan(plan)
             period_note = "; ".join(notes) or None
             verified_hit = _verified_match(definition, model_id, semantic_ir, plan)
             errors = [
@@ -413,7 +419,7 @@ class SemanticQueryTool:
             return ToolOutcome(
                 ok=False,
                 summary="",
-                error="The semantic plan could not be compiled safely.",
+                error=_plan_error_message(str(exc)),
                 error_class="INVALID_SEMANTIC_PLAN",
                 recoverable=True,
                 safe_detail=str(exc),
@@ -446,6 +452,16 @@ class SemanticQueryTool:
                 + ". Run those steps with your other tools, or ask another query per part."
             )
         explanation += _readings_note(semantic_ir, plan)
+        unavailable = unavailable_sources(getattr(context, "user_question", None), semantic_ir)
+        if unavailable:
+            # The user named a table or schema this agent cannot use. Answering from
+            # the bound data without saying so passes one source off as another.
+            names = ", ".join(unavailable)
+            explanation += (
+                f" The question names {names}, which is not a source this agent can use. "
+                f"Say first that {names} is not available here, then give these figures "
+                f"labelled as from {semantic_model.get('name') or semantic_ir.name}."
+            )
         # Where the plan came from, not a model's opinion of itself: a verified
         # query is exact, a validated plan is the model's reading of the question.
         plan_source: PlanSource = "verified_query" if verified_hit else (
@@ -643,6 +659,26 @@ class SemanticQueryTool:
                     generation_duration_ms=generation_duration_ms,
                     execution_duration_ms=execution_duration_ms,
                 ),
+            )
+
+        relaxed = await _relaxed_filter(plan, last_columns, last_rows, run_window)
+        if relaxed is not None:
+            # No record matches every filter together, while one filter alone empties
+            # the result: "orders shipped to Bandung" read as status Shipped and city
+            # Bandung. The figure without that filter is the answer the user can use.
+            dropped, relaxed_plan, relaxed_columns, relaxed_rows = relaxed
+            plan = relaxed_plan
+            last_columns, last_rows = relaxed_columns, relaxed_rows
+            from app.modules.query.repository import QueryResult
+
+            results = [QueryResult(columns=list(relaxed_columns), rows=list(relaxed_rows),
+                                   row_count=len(relaxed_rows))]
+            safe_sql = _safe_sql_preview(self._compiler.compile(semantic_ir, plan).sql)
+            explanation += (
+                f" No record matches every filter together: with {dropped} the result is "
+                f"empty. The rows here are without that filter. Say first that no record "
+                f"matches {dropped} together with the other conditions, then give this "
+                "figure, labelled as without that condition."
             )
 
         covered: dict[str, str] | None = None
@@ -1004,6 +1040,88 @@ def _view_naming_metric(models: list[dict[str, Any]], question: str) -> str | No
     return hits[0] if len(hits) == 1 else None
 
 
+async def _relaxed_filter(
+    plan: SemanticPlan, columns: list[Any], rows: list[Any], run_window: Any,
+) -> tuple[str, SemanticPlan, list[Any], list[list[Any]]] | None:
+    """The plan without the one equality filter that empties an aggregate answer.
+
+    Only a total (no grouping, no series) with two or more filters is probed,
+    one filter dropped at a time, as the caller through the same compiler, and
+    at most three probes run. ``None`` when the result has rows or no single
+    filter explains the empty result.
+    """
+    if (not looks_empty(columns, rows) or len(plan.filters) < 2 or plan.dimensions
+            or (plan.time is not None and (plan.time.grain or plan.time.compare))
+            or not plan.metrics):
+        return None
+    candidates = [item for item in plan.filters if item.operator == "="][-3:]
+    for item in reversed(candidates):
+        relaxed = dataclass_replace(
+            plan, filters=tuple(other for other in plan.filters if other is not item))
+        found_columns, found_rows, error = await run_window(relaxed.as_dict())
+        if error is None and not looks_empty(found_columns, found_rows):
+            return (f"{item.field} = {item.value!r}", relaxed, found_columns, found_rows)
+    return None
+
+
+_QUALIFIED_NAME = re.compile(
+    r"(?<![\w@/.-])([A-Za-z_][A-Za-z0-9_]+(?:\.[A-Za-z_][A-Za-z0-9_]+){1,2})(?![\w/-]|\.\w)"
+)
+
+
+def unavailable_sources(question: str | None, model: SemanticModelIR) -> list[str]:
+    """Qualified table or schema names in the user's words that no bound dataset is.
+
+    ``analytics.sales`` in "show the analytics.sales amounts" is a source the user
+    asked for by name. A name that is a bound source, part of one (its schema or
+    table), or a ``dataset.field`` of the model is not reported.
+    """
+    if not question:
+        return []
+    known: set[str] = set()
+    for dataset in model.datasets:
+        parts = [part.strip('`"').lower() for part in dataset.source.split(".")]
+        for start in range(len(parts)):
+            for end in range(start + 1, len(parts) + 1):
+                known.add(".".join(parts[start:end]))
+        for item in dataset.fields:
+            known.add(f"{dataset.name}.{item.name}".lower())
+    names: list[str] = []
+    for match in _QUALIFIED_NAME.finditer(question):
+        name = match.group(1)
+        if re.fullmatch(r"[A-Z][a-z]+", name.split(".")[-1]):
+            continue  # "in Jakarta.Then": a missing space between sentences
+        if name.lower() not in known and name not in names:
+            names.append(name)
+    return names[:3]
+
+
+def _plan_error_message(detail: str) -> str:
+    """What the person can do when a plan cannot be compiled, in plain words.
+
+    The detail (field and metric names) stays with the agent for its repair.
+    """
+    text = detail.lower()
+    if any(word in text for word in ("comparison", "compare", "incompatible", "overlap",
+                                     "previous period", "execution window")):
+        return ("Nova could not compare those periods as asked. Name both periods "
+                "(for example June 2025 and July 2025), or ask for the trend by week "
+                "or by month.")
+    if "time range" in text or "time grain" in text or "time dimension" in text:
+        return ("Nova could not read that period. Name it as a month, a quarter, a year "
+                "or two dates.")
+    if "must use metric" in text:
+        return ("The question uses a business term with an official definition this data "
+                "does not compute. Ask for it by that definition, or choose another measure.")
+    if "unknown metric" in text or "unknown dimension" in text or "unknown filter" in text:
+        return ("Part of the question is not in this data: it has no matching measure or "
+                "field. Ask about the measures and fields this data provides.")
+    if "order field" in text or "not selected" in text:
+        return "Nova could not sort the result that way. Ask without the ordering."
+    return ("Nova could not turn this question into a safe query. Ask for one measure, "
+            "grouping and period at a time.")
+
+
 def reconcile_with_frame(
     plan: SemanticPlan, frame: Any, model: SemanticModelIR
 ) -> tuple[SemanticPlan, list[str]]:
@@ -1052,7 +1170,9 @@ def _frame_period(
     dimensions = plan.dimensions if frame.asks_series else tuple(
         name for name in plan.dimensions if name != dimension
     )
-    time = SemanticTime(dimension, grain=grain, range=frame.range, compare=frame.compare)
+    time = harmonize_time(
+        SemanticTime(dimension, grain=grain, range=frame.range, compare=frame.compare)
+    )
     note = f"Used the period the user asked for ({frame.range}"
     note += f", compared {frame.compare})" if frame.compare else ")"
     return replace(plan, time=time, dimensions=dimensions), note

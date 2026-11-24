@@ -9,6 +9,16 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
+#: ``median_of_revenue``, ``p90_of_average_order_value``.
+_DISTRIBUTION = re.compile(
+    r"(?P<kind>median|p(?:[1-9]|[1-9][0-9]))_of_(?P<metric>[A-Za-z_][A-Za-z0-9_]*)"
+)
+#: One aggregate over one column reference: the metric's per-record input.
+_SINGLE_COLUMN_AGGREGATE = re.compile(
+    r"(?:SUM|AVG|MIN|MAX)\(\s*(?P<column>[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?)\s*\)",
+    re.IGNORECASE,
+)
+
 
 class FieldKind(StrEnum):
     FACT = "fact"
@@ -283,7 +293,55 @@ class SemanticModelIR:
         return next((item for item in self.datasets if item.name == name), None)
 
     def metric(self, name: str) -> SemanticMetricIR | None:
-        return next((item for item in self.metrics if item.name == name), None)
+        found = next((item for item in self.metrics if item.name == name), None)
+        return found if found is not None else self.distribution_metric(name)
+
+    def distribution_metric(self, name: str) -> SemanticMetricIR | None:
+        """``median_of_<metric>`` or ``p90_of_<metric>``: a percentile of a metric's input.
+
+        A metric that aggregates one column per record (``AVG(orders.total_amount)``,
+        ``SUM(...)``) also has a median and percentiles of that column over the
+        same records: "median order value" is the median of ``total_amount`` per
+        order. The statistic keeps the metric's dataset, time dimension, unit and
+        filters; it is computed by the engine (``PERCENTILE_CONT``), never by the
+        model. A metric of anything else (a count, a ratio, a derived metric) has
+        no such statistic.
+        """
+        match = _DISTRIBUTION.fullmatch(name)
+        if match is None:
+            return None
+        base = next((item for item in self.metrics if item.name == match["metric"]), None)
+        if base is None or base.dependencies:
+            return None
+        column = _SINGLE_COLUMN_AGGREGATE.fullmatch(base.expression.strip())
+        if column is None:
+            return None
+        fraction = 0.5 if match["kind"] == "median" else int(match["kind"][1:]) / 100
+        if not 0 < fraction < 1:
+            return None
+        label = "Median" if fraction == 0.5 else f"{match['kind'][1:]}th percentile"
+        # Computed from the records of each group, so any field of its own
+        # records may group it, as for the metric itself.
+        dataset = self.dataset(base.base_dataset)
+        own = tuple(
+            name for item in (dataset.fields if dataset else ())
+            for name in (item.name, f"{dataset.name}.{item.name}")
+        ) if dataset else ()
+        return SemanticMetricIR(
+            name=name,
+            expression=f"PERCENTILE_CONT(CAST({column['column']} AS DOUBLE), {fraction})",
+            base_dataset=base.base_dataset,
+            datatype="Double",
+            description=f"{label} of the values {base.name} aggregates, per record.",
+            grain=base.grain,
+            additivity=Additivity.NON_ADDITIVE,
+            default_time_dimension=base.default_time_dimension,
+            allowed_dimensions=tuple(dict.fromkeys((*base.allowed_dimensions, *own))),
+            unit=base.unit,
+            filters=base.filters,
+            visibility=base.visibility,
+            preferred_relationship_path=base.preferred_relationship_path,
+        )
 
     def field(self, name: str) -> SemanticFieldIR | None:
         qualified_dataset, _, bare = name.partition(".")
