@@ -1045,3 +1045,7 @@ by a recorded decision and 3 are blocked.
   pass; frontend lint, build, bundle budget, licenses and 236 files / 2,005 tests
   with coverage pass. The PG17 suites, including the schema-62 upgrade test,
   run in CI because the disposable PG17 fixture is not running on this host.
+- **CI attempt 1 (PR #246, `4a84627f`):** PG17 1,098 passed, 1 failed. The new
+  upgrade test expected schema-2 rows to omit `schema_version` from the stored
+  definition; they store it as `2`. The test expectation was corrected; the
+  migration and code were unchanged. All other jobs passed.
